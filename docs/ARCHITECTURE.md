@@ -63,10 +63,11 @@ ImGui overlay. Its implementation uses SDL's GPU API on the requested backend
 and reports an unavailable one instead of substituting another. Scaling needs
 no shaders; the overlay uses Dear ImGui's precompiled SPIR-V, DXBC and metallib
 shaders. Another GPU provider, such as Dawn, could implement the same interface
-if the game's rendering needs one. `runtime::run` receives mounted game data and opens the
-window and runs the fixed-step game loop, currently with an empty back buffer.
-Before the first frame, startup steps (now the game files' startup read through
-the VFS, later shader preparation) run on a worker behind a minimal loading
+if the game's rendering needs one. `runtime::run` receives the selected source,
+cache and settings paths, opens the window and runs the fixed-step game loop,
+currently with an empty back buffer. Before the first frame, startup steps
+(cache validation, ISO preparation when needed, VFS mounting and the initial
+game-file read; later shader preparation) run on one worker behind a minimal loading
 screen: a label, percentage and thin bar on black, adapted from Recharged. It
 appears only when startup takes longer than 0.3 s and fades out to the black
 the game starts from. The optional performance overlay (FPS, system GPU and CPU
@@ -89,13 +90,15 @@ InstallShield 6 metadata from an ISO-backed header snapshot through read-only
 callbacks. Game-path mapping selects the supported English Data/ tree and INI.
 Preparation verifies and stages cabinet/loose members into persistent user
 storage, then publishes a versioned manifest. The runtime uses ordinary local
-reads and seeks through `PreparedSource`; it never reopens the ISO.
+reads and seeks through `PreparedSource` after setup; those reads never reopen the ISO.
 [Logical paths](DATA.md) preserve display spelling and normalize
 ASCII case/separators without permitting traversal.
 
 The source picker checks availability and the ISO container signature. A
-cancellable setup worker validates game content before Play hands a mounted
-source to the runtime. Settings remember readiness for offline startup; changed
+cancellable startup worker validates and prepares game content after Play opens
+the game window. Explicit prepare/repair uses that same loading screen and
+returns to the launcher. The launcher only checks source/cache readiness for
+its status cards. Settings remember readiness for offline startup; changed
 sources invalidate it. The verified profile supplies the game language, with
 English currently supported. Installer translations and launcher-interface
 translations are separate concerns. See [DATA](DATA.md) for lifecycle and checks.

@@ -118,13 +118,16 @@ artifact; product packages still contain the launcher/runtime executable.
 CTest checks help/version/build-info, settings persistence, source errors and
 a window smoke that renders all six pages with SDL's dummy video driver and
 software renderer. Package smoke runs the same window check after extraction,
-proving that the artwork, icon and fonts travel with it. Package smoke also
-prepares generated data, checks offline reuse and repair, and reaches the
-runtime handoff, then either runs the hidden loop, including the startup VFS
-read, or checks the unavailable-GPU error. The
+proving that the artwork, icon and fonts travel with it. With a usable GPU,
+package smoke also opens the game window, prepares generated data, checks
+offline reuse and repair, and runs the hidden loop including the startup VFS
+read. Without one, it checks that the GPU error occurs before any cache or
+readiness is created and reports the skipped game-loading integration. The
 `launcher_content` test covers cancellation, source switches and mount lifetime;
 `startup_work` covers the order, progress, cancellation and errors of the work
-behind the game window's loading screen.
+behind the game window's loading screen. `content_startup` runs its real
+check/prepare/mount/read worker without a GPU, including cancelled extraction,
+resumption, binding persistence, offline reuse and repair.
 Generated fixtures cover
 pins, patch ordering, tampering, version changes, archive payloads, provenance,
 ABI bounds and release decisions.
@@ -146,12 +149,12 @@ runs never check for updates; `--update-preview STATE` shows a made-up update
 state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
 `downloading`, `failed` or `installfailed`).
 
-`--play` prepares or reuses game data, then opens the game window with saved
-settings (or `--config` and `--source`), as Play does. `--cache-directory folder`
+`--play` opens the game window with saved settings (or `--config` and `--source`),
+then prepares or reuses game data behind its loading screen, as Play does. `--cache-directory folder`
 overrides the user cache for development. `--frames N` stops after N frames, and
-`--screenshot file.png` then saves the last one. The `game_runtime` test runs
-it hidden on a generated ISO and is skipped where no display or GPU device
-exists, as on hosted CI runners.
+`--screenshot file.png` then saves the last one. The `game_startup` and
+`game_runtime` integration tests run it hidden on a generated ISO and are skipped
+where no display or GPU device exists, as on hosted CI runners.
 
 The `launcher_updates` test writes packages the way `tools/package_build.py`
 does, plus damaged and hostile archives, and checks the update rules,

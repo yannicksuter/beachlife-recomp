@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <source_location>
 
@@ -65,10 +66,128 @@ private:
     std::shared_ptr<Probe> probe_;
 };
 
+void check_setup(const std::filesystem::path& image, const std::filesystem::path& cache) {
+    namespace fs = std::filesystem;
+    const auto config = cache.parent_path()/"launcher.cfg";
+    launcher::Settings settings;
+    settings.source = launcher::path_utf8(fs::absolute(image).lexically_normal());
+    launcher::save_settings(config, settings); // the launcher's part of Play
+    const auto offline = image.parent_path()/"setup-offline.iso";
+
+    // Hold the actual extraction inside the loading step, then cancel it. No
+    // saved readiness or later VFS read may escape the cancelled worker.
+    {
+        std::atomic_bool entered{false}, released{false}, later{false};
+        runtime::ContentStartup content(settings, cache, config);
+        auto prepare = content.prepare([&](const data::PrepareProgress& update) {
+            if (update.phase != "extracting" || update.completed_files != 1) return;
+            entered = true;
+            wait_for([&] { return released.load(); });
+        });
+        auto work = std::make_unique<runtime::StartupWork>(std::vector<runtime::StartupStep>{
+            std::move(prepare), {"later", [&](runtime::StartupProgress&) { later = true; }}});
+        wait_for([&] { return entered.load(); });
+        const auto status = work->status();
+        expect(status.label == "Preparing game files" && !status.ready && !status.failed);
+        expect(status.share().value() >= 0.25f && status.share().value() <= 0.375f);
+        expect(launcher::load_settings(config).content.identity.empty());
+        work->cancel();
+        released = true;
+        work.reset();
+        expect(!later && launcher::load_settings(config).content.identity.empty());
+        for (const auto& entry : fs::directory_iterator(cache))
+            if (entry.is_directory()) expect(!fs::exists(entry.path()/"manifest.json"));
+    }
+
+    // Resume all the way through saving the binding and reading from the VFS.
+    fs::path root;
+    {
+        runtime::ContentStartup content(settings, cache, config);
+        {
+            runtime::StartupWork work({content.prepare(), content.read()});
+            settle(work);
+            work.rethrow();
+            expect(work.status().ready && work.status().done == 27);
+        }
+        settings = launcher::load_settings(config);
+        expect(!settings.content.identity.empty());
+        root = cache/settings.content.identity;
+        expect(fs::exists(root/"manifest.json"));
+        bool locked = false;
+        try { data::prepare_content(image, cache); } catch (const std::runtime_error&) { locked = true; }
+        expect(locked); // the runtime retains its mount after loading finishes
+    }
+
+    const auto target = root/"files/Data/loose.txt";
+    const auto modified = fs::last_write_time(target);
+    const auto config_modified = fs::last_write_time(config);
+    for (bool disconnected : {false, true}) {
+        if (disconnected) fs::rename(image, offline);
+        runtime::ContentStartup content(settings, cache, config);
+        runtime::StartupWork work({content.prepare([](const auto&) { expect(false); }), content.read()});
+        settle(work);
+        work.rethrow();
+        expect(work.status().ready);
+        expect(fs::last_write_time(target) == modified && fs::last_write_time(config) == config_modified);
+    }
+    fs::remove(target);
+    {
+        runtime::ContentStartup content(settings, cache, config);
+        runtime::StartupWork work({content.prepare(), content.read()});
+        settle(work);
+        expect(work.status().failed && !work.status().ready);
+        expect(launcher::load_settings(config) == settings);
+    }
+    fs::rename(offline, image);
+    {
+        runtime::ContentStartup content(settings, cache, config);
+        runtime::StartupWork work({content.prepare(), content.read()});
+        settle(work);
+        work.rethrow();
+        expect(work.status().ready && fs::is_regular_file(target));
+    }
+    // Explicit repair must verify even when the stamp and file sizes match.
+    { std::fstream changed(target, std::ios::binary|std::ios::in|std::ios::out); changed.put('!'); }
+    {
+        bool checked = false;
+        runtime::ContentStartup content(settings, cache, config, true);
+        runtime::StartupWork work({content.prepare([&](const auto& update) { checked |= update.phase == "checking"; })});
+        settle(work);
+        work.rethrow();
+        expect(work.status().ready && checked);
+        std::ifstream restored(target, std::ios::binary);
+        expect(restored.get() != '!');
+    }
+    // An inaccessible settings destination must not report a completed startup.
+    {
+        const auto bad_config = cache.parent_path()/"config-is-a-directory";
+        fs::create_directory(bad_config);
+        auto unbound = settings;
+        unbound.content = {};
+        runtime::ContentStartup content(unbound, cache, bad_config);
+        runtime::StartupWork work({content.prepare(), content.read()});
+        settle(work);
+        expect(work.status().failed && !work.status().ready);
+    }
+    // Replacing the selected source never inherits the old offline binding.
+    fs::rename(image, offline);
+    { std::ofstream broken(image, std::ios::binary); broken << "broken ISO"; }
+    {
+        runtime::ContentStartup content(settings, cache, config);
+        runtime::StartupWork work({content.prepare(), content.read()});
+        settle(work);
+        expect(work.status().failed && !work.status().ready);
+        expect(launcher::load_settings(config) == settings);
+    }
+    fs::remove(image);
+    fs::rename(offline, image);
+}
+
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
     try {
         const std::filesystem::path image(argv[1]), cache(argv[2]);
+        check_setup(image, cache.parent_path()/"setup-cache");
         const auto prepared = data::prepare_content(image, cache);
         const auto offline = image.parent_path()/"offline.iso";
         std::filesystem::rename(image, offline);
@@ -128,7 +247,8 @@ int main(int argc, char** argv) {
                 if (scenario == 2) expect(status.done == 1200);
             }
         }
-        std::cout << "Queued VFS ownership, offline reads, byte progress, cancellation, limits and read errors passed.\n";
+        std::cout << "Loading-screen preparation, cancellation, resume, saved/offline startup, repair and mount lifetime passed.\n"
+                  << "Queued VFS ownership, byte progress, limits and read errors passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

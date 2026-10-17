@@ -1,6 +1,5 @@
 #pragma once
 #include "settings.h"
-#include "data/content_manifest.h"
 
 namespace beachlife::launcher {
 
@@ -16,15 +15,16 @@ struct Options {
     int argc = 0;               // the command line, to restart after an update
     char** argv = nullptr;
     bool smoke = false;
-    bool auto_play = false; // --play: show setup progress, then leave for the runtime
+    bool auto_play = false; // --play: leave straight for the game's loading screen
 };
 
-// How the launcher was left: Play asks the caller to start the game with `settings`.
+// Play or explicit preparation asks the caller to open the game's loading screen.
 struct Outcome {
     int exit_code = 0;
     bool play = false;
+    bool prepare_only = false; // use the loading screen for explicit prepare/repair, then return
     Settings settings;
-    std::shared_ptr<const data::PreparedSource> content;
+    std::filesystem::path config;
 };
 
 Outcome run(const Options& options);

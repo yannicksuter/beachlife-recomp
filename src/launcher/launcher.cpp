@@ -109,7 +109,10 @@ public:
 
     int run() {
         initialize();
-        if (options_.auto_play) play();
+        if (options_.auto_play) {
+            play();
+            return exit_code_;
+        }
         int frame = 0;
         bool running = true;
         while (running) {
@@ -118,7 +121,6 @@ public:
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                     close_requested_ = true;
-                    pending_play_ = false;
                     content_->cancel();
                 }
                 if (event.type == SDL_EVENT_DROP_FILE && event.drop.data) {
@@ -146,7 +148,7 @@ public:
             ImGui::GetStyle().ScaleAllSizes(scale_);
             ImGui::NewFrame();
             draw(display);
-            if (play_ || finished_) running = false;
+            if (play_) running = false;
             if (close_requested_) {
                 if (settings_ == saved_) running = false;
                 else ImGui::OpenPopup("Save changes?");
@@ -174,15 +176,16 @@ public:
         if (options_.smoke) std::puts("Launcher window, artwork, fonts and pages verified.");
         if (options_.smoke || !options_.screenshot.empty())
             std::printf("Launcher renderer: %s\n", SDL_GetRendererName(renderer_));
-        return options_.auto_play && !play_ && !exit_code_ ? 130 : exit_code_;
+        return exit_code_;
     }
 
     // The updated launcher to start once this one is gone, or empty.
     fs::path restart_program() const { return restart_ ? installed_launcher(package_) : fs::path(); }
     // Play was pressed: the game starts once the launcher is gone.
     bool play_requested() const { return play_; }
+    bool prepare_only() const { return prepare_only_; }
     const Settings& settings() const { return settings_; }
-    std::shared_ptr<const data::PreparedSource> take_content() { return std::move(mounted_); }
+    const fs::path& config() const { return config_; }
 
 private:
     void initialize() {
@@ -205,7 +208,7 @@ private:
         content_status_ = content_->snapshot();
         source_ = content_status_.source;
         const auto flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
-            (options_.smoke ? SDL_WINDOW_HIDDEN : 0);
+            (options_.smoke || options_.auto_play ? SDL_WINDOW_HIDDEN : 0);
         window_ = SDL_CreateWindow((std::string("Beach Life ") + build::version).c_str(), 1180, 760, flags);
         require(window_ != nullptr, "Cannot create the launcher window");
         SDL_SetWindowMinimumSize(window_, 900, 600);
@@ -409,7 +412,7 @@ private:
     std::string source_detail() const {
         if (content_status_.state == ContentService::State::Ready)
             return std::to_string(content_status_.files) + " local files ready";
-        if (content_status_.busy()) return "Preparing your game files";
+        if (content_status_.busy()) return "Checking local game files";
         if (!source_.selected) return "Your disc image (.iso)";
         if (!source_.readable) return "Needs your attention";
         char size[48];
@@ -544,37 +547,18 @@ private:
                       ready ? "Your prepared files are ready. The ISO can be disconnected."
                             : "Prepare your files once, then play from this computer. Your ISO stays unchanged.");
         if (content_status_.busy()) {
-            const auto& progress = content_status_.progress;
-            const char* label = state == ContentService::State::Checking || progress.phase == "checking" ? "Checking prepared files..."
-                : progress.phase == "fingerprint" ? "Reading disc image..."
-                : progress.phase == "extracting" ? "Copying game files..."
-                : progress.phase == "confirming" ? "Verifying disc image..." : "Finishing preparation...";
-            ui::text(draw, Font::Body, {ix, iy}, col(color::text), label);
+            ui::text(draw, Font::Body, {ix, iy}, col(color::text), "Checking local game files...");
             iy += dp(28);
-            const float fraction = progress.total_bytes
-                ? std::clamp(static_cast<float>(progress.completed_bytes) / static_cast<float>(progress.total_bytes), 0.0f, 1.0f) : 0;
-            draw->AddRectFilled({ix, iy}, {ix+iw, iy+dp(6)}, col(color::white, 0.12f), dp(3));
-            if (fraction > 0) ui::gradient(draw, {ix, iy}, {ix+iw*fraction, iy+dp(6)}, col(color::sun), col(color::coral), dp(3), true);
-            iy += dp(18);
-            const std::string detail = std::to_string(progress.completed_files) + " / " +
-                std::to_string(progress.total_files) + " files" + (progress.path.empty() ? "" : "  " + progress.path);
-            ui::text(draw, Font::Caption, {ix, iy}, col(color::muted), ui::fit(Font::Caption, detail, iw).c_str());
-            iy += dp(30);
-            if (ui::secondary_button("cancel_setup", "Cancel", Icon::None, {ix, iy}, {dp(124), dp(42)})) {
-                content_->cancel();
-                pending_play_ = false;
-                if (options_.auto_play) { exit_code_ = 130; finished_ = true; }
-            }
         } else {
             std::string detail = ready ? std::to_string(content_status_.files) + " files prepared. Verify and repair if files are damaged."
                 : state == ContentService::State::Cancelled ? "Preparation cancelled. You can resume when ready."
-                : "Play will prepare the files automatically, or you can prepare them now.";
+                : "Play prepares the files in the game's loading screen. You can also prepare them now.";
             if (!content_status_.error.empty()) detail = content_status_.error;
             ui::text(draw, Font::Caption, {ix, iy}, col(content_status_.error.empty() ? color::muted : color::amber), detail.c_str(), iw);
             iy += ui::text_size(Font::Caption, detail.c_str(), iw).y + dp(18);
             if (ui::secondary_button("prepare", ready ? "Verify and repair" : "Prepare files", Icon::Refresh,
                                      {ix, iy}, {dp(190), dp(42)}, source_.readable && !update_busy())) {
-                if (save()) { content_->select(settings_); content_->prepare(); }
+                play(true);
             }
         }
         iy += dp(42) + pad;
@@ -919,7 +903,7 @@ private:
     // Play can prepare a readable ISO or use a previously prepared, offline set.
     std::string play_blocker() const {
         if (update_busy()) return "Wait for the application update to finish.";
-        if (content_status_.busy() || pending_play_) return "Preparing your game files.";
+        if (content_status_.busy()) return "Checking your game files.";
         if (content_status_.state == ContentService::State::Ready) return {};
         if (!source_.selected) return "Choose your game files first.";
         if (!source_.readable) return "Your game files need attention.";
@@ -927,7 +911,6 @@ private:
     }
 
     void select_source(bool clear_binding = true) {
-        pending_play_ = false;
         if (clear_binding) settings_.content = {};
         failed_binding_.clear();
         content_->select(settings_);
@@ -936,12 +919,10 @@ private:
     }
 
     void setup_failed(const std::string& error) {
-        pending_play_ = false;
         show_notice(error);
         if (options_.auto_play) {
             std::fprintf(stderr, "Beach Life: %s\n", error.c_str());
             exit_code_ = 1;
-            finished_ = true;
         }
     }
 
@@ -959,27 +940,16 @@ private:
                 try { save_settings(config_, stored); saved_ = std::move(stored); }
                 catch (const std::exception& error) { failed_binding_ = binding.identity; setup_failed(error.what()); return; }
             }
-            if (pending_play_) {
-                if (settings_ != saved_ && !save()) { setup_failed(notice_); return; }
-                mounted_ = content_->take_ready();
-                pending_play_ = false;
-                play_ = true;
-            }
-        } else if (pending_play_) {
-            if (content_status_.state == State::NeedsPreparation) content_->prepare();
-            else if (content_status_.state == State::Failed || content_status_.state == State::Idle ||
-                     content_status_.state == State::Cancelled)
-                setup_failed(content_status_.error.empty() ? "Choose a readable Beach Life ISO to prepare your game files."
-                                                           : content_status_.error);
         }
     }
 
-    // Recheck the source stamp even if it was ready when the launcher opened.
-    void play() {
+    // The game window owns setup progress. Its worker rechecks the source stamp,
+    // even if the launcher's readiness check succeeded earlier.
+    void play(bool prepare_only = false) {
         if (settings_ != saved_ && !save()) { setup_failed(notice_); return; }
-        content_->select(settings_);
-        pending_play_ = true;
-        page_ = PageFiles;
+        content_->cancel(); // release the launcher's mount before setup/repair
+        prepare_only_ = prepare_only;
+        play_ = true;
     }
 
     UpdateChannel update_channel() const {
@@ -1142,9 +1112,9 @@ private:
         const ImVec2 button{at.x + room - action_width, at.y - height * 0.5f};
         if (update_.state == State::Available && update_.install_blocker.empty()) {
             if (ui::primary_button("update", action.c_str(), Icon::Download, button, {action_width, height},
-                                   !content_status_.busy() && !pending_play_)) updates_->install();
+                                   !content_status_.busy() && !play_)) updates_->install();
         } else if (ui::secondary_button("update", action.c_str(), Icon::None, button, {action_width, height},
-                                        update_.state != State::InstallFailed || (!content_status_.busy() && !pending_play_))) {
+                                        update_.state != State::InstallFailed || (!content_status_.busy() && !play_))) {
             if (update_.state == State::Downloading) updates_->cancel();
             else if (update_.state == State::InstallFailed) updates_->install();
             else if (!SDL_OpenURL(update_.offer->page.c_str())) show_notice(std::string("Cannot open the page: ") + SDL_GetError());
@@ -1260,9 +1230,8 @@ private:
     SourceStatus source_;
     std::unique_ptr<ContentService> content_;
     ContentService::Status content_status_;
-    std::shared_ptr<const data::PreparedSource> mounted_;
     std::string failed_binding_;
-    bool pending_play_ = false, finished_ = false;
+    bool prepare_only_ = false;
     int exit_code_ = 0;
     std::string notice_;
     std::string font_path_;
@@ -1295,8 +1264,9 @@ Outcome run(const Options& options) {
         outcome.exit_code = launcher.run();
         restart = launcher.restart_program();
         outcome.play = launcher.play_requested() && restart.empty();
+        outcome.prepare_only = launcher.prepare_only();
         outcome.settings = launcher.settings();
-        if (outcome.play) outcome.content = launcher.take_content();
+        outcome.config = launcher.config();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "Beach Life: %s\n", error.what());
         if (!options.smoke) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Beach Life", error.what(), nullptr);

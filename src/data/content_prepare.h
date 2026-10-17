@@ -15,8 +15,8 @@ struct PrepareProgress {
 };
 
 struct PrepareOptions {
-    // Called synchronously on the preparing thread. The launcher should run
-    // preparation on a worker and marshal progress to its UI thread.
+    // Called synchronously on the preparing thread. Run preparation on a
+    // worker and publish progress snapshots for the loading screen.
     std::function<void(const PrepareProgress&)> progress;
     std::function<bool()> cancelled;
 };

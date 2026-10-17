@@ -104,46 +104,6 @@ void ContentService::worker() {
 }
 
 void ContentService::run(const Job& job) {
-    Status status;
-    status.source = inspect_source(job.settings);
-    if (job.settings.source.empty()) { publish(job, std::move(status)); return; }
-    const auto image = std::filesystem::absolute(platform::utf8_path(job.settings.source)).lexically_normal();
-    const auto path = platform::utf8(image);
-    const auto before = stamp(image);
-    if (*job.cancelled) return;
-
-    auto mount = [&](const ContentBinding& binding) {
-        auto source = std::make_shared<data::PreparedSource>(cache_/binding.identity);
-        status.state = State::Ready;
-        status.binding = binding;
-        status.language = source->manifest().language;
-        status.files = source->manifest().files.size();
-        status.bytes = source->manifest().total_bytes;
-        status.source.title = before ? "ISO linked to prepared files" : "Playing from local files";
-        status.source.detail = before ? "Game data has been prepared from this image."
-                                     : "The original ISO is disconnected. Your prepared game files are ready.";
-        status.error.clear();
-        publish(job, std::move(status), std::move(source));
-    };
-    if (!job.prepare) {
-        const auto& binding = job.settings.content;
-        // An absent source is an offline launch, not permission to use an old
-        // cache after selecting another path or replacing the ISO in place.
-        if (!binding.identity.empty() && binding.identity.size() == 64 &&
-            binding.identity.find_first_not_of("0123456789abcdef") == std::string::npos && binding.source == path &&
-            (!before || *before == Stamp{binding.size, binding.modified})) {
-            try { mount(binding); return; }
-            catch (const std::exception& error) { status.error = "Prepared game data needs repair: "+std::string(error.what()); }
-        }
-        status.state = status.source.readable ? State::NeedsPreparation : State::Failed;
-        if (status.state == State::Failed && status.error.empty()) status.error = status.source.detail;
-        publish(job, std::move(status));
-        return;
-    }
-    if (!before || !status.source.readable)
-        throw std::runtime_error("Preparation needs the original ISO. "+status.source.detail);
-    status.state = State::Preparing;
-    publish(job, status);
     data::PrepareOptions options;
     options.cancelled = [cancel = job.cancelled] { return cancel->load(); };
     options.progress = [&](const auto& progress) {
@@ -153,9 +113,61 @@ void ContentService::run(const Job& job) {
         }
         if (observer_) observer_(progress);
     };
-    const auto result = data::prepare_content(image, cache_, options);
+    auto result = open_content(job.settings, cache_, job.prepare, options);
+    publish(job, std::move(result.status), std::move(result.source));
+}
+
+ContentResult open_content(const Settings& settings, const std::filesystem::path& cache,
+                          bool prepare, const data::PrepareOptions& options) {
+    using State = ContentService::State;
+    const auto check_cancelled = [&] {
+        if (options.cancelled && options.cancelled()) throw data::PreparationCancelled();
+    };
+    check_cancelled();
+    ContentResult result;
+    auto& status = result.status;
+    status.source = inspect_source(settings);
+    if (settings.source.empty()) return result;
+    const auto image = std::filesystem::absolute(platform::utf8_path(settings.source)).lexically_normal();
+    const auto path = platform::utf8(image);
+    const auto before = stamp(image);
+    check_cancelled();
+
+    auto mount = [&](const ContentBinding& binding) {
+        auto source = std::make_shared<data::PreparedSource>(cache/binding.identity);
+        check_cancelled();
+        status.state = State::Ready;
+        status.binding = binding;
+        status.language = source->manifest().language;
+        status.files = source->manifest().files.size();
+        status.bytes = source->manifest().total_bytes;
+        status.source.title = before ? "ISO linked to prepared files" : "Playing from local files";
+        status.source.detail = before ? "Game data has been prepared from this image."
+                                     : "The original ISO is disconnected. Your prepared game files are ready.";
+        status.error.clear();
+        result.source = std::move(source);
+    };
+    if (!prepare) {
+        const auto& binding = settings.content;
+        // An absent source is an offline launch, not permission to use an old
+        // cache after selecting another path or replacing the ISO in place.
+        if (!binding.identity.empty() && binding.identity.size() == 64 &&
+            binding.identity.find_first_not_of("0123456789abcdef") == std::string::npos && binding.source == path &&
+            (!before || *before == Stamp{binding.size, binding.modified})) {
+            try { mount(binding); return result; }
+            catch (const data::PreparationCancelled&) { throw; }
+            catch (const std::exception& error) { status.error = "Prepared game data needs repair: "+std::string(error.what()); }
+        }
+        status.state = status.source.readable ? State::NeedsPreparation : State::Failed;
+        if (status.state == State::Failed && status.error.empty()) status.error = status.source.detail;
+        return result;
+    }
+    if (!before || !status.source.readable)
+        throw std::runtime_error("Preparation needs the original ISO. "+status.source.detail);
+    const auto prepared = data::prepare_content(image, cache, options);
     if (stamp(image) != before) throw std::runtime_error("The ISO changed during setup. Select it again to prepare it.");
-    if (*job.cancelled) return;
-    mount({result.manifest.identity(), path, before->size, before->modified});
+    check_cancelled();
+    mount({prepared.manifest.identity(), path, before->size, before->modified});
+    return result;
 }
 } // namespace beachlife::launcher

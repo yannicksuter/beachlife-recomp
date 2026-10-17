@@ -25,8 +25,10 @@ On **Game files**, choose the ISO image of your original CD: use Browse,
 paste a path, or drop the file onto the window. ISO selection checks that
 the file is an ISO 9660 container. **Prepare files**, or **Play**, checks the
 supported game layout and copies verified game data into local user storage.
-Progress and **Cancel** remain available while setup runs. Cancelled setup can
-resume; previously verified files are reused. Missing, unreadable and unsupported
+This work runs in the game window's loading screen. Esc or closing that window
+cancels setup and returns to the launcher. Cancelled setup can resume; previously
+verified files are reused. **Prepare files** returns to Game files when done;
+**Play** continues into the game. Missing, unreadable and unsupported
 inputs show a specific status. The original installer is never run.
 
 **Display** holds the window mode, window size, display, scaling, VSync and,
@@ -47,7 +49,8 @@ English disc layout is supported; installer language lists do not establish
 game translations. This launcher's interface is English.
 
 After setup, the local files work with the ISO disconnected. **Verify and repair**
-on Game files needs the original ISO and restores missing or damaged files.
+on Game files needs the original ISO and restores missing or damaged files in
+the same loading screen, then returns to the launcher.
 An image changed in place requires setup again. Settings and future saves live
 outside the game-data cache. See [DATA](DATA.md) for cache locations and checks.
 
@@ -55,12 +58,13 @@ outside the game-data cache. See [DATA](DATA.md) for cache locations and checks.
 
 **Play**, at the bottom right of every page, is available once a readable ISO
 image is selected or prepared files are ready; its tooltip says why otherwise.
-It saves unsaved settings, prepares or reuses local files, then closes the
-launcher and opens the game window with the Display settings:
+It saves unsaved settings, closes the launcher and opens the game window with
+the Display settings:
 window or fullscreen, size, display, Fit or Stretch, VSync and the graphics API
 (Direct3D 12 or Vulkan on Windows, Metal on macOS, Vulkan on Linux). A graphics
 API that is not available is reported, never replaced by another one. Startup
-work that takes longer than a moment shows a progress bar first. The game
+checks, ISO preparation and VFS loading run behind the in-game loading screen;
+its progress appears when the work takes longer than a moment. The game
 code is not reconstructed yet, so the window shows an empty picture with a
 small overlay naming the graphics API and frame rate. Esc or closing the window
 returns to the launcher.

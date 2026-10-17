@@ -3,6 +3,7 @@
 #include "runtime/fps_overlay.h"
 #include "runtime/loading_view.h"
 #include "runtime/startup.h"
+#include "data/content_manifest.h"
 #include "platform/path.h"
 #include "platform/video.h"
 #include "platform/app_icon.h"
@@ -111,13 +112,6 @@ struct Session {
 
 int run_game(const Options& options) {
     const auto& settings = options.settings;
-    // Keep the mount alive until the game session ends. Runtime reads never
-    // reopen the ISO; reconstructed startup will consume this same FileSource.
-    const auto content = options.content;
-    if (!content) throw std::runtime_error("Prepare your game files on the launcher's Game files page first.");
-    std::printf("Game data: %zu files mounted, language %s.\n", content->manifest().files.size(),
-                content->manifest().language.c_str());
-
     Session session;
     if (!SDL_Init(SDL_INIT_VIDEO)) throw std::runtime_error(std::string("Cannot start the game: ") + SDL_GetError());
     session.sdl = true;
@@ -137,10 +131,15 @@ int run_game(const Options& options) {
     frame.width = frame_width;
     frame.height = frame_height;
     frame.pixels.assign(static_cast<std::size_t>(frame_width)*frame_height, 0xFF000000u);
-    // Before the first frame: game files through the VFS, behind the loading screen.
+    // The window is open before any slow ISO work. The owned mount survives until
+    // the session ends, when the launcher may safely offer repair again.
+    ContentStartup content(settings, options.cache.empty() ? data::default_content_directory() : options.cache,
+                           options.config, options.prepare_only);
     std::vector<StartupStep> steps;
-    steps.push_back(read_game_files(content));
+    steps.push_back(content.prepare());
+    if (!options.prepare_only) steps.push_back(content.read());
     if (!start_game(video, frame, options.resources / "Roboto-Medium.ttf", std::move(steps))) return 0;
+    if (options.prepare_only) return 0;
 
     // The performance overlay, when the Display settings show it.
     std::unique_ptr<FpsOverlay> fps_overlay;

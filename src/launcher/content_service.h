@@ -66,4 +66,14 @@ private:
     std::thread thread_;
 };
 
+struct ContentResult {
+    ContentService::Status status;
+    std::shared_ptr<const data::PreparedSource> source;
+};
+
+// Synchronous check or explicit preparation, for a caller-owned worker. The
+// launcher checks readiness here; the game window runs setup behind its loader.
+ContentResult open_content(const Settings& settings, const std::filesystem::path& cache,
+    bool prepare, const data::PrepareOptions& options = {});
+
 } // namespace beachlife::launcher

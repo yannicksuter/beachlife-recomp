@@ -80,14 +80,23 @@ boundary against another process running as that same user.
 
 ## Launcher and runtime handoff
 
-Play and the Game files page use `launcher::ContentService`: a single background
-worker performs preparation and publishes progress snapshots to the UI. Cancel,
-source edits, Browse/drop and Revert invalidate pending results. A source change
-cannot publish readiness for the new selection. Closing cancels outstanding work.
-Play waits for a mounted `PreparedSource` and passes it to `runtime::Options`.
-Once the game window is open, a startup worker reads `BeachLife.ini` through the
-VFS behind the loading screen; closing the window during startup cancels it.
-The mount is released when the runtime returns to the launcher, allowing repair.
+The launcher uses `launcher::ContentService` for background readiness checks.
+Source edits, Browse/drop and Revert invalidate pending results. Play saves the
+selection and opens the game window immediately. Its `runtime::ContentStartup`
+steps run the shared synchronous `launcher::open_content` check/preparation API
+on the existing startup worker: validate the cache, prepare or repair if needed,
+mount `PreparedSource`, save the offline binding, then read `BeachLife.ini`.
+The loading screen shows the actual preparation phases and their byte progress.
+Each preparation phase has an equal share within that startup step; percentages
+measure completed work, not estimated remaining time.
+
+**Prepare files** and **Verify and repair** use the same loading screen, force
+verification from the ISO, and return to the launcher without starting the game
+loop. Esc or closing the window cancels the worker; incomplete setup never saves
+readiness. Completed files remain reusable. The mount survives the loading steps
+for the game session and is released on return, allowing later repair. A graphics
+failure happens before preparation starts. The independent data tool remains
+available for preparation without a graphics device.
 
 `runtime::read_game_files` creates the loading-screen step with shared ownership
 of its `FileSource`. It reports the INI's actual byte count, reads bounded chunks,
@@ -95,8 +104,9 @@ and checks cancellation between reads. Missing, truncated and oversized files
 fail startup. The current small INI read usually finishes within the screen's
 grace period; no artificial delay or whole-cache preload is added. Future startup
 assets can join this queue when their loading requirements are reconstructed.
-The `content_startup` test exercises this VFS step without a graphics device,
-including offline reads, mount lifetime, progress and storage failures.
+The `content_startup` test exercises the complete loading worker without a
+graphics device: preparation, cancellation/resume, saved/offline reads, repair,
+mount lifetime, progress and storage failures.
 
 Launcher settings format 3 remembers the prepared identity and the absolute ISO
 path, size and modification time; format 4 adds the performance overlay, and
@@ -126,9 +136,9 @@ auto script = content->open("Data\\Script\\GameParameters.pis");
 `PrepareOptions` provides progress and cancellation callbacks.
 `PrepareProgress` reports phase (`fingerprint`, `checking`, `extracting`,
 `confirming`, `ready`), current path and per-phase byte/file counts.
-The content service marshals these callbacks to its UI thread, discards stale
-results when the selected ISO changes, and handles `PreparationCancelled`
-separately from errors. Callbacks must not throw after `ready`: publication
+The startup worker translates callbacks into loading-screen status snapshots
+and handles `PreparationCancelled` separately from errors. Callbacks must not
+throw after `ready`: publication
 has already completed. `PrepareResult` supplies the prepared root, manifest,
 language/profile and reuse counts. The default profile currently supports the
 observed English layout; installer translations are not game languages.

@@ -107,6 +107,7 @@ if(BUILD_TESTING)
             "$<TARGET_FILE:launcher_content_tests>")
     add_test(NAME game_startup
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_startup.py" "$<TARGET_FILE:beachlife>")
+    set_tests_properties(game_startup PROPERTIES SKIP_RETURN_CODE 77)
     # The work behind the game window's loading screen, without a window.
     add_executable(startup_work_tests tests/startup_work.cpp src/runtime/startup.cpp)
     target_include_directories(startup_work_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
@@ -122,7 +123,7 @@ if(BUILD_TESTING)
     add_test(NAME fps_overlay_layout COMMAND fps_overlay_layout_tests)
     add_executable(content_startup_tests tests/content_startup.cpp src/runtime/content_startup.cpp src/runtime/startup.cpp)
     target_include_directories(content_startup_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
-    target_link_libraries(content_startup_tests PRIVATE beachlife_cabinet Threads::Threads)
+    target_link_libraries(content_startup_tests PRIVATE beachlife_launcher_core)
     add_test(NAME content_startup
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_content_startup.py" "$<TARGET_FILE:content_startup_tests>")
     # Packages written the way tools/package_build.py writes them, then the C++ checks.

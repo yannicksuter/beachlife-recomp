@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_fixture import content_files, iso_files  # noqa: E402
 
 SKIP = 77
-UNAVAILABLE = ("is not available on this computer", "Cannot start the game", "Cannot draw into the game window")
+UNAVAILABLE = ("is not available on this computer", "Cannot start the game", "Cannot draw into the game window",
+               "Cannot initialize the launcher: No available video device")
 
 
 def check(executable):
@@ -24,11 +25,8 @@ def check(executable):
         result = subprocess.run([str(Path(executable).resolve()), '--play', '--smoke-test', '--frames', '30',
                                  '--config', str(config), '--cache-directory', str(Path(temporary)/'cache')],
                                 capture_output=True, text=True, timeout=60)
-        if result.returncode != 0 and 'Cannot initialize the launcher: No available video device' in result.stderr:
-            print('Skipped, no usable display here:', result.stderr.strip())
-            return SKIP
         if result.returncode != 0 and any(reason in result.stderr for reason in UNAVAILABLE):
-            assert 'Game data: 5 files mounted' in result.stdout, result.stdout + result.stderr
+            assert 'Game data:' not in result.stdout and not (Path(temporary)/'cache').exists(), result.stdout + result.stderr
             print('Skipped, no usable display or GPU here:', result.stderr.strip())
             return SKIP
         assert result.returncode == 0, result.stdout + result.stderr

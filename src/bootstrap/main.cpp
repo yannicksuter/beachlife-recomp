@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
                   "       beachlife --help | --version | --build-info\n\n"
                   "       beachlife --inspect-iso image.iso\n\n"
                   "Open without arguments to launch the graphical interface.\n"
-                  "--play prepares or reuses local game files, then opens the game window.\n"
+                  "--play opens the game window and prepares files in its loading screen.\n"
                   "The game code is not reconstructed yet: the game window opens on\n"
                   "the chosen graphics API and runs an empty game loop.");
         return 0;
@@ -95,14 +95,16 @@ int main(int argc, char** argv) {
     game.screenshot = play ? std::exchange(options.screenshot, {}) : std::filesystem::path{};
     game.frames = frames;
     game.hidden = options.smoke;
+    game.cache = options.cache;
     for (;;) {
         auto outcome = beachlife::launcher::run(options);
         if (!outcome.play) return outcome.exit_code;
         game.settings = outcome.settings;
-        game.content = std::move(outcome.content);
+        game.config = outcome.config;
+        game.prepare_only = outcome.prepare_only;
         const auto result = beachlife::runtime::run(game);
-        game.content.reset(); // release the mount before the launcher can repair it
         if (play) return result;
         options.source.clear(); // the launcher shows the saved choice from now on
+        if (outcome.prepare_only) options.page = beachlife::launcher::PageFiles;
     }
 }

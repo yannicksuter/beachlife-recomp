@@ -16,8 +16,9 @@ and revert work. The launcher updates itself from published releases or pull
 requests' test builds.
 The independent [data tool](docs/DATA.md) indexes and reads files directly
 from an ISO, reads installer cabinets and prepares verified local game data
-for a read-only VFS. Play prepares or repairs those files on a background worker,
-then mounts them for the runtime. Completed setup works with the ISO disconnected.
+for a read-only VFS. Play opens the game window, then checks, prepares and mounts
+those files on a worker behind its loading screen. Completed setup works with
+the ISO disconnected.
 The observed English data layout is supported; broader language detection and
 gameplay are still ahead. Play opens the game window on
 Direct3D 12, Vulkan or Metal and runs an empty game loop until the game code is

@@ -33,6 +33,7 @@ class StartupProgress {
 public:
     void total(std::uint64_t units); // the step's size, once known
     void advance(std::uint64_t units);
+    void report(std::string label, std::uint64_t done, std::uint64_t total);
     bool cancelled() const;
 
 private:

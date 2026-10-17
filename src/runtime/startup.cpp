@@ -21,6 +21,13 @@ void StartupProgress::advance(std::uint64_t units) {
     work_.status_.done += units;
 }
 
+void StartupProgress::report(std::string label, std::uint64_t done, std::uint64_t total) {
+    std::lock_guard lock(work_.mutex_);
+    work_.status_.label = std::move(label);
+    work_.status_.done = done;
+    work_.status_.total = total;
+}
+
 bool StartupProgress::cancelled() const { return work_.cancelled_; }
 
 StartupWork::StartupWork(std::vector<StartupStep> steps) : steps_(std::move(steps)) {
