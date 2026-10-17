@@ -9,6 +9,7 @@ namespace beachlife::launcher {
 enum class WindowMode { Windowed, Fullscreen };
 enum class Scaling { Fit, Stretch };
 enum class GraphicsApi { Automatic, Direct3D12, Vulkan, Metal };
+enum class OverlayCorner { TopLeft, TopRight, BottomLeft, BottomRight };
 
 // How the native game will open its window. Saved now, applied once the game runs.
 struct DisplaySettings {
@@ -18,6 +19,8 @@ struct DisplaySettings {
     Scaling scaling = Scaling::Fit;
     bool vsync = true;
     GraphicsApi api = GraphicsApi::Automatic;
+    bool fps_overlay = false; // the performance overlay: FPS, GPU and CPU usage over the game picture
+    OverlayCorner fps_overlay_corner = OverlayCorner::TopRight;
     bool operator==(const DisplaySettings&) const = default;
 };
 

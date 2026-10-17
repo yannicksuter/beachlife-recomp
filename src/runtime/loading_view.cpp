@@ -2,6 +2,7 @@
 #include "platform/video.h"
 
 #include "imgui.h"
+#include "imgui_freetype.h"
 #include "imgui_impl_sdl3.h"
 
 #include <SDL3/SDL.h>
@@ -42,6 +43,7 @@ void LoadingView::build_font(float size, float density) {
     auto& io = ImGui::GetIO();
     io.Fonts->Clear(); // the video layer uploads the new atlas with the next frame
     ImFontConfig config;
+    config.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
     config.RasterizerDensity = density;
     // The atlas owns (and frees) its copy, so it never refers to this view's memory.
     auto* data = static_cast<unsigned char*>(IM_ALLOC(font_data_.size()));
@@ -108,7 +110,7 @@ void LoadingView::frame(bool finished, const std::optional<float>* share) {
     auto* draw = ImGui::GetForegroundDrawList();
     if (opacity_ > 0) {
         const float alpha = smooth(opacity_);
-        const float bar_width = std::min(std::round(text*20.0f), w - 32.0f);
+        const float bar_width = std::min(std::round(text*26.0f), w - 32.0f); // 30% wider than Recharged's
         const float bar_height = std::max(2.0f, std::round(text*0.14f));
         const float gap = std::round(text*0.8f);
         const float line = font_->FontSize;

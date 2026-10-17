@@ -744,6 +744,20 @@ private:
 #endif
         iy += pad - spacing;
         picture_panel.end(iy);
+        y = iy + dp(18);
+
+        PanelScope overlay_panel(draw, {left, y}, available);
+        iy = y + pad;
+        iy += section(draw, {ix, iy}, iw, Icon::Info, color::palm, "Performance overlay", "FPS, system GPU and CPU usage.");
+        at = row(iy, true, "On screen", "A compact row in a corner, also in fullscreen.", toggle_height);
+        switch_control(draw, "fps_overlay", &display.fps_overlay, at);
+        at = row(iy, false, "Corner", "Where the performance overlay sits.", field);
+        static const std::vector<std::string> corners{"Top left", "Top right", "Bottom left", "Bottom right"};
+        int corner = static_cast<int>(display.fps_overlay_corner);
+        if (ui::dropdown("fps_corner", corners, &corner, at, {control, field}, display.fps_overlay))
+            display.fps_overlay_corner = static_cast<OverlayCorner>(corner);
+        iy += pad - spacing;
+        overlay_panel.end(iy);
         return iy;
     }
 

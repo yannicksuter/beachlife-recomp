@@ -65,6 +65,13 @@ code is not reconstructed yet, so the window shows an empty picture with a
 small overlay naming the graphics API and frame rate. Esc or closing the window
 returns to the launcher.
 
+The Display page's **Performance overlay** (off by default) adds a compact row
+with the frame rate and the system's GPU and CPU usage in the chosen corner of
+the game window, also in fullscreen. A reading the system does not provide shows
+N/A: GPU usage comes from Windows' performance counters, macOS IOKit, NVIDIA's
+driver library or AMD/Intel kernel counters on Linux (Intel's need system-wide
+performance monitoring access).
+
 ## Updates
 
 The footer's left side checks for updates: the refresh button checks now, the

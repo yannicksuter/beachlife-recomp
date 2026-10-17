@@ -1,5 +1,6 @@
 #include "runtime/runtime.h"
 #include "runtime/content_startup.h"
+#include "runtime/fps_overlay.h"
 #include "runtime/loading_view.h"
 #include "runtime/startup.h"
 #include "platform/path.h"
@@ -7,6 +8,7 @@
 #include "platform/app_icon.h"
 
 #include "imgui.h"
+#include "imgui_freetype.h"
 #include "imgui_impl_sdl3.h"
 
 #include <SDL3/SDL.h>
@@ -123,6 +125,7 @@ int run_game(const Options& options) {
     ImGui::CreateContext();
     auto& io = ImGui::GetIO();
     io.IniFilename = nullptr;
+    io.Fonts->FontBuilderIO = ImGuiFreeType::GetBuilderForFreeType(); // the game window's text, as in Recharged
     session.video = platform::create_video(video_settings(settings, options.hidden));
     auto& video = *session.video;
     platform::set_app_icon(video.window(), options.resources.parent_path() / "app" / "icon.png");
@@ -139,10 +142,29 @@ int run_game(const Options& options) {
     steps.push_back(read_game_files(content));
     if (!start_game(video, frame, options.resources / "Roboto-Medium.ttf", std::move(steps))) return 0;
 
+    // The performance overlay, when the Display settings show it.
+    std::unique_ptr<FpsOverlay> fps_overlay;
+    if (settings.display.fps_overlay)
+        fps_overlay = std::make_unique<FpsOverlay>(options.resources / "Roboto-Medium.ttf", settings.display.fps_overlay_corner);
+    FrameRateMeter frame_rate;
+    const auto window_pixels = [&video] {
+        int width = 0, height = 0;
+        SDL_GetWindowSizeInPixels(video.window(), &width, &height);
+        return std::pair{width, height};
+    };
     const float density = std::max(1.0f, SDL_GetWindowPixelDensity(video.window()));
-    io.Fonts->Clear(); // the loading screen's font; the overlay uses the launcher's Roboto at its own size
-    io.FontDefault = io.Fonts->AddFontFromFileTTF(platform::utf8(options.resources / "Roboto-Medium.ttf").c_str(), 15*density);
-    if (!io.FontDefault) throw std::runtime_error("The overlay font is missing. Restore the complete package.");
+    // Replaces the loading screen's font: the overlay's Roboto, and the performance
+    // overlay's fonts for the window's current size.
+    const auto build_fonts = [&](int pixel_width, int pixel_height, float pixel_density) {
+        io.Fonts->Clear();
+        io.FontDefault = io.Fonts->AddFontFromFileTTF(platform::utf8(options.resources / "Roboto-Medium.ttf").c_str(), 15*density);
+        if (!io.FontDefault) throw std::runtime_error("The overlay font is missing. Restore the complete package.");
+        if (fps_overlay) fps_overlay->add_fonts(*io.Fonts, pixel_width, pixel_height, pixel_density);
+    };
+    {
+        const auto [width, height] = window_pixels();
+        build_fonts(width, height, density);
+    }
     io.FontGlobalScale = 1/density;
     ImGui::GetStyle().WindowRounding = 10;
     ImGui::GetStyle().Colors[ImGuiCol_WindowBg] = {0.04f, 0.09f, 0.16f, 0.86f};
@@ -164,6 +186,10 @@ int run_game(const Options& options) {
         last = now;
         for (; accumulator >= tick; accumulator -= tick) ++ticks;
 
+        const auto [pixel_width, pixel_height] = window_pixels();
+        const float pixel_density = std::max(1.0f, SDL_GetWindowPixelDensity(video.window()));
+        if (fps_overlay && fps_overlay->needs_fonts(pixel_width, pixel_height, pixel_density))
+            build_fonts(pixel_width, pixel_height, pixel_density);
         video.new_overlay_frame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
@@ -174,6 +200,7 @@ int run_game(const Options& options) {
         ImGui::TextDisabled("No game code yet. Esc returns to the launcher.");
         ImGui::TextDisabled("%s, %.0f FPS", graphics.c_str(), fps);
         ImGui::End();
+        if (fps_overlay) fps_overlay->draw(pixel_width, pixel_height, pixel_density);
         ImGui::Render();
         if (!options.screenshot.empty() && options.frames && frames+1 == static_cast<std::uint64_t>(options.frames))
             video.save_next(options.screenshot);
@@ -181,6 +208,8 @@ int run_game(const Options& options) {
 
         ++frames;
         ++measured_frames;
+        if (fps_overlay)
+            if (const auto rate = frame_rate.sample(frames, std::chrono::steady_clock::now())) fps_overlay->set_rate(*rate);
         const double elapsed = static_cast<double>(SDL_GetPerformanceCounter()-measured_since)/frequency;
         if (elapsed >= 0.5) {
             fps = static_cast<double>(measured_frames)/elapsed;

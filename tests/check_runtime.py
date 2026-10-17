@@ -35,6 +35,13 @@ def check(executable):
         assert 'Game data: BeachLife.ini 27 bytes read through VFS.' in result.stdout, result.stdout
         assert 'Game runtime:' in result.stdout and ' 30 frames' in result.stdout, result.stdout
         print(result.stdout.strip())
+        # The same window with the performance overlay (its fonts, usage sampler and drawing).
+        config.write_text(f'beachlife-launcher 4\nsource.path "{quoted}"\ndisplay.fps_overlay on\n'
+                          'display.fps_overlay_corner bottom-left\n', encoding='utf-8')
+        overlay = subprocess.run([str(Path(executable).resolve()), '--play', '--smoke-test', '--frames', '30',
+                                  '--config', str(config), '--cache-directory', str(Path(temporary)/'cache')],
+                                 capture_output=True, text=True, timeout=60)
+        assert overlay.returncode == 0 and ' 30 frames' in overlay.stdout, overlay.stdout + overlay.stderr
     return 0
 
 

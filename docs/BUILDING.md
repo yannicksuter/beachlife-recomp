@@ -32,7 +32,7 @@ commit and dirty marker come from Git. `--build-info` emits the complete JSON
 record. Local builds use channel `dev`; Actions sets `test` or `release` and
 records its PR/run IDs. Test/release packages require clean committed sources.
 
-SDL3, Dear ImGui, stb, unshield and zlib are immutable Git submodule pins.
+SDL3, Dear ImGui, stb, FreeType, unshield and zlib are immutable Git submodule pins.
 Dependency setup is an explicit network step; CMake never fetches source.
 Configuration exports each clean pin into the build directory, applies any ordered
 `patches/<name>/series`,

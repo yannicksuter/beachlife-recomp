@@ -50,9 +50,10 @@ both targets use little-endian storage. File/save layouts, pointer widths,
 | Settings and saves | Writable user storage, separate from read-only game data |
 
 SDL3 and Dear ImGui are integrated for the launcher, with stb decoding the
-declared header image. They build from immutable pinned exports, verified before
-each build. The game module remains future work. The host does not need Wii/GX
-compatibility or a browser runtime.
+declared header image. The game window's ImGui text uses FreeType, as Recharged
+does; the launcher keeps ImGui's built-in rasterizer. They build from immutable
+pinned exports, verified before each build. The game module remains future
+work. The host does not need Wii/GX compatibility or a browser runtime.
 
 The launcher uses SDL's 2D rendering interface, preferring DX12, Metal or Vulkan
 for its host platform, and can fall back to software. The game window is
@@ -68,7 +69,8 @@ Before the first frame, startup steps (now the game files' startup read through
 the VFS, later shader preparation) run on a worker behind a minimal loading
 screen: a label, percentage and thin bar on black, adapted from Recharged. It
 appears only when startup takes longer than 0.3 s and fades out to the black
-the game starts from.
+the game starts from. The optional performance overlay (FPS, system GPU and CPU
+usage, also from Recharged) is host presentation only; the game never sees it.
 Renderer-independent settings code handles UTF-8
 paths, bounded settings parsing, atomic replacement and basic source checks.
 

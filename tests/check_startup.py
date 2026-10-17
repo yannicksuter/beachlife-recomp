@@ -38,7 +38,7 @@ def check(executable):
 
         run('--source', str(image))
         settings = config.read_bytes()
-        assert settings.startswith(b'beachlife-launcher 3\n') and b'content.identity ""' not in settings
+        assert settings.startswith(b'beachlife-launcher 4\n') and b'content.identity ""' not in settings
         root, = [p for p in cache.iterdir() if p.is_dir()]
         manifest = json.loads((root/'manifest.json').read_text())
         assert len(manifest['files']) == 5

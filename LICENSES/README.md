@@ -11,6 +11,14 @@ All packages statically link SDL3 (zlib), Dear ImGui (MIT) and stb's JPEG decode
 exact prepared pins as `SDL.txt`, `ImGui.txt` and `stb.txt`. Dependency commits
 and patch identities are recorded in SOURCE-MANIFEST.json.
 
+The game window's text is rasterized by FreeType, used under the FreeType
+License (selected from its FTL/GPLv2 choice) and copied from the pin as
+`FreeType.txt`. Its contributed BDF and PCF drivers carry the additional notices
+in `FreeType-BDF.txt` and `FreeType-PCF.txt`.
+
+Portions of this software are copyright © 2026 The FreeType Project
+(https://freetype.org). All rights reserved.
+
 Cabinet access builds pinned unshield and zlib libraries. Their notices are
 retained in `unshield.txt` and `zlib.txt`; `RSA-MD5.txt` identifies unshield's
 included RSA Data Security, Inc. MD5 Message-Digest Algorithm. The dependency

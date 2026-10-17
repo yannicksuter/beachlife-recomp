@@ -27,7 +27,8 @@ MAC_FILES = ("beachlife.app/Contents/MacOS/beachlife", "beachlife.app/Contents/I
 MAC_SIGNATURE = "beachlife.app/Contents/_CodeSignature/CodeResources"
 LAUNCHER_RESOURCES = ("header.jpg", "logo.png", "Roboto-Medium.ttf")
 LAUNCHER_NOTICES = ("assets/launcher/README.md", "LICENSES/Apache-2.0.txt",
-                    "LICENSES/SDL.txt", "LICENSES/ImGui.txt", "LICENSES/stb.txt")
+                    "LICENSES/SDL.txt", "LICENSES/ImGui.txt", "LICENSES/stb.txt", "LICENSES/FreeType.txt",
+                    "LICENSES/FreeType-BDF.txt", "LICENSES/FreeType-PCF.txt")
 MAC_WRAPPER = b'#!/bin/sh\nexec "$(dirname "$0")/beachlife.app/Contents/MacOS/beachlife" "$@"\n'
 STEAM_LIBRARIES = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
                    "libstdc++.so.6", "libgcc_s.so.1", "ld-linux-x86-64.so.2"}
@@ -135,7 +136,10 @@ def package(build, output, source=ROOT, toolchain=None):
             copy(source, name)
         for dependency, filename, destination in [('sdl', 'LICENSE.txt', 'SDL.txt'),
                                                   ('imgui', 'LICENSE.txt', 'ImGui.txt'),
-                                                  ('stb', 'LICENSE', 'stb.txt')]:
+                                                  ('stb', 'LICENSE', 'stb.txt'),
+                                                  ('freetype', 'docs/FTL.TXT', 'FreeType.txt'),
+                                                  ('freetype', 'src/bdf/README', 'FreeType-BDF.txt'),
+                                                  ('freetype', 'src/pcf/README', 'FreeType-PCF.txt')]:
             copy(build / 'prepared' / dependency, filename, 'LICENSES/' + destination)
     executable = MAC_FILES[0] if system == "macos" else "beachlife.exe" if system == "windows" else "beachlife"
     if system == "macos":

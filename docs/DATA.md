@@ -99,7 +99,8 @@ The `content_startup` test exercises this VFS step without a graphics device,
 including offline reads, mount lifetime, progress and storage failures.
 
 Launcher settings format 3 remembers the prepared identity and the absolute ISO
-path, size and modification time; formats 1 and 2 still load. Normal startup
+path, size and modification time; format 4 adds the performance overlay, and
+formats 1 to 3 still load. Normal startup
 checks that stamp and the prepared manifest/files, or uses the remembered set
 when the ISO is absent. This quick source check is not a content hash: a change
 that preserves both size and timestamp needs explicit **Verify and repair** or

@@ -537,26 +537,29 @@ bool toggle(const char* id, bool* value, ImVec2 pos) {
     return pressed;
 }
 
-bool dropdown(const char* id, const std::vector<std::string>& items, int* selected, ImVec2 pos, ImVec2 size) {
+bool dropdown(const char* id, const std::vector<std::string>& items, int* selected, ImVec2 pos, ImVec2 size,
+              bool enabled) {
     ImGui::PushID(id);
     ImGui::SetCursorScreenPos(pos);
+    ImGui::BeginDisabled(!enabled);
     if (ImGui::InvisibleButton("##field", size)) ImGui::OpenPopup("##list");
-    hand_cursor();
+    ImGui::EndDisabled();
+    if (enabled) hand_cursor();
     const bool open = ImGui::IsPopupOpen("##list");
-    const float hover = animate(ImGui::GetID("##hover"), ImGui::IsItemHovered() || open);
+    const float hover = animate(ImGui::GetID("##hover"), enabled && (ImGui::IsItemHovered() || open));
     auto* draw = ImGui::GetWindowDrawList();
     const ImVec2 max = add(pos, size);
     draw->AddRectFilled(pos, max, col(mix({0.02f, 0.05f, 0.09f, 0.72f}, {0.05f, 0.11f, 0.18f, 0.85f}, hover)), dp(12));
     draw->AddRect(pos, max, open ? col(color::coral, 0.7f) : col(color::white, 0.08f+0.1f*hover), dp(12), 0, 1);
     const bool valid = *selected >= 0 && *selected < static_cast<int>(items.size());
     const std::string label = fit(Body, valid ? items[*selected] : "Choose\xE2\x80\xA6", size.x-dp(56));
-    text(draw, Body, {pos.x+dp(14), pos.y+(size.y-font_size(Body))*0.5f}, col(valid ? color::text : color::dim),
+    text(draw, Body, {pos.x+dp(14), pos.y+(size.y-font_size(Body))*0.5f}, col(valid && enabled ? color::text : color::dim),
          label.c_str());
     const ImVec2 caret{max.x-dp(22), pos.y+size.y*0.5f};
     const float flip = open ? -1.0f : 1.0f;
     const ImVec2 points[] = {{caret.x-dp(5), caret.y-dp(2.5f)*flip}, {caret.x, caret.y+dp(2.5f)*flip},
                              {caret.x+dp(5), caret.y-dp(2.5f)*flip}};
-    draw->AddPolyline(points, 3, col(mix(color::muted, color::text, hover)), 0, dp(1.6f));
+    draw->AddPolyline(points, 3, col(enabled ? mix(color::muted, color::text, hover) : color::dim), 0, dp(1.6f));
 
     bool changed = false;
     const float row = dp(38);
