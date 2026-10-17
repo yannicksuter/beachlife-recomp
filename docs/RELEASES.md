@@ -62,6 +62,14 @@ Manual dispatch produces development artifacts and does not publish a release.
    when possible, and push it. If main has advanced, merge stable into main and
    resolve the changes before the next promotion.
 
+The launcher updates itself from this repository's public release list: the
+Release channel reads published `v<version>` releases, the Test channel the
+`test-pr<N>-<sha>` prereleases. It downloads the
+`beachlife-<version>-<platform>-<arch>` archive for its own package, checks it
+against GitHub's SHA-256 digest (or SHA256SUMS) and every file against
+SOURCE-MANIFEST.json. Keep these names, SHA256SUMS and the manifest format
+stable. Drafts stay invisible to the launcher until they are published.
+
 A candidate is a **draft GitHub release**, not an automatically numbered RC.
 Numbered prereleases would need an explicit additional CMake version field and
 promotion policy. The owner controls final publication.

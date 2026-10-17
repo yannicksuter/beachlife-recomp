@@ -10,8 +10,10 @@ repository. New launcher, data, runtime and native platform code lives in
 ## Current status
 
 The first graphical launcher and the build/release pipeline are implemented.
-Open it to select an ISO or installed folder, remember the source, and adjust
-the interface size. Browse, drag-and-drop, manual paths, save and revert work.
+Open it to select your ISO disc image, remember it, and adjust display,
+diagnostics and interface settings. Browse, drag-and-drop, manual paths, save
+and revert work. The launcher updates itself from published releases or pull
+requests' test builds.
 The independent [data tool](docs/DATA.md) indexes and reads files directly
 from an ISO and inspects installer cabinet metadata. Compressed asset reads,
 language detection and gameplay are still ahead;
@@ -56,8 +58,8 @@ No original executables, DLLs, disc images, game data or extracted assets are
 committed or included in packages. The completed port will require the user's
 own game data. Development inputs belong under ignored `orig/` or outside the
 repository; see [orig/README.md](orig/README.md). CI uses generated fixtures and
-builds without game files. The selected public promotional artwork is documented
-separately in [launcher resources](assets/launcher/README.md).
+builds without game files. The launcher artwork, a remaster of Beach Life art,
+and the game's logo are documented in [launcher resources](assets/launcher/README.md).
 
 ## Layout
 

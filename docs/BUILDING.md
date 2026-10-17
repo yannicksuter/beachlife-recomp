@@ -127,8 +127,16 @@ For an actual desktop screenshot (then exit), use:
 ./build/debug/beachlife --screenshot build/launcher.png --config build/preview.cfg
 ```
 
-`--page files|appearance|about` selects another page. `--source path.iso` and
-`--folder directory` preselect a source without saving it automatically.
+`--page files|display|appearance|advanced|about` selects another page. `--source path.iso`
+preselects a disc image without saving it automatically. Screenshot and smoke
+runs never check for updates; `--update-preview STATE` shows a made-up update
+state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
+`downloading`, `failed` or `installfailed`).
+
+The `launcher_updates` test writes packages the way `tools/package_build.py`
+does, plus damaged and hostile archives, and checks the update rules,
+unpacking, installation, rollback and the completion of an interrupted update
+without network access.
 
 The launcher prefers SDL's DX12 renderer on Windows, Metal on macOS and Vulkan
 on Linux, with a software fallback. Hosted software smoke does not qualify GPU
