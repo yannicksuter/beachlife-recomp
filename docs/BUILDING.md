@@ -39,6 +39,32 @@ Configuration exports each clean pin into the build directory, applies any order
 and records file hashes. Every build rejects edited checkouts, edited prepared
 files or stale patch identities. Put changes in patch files, never in `extern/`.
 
+## Source formatting
+
+All C and C++ sources in `src/`, `tests/` and `decomp/` use clang-format at the
+version pinned in `tools/requirements-format.txt`. Patch releases can format
+differently, so the tool refuses any other version. Install the pinned wheel
+once, then format the work tree:
+
+```sh
+python3 -m venv build/format-venv
+build/format-venv/bin/pip install -r tools/requirements-format.txt
+python3 tools/format_sources.py
+python3 tools/format_sources.py --check
+```
+
+Paths limit either command to files or folders. Tracked and new files are
+included; submodules, ignored files and `orig/` are not. `--check` prints the
+differences and fails without changing anything; the Linux CI job runs it.
+
+The root `.clang-format` is the native C++20 style. `decomp/.clang-format` keeps
+include order and C++98 `> >` for the VC6 compiler. Formatting moves lines and
+adds braces but does not change behavior. Only line numbers (`__LINE__`,
+`std::source_location`) can differ in the output. Code that must keep its line
+numbers goes between `// clang-format off` and `// clang-format on` with a
+reason. Format a reconstructed file before writing patches for it, so the
+patches apply to formatted source.
+
 ## Linux
 
 The primary CI target uses Ubuntu 26.04 and GCC 15. The compatibility/Steam Deck

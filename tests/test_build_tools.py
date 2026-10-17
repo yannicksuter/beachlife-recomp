@@ -13,6 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import build_version
 import bump_version
+import format_sources
 import package_build as packages
 import release
 from project_version import read_version
@@ -176,6 +177,45 @@ class ReleaseTests(unittest.TestCase):
         args = command.call_args.args
         self.assertIn('--draft', args)
         self.assertEqual(args[args.index('--target') + 1], 'a' * 40)
+
+
+class FormatTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.executable = format_sources.formatter(format_sources.default_formatter(), format_sources.pinned_version())
+        except (OSError, ValueError) as error:
+            self.skipTest(str(error))
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
+        for config in ('.clang-format', 'decomp/.clang-format'):
+            (self.root / config).parent.mkdir(exist_ok=True)
+            (self.root / config).write_bytes((format_sources.ROOT / config).read_bytes())
+        (self.root / '.gitignore').write_text('ignored.cpp\n')
+        self.untidy = untidy = '#include <b.h>\n#include <a.h>\nstd::vector<std::vector<int> > table;\nint f(){return 1;}\n'
+        for name in ('src/game.cpp', 'decomp/src/loader.cpp', 'extern/dep/lib.cpp', 'orig/dump.cpp', 'ignored.cpp'):
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_text(untidy)
+
+    def test_formats_only_project_sources_with_their_own_style(self):
+        names = format_sources.sources(self.root)
+        self.assertEqual(names, ['decomp/src/loader.cpp', 'src/game.cpp'])
+        with patch('sys.stdout', new=io.StringIO()) as diff:
+            self.assertEqual(format_sources.run(self.executable, self.root, names, check=True), names)
+            self.assertIn('+int f()\n', diff.getvalue())
+            self.assertIn('int f(){', (self.root / 'src/game.cpp').read_text())
+            format_sources.run(self.executable, self.root, names, check=False)
+            self.assertEqual(format_sources.run(self.executable, self.root, names, check=True), [])
+        native = (self.root / 'src/game.cpp').read_text()
+        self.assertLess(native.index('<a.h>'), native.index('<b.h>'))
+        self.assertIn('<std::vector<int>>', native)
+        # The VC6 sources keep their include order and C++98 template closers.
+        matching = (self.root / 'decomp/src/loader.cpp').read_text()
+        self.assertLess(matching.index('<b.h>'), matching.index('<a.h>'))
+        self.assertIn('<std::vector<int> >', matching)
+        for name in ('extern/dep/lib.cpp', 'orig/dump.cpp', 'ignored.cpp'):
+            self.assertEqual((self.root / name).read_text(), self.untidy)
 
 
 if __name__ == '__main__':
