@@ -29,8 +29,8 @@ int main(int argc, char** argv) {
     }
     if (argc == 2 && std::string_view(argv[1]) == "--help") {
         std::puts("Beach Life - native launcher\n"
-                  "Usage: beachlife [--launcher] [--source image.iso | --folder directory]\n"
-                  "                 [--config file] [--page play|files|appearance|about]\n"
+                  "Usage: beachlife [--launcher] [--source image.iso]\n"
+                  "                 [--config file] [--page play|files|display|appearance|advanced|about]\n"
                   "                 [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --help | --version | --build-info\n\n"
                   "       beachlife --inspect-iso image.iso\n\n"
@@ -40,6 +40,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     beachlife::launcher::Options options;
+    options.argc = argc;
+    options.argv = argv;
     try {
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -49,14 +51,15 @@ int main(int argc, char** argv) {
             const std::string value = argv[++i];
             if (arg == "--config") options.config = beachlife::launcher::path_from_utf8(value);
             else if (arg == "--screenshot") options.screenshot = beachlife::launcher::path_from_utf8(value);
-            else if (arg == "--source" || arg == "--folder") {
-                options.source = value;
-                options.kind = arg == "--folder" ? beachlife::launcher::SourceKind::Folder : beachlife::launcher::SourceKind::Iso;
-            } else if (arg == "--page") {
-                if (value == "play") options.page = 0;
-                else if (value == "files") options.page = 1;
-                else if (value == "appearance") options.page = 2;
-                else if (value == "about") options.page = 3;
+            else if (arg == "--update-preview") options.update_preview = value;
+            else if (arg == "--source") options.source = value;
+            else if (arg == "--page") {
+                if (value == "play") options.page = beachlife::launcher::PagePlay;
+                else if (value == "files") options.page = beachlife::launcher::PageFiles;
+                else if (value == "display") options.page = beachlife::launcher::PageDisplay;
+                else if (value == "appearance") options.page = beachlife::launcher::PageAppearance;
+                else if (value == "advanced") options.page = beachlife::launcher::PageAdvanced;
+                else if (value == "about") options.page = beachlife::launcher::PageAbout;
                 else throw std::runtime_error("Unknown launcher page.");
             } else throw std::runtime_error("Unknown argument.");
         }

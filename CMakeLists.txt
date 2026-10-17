@@ -98,6 +98,7 @@ if(APPLE)
 endif()
 
 include(cmake/Launcher.cmake)
+include(cmake/Cabinet.cmake)
 include(cmake/Matching.cmake)
 
 if(BUILD_TESTING)
@@ -126,4 +127,7 @@ if(BUILD_TESTING)
     add_test(NAME iso_file_reads
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_data.py"
             "$<TARGET_FILE:beachlife-data>" "$<TARGET_FILE:iso_source_tests>")
+    add_test(NAME cabinet_index
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_cabinet.py"
+            "$<TARGET_FILE:beachlife-data>")
 endif()

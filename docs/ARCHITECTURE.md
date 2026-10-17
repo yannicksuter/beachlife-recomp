@@ -30,7 +30,9 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. See [matching setup](../decomp/README.md).
+verified. The version getter and file-size helper match after address
+normalization, totaling 113 bytes; the full game layout remains unknown.
+See [matching setup](../decomp/README.md).
 
 The host is 64-bit. x86_64 and ARM64 are distinct architectures, even though
 both targets use little-endian storage. File/save layouts, pointer widths,
@@ -66,8 +68,11 @@ and command-line startup alone do not establish GPU or gameplay compatibility.
 ## Data and game integration
 
 Native ISO 9660/Joliet indexing and bounded file reads are implemented behind
-a read/seek interface and the independent `beachlife-data` tool. Folder and
-InstallShield cabinet backends follow. Direct reads avoid requiring a permanent
+a read/seek interface and the independent `beachlife-data` tool. Pinned unshield
+and zlib provide the cabinet dependency boundary. The tool enumerates guarded
+InstallShield 6 metadata from an ISO-backed header snapshot through read-only
+callbacks; game-path mapping and compressed member reads follow. Folder access
+is a separate backend. Direct reads avoid requiring a permanent
 extracted game tree; large compressed members need measured seeking/caching
 experiments. [Logical paths](DATA.md) preserve display spelling and normalize
 ASCII case/separators without permitting traversal.

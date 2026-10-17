@@ -6,12 +6,43 @@
 
 namespace beachlife::launcher {
 
-enum class SourceKind { Iso, Folder };
+enum class WindowMode { Windowed, Fullscreen };
+enum class Scaling { Fit, Stretch };
+enum class GraphicsApi { Automatic, Direct3D12, Vulkan, Metal };
+
+// How the native game will open its window. Saved now, applied once the game runs.
+struct DisplaySettings {
+    WindowMode mode = WindowMode::Windowed;
+    int width = 1280, height = 960;
+    int monitor = 0; // 0 is the primary display, otherwise its 1-based position
+    Scaling scaling = Scaling::Fit;
+    bool vsync = true;
+    GraphicsApi api = GraphicsApi::Automatic;
+    bool operator==(const DisplaySettings&) const = default;
+};
+
+enum class UpdateChoice { Automatic, Release, Test };
+
+// Where updates come from: releases or test builds (Automatic: test builds keep
+// to test builds, everything else to releases), and whether the launcher looks at start.
+struct UpdateSettings {
+    bool check = true;
+    UpdateChoice channel = UpdateChoice::Automatic;
+    bool operator==(const UpdateSettings&) const = default;
+};
+
+// Local troubleshooting aids; no usage data is collected or sent.
+struct DiagnosticsSettings {
+    bool log_window = false; // a window that follows the game's log while it runs
+    bool operator==(const DiagnosticsSettings&) const = default;
+};
 
 struct Settings {
-    std::string source;
-    SourceKind kind = SourceKind::Iso;
+    std::string source; // the game's ISO disc image
     int scale = 100;
+    DisplaySettings display;
+    DiagnosticsSettings diagnostics;
+    UpdateSettings updates;
     bool operator==(const Settings&) const = default;
 };
 
@@ -19,7 +50,7 @@ struct SourceStatus {
     bool selected = false;
     bool readable = false;
     std::string title = "No game files selected";
-    std::string detail = "Choose your original disc image or installed game folder.";
+    std::string detail = "Choose the ISO image of your original Beach Life CD.";
     std::uintmax_t bytes = 0;
 };
 

@@ -3,12 +3,16 @@
 
 namespace beachlife::launcher {
 
+enum Page { PagePlay, PageFiles, PageDisplay, PageAppearance, PageAdvanced, PageAbout, PageCount };
+
 struct Options {
     std::filesystem::path config;
     std::filesystem::path screenshot;
     std::string source;
-    SourceKind kind = SourceKind::Iso;
-    int page = 0;
+    int page = PagePlay;
+    std::string update_preview; // a made-up update state for screenshots (UpdateService::preview)
+    int argc = 0;               // the command line, to restart after an update
+    char** argv = nullptr;
     bool smoke = false;
 };
 

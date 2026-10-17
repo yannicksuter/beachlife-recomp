@@ -3,6 +3,8 @@
 #include <array>
 #include <fstream>
 #include <iomanip>
+#include <set>
+#include <sstream>
 #include <stdexcept>
 #include <system_error>
 #ifdef _WIN32
@@ -23,14 +25,74 @@ std::string path_utf8(const fs::path& value) {
     return {encoded.begin(), encoded.end()};
 }
 
-static void validate(const Settings& settings) {
+namespace {
+// Each choice as it is spelled in the settings file.
+template <typename T> struct Name { T value; const char* text; };
+constexpr Name<WindowMode> modes[] = {{WindowMode::Windowed, "windowed"}, {WindowMode::Fullscreen, "fullscreen"}};
+constexpr Name<Scaling> scalings[] = {{Scaling::Fit, "fit"}, {Scaling::Stretch, "stretch"}};
+constexpr Name<GraphicsApi> apis[] = {{GraphicsApi::Automatic, "auto"}, {GraphicsApi::Direct3D12, "d3d12"},
+                                      {GraphicsApi::Vulkan, "vulkan"}, {GraphicsApi::Metal, "metal"}};
+constexpr Name<bool> switches[] = {{false, "off"}, {true, "on"}};
+constexpr Name<UpdateChoice> channels[] = {{UpdateChoice::Automatic, "auto"}, {UpdateChoice::Release, "release"},
+                                           {UpdateChoice::Test, "test"}};
+
+template <typename T, size_t N> const char* name_of(const Name<T> (&names)[N], T value) {
+    for (const auto& name : names) if (name.value == value) return name.text;
+    throw std::runtime_error("Unsupported launcher setting.");
+}
+
+template <typename T, size_t N> T value_of(const Name<T> (&names)[N], const std::string& text) {
+    for (const auto& name : names) if (text == name.text) return name.value;
+    throw std::runtime_error("The launcher settings format is invalid.");
+}
+
+void validate_source(const Settings& settings) {
     if (settings.source.size() > 32768 || settings.source.find_first_of("\r\n\0", 0, 3) != std::string::npos)
         throw std::runtime_error("The source path contains an unsupported character or is too long.");
+}
+
+void validate(const Settings& settings) {
+    validate_source(settings);
     if (settings.scale != 100 && settings.scale != 125 && settings.scale != 150)
         throw std::runtime_error("Unsupported interface scale.");
-    if (settings.kind != SourceKind::Iso && settings.kind != SourceKind::Folder)
-        throw std::runtime_error("Unknown source type.");
+    const auto& display = settings.display;
+    if (display.width < 640 || display.width > 16384 || display.height < 480 || display.height > 16384)
+        throw std::runtime_error("Unsupported window size.");
+    if (display.monitor < 0 || display.monitor > 64) throw std::runtime_error("Unsupported display number.");
+    // Unknown enumerators have no file spelling and are rejected here.
+    name_of(modes, display.mode);
+    name_of(scalings, display.scaling);
+    name_of(apis, display.api);
+    name_of(channels, settings.updates.channel);
 }
+
+// Version 2: one "key value" line per setting; every key at most once, none unknown.
+void read_keyed(std::istream& file, Settings& result) {
+    const std::runtime_error invalid("The launcher settings format is invalid.");
+    std::set<std::string> seen;
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream in(line);
+        std::string key, word;
+        if (!(in >> key) || !seen.insert(key).second) throw invalid;
+        auto& display = result.display;
+        if (key == "source.path") in >> std::quoted(result.source);
+        else if (key == "launcher.scale") in >> result.scale;
+        else if (key == "display.mode" && in >> word) display.mode = value_of(modes, word);
+        else if (key == "display.width") in >> display.width;
+        else if (key == "display.height") in >> display.height;
+        else if (key == "display.monitor") in >> display.monitor;
+        else if (key == "display.scaling" && in >> word) display.scaling = value_of(scalings, word);
+        else if (key == "display.vsync" && in >> word) display.vsync = value_of(switches, word);
+        else if (key == "display.api" && in >> word) display.api = value_of(apis, word);
+        else if (key == "diagnostics.log_window" && in >> word) result.diagnostics.log_window = value_of(switches, word);
+        else if (key == "updates.check" && in >> word) result.updates.check = value_of(switches, word);
+        else if (key == "updates.channel" && in >> word) result.updates.channel = value_of(channels, word);
+        else throw invalid;
+        if (!in || !(in >> std::ws).eof()) throw invalid;
+    }
+}
+} // namespace
 
 Settings load_settings(const fs::path& path) {
     std::error_code error;
@@ -42,13 +104,18 @@ Settings load_settings(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
     std::string magic, kind;
     Settings result;
-    if (!std::getline(file, magic) || magic != "beachlife-launcher 1" ||
-        !(file >> kind >> result.scale >> std::quoted(result.source)))
+    if (!std::getline(file, magic) || (magic != "beachlife-launcher 1" && magic != "beachlife-launcher 2"))
         throw std::runtime_error("Cannot read launcher settings. The existing file has been preserved.");
-    file >> std::ws;
-    if (!file.eof() || (kind != "iso" && kind != "folder"))
-        throw std::runtime_error("The launcher settings format is invalid.");
-    result.kind = kind == "iso" ? SourceKind::Iso : SourceKind::Folder;
+    if (magic == "beachlife-launcher 2") read_keyed(file, result);
+    else {
+        // Version 1 (launcher 0.0.1): source kind, scale and quoted path; display defaults. Only ISO
+        // images are supported now: a saved folder stays selected and asks for the image instead.
+        if (!(file >> kind >> result.scale >> std::quoted(result.source)))
+            throw std::runtime_error("Cannot read launcher settings. The existing file has been preserved.");
+        file >> std::ws;
+        if (!file.eof() || (kind != "iso" && kind != "folder"))
+            throw std::runtime_error("The launcher settings format is invalid.");
+    }
     validate(result);
     return result;
 }
@@ -60,8 +127,20 @@ void save_settings(const fs::path& path, const Settings& settings) {
     temporary += ".tmp";
     try {
         std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-        file << "beachlife-launcher 1\n" << (settings.kind == SourceKind::Iso ? "iso" : "folder")
-             << '\n' << settings.scale << '\n' << std::quoted(settings.source) << '\n';
+        const auto& display = settings.display;
+        file << "beachlife-launcher 2\n"
+             << "source.path " << std::quoted(settings.source) << '\n'
+             << "launcher.scale " << settings.scale << '\n'
+             << "display.mode " << name_of(modes, display.mode) << '\n'
+             << "display.width " << display.width << '\n'
+             << "display.height " << display.height << '\n'
+             << "display.monitor " << display.monitor << '\n'
+             << "display.scaling " << name_of(scalings, display.scaling) << '\n'
+             << "display.vsync " << name_of(switches, display.vsync) << '\n'
+             << "display.api " << name_of(apis, display.api) << '\n'
+             << "diagnostics.log_window " << name_of(switches, settings.diagnostics.log_window) << '\n'
+             << "updates.check " << name_of(switches, settings.updates.check) << '\n'
+             << "updates.channel " << name_of(channels, settings.updates.channel) << '\n';
         file.close();
         if (!file) throw std::runtime_error("Cannot write launcher settings.");
 #ifdef _WIN32
@@ -82,7 +161,7 @@ SourceStatus inspect_source(const Settings& settings) {
     if (settings.source.empty()) return status;
     status.selected = true;
     try {
-        validate(settings);
+        validate_source(settings);
         const auto path = path_from_utf8(settings.source);
         std::error_code error;
         if (!fs::exists(path, error) || error) {
@@ -90,26 +169,20 @@ SourceStatus inspect_source(const Settings& settings) {
             status.detail = "Reconnect the drive or choose another source.";
             return status;
         }
-        if (settings.kind == SourceKind::Folder) {
-            if (!fs::is_directory(path, error) || error)
-                throw std::runtime_error("Choose a folder, or switch the source type to Disc image.");
-            fs::directory_iterator probe(path, error);
-            if (error) throw std::runtime_error("The selected folder cannot be read.");
-            status.title = "Game folder selected";
-        } else {
-            if (!fs::is_regular_file(path, error) || error)
-                throw std::runtime_error("Choose an ISO file, or switch the source type to Installed folder.");
-            status.bytes = fs::file_size(path, error);
-            if (error) throw std::runtime_error("The selected file cannot be read.");
-            std::ifstream file(path, std::ios::binary);
-            std::array<char, 7> descriptor{};
-            file.seekg(16 * 2048);
-            file.read(descriptor.data(), static_cast<std::streamsize>(descriptor.size()));
-            if (!file || std::string_view(descriptor.data() + 1, 5) != "CD001" || descriptor[6] != 1 ||
-                status.bytes < 17 * 2048)
-                throw std::runtime_error("This is not a supported ISO 9660 image. Choose your original Beach Life disc image.");
-            status.title = "ISO image selected";
-        }
+        if (fs::is_directory(path, error))
+            throw std::runtime_error("This is a folder. Choose the disc image (.iso file) itself.");
+        if (!fs::is_regular_file(path, error) || error)
+            throw std::runtime_error("Choose your Beach Life disc image (.iso file).");
+        status.bytes = fs::file_size(path, error);
+        if (error) throw std::runtime_error("The selected file cannot be read.");
+        std::ifstream file(path, std::ios::binary);
+        std::array<char, 7> descriptor{};
+        file.seekg(16 * 2048);
+        file.read(descriptor.data(), static_cast<std::streamsize>(descriptor.size()));
+        if (!file || std::string_view(descriptor.data() + 1, 5) != "CD001" || descriptor[6] != 1 ||
+            status.bytes < 17 * 2048)
+            throw std::runtime_error("This is not a supported ISO 9660 image. Choose your original Beach Life disc image.");
+        status.title = "ISO image selected";
         status.readable = true;
         status.detail = "Game content and languages have not been inspected yet.";
     } catch (const std::exception& error) {

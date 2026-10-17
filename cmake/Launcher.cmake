@@ -37,11 +37,44 @@ target_link_libraries(beachlife_ui PUBLIC SDL3::SDL3)
 target_compile_features(beachlife_ui PUBLIC cxx_std_20)
 add_dependencies(beachlife_ui verify_prepared)
 
-target_sources(beachlife PRIVATE src/launcher/launcher.cpp src/launcher/settings.cpp)
+# The launcher's logic without its interface: settings, and the update check and
+# in-place updates. HTTPS goes through the system (WinHTTP, or the system's libcurl
+# loaded at run time); unpacking packages uses the pinned zlib (cmake/Cabinet.cmake).
+find_package(Threads REQUIRED)
+add_library(beachlife_launcher_core STATIC
+    src/launcher/settings.cpp
+    src/launcher/update_check.cpp src/launcher/update_install.cpp src/launcher/update_service.cpp
+    src/platform/http_client.cpp src/platform/json.cpp src/platform/sha256.cpp)
+target_include_directories(beachlife_launcher_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_compile_features(beachlife_launcher_core PUBLIC cxx_std_20)
+set_target_properties(beachlife_launcher_core PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(beachlife_launcher_core PRIVATE ZLIB::ZLIBSTATIC PUBLIC Threads::Threads)
+if(WIN32)
+    target_link_libraries(beachlife_launcher_core PRIVATE winhttp)
+else()
+    target_link_libraries(beachlife_launcher_core PRIVATE ${CMAKE_DL_LIBS})
+endif()
+if(MSVC)
+    target_compile_options(beachlife_launcher_core PRIVATE /W4 /WX)
+else()
+    target_compile_options(beachlife_launcher_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+target_sources(beachlife PRIVATE src/launcher/launcher.cpp src/launcher/ui.cpp)
 target_include_directories(beachlife PRIVATE "${CMAKE_SOURCE_DIR}/src")
-target_link_libraries(beachlife PRIVATE beachlife_ui)
+target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core)
+
+if(BUILD_TESTING)
+    # Packages written the way tools/package_build.py writes them, then the C++ checks.
+    add_executable(launcher_update_tests tests/launcher_updates.cpp)
+    target_link_libraries(launcher_update_tests PRIVATE beachlife_launcher_core)
+    add_test(NAME launcher_updates
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/launcher_update_fixture.py"
+            "$<TARGET_FILE:launcher_update_tests>" "${CMAKE_CURRENT_BINARY_DIR}/launcher-update-tests")
+endif()
 set_property(TARGET beachlife APPEND PROPERTY LINK_DEPENDS
     "${CMAKE_SOURCE_DIR}/assets/launcher/header.jpg"
+    "${CMAKE_SOURCE_DIR}/assets/launcher/logo.png"
     "${IMGUI_DIR}/misc/fonts/Roboto-Medium.ttf")
 
 # SDL uses the bundle Resources directory on macOS and the executable directory elsewhere.
@@ -53,6 +86,7 @@ add_custom_command(TARGET beachlife POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${BEACHLIFE_RESOURCE_DIR}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "${CMAKE_SOURCE_DIR}/assets/launcher/header.jpg"
+        "${CMAKE_SOURCE_DIR}/assets/launcher/logo.png"
         "${IMGUI_DIR}/misc/fonts/Roboto-Medium.ttf"
         "${BEACHLIFE_RESOURCE_DIR}"
     VERBATIM)

@@ -95,7 +95,7 @@ jobs:
             sudo softwareupdate --install-rosetta --agree-to-license
           fi
           brew install cmake ninja
-      - name: Prepare pinned launcher dependencies
+      - name: Prepare pinned dependencies
         run: python tools/setup_dependencies.py
       - name: Configure shared release preset
         env:
@@ -154,7 +154,7 @@ jobs:
         run: |
           toolchain=$(python tools/setup_windows_toolchain.py "$RUNNER_TEMP/llvm-mingw")
           echo "LLVM_MINGW_ROOT=$toolchain" >> "$GITHUB_ENV"
-      - name: Prepare pinned launcher dependencies
+      - name: Prepare pinned dependencies
         run: python tools/setup_dependencies.py
       - name: Configure and build
         env:
@@ -170,6 +170,32 @@ jobs:
           python -B -m unittest discover -s tests -p 'test_*.py'
       - name: Package native Windows binary and runtimes
         run: python tools/package_build.py --build-dir build/release --output-dir build/artifacts --toolchain "$LLVM_MINGW_ROOT"
+      - name: Prepare Windows data checks
+        run: |
+          python - <<'PY'
+          import shutil, sys
+          from pathlib import Path
+          sys.path.insert(0, 'tools')
+          from package_build import inspect_package, WINDOWS_DLLS
+          archive, = Path('build/artifacts').glob('*.zip')
+          _, files = inspect_package(archive)
+          output = Path('build/windows-data-tests')
+          output.mkdir()
+          for name, (body, _) in files.items():
+              if name in WINDOWS_DLLS or name.startswith('LICENSES/'):
+                  path = output / name
+                  path.parent.mkdir(parents=True, exist_ok=True)
+                  path.write_bytes(body)
+          for name in ('beachlife-data.exe', 'iso_source_tests.exe'):
+              shutil.copy2(Path('build/release') / name, output / name)
+          shutil.copy2('build/release/generated/build-info.json', output / 'build-info.json')
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-data-tests
+          path: build/windows-data-tests/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           path: build/artifacts/*.zip
@@ -204,6 +230,17 @@ jobs:
           $packages = @(Get-ChildItem build/artifacts/*.zip)
           if ($packages.Count -ne 1) { throw 'Expected one Windows package' }
           python tools/check_package.py $packages[0].FullName
+          exit $LASTEXITCODE
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: windows-data-tests
+          path: build/data-tests
+      - name: Check ISO and cabinet readers on Windows
+        shell: pwsh
+        run: |
+          python tests/check_data.py build/data-tests/beachlife-data.exe build/data-tests/iso_source_tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/check_cabinet.py build/data-tests/beachlife-data.exe
           exit $LASTEXITCODE
 
   verify:

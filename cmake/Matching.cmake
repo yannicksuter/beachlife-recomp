@@ -10,6 +10,14 @@ add_custom_target(matching_fixture
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Verify the original-toolchain comparison fixture"
     VERBATIM)
+add_custom_target(matching_stdio_fixture
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/matching.py" stdio-fixture
+        --compiler "${BEACHLIFE_MATCHING_COMPILER}"
+        --reccmp "${BEACHLIFE_RECCMP}"
+        --output "${CMAKE_BINARY_DIR}/matching"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verify generated VC6 stdio import linkage"
+    VERBATIM)
 add_custom_target(matching_game
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/matching.py" game
         --compiler "${BEACHLIFE_MATCHING_COMPILER}"
