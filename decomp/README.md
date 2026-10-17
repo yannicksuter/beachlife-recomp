@@ -102,6 +102,14 @@ position and returns only its low 32 bits. Open/seek/position failures return
 zero, as does an empty file; close errors are ignored. `GetFileSize` is a
 descriptive name and the original signed return declaration is unknown.
 
+`src/file_loader.cpp` reconstructs the 83-byte plain file loader at
+`0x004ec1c0`, used by the TGA file-to-image wrapper. It obtains the size, returns
+null for missing or empty files, allocates one extra byte, reopens and reads
+the file, then appends a period. The allocation, second open, read and close
+remain unchecked. Unlike the BLE loader it leaves the input bytes unchanged.
+`LoadFile` is descriptive; the original symbol and allocation spelling are
+unknown.
+
 `src/ble_loader.cpp` reconstructs the 102-byte loader at `0x004ec220`. It asks
 the size helper for the low 32-bit file length, allocates one additional byte,
 reopens and reads the file, inverts its bytes with a signed index comparison,
@@ -138,7 +146,7 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-All six functions currently match after address normalization, totaling 315
+All seven functions currently match after address normalization, totaling 398
 bytes. The filename hash and the two TGA pointer helpers also match all 100 raw
 bytes exactly. Rebuilt constants/imports in the other functions have different
 addresses, so this is not a byte-identical executable or an established
@@ -172,5 +180,5 @@ class declarations or the full game's compiler flags.
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There are six annotated game functions and no
+does not implement game startup. There are seven annotated game functions and no
 established whole-game function denominator.
