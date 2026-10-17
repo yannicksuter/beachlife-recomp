@@ -98,6 +98,7 @@ if(APPLE)
 endif()
 
 include(cmake/Launcher.cmake)
+include(cmake/Matching.cmake)
 
 if(BUILD_TESTING)
     add_test(NAME bootstrap_cli
