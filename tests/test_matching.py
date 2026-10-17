@@ -51,6 +51,29 @@ class MatchingInputTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 matching.section(path, b'.text')
 
+    def test_virtual_address_reads_respect_raw_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'generated.exe'
+            data = bytearray(512)
+            data[:2] = b'MZ'
+            struct.pack_into('<I', data, 0x3c, 64)
+            data[64:68] = b'PE\0\0'
+            struct.pack_into('<HH', data, 68, 0x14c, 1)
+            struct.pack_into('<H', data, 84, 224)
+            struct.pack_into('<H', data, 88, 0x10b)
+            struct.pack_into('<I', data, 116, 0x400000)
+            data[312:320] = b'.text\0\0\0'
+            struct.pack_into('<III', data, 324, 0x1000, 4, 448)
+            data[448:452] = b'code'
+            path.write_bytes(data)
+            self.assertEqual(matching.read_va(path, 0x401001, 2), b'od')
+            for address, size in [(0x400fff, 1), (0x401003, 2), (-1, 1), (0x401000, -1)]:
+                with self.assertRaises(ValueError):
+                    matching.read_va(path, address, size)
+            path.write_bytes(data[:450])
+            with self.assertRaises(ValueError):
+                matching.read_va(path, 0x401000, 4)
+
 
 if __name__ == '__main__':
     unittest.main()

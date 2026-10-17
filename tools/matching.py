@@ -58,6 +58,33 @@ def save(path, value):
     Path(path).write_text(json.dumps(value, indent=2) + '\n')
 
 
+def read_va(path, address, size):
+    if address < 0 or size < 0:
+        raise ValueError('Invalid PE address range.')
+    data = Path(path).read_bytes()
+    if len(data) < 64 or data[:2] != b'MZ':
+        raise ValueError('Truncated PE image.')
+    pe = struct.unpack_from('<I', data, 0x3c)[0]
+    if pe+56 > len(data) or data[pe:pe+4] != b'PE\0\0':
+        raise ValueError('Invalid PE header.')
+    if struct.unpack_from('<H', data, pe+4)[0] != 0x14c:
+        raise ValueError('Expected a 32-bit x86 matching image.')
+    if struct.unpack_from('<H', data, pe+24)[0] != 0x10b:
+        raise ValueError('Expected a PE32 matching image.')
+    base = struct.unpack_from('<I', data, pe+52)[0]
+    headers = pe+24+struct.unpack_from('<H', data, pe+20)[0]
+    count = struct.unpack_from('<H', data, pe+6)[0]
+    if headers+count*40 > len(data):
+        raise ValueError('Truncated PE sections.')
+    for index in range(count):
+        entry = headers+40*index
+        rva, length, offset = struct.unpack_from('<III', data, entry+12)
+        relative = address-base-rva
+        if 0 <= relative and relative+size <= length and offset+length <= len(data):
+            return data[offset+relative:offset+relative+size]
+    raise ValueError('Address is outside initialized PE sections.')
+
+
 class Toolchain:
     def __init__(self, args):
         if not args.compiler:
@@ -105,7 +132,7 @@ class Toolchain:
             raise ValueError('Unsupported quote/newline in compiler argument.')
         path.write_text('\n'.join('"' + arg + '"' for arg in arguments) + '\n')
 
-    def build(self, folder, sources, name):
+    def build(self, folder, sources, name, extra_link=()):
         folder.mkdir(parents=True, exist_ok=True)
         objects, logs = [], []
         for source in sources:
@@ -121,7 +148,7 @@ class Toolchain:
         flags = ['/nologo', '/out:' + name + '.exe', '/pdb:' + name + '.pdb', '/debug',
                  '/pdbtype:sept', '/incremental:no', '/opt:ref', '/opt:icf',
                  '/entry:fixture_entry', '/subsystem:console', '/machine:I386',
-                 '/nodefaultlib', '/map:' + name + '.map', *objects]
+                 '/nodefaultlib', '/map:' + name + '.map', *extra_link, *objects]
         self.response(folder / 'link.rsp', flags)
         command = [str(self.compiler / 'LINK.EXE'), '@link.rsp']
         logs.append(self.run(command if os.name == 'nt' else ['wine', *command], folder))
@@ -167,22 +194,74 @@ def fixture(tool):
     print(json.dumps(result, indent=2))
 
 
+def game(tool, args):
+    target = json.loads(TARGET.read_text())
+    original = verify_original(args.original, target)
+    source = args.source.resolve()
+    sources = sorted(source.rglob('*.cpp'))
+    if not sources:
+        raise ValueError('No matching source files found.')
+    folder = tool.output / 'game'
+    folder.mkdir(parents=True, exist_ok=True)
+    entry = folder / 'entry.cpp'
+    entry.write_text('extern "C" { int _fltused = 0; }\n'
+                     'float GetGameVersion();\nvolatile float fixture_result;\n'
+                     'extern "C" void fixture_entry() { fixture_result = GetGameVersion(); }\n')
+    binary, pdb = tool.build(folder, [*sources, entry], 'BeachLife', ['/fixed:no'])
+    # CSV metadata supplies the known float in the original, whose relocations
+    # were stripped. Relocations in our comparison build identify its literal.
+    save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
+        'filename': 'BeachLife.exe', 'source-root': [str(source)],
+        'hash': {'sha256': target['sha256']},
+        'data-sources': [str(ROOT / 'decomp/metadata.csv')],
+        'report': {'ignore-functions': ['fixture_entry']}}}})
+    save(folder / 'reccmp-user.yml', {'targets': {'BEACHLIFE': {'path': str(original)}}})
+    save(folder / 'reccmp-build.yml', {'project': '.', 'targets': {'BEACHLIFE': {
+        'path': str(binary), 'pdb': str(pdb)}}})
+    reports = args.reports.resolve()
+    reports.mkdir(parents=True, exist_ok=True)
+    output = tool.run([tool.reccmp, '--target', 'BEACHLIFE', '--json',
+                       str(reports / 'comparison.json'), '--no-color'], folder)
+    (reports / 'comparison.log').write_text(output)
+    report = json.loads((reports / 'comparison.json').read_text())
+    functions = []
+    for item in target['functions']:
+        row = next((row for row in report['data'] if int(row['address'], 16) == int(item['address'], 16)), None)
+        if row is None:
+            raise ValueError(f"Comparator did not find {item['name']}.")
+        exact = read_va(original, int(item['address'], 16), item['size']) == read_va(binary, int(row['recomp'], 16), item['size'])
+        functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
+                          'normalized_match': row['matching'], 'exact_bytes': exact})
+    result = {'target': target['id'], 'original_sha256': target['sha256'],
+              'compiler': 'VC6 SP4 / C2 12.0.8799.0', 'reccmp': '0.1.7',
+              'functions': functions, 'scope': 'Only listed functions; whole-game denominator unknown.',
+              'comparison_layout': 'Relocations enabled in rebuilt comparison image; original remains unchanged.'}
+    save(reports / 'result.json', result)
+    print(json.dumps(result, indent=2))
+    if any(item['normalized_match'] != 1 for item in functions):
+        raise ValueError('One or more annotated functions do not match.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['verify', 'fixture'])
+    parser.add_argument('command', choices=['verify', 'fixture', 'game'])
     parser.add_argument('--compiler', default=os.environ.get('BEACHLIFE_MSVC6'))
     parser.add_argument('--original', type=Path, default=ROOT / 'orig/analysis/disc/BeachLife.exe')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/matching')
     parser.add_argument('--prefix', type=Path, default=ROOT / 'build/matching/wine')
     parser.add_argument('--reccmp', default='reccmp-reccmp')
+    parser.add_argument('--source', type=Path, default=ROOT / 'decomp/src')
+    parser.add_argument('--reports', type=Path, default=ROOT / 'orig/analysis/matching')
     args = parser.parse_args()
     try:
         if args.command == 'verify':
             target = json.loads(TARGET.read_text())
             path = verify_original(args.original, target)
             print(json.dumps({'target': target['id'], 'original': str(path), 'verified': True}))
-        else:
+        elif args.command == 'fixture':
             fixture(Toolchain(args))
+        else:
+            game(Toolchain(args), args)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         parser.exit(1, str(error) + '\n')
 
