@@ -1,8 +1,10 @@
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from prepare_sources import prepare
@@ -31,10 +33,14 @@ class PreparedSourceTests(unittest.TestCase):
             patches = repo / 'patches' / 'fixture'
             patches.mkdir(parents=True)
             for name, before, after in [('one.patch', 'first', 'second'), ('two.patch', 'second', 'third')]:
-                patch = f'diff --git a/value.txt b/value.txt\n--- a/value.txt\n+++ b/value.txt\n@@ -1 +1 @@\n-{before}\n+{after}\n'
-                (patches / name).write_bytes(patch.encode())
+                patch_text = f'diff --git a/value.txt b/value.txt\n--- a/value.txt\n+++ b/value.txt\n@@ -1 +1 @@\n-{before}\n+{after}\n'
+                (patches / name).write_bytes(patch_text.encode())
             (patches / 'series').write_bytes(b'one.patch\ntwo.patch\n')
-            prepare(repo, output, ['fixture'])
+            # Git for Windows commonly enables automatic CRLF conversion.
+            with patch.dict(os.environ, {'GIT_CONFIG_COUNT': '1',
+                                        'GIT_CONFIG_KEY_0': 'core.autocrlf',
+                                        'GIT_CONFIG_VALUE_0': 'true'}):
+                prepare(repo, output, ['fixture'])
             self.assertEqual((output / 'fixture/value.txt').read_bytes(), b'third\n')
             self.assertEqual((checkout / 'value.txt').read_bytes(), b'first\n')
             prepare(repo, output, ['fixture'], verify=True)

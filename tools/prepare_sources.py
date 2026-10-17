@@ -93,7 +93,8 @@ def prepare(source, output, names=DEPENDENCIES, verify=False):
         with tempfile.TemporaryDirectory(dir=output, prefix=name + '-') as temporary:
             temporary = Path(temporary)
             archive = temporary / 'source.tar'
-            subprocess.run(['git', '-C', str(submodule), 'archive', identity['commit'],
+            subprocess.run(['git', '-C', str(submodule), '-c', 'core.autocrlf=false',
+                            '-c', 'core.eol=lf', 'archive', identity['commit'],
                             '-o', str(archive)], check=True)
             staged = temporary / 'source'
             staged.mkdir()
@@ -110,7 +111,8 @@ def prepare(source, output, names=DEPENDENCIES, verify=False):
                         target.write_bytes(handle.extractfile(member).read())
                         target.chmod(member.mode & 0o777)
             for patch in patches:
-                subprocess.run(['git', 'apply', '--no-index', str(patch)], cwd=staged, check=True)
+                subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                'apply', '--no-index', str(patch)], cwd=staged, check=True)
             record = {'identity': identity, 'files': tree_manifest(staged)}
             if destination.exists():
                 shutil.rmtree(destination)
