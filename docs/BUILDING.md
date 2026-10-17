@@ -1,7 +1,8 @@
 # Building
 
-The current executable is a native bootstrap, with no game or graphics
-implementation yet. Building requires no original game files or decomp source.
+The current executable is the graphical launcher. Gameplay and content-language
+detection are not implemented yet. Building requires no original game files or
+decomp source.
 
 ## Requirements and presets
 
@@ -10,6 +11,7 @@ checkout so generated identity can record the source commit. Configure outside
 the source directory. `CMakeUserPresets.json` can hold local overrides.
 
 ```sh
+python3 tools/setup_dependencies.py
 cmake --workflow --preset debug
 cmake --workflow --preset release
 cmake --workflow --preset launcher
@@ -17,7 +19,7 @@ cmake --workflow --preset launcher
 
 Each workflow configures, builds and runs CTest. `debug` is for development;
 `release` is the distributable configuration; `launcher` currently builds the
-same bootstrap and will grow with the host. Individual commands are available:
+same launcher. Individual commands are available:
 
 ```sh
 cmake --preset release
@@ -30,12 +32,28 @@ commit and dirty marker come from Git. `--build-info` emits the complete JSON
 record. Local builds use channel `dev`; Actions sets `test` or `release` and
 records its PR/run IDs. Test/release packages require clean committed sources.
 
+SDL3, Dear ImGui and stb are immutable Git submodule pins. Dependency setup is
+an explicit network step; CMake never fetches source. Configuration exports each
+clean pin into the build directory, applies any ordered `patches/<name>/series`,
+and records file hashes. Every build rejects edited checkouts, edited prepared
+files or stale patch identities. Put changes in patch files, never in `extern/`.
+
 ## Linux
 
 The primary CI target uses Ubuntu 26.04 and GCC 15. The compatibility/Steam Deck
 package uses Ubuntu 24.04 and GCC 14. The packager checks its imported libraries
 and symbol versions against the SteamOS 3.7 runtime baseline. This check is not
 a claim that GPU operation or gameplay has been qualified on the device.
+
+Install SDL's development prerequisites before configuring on Ubuntu:
+
+```sh
+sudo apt-get install build-essential cmake ninja-build python3 git pkg-config \
+  libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev \
+  libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libx11-xcb-dev libegl-dev \
+  libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
+  libudev-dev libdbus-1-dev libvulkan-dev
+```
 
 ```sh
 ./build/release/beachlife --help
@@ -90,13 +108,28 @@ LLVM-MinGW runtime, so use the documented cross build for release packages.
 
 ## Tests and scope
 
-CTest checks actual help/version/build-info behavior and generated fixtures for
-version changes, archive payloads, provenance, ABI bounds and release decisions.
+CTest checks help/version/build-info, settings persistence, source errors and
+a window smoke that renders all four pages with SDL's dummy video driver and
+software renderer. Package smoke runs the same window check after extraction,
+proving that the artwork and fonts travel with it. Generated fixtures cover
+pins, patch ordering, tampering, version changes, archive payloads, provenance,
+ABI bounds and release decisions.
 Run the Python checks alone with:
 
 ```sh
 python3 -B -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The pipeline does not download or execute original game code. GPU checks and
-matching-toolchain checks will be separate additions. See [RELEASES](RELEASES.md).
+For an actual desktop screenshot (then exit), use:
+
+```sh
+./build/debug/beachlife --screenshot build/launcher.png --config build/preview.cfg
+```
+
+`--page files|appearance|about` selects another page. `--source path.iso` and
+`--folder directory` preselect a source without saving it automatically.
+
+The launcher prefers SDL's DX12 renderer on Windows, Metal on macOS and Vulkan
+on Linux, with a software fallback. Hosted software smoke does not qualify GPU
+hardware or the future Dawn game renderer. The pipeline does not download or
+execute original game code. See [RELEASES](RELEASES.md).

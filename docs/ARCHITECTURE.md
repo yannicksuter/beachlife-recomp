@@ -1,8 +1,9 @@
 # Architecture
 
 The native host and the matching decompilation develop together. The current
-host is a small C++20 bootstrap; its CMake build, native packages and release
-pipeline are usable before a game module exists.
+host is a C++20 graphical launcher; its CMake build, native packages and release
+pipeline are usable before a game module exists. The launcher uses SDL3 and
+Dear ImGui with settings/source logic independent of rendering.
 
 ```mermaid
 flowchart LR
@@ -41,9 +42,15 @@ both targets use little-endian storage. File/save layouts, pointer widths,
 | Game files | Read/seek interface over installed folders, images and installer archives |
 | Settings and saves | Writable user storage, separate from read-only game data |
 
-SDL3, Dawn and the game module are not yet integrated. Each dependency will be
-pinned and built from prepared source when introduced. The host does not need
+SDL3 and Dear ImGui are integrated for the launcher, with stb decoding the
+declared header image. They build from immutable pinned exports, verified before
+each build. Dawn and the game module remain future work. The host does not need
 Wii/GX compatibility or a browser runtime.
+
+The launcher uses SDL's 2D rendering interface, preferring DX12, Metal or Vulkan
+for its host platform, and can fall back to software. This is independent of
+the future Dawn game renderer. Renderer-independent settings code handles UTF-8
+paths, bounded settings parsing, atomic replacement and basic source checks.
 
 The retail DirectDraw/GDI operations determine whether adaptation belongs at
 the API boundary or at a narrow game-renderer interface. That mapping remains
@@ -57,6 +64,12 @@ Start with installed-folder reads, then ISO 9660/Joliet and InstallShield
 cabinet access. Direct reads should avoid requiring a permanent extracted game
 tree; large compressed members need measured seeking/caching experiments.
 Keep case/slash compatibility without allowing paths to escape the source.
+
+The initial source picker checks availability and the ISO container signature;
+it does not index game content. Game languages must later be derived from the
+selected source's actual localization data. Switching sources must recompute
+the available list and reset an unavailable selection. Installer translations
+and launcher-interface translations are separate concerns.
 
 Asset previews and subsystem harnesses can advance while matching is incomplete.
 Full game launch requires all reachable game code and dependencies in source.

@@ -7,7 +7,7 @@ from pathlib import Path
 
 def check(executable, expected):
     executable = str(Path(executable).resolve())
-    for arguments in ([], ["--help"]):
+    for arguments in (["--help"],):
         output = subprocess.check_output([executable, *arguments], text=True)
         assert "does not yet load or run the game" in output, output
     version = subprocess.check_output([executable, "--version"], text=True).strip()
