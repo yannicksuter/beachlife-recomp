@@ -139,6 +139,15 @@ nonzero. Palette length uses only its low 16 bits. It preserves the fixed
 three-byte palette stride and unchecked pointer arithmetic. `GetTgaPixelData`
 is descriptive; the original symbol and exact declaration remain unknown.
 
+`src/tga_palette_copy.cpp` reconstructs the 56-byte palette copier at
+`0x004ea430`. It writes BGR input triples as RGB into the palette pointer at
+image offset `0x14` on x86. The signed count skips writes when nonpositive;
+the image pointer is still accessed first. Source and destination remain
+unchecked, and sequential byte reads/writes preserve the original behavior
+for overlapping buffers. `CopyTgaPalette` and the partial `TgaImage` layout
+are descriptive, with the preceding fields left opaque; original names and
+the full type declaration remain unknown.
+
 ```sh
 python3 tools/matching.py game --compiler /path/to/msvc6.4 \
   --reccmp build/matching/venv/bin/reccmp-reccmp
@@ -146,8 +155,8 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-All seven functions currently match after address normalization, totaling 398
-bytes. The filename hash and the two TGA pointer helpers also match all 100 raw
+All eight functions currently match after address normalization, totaling 454
+bytes. The filename hash and the three TGA helpers also match all 156 raw
 bytes exactly. Rebuilt constants/imports in the other functions have different
 addresses, so this is not a byte-identical executable or an established
 whole-program layout. The original
@@ -172,13 +181,14 @@ constant; a normalized match alone does not establish a complete binary match.
 
 Each reconstructed function has been checked with a deliberately incorrect
 source variant. Changing the BLE terminator, filename-hash signedness or TGA
-header offset makes the comparison fail. Generated semantic tests additionally
-check the pure helpers' boundary values. These checks establish the
+header offset or palette channel order makes the comparison fail. Generated
+semantic tests additionally check the pure helpers' boundary values and palette
+copy overlap behavior. These checks establish the
 reported machine-code matches; they do not recover original variable names,
 class declarations or the full game's compiler flags.
 
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There are seven annotated game functions and no
+does not implement game startup. There are eight annotated game functions and no
 established whole-game function denominator.

@@ -271,7 +271,8 @@ def game(tool, args):
     folder = tool.output / 'game'
     folder.mkdir(parents=True, exist_ok=True)
     entry = folder / 'entry.cpp'
-    entry.write_text('extern "C" { int _fltused = 0; }\n'
+    entry.write_text('#include "tga_image.h"\n'
+                     'extern "C" { int _fltused = 0; }\n'
                      'float GetGameVersion();\nvolatile float fixture_result;\n'
                      'long GetFileSize(const char*);\nvolatile long fixture_size;\n'
                      'char* LoadFile(const char*);\nchar* volatile fixture_file;\n'
@@ -279,18 +280,23 @@ def game(tool, args):
                      'unsigned int SoundNameHash(const char*);\nvolatile unsigned int fixture_hash;\n'
                      'unsigned char* GetTgaPaletteData(unsigned char*, unsigned char, unsigned char);\n'
                      'unsigned char* GetTgaPixelData(unsigned char*, unsigned char, unsigned short, unsigned char);\n'
+                     'void CopyTgaPalette(const unsigned char*, TgaImage*, int);\n'
                      'unsigned char fixture_tga[18];\nunsigned char* volatile fixture_palette;\n'
                      'unsigned char* volatile fixture_pixels;\n'
+                     'TgaImage fixture_tga_image;\nunsigned char fixture_palette_copy[3];\n'
                      'extern "C" void fixture_entry() { fixture_result = GetGameVersion(); '
                      'fixture_size = GetFileSize("generated.bin"); '
                      'fixture_file = LoadFile("generated.bin"); '
                      'fixture_buffer = LoadBleFile("generated.ble"); '
                      'fixture_hash = SoundNameHash("generated.wav"); '
                      'fixture_palette = GetTgaPaletteData(fixture_tga, 0, 1); '
-                     'fixture_pixels = GetTgaPixelData(fixture_tga, 0, 0, 0); }\n')
+                     'fixture_pixels = GetTgaPixelData(fixture_tga, 0, 0, 0); '
+                     'fixture_tga_image.palette = fixture_palette_copy; '
+                     'CopyTgaPalette(fixture_tga, &fixture_tga_image, 1); }\n')
     library = tool.runtime_library(folder)
     binary, pdb = tool.build(folder, [*sources, entry], 'BeachLife', ['/fixed:no', library],
-                            ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include')])
+                            ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
+                             '/I' + tool.native(source)])
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
