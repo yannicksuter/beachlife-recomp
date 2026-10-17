@@ -69,6 +69,11 @@ code is not reconstructed yet, so the window shows an empty picture with a
 small overlay naming the graphics API and frame rate. Esc or closing the window
 returns to the launcher.
 
+To view original artwork now, open **Game files → Preview title screen**. This
+opens the native window, prepares data if needed and displays the title image
+from your copy. Display settings apply, and Esc returns to Game files. This is
+an image preview; the original menu buttons and gameplay are not implemented.
+
 The Display page's **Performance overlay** (off by default) adds a compact row
 with the frame rate and the system's GPU and CPU usage in the chosen corner of
 the game window, also in fullscreen. A reading the system does not provide shows

@@ -44,6 +44,16 @@ void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(std::string(message) + ": " + SDL_GetError());
 }
 
+// The settings file: --config, or launcher.cfg in the per-user preferences folder.
+fs::path settings_file(const Options& options) {
+    if (!options.config.empty()) return options.config;
+    char* preference = SDL_GetPrefPath("BeachLife", "BeachLife");
+    require(preference != nullptr, "Cannot locate your settings folder");
+    auto path = path_from_utf8(preference) / "launcher.cfg";
+    SDL_free(preference);
+    return path;
+}
+
 ImVec2 add(ImVec2 a, ImVec2 b) { return {a.x+b.x, a.y+b.y}; }
 ImTextureID texture_id(SDL_Texture* texture) { return static_cast<ImTextureID>(reinterpret_cast<intptr_t>(texture)); }
 
@@ -109,10 +119,6 @@ public:
 
     int run() {
         initialize();
-        if (options_.auto_play) {
-            play();
-            return exit_code_;
-        }
         int frame = 0;
         bool running = true;
         while (running) {
@@ -120,8 +126,7 @@ public:
             while (SDL_PollEvent(&event)) {
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-                    close_requested_ = true;
-                    content_->cancel();
+                    close_requested_ = true; // file work stops when the launcher actually closes
                 }
                 if (event.type == SDL_EVENT_DROP_FILE && event.drop.data) {
                     settings_.source = event.drop.data;
@@ -137,7 +142,7 @@ public:
                 restart_ = true;
                 close_requested_ = true;
             }
-            if (options_.smoke && !options_.auto_play && options_.screenshot.empty()) page_ = (frame / 3) % PageCount;
+            if (options_.smoke && options_.screenshot.empty()) page_ = (frame / 3) % PageCount;
             ImGui_ImplSDL3_NewFrame();
             const auto display = ImGui::GetIO().DisplaySize;
             scale_ = std::min({settings_.scale / 100.0f, display.x / 960.0f, display.y / 620.0f});
@@ -170,7 +175,7 @@ public:
             }
             require(SDL_RenderPresent(renderer_), "Cannot present the launcher");
             ++frame;
-            if (options_.smoke && !options_.auto_play && frame >= 3 * PageCount) running = false;
+            if (options_.smoke && frame >= 3 * PageCount) running = false;
             SDL_Delay(8);
         }
         if (options_.smoke) std::puts("Launcher window, artwork, fonts and pages verified.");
@@ -184,6 +189,7 @@ public:
     // Play was pressed: the game starts once the launcher is gone.
     bool play_requested() const { return play_; }
     bool prepare_only() const { return prepare_only_; }
+    const std::string& preview_screen() const { return preview_screen_; }
     const Settings& settings() const { return settings_; }
     const fs::path& config() const { return config_; }
 
@@ -191,24 +197,26 @@ private:
     void initialize() {
         SDL_SetAppMetadata("Beach Life", build::version, "org.beachlife.recomp");
         require(SDL_Init(SDL_INIT_VIDEO), "Cannot initialize the launcher");
-        if (options_.config.empty()) {
-            char* preference = SDL_GetPrefPath("BeachLife", "BeachLife");
-            require(preference != nullptr, "Cannot locate your settings folder");
-            config_ = path_from_utf8(preference) / "launcher.cfg";
-            SDL_free(preference);
-        } else config_ = options_.config;
+        config_ = settings_file(options_);
         try { saved_ = settings_ = load_settings(config_); }
         catch (const std::exception& error) { notice_ = error.what(); }
         if (!options_.source.empty()) {
             settings_.source = options_.source;
             settings_.content = {}; // an explicit selection always checks the image again
         }
-        content_ = std::make_unique<ContentService>(options_.cache.empty() ? data::default_content_directory() : options_.cache);
+        // Without a folder for prepared files the launcher still opens; the
+        // Game files page reports why nothing can be prepared.
+        auto cache = options_.cache;
+        if (cache.empty()) {
+            try { cache = data::default_content_directory(); }
+            catch (const std::exception& error) { notice_ = error.what(); }
+        }
+        content_ = std::make_unique<ContentService>(cache);
         content_->select(settings_);
         content_status_ = content_->snapshot();
         source_ = content_status_.source;
         const auto flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
-            (options_.smoke || options_.auto_play ? SDL_WINDOW_HIDDEN : 0);
+            (options_.smoke ? SDL_WINDOW_HIDDEN : 0);
         window_ = SDL_CreateWindow((std::string("Beach Life ") + build::version).c_str(), 1180, 760, flags);
         require(window_ != nullptr, "Cannot create the launcher window");
         SDL_SetWindowMinimumSize(window_, 900, 600);
@@ -236,7 +244,7 @@ private:
         // Updates: the package this launcher was unpacked from (none for a local build).
         package_ = package_folder(path_from_utf8(base));
         updates_ = std::make_unique<UpdateService>(parse_build_identity(build::json), package_);
-        const bool offline = options_.smoke || options_.auto_play || !options_.screenshot.empty();
+        const bool offline = options_.smoke || !options_.screenshot.empty();
         if (!offline) {
             try {
                 const auto replaced = finish_updates(package_);
@@ -560,6 +568,10 @@ private:
                                      {ix, iy}, {dp(190), dp(42)}, source_.readable && !update_busy())) {
                 play(true);
             }
+            iy += dp(54);
+            if (ui::secondary_button("preview_screen", "Preview title screen", Icon::Monitor,
+                                     {ix, iy}, {dp(220), dp(42)}, (ready || source_.readable) && !update_busy()))
+                play(false, "Data/Screens/FrontScreen.tga");
         }
         iy += dp(42) + pad;
         content_panel.end(iy);
@@ -918,13 +930,7 @@ private:
         source_ = content_status_.source;
     }
 
-    void setup_failed(const std::string& error) {
-        show_notice(error);
-        if (options_.auto_play) {
-            std::fprintf(stderr, "Beach Life: %s\n", error.c_str());
-            exit_code_ = 1;
-        }
-    }
+    void setup_failed(const std::string& error) { show_notice(error); }
 
     void poll_content() {
         content_status_ = content_->snapshot();
@@ -945,10 +951,11 @@ private:
 
     // The game window owns setup progress. Its worker rechecks the source stamp,
     // even if the launcher's readiness check succeeded earlier.
-    void play(bool prepare_only = false) {
+    void play(bool prepare_only = false, std::string preview_screen = {}) {
         if (settings_ != saved_ && !save()) { setup_failed(notice_); return; }
         content_->cancel(); // release the launcher's mount before setup/repair
         prepare_only_ = prepare_only;
+        preview_screen_ = std::move(preview_screen);
         play_ = true;
     }
 
@@ -1232,6 +1239,7 @@ private:
     ContentService::Status content_status_;
     std::string failed_binding_;
     bool prepare_only_ = false;
+    std::string preview_screen_;
     int exit_code_ = 0;
     std::string notice_;
     std::string font_path_;
@@ -1256,6 +1264,27 @@ private:
 };
 } // namespace
 
+Outcome play_settings(const Options& options) {
+    Outcome outcome;
+    try {
+        SDL_SetAppMetadata("Beach Life", build::version, "org.beachlife.recomp");
+        outcome.config = settings_file(options);
+        const auto saved = load_settings(outcome.config); // unreadable settings stop here, untouched
+        outcome.settings = saved;
+        if (!options.source.empty()) {
+            outcome.settings.source = path_utf8(fs::absolute(path_from_utf8(options.source)).lexically_normal());
+            outcome.settings.content = {}; // an explicit selection always checks the image again
+        }
+        if (outcome.settings != saved) save_settings(outcome.config, outcome.settings);
+        outcome.play = true;
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "Beach Life: %s\n", error.what());
+        if (!options.smoke) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Beach Life", error.what(), nullptr);
+        outcome.exit_code = 1;
+    }
+    return outcome;
+}
+
 Outcome run(const Options& options) {
     fs::path restart;
     Outcome outcome;
@@ -1265,6 +1294,7 @@ Outcome run(const Options& options) {
         restart = launcher.restart_program();
         outcome.play = launcher.play_requested() && restart.empty();
         outcome.prepare_only = launcher.prepare_only();
+        outcome.preview_screen = launcher.preview_screen();
         outcome.settings = launcher.settings();
         outcome.config = launcher.config();
     } catch (const std::exception& error) {

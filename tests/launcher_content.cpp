@@ -68,7 +68,8 @@ int main(int argc, char** argv) {
         settings.content = ready.binding;
         const auto root = cache/ready.binding.identity;
         {
-            auto mount = service.take_ready();
+            // The game window's mount, held while the launcher is asked to repair.
+            auto mount = std::make_shared<beachlife::data::PreparedSource>(root);
             auto file = mount->open("BEACHLIFE.INI");
             std::array<unsigned char, 10> body{};
             expect(file->read(body) == body.size() && body[0] == '[');
@@ -80,6 +81,20 @@ int main(int argc, char** argv) {
         // A missing ISO is fine once the prepared identity has been remembered.
         const auto offline = image.parent_path()/"offline.iso";
         fs::rename(image, offline);
+        service.select(settings);
+        expect(settled(service).state == State::Ready);
+        // So is one the system cannot reach (here a file where its folder was,
+        // like a drive without its disc): the remembered set still plays.
+        {
+            const auto blocker = image.parent_path()/"not-a-folder";
+            { std::ofstream file(blocker); }
+            auto unreachable = settings;
+            unreachable.source = path_utf8(blocker/"source.iso");
+            unreachable.content.source = unreachable.source;
+            service.select(unreachable);
+            expect(settled(service).state == State::Ready);
+            fs::remove(blocker);
+        }
         service.select(settings);
         expect(settled(service).state == State::Ready);
         service.cancel(); // release the mount before damaging a prepared file
@@ -128,6 +143,13 @@ int main(int argc, char** argv) {
         expect(settled(service).state == State::Failed);
         service.select({});
         expect(settled(service).state == State::Idle);
+        {
+            // Without a folder for prepared files, a selected ISO reports why.
+            ContentService nowhere{{}};
+            nowhere.select(settings);
+            const auto status = settled(nowhere);
+            expect(status.state == State::Failed && status.error.find("Cannot locate the folder") != std::string::npos);
+        }
         std::cout << "Setup worker cancellation, resumption, stale results, offline readiness, repair and mount lifetime passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

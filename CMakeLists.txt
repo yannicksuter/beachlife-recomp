@@ -64,7 +64,7 @@ target_compile_features(beachlife_formats PUBLIC cxx_std_20)
 set_target_properties(beachlife_formats PROPERTIES CXX_EXTENSIONS OFF)
 
 add_library(beachlife_data STATIC src/data/iso9660.cpp src/data/game_path.cpp src/data/source.cpp
-    src/data/folder_source.cpp src/data/local_files.cpp)
+    src/data/folder_source.cpp src/data/local_files.cpp src/data/tga.cpp)
 target_include_directories(beachlife_data PUBLIC src)
 target_compile_features(beachlife_data PUBLIC cxx_std_20)
 set_target_properties(beachlife_data PROPERTIES CXX_EXTENSIONS OFF)
@@ -128,6 +128,9 @@ if(BUILD_TESTING)
     target_include_directories(game_path_tests PRIVATE src)
     target_compile_features(game_path_tests PRIVATE cxx_std_20)
     add_test(NAME game_paths COMMAND game_path_tests)
+    add_executable(tga_tests tests/tga.cpp)
+    target_link_libraries(tga_tests PRIVATE beachlife_data)
+    add_test(NAME tga_images COMMAND tga_tests)
     add_executable(iso_source_tests tests/iso_source.cpp)
     target_link_libraries(iso_source_tests PRIVATE beachlife_data)
     add_test(NAME iso_file_reads

@@ -10,14 +10,18 @@ struct Stamp {
     bool operator==(const Stamp&) const = default;
 };
 
+// None when the ISO cannot be reached now: removed media, a drive without a disc
+// or an unreadable folder are a disconnected ISO, so a remembered set still plays.
 std::optional<Stamp> stamp(const std::filesystem::path& source) {
     std::error_code error;
     const auto status = std::filesystem::status(source, error);
-    if (error == std::errc::no_such_file_or_directory || (!error && !std::filesystem::exists(status))) return {};
-    if (error || !std::filesystem::is_regular_file(status))
-        throw std::runtime_error("The selected ISO is inaccessible or is not a file.");
-    return Stamp{std::filesystem::file_size(source),
-        static_cast<std::int64_t>(std::filesystem::last_write_time(source).time_since_epoch().count())};
+    if (error || !std::filesystem::exists(status)) return {};
+    if (!std::filesystem::is_regular_file(status)) throw std::runtime_error("The selected ISO is not a file.");
+    const auto size = std::filesystem::file_size(source, error);
+    if (error) return {};
+    const auto modified = std::filesystem::last_write_time(source, error);
+    if (error) return {};
+    return Stamp{size, static_cast<std::int64_t>(modified.time_since_epoch().count())};
 }
 } // namespace
 
@@ -69,11 +73,6 @@ void ContentService::cancel() {
 ContentService::Status ContentService::snapshot() const {
     const std::lock_guard lock(mutex_);
     return status_;
-}
-std::shared_ptr<const data::PreparedSource> ContentService::take_ready() {
-    const std::lock_guard lock(mutex_);
-    if (status_.state != State::Ready || !ready_) throw std::runtime_error("Game data is not ready.");
-    return std::exchange(ready_, {});
 }
 void ContentService::publish(const Job& job, Status status, std::shared_ptr<const data::PreparedSource> source) {
     const std::lock_guard lock(mutex_);
@@ -128,14 +127,17 @@ ContentResult open_content(const Settings& settings, const std::filesystem::path
     auto& status = result.status;
     status.source = inspect_source(settings);
     if (settings.source.empty()) return result;
+    if (cache.empty()) throw std::runtime_error("Cannot locate the folder for prepared game files.");
     const auto image = std::filesystem::absolute(platform::utf8_path(settings.source)).lexically_normal();
     const auto path = platform::utf8(image);
     const auto before = stamp(image);
     check_cancelled();
 
-    auto mount = [&](const ContentBinding& binding) {
+    // After publication the prepared set is committed: a late cancel still returns
+    // it, so the caller can remember it instead of preparing it again.
+    auto mount = [&](const ContentBinding& binding, bool committed = false) {
         auto source = std::make_shared<data::PreparedSource>(cache/binding.identity);
-        check_cancelled();
+        if (!committed) check_cancelled();
         status.state = State::Ready;
         status.binding = binding;
         status.language = source->manifest().language;
@@ -166,8 +168,7 @@ ContentResult open_content(const Settings& settings, const std::filesystem::path
         throw std::runtime_error("Preparation needs the original ISO. "+status.source.detail);
     const auto prepared = data::prepare_content(image, cache, options);
     if (stamp(image) != before) throw std::runtime_error("The ISO changed during setup. Select it again to prepare it.");
-    check_cancelled();
-    mount({prepared.manifest.identity(), path, before->size, before->modified});
+    mount({prepared.manifest.identity(), path, before->size, before->modified}, true);
     return result;
 }
 } // namespace beachlife::launcher

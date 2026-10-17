@@ -19,6 +19,10 @@ from an ISO, reads installer cabinets and prepares verified local game data
 for a read-only VFS. Play opens the game window, then checks, prepares and mounts
 those files on a worker behind its loading screen. Completed setup works with
 the ISO disconnected.
+**Game files → Preview title screen** displays the original title artwork from
+the prepared data in the native window. The preview uses the selected graphics
+API and display settings; Esc returns to the launcher. It is an image viewer,
+not the reconstructed game menu.
 The observed English data layout is supported; broader language detection and
 gameplay are still ahead. Play opens the game window on
 Direct3D 12, Vulkan or Metal and runs an empty game loop until the game code is

@@ -156,6 +156,18 @@ overrides the user cache for development. `--frames N` stops after N frames, and
 `game_runtime` integration tests run it hidden on a generated ISO and are skipped
 where no display or GPU device exists, as on hosted CI runners.
 
+View a supported original TGA through the same worker and VFS:
+
+```sh
+./build/debug/beachlife --play --preview-screen Data/Screens/FrontScreen.tga
+```
+
+The selected ISO or prepared cache supplies the image. This explicit preview
+also appears as **Preview title screen** on the launcher's Game files page;
+it does not execute a reconstructed menu. `tga_images` tests generated decoder
+fixtures, `content_startup` checks image progress/cancellation and offline mount
+lifetime, and `game_runtime` presents a generated image when a GPU is available.
+
 The `launcher_updates` test writes packages the way `tools/package_build.py`
 does, plus damaged and hostile archives, and checks the update rules,
 unpacking, installation, rollback and the completion of an interrupted update

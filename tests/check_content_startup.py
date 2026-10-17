@@ -11,7 +11,7 @@ def check(executable):
     with tempfile.TemporaryDirectory(prefix='beachlife-content-startup-') as directory:
         root = Path(directory)
         image = root/'source.iso'
-        image.write_bytes(iso_files(content_files()[0]))
+        image.write_bytes(iso_files(content_files(screen=True)[0]))
         subprocess.run([str(Path(executable).resolve()), str(image), str(root/'cache')], check=True, timeout=60)
 
 

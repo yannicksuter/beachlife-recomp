@@ -38,7 +38,6 @@ public:
     void prepare(); // also explicitly verifies/repairs an existing set
     void cancel();
     Status snapshot() const;
-    std::shared_ptr<const data::PreparedSource> take_ready();
 
 private:
     struct Job {

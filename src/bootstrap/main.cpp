@@ -2,6 +2,7 @@
 #include "launcher/launcher.h"
 #include "runtime/runtime.h"
 #include "data/iso9660.h"
+#include "data/game_path.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
@@ -37,11 +38,13 @@ int main(int argc, char** argv) {
                   "                 [--cache-directory folder]\n"
                   "                 [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --play [--source image.iso] [--config file]\n"
+                  "                 [--preview-screen Data/Screens/FrontScreen.tga]\n"
                   "                 [--frames count] [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --help | --version | --build-info\n\n"
                   "       beachlife --inspect-iso image.iso\n\n"
                   "Open without arguments to launch the graphical interface.\n"
                   "--play opens the game window and prepares files in its loading screen.\n"
+                  "--preview-screen displays an original TGA image through the VFS.\n"
                   "The game code is not reconstructed yet: the game window opens on\n"
                   "the chosen graphics API and runs an empty game loop.");
         return 0;
@@ -50,6 +53,7 @@ int main(int argc, char** argv) {
     options.argc = argc;
     options.argv = argv;
     bool play = false;
+    std::string preview_screen;
     int frames = 0;
     try {
         for (int i = 1; i < argc; ++i) {
@@ -63,6 +67,7 @@ int main(int argc, char** argv) {
             else if (arg == "--cache-directory") options.cache = beachlife::launcher::path_from_utf8(value);
             else if (arg == "--screenshot") options.screenshot = beachlife::launcher::path_from_utf8(value);
             else if (arg == "--update-preview") options.update_preview = value;
+            else if (arg == "--preview-screen") preview_screen = beachlife::data::normalize_game_path(value).display;
             else if (arg == "--frames") {
                 frames = std::stoi(value);
                 if (frames <= 0) throw std::runtime_error("--frames needs a positive count.");
@@ -82,8 +87,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "%s Run beachlife --help.\n", error.what());
         return 2;
     }
-    if (frames && !play) {
-        std::fprintf(stderr, "--frames needs --play. Run beachlife --help.\n");
+    if ((frames || !preview_screen.empty()) && !play) {
+        std::fprintf(stderr, "--frames and --preview-screen need --play. Run beachlife --help.\n");
         return 2;
     }
     // The game window: straight from the command line, or each time Play is pressed,
@@ -91,20 +96,22 @@ int main(int argc, char** argv) {
     beachlife::runtime::Options game;
     const char* base = SDL_GetBasePath();
     game.resources = beachlife::launcher::path_from_utf8(base ? base : "") / "assets" / "launcher";
-    options.auto_play = play;
     game.screenshot = play ? std::exchange(options.screenshot, {}) : std::filesystem::path{};
     game.frames = frames;
     game.hidden = options.smoke;
     game.cache = options.cache;
     for (;;) {
-        auto outcome = beachlife::launcher::run(options);
+        // --play goes straight to the game window; its loading screen prepares the files.
+        auto outcome = play ? beachlife::launcher::play_settings(options) : beachlife::launcher::run(options);
         if (!outcome.play) return outcome.exit_code;
         game.settings = outcome.settings;
         game.config = outcome.config;
         game.prepare_only = outcome.prepare_only;
+        game.preview_screen = play ? preview_screen : outcome.preview_screen;
         const auto result = beachlife::runtime::run(game);
         if (play) return result;
         options.source.clear(); // the launcher shows the saved choice from now on
-        if (outcome.prepare_only) options.page = beachlife::launcher::PageFiles;
+        options.page = outcome.prepare_only || !outcome.preview_screen.empty() ? beachlife::launcher::PageFiles
+                                                                               : beachlife::launcher::PagePlay;
     }
 }

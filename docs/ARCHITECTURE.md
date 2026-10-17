@@ -30,8 +30,9 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. The version getter and file-size helper match after address
-normalization, totaling 113 bytes; the full game layout remains unknown.
+verified. Five reconstructed functions match after address normalization,
+totaling 273 bytes. Two helpers also match their raw bytes
+exactly; the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 
 The host is 64-bit. x86_64 and ARM64 are distinct architectures, even though
@@ -74,6 +75,13 @@ the game starts from. The optional performance overlay (FPS, system GPU and CPU
 usage, also from Recharged) is host presentation only; the game never sees it.
 Renderer-independent settings code handles UTF-8
 paths, bounded settings parsing, atomic replacement and basic source checks.
+
+The explicit image-preview mode uses the same worker and prepared VFS to load
+a selected TGA into an RGBA frame. It supports the palette-based RLE images in
+the game's screen directory. The video layer presents the decoded frame using
+the configured Fit/Stretch mode; the overlay identifies it as an image preview.
+Normal Play still runs the empty loop. This decoder is new host tooling, separate
+from reconstruction of the retail image loader.
 
 The retail DirectDraw/GDI operations determine whether adaptation belongs at
 the API boundary or at a narrow game-renderer interface. That mapping remains

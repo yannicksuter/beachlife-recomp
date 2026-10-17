@@ -61,7 +61,7 @@ bool leaves(const SDL_Event& event) {
 }
 
 // Runs the startup steps on a worker behind the loading screen, then fades out to
-// the game's black back buffer. Returns false when the player leaves first; the
+// the game's back buffer. Returns false when the player leaves first; the
 // error of a failed step is thrown.
 bool start_game(platform::Video& video, const platform::Frame& background, const std::filesystem::path& font,
                 std::vector<StartupStep> steps) {
@@ -138,8 +138,17 @@ int run_game(const Options& options) {
     std::vector<StartupStep> steps;
     steps.push_back(content.prepare());
     if (!options.prepare_only) steps.push_back(content.read());
+    auto preview = std::make_shared<data::TgaImage>();
+    if (!options.prepare_only && !options.preview_screen.empty())
+        steps.push_back(content.preview(options.preview_screen, preview));
     if (!start_game(video, frame, options.resources / "Roboto-Medium.ttf", std::move(steps))) return 0;
     if (options.prepare_only) return 0;
+    if (!options.preview_screen.empty()) {
+        frame.width = preview->width;
+        frame.height = preview->height;
+        frame.pixels = std::move(preview->pixels);
+        SDL_SetWindowTitle(video.window(), "Beach Life - Image preview");
+    }
 
     // The performance overlay, when the Display settings show it.
     std::unique_ptr<FpsOverlay> fps_overlay;
@@ -151,20 +160,22 @@ int run_game(const Options& options) {
         SDL_GetWindowSizeInPixels(video.window(), &width, &height);
         return std::pair{width, height};
     };
-    const float density = std::max(1.0f, SDL_GetWindowPixelDensity(video.window()));
-    // Replaces the loading screen's font: the overlay's Roboto, and the performance
-    // overlay's fonts for the window's current size.
+    // Replaces the loading screen's font: the overlay's Roboto at the window's pixel
+    // density, and the performance overlay's fonts for the window's current size.
+    float font_density = 0;
     const auto build_fonts = [&](int pixel_width, int pixel_height, float pixel_density) {
         io.Fonts->Clear();
-        io.FontDefault = io.Fonts->AddFontFromFileTTF(platform::utf8(options.resources / "Roboto-Medium.ttf").c_str(), 15*density);
+        io.FontDefault = io.Fonts->AddFontFromFileTTF(platform::utf8(options.resources / "Roboto-Medium.ttf").c_str(),
+                                                      15*pixel_density);
         if (!io.FontDefault) throw std::runtime_error("The overlay font is missing. Restore the complete package.");
+        io.FontGlobalScale = 1/pixel_density;
         if (fps_overlay) fps_overlay->add_fonts(*io.Fonts, pixel_width, pixel_height, pixel_density);
+        font_density = pixel_density;
     };
     {
         const auto [width, height] = window_pixels();
-        build_fonts(width, height, density);
+        build_fonts(width, height, std::max(1.0f, SDL_GetWindowPixelDensity(video.window())));
     }
-    io.FontGlobalScale = 1/density;
     ImGui::GetStyle().WindowRounding = 10;
     ImGui::GetStyle().Colors[ImGuiCol_WindowBg] = {0.04f, 0.09f, 0.16f, 0.86f};
 
@@ -187,7 +198,9 @@ int run_game(const Options& options) {
 
         const auto [pixel_width, pixel_height] = window_pixels();
         const float pixel_density = std::max(1.0f, SDL_GetWindowPixelDensity(video.window()));
-        if (fps_overlay && fps_overlay->needs_fonts(pixel_width, pixel_height, pixel_density))
+        // A move to a display with another pixel density, or a resize the
+        // performance overlay's text follows, rebuilds the fonts.
+        if (pixel_density != font_density || (fps_overlay && fps_overlay->needs_fonts(pixel_width, pixel_height, pixel_density)))
             build_fonts(pixel_width, pixel_height, pixel_density);
         video.new_overlay_frame();
         ImGui_ImplSDL3_NewFrame();
@@ -195,8 +208,11 @@ int run_game(const Options& options) {
         ImGui::SetNextWindowPos({16, 16});
         ImGui::Begin("runtime", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-        ImGui::TextUnformatted("Beach Life");
-        ImGui::TextDisabled("No game code yet. Esc returns to the launcher.");
+        ImGui::TextUnformatted(options.preview_screen.empty() ? "Beach Life" : "Image preview");
+        if (!options.preview_screen.empty()) {
+            ImGui::TextUnformatted(options.preview_screen.c_str());
+            ImGui::TextDisabled("%d x %d pixels. Esc returns to the launcher.", frame.width, frame.height);
+        } else ImGui::TextDisabled("No game code yet. Esc returns to the launcher.");
         ImGui::TextDisabled("%s, %.0f FPS", graphics.c_str(), fps);
         ImGui::End();
         if (fps_overlay) fps_overlay->draw(pixel_width, pixel_height, pixel_density);
