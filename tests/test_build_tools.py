@@ -145,7 +145,17 @@ class ReleaseTests(unittest.TestCase):
     @patch.object(release, 'verify_set', return_value=[])
     @patch.object(release, 'read_version', return_value='0.1.0')
     def test_existing_candidate_is_preserved(self, version, verify, command):
-        with patch.object(release, 'api', return_value={'draft': True}):
+        pages = [[{'tag_name': 'v0.0.1'}], [{'tag_name': 'v0.1.0', 'draft': True}]]
+        with patch.object(release, 'api', return_value=pages) as api:
+            release.publish('owner/repo', 'stable', Path('.'), 'a' * 40, 7)
+        api.assert_called_once_with('repos/owner/repo/releases?per_page=100', paginate=True)
+        command.assert_not_called()
+
+    @patch.object(release, 'command')
+    @patch.object(release, 'verify_set', return_value=[])
+    @patch.object(release, 'read_version', return_value='0.1.0')
+    def test_existing_tag_without_release_is_preserved(self, version, verify, command):
+        with patch.object(release, 'api', side_effect=[[], {'ref': 'refs/tags/v0.1.0'}]):
             release.publish('owner/repo', 'stable', Path('.'), 'a' * 40, 7)
         command.assert_not_called()
 
@@ -160,7 +170,7 @@ class ReleaseTests(unittest.TestCase):
     @patch.object(release, 'verify_set', return_value=[])
     @patch.object(release, 'read_version', return_value='0.1.0')
     def test_candidate_is_draft_at_exact_commit(self, version, verify):
-        with patch.object(release, 'api', return_value=None), patch.object(release, 'command') as command:
+        with patch.object(release, 'api', side_effect=[[], None]), patch.object(release, 'command') as command:
             release.publish('owner/repo', 'stable', Path('.'), 'a' * 40, 7)
         args = command.call_args.args
         self.assertIn('--draft', args)

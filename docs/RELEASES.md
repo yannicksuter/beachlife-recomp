@@ -69,6 +69,8 @@ promotion policy. The owner controls final publication.
 Existing tags, published releases and drafts are preserved. Another stable
 commit with the same CMake version still builds artifacts but does not replace
 the existing candidate. Increase the version for a new candidate.
+The pipeline checks the paginated release inventory, including drafts, as well
+as existing tags; GitHub's release-by-tag endpoint alone does not find drafts.
 
 `.github/workflows/test-builds.yml` removes only the closed PR's test releases
 and tags after close/merge. It shares a publication concurrency group and uses
