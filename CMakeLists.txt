@@ -101,4 +101,8 @@ if(BUILD_TESTING)
     add_test(NAME iso_directory_index
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_iso.py"
             "$<TARGET_FILE:beachlife>")
+    add_executable(game_path_tests tests/game_path.cpp src/data/game_path.cpp)
+    target_include_directories(game_path_tests PRIVATE src)
+    target_compile_features(game_path_tests PRIVATE cxx_std_20)
+    add_test(NAME game_paths COMMAND game_path_tests)
 endif()
