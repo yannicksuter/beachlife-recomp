@@ -124,6 +124,13 @@ low byte. It preserves unchecked pointer arithmetic and performs no file-size
 validation. `GetTgaPaletteData` is descriptive; the original symbol and exact
 declaration remain unknown.
 
+`src/tga_pixel_data.cpp` reconstructs the 42-byte pixel-data pointer helper at
+`0x004ea400`. It skips the 18-byte header and the ID length's low byte, then
+adds three bytes per palette entry when the color-map flag's low byte is
+nonzero. Palette length uses only its low 16 bits. It preserves the fixed
+three-byte palette stride and unchecked pointer arithmetic. `GetTgaPixelData`
+is descriptive; the original symbol and exact declaration remain unknown.
+
 ```sh
 python3 tools/matching.py game --compiler /path/to/msvc6.4 \
   --reccmp build/matching/venv/bin/reccmp-reccmp
@@ -131,8 +138,8 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-All five functions currently match after address normalization, totaling 273
-bytes. The filename hash and palette pointer helper each also match all 29 raw
+All six functions currently match after address normalization, totaling 315
+bytes. The filename hash and the two TGA pointer helpers also match all 100 raw
 bytes exactly. Rebuilt constants/imports in the other functions have different
 addresses, so this is not a byte-identical executable or an established
 whole-program layout. The original
@@ -158,12 +165,12 @@ constant; a normalized match alone does not establish a complete binary match.
 Each reconstructed function has been checked with a deliberately incorrect
 source variant. Changing the BLE terminator, filename-hash signedness or TGA
 header offset makes the comparison fail. Generated semantic tests additionally
-check the two pure helpers' boundary values. These checks establish the
+check the pure helpers' boundary values. These checks establish the
 reported machine-code matches; they do not recover original variable names,
 class declarations or the full game's compiler flags.
 
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There are five annotated game functions and no
+does not implement game startup. There are six annotated game functions and no
 established whole-game function denominator.

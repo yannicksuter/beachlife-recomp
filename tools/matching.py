@@ -277,12 +277,15 @@ def game(tool, args):
                      'char* LoadBleFile(const char*);\nchar* volatile fixture_buffer;\n'
                      'unsigned int SoundNameHash(const char*);\nvolatile unsigned int fixture_hash;\n'
                      'unsigned char* GetTgaPaletteData(unsigned char*, unsigned char, unsigned char);\n'
+                     'unsigned char* GetTgaPixelData(unsigned char*, unsigned char, unsigned short, unsigned char);\n'
                      'unsigned char fixture_tga[18];\nunsigned char* volatile fixture_palette;\n'
+                     'unsigned char* volatile fixture_pixels;\n'
                      'extern "C" void fixture_entry() { fixture_result = GetGameVersion(); '
                      'fixture_size = GetFileSize("generated.bin"); '
                      'fixture_buffer = LoadBleFile("generated.ble"); '
                      'fixture_hash = SoundNameHash("generated.wav"); '
-                     'fixture_palette = GetTgaPaletteData(fixture_tga, 0, 1); }\n')
+                     'fixture_palette = GetTgaPaletteData(fixture_tga, 0, 1); '
+                     'fixture_pixels = GetTgaPixelData(fixture_tga, 0, 0, 0); }\n')
     library = tool.runtime_library(folder)
     binary, pdb = tool.build(folder, [*sources, entry], 'BeachLife', ['/fixed:no', library],
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include')])
