@@ -138,6 +138,7 @@ public:
             ImGui::GetStyle().ScaleAllSizes(scale_);
             ImGui::NewFrame();
             draw(display);
+            if (play_) running = false;
             if (close_requested_) {
                 if (settings_ == saved_) running = false;
                 else ImGui::OpenPopup("Save changes?");
@@ -170,6 +171,9 @@ public:
 
     // The updated launcher to start once this one is gone, or empty.
     fs::path restart_program() const { return restart_ ? installed_launcher(package_) : fs::path(); }
+    // Play was pressed: the game starts once the launcher is gone.
+    bool play_requested() const { return play_; }
+    const Settings& settings() const { return settings_; }
 
 private:
     void initialize() {
@@ -588,8 +592,8 @@ private:
 
     float draw_display(ImDrawList* draw, float left, float y, float available) {
         auto& display = settings_.display;
-        y += callout(draw, {left, y}, available, Icon::Info, color::lagoon, "Saved for the native game",
-                     "This preview does not start the game yet, so these settings take effect once it does.") + dp(18);
+        y += callout(draw, {left, y}, available, Icon::Info, color::lagoon, "Used by Play's game window",
+                     "Play opens the game window with these settings. The game code is not reconstructed yet.") + dp(18);
         const float pad = dp(24), ix = left + pad, iw = available - 2*pad, spacing = row_spacing(), field = dp(44);
         const float control = control_width(iw);
         auto row = [&](float& iy, bool first, const char* name, const char* description, float height) {
@@ -682,8 +686,8 @@ private:
         iy += section(draw, {ix, iy}, iw, Icon::Terminal, color::lagoon, "Diagnostics & analytics",
                       "Local tools for investigating problems. No usage data is collected or sent.");
         ImVec2 at = setting_row(draw, iy, ix, iw, true, "Log window",
-                                "Opens a separate window that follows the game's log while it runs. Takes effect once "
-                                "the native game starts.", dp(ui::toggle_size.y));
+                                "Opens a separate window that follows the game's log while it runs. Not available in "
+                                "the runtime preview yet.", dp(ui::toggle_size.y));
         switch_control(draw, "log_window", &settings_.diagnostics.log_window, at);
 
         const std::string folder = path_utf8(config_.parent_path().empty() ? fs::current_path() : config_.parent_path());
@@ -826,10 +830,17 @@ private:
     }
 
     // Why Play cannot start the game yet; empty once it can.
+    // Why Play cannot start; empty once the game files are in order.
     std::string play_blocker() const {
         if (!source_.selected) return "Choose your game files first.";
         if (!source_.readable) return "Your game files need attention.";
-        return "Gameplay is still in development.";
+        return {};
+    }
+
+    // Play keeps unsaved settings by saving them first, then leaves for the game.
+    void play() {
+        if (settings_ != saved_ && !save()) return;
+        play_ = true;
     }
 
     UpdateChannel update_channel() const {
@@ -865,9 +876,11 @@ private:
         const bool narrow = display.x - side < dp(820);
         float x = display.x - dp(24) - dp(150);
         const std::string blocker = play_blocker();
-        ui::primary_button("play", "Play", Icon::Play, {x, top}, {dp(150), height}, blocker.empty(), blocker.empty());
-        if (!blocker.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", blocker.c_str());
+        if (ui::primary_button("play", "Play", Icon::Play, {x, top}, {dp(150), height}, blocker.empty(), blocker.empty()))
+            play();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", blocker.empty() ? "Opens the game window. The game code is not reconstructed yet."
+                                                    : blocker.c_str());
         const float save_width = dp(narrow ? 108 : 124);
         x -= dp(12) + save_width;
         if (ui::secondary_button("save", dirty ? "Save" : "Saved", dirty ? Icon::Check : Icon::None, {x, top},
@@ -1123,31 +1136,35 @@ private:
     fs::path package_;
     std::unique_ptr<UpdateService> updates_;
     UpdateService::Status update_;
-    bool restart_ = false, notice_success_ = false;
+    bool restart_ = false, notice_success_ = false, play_ = false;
     double notice_until_ = 0;
 };
 } // namespace
 
-int run(const Options& options) {
+Outcome run(const Options& options) {
     fs::path restart;
-    int result = 0;
+    Outcome outcome;
     try {
         Launcher launcher(options);
-        result = launcher.run();
+        outcome.exit_code = launcher.run();
         restart = launcher.restart_program();
+        outcome.play = launcher.play_requested() && restart.empty();
+        outcome.settings = launcher.settings();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "Beach Life: %s\n", error.what());
         if (!options.smoke) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Beach Life", error.what(), nullptr);
-        return 1;
+        outcome.exit_code = 1;
+        return outcome;
     }
-    if (restart.empty() || !options.argv) return result;
+    if (restart.empty() || !options.argv) return outcome;
     // An update replaced the program files; the old window and SDL are gone.
     const std::string error = restart_launcher(restart, options.argc, options.argv);
-    if (error.empty()) return 0;
+    if (error.empty()) return outcome;
     const std::string message = "The update is installed, but the launcher could not start again (" + error +
                                 "). Please start it again yourself.";
     std::fprintf(stderr, "Beach Life: %s\n", message.c_str());
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Beach Life", message.c_str(), nullptr);
-    return 1;
+    outcome.exit_code = 1;
+    return outcome;
 }
 } // namespace beachlife::launcher

@@ -1,6 +1,8 @@
 #include "build_version.h"
 #include "launcher/launcher.h"
+#include "runtime/runtime.h"
 #include "data/iso9660.h"
+#include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
 #include <cstdio>
@@ -32,26 +34,36 @@ int main(int argc, char** argv) {
                   "Usage: beachlife [--launcher] [--source image.iso]\n"
                   "                 [--config file] [--page play|files|display|appearance|advanced|about]\n"
                   "                 [--screenshot file.png] [--smoke-test]\n"
+                  "       beachlife --play [--source image.iso] [--config file]\n"
+                  "                 [--frames count] [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --help | --version | --build-info\n\n"
                   "       beachlife --inspect-iso image.iso\n\n"
                   "Open without arguments to launch the graphical interface.\n"
-                  "This preview selects and remembers your game source.\n"
-                  "It does not yet load or run the game.");
+                  "--play opens the game window directly with the saved settings.\n"
+                  "The game code is not reconstructed yet: the game window opens on\n"
+                  "the chosen graphics API and runs an empty game loop.");
         return 0;
     }
     beachlife::launcher::Options options;
     options.argc = argc;
     options.argv = argv;
+    bool play = false;
+    int frames = 0;
     try {
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
             if (arg == "--launcher") continue;
             if (arg == "--smoke-test") { options.smoke = true; continue; }
+            if (arg == "--play") { play = true; continue; }
             if (i+1 == argc) throw std::runtime_error("Unknown or incomplete argument.");
             const std::string value = argv[++i];
             if (arg == "--config") options.config = beachlife::launcher::path_from_utf8(value);
             else if (arg == "--screenshot") options.screenshot = beachlife::launcher::path_from_utf8(value);
             else if (arg == "--update-preview") options.update_preview = value;
+            else if (arg == "--frames") {
+                frames = std::stoi(value);
+                if (frames <= 0) throw std::runtime_error("--frames needs a positive count.");
+            }
             else if (arg == "--source") options.source = value;
             else if (arg == "--page") {
                 if (value == "play") options.page = beachlife::launcher::PagePlay;
@@ -67,5 +79,37 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "%s Run beachlife --help.\n", error.what());
         return 2;
     }
-    return beachlife::launcher::run(options);
+    if (frames && !play) {
+        std::fprintf(stderr, "--frames needs --play. Run beachlife --help.\n");
+        return 2;
+    }
+    // The game window: straight from the command line, or each time Play is pressed,
+    // returning to the launcher afterwards.
+    beachlife::runtime::Options game;
+    const char* base = SDL_GetBasePath();
+    game.resources = beachlife::launcher::path_from_utf8(base ? base : "") / "assets" / "launcher";
+    if (play) {
+        try {
+            if (!options.config.empty()) game.settings = beachlife::launcher::load_settings(options.config);
+            else if (char* folder = SDL_GetPrefPath("BeachLife", "BeachLife")) {
+                game.settings = beachlife::launcher::load_settings(beachlife::launcher::path_from_utf8(folder) / "launcher.cfg");
+                SDL_free(folder);
+            }
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "Beach Life: %s\n", error.what());
+            return 1;
+        }
+        if (!options.source.empty()) game.settings.source = options.source;
+        game.screenshot = options.screenshot;
+        game.frames = frames;
+        game.hidden = options.smoke;
+        return beachlife::runtime::run(game);
+    }
+    for (;;) {
+        const auto outcome = beachlife::launcher::run(options);
+        if (!outcome.play) return outcome.exit_code;
+        game.settings = outcome.settings;
+        beachlife::runtime::run(game);
+        options.source.clear(); // the launcher shows the saved choice from now on
+    }
 }

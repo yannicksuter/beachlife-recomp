@@ -28,6 +28,7 @@ add_library(beachlife_ui STATIC
     "${IMGUI_DIR}/imgui_tables.cpp" "${IMGUI_DIR}/imgui_widgets.cpp"
     "${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp"
     "${IMGUI_DIR}/backends/imgui_impl_sdlrenderer3.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_sdlgpu3.cpp"
     "${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp"
     src/launcher/image.cpp)
 target_include_directories(beachlife_ui SYSTEM PUBLIC
@@ -61,6 +62,8 @@ else()
 endif()
 
 target_sources(beachlife PRIVATE src/launcher/launcher.cpp src/launcher/ui.cpp)
+# The game window Play opens: SDL's GPU API (Direct3D 12, Vulkan or Metal) and the game loop.
+target_sources(beachlife PRIVATE src/runtime/runtime.cpp src/platform/video_sdl_gpu.cpp)
 target_include_directories(beachlife PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core)
 
@@ -68,6 +71,10 @@ if(BUILD_TESTING)
     # Packages written the way tools/package_build.py writes them, then the C++ checks.
     add_executable(launcher_update_tests tests/launcher_updates.cpp)
     target_link_libraries(launcher_update_tests PRIVATE beachlife_launcher_core)
+    # On a real GPU: game files, window, device, loop and clean exit; skipped where no GPU device exists.
+    add_test(NAME game_runtime
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_runtime.py" "$<TARGET_FILE:beachlife>")
+    set_tests_properties(game_runtime PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME launcher_updates
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/launcher_update_fixture.py"
             "$<TARGET_FILE:launcher_update_tests>" "${CMAKE_CURRENT_BINARY_DIR}/launcher-update-tests")

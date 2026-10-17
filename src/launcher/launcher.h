@@ -16,6 +16,13 @@ struct Options {
     bool smoke = false;
 };
 
-int run(const Options& options);
+// How the launcher was left: Play asks the caller to start the game with `settings`.
+struct Outcome {
+    int exit_code = 0;
+    bool play = false;
+    Settings settings;
+};
+
+Outcome run(const Options& options);
 
 } // namespace beachlife::launcher

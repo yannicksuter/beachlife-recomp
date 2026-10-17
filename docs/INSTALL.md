@@ -1,9 +1,9 @@
 # Using a native package
 
-These packages contain the first graphical launcher. It selects and remembers
-a game source; game-content inspection, language detection and gameplay remain
-under development. Play, at the bottom right of every page, stays unavailable
-in this preview; its tooltip says why.
+These packages contain the first graphical launcher and the game window. The
+launcher selects and remembers a game source; Play opens the game window and
+runs the game loop. The game code itself, game-content inspection and language
+detection remain under development.
 
 Download the archive matching your OS and CPU from the GitHub releases page: a
 published release, or a pull request's test build (a prerelease). Extract the
@@ -27,10 +27,10 @@ the file is an ISO 9660 container. It does not yet verify Beach Life's game
 content. Missing, unreadable and unsupported inputs show a specific status.
 
 **Display** holds the window mode, window size, display, scaling, VSync and,
-on Windows, the graphics API (DirectX 12 or Vulkan). They are saved for the
-native game and take effect once it runs; this preview does not start it.
+on Windows, the graphics API (DirectX 12 or Vulkan). Play's game window uses
+them.
 **Advanced** has a Diagnostics & analytics section: a log window for the game
-(also saved for later) and the settings file's location. Nothing is collected
+(saved for later) and the settings file's location. No usage data is collected
 or sent.
 
 Click **Save changes** to remember the path, display, diagnostics, update and
@@ -43,6 +43,18 @@ Closing with unsaved changes offers save, discard and cancel.
 Game-language selection stays unavailable until content inspection can establish
 which translations the selected source actually contains. Installer language
 lists do not establish that. This first launcher's interface is English.
+
+## Play
+
+**Play**, at the bottom right of every page, is available once a readable ISO
+image is selected; its tooltip says why otherwise. It saves unsaved settings,
+closes the launcher and opens the game window with the Display settings:
+window or fullscreen, size, display, Fit or Stretch, VSync and the graphics API
+(Direct3D 12 or Vulkan on Windows, Metal on macOS, Vulkan on Linux). A graphics
+API that is not available is reported, never replaced by another one. The game
+code is not reconstructed yet, so the window shows an empty picture with a
+small overlay naming the graphics API and frame rate. Esc or closing the window
+returns to the launcher.
 
 ## Updates
 

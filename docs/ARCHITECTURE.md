@@ -43,20 +43,28 @@ both targets use little-endian storage. File/save layouts, pointer widths,
 | Service | Native direction |
 | --- | --- |
 | Window, input, events, timing and audio device | SDL3 |
-| Windows graphics | Dawn native D3D12, with Vulkan selectable |
-| macOS graphics, ARM64 and Intel | Dawn native Metal |
-| Linux graphics | Dawn native Vulkan |
+| Windows graphics | SDL3 GPU on Direct3D 12, with Vulkan selectable |
+| macOS graphics, ARM64 and Intel | SDL3 GPU on Metal |
+| Linux graphics | SDL3 GPU on Vulkan |
 | Game files | Read/seek interface over installed folders, images and installer archives |
 | Settings and saves | Writable user storage, separate from read-only game data |
 
 SDL3 and Dear ImGui are integrated for the launcher, with stb decoding the
 declared header image. They build from immutable pinned exports, verified before
-each build. Dawn and the game module remain future work. The host does not need
-Wii/GX compatibility or a browser runtime.
+each build. The game module remains future work. The host does not need Wii/GX
+compatibility or a browser runtime.
 
 The launcher uses SDL's 2D rendering interface, preferring DX12, Metal or Vulkan
-for its host platform, and can fall back to software. This is independent of
-the future Dawn game renderer. Renderer-independent settings code handles UTF-8
+for its host platform, and can fall back to software. The game window is
+separate: `platform::Video` owns the window and the GPU and shows whole frames
+the game composes at its own resolution, scaled to fit or stretched, with an
+ImGui overlay. Its implementation uses SDL's GPU API on the requested backend
+and reports an unavailable one instead of substituting another. Scaling needs
+no shaders; the overlay uses Dear ImGui's precompiled SPIR-V, DXBC and metallib
+shaders. Another GPU provider, such as Dawn, could implement the same interface
+if the game's rendering needs one. `runtime::run` opens the game files and the
+window and runs the fixed-step game loop, currently with an empty back buffer.
+Renderer-independent settings code handles UTF-8
 paths, bounded settings parsing, atomic replacement and basic source checks.
 
 The retail DirectDraw/GDI operations determine whether adaptation belongs at

@@ -16,12 +16,13 @@ and revert work. The launcher updates itself from published releases or pull
 requests' test builds.
 The independent [data tool](docs/DATA.md) indexes and reads files directly
 from an ISO and inspects installer cabinet metadata. Compressed asset reads,
-language detection and gameplay are still ahead;
-Play remains unavailable. Decompilation and native development advance together.
+language detection and gameplay are still ahead. Play opens the game window on
+Direct3D 12, Vulkan or Metal and runs an empty game loop until the game code is
+reconstructed. Decompilation and native development advance together.
 
 The intended graphics backends are DX12/Vulkan on Windows, Metal on macOS, and
 Vulkan on Linux. The launcher uses pinned SDL3 and Dear ImGui, following
-Recharged's design. Dawn integration for the reconstructed game is upcoming.
+Recharged's design; the game window uses SDL3's GPU API on those backends.
 
 ![Beach Life launcher preview](docs/images/launcher.png)
 
@@ -71,8 +72,8 @@ src/bootstrap/       native entry point and command line
 src/data/            read-only game sources and the headless data tool
 decomp/              faithful reconstruction, target identity and matching tools
 src/launcher/        graphical launcher, source selection and preferences
-src/platform/        future native graphics, audio, input and file services
-src/runtime/         future reconstructed-game integration
+src/platform/        native graphics (the game window), audio, input and file services
+src/runtime/         the game loop and reconstructed-game integration
 extern/              pinned dependency checkouts; builds use prepared exports
 patches/             faithful and optional tweak patch series
 assets/              launcher resources and their provenance

@@ -133,6 +133,12 @@ runs never check for updates; `--update-preview STATE` shows a made-up update
 state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
 `downloading`, `failed` or `installfailed`).
 
+`--play` opens the game window directly with the saved settings (or `--config`
+and `--source`), as Play does; `--frames N` stops it after N frames, and
+`--screenshot file.png` then saves the last one. The `game_runtime` test runs
+it hidden on a generated ISO and is skipped where no display or GPU device
+exists, as on hosted CI runners.
+
 The `launcher_updates` test writes packages the way `tools/package_build.py`
 does, plus damaged and hostile archives, and checks the update rules,
 unpacking, installation, rollback and the completion of an interrupted update
