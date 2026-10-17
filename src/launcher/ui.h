@@ -81,7 +81,8 @@ bool icon_button(const char* id, Icon kind, const char* tooltip, ImVec2 pos, flo
 void spinner(ImDrawList* draw, ImVec2 center, float radius, ImU32 color);
 inline constexpr ImVec2 toggle_size{46, 26}; // design units
 // A field that opens a list below it, or above it near the window's bottom;
-// `selected` may be -1 (nothing chosen).
-bool dropdown(const char* id, const std::vector<std::string>& items, int* selected, ImVec2 pos, ImVec2 size);
+// `selected` may be -1 (nothing chosen). A disabled field shows its choice dimmed.
+bool dropdown(const char* id, const std::vector<std::string>& items, int* selected, ImVec2 pos, ImVec2 size,
+              bool enabled = true);
 
 } // namespace beachlife::launcher::ui

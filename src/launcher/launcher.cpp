@@ -1,9 +1,11 @@
 #include "launcher.h"
+#include "content_service.h"
 #include "image.h"
 #include "ui.h"
 #include "update_install.h"
 #include "update_service.h"
 #include "build_version.h"
+#include "platform/app_icon.h"
 
 #include <SDL3/SDL.h>
 #include "imgui.h"
@@ -91,6 +93,7 @@ class Launcher {
 public:
     explicit Launcher(const Options& options) : options_(options), page_(options.page) {}
     ~Launcher() {
+        content_.reset(); // cancel and finish file work before tearing down the interface
         if (renderer_backend_) ImGui_ImplSDLRenderer3_Shutdown();
         if (platform_backend_) ImGui_ImplSDL3_Shutdown();
         if (ImGui::GetCurrentContext()) ImGui::DestroyContext();
@@ -106,28 +109,35 @@ public:
 
     int run() {
         initialize();
+        if (options_.auto_play) {
+            play();
+            return exit_code_;
+        }
         int frame = 0;
         bool running = true;
         while (running) {
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
                 ImGui_ImplSDL3_ProcessEvent(&event);
-                if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+                if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                     close_requested_ = true;
+                    content_->cancel();
+                }
                 if (event.type == SDL_EVENT_DROP_FILE && event.drop.data) {
                     settings_.source = event.drop.data;
-                    source_ = inspect_source(settings_);
+                    select_source();
                     page_ = PageFiles;
                 }
             }
             consume_dialog();
+            poll_content();
             update_ = updates_->snapshot();
             // The new files are in place: restart into them, after any unsaved settings.
             if (update_.state == UpdateService::State::Installed && !restart_) {
                 restart_ = true;
                 close_requested_ = true;
             }
-            if (options_.smoke && options_.screenshot.empty()) page_ = (frame / 3) % PageCount;
+            if (options_.smoke && !options_.auto_play && options_.screenshot.empty()) page_ = (frame / 3) % PageCount;
             ImGui_ImplSDL3_NewFrame();
             const auto display = ImGui::GetIO().DisplaySize;
             scale_ = std::min({settings_.scale / 100.0f, display.x / 960.0f, display.y / 620.0f});
@@ -138,6 +148,7 @@ public:
             ImGui::GetStyle().ScaleAllSizes(scale_);
             ImGui::NewFrame();
             draw(display);
+            if (play_) running = false;
             if (close_requested_) {
                 if (settings_ == saved_) running = false;
                 else ImGui::OpenPopup("Save changes?");
@@ -158,18 +169,23 @@ public:
                 running = false;
             }
             require(SDL_RenderPresent(renderer_), "Cannot present the launcher");
-            if (options_.smoke && ++frame >= 3 * PageCount) running = false;
-            else if (!options_.smoke) ++frame;
+            ++frame;
+            if (options_.smoke && !options_.auto_play && frame >= 3 * PageCount) running = false;
             SDL_Delay(8);
         }
         if (options_.smoke) std::puts("Launcher window, artwork, fonts and pages verified.");
         if (options_.smoke || !options_.screenshot.empty())
             std::printf("Launcher renderer: %s\n", SDL_GetRendererName(renderer_));
-        return 0;
+        return exit_code_;
     }
 
     // The updated launcher to start once this one is gone, or empty.
     fs::path restart_program() const { return restart_ ? installed_launcher(package_) : fs::path(); }
+    // Play was pressed: the game starts once the launcher is gone.
+    bool play_requested() const { return play_; }
+    bool prepare_only() const { return prepare_only_; }
+    const Settings& settings() const { return settings_; }
+    const fs::path& config() const { return config_; }
 
 private:
     void initialize() {
@@ -183,10 +199,16 @@ private:
         } else config_ = options_.config;
         try { saved_ = settings_ = load_settings(config_); }
         catch (const std::exception& error) { notice_ = error.what(); }
-        if (!options_.source.empty()) settings_.source = options_.source;
-        source_ = inspect_source(settings_);
+        if (!options_.source.empty()) {
+            settings_.source = options_.source;
+            settings_.content = {}; // an explicit selection always checks the image again
+        }
+        content_ = std::make_unique<ContentService>(options_.cache.empty() ? data::default_content_directory() : options_.cache);
+        content_->select(settings_);
+        content_status_ = content_->snapshot();
+        source_ = content_status_.source;
         const auto flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
-            (options_.smoke ? SDL_WINDOW_HIDDEN : 0);
+            (options_.smoke || options_.auto_play ? SDL_WINDOW_HIDDEN : 0);
         window_ = SDL_CreateWindow((std::string("Beach Life ") + build::version).c_str(), 1180, 760, flags);
         require(window_ != nullptr, "Cannot create the launcher window");
         SDL_SetWindowMinimumSize(window_, 900, 600);
@@ -206,6 +228,7 @@ private:
         const char* base = SDL_GetBasePath();
         require(base != nullptr, "Cannot locate launcher resources");
         const auto resources = path_from_utf8(base) / "assets" / "launcher";
+        platform::set_app_icon(window_, resources.parent_path() / "app" / "icon.png");
         require(load_artwork(renderer_, path_utf8(resources / "header.jpg").c_str(), artwork_),
                 "Cannot load header.jpg; keep the package resources with the application");
         require(load_picture(path_utf8(resources / "logo.png").c_str(), logo_),
@@ -213,7 +236,7 @@ private:
         // Updates: the package this launcher was unpacked from (none for a local build).
         package_ = package_folder(path_from_utf8(base));
         updates_ = std::make_unique<UpdateService>(parse_build_identity(build::json), package_);
-        const bool offline = options_.smoke || !options_.screenshot.empty();
+        const bool offline = options_.smoke || options_.auto_play || !options_.screenshot.empty();
         if (!offline) {
             try {
                 const auto replaced = finish_updates(package_);
@@ -341,6 +364,8 @@ private:
     }
 
     Badge source_badge() const {
+        if (content_status_.state == ContentService::State::Ready) return {Icon::Check, color::palm};
+        if (content_status_.busy()) return {Icon::Refresh, color::lagoon};
         if (!source_.selected) return {Icon::Disc, color::lagoon};
         if (!source_.readable) return {Icon::Warning, color::amber};
         return {Icon::Check, color::palm};
@@ -357,10 +382,12 @@ private:
         const float card_width = (right - left - 2*gap) / 3;
         const auto& view = settings_.display;
         summary_card("files", {left, card_y}, {card_width, card_height}, Icon::Disc, status.tint, "Game files",
+                     content_status_.state == ContentService::State::Ready ? "Ready to play" :
                      source_.readable ? source_name() : source_.selected ? source_.title : "Not selected yet",
                      source_detail(), PageFiles);
         summary_card("language", {left + card_width + gap, card_y}, {card_width, card_height}, Icon::Globe,
-                     color::lagoon, "Game language", "Not detected yet", "Offered from your game data", PageFiles);
+                     color::lagoon, "Game language", content_status_.language == "en" ? "English" : "Not detected yet",
+                     "Offered from your game data", PageFiles);
         summary_card("display", {left + 2*(card_width + gap), card_y}, {card_width, card_height}, Icon::Monitor,
                      color::sun, "Display",
                      view.mode == WindowMode::Fullscreen ? "Fullscreen" : size_label(view.width, view.height, false) + " window",
@@ -383,6 +410,9 @@ private:
     }
 
     std::string source_detail() const {
+        if (content_status_.state == ContentService::State::Ready)
+            return std::to_string(content_status_.files) + " local files ready";
+        if (content_status_.busy()) return "Checking local game files";
         if (!source_.selected) return "Your disc image (.iso)";
         if (!source_.readable) return "Needs your attention";
         char size[48];
@@ -493,7 +523,7 @@ private:
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {dp(14), (field_height - ui::font_size(Font::Body)) * 0.5f});
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, dp(12));
         if (ImGui::InputTextWithHint("##source", "Select an .iso file, paste its path, or drag it into this window", &settings_.source))
-            source_ = inspect_source(settings_);
+            select_source();
         ImGui::PopStyleVar(2);
         bool pending;
         { const std::lock_guard lock(dialog_->mutex); pending = dialog_->pending; }
@@ -509,6 +539,32 @@ private:
         source_panel.end(iy);
         y = iy + dp(18);
 
+        PanelScope content_panel(draw, {left, y}, available);
+        iy = y + pad;
+        const auto state = content_status_.state;
+        const bool ready = state == ContentService::State::Ready;
+        iy += section(draw, {ix, iy}, iw, Icon::Folder, ready ? color::palm : color::lagoon, "Local game data",
+                      ready ? "Your prepared files are ready. The ISO can be disconnected."
+                            : "Prepare your files once, then play from this computer. Your ISO stays unchanged.");
+        if (content_status_.busy()) {
+            ui::text(draw, Font::Body, {ix, iy}, col(color::text), "Checking local game files...");
+            iy += dp(28);
+        } else {
+            std::string detail = ready ? std::to_string(content_status_.files) + " files prepared. Verify and repair if files are damaged."
+                : state == ContentService::State::Cancelled ? "Preparation cancelled. You can resume when ready."
+                : "Play prepares the files in the game's loading screen. You can also prepare them now.";
+            if (!content_status_.error.empty()) detail = content_status_.error;
+            ui::text(draw, Font::Caption, {ix, iy}, col(content_status_.error.empty() ? color::muted : color::amber), detail.c_str(), iw);
+            iy += ui::text_size(Font::Caption, detail.c_str(), iw).y + dp(18);
+            if (ui::secondary_button("prepare", ready ? "Verify and repair" : "Prepare files", Icon::Refresh,
+                                     {ix, iy}, {dp(190), dp(42)}, source_.readable && !update_busy())) {
+                play(true);
+            }
+        }
+        iy += dp(42) + pad;
+        content_panel.end(iy);
+        y = iy + dp(18);
+
         PanelScope language_panel(draw, {left, y}, available);
         iy = y + pad;
         iy += section(draw, {ix, iy}, iw, Icon::Globe, color::lagoon, "Game language",
@@ -517,7 +573,7 @@ private:
         draw->AddRectFilled(box, box_end, col({0.02f, 0.05f, 0.09f, 1}, 0.45f), dp(12));
         draw->AddRect(box, box_end, col(color::white, 0.06f), dp(12), 0, 1);
         ui::text(draw, Font::Body, {box.x + dp(14), box.y + (dp(44) - ui::font_size(Font::Body)) * 0.5f},
-                 col(color::dim), "Waiting for content detection");
+                 col(ready ? color::text : color::dim), content_status_.language == "en" ? "English" : "Waiting for content detection");
         const ImVec2 caret{box_end.x - dp(22), box.y + dp(22)};
         const ImVec2 points[] = {{caret.x - dp(5), caret.y - dp(2.5f)}, {caret.x, caret.y + dp(2.5f)}, {caret.x + dp(5), caret.y - dp(2.5f)}};
         draw->AddPolyline(points, 3, col(color::dim), 0, dp(1.6f));
@@ -588,8 +644,8 @@ private:
 
     float draw_display(ImDrawList* draw, float left, float y, float available) {
         auto& display = settings_.display;
-        y += callout(draw, {left, y}, available, Icon::Info, color::lagoon, "Saved for the native game",
-                     "This preview does not start the game yet, so these settings take effect once it does.") + dp(18);
+        y += callout(draw, {left, y}, available, Icon::Info, color::lagoon, "Used by Play's game window",
+                     "Play opens the game window with these settings. The game code is not reconstructed yet.") + dp(18);
         const float pad = dp(24), ix = left + pad, iw = available - 2*pad, spacing = row_spacing(), field = dp(44);
         const float control = control_width(iw);
         auto row = [&](float& iy, bool first, const char* name, const char* description, float height) {
@@ -672,6 +728,20 @@ private:
 #endif
         iy += pad - spacing;
         picture_panel.end(iy);
+        y = iy + dp(18);
+
+        PanelScope overlay_panel(draw, {left, y}, available);
+        iy = y + pad;
+        iy += section(draw, {ix, iy}, iw, Icon::Info, color::palm, "Performance overlay", "FPS, system GPU and CPU usage.");
+        at = row(iy, true, "On screen", "A compact row in a corner, also in fullscreen.", toggle_height);
+        switch_control(draw, "fps_overlay", &display.fps_overlay, at);
+        at = row(iy, false, "Corner", "Where the performance overlay sits.", field);
+        static const std::vector<std::string> corners{"Top left", "Top right", "Bottom left", "Bottom right"};
+        int corner = static_cast<int>(display.fps_overlay_corner);
+        if (ui::dropdown("fps_corner", corners, &corner, at, {control, field}, display.fps_overlay))
+            display.fps_overlay_corner = static_cast<OverlayCorner>(corner);
+        iy += pad - spacing;
+        overlay_panel.end(iy);
         return iy;
     }
 
@@ -682,8 +752,8 @@ private:
         iy += section(draw, {ix, iy}, iw, Icon::Terminal, color::lagoon, "Diagnostics & analytics",
                       "Local tools for investigating problems. No usage data is collected or sent.");
         ImVec2 at = setting_row(draw, iy, ix, iw, true, "Log window",
-                                "Opens a separate window that follows the game's log while it runs. Takes effect once "
-                                "the native game starts.", dp(ui::toggle_size.y));
+                                "Opens a separate window that follows the game's log while it runs. Not available in "
+                                "the runtime preview yet.", dp(ui::toggle_size.y));
         switch_control(draw, "log_window", &settings_.diagnostics.log_window, at);
 
         const std::string folder = path_utf8(config_.parent_path().empty() ? fs::current_path() : config_.parent_path());
@@ -825,11 +895,61 @@ private:
         return iy;
     }
 
-    // Why Play cannot start the game yet; empty once it can.
+    bool update_busy() const {
+        return update_.state == UpdateService::State::Downloading || update_.state == UpdateService::State::Installing ||
+               update_.state == UpdateService::State::Installed;
+    }
+
+    // Play can prepare a readable ISO or use a previously prepared, offline set.
     std::string play_blocker() const {
+        if (update_busy()) return "Wait for the application update to finish.";
+        if (content_status_.busy()) return "Checking your game files.";
+        if (content_status_.state == ContentService::State::Ready) return {};
         if (!source_.selected) return "Choose your game files first.";
         if (!source_.readable) return "Your game files need attention.";
-        return "Gameplay is still in development.";
+        return {};
+    }
+
+    void select_source(bool clear_binding = true) {
+        if (clear_binding) settings_.content = {};
+        failed_binding_.clear();
+        content_->select(settings_);
+        content_status_ = content_->snapshot();
+        source_ = content_status_.source;
+    }
+
+    void setup_failed(const std::string& error) {
+        show_notice(error);
+        if (options_.auto_play) {
+            std::fprintf(stderr, "Beach Life: %s\n", error.c_str());
+            exit_code_ = 1;
+        }
+    }
+
+    void poll_content() {
+        content_status_ = content_->snapshot();
+        source_ = content_status_.source;
+        using State = ContentService::State;
+        if (content_status_.state == State::Ready) {
+            const auto& binding = content_status_.binding;
+            settings_.content = binding;
+            // Remember completed setup without also saving display edits made while it ran.
+            if (saved_.content != binding && saved_.source == binding.source && failed_binding_ != binding.identity) {
+                auto stored = saved_;
+                stored.content = binding;
+                try { save_settings(config_, stored); saved_ = std::move(stored); }
+                catch (const std::exception& error) { failed_binding_ = binding.identity; setup_failed(error.what()); return; }
+            }
+        }
+    }
+
+    // The game window owns setup progress. Its worker rechecks the source stamp,
+    // even if the launcher's readiness check succeeded earlier.
+    void play(bool prepare_only = false) {
+        if (settings_ != saved_ && !save()) { setup_failed(notice_); return; }
+        content_->cancel(); // release the launcher's mount before setup/repair
+        prepare_only_ = prepare_only;
+        play_ = true;
     }
 
     UpdateChannel update_channel() const {
@@ -865,9 +985,11 @@ private:
         const bool narrow = display.x - side < dp(820);
         float x = display.x - dp(24) - dp(150);
         const std::string blocker = play_blocker();
-        ui::primary_button("play", "Play", Icon::Play, {x, top}, {dp(150), height}, blocker.empty(), blocker.empty());
-        if (!blocker.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", blocker.c_str());
+        if (ui::primary_button("play", "Play", Icon::Play, {x, top}, {dp(150), height}, blocker.empty(), blocker.empty()))
+            play();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", blocker.empty() ? "Opens the game window. The game code is not reconstructed yet."
+                                                    : blocker.c_str());
         const float save_width = dp(narrow ? 108 : 124);
         x -= dp(12) + save_width;
         if (ui::secondary_button("save", dirty ? "Save" : "Saved", dirty ? Icon::Check : Icon::None, {x, top},
@@ -880,7 +1002,7 @@ private:
                                      : ui::secondary_button("revert", "Revert", Icon::Revert, {x, top}, {revert_width, height}, dirty);
         if (reverted) {
             settings_ = saved_;
-            source_ = inspect_source(settings_);
+            select_source(false);
         }
 
         // Updates on the left: check again, the channel, and what the last check found.
@@ -989,8 +1111,10 @@ private:
         if (action.empty()) return;
         const ImVec2 button{at.x + room - action_width, at.y - height * 0.5f};
         if (update_.state == State::Available && update_.install_blocker.empty()) {
-            if (ui::primary_button("update", action.c_str(), Icon::Download, button, {action_width, height})) updates_->install();
-        } else if (ui::secondary_button("update", action.c_str(), Icon::None, button, {action_width, height})) {
+            if (ui::primary_button("update", action.c_str(), Icon::Download, button, {action_width, height},
+                                   !content_status_.busy() && !play_)) updates_->install();
+        } else if (ui::secondary_button("update", action.c_str(), Icon::None, button, {action_width, height},
+                                        update_.state != State::InstallFailed || (!content_status_.busy() && !play_))) {
             if (update_.state == State::Downloading) updates_->cancel();
             else if (update_.state == State::InstallFailed) updates_->install();
             else if (!SDL_OpenURL(update_.offer->page.c_str())) show_notice(std::string("Cannot open the page: ") + SDL_GetError());
@@ -1081,7 +1205,7 @@ private:
         if (!dialog_->error.empty()) notice_ = "Cannot open the file picker: " + dialog_->error + ". You can paste the path instead.";
         if (!dialog_->path.empty()) {
             settings_.source = dialog_->path;
-            source_ = inspect_source(settings_);
+            select_source();
             notice_.clear();
         }
         dialog_->path.clear();
@@ -1095,7 +1219,6 @@ private:
                 settings_.source = path_utf8(fs::absolute(path_from_utf8(settings_.source)).lexically_normal());
             save_settings(config_, settings_);
             saved_ = settings_;
-            source_ = inspect_source(settings_);
             notice_.clear();
             return true;
         } catch (const std::exception& error) { notice_ = error.what(); return false; }
@@ -1105,6 +1228,11 @@ private:
     fs::path config_;
     Settings settings_, saved_;
     SourceStatus source_;
+    std::unique_ptr<ContentService> content_;
+    ContentService::Status content_status_;
+    std::string failed_binding_;
+    bool prepare_only_ = false;
+    int exit_code_ = 0;
     std::string notice_;
     std::string font_path_;
     SDL_Window* window_ = nullptr;
@@ -1123,31 +1251,37 @@ private:
     fs::path package_;
     std::unique_ptr<UpdateService> updates_;
     UpdateService::Status update_;
-    bool restart_ = false, notice_success_ = false;
+    bool restart_ = false, notice_success_ = false, play_ = false;
     double notice_until_ = 0;
 };
 } // namespace
 
-int run(const Options& options) {
+Outcome run(const Options& options) {
     fs::path restart;
-    int result = 0;
+    Outcome outcome;
     try {
         Launcher launcher(options);
-        result = launcher.run();
+        outcome.exit_code = launcher.run();
         restart = launcher.restart_program();
+        outcome.play = launcher.play_requested() && restart.empty();
+        outcome.prepare_only = launcher.prepare_only();
+        outcome.settings = launcher.settings();
+        outcome.config = launcher.config();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "Beach Life: %s\n", error.what());
         if (!options.smoke) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Beach Life", error.what(), nullptr);
-        return 1;
+        outcome.exit_code = 1;
+        return outcome;
     }
-    if (restart.empty() || !options.argv) return result;
+    if (restart.empty() || !options.argv) return outcome;
     // An update replaced the program files; the old window and SDL are gone.
     const std::string error = restart_launcher(restart, options.argc, options.argv);
-    if (error.empty()) return 0;
+    if (error.empty()) return outcome;
     const std::string message = "The update is installed, but the launcher could not start again (" + error +
                                 "). Please start it again yourself.";
     std::fprintf(stderr, "Beach Life: %s\n", message.c_str());
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Beach Life", message.c_str(), nullptr);
-    return 1;
+    outcome.exit_code = 1;
+    return outcome;
 }
 } // namespace beachlife::launcher

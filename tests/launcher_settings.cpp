@@ -25,9 +25,11 @@ int main() {
         settings.scale = 150;
         save_settings(file, settings);
         check(load_settings(file) == settings, "Saving must replace the previous file");
-        settings.display = {WindowMode::Fullscreen, 1920, 1080, 2, Scaling::Stretch, false, GraphicsApi::Vulkan};
+        settings.display = {WindowMode::Fullscreen, 1920, 1080, 2, Scaling::Stretch, false, GraphicsApi::Vulkan,
+                            true, OverlayCorner::BottomLeft};
         settings.diagnostics.log_window = true;
         settings.updates = {false, UpdateChoice::Test};
+        settings.content = {std::string(64, 'a'), settings.source, 123456789, -6789012345};
         save_settings(file, settings);
         check(load_settings(file) == settings, "Display, diagnostics and update settings must survive saving");
         auto write = [&](const std::string& text) { std::ofstream out(file, std::ios::binary); out << text; };
@@ -55,6 +57,19 @@ int main() {
         auto partial = Settings{};
         partial.display.vsync = false;
         check(load_settings(file) == partial, "Missing keys must keep their defaults");
+        check(rejects("beachlife-launcher 3\ncontent.identity \"../other\"\n"), "Content identities cannot escape the cache");
+        check(rejects("beachlife-launcher 3\ncontent.size -1\n"), "Content size cannot be negative");
+        check(rejects("beachlife-launcher 3\ncontent.identity \"" + std::string(64, 'a') + "\"\n"),
+              "Content identities need their original source reference");
+        check(rejects("beachlife-launcher 3\ndisplay.fps_overlay on\n"), "Overlay settings need format 4");
+        check(rejects("beachlife-launcher 4\ndisplay.fps_overlay_corner middle\n"), "Unknown overlay corners must be rejected");
+        check(rejects("beachlife-launcher 5\n") && rejects("beachlife-launcher 40\n"), "Newer formats must be rejected");
+        write("beachlife-launcher 4\ndisplay.fps_overlay on\ndisplay.fps_overlay_corner top-left\n");
+        auto overlay = Settings{};
+        overlay.display.fps_overlay = true;
+        overlay.display.fps_overlay_corner = OverlayCorner::TopLeft;
+        check(load_settings(file) == overlay, "Overlay settings must load from format 4");
+        write("beachlife-launcher 2\ndisplay.vsync off\n");
         settings.display.width = 100;
         bool too_small = false;
         try { save_settings(file, settings); } catch (const std::runtime_error&) { too_small = true; }

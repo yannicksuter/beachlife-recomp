@@ -22,18 +22,37 @@ endfunction()
 beachlife_add_sdl()
 add_dependencies(SDL3-static verify_prepared)
 
+# FreeType rasterizes the game window's text (the loading screen and overlays) as
+# Recharged does; no optional codecs or shaping are needed for a TrueType font.
+function(beachlife_add_freetype)
+    set(BUILD_SHARED_LIBS OFF)
+    set(SKIP_INSTALL_ALL ON)
+    set(FT_DISABLE_BROTLI ON)
+    set(FT_DISABLE_HARFBUZZ ON)
+    set(FT_DISABLE_PNG ON)
+    set(FT_DISABLE_ZLIB ON)
+    set(FT_DISABLE_BZIP2 ON)
+    add_subdirectory("${BEACHLIFE_PREPARED}/freetype" "${CMAKE_BINARY_DIR}/extern/freetype" EXCLUDE_FROM_ALL)
+endfunction()
+beachlife_add_freetype()
+add_dependencies(freetype verify_prepared)
+
 set(IMGUI_DIR "${BEACHLIFE_PREPARED}/imgui")
+# The launcher keeps ImGui's default rasterizer; the game window selects FreeType
+# for its own font atlas (ImGuiFreeType::GetBuilderForFreeType).
 add_library(beachlife_ui STATIC
     "${IMGUI_DIR}/imgui.cpp" "${IMGUI_DIR}/imgui_draw.cpp"
     "${IMGUI_DIR}/imgui_tables.cpp" "${IMGUI_DIR}/imgui_widgets.cpp"
     "${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp"
     "${IMGUI_DIR}/backends/imgui_impl_sdlrenderer3.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_sdlgpu3.cpp"
     "${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp"
+    "${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp"
     src/launcher/image.cpp)
 target_include_directories(beachlife_ui SYSTEM PUBLIC
-    "${IMGUI_DIR}" "${IMGUI_DIR}/backends" "${IMGUI_DIR}/misc/cpp")
+    "${IMGUI_DIR}" "${IMGUI_DIR}/backends" "${IMGUI_DIR}/misc/cpp" "${IMGUI_DIR}/misc/freetype")
 target_include_directories(beachlife_ui SYSTEM PRIVATE "${BEACHLIFE_PREPARED}/stb")
-target_link_libraries(beachlife_ui PUBLIC SDL3::SDL3)
+target_link_libraries(beachlife_ui PUBLIC SDL3::SDL3 PRIVATE freetype)
 target_compile_features(beachlife_ui PUBLIC cxx_std_20)
 add_dependencies(beachlife_ui verify_prepared)
 
@@ -43,12 +62,13 @@ add_dependencies(beachlife_ui verify_prepared)
 find_package(Threads REQUIRED)
 add_library(beachlife_launcher_core STATIC
     src/launcher/settings.cpp
+    src/launcher/content_service.cpp
     src/launcher/update_check.cpp src/launcher/update_install.cpp src/launcher/update_service.cpp
-    src/platform/http_client.cpp src/platform/json.cpp src/platform/sha256.cpp)
+    src/platform/http_client.cpp)
 target_include_directories(beachlife_launcher_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_compile_features(beachlife_launcher_core PUBLIC cxx_std_20)
 set_target_properties(beachlife_launcher_core PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(beachlife_launcher_core PRIVATE ZLIB::ZLIBSTATIC PUBLIC Threads::Threads)
+target_link_libraries(beachlife_launcher_core PRIVATE ZLIB::ZLIBSTATIC beachlife_formats PUBLIC Threads::Threads beachlife_cabinet)
 if(WIN32)
     target_link_libraries(beachlife_launcher_core PRIVATE winhttp)
 else()
@@ -60,14 +80,59 @@ else()
     target_compile_options(beachlife_launcher_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# System CPU/GPU usage for the game window's performance overlay: Windows PDH,
+# macOS IOKit, Linux /proc and sysfs, NVIDIA's NVML loaded only when present.
+add_library(beachlife_system_usage STATIC src/platform/system_usage.cpp)
+target_include_directories(beachlife_system_usage PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_compile_features(beachlife_system_usage PUBLIC cxx_std_20)
+target_link_libraries(beachlife_system_usage PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+if(WIN32)
+    target_link_libraries(beachlife_system_usage PRIVATE pdh)
+elseif(APPLE)
+    target_link_libraries(beachlife_system_usage PRIVATE "-framework IOKit" "-framework CoreFoundation")
+endif()
+
 target_sources(beachlife PRIVATE src/launcher/launcher.cpp src/launcher/ui.cpp)
+# The game window Play opens: SDL's GPU API (Direct3D 12, Vulkan or Metal) and the game loop.
+target_sources(beachlife PRIVATE src/runtime/runtime.cpp src/runtime/startup.cpp src/runtime/loading_view.cpp src/runtime/content_startup.cpp src/runtime/fps_overlay.cpp
+    src/platform/video_sdl_gpu.cpp src/platform/app_icon.cpp)
 target_include_directories(beachlife PRIVATE "${CMAKE_SOURCE_DIR}/src")
-target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core)
+target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core beachlife_system_usage)
 
 if(BUILD_TESTING)
+    add_executable(launcher_content_tests tests/launcher_content.cpp)
+    target_link_libraries(launcher_content_tests PRIVATE beachlife_launcher_core)
+    add_test(NAME launcher_content
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_launcher_content.py"
+            "$<TARGET_FILE:launcher_content_tests>")
+    add_test(NAME game_startup
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_startup.py" "$<TARGET_FILE:beachlife>")
+    set_tests_properties(game_startup PROPERTIES SKIP_RETURN_CODE 77)
+    # The work behind the game window's loading screen, without a window.
+    add_executable(startup_work_tests tests/startup_work.cpp src/runtime/startup.cpp)
+    target_include_directories(startup_work_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_compile_features(startup_work_tests PRIVATE cxx_std_20)
+    target_link_libraries(startup_work_tests PRIVATE Threads::Threads)
+    add_test(NAME startup_work COMMAND startup_work_tests)
+    add_executable(system_usage_tests tests/system_usage.cpp)
+    target_link_libraries(system_usage_tests PRIVATE beachlife_system_usage)
+    add_test(NAME system_usage COMMAND system_usage_tests)
+    add_executable(fps_overlay_layout_tests tests/fps_overlay_layout.cpp)
+    target_include_directories(fps_overlay_layout_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_compile_features(fps_overlay_layout_tests PRIVATE cxx_std_20)
+    add_test(NAME fps_overlay_layout COMMAND fps_overlay_layout_tests)
+    add_executable(content_startup_tests tests/content_startup.cpp src/runtime/content_startup.cpp src/runtime/startup.cpp)
+    target_include_directories(content_startup_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(content_startup_tests PRIVATE beachlife_launcher_core)
+    add_test(NAME content_startup
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_content_startup.py" "$<TARGET_FILE:content_startup_tests>")
     # Packages written the way tools/package_build.py writes them, then the C++ checks.
     add_executable(launcher_update_tests tests/launcher_updates.cpp)
     target_link_libraries(launcher_update_tests PRIVATE beachlife_launcher_core)
+    # On a real GPU: game files, window, device, loop and clean exit; skipped where no GPU device exists.
+    add_test(NAME game_runtime
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_runtime.py" "$<TARGET_FILE:beachlife>")
+    set_tests_properties(game_runtime PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME launcher_updates
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/launcher_update_fixture.py"
             "$<TARGET_FILE:launcher_update_tests>" "${CMAKE_CURRENT_BINARY_DIR}/launcher-update-tests")
@@ -90,3 +155,4 @@ add_custom_command(TARGET beachlife POST_BUILD
         "${IMGUI_DIR}/misc/fonts/Roboto-Medium.ttf"
         "${BEACHLIFE_RESOURCE_DIR}"
     VERBATIM)
+include("${CMAKE_SOURCE_DIR}/cmake/AppIcon.cmake")

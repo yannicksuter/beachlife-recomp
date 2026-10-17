@@ -32,7 +32,7 @@ commit and dirty marker come from Git. `--build-info` emits the complete JSON
 record. Local builds use channel `dev`; Actions sets `test` or `release` and
 records its PR/run IDs. Test/release packages require clean committed sources.
 
-SDL3, Dear ImGui, stb, unshield and zlib are immutable Git submodule pins.
+SDL3, Dear ImGui, stb, FreeType, unshield and zlib are immutable Git submodule pins.
 Dependency setup is an explicit network step; CMake never fetches source.
 Configuration exports each clean pin into the build directory, applies any ordered
 `patches/<name>/series`,
@@ -109,10 +109,26 @@ LLVM-MinGW runtime, so use the documented cross build for release packages.
 
 ## Tests and scope
 
+The presets also build `beachlife-data` and its generated ISO, cabinet and
+prepared-content fixtures. See [DATA](DATA.md) for headless preparation,
+verification, VFS reads and the launcher/runtime API. No retail inputs are
+needed for these tests. Windows CI runs the data checks in a separate test
+artifact; product packages still contain the launcher/runtime executable.
+
 CTest checks help/version/build-info, settings persistence, source errors and
-a window smoke that renders all four pages with SDL's dummy video driver and
+a window smoke that renders all six pages with SDL's dummy video driver and
 software renderer. Package smoke runs the same window check after extraction,
-proving that the artwork and fonts travel with it. Generated fixtures cover
+proving that the artwork, icon and fonts travel with it. With a usable GPU,
+package smoke also opens the game window, prepares generated data, checks
+offline reuse and repair, and runs the hidden loop including the startup VFS
+read. Without one, it checks that the GPU error occurs before any cache or
+readiness is created and reports the skipped game-loading integration. The
+`launcher_content` test covers cancellation, source switches and mount lifetime;
+`startup_work` covers the order, progress, cancellation and errors of the work
+behind the game window's loading screen. `content_startup` runs its real
+check/prepare/mount/read worker without a GPU, including cancelled extraction,
+resumption, binding persistence, offline reuse and repair.
+Generated fixtures cover
 pins, patch ordering, tampering, version changes, archive payloads, provenance,
 ABI bounds and release decisions.
 Run the Python checks alone with:
@@ -133,6 +149,13 @@ runs never check for updates; `--update-preview STATE` shows a made-up update
 state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
 `downloading`, `failed` or `installfailed`).
 
+`--play` opens the game window with saved settings (or `--config` and `--source`),
+then prepares or reuses game data behind its loading screen, as Play does. `--cache-directory folder`
+overrides the user cache for development. `--frames N` stops after N frames, and
+`--screenshot file.png` then saves the last one. The `game_startup` and
+`game_runtime` integration tests run it hidden on a generated ISO and are skipped
+where no display or GPU device exists, as on hosted CI runners.
+
 The `launcher_updates` test writes packages the way `tools/package_build.py`
 does, plus damaged and hostile archives, and checks the update rules,
 unpacking, installation, rollback and the completion of an interrupted update
@@ -140,5 +163,10 @@ without network access.
 
 The launcher prefers SDL's DX12 renderer on Windows, Metal on macOS and Vulkan
 on Linux, with a software fallback. Hosted software smoke does not qualify GPU
-hardware or the future Dawn game renderer. The pipeline does not download or
+hardware or reconstructed gameplay. The pipeline does not download or
 execute original game code. See [RELEASES](RELEASES.md).
+
+Windows embeds `assets/app/icon.ico` using the native resource compiler. All
+windows load the matching PNG from package resources. macOS builds the ICNS
+bundle resource using the system `sips` and `iconutil`; these tools are required
+on the macOS build host. No original ISO is needed to build the app icons.

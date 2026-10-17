@@ -1,6 +1,7 @@
 #include "settings.h"
 
 #include <array>
+#include <charconv>
 #include <fstream>
 #include <iomanip>
 #include <set>
@@ -32,6 +33,9 @@ constexpr Name<WindowMode> modes[] = {{WindowMode::Windowed, "windowed"}, {Windo
 constexpr Name<Scaling> scalings[] = {{Scaling::Fit, "fit"}, {Scaling::Stretch, "stretch"}};
 constexpr Name<GraphicsApi> apis[] = {{GraphicsApi::Automatic, "auto"}, {GraphicsApi::Direct3D12, "d3d12"},
                                       {GraphicsApi::Vulkan, "vulkan"}, {GraphicsApi::Metal, "metal"}};
+constexpr Name<OverlayCorner> corners[] = {{OverlayCorner::TopLeft, "top-left"}, {OverlayCorner::TopRight, "top-right"},
+                                           {OverlayCorner::BottomLeft, "bottom-left"},
+                                           {OverlayCorner::BottomRight, "bottom-right"}};
 constexpr Name<bool> switches[] = {{false, "off"}, {true, "on"}};
 constexpr Name<UpdateChoice> channels[] = {{UpdateChoice::Automatic, "auto"}, {UpdateChoice::Release, "release"},
                                            {UpdateChoice::Test, "test"}};
@@ -53,6 +57,12 @@ void validate_source(const Settings& settings) {
 
 void validate(const Settings& settings) {
     validate_source(settings);
+    const auto& content = settings.content;
+    if ((!content.identity.empty() && (content.identity.size() != 64 ||
+         content.identity.find_first_not_of("0123456789abcdef") != std::string::npos || content.source.empty())) ||
+        (content.identity.empty() && (!content.source.empty() || content.size || content.modified)) ||
+        content.source.size() > 32768 || content.source.find_first_of("\r\n\0", 0, 3) != std::string::npos)
+        throw std::runtime_error("The prepared-content reference is invalid.");
     if (settings.scale != 100 && settings.scale != 125 && settings.scale != 150)
         throw std::runtime_error("Unsupported interface scale.");
     const auto& display = settings.display;
@@ -63,11 +73,14 @@ void validate(const Settings& settings) {
     name_of(modes, display.mode);
     name_of(scalings, display.scaling);
     name_of(apis, display.api);
+    name_of(corners, display.fps_overlay_corner);
     name_of(channels, settings.updates.channel);
 }
 
-// Version 2: one "key value" line per setting; every key at most once, none unknown.
-void read_keyed(std::istream& file, Settings& result) {
+// Versions 2-4: one "key value" line per setting; every key at most once, none unknown.
+// Version 3 added the content keys, version 4 the performance overlay.
+void read_keyed(std::istream& file, Settings& result, int version) {
+    const bool content_fields = version >= 3, overlay_fields = version >= 4;
     const std::runtime_error invalid("The launcher settings format is invalid.");
     std::set<std::string> seen;
     std::string line;
@@ -77,6 +90,14 @@ void read_keyed(std::istream& file, Settings& result) {
         if (!(in >> key) || !seen.insert(key).second) throw invalid;
         auto& display = result.display;
         if (key == "source.path") in >> std::quoted(result.source);
+        else if (content_fields && key == "content.identity") in >> std::quoted(result.content.identity);
+        else if (content_fields && key == "content.source") in >> std::quoted(result.content.source);
+        else if (content_fields && key == "content.size") {
+            in >> word;
+            const auto parsed = std::from_chars(word.data(), word.data()+word.size(), result.content.size);
+            if (parsed.ec != std::errc{} || parsed.ptr != word.data()+word.size()) throw invalid;
+        }
+        else if (content_fields && key == "content.modified") in >> result.content.modified;
         else if (key == "launcher.scale") in >> result.scale;
         else if (key == "display.mode" && in >> word) display.mode = value_of(modes, word);
         else if (key == "display.width") in >> display.width;
@@ -85,6 +106,9 @@ void read_keyed(std::istream& file, Settings& result) {
         else if (key == "display.scaling" && in >> word) display.scaling = value_of(scalings, word);
         else if (key == "display.vsync" && in >> word) display.vsync = value_of(switches, word);
         else if (key == "display.api" && in >> word) display.api = value_of(apis, word);
+        else if (overlay_fields && key == "display.fps_overlay" && in >> word) display.fps_overlay = value_of(switches, word);
+        else if (overlay_fields && key == "display.fps_overlay_corner" && in >> word)
+            display.fps_overlay_corner = value_of(corners, word);
         else if (key == "diagnostics.log_window" && in >> word) result.diagnostics.log_window = value_of(switches, word);
         else if (key == "updates.check" && in >> word) result.updates.check = value_of(switches, word);
         else if (key == "updates.channel" && in >> word) result.updates.channel = value_of(channels, word);
@@ -99,14 +123,17 @@ Settings load_settings(const fs::path& path) {
     const bool exists = fs::exists(path, error);
     if (error) throw std::runtime_error("Cannot access launcher settings: " + error.message());
     if (!exists) return {};
-    if (!fs::is_regular_file(path, error) || error || fs::file_size(path, error) > 65536 || error)
+    if (!fs::is_regular_file(path, error) || error || fs::file_size(path, error) > 256*1024 || error)
         throw std::runtime_error("The settings file is unreadable or invalid.");
     std::ifstream file(path, std::ios::binary);
     std::string magic, kind;
     Settings result;
-    if (!std::getline(file, magic) || (magic != "beachlife-launcher 1" && magic != "beachlife-launcher 2"))
+    const std::string prefix = "beachlife-launcher ";
+    const int version = std::getline(file, magic) && magic.size() == prefix.size()+1 && magic.starts_with(prefix)
+        ? magic.back() - '0' : 0;
+    if (version < 1 || version > 4)
         throw std::runtime_error("Cannot read launcher settings. The existing file has been preserved.");
-    if (magic == "beachlife-launcher 2") read_keyed(file, result);
+    if (version > 1) read_keyed(file, result, version);
     else {
         // Version 1 (launcher 0.0.1): source kind, scale and quoted path; display defaults. Only ISO
         // images are supported now: a saved folder stays selected and asks for the image instead.
@@ -128,8 +155,12 @@ void save_settings(const fs::path& path, const Settings& settings) {
     try {
         std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
         const auto& display = settings.display;
-        file << "beachlife-launcher 2\n"
+        file << "beachlife-launcher 4\n"
              << "source.path " << std::quoted(settings.source) << '\n'
+             << "content.identity " << std::quoted(settings.content.identity) << '\n'
+             << "content.source " << std::quoted(settings.content.source) << '\n'
+             << "content.size " << settings.content.size << '\n'
+             << "content.modified " << settings.content.modified << '\n'
              << "launcher.scale " << settings.scale << '\n'
              << "display.mode " << name_of(modes, display.mode) << '\n'
              << "display.width " << display.width << '\n'
@@ -138,6 +169,8 @@ void save_settings(const fs::path& path, const Settings& settings) {
              << "display.scaling " << name_of(scalings, display.scaling) << '\n'
              << "display.vsync " << name_of(switches, display.vsync) << '\n'
              << "display.api " << name_of(apis, display.api) << '\n'
+             << "display.fps_overlay " << name_of(switches, display.fps_overlay) << '\n'
+             << "display.fps_overlay_corner " << name_of(corners, display.fps_overlay_corner) << '\n'
              << "diagnostics.log_window " << name_of(switches, settings.diagnostics.log_window) << '\n'
              << "updates.check " << name_of(switches, settings.updates.check) << '\n'
              << "updates.channel " << name_of(channels, settings.updates.channel) << '\n';

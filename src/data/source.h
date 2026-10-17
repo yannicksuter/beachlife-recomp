@@ -18,11 +18,17 @@ public:
     virtual std::size_t read(std::span<unsigned char> destination) = 0;
 };
 
-class IsoSource {
+class FileSource {
+public:
+    virtual ~FileSource() = default;
+    virtual std::unique_ptr<SourceFile> open(std::string_view logical_path) const = 0;
+};
+
+class IsoSource final : public FileSource {
 public:
     explicit IsoSource(std::filesystem::path image);
     const IsoIndex& index() const { return index_; }
-    std::unique_ptr<SourceFile> open(std::string_view logical_path) const;
+    std::unique_ptr<SourceFile> open(std::string_view logical_path) const override;
 
 private:
     std::filesystem::path image_;

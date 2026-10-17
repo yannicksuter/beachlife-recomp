@@ -58,7 +58,13 @@ add_custom_target(build_identity
     COMMENT "Record the CMake version and current source revision"
     VERBATIM)
 
-add_library(beachlife_data STATIC src/data/iso9660.cpp src/data/game_path.cpp src/data/source.cpp)
+add_library(beachlife_formats STATIC src/platform/json.cpp src/platform/sha256.cpp)
+target_include_directories(beachlife_formats PUBLIC src)
+target_compile_features(beachlife_formats PUBLIC cxx_std_20)
+set_target_properties(beachlife_formats PROPERTIES CXX_EXTENSIONS OFF)
+
+add_library(beachlife_data STATIC src/data/iso9660.cpp src/data/game_path.cpp src/data/source.cpp
+    src/data/folder_source.cpp src/data/local_files.cpp)
 target_include_directories(beachlife_data PUBLIC src)
 target_compile_features(beachlife_data PUBLIC cxx_std_20)
 set_target_properties(beachlife_data PROPERTIES CXX_EXTENSIONS OFF)
@@ -79,7 +85,7 @@ if(WIN32)
 endif()
 target_include_directories(beachlife PRIVATE "${BEACHLIFE_GENERATED}")
 add_dependencies(beachlife build_identity)
-foreach(target beachlife beachlife-data beachlife_data)
+foreach(target beachlife beachlife-data beachlife_data beachlife_formats)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /WX)
     else()
@@ -130,4 +136,23 @@ if(BUILD_TESTING)
     add_test(NAME cabinet_index
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_cabinet.py"
             "$<TARGET_FILE:beachlife-data>")
+    add_executable(folder_source_tests tests/folder_source.cpp)
+    target_link_libraries(folder_source_tests PRIVATE beachlife_data)
+    add_test(NAME prepared_folder_reads
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_folder.py"
+            "$<TARGET_FILE:folder_source_tests>")
+    add_executable(game_index_tests tests/game_index.cpp)
+    target_link_libraries(game_index_tests PRIVATE beachlife_cabinet)
+    add_test(NAME game_content_paths COMMAND game_index_tests)
+    add_test(NAME game_content_reads
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_game_content.py"
+            "$<TARGET_FILE:beachlife-data>")
+    add_executable(content_manifest_tests tests/content_manifest.cpp)
+    target_link_libraries(content_manifest_tests PRIVATE beachlife_cabinet)
+    add_test(NAME content_manifests COMMAND content_manifest_tests)
+    add_executable(content_prepare_tests tests/content_prepare.cpp)
+    target_link_libraries(content_prepare_tests PRIVATE beachlife_cabinet)
+    add_test(NAME prepared_content
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_vfs.py"
+            "$<TARGET_FILE:beachlife-data>" "$<TARGET_FILE:content_prepare_tests>")
 endif()
