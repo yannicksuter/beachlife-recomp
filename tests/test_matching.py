@@ -51,6 +51,37 @@ class MatchingInputTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 matching.section(path, b'.text')
 
+    def test_imports_resolve_names_ordinals_and_reject_invalid_ranges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'generated.exe'
+            data = bytearray(1024)
+            data[:2] = b'MZ'
+            struct.pack_into('<I', data, 0x3c, 64)
+            data[64:68] = b'PE\0\0'
+            struct.pack_into('<HH', data, 68, 0x14c, 1)
+            struct.pack_into('<H', data, 84, 224)
+            struct.pack_into('<H', data, 88, 0x10b)
+            struct.pack_into('<I', data, 116, 0x400000)
+            struct.pack_into('<I', data, 192, 0x1000)
+            data[312:320] = b'.text\0\0\0'
+            struct.pack_into('<III', data, 324, 0x1000, 512, 512)
+            struct.pack_into('<5I', data, 512, 0x1040, 0, 0, 0x10a0, 0x1060)
+            struct.pack_into('<3I', data, 576, 0x1080, 0x80000005, 0)
+            data[642:648] = b'alpha\0'
+            data[672:682] = b'dummy.dll\0'
+            path.write_bytes(data)
+            self.assertEqual(matching.pe_imports(path), {
+                'dummy.dll': {'alpha': '0x401060', 'ordinal:5': '0x401064'}})
+            for offset, value in [(512, 0xffffffff), (576, 0x11ff), (524, 0x1200)]:
+                malformed = bytearray(data)
+                struct.pack_into('<I', malformed, offset, value)
+                path.write_bytes(malformed)
+                with self.assertRaises(ValueError):
+                    matching.pe_imports(path)
+            struct.pack_into('<I', data, 192, 0)
+            path.write_bytes(data)
+            self.assertEqual(matching.pe_imports(path), {})
+
     def test_virtual_address_reads_respect_raw_bounds(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'generated.exe'

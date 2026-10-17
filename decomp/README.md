@@ -71,6 +71,23 @@ and generated binaries stay under `build/`; fixture results are not game
 completion percentages. See [reccmp](https://github.com/isledecomp/reccmp) for
 annotation and comparison semantics.
 
+The stdio fixture checks the next link boundary without requiring an SDK import
+library. The pinned VC6 librarian builds a small import library from the four
+declared exports in `msvcrt.def`; it contains import metadata, not CRT code.
+The fixture uses the pinned VC6 `STDIO.H`, requires eight-byte `fpos_t`, and
+verifies the generated executable's actual import names and addresses:
+
+```sh
+python3 tools/matching.py stdio-fixture --compiler /path/to/msvc6.4 \
+  --reccmp build/matching/venv/bin/reccmp-reccmp
+# Or: cmake --build --preset debug --target matching_stdio_fixture
+```
+
+This experiment uses `/MD` for the dynamic CRT declarations. It establishes
+the stdio ABI needed for a small helper, not a complete SDK/CRT environment or
+the original game's entire compiler configuration. The fixture is compiled and
+inspected; it does not execute retail code.
+
 ## First reconstructed function
 
 `src/version.cpp` reconstructs the seven-byte version getter at `0x004e3cb0`.
