@@ -1,5 +1,7 @@
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
+# CMake re-enters this file for compiler ABI probes in a separate project.
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES LLVM_MINGW_ROOT)
 if(NOT LLVM_MINGW_ROOT)
     message(FATAL_ERROR "Set LLVM_MINGW_ROOT to the pinned LLVM-MinGW directory")
 endif()
