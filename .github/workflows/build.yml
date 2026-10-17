@@ -1,0 +1,279 @@
+name: Build binaries
+
+on:
+  pull_request:
+    branches: [main, stable]
+  push:
+    branches: [stable]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  BUILD_CHANNEL: ${{ github.event_name == 'pull_request' && 'test' || (github.event_name == 'push' && github.ref == 'refs/heads/stable' && 'release') || 'dev' }}
+
+jobs:
+  policy:
+    name: Promotion policy
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require main for stable promotions
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$EVENT" = pull_request ] && [ "$BASE" = stable ]; then
+            test "$HEAD" = main
+            test "$HEAD_REPOSITORY" = "$REPOSITORY"
+          fi
+
+  build:
+    name: ${{ matrix.platform }}
+    needs: policy
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-26.04
+            gcc: 15
+            package_platform: linux
+          - platform: steamdeck-x86_64
+            runner: ubuntu-24.04
+            gcc: 14
+            package_platform: steamdeck
+          - platform: macos-arm64
+            runner: macos-15
+            arch: arm64
+            package_platform: macos
+          - platform: macos-x86_64
+            runner: macos-15
+            arch: x86_64
+            package_platform: macos
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install Linux tools
+        if: runner.os == 'Linux'
+        env:
+          GCC_VERSION: ${{ matrix.gcc }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y "g++-$GCC_VERSION" cmake ninja-build
+          echo "CC=gcc-$GCC_VERSION" >> "$GITHUB_ENV"
+          echo "CXX=g++-$GCC_VERSION" >> "$GITHUB_ENV"
+      - name: Select macOS toolchain
+        if: runner.os == 'macOS'
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          if [ "$TARGET_ARCH" = x86_64 ] && ! arch -x86_64 /usr/bin/true; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          brew install cmake ninja
+      - name: Configure shared release preset
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          PACKAGE_PLATFORM: ${{ matrix.package_platform }}
+          PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
+        run: |
+          args=()
+          if [ "$RUNNER_OS" = macOS ]; then
+            args+=(-DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0)
+          fi
+          cmake --preset release "${args[@]}" \
+            -DBEACHLIFE_BUILD_CHANNEL="$BUILD_CHANNEL" \
+            -DBEACHLIFE_BUILD_PULL_REQUEST="$PR_NUMBER" \
+            -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID" \
+            -DBEACHLIFE_PACKAGE_PLATFORM="$PACKAGE_PLATFORM"
+      - name: Build and test
+        run: |
+          cmake --build --preset release --parallel 3
+          ctest --preset release
+      - name: Check and sign macOS bundle
+        if: runner.os == 'macOS'
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(lipo -archs build/release/beachlife.app/Contents/MacOS/beachlife)" = "$TARGET_ARCH"
+          codesign --force --sign - build/release/beachlife.app
+          codesign --verify --deep --strict build/release/beachlife.app
+      - name: Package and test extracted binaries
+        run: |
+          python tools/package_build.py --build-dir build/release --output-dir build/artifacts
+          python tools/check_package.py build/artifacts/*.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          path: build/artifacts/*.tar.gz
+          archive: false
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
+
+  windows:
+    name: windows-x86_64
+    needs: policy
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - name: Prepare pinned cross compiler
+        run: |
+          toolchain=$(python tools/setup_windows_toolchain.py "$RUNNER_TEMP/llvm-mingw")
+          echo "LLVM_MINGW_ROOT=$toolchain" >> "$GITHUB_ENV"
+      - name: Configure and build
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
+        run: |
+          cmake --preset release \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/llvm-mingw-x86_64.cmake \
+            -DLLVM_MINGW_ROOT="$LLVM_MINGW_ROOT" \
+            -DBEACHLIFE_BUILD_CHANNEL="$BUILD_CHANNEL" \
+            -DBEACHLIFE_BUILD_PULL_REQUEST="$PR_NUMBER" \
+            -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID"
+          cmake --build --preset release --parallel 3
+          python -B -m unittest discover -s tests -p 'test_*.py'
+      - name: Package native Windows binary and runtimes
+        run: python tools/package_build.py --build-dir build/release --output-dir build/artifacts --toolchain "$LLVM_MINGW_ROOT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          path: build/artifacts/*.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
+
+  windows-smoke:
+    name: Windows package smoke
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: beachlife-*-windows-x86_64.zip
+          path: build/artifacts
+          merge-multiple: true
+          skip-decompress: true
+      - name: Run host checks and packaged executable on Windows
+        shell: pwsh
+        run: |
+          python -B -m unittest discover -s tests -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $packages = @(Get-ChildItem build/artifacts/*.zip)
+          if ($packages.Count -ne 1) { throw 'Expected one Windows package' }
+          python tools/check_package.py $packages[0].FullName
+          exit $LASTEXITCODE
+
+  verify:
+    name: Native build gate
+    if: always()
+    needs: [policy, build, windows, windows-smoke]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every build and native test
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          assert all(job['result'] == 'success' for job in results.values()), results
+          PY
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: beachlife-*
+          path: build/packages
+          merge-multiple: true
+          skip-decompress: true
+      - name: Verify complete package set and provenance
+        run: python tools/check_package.py build/packages --sha "$SOURCE_SHA" --channel "$BUILD_CHANNEL" --run-id "$GITHUB_RUN_ID"
+
+  test-release:
+    name: Publish PR test build
+    needs: verify
+    if: >-
+      github.event_name == 'pull_request' && github.base_ref == 'stable'
+      && github.head_ref == 'main'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: test-release-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: beachlife-*
+          path: build/packages
+          merge-multiple: true
+          skip-decompress: true
+      - name: Publish current promotion build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python tools/release.py test --repository "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --sha "$SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --packages build/packages
+
+  release:
+    name: Draft stable candidate
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: beachlife-*
+          path: build/packages
+          merge-multiple: true
+          skip-decompress: true
+      - name: Draft the CMake version using this stable run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/release.py stable --repository "$GITHUB_REPOSITORY" --sha "$SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --packages build/packages
