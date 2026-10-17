@@ -273,8 +273,12 @@ def game(tool, args):
     entry = folder / 'entry.cpp'
     entry.write_text('extern "C" { int _fltused = 0; }\n'
                      'float GetGameVersion();\nvolatile float fixture_result;\n'
-                     'extern "C" void fixture_entry() { fixture_result = GetGameVersion(); }\n')
-    binary, pdb = tool.build(folder, [*sources, entry], 'BeachLife', ['/fixed:no'])
+                     'long GetFileSize(const char*);\nvolatile long fixture_size;\n'
+                     'extern "C" void fixture_entry() { fixture_result = GetGameVersion(); '
+                     'fixture_size = GetFileSize("generated.bin"); }\n')
+    library = tool.runtime_library(folder)
+    binary, pdb = tool.build(folder, [*sources, entry], 'BeachLife', ['/fixed:no', library],
+                            ['/MD', '/I' + tool.native(tool.compiler.parent / 'Include')])
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {

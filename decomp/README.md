@@ -88,12 +88,18 @@ the stdio ABI needed for a small helper, not a complete SDK/CRT environment or
 the original game's entire compiler configuration. The fixture is compiled and
 inspected; it does not execute retail code.
 
-## First reconstructed function
+## Reconstructed functions
 
 `src/version.cpp` reconstructs the seven-byte version getter at `0x004e3cb0`.
 `GetGameVersion` is a descriptive name; the original symbol/class and exact
 return declaration remain provisional. The caller uses its x87 return for
 the menu's version display.
+
+`src/file_size.cpp` reconstructs the 106-byte helper at `0x004ec150`. It opens
+the named file in binary mode, seeks to the end, reads an eight-byte file
+position and returns only its low 32 bits. Open/seek/position failures return
+zero, as does an empty file; close errors are ignored. `GetFileSize` is a
+descriptive name and the original signed return declaration is unknown.
 
 ```sh
 python3 tools/matching.py game --compiler /path/to/msvc6.4 \
@@ -102,15 +108,16 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-This function currently matches after address normalization. Its rebuilt
-constant has a different address, so it is not a byte-identical executable or
-an established whole-program layout. The original has stripped relocations;
-`metadata.csv` identifies its known float constant. The comparison build keeps
-relocations so reccmp can identify the rebuilt literal. The tool reports raw
+Both functions currently match after address normalization, totaling 113
+bytes. Rebuilt constants/imports have different addresses, so this is not a
+byte-identical executable or an established whole-program layout. The original
+has stripped relocations; `metadata.csv` identifies the known float and the
+binary-read-mode string. The comparison build keeps relocations so reccmp can
+identify rebuilt literals. The tool reports raw
 byte equality separately and fails if an annotated function does not match.
 
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There is one annotated function and no
+does not implement game startup. There are two annotated functions and no
 established whole-game function denominator.
