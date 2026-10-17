@@ -72,8 +72,9 @@ completion percentages. See [reccmp](https://github.com/isledecomp/reccmp) for
 annotation and comparison semantics.
 
 The stdio fixture checks the next link boundary without requiring an SDK import
-library. The pinned VC6 librarian builds a small import library from the four
-declared exports in `msvcrt.def`; it contains import metadata, not CRT code.
+library. The pinned VC6 librarian builds a small import library from
+`msvcrt.def`; it contains import metadata, not CRT code. The stdio fixture uses
+four exports; the game comparison also uses `fread` and operator new.
 The fixture uses the pinned VC6 `STDIO.H`, requires eight-byte `fpos_t`, and
 verifies the generated executable's actual import names and addresses:
 
@@ -101,6 +102,28 @@ position and returns only its low 32 bits. Open/seek/position failures return
 zero, as does an empty file; close errors are ignored. `GetFileSize` is a
 descriptive name and the original signed return declaration is unknown.
 
+`src/ble_loader.cpp` reconstructs the 102-byte loader at `0x004ec220`. It asks
+the size helper for the low 32-bit file length, allocates one additional byte,
+reopens and reads the file, inverts its bytes with a signed index comparison,
+and appends a period. It preserves the unchecked allocation, second open,
+read and close, as well as the period instead of a NUL terminator. Missing and
+empty files return null through the size helper. `LoadBleFile` is descriptive;
+the original symbol and allocation spelling remain unknown. VC6 lowers this
+byte-array allocation to the verified imported operator new.
+
+`src/sound_name_hash.cpp` reconstructs the 29-byte filename hash at `0x004d2280`.
+It multiplies a 32-bit unsigned accumulator by five and adds each signed byte
+until NUL, wrapping at 32 bits. The signed conversion is explicit so native
+compilers with unsigned plain `char` preserve the observed behavior.
+`SoundNameHash` is descriptive; the original symbol and declaration are unknown.
+
+`src/tga_palette.cpp` reconstructs the 29-byte palette pointer helper at
+`0x004ea3e0`. It returns null when the color-map flag's low byte is zero;
+otherwise it returns the buffer plus the 18-byte TGA header and the ID length's
+low byte. It preserves unchecked pointer arithmetic and performs no file-size
+validation. `GetTgaPaletteData` is descriptive; the original symbol and exact
+declaration remain unknown.
+
 ```sh
 python3 tools/matching.py game --compiler /path/to/msvc6.4 \
   --reccmp build/matching/venv/bin/reccmp-reccmp
@@ -108,16 +131,39 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-Both functions currently match after address normalization, totaling 113
-bytes. Rebuilt constants/imports have different addresses, so this is not a
-byte-identical executable or an established whole-program layout. The original
+All five functions currently match after address normalization, totaling 273
+bytes. The filename hash and palette pointer helper each also match all 29 raw
+bytes exactly. Rebuilt constants/imports in the other functions have different
+addresses, so this is not a byte-identical executable or an established
+whole-program layout. The original
 has stripped relocations; `metadata.csv` identifies the known float and the
-binary-read-mode string. The comparison build keeps relocations so reccmp can
-identify rebuilt literals. The tool reports raw
-byte equality separately and fails if an annotated function does not match.
+binary-read-mode string and names the verified operator-new import thunk as
+library code. The comparison build keeps relocations so reccmp can identify
+rebuilt literals. The game comparison adds `/MD /G6` to the fixture flags:
+`/G6` reproduces the loader's loop scheduling, while `/G3`, `/G4` and `/G5`
+produce a different instruction order. This is evidence for this small source
+set, not a recovered whole-program compiler recipe. The tool reports raw
+byte equality separately and fails if a registered target function is missing
+or does not match.
+
+Accuracy is checked at the function level. The target executable and compiler
+components are hash-verified, reconstructed C++ is compiled with the pinned
+toolchain, and PDB symbols locate the rebuilt functions. The strict comparison
+checks their disassembled instructions against the original addresses. Raw
+byte equality is a separate result because calls and data references can have
+different addresses in the small comparison executable. Those differing
+operands are also inspected to confirm the referenced function, import or
+constant; a normalized match alone does not establish a complete binary match.
+
+Each reconstructed function has been checked with a deliberately incorrect
+source variant. Changing the BLE terminator, filename-hash signedness or TGA
+header offset makes the comparison fail. Generated semantic tests additionally
+check the two pure helpers' boundary values. These checks establish the
+reported machine-code matches; they do not recover original variable names,
+class declarations or the full game's compiler flags.
 
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There are two annotated functions and no
+does not implement game startup. There are five annotated game functions and no
 established whole-game function denominator.
