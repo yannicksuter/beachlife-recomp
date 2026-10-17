@@ -17,7 +17,8 @@ from project_version import ROOT, read_version
 from prepare_sources import prepare
 
 TARGETS = ("linux-x86_64", "steamdeck-x86_64", "windows-x86_64", "macos-arm64", "macos-x86_64")
-DOCUMENTS = ("README.md", "docs/BUILDING.md", "docs/RELEASES.md", "docs/INSTALL.md", "LICENSES/README.md")
+DOCUMENTS = ("README.md", "docs/BUILDING.md", "docs/RELEASES.md", "docs/INSTALL.md", "LICENSES/README.md",
+             "LICENSES/unshield.txt", "LICENSES/zlib.txt", "LICENSES/RSA-MD5.txt")
 WINDOWS_DLLS = ("libc++.dll", "libunwind.dll", "libwinpthread-1.dll")
 WINDOWS_NOTICES = ("LICENSE.TXT", "x86_64-w64-mingw32/share/mingw32/COPYING.winpthreads.txt",
                    "x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt")

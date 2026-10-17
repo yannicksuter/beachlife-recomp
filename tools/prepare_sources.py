@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-DEPENDENCIES = ('sdl', 'imgui', 'stb')
+DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib')
 
 
 def git(root, *args):

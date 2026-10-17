@@ -11,6 +11,11 @@ All packages statically link SDL3 (zlib), Dear ImGui (MIT) and stb's JPEG decode
 exact prepared pins as `SDL.txt`, `ImGui.txt` and `stb.txt`. Dependency commits
 and patch identities are recorded in SOURCE-MANIFEST.json.
 
+Cabinet access builds pinned unshield and zlib libraries. Their notices are
+retained in `unshield.txt` and `zlib.txt`; `RSA-MD5.txt` identifies unshield's
+included RSA Data Security, Inc. MD5 Message-Digest Algorithm. The dependency
+checkouts are exported without edits before compilation.
+
 Roboto Medium is copied from the Dear ImGui pin, with the Apache 2.0 text in
 `Apache-2.0.txt`. The launcher artwork has separate provenance and rights notes
 in `assets/launcher/README.md`. These resources retain their owners' rights.

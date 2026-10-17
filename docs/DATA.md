@@ -29,6 +29,16 @@ Reading a loose disc file does not decompress an installer cabinet. Cabinet
 mapping and compressed member access are separate capabilities. The development
 tool is built locally/with CI; release packages currently contain the launcher.
 
+## Cabinet dependencies
+
+The shared presets build static unshield 1.6.2 and zlib 1.3.2 from immutable
+gitlinks. `tools/setup_dependencies.py` fetches them; configuration exports
+verified copies into the build tree. No dependency checkout is edited and no
+system zlib/OpenSSL installation is used. Only the library sources are built.
+The unshield, zlib and included RSA MD5 notices are retained under `LICENSES/`
+and in native packages. Cabinet enumeration and reads use a separate adapter
+over the ISO source interface.
+
 ## Logical paths
 
 `normalize_game_path` in `src/data/game_path.h` accepts relative UTF-8 names.
