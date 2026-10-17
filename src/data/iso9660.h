@@ -6,16 +6,19 @@
 #include <string>
 #include <vector>
 
-namespace beachlife::data {
+namespace beachlife::data
+{
 
-struct IsoEntry {
+struct IsoEntry
+{
     std::string path;
     std::uint64_t offset = 0;
     std::uint64_t size = 0;
     bool directory = false;
 };
 
-struct IsoIndex {
+struct IsoIndex
+{
     std::string volume;
     bool joliet = false;
     std::uint64_t image_bytes = 0;

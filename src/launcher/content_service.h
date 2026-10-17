@@ -9,14 +9,26 @@
 #include <optional>
 #include <thread>
 
-namespace beachlife::launcher {
+namespace beachlife::launcher
+{
 
 // One persistent worker. Selecting/cancelling never joins an in-flight import
 // on the UI thread; superseded results cannot become the current ready source.
-class ContentService {
-public:
-    enum class State { Idle, Checking, NeedsPreparation, Preparing, Ready, Cancelled, Failed };
-    struct Status {
+class ContentService
+{
+  public:
+    enum class State
+    {
+        Idle,
+        Checking,
+        NeedsPreparation,
+        Preparing,
+        Ready,
+        Cancelled,
+        Failed
+    };
+    struct Status
+    {
         State state = State::Idle;
         SourceStatus source;
         data::PrepareProgress progress;
@@ -24,7 +36,10 @@ public:
         std::string language, error;
         std::size_t files = 0;
         std::uint64_t bytes = 0;
-        bool busy() const { return state == State::Checking || state == State::Preparing; }
+        bool busy() const
+        {
+            return state == State::Checking || state == State::Preparing;
+        }
     };
 
     // Optional observer is for diagnostics on the worker, never UI calls.
@@ -39,8 +54,9 @@ public:
     void cancel();
     Status snapshot() const;
 
-private:
-    struct Job {
+  private:
+    struct Job
+    {
         Settings settings;
         bool prepare = false;
         std::uint64_t generation = 0;
@@ -49,7 +65,8 @@ private:
     void enqueue(const Settings& settings, bool prepare);
     void worker();
     void run(const Job& job);
-    void publish(const Job& job, Status status, std::shared_ptr<const data::PreparedSource> source = {});
+    void publish(
+        const Job& job, Status status, std::shared_ptr<const data::PreparedSource> source = {});
 
     const std::filesystem::path cache_;
     const std::function<void(const data::PrepareProgress&)> observer_;
@@ -65,14 +82,17 @@ private:
     std::thread thread_;
 };
 
-struct ContentResult {
+struct ContentResult
+{
     ContentService::Status status;
     std::shared_ptr<const data::PreparedSource> source;
 };
 
 // Synchronous check or explicit preparation, for a caller-owned worker. The
 // launcher checks readiness here; the game window runs setup behind its loader.
-ContentResult open_content(const Settings& settings, const std::filesystem::path& cache,
-    bool prepare, const data::PrepareOptions& options = {});
+ContentResult open_content(const Settings& settings,
+    const std::filesystem::path& cache,
+    bool prepare,
+    const data::PrepareOptions& options = {});
 
 } // namespace beachlife::launcher

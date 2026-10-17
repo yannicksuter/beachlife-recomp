@@ -4,11 +4,13 @@
 #include <string_view>
 #include <vector>
 
-namespace beachlife::data {
+namespace beachlife::data
+{
 
 class FileSource;
 
-struct TgaImage {
+struct TgaImage
+{
     int width = 0, height = 0;
     // Top-left origin, rows in order; RGBA with red in the lowest byte.
     std::vector<std::uint32_t> pixels;

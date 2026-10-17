@@ -1,11 +1,22 @@
 #pragma once
 #include "settings.h"
 
-namespace beachlife::launcher {
+namespace beachlife::launcher
+{
 
-enum Page { PagePlay, PageFiles, PageDisplay, PageAppearance, PageAdvanced, PageAbout, PageCount };
+enum Page
+{
+    PagePlay,
+    PageFiles,
+    PageDisplay,
+    PageAppearance,
+    PageAdvanced,
+    PageAbout,
+    PageCount
+};
 
-struct Options {
+struct Options
+{
     std::filesystem::path config;
     std::filesystem::path screenshot;
     std::filesystem::path cache; // empty uses the per-user content directory
@@ -18,10 +29,11 @@ struct Options {
 };
 
 // Play or explicit preparation asks the caller to open the game's loading screen.
-struct Outcome {
+struct Outcome
+{
     int exit_code = 0;
     bool play = false;
-    bool prepare_only = false; // use the loading screen for explicit prepare/repair, then return
+    bool prepare_only = false;  // use the loading screen for explicit prepare/repair, then return
     std::string preview_screen; // selected artwork to show through the native VFS
     Settings settings;
     std::filesystem::path config;

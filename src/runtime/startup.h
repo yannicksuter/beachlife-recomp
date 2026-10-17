@@ -12,12 +12,14 @@
 #include <utility>
 #include <vector>
 
-namespace beachlife::runtime {
+namespace beachlife::runtime
+{
 
 class StartupWork;
 
 // What the loading screen shows of the startup work.
-struct StartupStatus {
+struct StartupStatus
+{
     std::string label;                 // the running step
     std::uint64_t done = 0, total = 0; // of the running step; total is 0 while its size is unknown
     std::size_t step = 0, steps = 0;   // finished steps, all steps
@@ -29,22 +31,27 @@ struct StartupStatus {
 
 // A step's view of the work: reports its progress, and asks it to return early
 // once the player has left.
-class StartupProgress {
-public:
+class StartupProgress
+{
+  public:
     void total(std::uint64_t units); // the step's size, once known
     void advance(std::uint64_t units);
     void report(std::string label, std::uint64_t done, std::uint64_t total);
     bool cancelled() const;
 
-private:
+  private:
     friend class StartupWork;
-    explicit StartupProgress(StartupWork& work) : work_(work) {}
+    explicit StartupProgress(StartupWork& work)
+        : work_(work)
+    {
+    }
     StartupWork& work_;
 };
 
 // Work between the window opening and the game's first frame, such as reading
 // game files through the VFS or preparing shaders.
-struct StartupStep {
+struct StartupStep
+{
     std::string label; // "Loading game files"
     std::function<void(StartupProgress&)> run;
 };
@@ -52,8 +59,9 @@ struct StartupStep {
 // Runs the steps in order on one worker thread. An exception ends the work and is
 // kept for the caller. cancel() asks the running step to return; destruction also
 // cancels, then waits for it.
-class StartupWork {
-public:
+class StartupWork
+{
+  public:
     explicit StartupWork(std::vector<StartupStep> steps);
     ~StartupWork();
     StartupWork(const StartupWork&) = delete;
@@ -64,7 +72,7 @@ public:
     // Throws the error of the failed step, if there is one.
     void rethrow() const;
 
-private:
+  private:
     friend class StartupProgress;
     void run();
 

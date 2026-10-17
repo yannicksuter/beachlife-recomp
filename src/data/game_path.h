@@ -3,9 +3,11 @@
 #include <string>
 #include <string_view>
 
-namespace beachlife::data {
+namespace beachlife::data
+{
 
-struct GamePath {
+struct GamePath
+{
     std::string display;
     std::string key;
 };

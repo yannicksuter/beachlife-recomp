@@ -7,17 +7,19 @@
 #include <string>
 #include <string_view>
 
-namespace beachlife::platform {
+namespace beachlife::platform
+{
 
 // SHA-256 (FIPS 180-4), for checking downloaded packages and their files.
-class Sha256 {
-public:
+class Sha256
+{
+  public:
     Sha256();
     void update(const void* data, std::size_t size);
     // The digest as 64 lowercase hex digits; the object is spent afterwards.
     std::string finish_hex();
 
-private:
+  private:
     void block(const std::uint8_t* data);
     std::array<std::uint32_t, 8> state_;
     std::array<std::uint8_t, 64> buffer_{};

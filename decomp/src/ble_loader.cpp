@@ -7,7 +7,8 @@ long GetFileSize(const char* filename);
 char* LoadBleFile(const char* filename)
 {
     long size = GetFileSize(filename);
-    if (size) {
+    if (size)
+    {
         char* buffer = new char[size + 1];
         FILE* file = fopen(filename, "rb");
         fread(buffer, 1, size, file);

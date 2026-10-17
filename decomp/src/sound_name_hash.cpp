@@ -3,7 +3,8 @@
 unsigned int SoundNameHash(const char* name)
 {
     unsigned int hash = 0;
-    while (*name) {
+    while (*name)
+    {
         hash = hash * 5u + static_cast<signed char>(*name);
         ++name;
     }

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "runtime/fps_overlay_layout.h"
 #include "platform/system_usage.h"
+#include "runtime/fps_overlay_layout.h"
 
 #include <filesystem>
 #include <optional>
@@ -10,13 +10,15 @@
 struct ImFont;
 struct ImFontAtlas;
 
-namespace beachlife::runtime {
+namespace beachlife::runtime
+{
 
 // The performance overlay (display.fps_overlay): FPS | GPU % | CPU %, drawn over
 // the presented picture in windowed and fullscreen mode. Host presentation only;
 // the game never sees it. Adapted from Recharged's, without its latency column.
-class FpsOverlay {
-public:
+class FpsOverlay
+{
+  public:
     // `font` is the launcher's Roboto; a missing font is an incomplete package.
     FpsOverlay(const std::filesystem::path& font, OverlayCorner corner);
 
@@ -31,7 +33,7 @@ public:
     // show N/A, including during the first sample window.
     void draw(int pixel_width, int pixel_height, float density) const;
 
-private:
+  private:
     platform::SystemUsageMonitor usage_;
     std::vector<unsigned char> font_data_;
     OverlayCorner corner_;
