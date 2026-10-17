@@ -1,12 +1,24 @@
 #include "build_version.h"
 #include "launcher/launcher.h"
+#include "data/iso9660.h"
 #include <SDL3/SDL_main.h>
 
 #include <cstdio>
+#include <iostream>
 #include <stdexcept>
 #include <string_view>
 
 int main(int argc, char** argv) {
+    if (argc == 3 && std::string_view(argv[1]) == "--inspect-iso") {
+        try {
+            const auto index = beachlife::data::index_iso(beachlife::launcher::path_from_utf8(argv[2]));
+            beachlife::data::write_iso_json(std::cout, index);
+            return 0;
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "Beach Life: %s\n", error.what());
+            return 1;
+        }
+    }
     if (argc == 2 && std::string_view(argv[1]) == "--version") {
         std::puts(beachlife::build::version);
         return 0;
@@ -21,6 +33,7 @@ int main(int argc, char** argv) {
                   "                 [--config file] [--page play|files|appearance|about]\n"
                   "                 [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --help | --version | --build-info\n\n"
+                  "       beachlife --inspect-iso image.iso\n\n"
                   "Open without arguments to launch the graphical interface.\n"
                   "This preview selects and remembers your game source.\n"
                   "It does not yet load or run the game.");

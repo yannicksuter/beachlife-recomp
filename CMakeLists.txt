@@ -58,7 +58,7 @@ add_custom_target(build_identity
     COMMENT "Record the CMake version and current source revision"
     VERBATIM)
 
-add_executable(beachlife src/bootstrap/main.cpp)
+add_executable(beachlife src/bootstrap/main.cpp src/data/iso9660.cpp)
 target_compile_features(beachlife PRIVATE cxx_std_20)
 set_target_properties(beachlife PROPERTIES CXX_EXTENSIONS OFF)
 if(WIN32)
@@ -97,5 +97,8 @@ if(BUILD_TESTING)
     add_test(NAME launcher_settings COMMAND launcher_settings_tests)
     add_test(NAME launcher_window
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_launcher.py"
+            "$<TARGET_FILE:beachlife>")
+    add_test(NAME iso_directory_index
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_iso.py"
             "$<TARGET_FILE:beachlife>")
 endif()
