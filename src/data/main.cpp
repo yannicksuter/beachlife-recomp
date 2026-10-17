@@ -1,4 +1,5 @@
 #include "source.h"
+#include "cabinet.h"
 
 #include <algorithm>
 #include <array>
@@ -33,9 +34,10 @@ int run(const std::vector<std::string>& args) {
     try {
         if (args.size() == 2 && args[1] == "--help") {
             std::cout << "beachlife-data list image.iso\n"
+                         "beachlife-data cabinets image.iso\n"
                          "beachlife-data cat image.iso logical/path\n"
                          "beachlife-data read image.iso logical/path offset count\n\n"
-                         "List returns JSON. Cat/read write raw bytes to stdout.\n";
+                         "List/cabinets return JSON. Cat/read write raw bytes to stdout.\n";
             return 0;
         }
         if (args.size() < 3) throw std::invalid_argument("Use --help for data commands.");
@@ -43,6 +45,13 @@ int run(const std::vector<std::string>& args) {
         const std::filesystem::path image(std::u8string(reinterpret_cast<const char8_t*>(name.data()), name.size()));
         if (args.size() == 3 && args[1] == "list") {
             beachlife::data::write_iso_json(std::cout, beachlife::data::index_iso(image));
+            return 0;
+        }
+        if (args.size() == 3 && args[1] == "cabinets") {
+            const beachlife::data::IsoSource source(image);
+            beachlife::data::write_cabinet_json(std::cout, beachlife::data::index_cabinet(source));
+            std::cout.flush();
+            if (!std::cout) throw std::runtime_error("Cannot write output.");
             return 0;
         }
         if (!((args.size() == 4 && args[1] == "cat") || (args.size() == 6 && args[1] == "read")))

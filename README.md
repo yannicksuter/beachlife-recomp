@@ -13,7 +13,8 @@ The first graphical launcher and the build/release pipeline are implemented.
 Open it to select an ISO or installed folder, remember the source, and adjust
 the interface size. Browse, drag-and-drop, manual paths, save and revert work.
 The independent [data tool](docs/DATA.md) indexes and reads files directly
-from an ISO. Cabinet access, language detection and gameplay are still ahead;
+from an ISO and inspects installer cabinet metadata. Compressed asset reads,
+language detection and gameplay are still ahead;
 Play remains unavailable. Decompilation and native development advance together.
 
 The intended graphics backends are DX12/Vulkan on Windows, Metal on macOS, and

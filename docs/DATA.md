@@ -7,11 +7,12 @@ The regular CMake presets also build the `beachlife-data` development tool:
 
 ```sh
 ./build/debug/beachlife-data list orig/Beachlife.iso
+./build/debug/beachlife-data cabinets orig/Beachlife.iso
 ./build/debug/beachlife-data cat orig/Beachlife.iso Readme.htm
 ./build/debug/beachlife-data read orig/Beachlife.iso BeachLife.exe 0 64
 ```
 
-`list` emits JSON. `cat` and `read` stream raw bytes to stdout; redirect output
+`list` and `cabinets` emit JSON. `cat` and `read` stream raw bytes to stdout; redirect output
 when saving a file. `read` takes a decimal byte offset and count and rejects a
 range outside that file. Input images are opened read-only. Data commands need
 no window, graphics device, installed game or launcher configuration.
@@ -26,7 +27,8 @@ Ambiguous case aliases, missing files, directory reads, changed image sizes and
 truncated reads report errors. Keep the source image unchanged while using it.
 
 Reading a loose disc file does not decompress an installer cabinet. Cabinet
-mapping and compressed member access are separate capabilities. The development
+metadata inspection is implemented; game-path mapping and compressed member
+access remain separate capabilities. The development
 tool is built locally/with CI; release packages currently contain the launcher.
 
 ## Cabinet dependencies
@@ -36,8 +38,26 @@ gitlinks. `tools/setup_dependencies.py` fetches them; configuration exports
 verified copies into the build tree. No dependency checkout is edited and no
 system zlib/OpenSSL installation is used. Only the library sources are built.
 The unshield, zlib and included RSA MD5 notices are retained under `LICENSES/`
-and in native packages. Cabinet enumeration and reads use a separate adapter
-over the ISO source interface.
+and in native packages. Cabinet metadata uses an adapter over the ISO source
+interface.
+
+`cabinets` reads `data1.hdr` directly from the selected ISO and lists components,
+groups, directory names and file descriptors. It distinguishes cabinet members,
+external loose files and placeholders. The metadata command needs no cabinet
+payload files and creates no extracted files. An immutable header snapshot is
+validated before unshield reads it through bounded, read-only callbacks.
+
+The supported layout is InstallShield 6 with a separate header, capped at
+16 MiB and 100,000 directory/file entries. Invalid offsets, truncated tables,
+unterminated names, invalid group ranges and linked-list cycles report errors.
+This validates metadata access; compressed-data validation belongs to the
+future member reader. Names retain their original bytes: JSON maps each byte
+to the same Unicode code point (`name_encoding: byte-values`) until a source's
+character encoding is established. This is not game-language detection.
+
+The `cabinet_index` CTest uses generated metadata inside a generated ISO,
+including malformed cases, 64-bit sizes, unusual name bytes and Unicode host
+paths. It never requires a retail cabinet or extracted asset.
 
 ## Logical paths
 
