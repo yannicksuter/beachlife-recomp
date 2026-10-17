@@ -3,6 +3,32 @@
 Data access is independent of the launcher and does not run the retail game or
 installer. The native directory index is documented in [ISO.md](ISO.md).
 
+The regular CMake presets also build the `beachlife-data` development tool:
+
+```sh
+./build/debug/beachlife-data list orig/Beachlife.iso
+./build/debug/beachlife-data cat orig/Beachlife.iso Readme.htm
+./build/debug/beachlife-data read orig/Beachlife.iso BeachLife.exe 0 64
+```
+
+`list` emits JSON. `cat` and `read` stream raw bytes to stdout; redirect output
+when saving a file. `read` takes a decimal byte offset and count and rejects a
+range outside that file. Input images are opened read-only. Data commands need
+no window, graphics device, installed game or launcher configuration.
+
+## Source interface
+
+`IsoSource` indexes a selected ISO and opens logical paths as owned `SourceFile`
+objects. Each object exposes size, absolute seek, position and bounded reads.
+Reads stop at the file's own extent; EOF returns zero. Seeking past EOF fails.
+Independent handles have independent positions and outlive their source index.
+Ambiguous case aliases, missing files, directory reads, changed image sizes and
+truncated reads report errors. Keep the source image unchanged while using it.
+
+Reading a loose disc file does not decompress an installer cabinet. Cabinet
+mapping and compressed member access are separate capabilities. The development
+tool is built locally/with CI; release packages currently contain the launcher.
+
 ## Logical paths
 
 `normalize_game_path` in `src/data/game_path.h` accepts relative UTF-8 names.
@@ -19,3 +45,6 @@ must separately enforce containment, including symbolic links.
 
 `game_paths` in CTest covers lookup equivalence, preserved Unicode/display
 spelling and invalid paths using generated data.
+`iso_file_reads` checks the independent command-line tool and C++ source
+interface, including binary output, Unicode host paths, range limits, empty
+files, streaming, source lifetime, case collisions and truncation.
