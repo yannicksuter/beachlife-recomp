@@ -7,7 +7,7 @@ Dear ImGui with settings/source logic independent of rendering.
 
 ```mermaid
 flowchart LR
-    decomp[Reconstructed retail source] --> pin[Pinned export and patches]
+    decomp[decomp: reconstructed retail source] --> pin[Revision export and patches]
     pin --> game[Future native game module]
     launcher[New launcher and runtime] --> game
     game --> platform[New platform services]
@@ -16,16 +16,21 @@ flowchart LR
 
 ## Source and build boundaries
 
-The host contains only new bootstrap, launcher, runtime and platform code.
-Retail source belongs in beachlife-decomp. The future game module will compile
-its pinned `include/`, `libs/` and `src/` exports after applying the faithful
-patch series. Intentional behavior changes stay in a separate optional series,
-with tweaks off by default. Never edit a dependency checkout in place.
+This repository owns both tracks. `src/` contains new bootstrap, launcher,
+data, runtime and platform code. `decomp/` holds faithful reconstructed retail
+source and matching configuration; no sibling checkout is required. The future
+native game module will consume a revision-identified export of that source
+with faithful portability patches. Intentional behavior changes stay in a
+separate optional series, with tweaks off by default. Third-party dependencies
+remain immutable pins; never edit their checkouts in place.
 
 The matching build uses the original 32-bit compiler and compares functions
 against the target executable. The native build uses CMake/Ninja and modern
 C++20 compilers. These are different build products; a successful native build
 is not a matching result.
+The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
+the dominant Rich-header record, and the generated PDB/comparison fixture is
+verified. See [matching setup](../decomp/README.md).
 
 The host is 64-bit. x86_64 and ARM64 are distinct architectures, even though
 both targets use little-endian storage. File/save layouts, pointer widths,
@@ -60,10 +65,12 @@ and command-line startup alone do not establish GPU or gameplay compatibility.
 
 ## Data and game integration
 
-Start with installed-folder reads, then ISO 9660/Joliet and InstallShield
-cabinet access. Direct reads should avoid requiring a permanent extracted game
-tree; large compressed members need measured seeking/caching experiments.
-Keep case/slash compatibility without allowing paths to escape the source.
+Native ISO 9660/Joliet indexing and bounded file reads are implemented behind
+a read/seek interface and the independent `beachlife-data` tool. Folder and
+InstallShield cabinet backends follow. Direct reads avoid requiring a permanent
+extracted game tree; large compressed members need measured seeking/caching
+experiments. [Logical paths](DATA.md) preserve display spelling and normalize
+ASCII case/separators without permitting traversal.
 
 The initial source picker checks availability and the ISO container signature;
 it does not index game content. Game languages must later be derived from the

@@ -3,17 +3,17 @@
 A native C++ port of **Beach Life** (Deep Red Games / Eidos, 2002), known in
 North America as **Virtual Resort: Spring Break**, for Windows, Linux and macOS.
 
-The game will be compiled from reconstructed source in
-[beachlife-decomp](../beachlife-decomp). This repository supplies the new
-launcher, runtime and native platform services. The original executable never
-runs inside the port.
+Faithful reconstruction lives in [decomp/](decomp/README.md) within this
+repository. New launcher, data, runtime and native platform code lives in
+`src/`. The original executable never runs inside the port.
 
 ## Current status
 
 The first graphical launcher and the build/release pipeline are implemented.
 Open it to select an ISO or installed folder, remember the source, and adjust
 the interface size. Browse, drag-and-drop, manual paths, save and revert work.
-Game-content inspection, language detection and gameplay are still ahead;
+The independent [data tool](docs/DATA.md) indexes and reads files directly
+from an ISO. Cabinet access, language detection and gameplay are still ahead;
 Play remains unavailable. Decompilation and native development advance together.
 
 The intended graphics backends are DX12/Vulkan on Windows, Metal on macOS, and
@@ -65,6 +65,8 @@ CMakeLists.txt        native targets and the sole release version
 CMakePresets.json     shared local/CI configure, build and test presets
 cmake/               platform configuration and toolchains
 src/bootstrap/       native entry point and command line
+src/data/            read-only game sources and the headless data tool
+decomp/              faithful reconstruction, target identity and matching tools
 src/launcher/        graphical launcher, source selection and preferences
 src/platform/        future native graphics, audio, input and file services
 src/runtime/         future reconstructed-game integration
@@ -76,6 +78,6 @@ tests/               generated-fixture and native startup checks
 docs/                architecture, building, installation and releases
 ```
 
-Retail code lives only in decomp. The port will consume immutable source pins
-and apply patches to exported build trees. New host code lives here. See
+Retail code lives only in `decomp/`. The port will consume revision-identified
+exports and apply patches to build trees. New host code lives here. See
 [ARCHITECTURE](docs/ARCHITECTURE.md) and [patch rules](patches/README.md).

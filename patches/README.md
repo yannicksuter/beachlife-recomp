@@ -1,9 +1,9 @@
 # Source patches
 
-The port never edits pinned source directly. Every change to it is a patch in
-this folder, applied in the order of each folder's `series` file to a copy of
-the pinned source during the build. Each patch explains its reason in its
-header.
+Third-party source remains pinned and unmodified. Faithful retail
+reconstruction lives in this repository's `decomp/` directory. Native
+adaptations are patches in this folder, applied in each folder's `series`
+order to an exported copy during the build. Each patch explains its reason.
 
 - `beachlife-decomp/`: the faithful series. Only adapts the retail code to a
   modern compiler, 64-bit and the native platform.
