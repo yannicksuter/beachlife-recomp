@@ -9,7 +9,7 @@ private. Actions artifacts and releases require repository access.
 The root `CMakeLists.txt` declares the port's version:
 
 ```cmake
-project(beachlife_recomp VERSION 0.1.0 LANGUAGES C CXX)
+project(beachlife_recomp VERSION 0.0.1 LANGUAGES C CXX)
 ```
 
 This version is independent of the retail game's version. Update it on `main`:
@@ -31,11 +31,11 @@ builds its exact head SHA and produces these package artifacts:
 
 | Target | Archive | Build/startup validation |
 | --- | --- | --- |
-| Linux x86_64 | tar.gz | GCC build, CTest, extracted-package smoke |
-| Steam Deck x86_64 | tar.gz | GCC build, CTest, runtime ABI bounds, package smoke |
-| Windows x86_64 | ZIP | Pinned LLVM-MinGW build/import checks, package smoke on Windows |
-| macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, package smoke |
-| macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta smoke |
+| Linux x86_64 | tar.gz | GCC build, CTest, extracted CLI/window smoke |
+| Steam Deck x86_64 | tar.gz | GCC build, CTest, runtime ABI bounds, CLI/window smoke |
+| Windows x86_64 | ZIP | Pinned LLVM-MinGW build/import checks, CLI/window smoke on Windows |
+| macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, CLI/window smoke |
+| macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta CLI/window smoke |
 
 PR artifacts expire after seven days; stable/manual artifacts after fourteen.
 A test or draft release retains attached archives independently of that Actions
@@ -98,10 +98,12 @@ team copied from another repository.
 
 Packages contain only declared native outputs, documentation and runtime
 notices. SOURCE-MANIFEST.json records build identity, dependency information and
-payload hashes. SHA256SUMS covers the release archives. The current bootstrap
-has no game module or bundled game assets. Future libraries/resources must be
+payload hashes. SHA256SUMS covers the release archives. The current launcher
+has no game module or bundled retail data. It includes the declared header,
+font and dependency notices. Window smoke uses software rendering and requires
+no game files or GPU. Future libraries/resources must be
 added explicitly to the packaging contract and its checks.
 
 For local reproduction see [BUILDING](BUILDING.md); for startup see
 [INSTALL](INSTALL.md). The initial candidate verifies distribution of the
-bootstrap, not a playable game or qualified graphics backend.
+launcher, not a playable game or qualified game graphics backend.

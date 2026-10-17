@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from build_version import git_output
 from project_version import ROOT, read_version
+from prepare_sources import prepare
 
 TARGETS = ("linux-x86_64", "steamdeck-x86_64", "windows-x86_64", "macos-arm64", "macos-x86_64")
 DOCUMENTS = ("README.md", "docs/BUILDING.md", "docs/RELEASES.md", "docs/INSTALL.md", "LICENSES/README.md")
@@ -22,6 +23,9 @@ WINDOWS_NOTICES = ("LICENSE.TXT", "x86_64-w64-mingw32/share/mingw32/COPYING.winp
                    "x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt")
 MAC_FILES = ("beachlife.app/Contents/MacOS/beachlife", "beachlife.app/Contents/Info.plist")
 MAC_SIGNATURE = "beachlife.app/Contents/_CodeSignature/CodeResources"
+LAUNCHER_RESOURCES = ("header.jpg", "Roboto-Medium.ttf")
+LAUNCHER_NOTICES = ("assets/launcher/README.md", "LICENSES/Apache-2.0.txt",
+                    "LICENSES/SDL.txt", "LICENSES/ImGui.txt", "LICENSES/stb.txt")
 MAC_WRAPPER = b'#!/bin/sh\nexec "$(dirname "$0")/beachlife.app/Contents/MacOS/beachlife" "$@"\n'
 STEAM_LIBRARIES = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
                    "libstdc++.so.6", "libgcc_s.so.1", "ld-linux-x86-64.so.2"}
@@ -85,6 +89,10 @@ def payload_names(info):
     if info["system"] == "windows":
         names.update(WINDOWS_DLLS)
         names.update("LICENSES/llvm-mingw/" + Path(name).name for name in WINDOWS_NOTICES)
+    if info.get("capability") == "launcher":
+        prefix = "beachlife.app/Contents/Resources/" if info["system"] == "macos" else ""
+        names.update(prefix + "assets/launcher/" + name for name in LAUNCHER_RESOURCES)
+        names.update(LAUNCHER_NOTICES)
     return names
 
 
@@ -109,13 +117,26 @@ def package(build, output, source=ROOT, toolchain=None):
         data[name] = path.read_bytes()
         modes[name] = 0o755 if path.stat().st_mode & 0o111 else 0o644
 
+    dependencies = []
     for name in DOCUMENTS:
         copy(source, name)
     system = info["system"]
+    if info.get("capability") == "launcher":
+        dependencies.extend(prepare(source, build / 'prepared', verify=True))
+        prefix = "beachlife.app/Contents/Resources/" if system == "macos" else ""
+        for name in LAUNCHER_RESOURCES:
+            copy(build, prefix + 'assets/launcher/' + name)
+        for name in LAUNCHER_NOTICES[:2]:
+            copy(source, name)
+        for dependency, filename, destination in [('sdl', 'LICENSE.txt', 'SDL.txt'),
+                                                  ('imgui', 'LICENSE.txt', 'ImGui.txt'),
+                                                  ('stb', 'LICENSE', 'stb.txt')]:
+            copy(build / 'prepared' / dependency, filename, 'LICENSES/' + destination)
     executable = MAC_FILES[0] if system == "macos" else "beachlife.exe" if system == "windows" else "beachlife"
     if system == "macos":
         actual = {p.relative_to(build).as_posix() for p in (build / "beachlife.app").rglob('*') if not p.is_dir()}
-        if actual - set(MAC_FILES) - {MAC_SIGNATURE}:
+        allowed = {name for name in payload_names(info) if name.startswith('beachlife.app/')}
+        if actual - allowed - {MAC_SIGNATURE}:
             raise ValueError("Unexpected files in the application bundle")
         for name in MAC_FILES:
             copy(build, name)
@@ -129,7 +150,6 @@ def package(build, output, source=ROOT, toolchain=None):
         raise ValueError("Executable does not contain the current build version")
     if system != "windows" and modes[executable] != 0o755:
         raise ValueError("Native executable is missing its executable permission")
-    dependencies = []
     if system == "windows":
         if toolchain is None:
             raise ValueError("Windows packaging requires --toolchain for runtime DLLs/notices")
@@ -143,7 +163,10 @@ def package(build, output, source=ROOT, toolchain=None):
         # All imported non-system DLLs must be included. Inspect transitive runtimes too.
         system_dlls = {"kernel32.dll", "ntdll.dll", "msvcrt.dll", "ucrtbase.dll", "advapi32.dll",
                        "user32.dll", "bcrypt.dll", "bcryptprimitives.dll", "userenv.dll",
-                       "ole32.dll", "shell32.dll", "version.dll", "winmm.dll"}
+                       "ole32.dll", "shell32.dll", "version.dll", "winmm.dll",
+                       "cfgmgr32.dll", "comdlg32.dll", "gdi32.dll", "imm32.dll",
+                       "oleaut32.dll", "setupapi.dll", "shlwapi.dll", "rpcrt4.dll",
+                       "dinput8.dll", "dxgi.dll", "d3d11.dll", "d3d12.dll", "hid.dll"}
         for name, path in [(executable, build / executable)] + [(n, toolchain / "x86_64-w64-mingw32/bin" / n) for n in WINDOWS_DLLS]:
             report = subprocess.check_output([str(toolchain / "bin/llvm-objdump"), "-p", str(path)], text=True)
             imports = re.findall(r'DLL Name:\s*(\S+)', report)

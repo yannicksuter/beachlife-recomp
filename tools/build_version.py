@@ -31,7 +31,7 @@ def identity(source, config, git="git"):
     result["build_version"] = result["project_version"] + "+g" + result["commit"][:12]
     if result["dirty"]:
         result["build_version"] += ".dirty"
-    result["capability"] = "bootstrap"
+    result["capability"] = "launcher"
     return result
 
 

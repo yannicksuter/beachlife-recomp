@@ -12,9 +12,10 @@ header.
 
 Other dependencies get their own folder here if they ever need changes.
 
-The initial bootstrap has no decomp or graphics dependencies, so these series
-are currently empty and no retail source is compiled. Introduce a dependency
-through an immutable pin and prepared export when its first usable target is
-added. Native packages must record the pin and applied patch identities in
-their source manifest. See [architecture](../docs/ARCHITECTURE.md) and
+The launcher builds pinned SDL3, Dear ImGui and stb exports. No patches are
+needed for those pins yet, and no retail source is compiled. Configuration
+exports clean Git pins into the build tree and applies any dependency series;
+each build verifies the prepared files. Native packages record dependency pins
+and applied patch identities in their source manifest. See
+[architecture](../docs/ARCHITECTURE.md) and
 [release packaging](../docs/RELEASES.md).

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(beachlife_recomp VERSION 0.1.0 LANGUAGES C CXX)
+project(beachlife_recomp VERSION 0.0.1 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")
@@ -61,6 +61,9 @@ add_custom_target(build_identity
 add_executable(beachlife src/bootstrap/main.cpp)
 target_compile_features(beachlife PRIVATE cxx_std_20)
 set_target_properties(beachlife PROPERTIES CXX_EXTENSIONS OFF)
+if(WIN32)
+    set_target_properties(beachlife PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 target_include_directories(beachlife PRIVATE "${BEACHLIFE_GENERATED}")
 add_dependencies(beachlife build_identity)
 if(MSVC)
@@ -79,6 +82,8 @@ if(APPLE)
         OUTPUT_NAME beachlife)
 endif()
 
+include(cmake/Launcher.cmake)
+
 if(BUILD_TESTING)
     add_test(NAME bootstrap_cli
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_cli.py"
@@ -86,4 +91,11 @@ if(BUILD_TESTING)
     add_test(NAME build_tools
         COMMAND "${Python3_EXECUTABLE}" -B -m unittest discover -s tests -p "test_*.py")
     set_tests_properties(build_tools PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_executable(launcher_settings_tests tests/launcher_settings.cpp src/launcher/settings.cpp)
+    target_include_directories(launcher_settings_tests PRIVATE src)
+    target_compile_features(launcher_settings_tests PRIVATE cxx_std_20)
+    add_test(NAME launcher_settings COMMAND launcher_settings_tests)
+    add_test(NAME launcher_window
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_launcher.py"
+            "$<TARGET_FILE:beachlife>")
 endif()

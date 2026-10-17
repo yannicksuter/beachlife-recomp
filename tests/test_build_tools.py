@@ -59,7 +59,8 @@ def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corr
     system = 'linux' if platform == 'steamdeck' else platform
     version = '0.1.0+g' + sha[:12]
     info = {'project_version': '0.1.0', 'build_version': version, 'commit': sha, 'dirty': False,
-            'channel': channel, 'run_id': 7, 'platform': platform, 'system': system, 'architecture': architecture}
+            'channel': channel, 'run_id': 7, 'platform': platform, 'system': system, 'architecture': architecture,
+            'capability': 'launcher'}
     data = {name: b'fixture' for name in packages.payload_names(info)}
     manifest = {'format': 1, 'build': info, 'files': {
         name: {'sha256': packages.digest(body), 'bytes': len(body), 'mode': 0o644} for name, body in data.items()}}
