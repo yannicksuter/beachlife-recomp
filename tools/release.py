@@ -34,9 +34,13 @@ def test_tags(releases, number):
     return [item['tag_name'] for item in releases if pattern.fullmatch(item['tag_name'])]
 
 
-def cleanup(repository, number, keep=None):
+def releases(repository):
     pages = api(f'repos/{repository}/releases?per_page=100', paginate=True)
-    for tag in test_tags([item for page in pages for item in page], number):
+    return [item for page in pages for item in page]
+
+
+def cleanup(repository, number, keep=None):
+    for tag in test_tags(releases(repository), number):
         if tag != keep:
             command('release', 'delete', tag, '--repo', repository, '--cleanup-tag', '--yes')
 
@@ -64,7 +68,8 @@ def publish(repository, kind, directory, sha, run_id, number=0):
         notes = f'Test build of https://github.com/{repository}/pull/{number} at {sha}.\n\n'
     else:
         tag = 'v' + version
-        if (api(f'repos/{repository}/releases/tags/{tag}', optional=True)
+        # The tag endpoint omits drafts: enumerate releases before checking tags.
+        if (any(item['tag_name'] == tag for item in releases(repository))
                 or api(f'repos/{repository}/git/ref/tags/{tag}', optional=True)):
             print(f'{tag} already exists; preserving its commit and assets. Bump CMake for a new candidate.')
             return
