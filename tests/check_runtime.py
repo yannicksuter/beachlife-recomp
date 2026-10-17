@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_iso import fixture  # noqa: E402
+from content_fixture import content_files, iso_files  # noqa: E402
 
 SKIP = 77
 UNAVAILABLE = ("is not available on this computer", "Cannot start the game", "Cannot draw into the game window")
@@ -17,13 +17,18 @@ UNAVAILABLE = ("is not available on this computer", "Cannot start the game", "Ca
 def check(executable):
     with tempfile.TemporaryDirectory(prefix='beachlife-runtime-') as temporary:
         image = Path(temporary) / 'source.iso'
-        image.write_bytes(fixture())
+        image.write_bytes(iso_files(content_files()[0]))
         config = Path(temporary) / 'launcher.cfg'
         quoted = str(image).replace('\\', '\\\\').replace('"', '\\"')
         config.write_text(f'beachlife-launcher 2\nsource.path "{quoted}"\n', encoding='utf-8')
         result = subprocess.run([str(Path(executable).resolve()), '--play', '--smoke-test', '--frames', '30',
-                                 '--config', str(config)], capture_output=True, text=True, timeout=60)
+                                 '--config', str(config), '--cache-directory', str(Path(temporary)/'cache')],
+                                capture_output=True, text=True, timeout=60)
+        if result.returncode != 0 and 'Cannot initialize the launcher: No available video device' in result.stderr:
+            print('Skipped, no usable display here:', result.stderr.strip())
+            return SKIP
         if result.returncode != 0 and any(reason in result.stderr for reason in UNAVAILABLE):
+            assert 'Game data: 5 files mounted' in result.stdout, result.stdout + result.stderr
             print('Skipped, no usable display or GPU here:', result.stderr.strip())
             return SKIP
         assert result.returncode == 0, result.stdout + result.stderr

@@ -21,6 +21,13 @@ function(beachlife_add_cabinet_dependencies)
     set_target_properties(beachlife_unshield PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
     target_include_directories(beachlife_unshield SYSTEM PUBLIC "${unshield}/lib")
     target_include_directories(beachlife_unshield PRIVATE "${config}")
+    # advapi32 exports incompatible MD5 functions under these same names. SDL
+    # links it on Windows; keep the bundled implementation and its callers in
+    # our namespace regardless of static/import-library ordering.
+    target_compile_definitions(beachlife_unshield PUBLIC
+        MD5Init=beachlife_unshield_MD5Init
+        MD5Update=beachlife_unshield_MD5Update
+        MD5Final=beachlife_unshield_MD5Final)
     if(MSVC)
         target_include_directories(beachlife_unshield PRIVATE "${unshield}/win32_msvc")
         target_compile_definitions(beachlife_unshield PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -30,8 +37,9 @@ function(beachlife_add_cabinet_dependencies)
 endfunction()
 beachlife_add_cabinet_dependencies()
 
-add_library(beachlife_cabinet STATIC src/data/cabinet.cpp)
-target_link_libraries(beachlife_cabinet PUBLIC beachlife_data PRIVATE beachlife_unshield)
+add_library(beachlife_cabinet STATIC src/data/cabinet.cpp src/data/game_index.cpp
+    src/data/content_manifest.cpp src/data/content_storage.cpp src/data/content_prepare.cpp)
+target_link_libraries(beachlife_cabinet PUBLIC beachlife_data PRIVATE beachlife_unshield beachlife_formats)
 set_target_properties(beachlife_cabinet PROPERTIES CXX_EXTENSIONS OFF)
 if(MSVC)
     target_compile_options(beachlife_cabinet PRIVATE /W4 /WX)

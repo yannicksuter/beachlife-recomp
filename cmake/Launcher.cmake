@@ -44,12 +44,13 @@ add_dependencies(beachlife_ui verify_prepared)
 find_package(Threads REQUIRED)
 add_library(beachlife_launcher_core STATIC
     src/launcher/settings.cpp
+    src/launcher/content_service.cpp
     src/launcher/update_check.cpp src/launcher/update_install.cpp src/launcher/update_service.cpp
-    src/platform/http_client.cpp src/platform/json.cpp src/platform/sha256.cpp)
+    src/platform/http_client.cpp)
 target_include_directories(beachlife_launcher_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_compile_features(beachlife_launcher_core PUBLIC cxx_std_20)
 set_target_properties(beachlife_launcher_core PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(beachlife_launcher_core PRIVATE ZLIB::ZLIBSTATIC PUBLIC Threads::Threads)
+target_link_libraries(beachlife_launcher_core PRIVATE ZLIB::ZLIBSTATIC beachlife_formats PUBLIC Threads::Threads beachlife_cabinet)
 if(WIN32)
     target_link_libraries(beachlife_launcher_core PRIVATE winhttp)
 else()
@@ -63,11 +64,18 @@ endif()
 
 target_sources(beachlife PRIVATE src/launcher/launcher.cpp src/launcher/ui.cpp)
 # The game window Play opens: SDL's GPU API (Direct3D 12, Vulkan or Metal) and the game loop.
-target_sources(beachlife PRIVATE src/runtime/runtime.cpp src/platform/video_sdl_gpu.cpp)
+target_sources(beachlife PRIVATE src/runtime/runtime.cpp src/platform/video_sdl_gpu.cpp src/platform/app_icon.cpp)
 target_include_directories(beachlife PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core)
 
 if(BUILD_TESTING)
+    add_executable(launcher_content_tests tests/launcher_content.cpp)
+    target_link_libraries(launcher_content_tests PRIVATE beachlife_launcher_core)
+    add_test(NAME launcher_content
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_launcher_content.py"
+            "$<TARGET_FILE:launcher_content_tests>")
+    add_test(NAME game_startup
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_startup.py" "$<TARGET_FILE:beachlife>")
     # Packages written the way tools/package_build.py writes them, then the C++ checks.
     add_executable(launcher_update_tests tests/launcher_updates.cpp)
     target_link_libraries(launcher_update_tests PRIVATE beachlife_launcher_core)
@@ -97,3 +105,4 @@ add_custom_command(TARGET beachlife POST_BUILD
         "${IMGUI_DIR}/misc/fonts/Roboto-Medium.ttf"
         "${BEACHLIFE_RESOURCE_DIR}"
     VERBATIM)
+include("${CMAKE_SOURCE_DIR}/cmake/AppIcon.cmake")

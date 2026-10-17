@@ -9,6 +9,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 int main(int argc, char** argv) {
     if (argc == 3 && std::string_view(argv[1]) == "--inspect-iso") {
@@ -33,13 +34,14 @@ int main(int argc, char** argv) {
         std::puts("Beach Life - native launcher\n"
                   "Usage: beachlife [--launcher] [--source image.iso]\n"
                   "                 [--config file] [--page play|files|display|appearance|advanced|about]\n"
+                  "                 [--cache-directory folder]\n"
                   "                 [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --play [--source image.iso] [--config file]\n"
                   "                 [--frames count] [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --help | --version | --build-info\n\n"
                   "       beachlife --inspect-iso image.iso\n\n"
                   "Open without arguments to launch the graphical interface.\n"
-                  "--play opens the game window directly with the saved settings.\n"
+                  "--play prepares or reuses local game files, then opens the game window.\n"
                   "The game code is not reconstructed yet: the game window opens on\n"
                   "the chosen graphics API and runs an empty game loop.");
         return 0;
@@ -58,6 +60,7 @@ int main(int argc, char** argv) {
             if (i+1 == argc) throw std::runtime_error("Unknown or incomplete argument.");
             const std::string value = argv[++i];
             if (arg == "--config") options.config = beachlife::launcher::path_from_utf8(value);
+            else if (arg == "--cache-directory") options.cache = beachlife::launcher::path_from_utf8(value);
             else if (arg == "--screenshot") options.screenshot = beachlife::launcher::path_from_utf8(value);
             else if (arg == "--update-preview") options.update_preview = value;
             else if (arg == "--frames") {
@@ -88,28 +91,18 @@ int main(int argc, char** argv) {
     beachlife::runtime::Options game;
     const char* base = SDL_GetBasePath();
     game.resources = beachlife::launcher::path_from_utf8(base ? base : "") / "assets" / "launcher";
-    if (play) {
-        try {
-            if (!options.config.empty()) game.settings = beachlife::launcher::load_settings(options.config);
-            else if (char* folder = SDL_GetPrefPath("BeachLife", "BeachLife")) {
-                game.settings = beachlife::launcher::load_settings(beachlife::launcher::path_from_utf8(folder) / "launcher.cfg");
-                SDL_free(folder);
-            }
-        } catch (const std::exception& error) {
-            std::fprintf(stderr, "Beach Life: %s\n", error.what());
-            return 1;
-        }
-        if (!options.source.empty()) game.settings.source = options.source;
-        game.screenshot = options.screenshot;
-        game.frames = frames;
-        game.hidden = options.smoke;
-        return beachlife::runtime::run(game);
-    }
+    options.auto_play = play;
+    game.screenshot = play ? std::exchange(options.screenshot, {}) : std::filesystem::path{};
+    game.frames = frames;
+    game.hidden = options.smoke;
     for (;;) {
-        const auto outcome = beachlife::launcher::run(options);
+        auto outcome = beachlife::launcher::run(options);
         if (!outcome.play) return outcome.exit_code;
         game.settings = outcome.settings;
-        beachlife::runtime::run(game);
+        game.content = std::move(outcome.content);
+        const auto result = beachlife::runtime::run(game);
+        game.content.reset(); // release the mount before the launcher can repair it
+        if (play) return result;
         options.source.clear(); // the launcher shows the saved choice from now on
     }
 }

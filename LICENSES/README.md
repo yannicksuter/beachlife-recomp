@@ -18,8 +18,9 @@ checkouts are exported without edits before compilation.
 
 Roboto Medium is copied from the Dear ImGui pin, with the Apache 2.0 text in
 `Apache-2.0.txt`. The launcher artwork has separate provenance and rights notes
-in `assets/launcher/README.md`. These resources retain their owners' rights.
+in `assets/launcher/README.md`. The original application icon's provenance is
+in `assets/app/README.md`. These resources retain their owners' rights.
 
 Linux and macOS packages use system runtimes. No retail game libraries or
-extracted game files are distributed. New bundled dependencies must carry their
+gameplay data is distributed. New bundled dependencies must carry their
 applicable notices when they enter the package.

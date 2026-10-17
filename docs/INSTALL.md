@@ -10,7 +10,7 @@ published release, or a pull request's test build (a prerelease). Extract the
 entire archive into its own directory, which the launcher updates in place.
 
 - Windows x86_64: open `beachlife.exe`. Keep the supplied runtime DLLs and
-  `assets/launcher/` beside it.
+  `assets/` beside it.
 - Linux x86_64: run `./beachlife`. Use the compatibility/Steam Deck package
   when the ordinary Linux package requires newer system libraries.
 - macOS ARM64 or Intel: open `beachlife.app`, or run the provided `./beachlife`
@@ -23,8 +23,11 @@ the current capability. Unknown arguments return an error.
 
 On **Game files**, choose the ISO image of your original CD: use Browse,
 paste a path, or drop the file onto the window. ISO selection checks that
-the file is an ISO 9660 container. It does not yet verify Beach Life's game
-content. Missing, unreadable and unsupported inputs show a specific status.
+the file is an ISO 9660 container. **Prepare files**, or **Play**, checks the
+supported game layout and copies verified game data into local user storage.
+Progress and **Cancel** remain available while setup runs. Cancelled setup can
+resume; previously verified files are reused. Missing, unreadable and unsupported
+inputs show a specific status. The original installer is never run.
 
 **Display** holds the window mode, window size, display, scaling, VSync and,
 on Windows, the graphics API (DirectX 12 or Vulkan). Play's game window uses
@@ -36,19 +39,24 @@ or sent.
 Click **Save changes** to remember the path, display, diagnostics, update and
 interface settings, or **Revert** to restore the saved values. Preferences live
 in SDL's user configuration directory (BeachLife/BeachLife/launcher.cfg).
-`--config file` overrides that location. Game sources are never modified,
-extracted or copied by the launcher.
+`--config file` overrides that location. The ISO is never modified.
 Closing with unsaved changes offers save, discard and cancel.
 
-Game-language selection stays unavailable until content inspection can establish
-which translations the selected source actually contains. Installer language
-lists do not establish that. This first launcher's interface is English.
+The prepared game's language appears after content inspection. Currently the
+English disc layout is supported; installer language lists do not establish
+game translations. This launcher's interface is English.
+
+After setup, the local files work with the ISO disconnected. **Verify and repair**
+on Game files needs the original ISO and restores missing or damaged files.
+An image changed in place requires setup again. Settings and future saves live
+outside the game-data cache. See [DATA](DATA.md) for cache locations and checks.
 
 ## Play
 
 **Play**, at the bottom right of every page, is available once a readable ISO
-image is selected; its tooltip says why otherwise. It saves unsaved settings,
-closes the launcher and opens the game window with the Display settings:
+image is selected or prepared files are ready; its tooltip says why otherwise.
+It saves unsaved settings, prepares or reuses local files, then closes the
+launcher and opens the game window with the Display settings:
 window or fullscreen, size, display, Fit or Stretch, VSync and the graphics API
 (Direct3D 12 or Vulkan on Windows, Metal on macOS, Vulkan on Linux). A graphics
 API that is not available is reported, never replaced by another one. The game
@@ -75,11 +83,13 @@ start** turns that off. A check reads GitHub's public release list
 and the system's libcurl on Linux and macOS.
 
 Release archives have SHA256SUMS and each package contains SOURCE-MANIFEST.json.
-No original executables, game DLLs, disc images or extracted assets are supplied. The
+No original executables, game DLLs, disc images or gameplay data are supplied. The
 completed port will require a copy of the original game's data. Downloading a
 launcher package does not provide that data or a playable game. The header
-artwork (a remaster of Beach Life art), the game's logo and the font have
-separate notices in the package.
+artwork (a remaster of Beach Life art), the game's logo, original application
+icon and font have separate notices in the package. Windows uses the original
+icon in the executable; macOS uses it in the app bundle. Linux window icons
+depend on desktop support. The source icon is 32×32 pixels.
 
 See [RELEASES](RELEASES.md) for candidate promotion and [BUILDING](BUILDING.md)
 for building the same executable yourself.

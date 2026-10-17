@@ -22,7 +22,8 @@ DOCUMENTS = ("README.md", "docs/BUILDING.md", "docs/RELEASES.md", "docs/INSTALL.
 WINDOWS_DLLS = ("libc++.dll", "libunwind.dll", "libwinpthread-1.dll")
 WINDOWS_NOTICES = ("LICENSE.TXT", "x86_64-w64-mingw32/share/mingw32/COPYING.winpthreads.txt",
                    "x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt")
-MAC_FILES = ("beachlife.app/Contents/MacOS/beachlife", "beachlife.app/Contents/Info.plist")
+MAC_FILES = ("beachlife.app/Contents/MacOS/beachlife", "beachlife.app/Contents/Info.plist",
+             "beachlife.app/Contents/Resources/beachlife.icns")
 MAC_SIGNATURE = "beachlife.app/Contents/_CodeSignature/CodeResources"
 LAUNCHER_RESOURCES = ("header.jpg", "logo.png", "Roboto-Medium.ttf")
 LAUNCHER_NOTICES = ("assets/launcher/README.md", "LICENSES/Apache-2.0.txt",
@@ -93,6 +94,7 @@ def payload_names(info):
     if info.get("capability") == "launcher":
         prefix = "beachlife.app/Contents/Resources/" if info["system"] == "macos" else ""
         names.update(prefix + "assets/launcher/" + name for name in LAUNCHER_RESOURCES)
+        names.update((prefix + "assets/app/icon.png", "assets/app/README.md"))
         names.update(LAUNCHER_NOTICES)
     return names
 
@@ -127,6 +129,8 @@ def package(build, output, source=ROOT, toolchain=None):
         prefix = "beachlife.app/Contents/Resources/" if system == "macos" else ""
         for name in LAUNCHER_RESOURCES:
             copy(build, prefix + 'assets/launcher/' + name)
+        copy(build, prefix + 'assets/app/icon.png')
+        copy(source, 'assets/app/README.md')
         for name in LAUNCHER_NOTICES[:2]:
             copy(source, name)
         for dependency, filename, destination in [('sdl', 'LICENSE.txt', 'SDL.txt'),

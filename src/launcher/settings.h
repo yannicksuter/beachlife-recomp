@@ -37,12 +37,23 @@ struct DiagnosticsSettings {
     bool operator==(const DiagnosticsSettings&) const = default;
 };
 
+// The prepared identity belongs to this exact source selection. Size/time are
+// a fast replacement check, not an integrity checksum; the manifest holds the
+// full source fingerprint. An absent ISO can still use the last prepared set.
+struct ContentBinding {
+    std::string identity, source;
+    std::uint64_t size = 0;
+    std::int64_t modified = 0;
+    bool operator==(const ContentBinding&) const = default;
+};
+
 struct Settings {
     std::string source; // the game's ISO disc image
     int scale = 100;
     DisplaySettings display;
     DiagnosticsSettings diagnostics;
     UpdateSettings updates;
+    ContentBinding content;
     bool operator==(const Settings&) const = default;
 };
 

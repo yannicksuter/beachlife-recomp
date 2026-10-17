@@ -1,6 +1,7 @@
 #include "settings.h"
 
 #include <array>
+#include <charconv>
 #include <fstream>
 #include <iomanip>
 #include <set>
@@ -53,6 +54,12 @@ void validate_source(const Settings& settings) {
 
 void validate(const Settings& settings) {
     validate_source(settings);
+    const auto& content = settings.content;
+    if ((!content.identity.empty() && (content.identity.size() != 64 ||
+         content.identity.find_first_not_of("0123456789abcdef") != std::string::npos || content.source.empty())) ||
+        (content.identity.empty() && (!content.source.empty() || content.size || content.modified)) ||
+        content.source.size() > 32768 || content.source.find_first_of("\r\n\0", 0, 3) != std::string::npos)
+        throw std::runtime_error("The prepared-content reference is invalid.");
     if (settings.scale != 100 && settings.scale != 125 && settings.scale != 150)
         throw std::runtime_error("Unsupported interface scale.");
     const auto& display = settings.display;
@@ -66,8 +73,8 @@ void validate(const Settings& settings) {
     name_of(channels, settings.updates.channel);
 }
 
-// Version 2: one "key value" line per setting; every key at most once, none unknown.
-void read_keyed(std::istream& file, Settings& result) {
+// Versions 2/3: one "key value" line per setting; every key at most once, none unknown.
+void read_keyed(std::istream& file, Settings& result, bool content_fields) {
     const std::runtime_error invalid("The launcher settings format is invalid.");
     std::set<std::string> seen;
     std::string line;
@@ -77,6 +84,14 @@ void read_keyed(std::istream& file, Settings& result) {
         if (!(in >> key) || !seen.insert(key).second) throw invalid;
         auto& display = result.display;
         if (key == "source.path") in >> std::quoted(result.source);
+        else if (content_fields && key == "content.identity") in >> std::quoted(result.content.identity);
+        else if (content_fields && key == "content.source") in >> std::quoted(result.content.source);
+        else if (content_fields && key == "content.size") {
+            in >> word;
+            const auto parsed = std::from_chars(word.data(), word.data()+word.size(), result.content.size);
+            if (parsed.ec != std::errc{} || parsed.ptr != word.data()+word.size()) throw invalid;
+        }
+        else if (content_fields && key == "content.modified") in >> result.content.modified;
         else if (key == "launcher.scale") in >> result.scale;
         else if (key == "display.mode" && in >> word) display.mode = value_of(modes, word);
         else if (key == "display.width") in >> display.width;
@@ -99,14 +114,15 @@ Settings load_settings(const fs::path& path) {
     const bool exists = fs::exists(path, error);
     if (error) throw std::runtime_error("Cannot access launcher settings: " + error.message());
     if (!exists) return {};
-    if (!fs::is_regular_file(path, error) || error || fs::file_size(path, error) > 65536 || error)
+    if (!fs::is_regular_file(path, error) || error || fs::file_size(path, error) > 256*1024 || error)
         throw std::runtime_error("The settings file is unreadable or invalid.");
     std::ifstream file(path, std::ios::binary);
     std::string magic, kind;
     Settings result;
-    if (!std::getline(file, magic) || (magic != "beachlife-launcher 1" && magic != "beachlife-launcher 2"))
+    if (!std::getline(file, magic) || (magic != "beachlife-launcher 1" && magic != "beachlife-launcher 2" &&
+                                     magic != "beachlife-launcher 3"))
         throw std::runtime_error("Cannot read launcher settings. The existing file has been preserved.");
-    if (magic == "beachlife-launcher 2") read_keyed(file, result);
+    if (magic != "beachlife-launcher 1") read_keyed(file, result, magic == "beachlife-launcher 3");
     else {
         // Version 1 (launcher 0.0.1): source kind, scale and quoted path; display defaults. Only ISO
         // images are supported now: a saved folder stays selected and asks for the image instead.
@@ -128,8 +144,12 @@ void save_settings(const fs::path& path, const Settings& settings) {
     try {
         std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
         const auto& display = settings.display;
-        file << "beachlife-launcher 2\n"
+        file << "beachlife-launcher 3\n"
              << "source.path " << std::quoted(settings.source) << '\n'
+             << "content.identity " << std::quoted(settings.content.identity) << '\n'
+             << "content.source " << std::quoted(settings.content.source) << '\n'
+             << "content.size " << settings.content.size << '\n'
+             << "content.modified " << settings.content.modified << '\n'
              << "launcher.scale " << settings.scale << '\n'
              << "display.mode " << name_of(modes, display.mode) << '\n'
              << "display.width " << display.width << '\n'

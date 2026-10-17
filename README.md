@@ -15,8 +15,11 @@ diagnostics and interface settings. Browse, drag-and-drop, manual paths, save
 and revert work. The launcher updates itself from published releases or pull
 requests' test builds.
 The independent [data tool](docs/DATA.md) indexes and reads files directly
-from an ISO and inspects installer cabinet metadata. Compressed asset reads,
-language detection and gameplay are still ahead. Play opens the game window on
+from an ISO, reads installer cabinets and prepares verified local game data
+for a read-only VFS. Play prepares or repairs those files on a background worker,
+then mounts them for the runtime. Completed setup works with the ISO disconnected.
+The observed English data layout is supported; broader language detection and
+gameplay are still ahead. Play opens the game window on
 Direct3D 12, Vulkan or Metal and runs an empty game loop until the game code is
 reconstructed. Decompilation and native development advance together.
 
@@ -43,7 +46,6 @@ See [BUILDING](docs/BUILDING.md) for release builds, macOS and Windows.
 PRs to `main` and `stable` produce native packages for Windows x86_64, Linux
 x86_64, Steam Deck, macOS ARM64 and macOS x86_64. `main` is the development
 branch; promotion to `stable` goes through a tested `main` → `stable` PR.
-The repository remains private, and downloads require repository access.
 
 Promotion PRs receive temporary test prereleases. Merging builds the stable
 commit and creates a draft release candidate for the version in
@@ -55,12 +57,13 @@ Read [RELEASES](docs/RELEASES.md) for the complete process and
 
 ## Original game files
 
-No original executables, DLLs, disc images, game data or extracted assets are
+No original executables, DLLs, disc images or gameplay data are
 committed or included in packages. The completed port will require the user's
 own game data. Development inputs belong under ignored `orig/` or outside the
 repository; see [orig/README.md](orig/README.md). CI uses generated fixtures and
 builds without game files. The launcher artwork, a remaster of Beach Life art,
 and the game's logo are documented in [launcher resources](assets/launcher/README.md).
+The original application icon has separate [provenance](assets/app/README.md).
 
 ## Layout
 

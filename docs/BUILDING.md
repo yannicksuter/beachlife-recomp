@@ -109,10 +109,21 @@ LLVM-MinGW runtime, so use the documented cross build for release packages.
 
 ## Tests and scope
 
+The presets also build `beachlife-data` and its generated ISO, cabinet and
+prepared-content fixtures. See [DATA](DATA.md) for headless preparation,
+verification, VFS reads and the launcher/runtime API. No retail inputs are
+needed for these tests. Windows CI runs the data checks in a separate test
+artifact; product packages still contain the launcher/runtime executable.
+
 CTest checks help/version/build-info, settings persistence, source errors and
-a window smoke that renders all four pages with SDL's dummy video driver and
+a window smoke that renders all six pages with SDL's dummy video driver and
 software renderer. Package smoke runs the same window check after extraction,
-proving that the artwork and fonts travel with it. Generated fixtures cover
+proving that the artwork, icon and fonts travel with it. Package smoke also
+prepares generated data, checks offline reuse and repair, and reaches the
+runtime VFS read, then either runs the hidden loop or checks the unavailable-GPU
+error. The
+`launcher_content` test covers cancellation, source switches and mount lifetime.
+Generated fixtures cover
 pins, patch ordering, tampering, version changes, archive payloads, provenance,
 ABI bounds and release decisions.
 Run the Python checks alone with:
@@ -133,8 +144,9 @@ runs never check for updates; `--update-preview STATE` shows a made-up update
 state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
 `downloading`, `failed` or `installfailed`).
 
-`--play` opens the game window directly with the saved settings (or `--config`
-and `--source`), as Play does; `--frames N` stops it after N frames, and
+`--play` prepares or reuses game data, then opens the game window with saved
+settings (or `--config` and `--source`), as Play does. `--cache-directory folder`
+overrides the user cache for development. `--frames N` stops after N frames, and
 `--screenshot file.png` then saves the last one. The `game_runtime` test runs
 it hidden on a generated ISO and is skipped where no display or GPU device
 exists, as on hosted CI runners.
@@ -146,5 +158,10 @@ without network access.
 
 The launcher prefers SDL's DX12 renderer on Windows, Metal on macOS and Vulkan
 on Linux, with a software fallback. Hosted software smoke does not qualify GPU
-hardware or the future Dawn game renderer. The pipeline does not download or
+hardware or reconstructed gameplay. The pipeline does not download or
 execute original game code. See [RELEASES](RELEASES.md).
+
+Windows embeds `assets/app/icon.ico` using the native resource compiler. All
+windows load the matching PNG from package resources. macOS builds the ICNS
+bundle resource using the system `sips` and `iconutil`; these tools are required
+on the macOS build host. No original ISO is needed to build the app icons.

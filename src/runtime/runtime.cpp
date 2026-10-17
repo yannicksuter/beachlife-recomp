@@ -1,7 +1,9 @@
 #include "runtime/runtime.h"
-#include "data/iso9660.h"
+#include "runtime/loading_view.h"
+#include "runtime/startup.h"
 #include "platform/path.h"
 #include "platform/video.h"
+#include "platform/app_icon.h"
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -9,10 +11,15 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 namespace beachlife::runtime {
 namespace {
@@ -44,6 +51,68 @@ std::string api_title(const std::string& driver) {
     return driver;
 }
 
+// Esc or closing the window returns to the launcher.
+bool leaves(const SDL_Event& event) {
+    return event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
+           (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE);
+}
+
+// The game files the game reads before its first frame, through the VFS.
+StartupStep read_game_files(const data::PreparedSource& content) {
+    return {"Loading game files", [&content](StartupProgress& progress) {
+        auto ini = content.open("BeachLife.ini");
+        if (ini->size() > 1024*1024) throw std::runtime_error("BeachLife.ini exceeds the startup read limit.");
+        progress.total(ini->size());
+        std::array<unsigned char, 4096> buffer{};
+        std::uint64_t read = 0;
+        while (const auto count = ini->read(buffer)) {
+            if (progress.cancelled()) return;
+            read += count;
+            progress.advance(count);
+        }
+        if (read != ini->size()) throw std::runtime_error("Cannot read BeachLife.ini from prepared game data.");
+        std::printf("Game data: BeachLife.ini %llu bytes read through VFS.\n", static_cast<unsigned long long>(read));
+    }};
+}
+
+// Runs the startup steps on a worker behind the loading screen, then fades out to
+// the game's black back buffer. Returns false when the player leaves first; the
+// error of a failed step is thrown.
+bool start_game(platform::Video& video, const platform::Frame& background, const std::filesystem::path& font,
+                std::vector<StartupStep> steps) {
+    LoadingView view(video, background, font);
+    StartupWork work(std::move(steps));
+    const auto left = [] {
+        bool leave = false;
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+            leave |= leaves(event);
+        }
+        return leave;
+    };
+    // About 60 frames per second; the worker keeps the rest.
+    auto next = std::chrono::steady_clock::now();
+    const auto pause = [&next] {
+        next = std::max(std::chrono::steady_clock::now(), next + std::chrono::microseconds(16667));
+        std::this_thread::sleep_until(next);
+    };
+    for (;;) {
+        if (left()) return false; // an already queued leave wins over finished work
+        const auto status = work.status();
+        if (status.failed) work.rethrow();
+        if (status.ready) break;
+        view.draw(status.label, status.share());
+        pause();
+    }
+    // Completes the bar and fades out: a single black frame when nothing was shown.
+    for (;;) {
+        if (left()) return false;
+        if (!view.draw_finished()) return true;
+        pause();
+    }
+}
+
 // Shuts the parts down in reverse order, also after an error.
 struct Session {
     std::unique_ptr<platform::Video> video;
@@ -58,9 +127,12 @@ struct Session {
 
 int run_game(const Options& options) {
     const auto& settings = options.settings;
-    // The game files: the selected disc image, read only.
-    if (settings.source.empty()) throw std::runtime_error("Choose your game files on the launcher's Game files page first.");
-    data::index_iso(platform::utf8_path(settings.source));
+    // Keep the mount alive until the game session ends. Runtime reads never
+    // reopen the ISO; reconstructed startup will consume this same FileSource.
+    const auto content = options.content;
+    if (!content) throw std::runtime_error("Prepare your game files on the launcher's Game files page first.");
+    std::printf("Game data: %zu files mounted, language %s.\n", content->manifest().files.size(),
+                content->manifest().language.c_str());
 
     Session session;
     if (!SDL_Init(SDL_INIT_VIDEO)) throw std::runtime_error(std::string("Cannot start the game: ") + SDL_GetError());
@@ -71,21 +143,28 @@ int run_game(const Options& options) {
     io.IniFilename = nullptr;
     session.video = platform::create_video(video_settings(settings, options.hidden));
     auto& video = *session.video;
+    platform::set_app_icon(video.window(), options.resources.parent_path() / "app" / "icon.png");
     if (!ImGui_ImplSDL3_InitForSDLGPU(video.window())) throw std::runtime_error("Cannot set up the overlay's input");
     session.input = true;
-    const float density = std::max(1.0f, SDL_GetWindowPixelDensity(video.window()));
-    io.Fonts->Clear(); // the renderer set up ImGui's default font; the launcher's Roboto replaces it
-    io.FontDefault = io.Fonts->AddFontFromFileTTF(platform::utf8(options.resources / "Roboto-Medium.ttf").c_str(), 15*density);
-    if (!io.FontDefault) throw std::runtime_error("The overlay font is missing. Restore the complete package.");
-    io.FontGlobalScale = 1/density;
-    ImGui::GetStyle().WindowRounding = 10;
-    ImGui::GetStyle().Colors[ImGuiCol_WindowBg] = {0.04f, 0.09f, 0.16f, 0.86f};
 
     // The back buffer the game will draw into; black while there is no game code.
     platform::Frame frame;
     frame.width = frame_width;
     frame.height = frame_height;
     frame.pixels.assign(static_cast<std::size_t>(frame_width)*frame_height, 0xFF000000u);
+    // Before the first frame: game files through the VFS, behind the loading screen.
+    std::vector<StartupStep> steps;
+    steps.push_back(read_game_files(*content));
+    if (!start_game(video, frame, options.resources / "Roboto-Medium.ttf", std::move(steps))) return 0;
+
+    const float density = std::max(1.0f, SDL_GetWindowPixelDensity(video.window()));
+    io.Fonts->Clear(); // the loading screen's font; the overlay uses the launcher's Roboto at its own size
+    io.FontDefault = io.Fonts->AddFontFromFileTTF(platform::utf8(options.resources / "Roboto-Medium.ttf").c_str(), 15*density);
+    if (!io.FontDefault) throw std::runtime_error("The overlay font is missing. Restore the complete package.");
+    io.FontGlobalScale = 1/density;
+    ImGui::GetStyle().WindowRounding = 10;
+    ImGui::GetStyle().Colors[ImGuiCol_WindowBg] = {0.04f, 0.09f, 0.16f, 0.86f};
+
     const std::string graphics = api_title(video.info().api) + ", " + video.info().present_mode;
     const double frequency = static_cast<double>(SDL_GetPerformanceFrequency());
     std::uint64_t last = SDL_GetPerformanceCounter(), measured_since = last, ticks = 0, frames = 0, measured_frames = 0;
@@ -95,8 +174,7 @@ int run_game(const Options& options) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
-            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) running = false;
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) running = false;
+            if (leaves(event)) running = false;
         }
         // Fixed simulation steps for the time that passed (at most a quarter second after a stall).
         const std::uint64_t now = SDL_GetPerformanceCounter();

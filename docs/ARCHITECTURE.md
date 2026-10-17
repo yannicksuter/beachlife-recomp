@@ -46,7 +46,7 @@ both targets use little-endian storage. File/save layouts, pointer widths,
 | Windows graphics | SDL3 GPU on Direct3D 12, with Vulkan selectable |
 | macOS graphics, ARM64 and Intel | SDL3 GPU on Metal |
 | Linux graphics | SDL3 GPU on Vulkan |
-| Game files | Read/seek interface over installed folders, images and installer archives |
+| Game files | ISO/cabinet preparation, then read/seek through a managed local VFS |
 | Settings and saves | Writable user storage, separate from read-only game data |
 
 SDL3 and Dear ImGui are integrated for the launcher, with stb decoding the
@@ -62,7 +62,7 @@ ImGui overlay. Its implementation uses SDL's GPU API on the requested backend
 and reports an unavailable one instead of substituting another. Scaling needs
 no shaders; the overlay uses Dear ImGui's precompiled SPIR-V, DXBC and metallib
 shaders. Another GPU provider, such as Dawn, could implement the same interface
-if the game's rendering needs one. `runtime::run` opens the game files and the
+if the game's rendering needs one. `runtime::run` receives mounted game data and opens the
 window and runs the fixed-step game loop, currently with an empty back buffer.
 Renderer-independent settings code handles UTF-8
 paths, bounded settings parsing, atomic replacement and basic source checks.
@@ -79,17 +79,19 @@ Native ISO 9660/Joliet indexing and bounded file reads are implemented behind
 a read/seek interface and the independent `beachlife-data` tool. Pinned unshield
 and zlib provide the cabinet dependency boundary. The tool enumerates guarded
 InstallShield 6 metadata from an ISO-backed header snapshot through read-only
-callbacks; game-path mapping and compressed member reads follow. Folder access
-is a separate backend. Direct reads avoid requiring a permanent
-extracted game tree; large compressed members need measured seeking/caching
-experiments. [Logical paths](DATA.md) preserve display spelling and normalize
+callbacks. Game-path mapping selects the supported English Data/ tree and INI.
+Preparation verifies and stages cabinet/loose members into persistent user
+storage, then publishes a versioned manifest. The runtime uses ordinary local
+reads and seeks through `PreparedSource`; it never reopens the ISO.
+[Logical paths](DATA.md) preserve display spelling and normalize
 ASCII case/separators without permitting traversal.
 
-The initial source picker checks availability and the ISO container signature;
-it does not index game content. Game languages must later be derived from the
-selected source's actual localization data. Switching sources must recompute
-the available list and reset an unavailable selection. Installer translations
-and launcher-interface translations are separate concerns.
+The source picker checks availability and the ISO container signature. A
+cancellable setup worker validates game content before Play hands a mounted
+source to the runtime. Settings remember readiness for offline startup; changed
+sources invalidate it. The verified profile supplies the game language, with
+English currently supported. Installer translations and launcher-interface
+translations are separate concerns. See [DATA](DATA.md) for lifecycle and checks.
 
 Asset previews and subsystem harnesses can advance while matching is incomplete.
 Full game launch requires all reachable game code and dependencies in source.
