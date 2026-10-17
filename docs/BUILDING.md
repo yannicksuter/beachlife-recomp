@@ -120,9 +120,11 @@ a window smoke that renders all six pages with SDL's dummy video driver and
 software renderer. Package smoke runs the same window check after extraction,
 proving that the artwork, icon and fonts travel with it. Package smoke also
 prepares generated data, checks offline reuse and repair, and reaches the
-runtime VFS read, then either runs the hidden loop or checks the unavailable-GPU
-error. The
-`launcher_content` test covers cancellation, source switches and mount lifetime.
+runtime handoff, then either runs the hidden loop, including the startup VFS
+read, or checks the unavailable-GPU error. The
+`launcher_content` test covers cancellation, source switches and mount lifetime;
+`startup_work` covers the order, progress, cancellation and errors of the work
+behind the game window's loading screen.
 Generated fixtures cover
 pins, patch ordering, tampering, version changes, archive payloads, provenance,
 ABI bounds and release decisions.

@@ -23,10 +23,12 @@ def check(executable):
         def run(*args, ready=True):
             result = subprocess.run([*command, *args], env=environment, capture_output=True, text=True, timeout=40)
             if ready:
-                assert 'Game data: 5 files mounted, language en, BeachLife.ini 27 bytes read through VFS.' in result.stdout, result
-                # Setup and the VFS read must finish even without a display.
-                # Some backends (notably D3D12) can also run the hidden loop.
+                assert 'Game data: 5 files mounted, language en.' in result.stdout, result
+                # Setup and the handoff must finish even without a display. The startup
+                # VFS read runs behind the loading screen, so it needs the window; some
+                # backends (notably D3D12) can also run the hidden loop.
                 if result.returncode == 0:
+                    assert 'Game data: BeachLife.ini 27 bytes read through VFS.' in result.stdout, result
                     assert 'Game runtime:' in result.stdout and ' 1 frames' in result.stdout, result
                 else:
                     assert result.returncode == 1 and 'is not available on this computer' in result.stderr, result

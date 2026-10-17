@@ -64,7 +64,8 @@ endif()
 
 target_sources(beachlife PRIVATE src/launcher/launcher.cpp src/launcher/ui.cpp)
 # The game window Play opens: SDL's GPU API (Direct3D 12, Vulkan or Metal) and the game loop.
-target_sources(beachlife PRIVATE src/runtime/runtime.cpp src/platform/video_sdl_gpu.cpp src/platform/app_icon.cpp)
+target_sources(beachlife PRIVATE src/runtime/runtime.cpp src/runtime/startup.cpp src/runtime/loading_view.cpp src/runtime/content_startup.cpp
+    src/platform/video_sdl_gpu.cpp src/platform/app_icon.cpp)
 target_include_directories(beachlife PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core)
 
@@ -76,6 +77,17 @@ if(BUILD_TESTING)
             "$<TARGET_FILE:launcher_content_tests>")
     add_test(NAME game_startup
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_startup.py" "$<TARGET_FILE:beachlife>")
+    # The work behind the game window's loading screen, without a window.
+    add_executable(startup_work_tests tests/startup_work.cpp src/runtime/startup.cpp)
+    target_include_directories(startup_work_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_compile_features(startup_work_tests PRIVATE cxx_std_20)
+    target_link_libraries(startup_work_tests PRIVATE Threads::Threads)
+    add_test(NAME startup_work COMMAND startup_work_tests)
+    add_executable(content_startup_tests tests/content_startup.cpp src/runtime/content_startup.cpp src/runtime/startup.cpp)
+    target_include_directories(content_startup_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(content_startup_tests PRIVATE beachlife_cabinet Threads::Threads)
+    add_test(NAME content_startup
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_content_startup.py" "$<TARGET_FILE:content_startup_tests>")
     # Packages written the way tools/package_build.py writes them, then the C++ checks.
     add_executable(launcher_update_tests tests/launcher_updates.cpp)
     target_link_libraries(launcher_update_tests PRIVATE beachlife_launcher_core)

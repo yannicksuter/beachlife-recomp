@@ -64,6 +64,11 @@ no shaders; the overlay uses Dear ImGui's precompiled SPIR-V, DXBC and metallib
 shaders. Another GPU provider, such as Dawn, could implement the same interface
 if the game's rendering needs one. `runtime::run` receives mounted game data and opens the
 window and runs the fixed-step game loop, currently with an empty back buffer.
+Before the first frame, startup steps (now the game files' startup read through
+the VFS, later shader preparation) run on a worker behind a minimal loading
+screen: a label, percentage and thin bar on black, adapted from Recharged. It
+appears only when startup takes longer than 0.3 s and fades out to the black
+the game starts from.
 Renderer-independent settings code handles UTF-8
 paths, bounded settings parsing, atomic replacement and basic source checks.
 

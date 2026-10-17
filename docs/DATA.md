@@ -84,9 +84,19 @@ Play and the Game files page use `launcher::ContentService`: a single background
 worker performs preparation and publishes progress snapshots to the UI. Cancel,
 source edits, Browse/drop and Revert invalidate pending results. A source change
 cannot publish readiness for the new selection. Closing cancels outstanding work.
-Play waits for a mounted `PreparedSource`, passes it to `runtime::Options`, and
-the runtime reads `BeachLife.ini` through the VFS before creating its GPU window.
+Play waits for a mounted `PreparedSource` and passes it to `runtime::Options`.
+Once the game window is open, a startup worker reads `BeachLife.ini` through the
+VFS behind the loading screen; closing the window during startup cancels it.
 The mount is released when the runtime returns to the launcher, allowing repair.
+
+`runtime::read_game_files` creates the loading-screen step with shared ownership
+of its `FileSource`. It reports the INI's actual byte count, reads bounded chunks,
+and checks cancellation between reads. Missing, truncated and oversized files
+fail startup. The current small INI read usually finishes within the screen's
+grace period; no artificial delay or whole-cache preload is added. Future startup
+assets can join this queue when their loading requirements are reconstructed.
+The `content_startup` test exercises this VFS step without a graphics device,
+including offline reads, mount lifetime, progress and storage failures.
 
 Launcher settings format 3 remembers the prepared identity and the absolute ISO
 path, size and modification time; formats 1 and 2 still load. Normal startup

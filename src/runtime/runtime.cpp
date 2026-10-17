@@ -1,4 +1,5 @@
 #include "runtime/runtime.h"
+#include "runtime/content_startup.h"
 #include "runtime/loading_view.h"
 #include "runtime/startup.h"
 #include "platform/path.h"
@@ -11,7 +12,6 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -55,24 +55,6 @@ std::string api_title(const std::string& driver) {
 bool leaves(const SDL_Event& event) {
     return event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
            (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE);
-}
-
-// The game files the game reads before its first frame, through the VFS.
-StartupStep read_game_files(const data::PreparedSource& content) {
-    return {"Loading game files", [&content](StartupProgress& progress) {
-        auto ini = content.open("BeachLife.ini");
-        if (ini->size() > 1024*1024) throw std::runtime_error("BeachLife.ini exceeds the startup read limit.");
-        progress.total(ini->size());
-        std::array<unsigned char, 4096> buffer{};
-        std::uint64_t read = 0;
-        while (const auto count = ini->read(buffer)) {
-            if (progress.cancelled()) return;
-            read += count;
-            progress.advance(count);
-        }
-        if (read != ini->size()) throw std::runtime_error("Cannot read BeachLife.ini from prepared game data.");
-        std::printf("Game data: BeachLife.ini %llu bytes read through VFS.\n", static_cast<unsigned long long>(read));
-    }};
 }
 
 // Runs the startup steps on a worker behind the loading screen, then fades out to
@@ -154,7 +136,7 @@ int run_game(const Options& options) {
     frame.pixels.assign(static_cast<std::size_t>(frame_width)*frame_height, 0xFF000000u);
     // Before the first frame: game files through the VFS, behind the loading screen.
     std::vector<StartupStep> steps;
-    steps.push_back(read_game_files(*content));
+    steps.push_back(read_game_files(content));
     if (!start_game(video, frame, options.resources / "Roboto-Medium.ttf", std::move(steps))) return 0;
 
     const float density = std::max(1.0f, SDL_GetWindowPixelDensity(video.window()));

@@ -32,6 +32,7 @@ def check(executable):
             print('Skipped, no usable display or GPU here:', result.stderr.strip())
             return SKIP
         assert result.returncode == 0, result.stdout + result.stderr
+        assert 'Game data: BeachLife.ini 27 bytes read through VFS.' in result.stdout, result.stdout
         assert 'Game runtime:' in result.stdout and ' 30 frames' in result.stdout, result.stdout
         print(result.stdout.strip())
     return 0

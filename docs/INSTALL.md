@@ -59,7 +59,8 @@ It saves unsaved settings, prepares or reuses local files, then closes the
 launcher and opens the game window with the Display settings:
 window or fullscreen, size, display, Fit or Stretch, VSync and the graphics API
 (Direct3D 12 or Vulkan on Windows, Metal on macOS, Vulkan on Linux). A graphics
-API that is not available is reported, never replaced by another one. The game
+API that is not available is reported, never replaced by another one. Startup
+work that takes longer than a moment shows a progress bar first. The game
 code is not reconstructed yet, so the window shows an empty picture with a
 small overlay naming the graphics API and frame rate. Esc or closing the window
 returns to the launcher.
