@@ -7,8 +7,10 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -273,6 +275,356 @@ void prefixes_and_mixed_inputs()
         check(bytes);
     }
 }
+
+// The seeker reads one byte beyond a positive declared extent. Its result can
+// be modeled independently by a forward slash/CR state machine over payload only.
+int quote_oracle(std::span<const unsigned char> bytes)
+{
+    bool skipping = false;
+    for (std::size_t position = 0; position < bytes.size(); ++position)
+    {
+        const unsigned char byte = bytes[position];
+        if (skipping)
+        {
+            if (byte == '\r')
+            {
+                skipping = false;
+            }
+        }
+        else if (position != 0 && byte == '/')
+        {
+            skipping = true;
+        }
+        else if (byte == '\'')
+        {
+            return static_cast<int>(position);
+        }
+    }
+    return static_cast<int>(bytes.size());
+}
+
+struct UnsafeCounterInput
+{
+};
+
+std::optional<int> count_oracle(std::span<const unsigned char> storage, int size)
+{
+    // Absolute cursors and bounded searches deliberately differ from the
+    // reconstructed helper calls. Reject unsafe composed domains before running
+    // the unchecked counter: one lookahead byte alone does not make it safe.
+    const int allocated = static_cast<int>(storage.size());
+    if (allocated == 0 || size >= allocated)
+    {
+        throw std::logic_error("Counter oracle requires one readable lookahead byte.");
+    }
+    const auto pointer = [&](int position)
+    {
+        if (position < 0 || position > allocated)
+        {
+            throw UnsafeCounterInput{};
+        }
+    };
+    const auto at = [&](int position)
+    {
+        if (position < 0 || position >= allocated)
+        {
+            throw UnsafeCounterInput{};
+        }
+        return storage[static_cast<std::size_t>(position)];
+    };
+    const auto span = [&](int position)
+    {
+        pointer(position);
+        return storage.subspan(static_cast<std::size_t>(position),
+            static_cast<std::size_t>(std::max(size - position, 0)));
+    };
+    const auto skip = [&](int position)
+    {
+        const auto remaining = span(position);
+        const auto first = std::find_if(remaining.begin(),
+            remaining.end(),
+            [](unsigned char byte)
+            {
+                return accepted[byte];
+            });
+        return position + static_cast<int>(first - remaining.begin());
+    };
+    const auto through_quote = [&](int position, unsigned char quote)
+    {
+        // Both extent helpers consume at least one byte when the remaining
+        // size is exhausted; preserve that quirk in the model, then check bounds.
+        if (position + 1 >= size)
+        {
+            return position + 1;
+        }
+        const auto after_opening = span(position + 1);
+        const auto found = std::find(after_opening.begin(), after_opening.end(), quote);
+        return position + 1 + static_cast<int>(found - after_opening.begin()) +
+               (found != after_opening.end() ? 1 : 0);
+    };
+    try
+    {
+        int cursor = skip(0);
+        int count = 0;
+        for (;;)
+        {
+            const auto remaining = span(cursor);
+            if (std::count(remaining.begin(), remaining.end(), '\'') < 2)
+            {
+                return count;
+            }
+            cursor += quote_oracle(remaining);
+            cursor = skip(through_quote(cursor, '\''));
+            if (at(cursor) == '"')
+            {
+                cursor = through_quote(cursor, '"');
+            }
+            else
+            {
+                const auto value = span(cursor);
+                const auto end = std::find_if_not(value.begin(),
+                    value.end(),
+                    [](unsigned char byte)
+                    {
+                        return accepted[byte];
+                    });
+                cursor += static_cast<int>(end - value.begin());
+            }
+            cursor = skip(cursor);
+            ++count;
+            if (count > allocated)
+            {
+                throw std::logic_error("Counter oracle unexpectedly failed to advance.");
+            }
+        }
+    }
+    catch (const UnsafeCounterInput&)
+    {
+        return std::nullopt;
+    }
+}
+
+std::size_t seeker_cases = 0;
+std::size_t counter_cases = 0;
+std::size_t counter_excluded = 0;
+
+Bytes padded(const Bytes& bytes, unsigned char sentinel)
+{
+    Bytes storage = bytes;
+    storage.push_back(sentinel);
+    return storage;
+}
+
+void check_scanners(const Bytes& bytes, unsigned char sentinel = 0)
+{
+    const Bytes expected_storage = padded(bytes, sentinel);
+    const int size = static_cast<int>(bytes.size());
+    const auto expected_count = count_oracle(expected_storage, size);
+    // Exact allocation: sanitizers catch a second lookahead byte. Existing
+    // four-helper checks above retain their stricter unpadded allocation bounds.
+    std::unique_ptr<char[]> storage(new char[expected_storage.size()]);
+    std::memcpy(storage.get(), expected_storage.data(), expected_storage.size());
+    const auto unchanged = [&]
+    {
+        expect(std::memcmp(storage.get(), expected_storage.data(), expected_storage.size()) == 0,
+            "A configuration scanner changed its input or lookahead byte.");
+    };
+    expect(SeekConfigQuotedName(storage.get(), size) == quote_oracle(bytes),
+        "Quote seeker differs from the independent slash/CR model.");
+    unchanged();
+    ++seeker_cases;
+    if (expected_count)
+    {
+        expect(CountConfigTokens(storage.get(), size) == *expected_count,
+            "Token count differs from the independent bounded byte model.");
+        unchanged();
+        ++counter_cases;
+    }
+    else
+    {
+        ++counter_excluded;
+    }
+}
+
+void known_scanners(const Bytes& bytes, int quote, std::optional<int> count)
+{
+    expect(quote_oracle(bytes) == quote &&
+               count_oracle(padded(bytes, 0), static_cast<int>(bytes.size())) == count,
+        "Scanner oracle differs from a literal result or known unsafe domain.");
+    check_scanners(bytes);
+}
+
+Bytes bytes_from(std::string_view text)
+{
+    return Bytes(text.begin(), text.end());
+}
+
+void scanner_preconditions_and_known_results()
+{
+    for (const int size : {0, -1, -2, -31, std::numeric_limits<int>::min()})
+    {
+        expect(SeekConfigQuotedName(nullptr, size) == size,
+            "Nonpositive quote seeking must return its size without reading.");
+        ++seeker_cases;
+        // Count forms buffer+0 even when its children do not read; use a valid
+        // sentinel pointer instead of making a null-pointer arithmetic claim.
+        const char sentinel = 0;
+        expect(count_oracle(Bytes{0}, size) == 0 && CountConfigTokens(&sentinel, size) == 0,
+            "Nonpositive token counting must return zero.");
+        ++counter_cases;
+    }
+    known_scanners({}, 0, 0);
+    known_scanners(bytes_from("abc"), 3, 0);
+    known_scanners(bytes_from("'unterminated"), 0, 0);
+    known_scanners(bytes_from("''"), 0, 1);
+    known_scanners(bytes_from("'a'"), 0, 1);
+    known_scanners(bytes_from("'a' 1 'b' 2"), 0, 2);
+    known_scanners(bytes_from("'a''b'"), 0, 1);
+    known_scanners(bytes_from("'a' \"x 'junk'\" 'b' 3"), 0, 2);
+    known_scanners(bytes_from("'a' zzz 'b' 3"), 0, 1);
+    known_scanners(bytes_from("x/'ignored'\r'a' 1"), 12, 1);
+    known_scanners(bytes_from("/'a' 1"), 1, 1);
+    known_scanners(bytes_from("'a' \"unfinished"), 0, 1);
+    known_scanners({0, 255, '\'', 'a', '\'', 128, '\t', '1'}, 2, 1);
+    // Both quotes can be present inside the span that the seeker skips. The
+    // name helper then advances beyond the extent, and the value read is unsafe.
+    known_scanners(bytes_from("x/'a'"), 5, std::nullopt);
+    known_scanners(bytes_from("x/'a'\r"), 6, std::nullopt);
+    known_scanners(bytes_from("x/'a'\n'b'1"), 10, std::nullopt);
+}
+
+void exhaustive_scanner_inputs()
+{
+    for (unsigned int first = 0; first != 256; ++first)
+    {
+        for (unsigned int second = 0; second != 256; ++second)
+        {
+            check_scanners({static_cast<unsigned char>(first)}, static_cast<unsigned char>(second));
+            check_scanners(
+                {static_cast<unsigned char>(first), static_cast<unsigned char>(second)}, '\'');
+        }
+    }
+    const std::array<unsigned char, 8> alphabet{0, '\r', ' ', '"', '\'', '/', 'A', 'z'};
+    std::size_t combinations = 1;
+    for (std::size_t length = 0; length <= 5; ++length)
+    {
+        for (std::size_t encoded = 0; encoded < combinations; ++encoded)
+        {
+            Bytes bytes(length);
+            std::size_t value = encoded;
+            for (auto& byte : bytes)
+            {
+                byte = alphabet[value % alphabet.size()];
+                value /= alphabet.size();
+            }
+            check_scanners(bytes, '\r');
+        }
+        combinations *= alphabet.size();
+    }
+    for (const Bytes& bytes : {bytes_from("x/"),
+             bytes_from("x/'a'\r'b' 1"),
+             bytes_from("x/'a'\n'b' 1"),
+             bytes_from("'a'"),
+             bytes_from("'a'\""),
+             Bytes{0, '/', '\r', '/', '\n', '\'', '\r', '\''}})
+    {
+        for (unsigned int sentinel = 0; sentinel != 256; ++sentinel)
+        {
+            check_scanners(bytes, static_cast<unsigned char>(sentinel));
+        }
+    }
+    for (const std::size_t size : {1, 2, 3, 7, 31, 255, 1024})
+    {
+        for (const unsigned char fill : {0, 10, 13, 32, 47, 128, 255})
+        {
+            Bytes bytes(size, fill);
+            check_scanners(bytes, '/');
+            for (std::size_t position = 0; position < size; ++position)
+            {
+                bytes[position] = '\'';
+                check_scanners(bytes, '\'');
+                bytes[position] = fill;
+            }
+        }
+    }
+}
+
+void constructed_tokens_and_mixed_scanners()
+{
+    std::uint32_t state = 0x67d031b9;
+    const auto random = [&]
+    {
+        state = state * 1664525u + 1013904223u;
+        return state >> 8;
+    };
+    const std::array<Bytes, 6> separators{Bytes{' '},
+        Bytes{'\r', '\n'},
+        Bytes{0, '\t'},
+        Bytes{'z', 'z'},
+        Bytes{128, 255},
+        Bytes{1, 'z', 127}};
+    const Bytes name_bytes{0, 9, 32, 34, 47, 65, 121, 122, 128, 255};
+    const Bytes quoted_bytes{0, 13, 32, 39, 47, 65, 122, 128, 255};
+    const Bytes unquoted_bytes{33, 35, 39, 47, 65, 90, 121};
+    for (unsigned int run = 0; run < 4096; ++run)
+    {
+        const int records = static_cast<int>(run % 13);
+        Bytes bytes;
+        const auto append = [&](const Bytes& part)
+        {
+            bytes.insert(bytes.end(), part.begin(), part.end());
+        };
+        append(separators[random() % separators.size()]);
+        for (int record = 0; record < records; ++record)
+        {
+            if (random() % 4 == 0)
+            {
+                append(bytes_from("x/'ignored'\ntext\r"));
+            }
+            bytes.push_back('\'');
+            const auto name_size = random() % 8;
+            for (unsigned int index = 0; index < name_size; ++index)
+            {
+                bytes.push_back(name_bytes[random() % name_bytes.size()]);
+            }
+            bytes.push_back('\'');
+            append(separators[random() % separators.size()]);
+            const bool quoted = random() % 2 != 0;
+            const auto& values = quoted ? quoted_bytes : unquoted_bytes;
+            if (quoted)
+            {
+                bytes.push_back('"');
+            }
+            const auto value_size = random() % 9 + (quoted ? 0u : 1u);
+            for (unsigned int index = 0; index < value_size; ++index)
+            {
+                bytes.push_back(values[random() % values.size()]);
+            }
+            if (quoted)
+            {
+                bytes.push_back('"');
+            }
+            append(separators[random() % separators.size()]);
+        }
+        // The expected count comes from construction, independently of scanning.
+        expect(count_oracle(padded(bytes, 0), static_cast<int>(bytes.size())) == records,
+            "Byte model disagrees with the number of generated complete tokens.");
+        check_scanners(bytes);
+    }
+    const std::array<unsigned char, 8> alphabet{0, '\r', '\n', ' ', '"', '\'', '/', 'z'};
+    for (unsigned int run = 0; run < 8192; ++run)
+    {
+        Bytes bytes(random() % 129);
+        for (auto& byte : bytes)
+        {
+            byte = run % 2 == 0 ? static_cast<unsigned char>(random())
+                                : alphabet[random() % alphabet.size()];
+        }
+        check_scanners(bytes, static_cast<unsigned char>(random()));
+    }
+    expect(counter_excluded != 0, "Malformed counter inputs were not screened out.");
+}
+
 } // namespace
 
 int main()
@@ -283,8 +635,13 @@ int main()
         exhaustive_small_inputs();
         bounded_runs();
         prefixes_and_mixed_inputs();
+        scanner_preconditions_and_known_results();
+        exhaustive_scanner_inputs();
+        constructed_tokens_and_mixed_scanners();
         std::cout << checks << " reconstructed configuration checks passed across " << cases
-                  << " generated lexer cases\n";
+                  << " generated lexer cases, " << seeker_cases << " seeker cases and "
+                  << counter_cases << " safe counter cases; " << counter_excluded
+                  << " unsafe counter inputs excluded\n";
     }
     catch (const std::exception& error)
     {
