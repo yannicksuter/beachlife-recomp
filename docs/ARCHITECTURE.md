@@ -39,7 +39,7 @@ the dominant Rich-header record, and the generated PDB/comparison fixture is
 verified. 63 reconstructed game functions match after address normalization,
 totaling 4,942 bytes. 30 functions also match all 1,436 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Five methods totaling 644 bytes also match after address normalization; their
+Six methods totaling 933 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
 Two of those methods match all 105 raw bytes exactly.
 The full game layout remains unknown.
