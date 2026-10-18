@@ -17,6 +17,7 @@
 std::int32_t GetFileSize(const char* filename);
 char* LoadFile(const char* filename);
 char* LoadBleFile(const char* filename);
+int ReadConfigFileBuffer(const char* filename, char* buffer, unsigned int size);
 
 namespace
 {
@@ -63,6 +64,7 @@ struct Observations
     std::size_t largest_read = 0;
     std::size_t chunk = std::numeric_limits<std::size_t>::max();
     std::uint64_t stop = std::numeric_limits<std::uint64_t>::max();
+    bool fail_open = false;
     bool fail_read = false;
     bool fail_seek = false;
     bool fail_position = false;
@@ -137,6 +139,10 @@ class ObservedSource final : public data::FileSource
     }
     std::unique_ptr<data::SourceFile> open(std::string_view name) const override
     {
+        if (observations_->fail_open)
+        {
+            throw std::runtime_error("Generated open failure.");
+        }
         return std::make_unique<ObservedFile>(source_->open(name), observations_);
     }
 
@@ -232,6 +238,168 @@ void reconstructed_loaders(
         expect(GetFileSize(name) == 0 && LoadFile(name) == nullptr && LoadBleFile(name) == nullptr,
             "Missing or disallowed path escaped the VFS.");
     }
+}
+
+void configuration_reader(
+    const std::shared_ptr<const data::FileSource>& source, const std::vector<std::size_t>& sizes)
+{
+    auto observations = std::make_shared<Observations>();
+    auto observed = std::make_shared<ObservedSource>(source, observations);
+    files::Session session(observed);
+    for (std::size_t index = 0; index < sizes.size(); ++index)
+    {
+        const auto name = ".\\dAtA\\FILE" + std::to_string(index) + ".BIN";
+        const auto input = payload(sizes[index]);
+        for (const auto count :
+            {std::size_t{0}, std::size_t{1}, input.size() / 2, input.size(), input.size() + 5})
+        {
+            Bytes bytes(count + 16, 0xa5);
+            const auto opened = observations->opened;
+            const auto reads = observations->reads;
+            expect(ReadConfigFileBuffer(name.c_str(),
+                       reinterpret_cast<char*>(bytes.data() + 8),
+                       static_cast<unsigned int>(count)) == 1,
+                "Configuration reader must return one whenever its open succeeds.");
+            const auto amount = std::min(count, input.size());
+            expect(std::equal(input.begin(), input.begin() + amount, bytes.begin() + 8),
+                "Configuration reader payload or path alias differs.");
+            expect(std::all_of(bytes.begin(),
+                       bytes.begin() + 8,
+                       [](unsigned char value)
+                       {
+                           return value == 0xa5;
+                       }) &&
+                       std::all_of(bytes.begin() + 8 + amount,
+                           bytes.end(),
+                           [](unsigned char value)
+                           {
+                               return value == 0xa5;
+                           }),
+                "Configuration reader changed an unread tail/guard or added a terminator.");
+            expect(
+                observations->opened == opened + 1 && observations->opened == observations->closed,
+                "Configuration reader must open and close one stream per call.");
+            if (count == 0 || input.empty())
+            {
+                expect(observations->reads == reads,
+                    "Empty configuration reads must not access the VFS payload.");
+            }
+        }
+    }
+    for (const char* name : {"Data/missing.bin", "unlisted.bin", "../unlisted.bin"})
+    {
+        std::array<char, 8> bytes;
+        bytes.fill('x');
+        expect(ReadConfigFileBuffer(name, bytes.data(), bytes.size()) == 0 &&
+                   std::all_of(bytes.begin(),
+                       bytes.end(),
+                       [](char value)
+                       {
+                           return value == 'x';
+                       }),
+            "Missing configuration files must return zero without changing the destination.");
+        expect(ReadConfigFileBuffer(name, nullptr, std::numeric_limits<unsigned int>::max()) == 0,
+            "Failed configuration opens must not access the destination or count.");
+    }
+    const auto opened = observations->opened;
+    const auto reads = observations->reads;
+    observations->fail_open = true;
+    expect(ReadConfigFileBuffer(
+               "Data/file3.bin", nullptr, std::numeric_limits<unsigned int>::max()) == 0 &&
+               observations->opened == opened && observations->reads == reads &&
+               observations->opened == observations->closed,
+        "A configuration VFS open exception must return zero without reading or leaking.");
+}
+
+void configuration_read_failures(const std::shared_ptr<const data::FileSource>& source)
+{
+    const auto input = payload(255);
+    for (bool fail_read : {false, true})
+    {
+        for (std::uint64_t stop : {0, 3})
+        {
+            for (unsigned int count : {0, 1, 7, 257})
+            {
+                auto observations = std::make_shared<Observations>();
+                observations->chunk = 2;
+                observations->stop = stop;
+                observations->fail_read = fail_read;
+                files::Session session(std::make_shared<ObservedSource>(source, observations));
+                Bytes bytes(count + 16, 0xa5);
+                expect(ReadConfigFileBuffer(
+                           "Data/file3.bin", reinterpret_cast<char*>(bytes.data() + 8), count) == 1,
+                    "Configuration reader must ignore EOF and read errors after a successful "
+                    "open.");
+                const auto amount = static_cast<std::size_t>(std::min<std::uint64_t>(count, stop));
+                expect(std::equal(input.begin(), input.begin() + amount, bytes.begin() + 8) &&
+                           std::all_of(bytes.begin(),
+                               bytes.begin() + 8,
+                               [](unsigned char value)
+                               {
+                                   return value == 0xa5;
+                               }) &&
+                           std::all_of(bytes.begin() + 8 + amount,
+                               bytes.end(),
+                               [](unsigned char value)
+                               {
+                                   return value == 0xa5;
+                               }),
+                    "A short configuration read changed its known prefix, untouched tail or "
+                    "guards.");
+                expect(observations->opened == 1 && observations->closed == 1,
+                    "Configuration read failure must close its stream.");
+                expect(count ? observations->reads > 0 : observations->reads == 0,
+                    "Zero-count configuration reads must not reach the VFS read method.");
+            }
+        }
+    }
+}
+
+void configuration_buffer_ownership(const std::shared_ptr<const data::FileSource>& source)
+{
+    std::array<char, 17> buffer;
+    buffer.fill('x');
+    expect(ReadConfigFileBuffer("Data/file3.bin", buffer.data(), buffer.size()) == 0 &&
+               std::all_of(buffer.begin(),
+                   buffer.end(),
+                   [](char value)
+                   {
+                       return value == 'x';
+                   }),
+        "An unbound configuration read must not open process files or change its buffer.");
+    std::weak_ptr<const data::FileSource> lifetime;
+    {
+        auto observations = std::make_shared<Observations>();
+        auto observed = std::make_shared<ObservedSource>(source, observations);
+        lifetime = observed;
+        files::Session session(observed);
+        observed.reset();
+        expect(ReadConfigFileBuffer("Data/file3.bin", buffer.data(), buffer.size()) == 1,
+            "Configuration reader cannot use the session-owned source.");
+        expect(observations->opened == 1 && observations->closed == 1,
+            "Configuration reader retained a stream after returning.");
+    }
+    expect(lifetime.expired(), "Configuration reader retained the session-owned source.");
+    const auto input = payload(buffer.size());
+    expect(std::equal(input.begin(),
+               input.end(),
+               buffer.begin(),
+               [](unsigned char expected, char actual)
+               {
+                   return expected == static_cast<unsigned char>(actual);
+               }),
+        "The caller-owned configuration buffer must remain usable after the session ends.");
+    buffer.fill('z');
+    files::Session session(source);
+    expect(ReadConfigFileBuffer("Data/file3.bin", buffer.data(), buffer.size()) == 1 &&
+               std::equal(input.begin(),
+                   input.end(),
+                   buffer.begin(),
+                   [](unsigned char expected, char actual)
+                   {
+                       return expected == static_cast<unsigned char>(actual);
+                   }),
+        "Modifying the caller-owned configuration buffer changed the source payload.");
 }
 
 void facade_reads(const std::shared_ptr<const data::FileSource>& source)
@@ -472,6 +640,9 @@ int main(int argc, char** argv)
         auto second = std::make_shared<data::FolderSource>(
             root / "other", std::vector<data::SourceEntry>{{"Data/file1.bin", 17}});
         reconstructed_loaders(first, sizes);
+        configuration_reader(first, sizes);
+        configuration_read_failures(first);
+        configuration_buffer_ownership(first);
         facade_reads(first);
         failure_paths(first);
         size_width();

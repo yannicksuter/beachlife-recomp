@@ -100,13 +100,17 @@ They require no ISO or extracted data. The target is a native test executable;
 the production launcher still uses its existing decoder. A passing test does
 not establish a complete TGA parser, original ABI matching or gameplay.
 
-The file target runs the matched size, plain-file and BLE loaders through an
-explicit VFS session. Its portability patch preserves 32-bit size/count behavior,
+The file target runs the matched size, plain-file, BLE and startup configuration
+readers through an explicit VFS session. Its portability patches preserve 32-bit size/count behavior,
 the period terminator and signed byte inversion on 64-bit hosts. Scoped bindings
 belong to one thread, restore nested sessions and keep open handles' mounts alive.
 Reads use the supplied `FileSource`; they never fall back to the process directory
 or reopen the ISO. Generated tests cover real folder reads, aliases, short reads,
 stdio error results, seek/position behavior, ownership and repeated sessions.
+The configuration reader writes into caller-owned storage without adding a
+terminator. It returns one whenever opening succeeds, even after a short or
+failed read, preserving the original behavior. Generated tests check unchanged
+buffer tails and guards, error paths and buffer lifetime after the session ends.
 `BEACHLIFE_RECONSTRUCTED_FIXTURE_ROOT` selects the generated fixture directory;
 it defaults to the build tree. For a Windows cross-build run through Wine, use
 a path on its C: drive if Wine exposes the Unix build path as a reparse point.

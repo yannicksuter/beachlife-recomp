@@ -44,8 +44,9 @@ See [matching setup](../decomp/README.md).
 `beachlife_reconstructed_tga` compiles seven matched helpers with the modern
 compiler and host CRT. Its generated test executable checks data conversion
 and ownership; it does not link those helpers into the production launcher.
-`beachlife_reconstructed_files` runs the three file helpers through an explicit
-VFS binding with fixed-width size arithmetic. Both libraries have generated
+`beachlife_reconstructed_files` runs the three allocating/size helpers and the
+startup configuration reader through an explicit VFS binding with fixed-width
+size arithmetic. Both libraries have generated
 native tests; neither is linked into production gameplay. The complete original
 parser and allocating constructor remain separate work.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
