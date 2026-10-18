@@ -2,8 +2,10 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 
@@ -99,6 +101,10 @@ static_assert(std::is_standard_layout_v<InputState>);
 static_assert(std::is_trivially_copyable_v<GuardedInput>);
 static_assert(sizeof(unsigned int) == 4);
 static_assert(sizeof(int) == 4);
+static_assert(std::numeric_limits<int>::digits == 31);
+static_assert(has_value_134<InputState> && has_value_138<InputState>);
+static_assert(std::is_same_v<decltype(&InputState::ReadValue134), int (InputState::*)() const>);
+static_assert(std::is_same_v<decltype(&InputState::ReadValue138), int (InputState::*)() const>);
 static_assert(qualified_prefix<InputState>());
 static_assert(offsetof(GuardedInput, input) == 32);
 static_assert(offsetof(GuardedInput, after) == 32 + sizeof(InputState));
@@ -127,6 +133,9 @@ std::size_t checks = 0;
 std::size_t predicate_cases = 0;
 std::size_t reset_cases = 0;
 std::size_t representation_checks = 0;
+std::size_t getter_cases = 0;
+std::size_t getter_fixture_calls = 0;
+std::array<std::size_t, 4> getter_domains{};
 std::array<std::size_t, 3> resource_cases{};
 std::array<std::array<std::size_t, 7>, 2> integer_cases{};
 const char* phase = "predicate";
@@ -168,7 +177,7 @@ template <typename T> void native_values(Representation& bytes, unsigned int see
         ++resource_cases[choice];
     }
     // Newly observed signed fields receive valid typed values too. They remain
-    // outside the three methods' write contract, just like the cursor field.
+    // outside the methods' write contract, just like the cursor field.
     constexpr std::array<int, 7> integers{-2147483647 - 1, -300, -1, 0, 1, 0x12345678, 2147483647};
     if constexpr (has_value_134<T>)
     {
@@ -330,6 +339,101 @@ void transitions()
         reset(value, static_cast<unsigned int>(changed % 256));
     }
 }
+
+constexpr int signed_value(std::uint32_t bits)
+{
+    // Arithmetic decoding is independent of the getter and of signed casts
+    // from out-of-range unsigned values. Every result fits the qualified int.
+    const std::int64_t value = bits;
+    return static_cast<int>(value - (bits >= 0x80000000u ? 0x100000000ll : 0));
+}
+static_assert(signed_value(0) == 0);
+static_assert(signed_value(0x7fffffffu) == 2147483647);
+static_assert(signed_value(0x80000000u) == -2147483647 - 1);
+static_assert(signed_value(0xffffffffu) == -1);
+static_assert(signed_value(0xfffffed4u) == -300);
+
+void getter_case(int first, int second, std::size_t domain)
+{
+    current_case = getter_cases;
+    GuardedInput value;
+    patterned(value, static_cast<unsigned int>(getter_cases * 23u + 11u));
+    value.input.unknown_134 = first;
+    value.input.unknown_138 = second;
+    const auto before = snapshot(value);
+    const InputState& input = value.input;
+    // Expected values come from the caller's generated pair, never from a read
+    // of either member after assignment or from another reconstructed method.
+    ++getter_fixture_calls;
+    require(input.ReadValue134() == first, "ReadValue134 returned a value outside its oracle.");
+    require_representation(value, before, "ReadValue134 changed the object or its guards.");
+    ++getter_fixture_calls;
+    require(input.ReadValue138() == second, "ReadValue138 returned a value outside its oracle.");
+    require_representation(value, before, "ReadValue138 changed the object or its guards.");
+    ++getter_cases;
+    ++getter_domains[domain];
+}
+
+void getters()
+{
+    phase = "getter-signed16";
+    for (int value = -32768; value != 32768; ++value)
+    {
+        // Each getter sees the entire signed16 domain. Opposite paired values
+        // distinguish the two fields in every case without overflowing int.
+        getter_case(value, -1 - value, 0);
+    }
+    phase = "getter-boundary";
+    constexpr std::array<int, 17> values{-2147483647 - 1,
+        -2147483647,
+        -16777217,
+        -65536,
+        -32769,
+        -32768,
+        -300,
+        -1,
+        0,
+        1,
+        300,
+        32767,
+        32768,
+        65535,
+        16777217,
+        2147483646,
+        2147483647};
+    for (const int first : values)
+    {
+        for (const int second : values)
+        {
+            getter_case(first, second, 1);
+        }
+    }
+    phase = "getter-bits";
+    for (unsigned int bit = 0; bit != 32; ++bit)
+    {
+        const std::uint32_t one = std::uint32_t{1} << bit;
+        getter_case(signed_value(one), signed_value(~one), 2);
+        getter_case(signed_value(~one), signed_value(one), 2);
+    }
+    getter_case(signed_value(0xaaaaaaaau), signed_value(0x55555555u), 2);
+    getter_case(signed_value(0x55555555u), signed_value(0xaaaaaaaau), 2);
+
+    phase = "getter-generated";
+    std::uint32_t state = 0x58b17e43u;
+    const auto next = [&state]()
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return signed_value(state);
+    };
+    for (std::size_t pair = 0; pair != 4096; ++pair)
+    {
+        const int first = next();
+        const int second = next();
+        getter_case(first, second, 3);
+    }
+}
 } // namespace
 
 int main()
@@ -338,10 +442,19 @@ int main()
     {
         predicates();
         transitions();
+        const auto query_reset_checks = checks;
+        const auto query_reset_representation_checks = representation_checks;
+        getters();
         std::cout
-            << "{\"cases\":" << predicate_cases + reset_cases << ",\"checks\":" << checks
-            << ",\"predicate_cases\":" << predicate_cases << ",\"reset_cases\":" << reset_cases
-            << ",\"representation_checks\":" << representation_checks
+            << "{\"cases\":" << predicate_cases + reset_cases + getter_cases
+            << ",\"checks\":" << checks << ",\"predicate_cases\":" << predicate_cases
+            << ",\"reset_cases\":" << reset_cases
+            << ",\"query_reset_checks\":" << query_reset_checks
+            << ",\"query_reset_representation_checks\":" << query_reset_representation_checks
+            << ",\"getter_cases\":" << getter_cases
+            << ",\"getter_fixture_calls\":" << getter_fixture_calls << ",\"getter_domain_cases\":["
+            << getter_domains[0] << ',' << getter_domains[1] << ',' << getter_domains[2] << ','
+            << getter_domains[3] << ']' << ",\"representation_checks\":" << representation_checks
             << ",\"indices\":256,\"state_values\":256,\"cleared_bytes\":10,\"native_prefix_bytes\":"
             << sizeof(InputState)
             << ",\"pointer_prefix\":" << (has_resource_instance<InputState> ? "true" : "false")

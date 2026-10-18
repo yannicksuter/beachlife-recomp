@@ -229,21 +229,26 @@ CTest's normal exit-code checks. `BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT` 
 generated folder, defaulting to the build tree. These targets do not link the
 owner or a complete startup driver into the production game.
 
-The input target checks two matched byte-state queries and transition reset.
+The input target checks two matched byte-state queries, transition reset and
+two signed-integer getters.
 Generated fixtures cover all 256 valid indices and byte values, require exact
 zero-or-one results, and compare the whole declared object representation and
 surrounding guards. Reset clears only the two observed words and two bytes;
 tests check their widths, unchanged fields and repeated-call idempotence.
+Getter fixtures compare exact signed returns against independent supplied
+values over the complete signed 16-bit domain, 32-bit boundaries, walking-bit
+patterns and deterministic generated pairs. Both calls must leave the whole
+object and its guards unchanged; reported call counts are fixture entry calls.
 The declarations describe an observed prefix, not the complete retail input
-object. The fixture supports the earlier unsigned prefix, the recovered
-resource-pointer prefix and its two observed signed-integer refinements. It
-checks relative field positions in the actual native layout rather than
-imposing x86 offsets on a 64-bit build. Pointer fields receive null or live
+object. The current target requires the recovered resource-pointer prefix and
+both observed signed-integer fields. It checks relative field positions in the
+actual native layout rather than imposing x86 offsets on a 64-bit build.
+Pointer fields receive null or live
 fixture addresses; signed fields receive typed boundary and representative
 values. All typed values, padding and surrounding bytes remain part of the
-unchanged-representation checks. This target executes only the two queries and
-reset; layout compatibility does not exercise the integer getters, cursor
-setter or Win32 resources. Out-of-range queries, state
+unchanged-representation checks. Cursor methods have their own target;
+these getter checks do not establish the fields' original meaning.
+Out-of-range queries, state
 production, device input and integration with the controller or game loop remain
 unqualified.
 

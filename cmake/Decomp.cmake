@@ -219,7 +219,9 @@ set_tests_properties(reconstructed_startup_config PROPERTIES LABELS "reconstruct
 add_library(beachlife_reconstructed_input STATIC
     "${BEACHLIFE_DECOMP_SOURCE}/startup_input_state_predicate.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_input_state_one.cpp"
-    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_transition_reset.cpp")
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_transition_reset.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_getter_first.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_getter_second.cpp")
 target_include_directories(beachlife_reconstructed_input PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
 target_compile_features(beachlife_reconstructed_input PUBLIC cxx_std_20)
 set_target_properties(beachlife_reconstructed_input PROPERTIES CXX_EXTENSIONS OFF)
