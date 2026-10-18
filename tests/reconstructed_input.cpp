@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <type_traits>
 
+struct IDirectInputDeviceA;
+
 namespace
 {
 struct GuardedInput
@@ -21,6 +23,9 @@ using Representation = std::array<unsigned char, sizeof(GuardedInput)>;
 
 template <typename T>
 constexpr bool has_resource_instance = requires(T value) { value.resource_instance; };
+
+template <typename T>
+constexpr bool has_keyboard_device = requires(T value) { value.keyboard_device; };
 
 template <typename T> constexpr bool has_value_134 = requires(T value) { value.unknown_134; };
 
@@ -46,10 +51,25 @@ template <typename T> constexpr bool qualified_prefix()
     {
         static_assert(std::is_same_v<decltype(T::resource_instance), void*>);
         static_assert(std::is_same_v<decltype(T::cursor_identifier), int>);
-        static_assert(std::is_same_v<decltype(T::unknown_00), unsigned char[0x10]>);
+        if constexpr (has_keyboard_device<T>)
+        {
+            static_assert(std::is_same_v<decltype(T::keyboard_device), IDirectInputDeviceA*>);
+            static_assert(std::is_same_v<decltype(T::unknown_00), unsigned char[4]>);
+            static_assert(std::is_same_v<decltype(T::unknown_08), unsigned char[8]>);
+            static_assert(offsetof(T, keyboard_device) == (4 + alignof(IDirectInputDeviceA*) - 1) /
+                                                              alignof(IDirectInputDeviceA*) *
+                                                              alignof(IDirectInputDeviceA*));
+            static_assert(offsetof(T, unknown_08) ==
+                          offsetof(T, keyboard_device) + sizeof(IDirectInputDeviceA*));
+            static_assert(offsetof(T, resource_instance) == offsetof(T, unknown_08) + 8);
+        }
+        else
+        {
+            static_assert(std::is_same_v<decltype(T::unknown_00), unsigned char[0x10]>);
+            static_assert(offsetof(T, resource_instance) == 0x10);
+        }
         static_assert(sizeof(T::unknown_14) == 9);
         static_assert(sizeof(T::unknown_148) == 0x4c8);
-        static_assert(offsetof(T, resource_instance) == 0x10);
         static_assert(offsetof(T, unknown_14) == offsetof(T, resource_instance) + sizeof(void*));
         static_assert(offsetof(T, states) == offsetof(T, unknown_14) + sizeof(T::unknown_14));
         if constexpr (has_value_134<T>)
@@ -137,6 +157,7 @@ std::size_t getter_cases = 0;
 std::size_t getter_fixture_calls = 0;
 std::array<std::size_t, 4> getter_domains{};
 std::array<std::size_t, 3> resource_cases{};
+std::array<std::size_t, 3> keyboard_pointer_cases{};
 std::array<std::array<std::size_t, 7>, 2> integer_cases{};
 const char* phase = "predicate";
 std::size_t current_case = 0;
@@ -159,6 +180,25 @@ Representation snapshot(const GuardedInput& value)
 
 template <typename T> void native_values(Representation& bytes, unsigned int seed)
 {
+    if constexpr (has_keyboard_device<T>)
+    {
+        struct alignas(std::max_align_t) Identity
+        {
+            unsigned char value;
+        };
+        static Identity identities[2]{};
+        const auto choice = seed % 3;
+        using Pointer = decltype(T::keyboard_device);
+        Pointer device = choice == 0
+                             ? nullptr
+                             : static_cast<Pointer>(static_cast<void*>(&identities[choice - 1]));
+        // These borrowed identity addresses only test pointer representations
+        // and preservation. They are never dereferenced or used as COM devices.
+        std::memcpy(bytes.data() + offsetof(GuardedInput, input) + offsetof(T, keyboard_device),
+            &device,
+            sizeof(device));
+        ++keyboard_pointer_cases[choice];
+    }
     if constexpr (has_resource_instance<T>)
     {
         static unsigned char resources[2]{};
@@ -197,6 +237,22 @@ template <typename T> void native_values(Representation& bytes, unsigned int see
             sizeof(second));
         ++integer_cases[1][choice];
     }
+}
+
+template <typename T> void report_keyboard_layout()
+{
+    std::cout << ",\"keyboard_pointer\":" << (has_keyboard_device<T> ? "true" : "false")
+              << ",\"keyboard_pointer_offset\":";
+    if constexpr (has_keyboard_device<T>)
+    {
+        std::cout << offsetof(T, keyboard_device);
+    }
+    else
+    {
+        std::cout << "null";
+    }
+    std::cout << ",\"keyboard_pointer_values\":[" << keyboard_pointer_cases[0] << ','
+              << keyboard_pointer_cases[1] << ',' << keyboard_pointer_cases[2] << ']';
 }
 
 template <typename T> void report_integer_layout()
@@ -464,6 +520,7 @@ int main()
             << ",\"resource_values\":[" << resource_cases[0] << ',' << resource_cases[1] << ','
             << resource_cases[2] << ']';
         report_integer_layout<InputState>();
+        report_keyboard_layout<InputState>();
         std::cout << "}\n";
         return 0;
     }

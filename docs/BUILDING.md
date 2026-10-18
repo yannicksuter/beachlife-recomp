@@ -243,9 +243,12 @@ The declarations describe an observed prefix, not the complete retail input
 object. The current target requires the recovered resource-pointer prefix and
 both observed signed-integer fields. It checks relative field positions in the
 actual native layout rather than imposing x86 offsets on a 64-bit build.
-Pointer fields receive null or live
-fixture addresses; signed fields receive typed boundary and representative
-values. All typed values, padding and surrounding bytes remain part of the
+Pointer fields receive null or borrowed fixture addresses; signed fields receive
+typed boundary and representative values before their representations enter the
+object. Both input and cursor fixtures also accept the observed typed keyboard
+pointer prefix using relative native offsets. Its nonnull values are aligned
+fixture identities used only for preservation checks, never COM devices or
+callable API providers. All typed values, padding and surrounding bytes remain part of the
 unchanged-representation checks. Cursor methods have their own target;
 these getter checks do not establish the fields' original meaning.
 Out-of-range queries, state
