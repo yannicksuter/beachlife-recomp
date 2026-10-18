@@ -43,6 +43,10 @@ remains unclassified and is counted separately.
 The full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 
+Game comparisons verify the prepared target's declared SDK header hashes before
+compilation and again after building and comparing. Results record those hashes;
+changed headers or pins invalidate the comparison.
+
 Prepared matching targets can opt into `stdcall_imports`, a DLL mapping with
 `export_names` (`decorated` or `undecorated`) and a `symbols` mapping from source
 names to x86 stack-byte counts. The build generates import metadata and verifies

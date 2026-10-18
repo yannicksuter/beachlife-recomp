@@ -414,9 +414,33 @@ def game_target(metadata):
     return path, target
 
 
+def verify_sdk_headers(metadata, include):
+    """Check the declared SDK inputs without copying any SDK contents."""
+    specification = json.loads((metadata / 'win32-imports.json').read_text())
+    if not isinstance(specification, dict) or (
+            specification.get('schema'), specification.get('architecture'),
+            specification.get('calling_convention')) != (1, 'x86', 'stdcall'):
+        raise ValueError('Unsupported platform import specification.')
+    headers = specification.get('headers_sha256')
+    if not isinstance(headers, dict) or not headers:
+        raise ValueError('The platform specification needs pinned SDK headers.')
+    seen = set()
+    for name, expected in headers.items():
+        if (not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_-]+\.[Hh]', name) or
+                not isinstance(expected, str) or not re.fullmatch(r'[0-9a-f]{64}', expected) or
+                name.casefold() in seen):
+            raise ValueError('SDK pins need unique header basenames and SHA-256 digests.')
+        seen.add(name.casefold())
+    for name, expected in headers.items():
+        if digest(include / name) != expected:
+            raise ValueError(f'Platform header mismatch: {name}')
+    return headers
+
+
 def game(tool, args):
     metadata = tool.decomp_root
     target_path, target = game_target(metadata)
+    sdk_headers = verify_sdk_headers(metadata, tool.compiler.parent / 'Include')
     original = verify_original(args.original, target)
     source = args.source.resolve()
     sources = sorted(source.rglob('*.cpp'))
@@ -477,6 +501,8 @@ def game(tool, args):
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
                              '/I' + tool.native(source)],
                             source_flags=source_flags)
+    if verify_sdk_headers(metadata, tool.compiler.parent / 'Include') != sdk_headers:
+        raise ValueError('SDK header pins changed during the build.')
     if abi_support and abi_object.read_bytes() != abi_bytes:
         raise ValueError('Generated VC6 exception ABI object changed during the build.')
     for library_record in import_libraries:
@@ -518,12 +544,15 @@ def game(tool, args):
                 decomp_revision=args.decomp_revision, decomp_profile='matching')
     if input_hashes() != fingerprints:
         raise ValueError('Matching inputs changed during comparison; rerun the comparison.')
+    if verify_sdk_headers(metadata, tool.compiler.parent / 'Include') != sdk_headers:
+        raise ValueError('SDK header pins changed during comparison.')
     result = {'target': target['id'], 'original_sha256': target['sha256'],
               'compiler': 'VC6 SP4 / C2 12.0.8799.0', 'reccmp': '0.1.7',
               'functions': functions, 'scope': 'Only listed functions; whole-game denominator unknown.',
               'library_functions': library_functions,
               'unclassified_functions': unclassified_functions,
               'source_compile_options': {path.name: flags for path, flags in sorted(compile_options.items())},
+              'sdk_headers_sha256': sdk_headers,
               'link_abi_support': abi_support,
               'stdcall_import_libraries': import_libraries,
               'original_stdcall_imports': original_stdcall_imports,

@@ -139,10 +139,20 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.build_arguments = None
         self.tamper = False
         self.tamper_import = False
+        self.tamper_sdk_build = False
+        self.tamper_sdk_pin = False
+        self.tamper_sdk_compare = False
         self.tool = SimpleNamespace(decomp_root=self.metadata, output=self.args.output,
                                     compiler=self.root / 'compiler/Bin', reccmp='generated-comparator',
                                     native=str, runtime_library=self.runtime_library,
                                     build=self.build, run=self.compare)
+        self.sdk_header = self.root / 'compiler/Include/FIXTURE.H'
+        self.sdk_header.parent.mkdir(parents=True)
+        self.sdk_header.write_bytes(b'// generated SDK declaration fixture\n')
+        self.sdk_spec = {'schema': 1, 'architecture': 'x86', 'calling_convention': 'stdcall',
+                         'headers_sha256': {'FIXTURE.H': matching.digest(self.sdk_header)}}
+        self.sdk_pin = self.metadata / 'win32-imports.json'
+        self.sdk_pin.write_text(json.dumps(self.sdk_spec))
 
     def runtime_library(self, folder):
         self.calls.append('runtime_library')
@@ -157,10 +167,18 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         if self.tamper_import:
             path = folder / 'imports/fixture/fixture-import.lib'
             path.write_bytes(path.read_bytes() + b'changed')
+        if self.tamper_sdk_build:
+            self.sdk_header.write_bytes(b'changed during compilation')
+            if self.tamper_sdk_pin:
+                specification = self.sdk_spec | {
+                    'headers_sha256': {'FIXTURE.H': matching.digest(self.sdk_header)}}
+                self.sdk_pin.write_text(json.dumps(specification))
         return folder / 'generated.exe', folder / 'generated.pdb'
 
     def compare(self, arguments, folder):
         self.calls.append('compare')
+        if self.tamper_sdk_compare:
+            self.sdk_header.write_bytes(b'changed during comparison')
         report = Path(arguments[arguments.index('--json') + 1])
         report.write_text(json.dumps({'data': self.comparison_rows}))
         return ''
@@ -180,7 +198,67 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(result['source_compile_options'], {})
         self.assertEqual(result['unclassified_functions'], [])
         self.assertEqual(result['link_abi_support'], [])
+        self.assertEqual(result['sdk_headers_sha256'], self.sdk_spec['headers_sha256'])
+        self.assertIn(str(self.sdk_pin), result['input_sha256'])
         self.assertFalse((self.args.output / 'game/abi').exists())
+
+    def test_missing_or_changed_sdk_header_prevents_build(self):
+        original = self.sdk_header.read_bytes()
+        for contents in (None, original + b'changed'):
+            with self.subTest(contents=contents):
+                self.sdk_header.unlink(missing_ok=True)
+                if contents is not None:
+                    self.sdk_header.write_bytes(contents)
+                with self.assertRaises((FileNotFoundError, ValueError)):
+                    self.run_game()
+                self.assertEqual(self.calls, [])
+                self.assertFalse(self.args.output.exists())
+
+    def test_malformed_sdk_pins_prevent_build(self):
+        digest = self.sdk_spec['headers_sha256']['FIXTURE.H']
+        invalid = [None, [], {}, {'FIXTURE.H': 'wrong'}, {'FIXTURE.H': True},
+                   {'../FIXTURE.H': digest}, {'sub\\FIXTURE.H': digest},
+                   {'/FIXTURE.H': digest}, {'C:FIXTURE.H': digest},
+                   {'FIXTURE.H': digest, 'fixture.h': digest}]
+        for headers in invalid:
+            with self.subTest(headers=headers):
+                self.sdk_pin.write_text(json.dumps(self.sdk_spec | {'headers_sha256': headers}))
+                with self.assertRaises(ValueError):
+                    self.run_game()
+                self.assertEqual(self.calls, [])
+                self.assertFalse(self.args.output.exists())
+
+    def test_unsupported_sdk_specification_prevents_build(self):
+        for specification in ([], None, self.sdk_spec | {'architecture': 'x64'},
+                              self.sdk_spec | {'schema': 2},
+                              self.sdk_spec | {'calling_convention': 'cdecl'}):
+            with self.subTest(specification=specification):
+                self.sdk_pin.write_text(json.dumps(specification))
+                with self.assertRaises(ValueError):
+                    self.run_game()
+                self.assertEqual(self.calls, [])
+
+    def test_sdk_change_during_build_prevents_comparison(self):
+        self.tamper_sdk_build = True
+        with self.assertRaisesRegex(ValueError, 'Platform header mismatch'):
+            self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'build'])
+        self.assertFalse(self.args.reports.exists())
+
+    def test_sdk_change_during_comparison_prevents_result(self):
+        self.tamper_sdk_compare = True
+        with self.assertRaisesRegex(ValueError, 'Platform header mismatch'):
+            self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'build', 'compare'])
+        self.assertFalse((self.args.reports / 'result.json').exists())
+
+    def test_replacing_header_and_pin_during_build_prevents_comparison(self):
+        self.tamper_sdk_build = True
+        self.tamper_sdk_pin = True
+        with self.assertRaisesRegex(ValueError, 'SDK header pins changed during the build'):
+            self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'build'])
+        self.assertFalse(self.args.reports.exists())
 
     def test_only_selected_game_source_gets_options_and_eh_link_object(self):
         self.target['source_compile_options'] = {'helper.cpp': ['/GX', '/Ob1']}
