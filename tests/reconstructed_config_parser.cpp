@@ -269,9 +269,8 @@ struct Snapshot
 struct Fixture
 {
     std::uint64_t before = 0x2974a5ed632089bfULL;
-    // Generated caller-owned storage only. This does not model the separate
-    // retail file-loading constructor or imply that a default one was recovered.
-    ConfigTokenBuffer owner{};
+    // The real filename constructor returns empty before any VFS session exists.
+    ConfigTokenBuffer owner{"Data/generated-unbound.pis"};
     std::uint64_t after = 0x6f3982b47a1c50deULL;
     std::vector<Snapshot> old;
 

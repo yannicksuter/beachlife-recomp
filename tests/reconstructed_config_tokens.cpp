@@ -203,6 +203,9 @@ void cleanup(
         throw std::logic_error("Invalid generated token ownership domain.");
     }
     storage.bytes.fill(0xa5);
+    // Construct through the real missing-path loader before observing allocations.
+    auto* owner = new (storage.bytes.data() + allocations::guard)
+        ConfigTokenBuffer("Data/generated-unbound.pis");
     std::array<std::array<std::size_t, 3>, maximum_tokens> field_allocations{};
     allocations::begin();
     ConfigToken* table = null_table ? nullptr : new ConfigToken[count];
@@ -254,7 +257,6 @@ void cleanup(
     {
         expected[expected_count++] = 0;
     }
-    auto* owner = new (storage.bytes.data() + allocations::guard) ConfigTokenBuffer;
     owner->tokens = table;
     owner->count = count;
     const auto before = storage.bytes;

@@ -201,8 +201,10 @@ parity remain unqualified. Tests also load generated files from a real folder an
 check that parsed allocations outlive the VFS session.
 `BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT` selects their separate output
 directory, defaulting to the build tree; Windows cross tests can use a Wine C:
-path. The filename constructor and production startup driver remain separate
-integration steps.
+path. Fixtures now create owners through the real filename constructor with no
+VFS bound, before allocation observations or mounted loading cases begin. Loading
+during construction and the production startup driver remain separate
+qualification steps.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and

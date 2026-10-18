@@ -35,8 +35,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 36 reconstructed game functions match after address normalization,
-totaling 3,145 bytes. 16 functions also match all 974 raw bytes exactly. An
+verified. 37 reconstructed game functions match after address normalization,
+totaling 3,177 bytes. 16 functions also match all 974 raw bytes exactly. An
 11-byte runtime release wrapper is verified separately as library support;
 the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
@@ -63,8 +63,10 @@ failure and ownership after the mount ends. Uninitialized read tails, unchecked
 temporary/payload allocation failure and arbitrary numeric parity remain outside
 the executed domain.
 These libraries have generated native tests; none is linked into production
-gameplay. The configuration filename constructor, the complete image parser and
-the allocating image constructor remain separate work.
+gameplay. Fixtures construct configuration buffers through the real filename
+constructor before binding the VFS; loading during construction remains a separate
+qualification step. The complete image parser and allocating image constructor
+also remain separate work.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)

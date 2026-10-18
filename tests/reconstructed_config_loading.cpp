@@ -330,9 +330,9 @@ Document document(unsigned int count, unsigned int variant = 0)
 struct OwnerFixture
 {
     std::uint64_t before = 0x2974a5ed632089bfULL;
-    // Caller-owned storage for LoadAndParse. The separate retail filename
-    // constructor is not part of this target or invented by this fixture.
-    ConfigTokenBuffer owner{};
+    // Construct before mounting the scripted VFS or observing allocations.
+    // These cases still exercise LoadAndParse separately from construction.
+    ConfigTokenBuffer owner{"Data/generated-unbound.pis"};
     std::uint64_t after = 0x6f3982b47a1c50deULL;
     ConfigToken* old = nullptr;
 
