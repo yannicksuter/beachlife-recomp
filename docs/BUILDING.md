@@ -104,7 +104,7 @@ compiling jobs fetch full history. Configuration never fetches source itself.
 Packaging verifies the native reconstructed export again and records its baseline
 revision, source tree and ordered reconstruction/portability patch hashes in
 `SOURCE-MANIFEST.json`, alongside third-party dependency identities.
-Image, input and cursor subsystem targets remain optional.
+Image, input, cursor and surface subsystem targets remain optional.
 
 The game's `beachlife_startup_configuration` host library validates the audited
 1,242-byte English configuration, then constructs the real owner on the game
@@ -120,8 +120,8 @@ so an original zero-status fatal exit cannot pass the test.
 
 ## Reconstructed subsystem tests
 
-The optional targets compile reconstructed image, file, configuration and input helpers using the
-native compiler. They consume a committed source export with faithful patches
+The optional targets compile reconstructed image, file, configuration, input and
+surface helpers using the native compiler. They consume a committed source export with faithful patches
 through the same preparation tool as dependencies. Enable them explicitly:
 
 ```sh
@@ -133,7 +133,8 @@ cmake --build build/reconstructed-tga \
     reconstructed_config_allocation_tests reconstructed_config_parser_tests \
     reconstructed_config_loading_tests reconstructed_startup_config_tests \
     startup_configuration_tests startup_configuration_default_tests \
-    reconstructed_input_tests reconstructed_cursor_tests --parallel
+    reconstructed_input_tests reconstructed_cursor_tests \
+    reconstructed_surfaces_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -319,7 +320,22 @@ bindings and thread isolation. Handles are borrowed fixture values; no game
 assets, Win32 resources or platform cursor backend are used. A missing provider
 or invalid session lifetime violates the host boundary's preconditions and
 terminates; this is separate from the retail API's null-result behavior.
-The optional image, input and cursor libraries are not linked into production gameplay.
+
+The surface target compiles the real position setter, member cleanup and indexed
+cleanup from that same export. Generated guarded objects and live primitive
+arrays exercise exact selected-slot writes, signed coordinates, table aliases,
+inactive repeats and software/Surface7 ownership. A typed Surface7 provider
+checks the receiver and state visible before release, then mutates fields or
+replaces table bindings; the independent final-state oracle verifies publication
+on the originally selected object and preservation of unrelated bytes. Return
+values from Release are ignored. Pointer indices stay within the generated
+table, including negative indices relative to an interior table pointer.
+Hardware objects are borrowed providers; no DirectDraw backend or GPU is used.
+Invalid pointers, provider exceptions, reentrancy and concurrent mutation are
+outside this fixture's domain. A null software buffer has valid final-state
+checks, but modern C++ may omit its deallocator call; the test does not claim the
+original VC6 null-delete call timing. The optional image, input, cursor and
+surface libraries are not linked into production gameplay.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and

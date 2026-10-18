@@ -296,3 +296,23 @@ else()
 endif()
 add_test(NAME reconstructed_cursor COMMAND reconstructed_cursor_tests)
 set_tests_properties(reconstructed_cursor PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_surfaces STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_position.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_cleanup.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_indexed_cleanup.cpp")
+target_include_directories(beachlife_reconstructed_surfaces PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_surfaces PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_surfaces PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_surfaces verify_reconstructed_source)
+
+add_executable(reconstructed_surfaces_tests tests/reconstructed_surfaces.cpp)
+target_link_libraries(reconstructed_surfaces_tests PRIVATE beachlife_reconstructed_surfaces)
+set_target_properties(reconstructed_surfaces_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_surfaces_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_surfaces_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_surfaces COMMAND reconstructed_surfaces_tests)
+set_tests_properties(reconstructed_surfaces PROPERTIES LABELS "reconstructed;headless")
