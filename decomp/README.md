@@ -89,6 +89,24 @@ the stdio ABI needed for a small helper, not a complete SDK/CRT environment or
 the original game's entire compiler configuration. The fixture is compiled and
 inspected; it does not execute retail code.
 
+The Windows API fixture checks the SDK declarations needed for application
+startup. It verifies x86 structure sizes, 17 decorated `stdcall` references,
+and their undecorated exports from Kernel32, User32, GDI32 and Ole32. The used
+SDK headers are hash-pinned in `win32-imports.json`. The pinned librarian builds
+import metadata from declarations; the tool sets each short import record's
+name mode so linking retains the correct export name. It copies no SDK library
+code and checks the actual linked PE imports.
+
+```sh
+python3 tools/matching.py platform-fixture --compiler /path/to/msvc6.4 \
+  --reccmp build/matching/venv/bin/reccmp-reccmp
+# Or: cmake --build --preset debug --target matching_platform_fixture
+```
+
+This optional fixture is compiled and inspected, never executed. It establishes
+the original Windows ABI for comparison; native platform adaptation and game
+startup remain separate work.
+
 ## Reconstructed functions
 
 `src/version.cpp` reconstructs the seven-byte version getter at `0x004e3cb0`.

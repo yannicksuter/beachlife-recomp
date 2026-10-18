@@ -8,6 +8,11 @@ import shutil
 import struct
 import subprocess
 
+if __package__:
+    from .matching_imports import coff_import_symbols, stdcall_import_library
+else:
+    from matching_imports import coff_import_symbols, stdcall_import_library
+
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / 'decomp/targets/beachlife-uk-1.1.json'
 
@@ -231,6 +236,47 @@ def stdio_fixture(tool):
     print(json.dumps(result, indent=2))
 
 
+def platform_fixture(tool):
+    """Compile SDK declarations and verify both stdcall ABI and PE export names."""
+    specification = json.loads((ROOT / 'decomp/win32-imports.json').read_text())
+    if (specification['schema'], specification['architecture'],
+            specification['calling_convention']) != (1, 'x86', 'stdcall'):
+        raise ValueError('Unsupported platform import specification.')
+    headers = specification['headers_sha256']
+    for name, expected in headers.items():
+        if digest(tool.compiler.parent / 'Include' / name) != expected:
+            raise ValueError(f'Platform header mismatch: {name}')
+    folder = tool.output / 'platform'
+    libraries = []
+    adjustments = {}
+    for dll, symbols in specification['libraries'].items():
+        library, changed = stdcall_import_library(tool, folder, dll, symbols)
+        libraries.append(library.name)
+        adjustments[dll] = changed
+    source = ROOT / 'decomp/fixtures/platform.cpp'
+    binary, pdb = tool.build(folder, [source], 'platform', libraries,
+                            ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include')])
+    symbols = coff_import_symbols(folder / 'platform.obj')
+    expected_symbols = sorted(f'__imp__{name}@{size}'
+                              for functions in specification['libraries'].values()
+                              for name, size in functions.items())
+    if symbols != expected_symbols:
+        raise ValueError(f'Platform fixture has unexpected stdcall references: {symbols}')
+    imports = pe_imports(binary)
+    expected_imports = sorted((dll, name) for dll, names in specification['libraries'].items()
+                              for name in names)
+    actual_imports = sorted((dll, name) for dll, names in imports.items() for name in names)
+    if actual_imports != expected_imports:
+        raise ValueError(f'Platform fixture has unexpected PE imports: {imports}')
+    result = {'imports': imports, 'coff_import_symbols': symbols,
+              'headers_sha256': headers, 'pdb_created': pdb.is_file(),
+              'name_mode_adjustments': adjustments,
+              'fixture_sha256': digest(source), 'binary_sha256': digest(binary),
+              'scope': 'Generated compile/link fixture only; never executed. No SDK library code copied.'}
+    save(tool.output / 'platform-result.json', result)
+    print(json.dumps(result, indent=2))
+
+
 def fixture(tool):
     folder = tool.output / 'fixture'
     folder.mkdir(exist_ok=True)
@@ -275,6 +321,7 @@ def game(tool, args):
     inputs = sorted(set([*sources, *source.rglob('*.h'), *support_sources, TARGET,
                          ROOT / 'decomp/metadata.csv', ROOT / 'decomp/msvcrt.def',
                          ROOT / 'decomp/msvc6-sp4.json', ROOT / 'decomp/requirements.txt',
+                         ROOT / 'tools/matching_imports.py',
                          Path(__file__).resolve()]))
     def input_hashes():
         return {str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path): digest(path)
@@ -362,7 +409,7 @@ def game(tool, args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['verify', 'fixture', 'stdio-fixture', 'game'])
+    parser.add_argument('command', choices=['verify', 'fixture', 'stdio-fixture', 'platform-fixture', 'game'])
     parser.add_argument('--compiler', default=os.environ.get('BEACHLIFE_MSVC6'))
     parser.add_argument('--original', type=Path, default=ROOT / 'orig/analysis/disc/BeachLife.exe')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/matching')
@@ -380,6 +427,8 @@ def main():
             fixture(Toolchain(args))
         elif args.command == 'stdio-fixture':
             stdio_fixture(Toolchain(args))
+        elif args.command == 'platform-fixture':
+            platform_fixture(Toolchain(args))
         else:
             game(Toolchain(args), args)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
