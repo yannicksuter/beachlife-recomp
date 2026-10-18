@@ -64,7 +64,7 @@ StartupWork::StartupWork(std::vector<StartupStep> steps)
 StartupWork::~StartupWork()
 {
     cancel();
-    thread_.join();
+    join();
 }
 
 StartupStatus StartupWork::status() const
@@ -76,6 +76,14 @@ StartupStatus StartupWork::status() const
 void StartupWork::cancel()
 {
     cancelled_ = true;
+}
+
+void StartupWork::join()
+{
+    if (thread_.joinable())
+    {
+        thread_.join();
+    }
 }
 
 void StartupWork::rethrow() const

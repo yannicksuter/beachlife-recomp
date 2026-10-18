@@ -47,18 +47,44 @@ struct Gate
     }
 };
 
+struct ThreadExitNotice
+{
+    std::atomic_bool* finished;
+    ~ThreadExitNotice()
+    {
+        *finished = true;
+    }
+};
+
 int main()
 {
     try
     {
         {
             StartupWork none({});
-            wait_for(
-                [&]
-                {
-                    return none.status().ready;
-                });
+            none.join();
+            none.join();
             expect(none.status().share() == 1.0f && !none.status().failed);
+        }
+        {
+            // A ready status precedes thread-local teardown. The game caller
+            // needs a joined worker before constructing its own bound state.
+            std::atomic_bool exited{false};
+            std::thread::id worker_id;
+            std::optional<StartupProgress> observed_progress;
+            StartupWork work({{"handoff",
+                [&](StartupProgress& progress)
+                {
+                    thread_local ThreadExitNotice notice{&exited};
+                    worker_id = std::this_thread::get_id();
+                    observed_progress.emplace(progress);
+                }}});
+            work.join();
+            expect(exited && work.status().ready && !work.status().failed);
+            expect(worker_id != std::this_thread::get_id());
+            expect(observed_progress && !observed_progress->cancelled());
+            work.join();
+            expect(!observed_progress->cancelled());
         }
         {
             Gate unknown, later_unknown, known;
@@ -142,6 +168,8 @@ int main()
                 {
                     return returned.load();
                 });
+            work->join();
+            expect(!work->status().ready && !work->status().failed);
             work.reset();
             expect(!later);
         }
@@ -184,6 +212,8 @@ int main()
                 {
                     return work.status().failed;
                 });
+            work.join();
+            work.join();
             expect(!work.status().ready && !later);
             try
             {
