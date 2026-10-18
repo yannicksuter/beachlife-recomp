@@ -94,7 +94,7 @@ or unsupported input fails in the host preflight. Allocation failure during
 faithful construction terminates the process under a temporary default-allocator
 policy, including failures on other threads during that process-wide interval.
 It does not repair the original parser or claim arbitrary-input recovery.
-Image, input, cursor and surface subsystem targets remain behind the optional test flag.
+Image, input, cursor, surface and pool-lock targets remain behind the optional test flag.
 The file helpers and game share the host-only `beachlife_retail_files` library,
 so there is one thread-local VFS binding. Reconstructed gameplay remains open.
 `beachlife_reconstructed_input` qualifies the two byte-state queries, transition
@@ -118,6 +118,13 @@ cleanup methods through generated ownership and Surface7 providers. Its tests
 verify the selected object, callback-visible state and final writes, including
 table changes during release. Surface creation and a rendering backend remain
 separate dependencies; this library is not connected to production gameplay.
+
+`beachlife_reconstructed_pool_lock` tests the exported acquisition method and
+cleanup against one shared 32-bit word. Generated providers verify fast and
+fallback acquisition, wait values, adaptive state and cleanup after normal or
+exceptional host lifetimes. The test providers use distinct symbols so they can
+coexist with the host CRT's system imports. Operating-system synchronization,
+concurrent access and original parent unwind behavior remain unqualified.
 
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.

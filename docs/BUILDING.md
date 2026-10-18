@@ -120,8 +120,8 @@ so an original zero-status fatal exit cannot pass the test.
 
 ## Reconstructed subsystem tests
 
-The optional targets compile reconstructed image, file, configuration, input and
-surface helpers using the native compiler. They consume a committed source export with faithful patches
+The optional targets compile reconstructed image, file, configuration, input,
+surface and pool-lock helpers using the native compiler. They consume a committed source export with faithful patches
 through the same preparation tool as dependencies. Enable them explicitly:
 
 ```sh
@@ -134,7 +134,7 @@ cmake --build build/reconstructed-tga \
     reconstructed_config_loading_tests reconstructed_startup_config_tests \
     startup_configuration_tests startup_configuration_default_tests \
     reconstructed_input_tests reconstructed_cursor_tests \
-    reconstructed_surfaces_tests --parallel
+    reconstructed_surfaces_tests reconstructed_pool_lock_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -159,6 +159,14 @@ and prepared files. Update reconstruction or portability patches and reconfigure
 files. The matching-only VC6 release wrapper is excluded in favor of the host
 CRT. Subsystem test executables remain opt-in; configuration and file libraries
 are part of normal Play.
+
+The pool-lock target compiles the unchanged acquisition and cleanup methods
+against a test-only platform provider. It checks that both methods use the same
+32-bit word, preserves adaptive state across fast and fallback acquisition, and
+verifies the wait sequence and cleanup on normal and exceptional host lifetimes.
+Its deterministic single-threaded provider exercises no operating-system
+synchronization. Concurrent behavior, original parent unwind machinery and
+production use remain separate qualification steps.
 
 The generated fixtures check palette/pixel offsets, channel conversion, row
 orientation, raw and run-length packets, empty images and buffer ownership.

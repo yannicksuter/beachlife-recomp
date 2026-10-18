@@ -316,3 +316,26 @@ else()
 endif()
 add_test(NAME reconstructed_surfaces COMMAND reconstructed_surfaces_tests)
 set_tests_properties(reconstructed_surfaces PROPERTIES LABELS "reconstructed;headless")
+
+# This isolated test provider supplies deterministic platform calls to the
+# unchanged reconstructed methods. It is not linked into the game runtime.
+add_library(beachlife_reconstructed_pool_lock STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_guard.cpp")
+target_include_directories(beachlife_reconstructed_pool_lock PUBLIC
+    "${CMAKE_SOURCE_DIR}/tests/providers/pool_lock" "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_pool_lock PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_pool_lock PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_pool_lock verify_reconstructed_source)
+
+add_executable(reconstructed_pool_lock_tests tests/reconstructed_pool_lock.cpp)
+target_link_libraries(reconstructed_pool_lock_tests PRIVATE beachlife_reconstructed_pool_lock)
+set_target_properties(reconstructed_pool_lock_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_pool_lock_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_pool_lock_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_pool_lock COMMAND reconstructed_pool_lock_tests)
+set_tests_properties(reconstructed_pool_lock PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)
