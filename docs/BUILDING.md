@@ -75,8 +75,9 @@ through the same preparation tool as dependencies. Enable them explicitly:
 cmake --preset release -B build/reconstructed-tga \
   -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
 cmake --build build/reconstructed-tga \
-  --target reconstructed_tga_tests reconstructed_files_tests reconstructed_config_tests --parallel
-ctest --test-dir build/reconstructed-tga -R '^reconstructed_(tga|files|config)$' --output-on-failure
+  --target reconstructed_tga_tests reconstructed_files_tests \
+    reconstructed_config_tests reconstructed_config_tokens_tests --parallel
+ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
 `BUILD_TESTING` must be enabled. `patches/beachlife-decomp/source.json` owns the
@@ -128,6 +129,12 @@ extents, including embedded NULs, high-bit bytes and nonpositive sizes. The valu
 helper requires one readable byte even for a nonpositive size. Tests preserve
 that precondition and exercise exact allocation boundaries under sanitizers.
 These helpers do not yet form a complete configuration parser.
+
+The token lifecycle target runs matched initialization and cleanup through the
+host C++ allocator. Generated fixtures verify borrowed data remains unchanged,
+owned scalar and array allocations are released once in the original order,
+and owner fields and surrounding guards are unchanged. The token allocator and
+complete parser remain separate integration work.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
