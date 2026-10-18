@@ -1,0 +1,102 @@
+Reconstruct the input-motion update with its two observed globals.
+Preserve live x87 comparisons, stored-float loop reloads and both actual getters.
+Modern floating-point parity and object initialization remain separate.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,3 +1,4 @@
++#include "startup_input_motion.h"
+ #include "startup_render_rectangle.h"
+ #include "startup_list.h"
+ CircularListNode* volatile fixture_list_node;
+@@ -102,6 +103,10 @@
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
+     FrameClock fixture_frame_clock = { 0 };
+     fixture_frame_clock.Update(1000);
++    startup_input_state = &fixture_input;
++    startup_frame_clock = &fixture_frame_clock;
++    InputMotionState fixture_input_motion = { 0 };
++    fixture_config_offset = fixture_input_motion.Update();
+     CircularListNode fixture_list_head = { 0 };
+     fixture_list_head.next = &fixture_list_head;
+     fixture_list_head.previous = &fixture_list_head;
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -17,3 +17,5 @@
+ 0x588058,string,78,
+ 0x588014,string,68,
+ 0x004f4ea4,float,4,
++0x004f3328,float,4,
++0x004f3320,float,8,
+--- /dev/null
++++ b/src/startup_input_globals.cpp
+@@ -0,0 +1,6 @@
++#include "startup_input_motion.h"
++
++// GLOBAL: BEACHLIFE 0x005bb09c
++InputState* startup_input_state;
++// GLOBAL: BEACHLIFE 0x005bb0a0
++FrameClock* startup_frame_clock;
+--- /dev/null
++++ b/src/startup_input_motion.cpp
+@@ -0,0 +1,18 @@
++#include "startup_input_motion.h"
++#include "startup_frame_clock.h"
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x00409560
++unsigned char InputMotionState::Update()
++{
++    value_18 += startup_frame_clock->delta_seconds * scale_1c;
++    while (value_18 >= 8.0f)
++    {
++        value_18 -= 8.0;
++    }
++    unknown_14 = 0;
++    InputState* input = startup_input_state;
++    value_134 = input->ReadValue134();
++    value_138 = input->ReadValue138();
++    return 1;
++}
+--- /dev/null
++++ b/src/startup_input_motion.h
+@@ -0,0 +1,24 @@
++#ifndef STARTUP_INPUT_MOTION_H
++#define STARTUP_INPUT_MOTION_H
++
++struct InputState;
++struct FrameClock;
++
++// Descriptive observed prefix only; original names and complete class are unknown.
++struct InputMotionState
++{
++    unsigned char unknown_00[8];
++    int value_134;
++    int value_138;
++    unsigned char unknown_10[4];
++    unsigned int unknown_14;
++    float value_18;
++    float scale_1c;
++
++    unsigned char Update();
++};
++
++extern InputState* startup_input_state;
++extern FrameClock* startup_frame_clock;
++
++#endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -333,6 +333,12 @@
+       "address": "0x0040c0d0",
+       "size": 32,
+       "name": "RenderRectangleState::SetRectangle",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x00409560",
++      "size": 97,
++      "name": "InputMotionState::Update",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
