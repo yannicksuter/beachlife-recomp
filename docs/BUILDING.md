@@ -81,6 +81,25 @@ code, data or sections. Actual CRT imports and comparison metadata must still be
 provided by the target; the tool does not synthesize exception handlers. Matching
 results record the selected source options and generated object's identity.
 
+## Reconstructed configuration libraries
+
+Build the prepared configuration and VFS file libraries without test executables:
+
+```sh
+cmake --preset release -B build/reconstructed-config \
+  -DBUILD_TESTING=OFF -DBEACHLIFE_BUILD_RECONSTRUCTED_CONFIG=ON
+cmake --build build/reconstructed-config \
+  --target beachlife_reconstructed_startup_config --parallel
+```
+
+Consumers link `beachlife_reconstructed_startup_config`; its public dependencies
+provide the file, scanner, token, allocation, parser and loading libraries.
+This option uses the same pinned export and per-build verification as the tests
+below. It does not enable the image, input or cursor targets, or link reconstructed
+code into the launcher. Both reconstructed build options default to `OFF`.
+The VFS session and qualified input, allocation and lifetime limits below still
+apply to callers; building the libraries does not establish production startup.
+
 ## Reconstructed subsystem tests
 
 The optional targets compile reconstructed image, file, configuration and input helpers using the
@@ -99,7 +118,8 @@ cmake --build build/reconstructed-tga \
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
-`BUILD_TESTING` must be enabled. `patches/beachlife-decomp/source.json` owns the
+The test option also enables the configuration libraries and requires
+`BUILD_TESTING`. `patches/beachlife-decomp/source.json` owns the
 full baseline commit pin shared with matching; that object must exist locally,
 so shallow checkouts may need more history before configuration. Configuration
 never fetches it. New reconstructed increments are patches listed in

@@ -83,8 +83,13 @@ records, owner publication, duplicate names, copied strings, bounded values
 and global reset after destruction. Configuration lookup, empty-owner cleanup,
 general error/unwind paths and general floating-point parity remain separate,
 as do the complete image parser and allocating constructor.
-These libraries have generated native tests; none is linked into production
-gameplay.
+`BEACHLIFE_BUILD_RECONSTRUCTED_CONFIG` exposes this existing configuration/file
+library graph independently of `BUILD_TESTING`, through the same pinned export
+and verification target. The subsystem test option also enables it; test
+executables and the image, input and cursor libraries remain behind that option.
+Both options default to off. These libraries have generated native tests; none
+is linked into production gameplay. A runtime consumer still needs the explicit
+VFS session, qualified input/error domain and owner lifetime described above.
 `beachlife_reconstructed_input` qualifies the two byte-state queries, transition
 reset, two signed-integer getters and the first-button transition getter. Its
 generated tests cover all valid indices and byte values, bounded 32-bit getter
