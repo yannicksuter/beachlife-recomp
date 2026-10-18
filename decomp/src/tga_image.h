@@ -14,4 +14,5 @@ struct TgaImage
     unsigned char unknown_1c[4];
 
     TgaImage(int image_width, int image_height);
+    ~TgaImage();
 };

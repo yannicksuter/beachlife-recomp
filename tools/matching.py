@@ -141,7 +141,7 @@ class Toolchain:
         (folder / 'imports.log').write_text(log)
         return 'msvcrt-import.lib'
 
-    def build(self, folder, sources, name, extra_link=(), extra_compile=()):
+    def build(self, folder, sources, name, extra_link=(), extra_compile=(), source_flags=None):
         folder.mkdir(parents=True, exist_ok=True)
         objects, logs = [], []
         for source in sources:
@@ -150,7 +150,8 @@ class Toolchain:
                 raise ValueError('Matching source basenames must be unique.')
             objects.append(obj)
             flags = ['/nologo', '/c', '/O2', '/Ob0', '/Zi', '/Gd', '/Gy',
-                     '/Fdcompile.pdb', '/Fo' + obj, *extra_compile, self.native(source)]
+                     '/Fdcompile.pdb', '/Fo' + obj, *extra_compile,
+                     *(source_flags or {}).get(source, ()), self.native(source)]
             self.response(folder / 'compile.rsp', flags)
             command = [str(self.compiler / 'CL.EXE'), '@compile.rsp']
             logs.append(self.run(command if os.name == 'nt' else ['wine', *command], folder))
@@ -266,6 +267,8 @@ def game(tool, args):
     original = verify_original(args.original, target)
     source = args.source.resolve()
     sources = sorted(source.rglob('*.cpp'))
+    support = ROOT / 'decomp/support'
+    support_sources = sorted(support.glob('*.cpp'))
     if not sources:
         raise ValueError('No matching source files found.')
     folder = tool.output / 'game'
@@ -295,15 +298,17 @@ def game(tool, args):
                      'fixture_pixels = GetTgaPixelData(fixture_tga, 0, 0, 0); '
                      'fixture_tga_image.palette = fixture_palette_copy; '
                      'CopyTgaPalette(fixture_tga, &fixture_tga_image, 1); '
-                     'CopyTgaPixels(fixture_tga, &fixture_tga_image); }\n')
+                     'CopyTgaPixels(fixture_tga, &fixture_tga_image); '
+                     'fixture_tga_image.palette = 0; }\n')
     library = tool.runtime_library(folder)
-    binary, pdb = tool.build(folder, [*sources, entry], 'BeachLife', ['/fixed:no', library],
+    binary, pdb = tool.build(folder, [*sources, *support_sources, entry], 'BeachLife', ['/fixed:no', library],
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
-                             '/I' + tool.native(source)])
+                             '/I' + tool.native(source)],
+                            source_flags={support / 'operator_delete.cpp': ['/O1']})
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
-        'filename': 'BeachLife.exe', 'source-root': [str(source)],
+        'filename': 'BeachLife.exe', 'source-root': [str(source), str(support)],
         'hash': {'sha256': target['sha256']},
         'data-sources': [str(ROOT / 'decomp/metadata.csv')],
         'report': {'ignore-functions': ['fixture_entry']}}}})
@@ -316,22 +321,29 @@ def game(tool, args):
                        str(reports / 'comparison.json'), '--no-color'], folder)
     (reports / 'comparison.log').write_text(output)
     report = json.loads((reports / 'comparison.json').read_text())
-    functions = []
-    for item in target['functions']:
-        row = next((row for row in report['data'] if int(row['address'], 16) == int(item['address'], 16)), None)
-        if row is None:
-            raise ValueError(f"Comparator did not find {item['name']}.")
-        exact = read_va(original, int(item['address'], 16), item['size']) == read_va(binary, int(row['recomp'], 16), item['size'])
-        functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
-                          'normalized_match': row['matching'], 'exact_bytes': exact})
+    def compare_functions(items):
+        functions = []
+        for item in items:
+            row = next((row for row in report['data'] if int(row['address'], 16) == int(item['address'], 16)), None)
+            if row is None:
+                raise ValueError(f"Comparator did not find {item['name']}.")
+            exact = read_va(original, int(item['address'], 16), item['size']) == read_va(binary, int(row['recomp'], 16), item['size'])
+            functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
+                              'normalized_match': row['matching'], 'exact_bytes': exact})
+        return functions
+    functions = compare_functions(target['functions'])
+    library_functions = compare_functions(target.get('library_functions', []))
     result = {'target': target['id'], 'original_sha256': target['sha256'],
               'compiler': 'VC6 SP4 / C2 12.0.8799.0', 'reccmp': '0.1.7',
               'functions': functions, 'scope': 'Only listed functions; whole-game denominator unknown.',
+              'library_functions': library_functions,
               'comparison_layout': 'Relocations enabled in rebuilt comparison image; original remains unchanged.'}
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
     if any(item['normalized_match'] != 1 for item in functions):
         raise ValueError('One or more annotated functions do not match.')
+    if any(item['normalized_match'] != 1 for item in library_functions):
+        raise ValueError('One or more library support functions do not match.')
 
 
 def main():

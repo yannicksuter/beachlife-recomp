@@ -74,7 +74,7 @@ annotation and comparison semantics.
 The stdio fixture checks the next link boundary without requiring an SDK import
 library. The pinned VC6 librarian builds a small import library from
 `msvcrt.def`; it contains import metadata, not CRT code. The stdio fixture uses
-four exports; the game comparison also uses `fread` and operator new.
+four exports; the game comparison also uses `fread`, `free` and operator new.
 The fixture uses the pinned VC6 `STDIO.H`, requires eight-byte `fpos_t`, and
 verifies the generated executable's actual import names and addresses:
 
@@ -162,6 +162,20 @@ unchecked buffers and sequential channel reads/writes, including their effects
 on overlapping storage. `CopyTgaPixels` is descriptive; the original symbol and
 exact declaration remain unknown.
 
+`src/tga_image_cleanup.cpp` reconstructs the 49-byte image destructor at
+`0x004ea2e0`. It releases the pixel buffer unconditionally, then releases the
+palette and converted palette when nonnull. It reads each pointer after the
+previous release and leaves every field unchanged. VC6 lowers these trivial
+array deletions to scalar operator delete. The original class name remains
+unknown.
+
+`support/operator_delete.cpp` supplies the separate 11-byte C++ runtime wrapper
+at `0x004ee6d6`, forwarding to the verified MSVCRT `free` import. It is library
+support, excluded from the game-method count. The matching build appends `/O1`
+only for this file: size optimization reproduces the memory-operand push,
+where `/O2` emits a longer load/push sequence. This is a measured setting for
+the wrapper, not a recovered whole-library build recipe.
+
 ```sh
 python3 tools/matching.py game --compiler /path/to/msvc6.4 \
   --reccmp build/matching/venv/bin/reccmp-reccmp
@@ -169,20 +183,21 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-All ten functions currently match after address normalization, totaling 825
-bytes. The filename hash, four TGA helpers and image constructor also match
+All eleven game functions currently match after address normalization, totaling
+874 bytes. The filename hash, four TGA helpers and image constructor also match
 all 527 raw bytes exactly. Rebuilt constants/imports in the other functions
 have different addresses, so this is not a byte-identical executable or an
 established whole-program layout. The original has stripped relocations;
-`metadata.csv` identifies the known float and the
-binary-read-mode string and names the verified operator-new import thunk as
-library code. The comparison build keeps relocations so reccmp can identify
-rebuilt literals. The game comparison adds `/MD /G6` to the fixture flags:
+`metadata.csv` identifies the known float and binary-read-mode string and names
+the verified operator-new and `free` import thunks as library code. The comparison
+build keeps relocations so reccmp can identify rebuilt literals. The game
+comparison adds `/MD /G6` to the fixture flags:
 `/G6` reproduces the loader's loop scheduling, while `/G3`, `/G4` and `/G5`
 produce a different instruction order. This is evidence for this small source
 set, not a recovered whole-program compiler recipe. The tool reports raw
 byte equality separately and fails if a registered target function is missing
-or does not match.
+or does not match. The 11-byte release wrapper also matches after address
+normalization and is reported and checked separately under `library_functions`.
 
 Accuracy is checked at the function level. The target executable and compiler
 components are hash-verified, reconstructed C++ is compiled with the pinned
@@ -196,14 +211,17 @@ constant; a normalized match alone does not establish a complete binary match.
 Each reconstructed function has been checked with a deliberately incorrect
 source variant. Changing the BLE terminator, filename-hash signedness or TGA
 header offset, palette channel order, constructor pixel depth or pixel row
-direction makes the comparison fail. Generated semantic tests additionally
-check the pure helpers' boundary values, palette/pixel copy overlap and
-untouched constructor storage. These checks establish the reported machine-code
-matches; they do not recover original variable names, class declarations or
+direction makes the comparison fail. Adding a pixel-null guard to the
+destructor or changing the release wrapper's forwarded pointer also fails.
+Generated semantic tests additionally check the pure helpers' boundary values,
+palette/pixel copy overlap and
+untouched constructor storage, plus destructor release order and unchanged
+fields. These checks establish the reported machine-code matches; they do not
+recover original variable names, class declarations or
 the full game's compiler flags.
 
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There are ten annotated retail functions and no
-established whole-game function denominator.
+does not implement game startup. There are eleven annotated game functions and
+no established whole-game function denominator.
