@@ -83,7 +83,7 @@ results record the selected source options and generated object's identity.
 
 ## Reconstructed subsystem tests
 
-The optional targets compile reconstructed image, file and configuration helpers using the
+The optional targets compile reconstructed image, file, configuration and input helpers using the
 native compiler. They consume a committed source export with faithful patches
 through the same preparation tool as dependencies. Enable them explicitly:
 
@@ -95,7 +95,7 @@ cmake --build build/reconstructed-tga \
     reconstructed_config_tests reconstructed_config_tokens_tests \
     reconstructed_config_allocation_tests reconstructed_config_parser_tests \
     reconstructed_config_loading_tests reconstructed_startup_config_tests \
-    reconstructed_input_tests --parallel
+    reconstructed_input_tests reconstructed_cursor_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -243,6 +243,21 @@ part of the unchanged-representation checks. Qualifying this layout does not
 exercise the cursor setter or Win32 resources. Out-of-range queries, state
 production, device input and integration with the controller or game loop remain
 unqualified.
+
+The cursor target runs the reconstructed setter and current-cursor wrapper
+through an explicit thread-local provider. The native patch replaces Win32
+integer-resource/API spelling with typed numeric-resource calls; it preserves
+resource IDs, image type, dimensions, flags, cached-state gates and publication
+after callbacks. Generated providers record exact event order and arguments,
+null or live handle results, callback-visible state and whole-object guards.
+Failed loads still remember the requested identifier. The current-cursor
+wrapper passes that cached identifier and therefore does not force a reload.
+Tests cover ignored arguments and set-call returns, invalid identifiers, nested
+bindings and thread isolation. Handles are borrowed fixture values; no game
+assets, Win32 resources or platform cursor backend are used. A missing provider
+or invalid session lifetime violates the host boundary's preconditions and
+terminates; this is separate from the retail API's null-result behavior.
+These optional libraries are not linked into production startup or gameplay.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and

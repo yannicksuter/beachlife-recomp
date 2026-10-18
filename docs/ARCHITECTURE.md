@@ -82,10 +82,18 @@ gameplay.
 `beachlife_reconstructed_input` qualifies the two byte-state queries and
 transition reset over the observed unsigned prefix. Its generated tests cover
 all valid indices and byte values, exact returned bytes, clear widths,
-unchanged storage and idempotence. Pointer-bearing layouts, input production,
-device services and controller integration remain separate qualifications.
+unchanged storage and idempotence. The observed pointer-bearing prefix is
+qualified with valid null and live handles. Input production, device services
+and controller integration remain separate qualifications.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
+
+`beachlife_reconstructed_cursor` runs the matched cursor setter and current-cursor
+wrapper through a borrowed host provider. Its native patch preserves resource
+IDs, arguments, callback order and cached-state behavior. Generated providers
+qualify successful and failed loads, state publication and session lifetimes;
+actual cursor resources and platform backends remain separate.
+
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.
 
