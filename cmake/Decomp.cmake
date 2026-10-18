@@ -164,3 +164,27 @@ else()
 endif()
 add_test(NAME reconstructed_config_parser COMMAND reconstructed_config_parser_tests)
 set_tests_properties(reconstructed_config_parser PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_config_loading STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_load_parse.cpp")
+target_include_directories(beachlife_reconstructed_config_loading PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_config_loading PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_config_loading PUBLIC
+    beachlife_reconstructed_files beachlife_reconstructed_config_parser
+    beachlife_reconstructed_config_allocation)
+set_target_properties(beachlife_reconstructed_config_loading PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_config_loading verify_reconstructed_source)
+
+add_executable(reconstructed_config_loading_tests tests/reconstructed_config_loading.cpp)
+target_link_libraries(reconstructed_config_loading_tests PRIVATE beachlife_reconstructed_config_loading)
+set_target_properties(reconstructed_config_loading_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_config_loading_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_config_loading_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+set(BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/reconstructed-config-fixture"
+    CACHE STRING "Writable target-system directory for generated configuration loading tests")
+add_test(NAME reconstructed_config_loading COMMAND reconstructed_config_loading_tests
+    "${BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT}")
+set_tests_properties(reconstructed_config_loading PROPERTIES LABELS "reconstructed;headless")

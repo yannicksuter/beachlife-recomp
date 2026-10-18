@@ -56,9 +56,15 @@ decimal-prefix conversion and token parsing with the existing scanner and token
 libraries. Generated fixtures qualify bounded records and ownership with
 successful allocations; arbitrary fractional arithmetic and allocation failure
 remain separate boundaries.
+`beachlife_reconstructed_config_loading` connects the matched file orchestration
+to those libraries through the existing VFS reader. Generated files qualify the
+three-open sequence, fixed-width sizes, bounded complete reads, token allocation
+failure and ownership after the mount ends. Uninitialized read tails, unchecked
+temporary/payload allocation failure and arbitrary numeric parity remain outside
+the executed domain.
 These libraries have generated native tests; none is linked into production
-gameplay. Configuration file orchestration, the complete image parser and the allocating image
-constructor remain separate work.
+gameplay. The configuration filename constructor, the complete image parser and
+the allocating image constructor remain separate work.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)

@@ -93,7 +93,8 @@ cmake --preset release -B build/reconstructed-tga \
 cmake --build build/reconstructed-tga \
   --target reconstructed_tga_tests reconstructed_files_tests \
     reconstructed_config_tests reconstructed_config_tokens_tests \
-    reconstructed_config_allocation_tests reconstructed_config_parser_tests --parallel
+    reconstructed_config_allocation_tests reconstructed_config_parser_tests \
+    reconstructed_config_loading_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -178,6 +179,30 @@ original x87 arithmetic, allocation failure and invalid pointer/extent domains
 remain unqualified. The setters use ordinary successful host allocations here;
 the allocation target's failure adaptation does not extend to these methods.
 This target does not load configuration files or connect a game startup driver.
+
+The configuration-loading target runs the matched file orchestration through the
+existing VFS reader, scanner, allocator and parser. It preserves the probe, size
+and read opens, low-32-bit size arithmetic, ignored I/O results and final NUL.
+Generated fixtures cover complete bounded files, repeated partial reads, a file
+growing between opens, virtual sizes above 4 GiB and checked token-table allocation
+failure. A previous table is overwritten without being freed; tests recover that
+storage separately. Failure can leave a null table with a nonzero old count,
+which the unchecked cleanup cannot safely destroy; fixtures observe that state
+before resetting their own count for teardown. The temporary allocation uses the legacy nonthrowing result
+without adding a null check. Temporary and payload allocations must succeed in
+the executed domain.
+
+The loader's final NUL is inside its allocation, with no extra lookahead padding.
+Composed records are generated to stay within that extent. Missing read opens or
+failed reads are exercised only when the size stage produced a one-byte buffer,
+which the final NUL fully initializes. Positive-size incomplete reads, position
+failures that write no result, invalid size arithmetic and general fractional
+parity remain unqualified. Tests also load generated files from a real folder and
+check that parsed allocations outlive the VFS session.
+`BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT` selects their separate output
+directory, defaulting to the build tree; Windows cross tests can use a Wine C:
+path. The filename constructor and production startup driver remain separate
+integration steps.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
