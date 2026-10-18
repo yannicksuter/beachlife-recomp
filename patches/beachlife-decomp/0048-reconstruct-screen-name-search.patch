@@ -1,0 +1,97 @@
+Reconstruct the observed screen-name iterator search.
+Preserve first-match traversal and the explicit result-pointer ABI.
+Mixed generic/application provenance remains unclassified, outside game and library totals.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,3 +1,4 @@
++#include "startup_screen_name_search.h"
+ #include "startup_input_motion.h"
+ #include "startup_render_rectangle.h"
+ #include "startup_list.h"
+@@ -113,6 +114,8 @@
+     CircularList fixture_list = { &fixture_list_head };
+     fixture_list_node = fixture_list.End().node;
+     fixture_list_node = fixture_list.Begin().node;
++    CircularListIterator fixture_search_result = { 0 };
++    fixture_list_node = FindScreenByName(&fixture_search_result, fixture_list.Begin(), fixture_list.End(), "generated")->node;
+     RenderRectangleState fixture_render_state = { 0 };
+     RenderRectangle fixture_render_rectangle = { 0 };
+     fixture_render_state.SetRectangle(fixture_render_rectangle);
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -14,6 +14,8 @@
+ {
+     unsigned char unknown_00[4];
+     ScreenRectangle rectangle;
++    unsigned char unknown_14[0x34];
++    const char* name;
+ 
+     ScreenRectangle GetRectangle() const;
+ };
+--- /dev/null
++++ b/src/startup_screen_name_search.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_name_search.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004b30c0
++CircularListIterator* FindScreenByName(CircularListIterator* result,
++    CircularListIterator first, CircularListIterator last, const char* name)
++{
++    CircularListIterator current = first;
++    while (current.node != last.node)
++    {
++        ScreenListNode* node = static_cast<ScreenListNode*>(current.node);
++        if (strcmp(node->entry->item->name, name) == 0)
++        {
++            break;
++        }
++        current.node = current.node->next;
++    }
++    *result = current;
++    return result;
++}
+--- /dev/null
++++ b/src/startup_screen_name_search.h
+@@ -0,0 +1,23 @@
++#ifndef STARTUP_SCREEN_NAME_SEARCH_H
++#define STARTUP_SCREEN_NAME_SEARCH_H
++
++#include "startup_list.h"
++#include "startup_screen_item.h"
++
++// Observed entry and node prefixes; remaining fields and original names are unknown.
++struct ScreenListEntry
++{
++    ScreenItem* item;
++};
++
++struct ScreenListNode : CircularListNode
++{
++    ScreenListEntry* entry;
++};
++
++// Explicit representation of the observed cdecl result-pointer ABI.
++// The original iterator type and C++ return declaration remain unknown.
++CircularListIterator* FindScreenByName(CircularListIterator* result,
++    CircularListIterator first, CircularListIterator last, const char* name);
++
++#endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -396,5 +396,13 @@
+         "SetCursor": 4
+       }
+     }
+-  }
++  },
++  "unclassified_functions": [
++    {
++      "address": "0x004b30c0",
++      "size": 94,
++      "name": "FindScreenByName",
++      "name_status": "unclassified mixed generic/application provenance; original symbol and exact declaration unknown"
++    }
++  ]
+ }

@@ -387,10 +387,36 @@ def verify_stdcall_pe_imports(binary, configured, exact):
     return verified
 
 
+def game_target(metadata):
+    """Validate every registered group before invoking matching build tools."""
+    path = metadata / 'targets/beachlife-uk-1.1.json'
+    target = json.loads(path.read_text())
+    if not isinstance(target, dict) or 'functions' not in target:
+        raise ValueError('The matching target requires a functions list.')
+    seen = set()
+    for key in ('functions', 'library_functions', 'unclassified_functions'):
+        items = target.get(key, [])
+        if not isinstance(items, list):
+            raise ValueError(f'{key} must be a function list.')
+        for item in items:
+            if (not isinstance(item, dict) or
+                    not isinstance(item.get('name'), str) or not item['name'].strip() or
+                    not isinstance(item.get('address'), str) or
+                    not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item['address']) or
+                    type(item.get('size')) is not int or item['size'] <= 0):
+                raise ValueError(f'{key} needs named functions with a 32-bit address and positive integer size.')
+            start = int(item['address'], 16)
+            if start + item['size'] > 0x100000000:
+                raise ValueError('A registered function extends outside the 32-bit image.')
+            if start in seen:
+                raise ValueError(f'Duplicate function address across matching groups: {item["address"]}')
+            seen.add(start)
+    return path, target
+
+
 def game(tool, args):
     metadata = tool.decomp_root
-    target_path = metadata / 'targets/beachlife-uk-1.1.json'
-    target = json.loads(target_path.read_text())
+    target_path, target = game_target(metadata)
     original = verify_original(args.original, target)
     source = args.source.resolve()
     sources = sorted(source.rglob('*.cpp'))
@@ -486,6 +512,7 @@ def game(tool, args):
         return functions
     functions = compare_functions(target['functions'])
     library_functions = compare_functions(target.get('library_functions', []))
+    unclassified_functions = compare_functions(target.get('unclassified_functions', []))
     if manifest_path is not None:
         prepare(ROOT, manifest_path.parent, names=(), verify=True,
                 decomp_revision=args.decomp_revision, decomp_profile='matching')
@@ -495,6 +522,7 @@ def game(tool, args):
               'compiler': 'VC6 SP4 / C2 12.0.8799.0', 'reccmp': '0.1.7',
               'functions': functions, 'scope': 'Only listed functions; whole-game denominator unknown.',
               'library_functions': library_functions,
+              'unclassified_functions': unclassified_functions,
               'source_compile_options': {path.name: flags for path, flags in sorted(compile_options.items())},
               'link_abi_support': abi_support,
               'stdcall_import_libraries': import_libraries,
@@ -511,6 +539,8 @@ def game(tool, args):
         raise ValueError('One or more annotated functions do not match.')
     if any(item['normalized_match'] != 1 for item in library_functions):
         raise ValueError('One or more library support functions do not match.')
+    if any(item['normalized_match'] != 1 for item in unclassified_functions):
+        raise ValueError('One or more unclassified functions do not match.')
 
 
 def main():
@@ -537,6 +567,7 @@ def main():
             platform_fixture(Toolchain(args))
         else:
             prepare_game_source(args)
+            game_target(args.decomp_root)
             game(Toolchain(args), args)
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         parser.exit(1, str(error) + '\n')

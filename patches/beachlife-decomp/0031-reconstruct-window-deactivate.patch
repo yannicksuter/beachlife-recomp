@@ -1,0 +1,95 @@
+Reconstruct window deactivation through the actual audio helpers and globals.
+Preserve call order, global reloads and final state publication.
+The descriptive receiver prefix denotes the observed game-controller object.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2,6 +2,7 @@
+ #include "startup_config_tokens.h"
+ #include "startup_config_scan.h"
+ #include "startup_timer.h"
++#include "window_activation.h"
+ #include "window_audio.h"
+ #include "startup_controller.h"
+ #include "startup_config_decimal.h"
+@@ -79,6 +80,8 @@
+     WindowAudioState fixture_audio = { 0 };
+     fixture_audio.MuteDigitalDriver();
+     fixture_audio.PauseAudioStream();
++    WindowActivationTarget fixture_activation = { 0 };
++    fixture_activation.Deactivate();
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/window_activation.h
+@@ -0,0 +1,26 @@
++#ifndef WINDOW_ACTIVATION_H
++#define WINDOW_ACTIVATION_H
++
++#include "window_audio.h"
++
++// Descriptive observed prefixes, not recovered complete class layouts.
++struct WindowActivationTarget
++{
++    unsigned char unknown_00[0xc5];
++    unsigned char inactive;
++
++    void Activate();
++    void Deactivate();
++};
++
++struct WindowDeactivationState
++{
++    unsigned char unknown_00[0x439];
++    unsigned char deactivation_requested;
++};
++
++extern unsigned char window_deactivation_enabled;
++extern WindowDeactivationState* window_deactivation_state;
++extern WindowAudioState* window_audio_state;
++
++#endif
+--- /dev/null
++++ b/src/window_activation_globals.cpp
+@@ -0,0 +1,8 @@
++#include "window_activation.h"
++
++// GLOBAL: BEACHLIFE 0x005bb030
++unsigned char window_deactivation_enabled;
++// GLOBAL: BEACHLIFE 0x005baba8
++WindowDeactivationState* window_deactivation_state;
++// GLOBAL: BEACHLIFE 0x005baef4
++WindowAudioState* window_audio_state;
+--- /dev/null
++++ b/src/window_deactivate.cpp
+@@ -0,0 +1,14 @@
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004e3b20
++void WindowActivationTarget::Deactivate()
++{
++    if (window_deactivation_enabled && !inactive)
++    {
++        if (window_deactivation_state)
++            window_deactivation_state->deactivation_requested = 1;
++        window_audio_state->PauseAudioStream();
++        window_audio_state->MuteDigitalDriver();
++        inactive = 1;
++    }
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -255,6 +255,12 @@
+       "address": "0x004cff40",
+       "size": 22,
+       "name": "WindowAudioState::PauseAudioStream",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004e3b20",
++      "size": 69,
++      "name": "WindowActivationTarget::Deactivate",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],

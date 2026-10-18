@@ -35,10 +35,12 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 41 reconstructed game functions match after address normalization,
-totaling 3,673 bytes. 17 functions also match all 982 raw bytes exactly. An
-11-byte runtime release wrapper is verified separately as library support;
-the full game layout remains unknown.
+verified. 56 reconstructed game functions match after address normalization,
+totaling 4,460 bytes. 26 functions also match all 1,190 raw bytes exactly.
+Separate reconstructed library support totals 35 bytes across three methods.
+One 94-byte method also matches exactly; its mixed game/library provenance
+remains unclassified and is counted separately.
+The full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 
 Prepared matching targets can opt into `stdcall_imports`, a DLL mapping with
@@ -69,13 +71,31 @@ three-open sequence, fixed-width sizes, bounded complete reads, token allocation
 failure and ownership after the mount ends. Uninitialized read tails, unchecked
 temporary/payload allocation failure and arbitrary numeric parity remain outside
 the executed domain.
+The real configuration filename constructor is qualified through the VFS,
+including field initialization before the first open and the selected `2.5`
+float value. `beachlife_reconstructed_startup_config` adds the actual outer
+owner, append and cleanup chain. Its generated tests qualify nonempty typed
+records, owner publication, duplicate names, copied strings, bounded values
+and global reset after destruction. Configuration lookup, empty-owner cleanup,
+general error/unwind paths and general floating-point parity remain separate,
+as do the complete image parser and allocating constructor.
 These libraries have generated native tests; none is linked into production
-gameplay. The real configuration filename constructor is qualified through the
-VFS, including field initialization before the first open and the selected `2.5`
-float value. Typed outer-owner integration and general floating-point parity
-remain separate, as do the complete image parser and allocating constructor.
+gameplay.
+`beachlife_reconstructed_input` qualifies the two byte-state queries and
+transition reset over the observed unsigned prefix. Its generated tests cover
+all valid indices and byte values, exact returned bytes, clear widths,
+unchanged storage and idempotence. The observed pointer-bearing prefix is
+qualified with valid null and live handles. Input production, device services
+and controller integration remain separate qualifications.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
+
+`beachlife_reconstructed_cursor` runs the matched cursor setter and current-cursor
+wrapper through a borrowed host provider. Its native patch preserves resource
+IDs, arguments, callback order and cached-state behavior. Generated providers
+qualify successful and failed loads, state publication and session lifetimes;
+actual cursor resources and platform backends remain separate.
+
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.
 

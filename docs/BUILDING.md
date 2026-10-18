@@ -83,7 +83,7 @@ results record the selected source options and generated object's identity.
 
 ## Reconstructed subsystem tests
 
-The optional targets compile reconstructed image, file and configuration helpers using the
+The optional targets compile reconstructed image, file, configuration and input helpers using the
 native compiler. They consume a committed source export with faithful patches
 through the same preparation tool as dependencies. Enable them explicitly:
 
@@ -94,7 +94,8 @@ cmake --build build/reconstructed-tga \
   --target reconstructed_tga_tests reconstructed_files_tests \
     reconstructed_config_tests reconstructed_config_tokens_tests \
     reconstructed_config_allocation_tests reconstructed_config_parser_tests \
-    reconstructed_config_loading_tests --parallel
+    reconstructed_config_loading_tests reconstructed_startup_config_tests \
+    reconstructed_input_tests reconstructed_cursor_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -209,9 +210,62 @@ valid after the session ends and are released by the actual destructor.
 Construction cases retain the same bounded failure domains and exercise real
 folder mounts, comments and exact integers from -2048 through 2048. The selected
 literal `2.5` is separately checked against float32 bits `0x40200000`, directly
-and through construction. Other nonzero fractions, changed floating-point modes,
-the outer configuration owner and the production startup driver remain separate
-qualification boundaries.
+and through construction. Other nonzero fractions and changed floating-point
+modes remain outside this qualification.
+
+The startup-configuration target constructs the actual outer owner through the
+same VFS and token-loading library. It checks publication of the owner and a null
+list head before the first open, ordered typed records, duplicate names, copied
+strings, case-sensitive lowercase `true`, appended records and actual cleanup
+with global reset. Generated configurations are nonempty, with names and text
+of at most 255 bytes. Embedded NULs retain the original C-string prefix behavior.
+Numeric cases cover every integer from -2048 through 2048 and sample exact
+integers up to magnitude 1,000,000, with at most one zero fractional digit,
+signed zero and the separately qualified `2.5` literal. The original destructor
+assumes a nonempty list; empty-owner destruction, general fatal-error paths,
+allocation failure and exception unwinding remain unqualified. The fixture's
+completion guard rejects an early zero-status fatal exit while preserving
+CTest's normal exit-code checks. `BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT` selects its separate
+generated folder, defaulting to the build tree. These targets do not link the
+owner or a complete startup driver into the production game.
+
+The input target checks two matched byte-state queries, transition reset and
+two signed-integer getters.
+Generated fixtures cover all 256 valid indices and byte values, require exact
+zero-or-one results, and compare the whole declared object representation and
+surrounding guards. Reset clears only the two observed words and two bytes;
+tests check their widths, unchanged fields and repeated-call idempotence.
+Getter fixtures compare exact signed returns against independent supplied
+values over the complete signed 16-bit domain, 32-bit boundaries, walking-bit
+patterns and deterministic generated pairs. Both calls must leave the whole
+object and its guards unchanged; reported call counts are fixture entry calls.
+The declarations describe an observed prefix, not the complete retail input
+object. The current target requires the recovered resource-pointer prefix and
+both observed signed-integer fields. It checks relative field positions in the
+actual native layout rather than imposing x86 offsets on a 64-bit build.
+Pointer fields receive null or live
+fixture addresses; signed fields receive typed boundary and representative
+values. All typed values, padding and surrounding bytes remain part of the
+unchanged-representation checks. Cursor methods have their own target;
+these getter checks do not establish the fields' original meaning.
+Out-of-range queries, state
+production, device input and integration with the controller or game loop remain
+unqualified.
+
+The cursor target runs the reconstructed setter and current-cursor wrapper
+through an explicit thread-local provider. The native patch replaces Win32
+integer-resource/API spelling with typed numeric-resource calls; it preserves
+resource IDs, image type, dimensions, flags, cached-state gates and publication
+after callbacks. Generated providers record exact event order and arguments,
+null or live handle results, callback-visible state and whole-object guards.
+Failed loads still remember the requested identifier. The current-cursor
+wrapper passes that cached identifier and therefore does not force a reload.
+Tests cover ignored arguments and set-call returns, invalid identifiers, nested
+bindings and thread isolation. Handles are borrowed fixture values; no game
+assets, Win32 resources or platform cursor backend are used. A missing provider
+or invalid session lifetime violates the host boundary's preconditions and
+terminates; this is separate from the retail API's null-result behavior.
+These optional libraries are not linked into production startup or gameplay.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and

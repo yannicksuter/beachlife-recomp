@@ -32,6 +32,8 @@ def percentage(numerator, denominator):
 
 
 def by_address(items):
+    if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+        raise ValueError('Matching function groups must contain lists of records.')
     return unique([{**item, 'address_int': address(item['address'])} for item in items], 'address_int')
 
 
@@ -120,16 +122,29 @@ def build_report(inventory, comparison, target, root):
     for item in functions:
         if item['size'] is None and any(f['address_int'] <= item['address_int'] < f['address_int'] + f['size'] for f in bounded):
             raise ValueError('Address-only entry is inside an already bounded function.')
-    for key, kind in [('functions', 'game'), ('library_functions', 'library')]:
-        expected = by_address(target.get(key, []))
-        observed = by_address(comparison.get(key, []))
+    groups = [('functions', 'game'), ('library_functions', 'library'),
+              ('unclassified_functions', 'unclassified')]
+    expected_groups, observed_groups = {}, {}
+    for data, indexed_groups in [(target, expected_groups), (comparison, observed_groups)]:
+        seen = set()
+        for key, _ in groups:
+            indexed_groups[key] = by_address(data.get(key, []))
+            if seen.intersection(indexed_groups[key]):
+                raise ValueError('Duplicate function address across matching groups.')
+            seen.update(indexed_groups[key])
+    for key, kind in groups:
+        expected = expected_groups[key]
+        observed = observed_groups[key]
         if expected.keys() != observed.keys():
             raise ValueError('Comparison does not cover the registered target inventory.')
         for row in observed.values():
             start = address(row['address'])
             item = indexed.get(start)
             target_item = expected[start]
-            if not item or item['size'] != row['bytes'] or row['bytes'] != target_item['size'] or item['kind'] != kind:
+            if (not item or type(row['bytes']) is not int or row['bytes'] <= 0 or
+                    type(target_item['size']) is not int or
+                    item['size'] != row['bytes'] or row['bytes'] != target_item['size'] or
+                    item['kind'] != kind):
                 raise ValueError('Comparison method is missing or inconsistent in split inventory.')
             score = row['normalized_match']
             if type(score) not in [int, float] or not math.isfinite(score) or not 0 <= score <= 1:
@@ -137,7 +152,7 @@ def build_report(inventory, comparison, target, root):
             source = item.get('source')
             if not source or source not in comparison['input_sha256']:
                 raise ValueError('Compared method source is not covered by comparison fingerprints.')
-            marker = 'FUNCTION' if kind == 'game' else 'LIBRARY'
+            marker = 'LIBRARY' if kind == 'library' else 'FUNCTION'
             annotations = re.findall(r'//\s*' + marker + r':\s+BEACHLIFE' +
                                      r'\s+(0x[0-9a-fA-F]+)', (root / source).read_text(encoding='utf-8'))
             if start not in [int(a, 16) for a in annotations]:
@@ -177,7 +192,9 @@ def build_report(inventory, comparison, target, root):
                         'mapped_bytes': mapped_bytes, 'unknown_bytes': total_bytes - mapped_bytes,
                         'native_tested_matches': sum(f['native_tested'] for f in matched),
                         'comparison_linked_matches': sum(f['comparison_linked'] for f in matched),
-                        'library_matched_bytes': sum(f['size'] for f in functions if f['kind'] == 'library' and f['status'] == 'matched')}}
+                        'library_matched_bytes': sum(f['size'] for f in functions if f['kind'] == 'library' and f['status'] == 'matched'),
+                        'unclassified_matched_methods': sum(f['kind'] == 'unclassified' and f['status'] == 'matched' for f in functions),
+                        'unclassified_matched_bytes': sum(f['size'] for f in functions if f['kind'] == 'unclassified' and f['status'] == 'matched')}}
 
 
 def render(report):
@@ -248,6 +265,7 @@ def render(report):
         'UNKNOWN_DETAIL': f'{m["unknown_bytes"]:,} bytes · {percent(percentage(m["unknown_bytes"], m["executable_bytes"]))}',
         'TEXT_MATCH': percent(percentage(m['matched_bytes'], m['executable_bytes'])),
         'LIBRARY_DETAIL': f'{m["library_matched_bytes"]:,} matched bytes',
+        'UNCLASSIFIED_DETAIL': f'{m["unclassified_matched_methods"]} matched methods · {m["unclassified_matched_bytes"]:,} bytes',
         'BOUNDED_DETAIL': f'{m["bounded_methods"]} bounded bodies · {m["methods"]-m["bounded_methods"]} entry points awaiting full extents',
         'CATEGORY_CARDS': ''.join(cards),
         'CATEGORY_OPTIONS': ''.join(f'<option value="{c["id"]}">{escaped(c["name"])}</option>' for c in categories.values()),

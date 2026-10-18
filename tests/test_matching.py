@@ -135,6 +135,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.args = SimpleNamespace(source=self.source, original=self.original,
                                     output=self.root / 'output', reports=self.root / 'reports')
         self.calls = []
+        self.comparison_rows = []
         self.build_arguments = None
         self.tamper = False
         self.tamper_import = False
@@ -161,7 +162,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
     def compare(self, arguments, folder):
         self.calls.append('compare')
         report = Path(arguments[arguments.index('--json') + 1])
-        report.write_text(json.dumps({'data': []}))
+        report.write_text(json.dumps({'data': self.comparison_rows}))
         return ''
 
     def run_game(self):
@@ -177,6 +178,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(compile_options[:2], ['/MD', '/G6'])
         self.assertEqual(source_flags, {self.metadata / 'support/operator_delete.cpp': ['/O1']})
         self.assertEqual(result['source_compile_options'], {})
+        self.assertEqual(result['unclassified_functions'], [])
         self.assertEqual(result['link_abi_support'], [])
         self.assertFalse((self.args.output / 'game/abi').exists())
 
@@ -309,6 +311,105 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'import library changed'):
                 self.run_game()
         self.assertEqual(self.calls, ['runtime_library', 'import_library', 'build'])
+
+    def register_generated_functions(self):
+        for key, name, address in [('functions', 'game_fixture', '0x1000'),
+                                   ('library_functions', 'library_fixture', '0x1020'),
+                                   ('unclassified_functions', 'unclassified_fixture', '0x1040')]:
+            self.target[key] = [{'name': name, 'address': address, 'size': 4}]
+            self.comparison_rows.append({'address': address, 'recomp': '0x2000', 'matching': 1})
+
+    def test_unclassified_group_uses_the_existing_comparison_and_raw_checks(self):
+        self.register_generated_functions()
+        # Generated providers exercise orchestration only; no compiler or executable runs.
+        with patch.object(matching, 'read_va', return_value=b'data') as reader:
+            result = self.run_game()
+        for key in ['functions', 'library_functions', 'unclassified_functions']:
+            self.assertEqual(len(result[key]), 1)
+            self.assertEqual(result[key][0]['normalized_match'], 1)
+            self.assertTrue(result[key][0]['exact_bytes'])
+            self.assertEqual(result[key][0]['bytes'], 4)
+        self.assertEqual(reader.call_count, 6)
+        self.assertEqual(self.calls, ['runtime_library', 'build', 'compare'])
+        self.assertEqual(result['source_compile_options'], {})
+        self.assertEqual(self.build_arguments[1][:2], ['/MD', '/G6'])
+        self.assertIn(str(self.source / 'helper.cpp'), result['input_sha256'])
+        self.assertIn(str(self.metadata / 'targets/beachlife-uk-1.1.json'), result['input_sha256'])
+
+    def test_partial_unclassified_match_fails_after_saving_separate_results(self):
+        self.register_generated_functions()
+        self.comparison_rows[-1]['matching'] = 0.99
+        with patch.object(matching, 'read_va', side_effect=[b'a', b'a', b'b', b'b', b'c', b'd']):
+            with self.assertRaisesRegex(ValueError, 'unclassified functions do not match'):
+                self.run_game()
+        result = json.loads((self.args.reports / 'result.json').read_text())
+        self.assertEqual(result['functions'][0]['normalized_match'], 1)
+        self.assertEqual(result['library_functions'][0]['normalized_match'], 1)
+        self.assertEqual(result['unclassified_functions'][0]['normalized_match'], 0.99)
+        self.assertFalse(result['unclassified_functions'][0]['exact_bytes'])
+
+    def test_strict_unclassified_match_does_not_require_raw_byte_equality(self):
+        self.register_generated_functions()
+        with patch.object(matching, 'read_va', side_effect=[b'a', b'a', b'b', b'b', b'c', b'd']):
+            result = self.run_game()
+        self.assertEqual(result['unclassified_functions'][0]['normalized_match'], 1)
+        self.assertFalse(result['unclassified_functions'][0]['exact_bytes'])
+
+    def test_missing_unclassified_comparison_is_an_error(self):
+        self.register_generated_functions()
+        self.comparison_rows.pop()
+        with patch.object(matching, 'read_va', return_value=b'data'):
+            with self.assertRaisesRegex(ValueError, 'did not find unclassified_fixture'):
+                self.run_game()
+        self.assertFalse((self.args.reports / 'result.json').exists())
+
+    def test_malformed_function_groups_fail_before_build_tools(self):
+        valid = {'name': 'generated', 'address': '0x1000', 'size': 4}
+        malformed = [None, {}, True, 'function', [None], [[]], [{}],
+                     [valid | {'name': ''}], [valid | {'name': '  '}],
+                     [valid | {'name': 1}], [valid | {'address': 4096}],
+                     [valid | {'address': '1000'}], [valid | {'address': '0x100000000'}],
+                     [valid | {'address': '0x1000\n'}], [valid | {'size': True}],
+                     [valid | {'size': 0}], [valid | {'size': -1}],
+                     [valid | {'size': 4.0}], [valid | {'size': '4'}],
+                     [valid | {'address': '0xffffffff', 'size': 2}]]
+        for key in ['functions', 'library_functions', 'unclassified_functions']:
+            for configured in malformed:
+                with self.subTest(key=key, configured=configured):
+                    self.target[key] = configured
+                    with self.assertRaises(ValueError):
+                        self.run_game()
+                    self.assertEqual(self.calls, [])
+                    self.assertFalse(self.args.output.exists())
+            self.target[key] = []
+
+    def test_duplicate_addresses_across_all_groups_fail_before_build_tools(self):
+        keys = ['functions', 'library_functions', 'unclassified_functions']
+        row = {'name': 'generated', 'address': '0x1000', 'size': 4}
+        for left in keys:
+            for right in keys:
+                with self.subTest(left=left, right=right):
+                    self.target.update({key: [] for key in keys})
+                    self.target[left].append(row)
+                    self.target[right].append(row | {'address': '0x00001000'})
+                    with self.assertRaisesRegex(ValueError, 'Duplicate function address'):
+                        self.run_game()
+                    self.assertEqual(self.calls, [])
+                    self.assertFalse(self.args.output.exists())
+
+    def test_cli_validates_function_groups_before_toolchain_initialization(self):
+        self.target['unclassified_functions'] = [None]
+        (self.metadata / 'targets/beachlife-uk-1.1.json').write_text(json.dumps(self.target))
+        def prepared(args):
+            args.decomp_root = self.metadata
+        with patch.object(sys, 'argv', ['matching.py', 'game']), \
+                patch.object(matching, 'prepare_game_source', side_effect=prepared), \
+                patch.object(matching, 'Toolchain') as toolchain, \
+                contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as raised:
+                matching.main()
+        self.assertEqual(raised.exception.code, 1)
+        toolchain.assert_not_called()
 
 
 if __name__ == '__main__':

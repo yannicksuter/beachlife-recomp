@@ -189,3 +189,73 @@ set(BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/rec
 add_test(NAME reconstructed_config_loading COMMAND reconstructed_config_loading_tests
     "${BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT}")
 set_tests_properties(reconstructed_config_loading PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_startup_config STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_owner_constructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_owner_destructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_append.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_owner_reset.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_fatal.cpp")
+target_include_directories(beachlife_reconstructed_startup_config PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_startup_config PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_startup_config PUBLIC beachlife_reconstructed_config_loading)
+set_target_properties(beachlife_reconstructed_startup_config PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_startup_config verify_reconstructed_source)
+
+add_executable(reconstructed_startup_config_tests tests/reconstructed_startup_config.cpp)
+target_link_libraries(reconstructed_startup_config_tests PRIVATE beachlife_reconstructed_startup_config)
+set_target_properties(reconstructed_startup_config_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_startup_config_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_startup_config_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+set(BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/reconstructed-startup-fixture"
+    CACHE STRING "Writable target-system directory for generated startup configuration tests")
+add_test(NAME reconstructed_startup_config COMMAND reconstructed_startup_config_tests
+    "${BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT}")
+set_tests_properties(reconstructed_startup_config PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_input STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_state_predicate.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_state_one.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_transition_reset.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_getter_first.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_getter_second.cpp")
+target_include_directories(beachlife_reconstructed_input PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_input PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_input PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_input verify_reconstructed_source)
+
+add_executable(reconstructed_input_tests tests/reconstructed_input.cpp)
+target_link_libraries(reconstructed_input_tests PRIVATE beachlife_reconstructed_input)
+set_target_properties(reconstructed_input_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_input_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_input_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_input COMMAND reconstructed_input_tests)
+set_tests_properties(reconstructed_input PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_cursor STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_cursor_setter.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_current_cursor.cpp"
+    src/runtime/retail_cursor.cpp)
+target_include_directories(beachlife_reconstructed_cursor PUBLIC
+    "${BEACHLIFE_DECOMP_SOURCE}" "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(beachlife_reconstructed_cursor PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_cursor PUBLIC Threads::Threads)
+set_target_properties(beachlife_reconstructed_cursor PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_cursor verify_reconstructed_source)
+
+add_executable(reconstructed_cursor_tests tests/reconstructed_cursor.cpp)
+target_link_libraries(reconstructed_cursor_tests PRIVATE beachlife_reconstructed_cursor)
+set_target_properties(reconstructed_cursor_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_cursor_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_cursor_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_cursor COMMAND reconstructed_cursor_tests)
+set_tests_properties(reconstructed_cursor PROPERTIES LABELS "reconstructed;headless")

@@ -1,0 +1,111 @@
+Reconstruct surface restoration through the observed Surface7 ABI.
+Preserve the gate, nonzero HRESULT checks and field reloads between calls.
+Resource creation and native platform integration remain separate.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -116,6 +116,8 @@
+     RenderRectangleState fixture_render_state = { 0 };
+     RenderRectangle fixture_render_rectangle = { 0 };
+     fixture_render_state.SetRectangle(fixture_render_rectangle);
++    fixture_render_state.skip_surface_checks = 1;
++    fixture_render_state.RestoreSurfaces();
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/startup_directdraw_surface.h
+@@ -0,0 +1,31 @@
++#ifndef STARTUP_DIRECTDRAW_SURFACE_H
++#define STARTUP_DIRECTDRAW_SURFACE_H
++
++#if defined(_MSC_VER)
++#define SURFACE_STDCALL __stdcall
++#elif defined(__i386__)
++#define SURFACE_STDCALL __attribute__((stdcall))
++#else
++#define SURFACE_STDCALL
++#endif
++
++// The observed IDirectDrawSurface7 ABI prefix, not its complete declaration.
++// HRESULT is a signed 32-bit result; unused method signatures remain opaque.
++struct DirectDrawSurface7Prefix;
++typedef int SurfaceResult;
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceStatusMethod)(DirectDrawSurface7Prefix*);
++
++struct DirectDrawSurface7VtablePrefix
++{
++    void* unused_00[24];
++    SurfaceStatusMethod IsLost;
++    void* unused_64[2];
++    SurfaceStatusMethod Restore;
++};
++
++struct DirectDrawSurface7Prefix
++{
++    const DirectDrawSurface7VtablePrefix* vtable;
++};
++
++#endif
+--- a/src/startup_render_rectangle.h
++++ b/src/startup_render_rectangle.h
+@@ -1,5 +1,7 @@
+ #ifndef STARTUP_RENDER_RECTANGLE_H
+ #define STARTUP_RENDER_RECTANGLE_H
++
++#include "startup_directdraw_surface.h"
+ 
+ struct RenderRectangle
+ {
+@@ -12,10 +14,15 @@
+ // Observed prefix only; the original complete class and names are unknown.
+ struct RenderRectangleState
+ {
+-    unsigned char unknown_00[0x0c];
++    unsigned char skip_surface_checks;
++    unsigned char unknown_01[0x0b];
+     RenderRectangle rectangle;
++    unsigned char unknown_1c[0x20];
++    DirectDrawSurface7Prefix* primary_surface;
++    DirectDrawSurface7Prefix* back_surface;
+ 
+     void SetRectangle(const RenderRectangle& value);
++    void RestoreSurfaces();
+ };
+ 
+ #endif
+--- /dev/null
++++ b/src/startup_surface_status.cpp
+@@ -0,0 +1,17 @@
++#include "startup_render_rectangle.h"
++
++// FUNCTION: BEACHLIFE 0x00410ce0
++void RenderRectangleState::RestoreSurfaces()
++{
++    if (skip_surface_checks == 0)
++    {
++        if (primary_surface->vtable->IsLost(primary_surface) != 0)
++        {
++            primary_surface->vtable->Restore(primary_surface);
++        }
++        if (back_surface->vtable->IsLost(back_surface) != 0)
++        {
++            back_surface->vtable->Restore(back_surface);
++        }
++    }
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -339,6 +339,12 @@
+       "address": "0x00409560",
+       "size": 97,
+       "name": "InputMotionState::Update",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x00410ce0",
++      "size": 54,
++      "name": "RenderRectangleState::RestoreSurfaces",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],

@@ -57,6 +57,8 @@ class ProgressTests(unittest.TestCase):
         metrics = report['metrics']
         self.assertEqual(metrics['matched_bytes'], 16)
         self.assertEqual(metrics['library_matched_bytes'], 8)
+        self.assertEqual(metrics['unclassified_matched_methods'], 0)
+        self.assertEqual(metrics['unclassified_matched_bytes'], 0)
         self.assertEqual(metrics['game_bytes'], 48)
         self.assertEqual(metrics['mapped_bytes'], 56)
         self.assertEqual(metrics['unknown_bytes'], 200)
@@ -200,6 +202,118 @@ class ProgressTests(unittest.TestCase):
             self.report()
         del self.comparison['input_sha256'][name]
         with self.assertRaisesRegex(ValueError, 'no fingerprint'):
+            self.report()
+
+    def add_unclassified_fixture(self):
+        source = self.root / 'unclassified.cpp'
+        source.write_text('// FUNCTION: BEACHLIFE 0x10a0\n')
+        self.comparison['input_sha256']['unclassified.cpp'] = hashlib.sha256(source.read_bytes()).hexdigest()
+        self.target['unclassified_functions'] = [{'address': '0x10a0', 'size': 12}]
+        self.comparison['unclassified_functions'] = [
+            {'address': '0x10a0', 'bytes': 12, 'normalized_match': 1, 'exact_bytes': True}]
+        self.inventory['functions'].append(self.method('0x10a0', 12, kind='unclassified',
+                                                       source='unclassified.cpp', native_tested=True,
+                                                       runtime_linked=True))
+        return source
+
+    def test_unclassified_match_has_separate_totals_and_visible_raw_status(self):
+        self.add_unclassified_fixture()
+        report = self.report()
+        metrics = report['metrics']
+        for field, value in [('matched_methods', 1), ('matched_bytes', 16),
+                             ('raw_methods', 1), ('raw_bytes', 16), ('game_bytes', 48),
+                             ('library_matched_bytes', 8), ('runtime_methods', 0),
+                             ('runtime_bytes', 0), ('native_tested_matches', 1),
+                             ('comparison_linked_matches', 1), ('mapped_bytes', 68),
+                             ('unknown_bytes', 188), ('unclassified_matched_methods', 1),
+                             ('unclassified_matched_bytes', 12)]:
+            self.assertEqual(metrics[field], value, field)
+        row = report['functions'][-1]
+        self.assertEqual(row['kind'], 'unclassified')
+        self.assertEqual(row['status'], 'matched')
+        self.assertTrue(row['registered'])
+        self.assertTrue(row['raw_exact'])
+        self.assertTrue(row['comparison_linked'])
+        self.assertTrue(row['native_tested'])
+        self.assertTrue(row['runtime_linked'])
+        document = render(report)
+        self.assertIn('Unclassified code <b>1 matched methods · 12 bytes</b>', document)
+        self.assertIn('<span class="kind">unclassified</span>', document)
+        self.assertEqual(document.count('Raw bytes exact'), 2)
+        self.assertIn('16 / 48 bounded game bytes', document)
+
+    def test_partial_unclassified_result_is_visible_but_adds_no_completed_bytes(self):
+        self.add_unclassified_fixture()
+        self.comparison['unclassified_functions'][0].update(normalized_match=0.9999999, exact_bytes=False)
+        report = self.report()
+        self.assertEqual(report['metrics']['unclassified_matched_methods'], 0)
+        self.assertEqual(report['metrics']['unclassified_matched_bytes'], 0)
+        self.assertEqual(report['metrics']['matched_bytes'], 16)
+        self.assertEqual(report['functions'][-1]['status'], 'candidate')
+        self.assertIn('&lt;100%', render(report))
+
+    def test_unclassified_target_result_and_split_classifications_must_agree(self):
+        self.add_unclassified_fixture()
+        self.inventory['functions'][-1]['kind'] = 'game'
+        with self.assertRaisesRegex(ValueError, 'inconsistent'):
+            self.report()
+        self.inventory['functions'][-1]['kind'] = 'unclassified'
+        row = self.comparison['unclassified_functions'].pop()
+        with self.assertRaisesRegex(ValueError, 'registered target inventory'):
+            self.report()
+        self.comparison['library_functions'].append(row)
+        with self.assertRaisesRegex(ValueError, 'registered target inventory'):
+            self.report()
+        self.comparison['library_functions'].pop()
+        self.comparison['unclassified_functions'].append(row)
+        del self.target['unclassified_functions']
+        with self.assertRaisesRegex(ValueError, 'registered target inventory'):
+            self.report()
+
+    def test_cross_group_address_duplicates_are_rejected_in_target_and_result(self):
+        self.add_unclassified_fixture()
+        for data in [self.target, self.comparison]:
+            for other in ['functions', 'library_functions']:
+                duplicate = data[other][0] | {'address': '0x0000' + data[other][0]['address'][2:]}
+                data['unclassified_functions'].append(duplicate)
+                with self.assertRaisesRegex(ValueError, 'Duplicate function address'):
+                    self.report()
+                data['unclassified_functions'].pop()
+
+    def test_unclassified_records_retain_shape_extent_and_score_validation(self):
+        self.add_unclassified_fixture()
+        for data in [self.target, self.comparison]:
+            saved = data['unclassified_functions']
+            for malformed in [None, {}, True, 'function', [None], [[]]]:
+                data['unclassified_functions'] = malformed
+                with self.assertRaisesRegex(ValueError, 'lists of records'):
+                    self.report()
+            data['unclassified_functions'] = saved
+            field = 'size' if data is self.target else 'bytes'
+            for size in [True, 12.0, '12', 0, -1, 13]:
+                data['unclassified_functions'][0][field] = size
+                with self.assertRaisesRegex(ValueError, 'inconsistent'):
+                    self.report()
+            data['unclassified_functions'][0][field] = 12
+        row = self.comparison['unclassified_functions'][0]
+        for value in [True, float('nan'), float('inf'), -0.1, 1.1]:
+            row['normalized_match'] = value
+            with self.assertRaisesRegex(ValueError, 'Invalid comparison score'):
+                self.report()
+        row['normalized_match'] = 0.9
+        with self.assertRaisesRegex(ValueError, 'Raw-exact'):
+            self.report()
+
+    def test_unclassified_source_requires_current_fingerprint_and_function_annotation(self):
+        source = self.add_unclassified_fixture()
+        source.write_text('// LIBRARY: BEACHLIFE 0x10a0\n')
+        with self.assertRaisesRegex(ValueError, 'Stale comparison input'):
+            self.report()
+        self.comparison['input_sha256']['unclassified.cpp'] = hashlib.sha256(source.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'address annotation'):
+            self.report()
+        del self.comparison['input_sha256']['unclassified.cpp']
+        with self.assertRaisesRegex(ValueError, 'source is not covered'):
             self.report()
 
 

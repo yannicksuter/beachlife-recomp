@@ -1,0 +1,67 @@
+Reconstruct the indexed input-state byte predicate and its observed return ABI.
+Preserve unchecked indexing and conditional byte-result generation.
+Only the independently observed state-array prefix is represented.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2,6 +2,7 @@
+ #include "startup_config_tokens.h"
+ #include "startup_config_scan.h"
+ #include "startup_timer.h"
++#include "startup_input_state.h"
+ #include "window_activation.h"
+ #include "window_audio.h"
+ #include "startup_controller.h"
+@@ -82,6 +83,8 @@
+     fixture_audio.PauseAudioStream();
+     WindowActivationTarget fixture_activation = { 0 };
+     fixture_activation.Deactivate();
++    InputState fixture_input = { 0 };
++    fixture_config_offset = fixture_input.IsStateTwo(0);
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/startup_input_state.h
+@@ -0,0 +1,14 @@
++#ifndef STARTUP_INPUT_STATE_H
++#define STARTUP_INPUT_STATE_H
++
++// Descriptive observed prefix only; the original class and complete size are
++// unknown. The state producer accesses 256 bytes beginning at offset 0x1d.
++struct InputState
++{
++    unsigned char unknown_00[0x1d];
++    unsigned char states[256];
++
++    unsigned char IsStateTwo(int index) const;
++};
++
++#endif
+--- /dev/null
++++ b/src/startup_input_state_predicate.cpp
+@@ -0,0 +1,9 @@
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eaad0
++unsigned char InputState::IsStateTwo(int index) const
++{
++    if (states[index] == 2)
++        return 1;
++    return 0;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -261,6 +261,12 @@
+       "address": "0x004e3b20",
+       "size": 69,
+       "name": "WindowActivationTarget::Deactivate",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004eaad0",
++      "size": 15,
++      "name": "InputState::IsStateTwo",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
