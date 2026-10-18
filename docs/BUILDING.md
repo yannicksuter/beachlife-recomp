@@ -133,8 +133,13 @@ Keep the baseline intact. Uncommitted edits under `decomp/` are rejected;
 unrelated host edits do not affect the export.
 
 Configuration prepares `build/reconstructed-tga/prepared/beachlife-decomp/`
-and its adjacent JSON manifest. Every library build, including an otherwise
-up-to-date build, verifies the revision, source hashes, ordered patch series
+and its adjacent JSON manifest. The export's `src/` directory contains ordinary
+C++ translation units and headers, including files added by reconstruction
+patches. Open that directory to read the combined source; the patches record
+changes relative to the pinned baseline.
+
+Every library build, including an otherwise up-to-date build, verifies the
+revision, source hashes, ordered patch series
 and prepared files. Update reconstruction or portability patches and reconfigure; never edit prepared
 files. The matching-only VC6 release wrapper is excluded in favor of the host
 CRT. The default build leaves these targets disabled.
