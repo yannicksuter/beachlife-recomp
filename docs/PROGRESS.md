@@ -52,7 +52,7 @@ Library support and compiler glue remain separate from game-method totals.
 
 ## Split inventory contract
 
-The JSON has `schema_version: 1`, a `title`, the matching target's `target` ID
+The UTF-8 JSON has `schema_version: 1`, a `title`, the matching target's `target` ID
 and `original_sha256`, plus `snapshot` with `date` and full reconstructed-source
 `revision` (distinct from later host or report-tool commits).
 It contains four arrays:

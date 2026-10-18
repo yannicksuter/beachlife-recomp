@@ -1,5 +1,8 @@
 import hashlib
+import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -158,6 +161,21 @@ class ProgressTests(unittest.TestCase):
         self.assertIn('<title>{{DATE}} · reconstruction progress</title>', document)
         self.assertIn('<strong>{{MATCH_DETAIL}}</strong>', document)
         self.assertIn('{{UNKNOWN_FIELD}}', document)
+
+    def test_cli_preserves_utf8_in_a_non_utf8_locale(self):
+        self.inventory['title'] = 'Beach Life · été'
+        arguments = []
+        for flag, data in [('splits', self.inventory), ('comparison', self.comparison),
+                           ('target', self.target)]:
+            path = self.root / (flag + '.json')
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+            arguments.extend(['--' + flag, str(path)])
+        output = self.root / 'index.html'
+        script = Path(__file__).resolve().parents[1] / 'tools/decomp_progress.py'
+        environment = {**os.environ, 'LC_ALL': 'C', 'PYTHONUTF8': '0', 'PYTHONCOERCECLOCALE': '0'}
+        subprocess.run([sys.executable, str(script), *arguments, '--source', str(self.root),
+                        '--output', str(output)], env=environment, check=True, capture_output=True)
+        self.assertIn('Beach Life · été', output.read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':

@@ -133,7 +133,7 @@ def build_report(inventory, comparison, target, root):
                 raise ValueError('Compared method source is not covered by comparison fingerprints.')
             marker = 'FUNCTION' if kind == 'game' else 'LIBRARY'
             annotations = re.findall(r'//\s*' + marker + r':\s+BEACHLIFE' +
-                                     r'\s+(0x[0-9a-fA-F]+)', (root / source).read_text())
+                                     r'\s+(0x[0-9a-fA-F]+)', (root / source).read_text(encoding='utf-8'))
             if start not in [int(a, 16) for a in annotations]:
                 raise ValueError('Method is assigned to a source without its address annotation.')
             if type(row['exact_bytes']) is not bool or row['exact_bytes'] and score != 1:
@@ -257,7 +257,7 @@ def render(report):
         if key not in values:
             raise ValueError(f'Unfilled HTML template field: {key}')
         return values[key]
-    return re.sub(r'\{\{([A-Z_]+)\}\}', replace, TEMPLATE.read_text())
+    return re.sub(r'\{\{([A-Z_]+)\}\}', replace, TEMPLATE.read_text(encoding='utf-8'))
 
 
 def main():
@@ -269,11 +269,12 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     try:
-        report = build_report(json.loads(args.splits.read_text()), json.loads(args.comparison.read_text()),
-                              json.loads(args.target.read_text()), args.source)
+        report = build_report(json.loads(args.splits.read_text(encoding='utf-8')),
+                              json.loads(args.comparison.read_text(encoding='utf-8')),
+                              json.loads(args.target.read_text(encoding='utf-8')), args.source)
         output = render(report)
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(output)
+        args.output.write_text(output, encoding='utf-8')
         print(json.dumps({'output': str(args.output), **report['metrics']}, indent=2))
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f'Progress report: {error}\n')
