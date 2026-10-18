@@ -31,8 +31,8 @@ NEW_FILES = {
     "assets/launcher/header.jpg": (b"new header\n", 0o644),
     "assets/launcher/logo.png": (b"new logo\n" * 1000, 0o644),
     "docs/NEW.md": (b"only in the new package\n", 0o644),
-    # A path longer than ustar's 100-character name field (a pax header).
-    "LICENSES/dependencies/" + "a" * 60 + "/" + "b" * 60 + "/LICENSE": (b"license text\n", 0o644),
+    # Require a pax header while leaving room for Windows' staging directories.
+    "LICENSES/dependencies/" + "a" * 35 + "/" + "b" * 35 + "/LICENSE": (b"license text\n", 0o644),
 }
 OTHER_FILES = {
     "my-notes.txt": b"kept by the player\n",
