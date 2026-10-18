@@ -275,6 +275,28 @@ StartupStep ContentStartup::read() const
         }};
 }
 
+StartupStep ContentStartup::handoff(std::shared_ptr<Result> result) const
+{
+    if (!result || result->queued_ || result->source)
+    {
+        throw std::invalid_argument("A game data handoff needs a fresh, empty result.");
+    }
+    result->queued_ = true;
+    return {"Opening game files",
+        [state = state_, result = std::move(result)](StartupProgress& progress)
+        {
+            if (progress.cancelled())
+            {
+                return;
+            }
+            if (!state->content)
+            {
+                throw std::runtime_error("Game data is not mounted.");
+            }
+            result->source = state->content;
+        }};
+}
+
 StartupStep ContentStartup::preview(
     std::string logical_path, std::shared_ptr<data::TgaImage> result) const
 {

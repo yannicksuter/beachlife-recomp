@@ -19,7 +19,7 @@ def screen_tga():
     return header + palette + bytes((7, 3, 2, 1, 0, 0, 1, 2, 3))
 
 
-def content_files(*, screen=False):
+def content_files(*, screen=False, configuration=None):
     assets = [('BeachLife.ini', b'[Fixture]\nLanguage=English\n', False),
               ('Data/Script/sample.pis', b'generated fixture\n', False),
               ('Data/Sprites/test.dat', bytes(range(256))*300, False),
@@ -28,6 +28,10 @@ def content_files(*, screen=False):
               ('Setup.exe', b'not game content', False)]
     if screen:
         assets[1] = ('Data/Screens/FrontScreen.tga', screen_tga(), False)
+    if configuration is not None:
+        # Keep every compressed game entry contiguous before the loose/support
+        # groups. Existing callers without configuration keep identical bytes.
+        assets.insert(4, ('Data/Script/GameParameters.pis', bytes(configuration), False))
     header = bytearray(16384)
     struct.pack_into('<5I', header, 0, 0x28635349, 0x01006000, 0, DESCRIPTOR, 0x600)
     directories = list(dict.fromkeys(str(PurePosixPath(path).parent).replace('.', '') for path, _, _ in assets))
@@ -46,7 +50,9 @@ def content_files(*, screen=False):
 
     for i, name in enumerate(directories):
         struct.pack_into('<I', header, TABLE+i*4, text(name)-TABLE)
-    groups = [('Ess_English', 0, 0), ('UK Comp', 1, 3), ('UK Uncomp', 4, 4), ('<Support>Files', 5, 5)]
+    loose_index = len(assets) - 2
+    groups = [('Ess_English', 0, 0), ('UK Comp', 1, loose_index-1),
+              ('UK Uncomp', loose_index, loose_index), ('<Support>Files', loose_index+1, loose_index+1)]
     for i, (name, first, last) in enumerate(groups):
         node = 0x280+i*0x40
         descriptor = node+12

@@ -1,0 +1,65 @@
+Reconstruct indexed surface cleanup using the captured selected entry.
+Preserve software deletion, Surface7 Release and conditional field clearing.
+Original names and inline history remain unknown.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -121,6 +121,7 @@
+     fixture_screen_renderer.surfaces = fixture_screen_surfaces;
+     fixture_screen_renderer.PositionSurface(0, fixture_screen_position);
+     fixture_screen_surface.Cleanup();
++    fixture_screen_renderer.CleanupSurface(0);
+     {
+         PoolLockGuard fixture_pool_guard;
+         pool_lock_word = 1;
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -36,6 +36,7 @@
+ 
+     int CreateSurface(int width, int height, int mode);
+     void PrepareSurface(int surface);
++    void CleanupSurface(int surface);
+     void PositionSurface(int surface, ScreenPoint position);
+ };
+ 
+--- /dev/null
++++ b/src/startup_surface_indexed_cleanup.cpp
+@@ -0,0 +1,23 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e460
++void ScreenRequestRenderer::CleanupSurface(int surface)
++{
++    ScreenSurfacePosition* selected = surfaces[surface];
++    if (selected->active)
++    {
++        if (selected->software)
++        {
++            delete[] selected->pixels;
++            selected->pixels = 0;
++        }
++        else
++        {
++            selected->surface->vtable->Release(selected->surface);
++        }
++        selected->active = 0;
++        selected->width = 0;
++        selected->height = 0;
++        selected->pitch = 0;
++    }
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -382,6 +382,12 @@
+       "size": 69,
+       "name": "ScreenSurfacePosition::Cleanup",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x0040e460",
++      "size": 81,
++      "name": "ScreenRequestRenderer::CleanupSurface",
++      "name_status": "descriptive indexed cleanup; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

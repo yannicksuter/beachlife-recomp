@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <type_traits>
 
+struct IDirectInputDeviceA;
+
 namespace
 {
 struct GuardedInput
@@ -21,6 +23,9 @@ using Representation = std::array<unsigned char, sizeof(GuardedInput)>;
 
 template <typename T>
 constexpr bool has_resource_instance = requires(T value) { value.resource_instance; };
+
+template <typename T>
+constexpr bool has_keyboard_device = requires(T value) { value.keyboard_device; };
 
 template <typename T> constexpr bool has_value_134 = requires(T value) { value.unknown_134; };
 
@@ -46,10 +51,25 @@ template <typename T> constexpr bool qualified_prefix()
     {
         static_assert(std::is_same_v<decltype(T::resource_instance), void*>);
         static_assert(std::is_same_v<decltype(T::cursor_identifier), int>);
-        static_assert(std::is_same_v<decltype(T::unknown_00), unsigned char[0x10]>);
+        if constexpr (has_keyboard_device<T>)
+        {
+            static_assert(std::is_same_v<decltype(T::keyboard_device), IDirectInputDeviceA*>);
+            static_assert(std::is_same_v<decltype(T::unknown_00), unsigned char[4]>);
+            static_assert(std::is_same_v<decltype(T::unknown_08), unsigned char[8]>);
+            static_assert(offsetof(T, keyboard_device) == (4 + alignof(IDirectInputDeviceA*) - 1) /
+                                                              alignof(IDirectInputDeviceA*) *
+                                                              alignof(IDirectInputDeviceA*));
+            static_assert(offsetof(T, unknown_08) ==
+                          offsetof(T, keyboard_device) + sizeof(IDirectInputDeviceA*));
+            static_assert(offsetof(T, resource_instance) == offsetof(T, unknown_08) + 8);
+        }
+        else
+        {
+            static_assert(std::is_same_v<decltype(T::unknown_00), unsigned char[0x10]>);
+            static_assert(offsetof(T, resource_instance) == 0x10);
+        }
         static_assert(sizeof(T::unknown_14) == 9);
         static_assert(sizeof(T::unknown_148) == 0x4c8);
-        static_assert(offsetof(T, resource_instance) == 0x10);
         static_assert(offsetof(T, unknown_14) == offsetof(T, resource_instance) + sizeof(void*));
         static_assert(offsetof(T, states) == offsetof(T, unknown_14) + sizeof(T::unknown_14));
         if constexpr (has_value_134<T>)
@@ -105,6 +125,8 @@ static_assert(std::numeric_limits<int>::digits == 31);
 static_assert(has_value_134<InputState> && has_value_138<InputState>);
 static_assert(std::is_same_v<decltype(&InputState::ReadValue134), int (InputState::*)() const>);
 static_assert(std::is_same_v<decltype(&InputState::ReadValue138), int (InputState::*)() const>);
+static_assert(std::is_same_v<decltype(&InputState::ReadFirstButtonTransition),
+    unsigned int (InputState::*)() const>);
 static_assert(qualified_prefix<InputState>());
 static_assert(offsetof(GuardedInput, input) == 32);
 static_assert(offsetof(GuardedInput, after) == 32 + sizeof(InputState));
@@ -134,9 +156,12 @@ std::size_t predicate_cases = 0;
 std::size_t reset_cases = 0;
 std::size_t representation_checks = 0;
 std::size_t getter_cases = 0;
+std::size_t first_button_cases = 0;
+std::size_t first_button_fixture_calls = 0;
 std::size_t getter_fixture_calls = 0;
 std::array<std::size_t, 4> getter_domains{};
 std::array<std::size_t, 3> resource_cases{};
+std::array<std::size_t, 3> keyboard_pointer_cases{};
 std::array<std::array<std::size_t, 7>, 2> integer_cases{};
 const char* phase = "predicate";
 std::size_t current_case = 0;
@@ -159,6 +184,25 @@ Representation snapshot(const GuardedInput& value)
 
 template <typename T> void native_values(Representation& bytes, unsigned int seed)
 {
+    if constexpr (has_keyboard_device<T>)
+    {
+        struct alignas(std::max_align_t) Identity
+        {
+            unsigned char value;
+        };
+        static Identity identities[2]{};
+        const auto choice = seed % 3;
+        using Pointer = decltype(T::keyboard_device);
+        Pointer device = choice == 0
+                             ? nullptr
+                             : static_cast<Pointer>(static_cast<void*>(&identities[choice - 1]));
+        // These borrowed identity addresses only test pointer representations
+        // and preservation. They are never dereferenced or used as COM devices.
+        std::memcpy(bytes.data() + offsetof(GuardedInput, input) + offsetof(T, keyboard_device),
+            &device,
+            sizeof(device));
+        ++keyboard_pointer_cases[choice];
+    }
     if constexpr (has_resource_instance<T>)
     {
         static unsigned char resources[2]{};
@@ -197,6 +241,22 @@ template <typename T> void native_values(Representation& bytes, unsigned int see
             sizeof(second));
         ++integer_cases[1][choice];
     }
+}
+
+template <typename T> void report_keyboard_layout()
+{
+    std::cout << ",\"keyboard_pointer\":" << (has_keyboard_device<T> ? "true" : "false")
+              << ",\"keyboard_pointer_offset\":";
+    if constexpr (has_keyboard_device<T>)
+    {
+        std::cout << offsetof(T, keyboard_device);
+    }
+    else
+    {
+        std::cout << "null";
+    }
+    std::cout << ",\"keyboard_pointer_values\":[" << keyboard_pointer_cases[0] << ','
+              << keyboard_pointer_cases[1] << ',' << keyboard_pointer_cases[2] << ']';
 }
 
 template <typename T> void report_integer_layout()
@@ -434,6 +494,56 @@ void getters()
         getter_case(first, second, 3);
     }
 }
+
+void first_button_case(unsigned int expected)
+{
+    phase = "first-button";
+    current_case = first_button_cases;
+    GuardedInput value;
+    patterned(value, static_cast<unsigned int>(first_button_cases * 29u + 7u));
+    value.input.unknown_120 = expected;
+    value.input.unknown_124 = ~expected;
+    const InputState& input = value.input;
+    const auto before = snapshot(value);
+    ++first_button_fixture_calls;
+    require(input.ReadFirstButtonTransition() == expected,
+        "First-button read lost bits or used the adjacent button field.");
+    require_representation(value, before, "First-button read changed the object or its guards.");
+    auto after_reset = before;
+    for (const auto offset : cleared_bytes)
+    {
+        after_reset[offsetof(GuardedInput, input) + offset] = 0;
+    }
+    value.input.ResetTransition();
+    require_representation(
+        value, after_reset, "First-button sequence changed bytes outside the reset contract.");
+    ++first_button_fixture_calls;
+    require(input.ReadFirstButtonTransition() == 0,
+        "First-button read did not observe the transition reset.");
+    require_representation(
+        value, after_reset, "First-button read changed the reset object or its guards.");
+    ++first_button_cases;
+}
+
+void first_buttons()
+{
+    // Before reset the second button differs. High bits must remain values, not
+    // be truncated or converted to a Boolean before Intro compares against one.
+    constexpr std::array<unsigned int, 9> values{
+        0u, 1u, 2u, 0x7fffffffu, 0x80000000u, 0xffffffffu, 0x01234567u, 0xaaaaaaaau, 0x55555555u};
+    for (const auto value : values)
+    {
+        first_button_case(value);
+    }
+    for (unsigned int lane = 0; lane != 4; ++lane)
+    {
+        const auto shift = lane * 8u;
+        for (unsigned int byte = 0; byte != 256; ++byte)
+        {
+            first_button_case((0xa55ac33cu & ~(0xffu << shift)) | (byte << shift));
+        }
+    }
+}
 } // namespace
 
 int main()
@@ -445,12 +555,15 @@ int main()
         const auto query_reset_checks = checks;
         const auto query_reset_representation_checks = representation_checks;
         getters();
+        first_buttons();
         std::cout
-            << "{\"cases\":" << predicate_cases + reset_cases + getter_cases
+            << "{\"cases\":" << predicate_cases + reset_cases + getter_cases + first_button_cases
             << ",\"checks\":" << checks << ",\"predicate_cases\":" << predicate_cases
             << ",\"reset_cases\":" << reset_cases
             << ",\"query_reset_checks\":" << query_reset_checks
             << ",\"query_reset_representation_checks\":" << query_reset_representation_checks
+            << ",\"first_button_cases\":" << first_button_cases
+            << ",\"first_button_fixture_calls\":" << first_button_fixture_calls
             << ",\"getter_cases\":" << getter_cases
             << ",\"getter_fixture_calls\":" << getter_fixture_calls << ",\"getter_domain_cases\":["
             << getter_domains[0] << ',' << getter_domains[1] << ',' << getter_domains[2] << ','
@@ -464,6 +577,7 @@ int main()
             << ",\"resource_values\":[" << resource_cases[0] << ',' << resource_cases[1] << ','
             << resource_cases[2] << ']';
         report_integer_layout<InputState>();
+        report_keyboard_layout<InputState>();
         std::cout << "}\n";
         return 0;
     }

@@ -1,0 +1,99 @@
+Reconstruct the pending controller switch used by the intro transition.
+Preserve unsigned range handling, pointer publication and the selector-zero flag write.
+Keep the common controller prefix unchanged and describe the first controller separately.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,3 +1,4 @@
++#include "startup_controller_selection.h"
+ #include "startup_screen_name_search.h"
+ #include "startup_input_motion.h"
+ #include "startup_render_rectangle.h"
+@@ -85,6 +86,8 @@
+     }
+     ControllerState fixture_controller;
+     fixture_controller.Exit();
++    ControllerSelectionState fixture_selection = { 0 };
++    fixture_selection.SelectPendingController(1);
+     WindowAudioState fixture_audio = { 0 };
+     fixture_audio.MuteDigitalDriver();
+     fixture_audio.UnmuteDigitalDriver();
+--- /dev/null
++++ b/src/startup_controller_selection.cpp
+@@ -0,0 +1,31 @@
++#include "startup_controller_selection.h"
++
++// FUNCTION: BEACHLIFE 0x004e3cc0
++void ControllerSelectionState::SelectPendingController(unsigned int selection)
++{
++    switch (selection)
++    {
++    case 0:
++        pending = &first_controller->controller;
++        first_controller->unknown_9c = 0;
++        break;
++    case 1:
++        pending = controllers[0];
++        break;
++    case 2:
++        pending = controllers[1];
++        break;
++    case 3:
++        pending = controllers[2];
++        break;
++    case 4:
++        pending = controllers[3];
++        break;
++    case 5:
++        pending = controllers[4];
++        break;
++    case 6:
++        pending = controllers[5];
++        break;
++    }
++}
+--- /dev/null
++++ b/src/startup_controller_selection.h
+@@ -0,0 +1,27 @@
++#ifndef STARTUP_CONTROLLER_SELECTION_H
++#define STARTUP_CONTROLLER_SELECTION_H
++
++#include "startup_controller.h"
++
++// Only the first controller is observed with this extra byte; no hierarchy is inferred.
++struct FirstControllerSelectionPrefix
++{
++    ControllerState controller;
++    unsigned char unknown_85[0x17];
++    unsigned char unknown_9c;
++};
++
++// Observed pointer prefix only; the original complete game class is unknown.
++struct ControllerSelectionState
++{
++    void* instance;
++    void* window;
++    ControllerState* active;
++    ControllerState* pending;
++    FirstControllerSelectionPrefix* first_controller;
++    ControllerState* controllers[6];
++
++    void SelectPendingController(unsigned int selection);
++};
++
++#endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -351,6 +351,12 @@
+       "address": "0x004eabc0",
+       "size": 152,
+       "name": "InputState::ReadKeyboardState",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004e3cc0",
++      "size": 86,
++      "name": "ControllerSelectionState::SelectPendingController",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],

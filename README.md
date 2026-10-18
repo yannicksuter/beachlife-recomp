@@ -24,9 +24,11 @@ the prepared data in the native window. The preview uses the selected graphics
 API and display settings; Esc returns to the launcher. It is an image viewer,
 not the reconstructed game menu.
 The observed English data layout is supported; broader language detection and
-gameplay are still ahead. Play opens the game window on
-Direct3D 12, Vulkan or Metal and runs an empty game loop until the game code is
-reconstructed. Decompilation and native development advance together.
+gameplay are still ahead. Play opens the game window on Direct3D 12, Vulkan or
+Metal, then constructs the reconstructed configuration owner through the VFS
+before its loading screen fades. This currently accepts the audited English
+configuration. Menu rendering and gameplay remain incomplete; the game loop
+still has an empty back buffer. Decompilation and native development advance together.
 
 The intended graphics backends are DX12/Vulkan on Windows, Metal on macOS, and
 Vulkan on Linux. The launcher uses pinned SDL3 and Dear ImGui, following
@@ -90,10 +92,10 @@ tests/               generated-fixture and native startup checks
 docs/                architecture, building, installation and releases
 ```
 
-New retail reconstruction belongs in `patches/beachlife-decomp/`. Matching and
-optional native subsystem tests consume the pinned baseline plus ordered patches
-in build trees; the production
-game module is still ahead. See [subsystem tests](docs/BUILDING.md#reconstructed-subsystem-tests),
+New retail reconstruction belongs in `patches/beachlife-decomp/`. Matching,
+normal Play's configuration libraries and optional native subsystem tests consume
+the pinned baseline plus ordered patches in build trees. The rest of the game
+module remains ahead. See [subsystem tests](docs/BUILDING.md#reconstructed-subsystem-tests),
 [ARCHITECTURE](docs/ARCHITECTURE.md) and [patch rules](patches/README.md).
 
 The [progress report tool](docs/PROGRESS.md) turns a local audited split inventory

@@ -3,6 +3,7 @@
 #include "platform/app_icon.h"
 #include "platform/path.h"
 #include "platform/video.h"
+#include "runtime/configured_runtime.h"
 #include "runtime/content_startup.h"
 #include "runtime/fps_overlay.h"
 #include "runtime/loading_view.h"
@@ -18,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -75,15 +77,18 @@ bool leaves(const SDL_Event& event)
            (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE);
 }
 
-// Runs the startup steps on a worker behind the loading screen, then fades out to
-// the game's back buffer. Returns false when the player leaves first; the
-// error of a failed step is thrown.
+// Runs startup work, joins the worker, then initializes caller-thread state
+// while the loading screen remains visible. Returns false if the player leaves;
+// errors propagate before the fade to the game's back buffer.
 bool start_game(platform::Video& video,
     const platform::Frame& background,
     const std::filesystem::path& font,
-    std::vector<StartupStep> steps)
+    std::vector<StartupStep> steps,
+    const std::function<void()>& initialize)
 {
     LoadingView view(video, background, font);
+    const auto worker_share =
+        initialize ? static_cast<float>(steps.size()) / static_cast<float>(steps.size() + 1) : 1.0f;
     StartupWork work(std::move(steps));
     const auto left = []
     {
@@ -118,8 +123,28 @@ bool start_game(platform::Video& video,
         {
             break;
         }
-        view.draw(status.label, status.share());
+        auto share = status.share();
+        if (share)
+        {
+            *share *= worker_share;
+        }
+        view.draw(status.label, share);
         pause();
+    }
+    work.join();
+    work.rethrow();
+    if (left())
+    {
+        return false;
+    }
+    if (initialize)
+    {
+        view.draw("Loading game configuration", worker_share);
+        if (left())
+        {
+            return false;
+        }
+        initialize();
     }
     // Completes the bar and fades out: a single black frame when nothing was shown.
     for (;;)
@@ -159,7 +184,7 @@ struct Session
     }
 };
 
-int run_game(const Options& options)
+int run_game(const Options& options, detail::ConfigurationFactory configuration)
 {
     const auto& settings = options.settings;
     Session session;
@@ -205,7 +230,35 @@ int run_game(const Options& options)
     {
         steps.push_back(content.preview(options.preview_screen, preview));
     }
-    if (!start_game(video, frame, options.resources / "Roboto-Medium.ttf", std::move(steps)))
+    std::shared_ptr<ContentStartup::Result> game_result;
+    if (!options.prepare_only && options.preview_screen.empty())
+    {
+        game_result = std::make_shared<ContentStartup::Result>();
+        steps.push_back(content.handoff(game_result));
+    }
+    // The configuration owns its caller-thread VFS binding and retained mount.
+    // Keep it alive through the game loop, and destroy it before the window.
+    std::unique_ptr<StartupConfiguration> game_configuration;
+    std::function<void()> initialize;
+    if (game_result)
+    {
+        initialize = [&]
+        {
+            auto source = std::move(game_result->source);
+            if (!source)
+            {
+                throw std::runtime_error("Loading completed without mounted game data.");
+            }
+            game_configuration = configuration(std::move(source));
+            if (!game_configuration)
+            {
+                throw std::runtime_error("Loading completed without a game configuration.");
+            }
+            std::puts("Game configuration: loaded through VFS.");
+        };
+    }
+    if (!start_game(
+            video, frame, options.resources / "Roboto-Medium.ttf", std::move(steps), initialize))
     {
         return 0;
     }
@@ -313,7 +366,7 @@ int run_game(const Options& options)
         }
         else
         {
-            ImGui::TextDisabled("No game code yet. Esc returns to the launcher.");
+            ImGui::TextDisabled("Game startup in development. Esc returns to the launcher.");
         }
         ImGui::TextDisabled("%s, %.0f FPS", graphics.c_str(), fps);
         ImGui::End();
@@ -363,11 +416,11 @@ int run_game(const Options& options)
 }
 } // namespace
 
-int run(const Options& options)
+int detail::run_with_configuration(const Options& options, ConfigurationFactory configuration)
 {
     try
     {
-        return run_game(options);
+        return run_game(options, configuration);
     }
     catch (const std::exception& error)
     {
@@ -378,6 +431,15 @@ int run(const Options& options)
         }
         return 1;
     }
+}
+
+int run(const Options& options)
+{
+    return detail::run_with_configuration(options,
+        [](std::shared_ptr<const data::FileSource> source)
+        {
+            return std::make_unique<StartupConfiguration>(std::move(source));
+        });
 }
 
 } // namespace beachlife::runtime

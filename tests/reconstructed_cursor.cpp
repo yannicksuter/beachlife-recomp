@@ -14,6 +14,8 @@
 #include <thread>
 #include <type_traits>
 
+struct IDirectInputDeviceA;
+
 namespace cursor_api = beachlife::runtime::retail_cursor;
 
 namespace
@@ -28,6 +30,8 @@ std::size_t load_events = 0;
 std::size_t set_events = 0;
 std::size_t failed_loads = 0;
 std::size_t callback_cases = 0;
+std::array<std::size_t, 3> keyboard_pointer_cases{};
+std::array<std::array<std::size_t, 7>, 2> integer_cases{};
 const char* phase = "cursor";
 unsigned char handles[8]{};
 
@@ -57,6 +61,84 @@ static_assert(sizeof(int) == 4);
 static_assert(offsetof(GuardedInput, input) == 32);
 static_assert(offsetof(GuardedInput, after) == 32 + sizeof(InputState));
 
+template <typename T>
+constexpr bool has_keyboard_device = requires(T value) { value.keyboard_device; };
+
+template <typename T> void native_values(Representation& bytes, unsigned int seed)
+{
+    if constexpr (has_keyboard_device<T>)
+    {
+        static_assert(std::is_same_v<decltype(T::keyboard_device), IDirectInputDeviceA*>);
+        struct alignas(std::max_align_t) Identity
+        {
+            unsigned char value;
+        };
+        static Identity identities[2]{};
+        const auto choice = seed % 3;
+        using Pointer = decltype(T::keyboard_device);
+        Pointer device = choice == 0
+                             ? nullptr
+                             : static_cast<Pointer>(static_cast<void*>(&identities[choice - 1]));
+        // Identity pointers are only preserved as representations. No device
+        // class is completed here and no call through these values is allowed.
+        std::memcpy(bytes.data() + offsetof(GuardedInput, input) + offsetof(T, keyboard_device),
+            &device,
+            sizeof(device));
+        ++keyboard_pointer_cases[choice];
+    }
+    constexpr std::array<int, 7> values{INT_MIN, -300, -1, 0, 1, 0x12345678, INT_MAX};
+    if constexpr (requires { T::unknown_134; })
+    {
+        static_assert(std::is_same_v<decltype(T::unknown_134), int>);
+        const auto choice = seed % values.size();
+        const int first = values[choice];
+        std::memcpy(bytes.data() + offsetof(GuardedInput, input) + offsetof(T, unknown_134),
+            &first,
+            sizeof(first));
+        ++integer_cases[0][choice];
+    }
+    if constexpr (requires { T::unknown_138; })
+    {
+        if constexpr (std::is_same_v<decltype(T::unknown_138), int>)
+        {
+            const auto choice = (seed / values.size()) % values.size();
+            const int second = values[choice];
+            std::memcpy(bytes.data() + offsetof(GuardedInput, input) + offsetof(T, unknown_138),
+                &second,
+                sizeof(second));
+            ++integer_cases[1][choice];
+        }
+    }
+}
+
+template <typename T> void report_native_values()
+{
+    std::printf(",\"keyboard_pointer\":%s,\"keyboard_pointer_offset\":",
+        has_keyboard_device<T> ? "true" : "false");
+    if constexpr (has_keyboard_device<T>)
+    {
+        std::printf("%zu", offsetof(T, keyboard_device));
+    }
+    else
+    {
+        std::printf("null");
+    }
+    std::printf(",\"keyboard_pointer_values\":[%zu,%zu,%zu],\"integer_values\":[",
+        keyboard_pointer_cases[0],
+        keyboard_pointer_cases[1],
+        keyboard_pointer_cases[2]);
+    for (std::size_t field = 0; field != integer_cases.size(); ++field)
+    {
+        std::printf(field == 0 ? "[" : ",[");
+        for (std::size_t index = 0; index != integer_cases[field].size(); ++index)
+        {
+            std::printf(index == 0 ? "%zu" : ",%zu", integer_cases[field][index]);
+        }
+        std::printf("]");
+    }
+    std::printf("]");
+}
+
 void initialize(GuardedInput& value, unsigned int seed, void* instance, int identifier)
 {
     Representation bytes;
@@ -74,6 +156,7 @@ void initialize(GuardedInput& value, unsigned int seed, void* instance, int iden
         bytes.data() + offsetof(GuardedInput, input) + offsetof(InputState, cursor_identifier),
         &identifier,
         sizeof(identifier));
+    native_values<InputState>(bytes, seed);
     std::memcpy(&value, bytes.data(), bytes.size());
 }
 
@@ -437,7 +520,7 @@ int main(int argc, char** argv)
     std::printf(
         "{\"cases\":%zu,\"checks\":%zu,\"cursor_cases\":%zu,\"binding_cases\":%zu,"
         "\"method_calls\":%zu,\"wrapper_calls\":%zu,\"representation_checks\":%zu,"
-        "\"load_events\":%zu,\"set_events\":%zu,\"failed_loads\":%zu,\"callback_cases\":%zu}\n",
+        "\"load_events\":%zu,\"set_events\":%zu,\"failed_loads\":%zu,\"callback_cases\":%zu",
         cursor_cases + binding_cases,
         checks,
         cursor_cases,
@@ -449,5 +532,7 @@ int main(int argc, char** argv)
         set_events,
         failed_loads,
         callback_cases);
+    report_native_values<InputState>();
+    std::printf("}\n");
     return 0;
 }

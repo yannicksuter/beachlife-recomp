@@ -21,6 +21,12 @@ enum class SeekOrigin
     end
 };
 
+enum class AllocationFailure
+{
+    return_error,
+    terminate_process
+};
+
 // Binds an explicit VFS on this thread. Nested sessions restore the previous
 // binding. The session must be destroyed on its creating thread in stack order.
 // Open handles retain the mount and may outlive the binding; close each handle
@@ -28,7 +34,8 @@ enum class SeekOrigin
 class Session
 {
   public:
-    explicit Session(std::shared_ptr<const data::FileSource> source);
+    explicit Session(std::shared_ptr<const data::FileSource> source,
+        AllocationFailure allocation_failure = AllocationFailure::return_error);
     ~Session();
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;
@@ -40,6 +47,7 @@ class Session
     std::shared_ptr<const data::FileSource> source_;
     Session* previous_;
     std::thread::id thread_;
+    AllocationFailure allocation_failure_;
 };
 
 // Only the read-only operations needed by the reconstructed helpers are

@@ -110,6 +110,38 @@ The `content_startup` test exercises the complete loading worker without a
 graphics device: preparation, cancellation/resume, saved/offline reads, repair,
 mount lifetime, progress and storage failures.
 
+Normal Play queues `ContentStartup::handoff` last with a fresh, single-use
+`ContentStartup::Result`. The worker stages the existing mount as an owned
+`FileSource`; the main thread adopts it only after loading succeeds and the
+worker has joined. A late cancellation can leave a staged pointer, so pointer
+presence alone never starts a session. Failed or cancelled loading discards the
+result. Prepare-only and image-preview runs do not create this game handoff.
+After that success gate, normal Play constructs `StartupConfiguration` on the
+game thread while the loading screen is still active. It reads
+`Data/Script/GameParameters.pis` once into an immutable snapshot and checks the
+audited 1,242-byte English file identity. The actual reconstructed constructor
+then performs its three file opens through that snapshot. Other file paths
+continue to use the retained mount. Missing, truncated or unsupported input
+reports a loading error before publishing the retail owner.
+
+The host owner retains its `retail_files::Session` until game teardown. The
+reconstructed configuration is destroyed first, then the binding, then its
+snapshot and mounted source; all precede the window. Nested sessions restore
+the previous binding.
+Open file handles retain their source and prepared-set lock independently of
+the session, and must be closed on their creating thread. Preparation workers
+never bind this interface. The headless test covers both sides of cancellation,
+rejected/reused results, prior errors, nested and absent bindings, bridge reads,
+offline sessions and source/stream lock lifetimes. The host bridge is shared by
+the game and reconstructed file libraries. The caller-thread owner parses the
+supported configuration; the remaining startup driver and menu are incomplete.
+The original constructor has no qualified allocation-failure recovery. During
+its synchronous construction, the host installs a temporary process-wide
+allocation handler that terminates on default C++ allocation failure and restores
+the previous handler afterwards. This also applies to other threads during that
+short interval. Snapshot/preflight failures remain ordinary loading errors;
+the reconstructed parser and its failure behavior are unchanged.
+
 **Preview title screen** on Game files follows the same startup path and queues
 `Data/Screens/FrontScreen.tga` after mounting. The command-line equivalent is
 `beachlife --play --preview-screen Data/Screens/FrontScreen.tga`; another supported
@@ -162,8 +194,8 @@ has already completed. `PrepareResult` supplies the prepared root, manifest,
 language/profile and reuse counts. The default profile currently supports the
 observed English layout; installer translations are not game languages.
 
-The runtime can accept the mounted source through `FileSource`, independently
-of window creation and the graphics API. Keep the mount for the runtime's
+The runtime retains the mounted source through `FileSource`, independently
+of the graphics API. Keep the mount for the runtime's
 lifetime; open streams also retain its shared lock. A file has its own cursor;
 use separate handles for independent readers and synchronize access if sharing
 one handle between threads. A ready data set does not establish

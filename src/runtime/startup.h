@@ -69,6 +69,9 @@ class StartupWork
 
     StartupStatus status() const;
     void cancel();
+    // Wait for the worker to exit without cancelling it. The owning caller may
+    // join more than once; errors remain available through status()/rethrow().
+    void join();
     // Throws the error of the failed step, if there is one.
     void rethrow() const;
 

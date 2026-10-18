@@ -21,9 +21,10 @@ struct Options
 };
 
 // Opens the chosen graphics API, prepares/mounts data behind the loading screen, then runs
-// the game loop until the player leaves (Esc or closing the window). The game
-// itself is not reconstructed yet: its back buffer stays black unless an
-// explicit image preview is selected. Returns 0, or 1 after reporting an error.
+// the game loop until the player leaves (Esc or closing the window). Normal Play
+// constructs the reconstructed configuration owner before the loading fade.
+// Menu rendering and gameplay remain incomplete; the back buffer stays black
+// unless an image preview is selected. Returns 0, or 1 after reporting an error.
 int run(const Options& options);
 
 } // namespace beachlife::runtime

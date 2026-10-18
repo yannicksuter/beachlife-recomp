@@ -1,0 +1,100 @@
+Reconstruct keyboard-state reads through the pinned device ABI.
+Preserve buffer clearing, byte transitions, failed-read state and unbounded reacquisition.
+Keep native device provisioning and production input integration separate.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -100,6 +100,7 @@
+     fixture_input.ApplyCurrentCursor();
+     fixture_config_offset = fixture_input.ReadValue134();
+     fixture_config_offset = fixture_input.ReadValue138();
++    fixture_config_offset = fixture_input.ReadKeyboardState();
+     ScreenItem fixture_screen_item = { 0 };
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
+     FrameClock fixture_frame_clock = { 0 };
+--- a/src/startup_input_state.h
++++ b/src/startup_input_state.h
+@@ -1,11 +1,16 @@
+ #ifndef STARTUP_INPUT_STATE_H
+ #define STARTUP_INPUT_STATE_H
++
++struct IDirectInputDeviceA;
+ 
+ // Descriptive observed prefix only; the original class and complete size are
+ // unknown. The state producer accesses 256 bytes beginning at offset 0x1d.
+ struct InputState
+ {
+-    unsigned char unknown_00[0x10];
++    unsigned char unknown_00[4];
++    // Shared public device ABI prefix; creation requests IDirectInput8A.
++    IDirectInputDeviceA* keyboard_device;
++    unsigned char unknown_08[8];
+     void* resource_instance;
+     unsigned char unknown_14[9];
+     unsigned char states[256];
+@@ -21,6 +26,7 @@
+     unsigned char unknown_610;
+     unsigned char unknown_611;
+ 
++    unsigned char ReadKeyboardState();
+     unsigned char IsStateTwo(int index) const;
+     unsigned char IsStateOne(int index) const;
+     void ResetTransition();
+--- /dev/null
++++ b/src/startup_keyboard_state.cpp
+@@ -0,0 +1,30 @@
++#include <dinput.h>
++#include <string.h>
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eabc0
++unsigned char InputState::ReadKeyboardState()
++{
++    if (!keyboard_device)
++        return 0;
++
++    unsigned char buffer[256];
++    memset(buffer, 0, sizeof(buffer));
++    if (FAILED(keyboard_device->GetDeviceState(sizeof(buffer), buffer)))
++    {
++        while (keyboard_device->Acquire() == DIERR_INPUTLOST)
++        {
++        }
++    }
++    else
++    {
++        for (int index = 0; index < 256; ++index)
++        {
++            if (buffer[index] & 0x80)
++                states[index] = states[index] ? 2 : 1;
++            else
++                states[index] = 0;
++        }
++    }
++    return 1;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -345,6 +345,12 @@
+       "address": "0x00410ce0",
+       "size": 54,
+       "name": "RenderRectangleState::RestoreSurfaces",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004eabc0",
++      "size": 152,
++      "name": "InputState::ReadKeyboardState",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+--- a/win32-imports.json
++++ b/win32-imports.json
+@@ -33,6 +33,7 @@
+     "BASETSD.H": "a35a8c17af8854048436905913be53088570407279f8b8b17d2b26f93d77cc35",
+     "CGUID.H": "6af904de567e90bba4a8a33e340c6fb7570e681454bb0f49ca873319c40b4f73",
+     "CTYPE.H": "0ecd4c3263f85dc8c6292f9916752e55e06363647a3e555fe3510f2cf5c49fb2",
++    "DINPUT.H": "3638b722c0b53bd5060e024f9c1d215fde4edd4ff350afb5167097b91952be47",
+     "EXCPT.H": "67dbf009b32e5b9a731bd374232c25e2afaab603bd3513e77c2050b931534611",
+     "IMM.H": "5a008f7c94dfe13fb6bf22f53796eea4ac25659d90246324082ad610d33f2a1e",
+     "MCX.H": "5281aae5285093885e33502f3f42092208d5c9c8b32146f1e193cdbfc46b0866",

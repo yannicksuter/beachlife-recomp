@@ -25,6 +25,18 @@ StartupStep read_screen_preview(std::shared_ptr<const data::FileSource> content,
 class ContentStartup
 {
   public:
+    // A single-use destination for the worker's final handoff step. Only consume
+    // source after successful loading and worker join. Late cancellation can
+    // leave a staged source here; pointer presence does not authorize startup.
+    struct Result
+    {
+        std::shared_ptr<const data::FileSource> source;
+
+      private:
+        friend class ContentStartup;
+        bool queued_ = false;
+    };
+
     ContentStartup(launcher::Settings settings,
         std::filesystem::path cache,
         std::filesystem::path config,
@@ -33,6 +45,10 @@ class ContentStartup
     StartupStep prepare(std::function<void(const data::PrepareProgress&)> observer = {}) const;
     StartupStep read() const;
     StartupStep preview(std::string logical_path, std::shared_ptr<data::TgaImage> result) const;
+    // Queue last, using a fresh empty result. No result access is allowed while
+    // the worker runs. The retained source outlives this object and queued work;
+    // bind any thread-local consumer on its own thread after successful loading.
+    StartupStep handoff(std::shared_ptr<Result> result) const;
 
   private:
     struct State;

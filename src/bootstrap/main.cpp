@@ -55,8 +55,8 @@ int main(int argc, char** argv)
                   "Open without arguments to launch the graphical interface.\n"
                   "--play opens the game window and prepares files in its loading screen.\n"
                   "--preview-screen displays an original TGA image through the VFS.\n"
-                  "The game code is not reconstructed yet: the game window opens on\n"
-                  "the chosen graphics API and runs an empty game loop.");
+                  "The window loads the supported game configuration. Menu rendering\n"
+                  "and gameplay are still in development.");
         return 0;
     }
     beachlife::launcher::Options options;

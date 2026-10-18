@@ -1,0 +1,132 @@
+Reconstruct the pool chunk reservation and allocation routine.
+Preserve unsigned request arithmetic, bucket reuse and retry publication.
+Original symbol, declaration and library provenance remain unknown.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,3 +1,4 @@
++#include "pool_chunk_acquire.h"
+ #include "pool_lock_acquire.h"
+ #include "pool_lock_guard.h"
+ #include "startup_screen_renderer.h"
+@@ -131,6 +132,9 @@
+     }
+     fixture_config_offset = pool_lock_word;
+     AcquirePoolLock(&fixture_pool_lock);
++    int fixture_chunk_count = 1;
++    fixture_file = AcquirePoolChunk(8, fixture_chunk_count);
++    fixture_config_offset = fixture_chunk_count;
+     ScreenItem fixture_screen_item = { 0 };
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
+     FrameClock fixture_frame_clock = { 0 };
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -23,3 +23,8 @@
+ 0x00411df0,function,239,?AcquirePoolLock@@YAXPAJ@Z
+ 0x004fc40c,global,4,?pool_spin_limit@@3IA
+ 0x005a890c,global,4,?pool_last_spin@@3IA
++0x00412970,function,289,?AcquirePoolChunk@@YAPADIAAH@Z
++0x005a88c8,global,64,?pool_chunk_buckets@@3RCRAUPoolChunkLink@@C
++0x005a8910,global,4,?pool_heap_bytes@@3IA
++0x005a8914,global,4,?pool_chunk_begin@@3PADA
++0x005a8918,global,4,?pool_chunk_end@@3PADA
+--- /dev/null
++++ b/src/pool_chunk_acquire.h
+@@ -0,0 +1,17 @@
++#ifndef POOL_CHUNK_ACQUIRE_H
++#define POOL_CHUNK_ACQUIRE_H
++
++// Observed first-word link and16 size buckets, not a recovered allocator type.
++struct PoolChunkLink
++{
++    PoolChunkLink* next;
++};
++
++extern PoolChunkLink* volatile pool_chunk_buckets[16];
++extern unsigned int pool_heap_bytes;
++extern char* pool_chunk_begin;
++extern char* pool_chunk_end;
++
++char* AcquirePoolChunk(unsigned int block_size, int& count);
++
++#endif
+--- /dev/null
++++ b/src/pool_chunk_acquire.cpp
+@@ -0,0 +1,62 @@
++#include "pool_chunk_acquire.h"
++
++#include <new>
++
++// GLOBAL: BEACHLIFE 0x005a88c8
++PoolChunkLink* volatile pool_chunk_buckets[16] = { 0 };
++// GLOBAL: BEACHLIFE 0x005a8910
++unsigned int pool_heap_bytes = 0;
++// GLOBAL: BEACHLIFE 0x005a8914
++char* pool_chunk_begin = 0;
++// GLOBAL: BEACHLIFE 0x005a8918
++char* pool_chunk_end = 0;
++
++// FUNCTION: BEACHLIFE 0x00412970
++char* AcquirePoolChunk(unsigned int block_size, int& count)
++{
++    unsigned int total = block_size * count;
++    unsigned int available = pool_chunk_end - pool_chunk_begin;
++    if (available >= total)
++    {
++        char* result = pool_chunk_begin;
++        pool_chunk_begin += total;
++        return result;
++    }
++    if (available >= block_size)
++    {
++        count = available / block_size;
++        total = block_size * count;
++        char* result = pool_chunk_begin;
++        pool_chunk_begin += total;
++        return result;
++    }
++
++    unsigned int requested = 2 * total + (((pool_heap_bytes >> 4) + 7) & ~7u);
++    if (available > 0)
++    {
++        PoolChunkLink* volatile* bucket = pool_chunk_buckets + (available - 1) / 8;
++        reinterpret_cast<PoolChunkLink*>(pool_chunk_begin)->next = *bucket;
++        *bucket = reinterpret_cast<PoolChunkLink*>(pool_chunk_begin);
++    }
++    pool_chunk_begin = static_cast<char*>(::operator new(requested));
++    if (pool_chunk_begin == 0)
++    {
++        for (unsigned int size = block_size; size <= 128; size += 8)
++        {
++            PoolChunkLink* volatile* bucket = pool_chunk_buckets + (size - 1) / 8;
++            PoolChunkLink* entry = *bucket;
++            if (entry != 0)
++            {
++                *bucket = entry->next;
++                pool_chunk_begin = reinterpret_cast<char*>(entry);
++                pool_chunk_end = pool_chunk_begin + size;
++                return AcquirePoolChunk(block_size, count);
++            }
++        }
++        pool_chunk_end = 0;
++        pool_chunk_begin = static_cast<char*>(::operator new(requested));
++    }
++    pool_heap_bytes += requested;
++    pool_chunk_end = pool_chunk_begin + requested;
++    return AcquirePoolChunk(block_size, count);
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -473,6 +473,12 @@
+       "size": 239,
+       "name": "AcquirePoolLock",
+       "name_status": "unclassified adaptive pool acquisition; original symbol, exact declaration and library origin unknown"
++    },
++    {
++      "address": "0x00412970",
++      "size": 289,
++      "name": "AcquirePoolChunk",
++      "name_status": "unclassified pool chunk allocation; original symbol, exact declaration and library provenance unknown"
+     }
+   ]
+ }
