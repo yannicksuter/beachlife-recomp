@@ -1,12 +1,13 @@
-"""Export immutable dependency pins, apply ordered patches and verify the result.
+"""Export pinned dependencies or a committed local decomp tree and apply patches.
 
-Configuration never downloads dependencies. Run setup_dependencies.py first.
-Prepared files belong to the build tree; dependency checkouts remain untouched.
+Configuration never downloads inputs. Run setup_dependencies.py for dependencies.
+Prepared files belong to the build tree; source checkouts remain untouched.
 """
 import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -15,10 +16,11 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype')
+DECOMP = 'beachlife-decomp'
 
 
 def git(root, *args):
-    return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+    return subprocess.check_output(['git', '--no-replace-objects', '-C', str(root), *args], text=True).strip()
 
 
 def sha256(path):
@@ -35,9 +37,17 @@ def tree_manifest(root):
     return files
 
 
+def no_symlinks(path, root):
+    while path != root:
+        if path.is_symlink():
+            raise ValueError(f'Prepared paths cannot be symlinked: {path}')
+        path = path.parent
+
+
 def patch_paths(source, name):
     folder = Path(source) / 'patches' / name
     series = folder / 'series'
+    no_symlinks(series, Path(source))
     result = []
     if series.exists():
         for line in series.read_text().splitlines():
@@ -45,9 +55,13 @@ def patch_paths(source, name):
             if not line or line.startswith('#'):
                 continue
             path = folder / line
-            if (Path(line).is_absolute() or '..' in Path(line).parts or path.is_symlink()
+            if (Path(line).is_absolute() or '\\' in line or ':' in line
+                    or '..' in Path(line).parts or path.is_symlink()
                     or not path.is_file() or not path.resolve().is_relative_to(folder.resolve())):
                 raise ValueError(f'Invalid patch entry: {line}')
+            no_symlinks(path, Path(source))
+            if path in result:
+                raise ValueError(f'Duplicate patch entry: {line}')
             result.append(path)
     return result
 
@@ -69,65 +83,164 @@ def inputs(source, name):
     return submodule, identity, patches
 
 
-def prepare(source, output, names=DEPENDENCIES, verify=False):
-    source, output = Path(source).resolve(), Path(output).resolve()
+def decomp_inputs(source, revision):
+    if not isinstance(revision, str) or not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', revision):
+        raise ValueError('The decomp revision must be a full local commit SHA')
+    if Path(git(source, 'rev-parse', '--show-toplevel')).resolve() != source:
+        raise ValueError('The decomp source must be this repository root')
+    if git(source, 'cat-file', '-t', revision) != 'commit':
+        raise ValueError('The decomp revision must identify a commit')
+    if git(source, 'rev-parse', '--verify', revision + '^{commit}') != revision:
+        raise ValueError('The decomp revision must be a full local commit SHA, not a named ref')
+    if git(source, 'status', '--porcelain', '--untracked-files=all', '--', 'decomp'):
+        raise ValueError('decomp/ has local edits; commit or remove them before preparing source')
+    tree = git(source, 'rev-parse', revision + ':decomp')
+    if git(source, 'cat-file', '-t', tree) != 'tree':
+        raise ValueError('The selected commit has no decomp/ source tree')
+    files = {}
+    entries = subprocess.check_output(['git', '--no-replace-objects', '-C', str(source), 'ls-tree', '-rz', tree])
+    for entry in entries.split(b'\0'):
+        if not entry:
+            continue
+        metadata, raw_name = entry.split(b'\t', 1)
+        mode, kind, blob = metadata.decode('ascii').split()
+        name = raw_name.decode('utf-8')
+        path = PurePosixPath(name)
+        if (mode not in ('100644', '100755') or kind != 'blob' or path.is_absolute()
+                or '..' in path.parts or '.git' in path.parts or '\\' in name or ':' in name):
+            raise ValueError(f'Unsafe decomp source entry: {name}')
+        body = subprocess.check_output(['git', '--no-replace-objects', '-C', str(source), 'cat-file', 'blob', blob])
+        files[name] = hashlib.sha256(body).hexdigest()
+    if not files:
+        raise ValueError('The selected commit has no decomp source files')
+    patches = patch_paths(source, DECOMP)
+    series = source / 'patches' / DECOMP / 'series'
+    identity = {'name': DECOMP, 'commit': revision, 'subtree': 'decomp', 'tree': tree,
+                'series': {'path': series.relative_to(source).as_posix(),
+                           'sha256': sha256(series) if series.is_file() else None},
+                'patches': [{'path': p.relative_to(source).as_posix(), 'sha256': sha256(p)} for p in patches]}
+    return identity, patches, files
+
+
+def export_tree(repository, revision, archive, staged):
+    subprocess.run(['git', '--no-replace-objects', '-C', str(repository), '-c', 'core.autocrlf=false',
+                    '-c', 'core.eol=lf', 'archive', revision, '-o', str(archive)], check=True)
+    staged.mkdir()
+    with tarfile.open(archive) as handle:
+        for member in handle:
+            path = PurePosixPath(member.name)
+            if (path.is_absolute() or '..' in path.parts or '.git' in path.parts or '\\' in member.name
+                    or ':' in member.name or not (member.isdir() or member.isfile())):
+                raise ValueError(f'Unsafe source archive entry: {member.name}')
+            target = staged / member.name
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(handle.extractfile(member).read())
+                target.chmod(member.mode & 0o777)
+
+
+def prepare(source, output, names=DEPENDENCIES, verify=False, decomp_revision=None):
+    source, requested_output = Path(source).resolve(), Path(output).absolute()
+    if requested_output.is_symlink():
+        raise ValueError('Prepared output cannot be symlinked')
+    output = requested_output.resolve()
     if output == source or source.is_relative_to(output):
         raise ValueError('Prepared output cannot contain the source repository')
-    output.mkdir(parents=True, exist_ok=True)
+    if output.is_relative_to(source) and not output.is_relative_to(source / 'build'):
+        raise ValueError('Prepared output inside the source repository must be under build/')
+    if requested_output.is_relative_to(source):
+        no_symlinks(requested_output, source)
+    names = tuple(names)
+    if any(not re.fullmatch(r'[a-z0-9][a-z0-9-]*', name) or name == DECOMP for name in names):
+        raise ValueError('Invalid dependency name; use decomp_revision for the local export')
+    if len(set(names)) != len(names):
+        raise ValueError('Duplicate prepared dependency name')
+    local = decomp_inputs(source, decomp_revision) if decomp_revision is not None else None
+    if not verify:
+        output.mkdir(parents=True, exist_ok=True)
     identities = []
-    for name in names:
-        submodule, identity, patches = inputs(source, name)
+    for name in (*names, *((DECOMP,) if local else ())):
+        source_files = None
+        if name == DECOMP:
+            identity, patches, source_files = local
+            repository, revision = source, identity['tree']
+        else:
+            repository, identity, patches = inputs(source, name)
+            revision = identity['commit']
         destination = output / name
         stamp = output / (name + '.json')
         if destination.is_symlink() or stamp.is_symlink():
             raise ValueError('Prepared output cannot be symlinked')
-        previous = json.loads(stamp.read_text()) if stamp.exists() else None
-        if previous and destination.is_dir():
+        previous = None
+        if destination.exists() or stamp.exists():
+            if not destination.is_dir() or not stamp.is_file():
+                raise ValueError(f'Prepared {name} has no complete directory and manifest; remove both to regenerate')
+            previous = json.loads(stamp.read_text())
+            if not isinstance(previous, dict) or not isinstance(previous.get('files'), dict):
+                raise ValueError(f'Invalid prepared {name} manifest')
             if tree_manifest(destination) != previous['files']:
                 raise ValueError(f'Prepared {name} was edited; remove its prepared directory and stamp to regenerate')
-            if previous['identity'] == identity:
+            if previous.get('identity') == identity and source_files is None:
                 identities.append(identity)
                 continue
-        if verify:
+        if verify and (not previous or previous.get('identity') != identity):
             raise ValueError(f'Prepared {name} is stale; reconfigure the build')
         with tempfile.TemporaryDirectory(dir=output, prefix=name + '-') as temporary:
             temporary = Path(temporary)
-            archive = temporary / 'source.tar'
-            subprocess.run(['git', '-C', str(submodule), '-c', 'core.autocrlf=false',
-                            '-c', 'core.eol=lf', 'archive', identity['commit'],
-                            '-o', str(archive)], check=True)
             staged = temporary / 'source'
-            staged.mkdir()
-            with tarfile.open(archive) as handle:
-                for member in handle:
-                    path = PurePosixPath(member.name)
-                    if path.is_absolute() or '..' in path.parts or not (member.isdir() or member.isfile()):
-                        raise ValueError(f'Unsafe dependency archive entry: {member.name}')
-                    target = staged / member.name
-                    if member.isdir():
-                        target.mkdir(parents=True, exist_ok=True)
-                    else:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        target.write_bytes(handle.extractfile(member).read())
-                        target.chmod(member.mode & 0o777)
-            for patch in patches:
-                subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
-                                'apply', '--no-index', str(patch)], cwd=staged, check=True)
+            export_tree(repository, revision, temporary / 'source.tar', staged)
+            if source_files is not None and tree_manifest(staged) != source_files:
+                raise ValueError('The decomp archive differs from its committed blobs; check export attributes')
+            # A nested working directory otherwise makes Git silently skip patch
+            # paths outside that directory's prefix in the enclosing repository.
+            # A temporary repository also enforces Git's patch path confinement.
+            if patches:
+                subprocess.run(['git', '--no-replace-objects', 'init', '--quiet', '--template=', str(staged)], check=True)
+            for index, patch in enumerate(patches):
+                body = patch.read_bytes()
+                if hashlib.sha256(body).hexdigest() != identity['patches'][index]['sha256']:
+                    raise ValueError(f'Patch changed while preparing source: {patch}')
+                snapshot = temporary / f'patch-{index}.diff'
+                snapshot.write_bytes(body)
+                subprocess.run(['git', '--no-replace-objects', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                                'apply', str(snapshot)], cwd=staged, check=True)
+            if patches:
+                shutil.rmtree(staged / '.git')
             record = {'identity': identity, 'files': tree_manifest(staged)}
-            if destination.exists():
-                shutil.rmtree(destination)
-            os.replace(staged, destination)
-            stamp.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
+            if source_files is not None:
+                record['source_files'] = source_files
+            if previous and previous.get('identity') == identity:
+                if previous != record:
+                    raise ValueError(f'Prepared {name} manifest or files were edited; remove both to regenerate')
+            else:
+                if destination.exists():
+                    shutil.rmtree(destination)
+                os.replace(staged, destination)
+                staged_stamp = temporary / 'manifest.json'
+                staged_stamp.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
+                os.replace(staged_stamp, stamp)
         identities.append(identity)
     return identities
 
 
-if __name__ == '__main__':
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--verify', action='store_true')
-    args = parser.parse_args()
+    parser.add_argument('--decomp-revision', help='full local commit SHA containing decomp/')
+    parser.add_argument('--decomp-only', action='store_true', help='skip third-party dependencies')
+    args = parser.parse_args(argv)
+    if args.decomp_only and not args.decomp_revision:
+        parser.error('--decomp-only requires --decomp-revision')
     try:
-        prepare(ROOT, args.output, verify=args.verify)
-    except (ValueError, subprocess.CalledProcessError) as error:
-        raise SystemExit(str(error)) from error
+        prepare(ROOT, args.output, names=() if args.decomp_only else DEPENDENCIES,
+                verify=args.verify, decomp_revision=args.decomp_revision)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        parser.exit(1, str(error) + '\n')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
