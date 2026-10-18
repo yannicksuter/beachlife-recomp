@@ -205,6 +205,12 @@ int run_game(const Options& options)
     {
         steps.push_back(content.preview(options.preview_screen, preview));
     }
+    std::shared_ptr<ContentStartup::Result> game_result;
+    if (!options.prepare_only && options.preview_screen.empty())
+    {
+        game_result = std::make_shared<ContentStartup::Result>();
+        steps.push_back(content.handoff(game_result));
+    }
     if (!start_game(video, frame, options.resources / "Roboto-Medium.ttf", std::move(steps)))
     {
         return 0;
@@ -212,6 +218,18 @@ int run_game(const Options& options)
     if (options.prepare_only)
     {
         return 0;
+    }
+    // start_game has joined its worker. Keep this mount on the main thread for
+    // future game consumers; they must die before it and the window do. A staged
+    // result alone is insufficient: a leave during loading never reaches here.
+    std::shared_ptr<const data::FileSource> game_content;
+    if (game_result)
+    {
+        game_content = std::move(game_result->source);
+        if (!game_content)
+        {
+            throw std::runtime_error("Loading completed without mounted game data.");
+        }
     }
     if (!options.preview_screen.empty())
     {

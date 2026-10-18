@@ -110,6 +110,19 @@ The `content_startup` test exercises the complete loading worker without a
 graphics device: preparation, cancellation/resume, saved/offline reads, repair,
 mount lifetime, progress and storage failures.
 
+Normal Play queues `ContentStartup::handoff` last with a fresh, single-use
+`ContentStartup::Result`. The worker stages the existing mount as an owned
+`FileSource`; the main thread adopts it only after loading succeeds and the
+worker has joined. A late cancellation can leave a staged pointer, so pointer
+presence alone never starts a session. Failed or cancelled loading discards the
+result. Prepare-only and image-preview runs do not create this game handoff.
+The retained source survives the startup object and queued work. Future
+thread-local file bindings must be created on their consumer's thread after
+that success gate and destroyed before the source. The headless test covers
+both sides of cancellation, rejected/reused results, prior errors and independent
+source/stream lock lifetimes. This handoff does not link a reconstructed game
+driver or parse the startup configuration.
+
 **Preview title screen** on Game files follows the same startup path and queues
 `Data/Screens/FrontScreen.tga` after mounting. The command-line equivalent is
 `beachlife --play --preview-screen Data/Screens/FrontScreen.tga`; another supported
@@ -162,8 +175,8 @@ has already completed. `PrepareResult` supplies the prepared root, manifest,
 language/profile and reuse counts. The default profile currently supports the
 observed English layout; installer translations are not game languages.
 
-The runtime can accept the mounted source through `FileSource`, independently
-of window creation and the graphics API. Keep the mount for the runtime's
+The runtime retains the mounted source through `FileSource`, independently
+of the graphics API. Keep the mount for the runtime's
 lifetime; open streams also retain its shared lock. A file has its own cursor;
 use separate handles for independent readers and synchronize access if sharing
 one handle between threads. A ready data set does not establish
