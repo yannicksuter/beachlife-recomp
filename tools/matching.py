@@ -10,10 +10,14 @@ import struct
 import subprocess
 
 if __package__:
-    from .matching_imports import coff_import_symbols, stdcall_import_library, vc6_exception_abi_object
+    from .matching_imports import (coff_import_symbols, stdcall_export_names,
+                                  stdcall_import_library, validate_stdcall_imports,
+                                  vc6_exception_abi_object)
     from .prepare_sources import prepare
 else:
-    from matching_imports import coff_import_symbols, stdcall_import_library, vc6_exception_abi_object
+    from matching_imports import (coff_import_symbols, stdcall_export_names,
+                                 stdcall_import_library, validate_stdcall_imports,
+                                 vc6_exception_abi_object)
     from prepare_sources import prepare
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -349,6 +353,40 @@ def game_source_compile_options(target, sources):
     return result
 
 
+def game_stdcall_imports(target):
+    """Resolve opt-in DLL export policies without changing the CRT import route."""
+    configured = target.get('stdcall_imports', {})
+    if not isinstance(configured, dict):
+        raise ValueError('stdcall_imports must be a DLL mapping.')
+    result = {}
+    names = {'msvcrt.dll'}
+    for dll, policy in configured.items():
+        if not isinstance(policy, dict) or set(policy) != {'export_names', 'symbols'}:
+            raise ValueError('Each stdcall DLL requires export_names and symbols only.')
+        validate_stdcall_imports(dll, policy['symbols'], policy['export_names'])
+        if dll.lower() in names:
+            raise ValueError('Duplicate or reserved stdcall DLL basename.')
+        names.add(dll.lower())
+        result[dll] = {'export_names': policy['export_names'],
+                       'symbols': dict(sorted(policy['symbols'].items()))}
+    return dict(sorted(result.items()))
+
+
+def verify_stdcall_pe_imports(binary, configured, exact):
+    """Check actual PE names, not only matching tool labels or COFF symbols."""
+    if not configured:
+        return {}
+    imports = pe_imports(binary)
+    verified = {}
+    for dll, policy in configured.items():
+        expected = stdcall_export_names(policy['symbols'], policy['export_names'])
+        actual = imports.get(dll, {})
+        if not expected <= set(actual) or (exact and set(actual) != expected):
+            raise ValueError(f'Stdcall PE import identity mismatch for {dll}.')
+        verified[dll] = {name: actual[name] for name in sorted(expected)}
+    return verified
+
+
 def game(tool, args):
     metadata = tool.decomp_root
     target_path = metadata / 'targets/beachlife-uk-1.1.json'
@@ -361,6 +399,8 @@ def game(tool, args):
     if not sources:
         raise ValueError('No matching source files found.')
     compile_options = game_source_compile_options(target, sources)
+    stdcall_imports = game_stdcall_imports(target)
+    original_stdcall_imports = verify_stdcall_pe_imports(original, stdcall_imports, exact=False)
     # The fixture is part of the patchable source export, never a game driver.
     entry = metadata / 'fixtures/game.cpp'
     if not entry.is_file():
@@ -385,6 +425,17 @@ def game(tool, args):
     folder.mkdir(parents=True, exist_ok=True)
     library = tool.runtime_library(folder)
     link_flags = ['/fixed:no', library]
+    import_libraries = []
+    for dll, policy in stdcall_imports.items():
+        library_path, adjustments = stdcall_import_library(
+            tool, folder / 'imports' / dll[:-4].lower(), dll,
+            policy['symbols'], policy['export_names'])
+        link_flags.append(tool.native(library_path))
+        import_libraries.append({
+            'dll': dll, 'export_names': policy['export_names'],
+            'symbols': policy['symbols'],
+            'library': str(library_path.relative_to(ROOT) if library_path.is_relative_to(ROOT) else library_path),
+            'sha256': digest(library_path), 'name_mode_adjustments': adjustments})
     abi_support = []
     if any('/GX' in flags for flags in compile_options.values()):
         abi_object = folder / 'abi/vc6-except-list.obj'
@@ -402,6 +453,11 @@ def game(tool, args):
                             source_flags=source_flags)
     if abi_support and abi_object.read_bytes() != abi_bytes:
         raise ValueError('Generated VC6 exception ABI object changed during the build.')
+    for library_record in import_libraries:
+        library_path = ROOT / library_record['library']
+        if digest(library_path) != library_record['sha256']:
+            raise ValueError('Generated stdcall import library changed during the build.')
+    compiled_stdcall_imports = verify_stdcall_pe_imports(binary, stdcall_imports, exact=True)
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
@@ -441,6 +497,9 @@ def game(tool, args):
               'library_functions': library_functions,
               'source_compile_options': {path.name: flags for path, flags in sorted(compile_options.items())},
               'link_abi_support': abi_support,
+              'stdcall_import_libraries': import_libraries,
+              'original_stdcall_imports': original_stdcall_imports,
+              'compiled_stdcall_imports': compiled_stdcall_imports,
               'input_sha256': fingerprints,
               'target_config': str(target_path.relative_to(ROOT) if target_path.is_relative_to(ROOT) else target_path),
               'source_root': str(source.relative_to(ROOT) if source.is_relative_to(ROOT) else source),

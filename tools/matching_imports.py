@@ -54,8 +54,32 @@ def coff_import_symbols(path):
     return sorted(result)
 
 
-def undecorate_import_archive(path, dll, symbols):
+def validate_stdcall_imports(dll, symbols, export_names='undecorated'):
+    """Validate import identities before writing files or invoking the librarian."""
+    if not isinstance(dll, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*\.dll", dll):
+        raise ValueError('Expected a DLL basename.')
+    if not isinstance(symbols, dict) or not symbols:
+        raise ValueError('Expected at least one stdcall import.')
+    if export_names not in ('undecorated', 'decorated'):
+        raise ValueError('Expected undecorated or decorated export names.')
+    for name, stack_bytes in symbols.items():
+        if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) or
+                type(stack_bytes) is not int or not 0 <= stack_bytes <= 65532 or stack_bytes % 4):
+            raise ValueError('Expected an undecorated source name and x86 stack byte count.')
+
+
+def stdcall_export_names(symbols, export_names):
+    """Return PE names, keeping source/COFF decoration separate from DLL exports."""
+    if export_names == 'decorated':
+        return {f'_{name}@{count}' for name, count in symbols.items()}
+    if export_names == 'undecorated':
+        return set(symbols)
+    raise ValueError('Expected undecorated or decorated export names.')
+
+
+def rewrite_stdcall_import_archive(path, dll, symbols, export_names='undecorated'):
     """Change only LIB.EXE's short-import name mode; public symbols stay intact."""
+    validate_stdcall_imports(dll, symbols, export_names)
     data = bytearray(Path(path).read_bytes())
     if data[:8] != b"!<arch>\n":
         raise ValueError("Expected a COFF archive")
@@ -87,10 +111,13 @@ def undecorate_import_archive(path, dll, symbols):
             if imported_dll != dll or symbol not in expected or symbol in seen:
                 raise ValueError("Unexpected or duplicate stdcall import identity")
             seen.add(symbol)
-            # IMPORT_OBJECT_NAME_NO_PREFIX=2 -> IMPORT_OBJECT_NAME_UNDECORATE=3.
-            struct.pack_into("<H", data, begin + 18, 3 << 2)
+            # NAME=1 keeps _name@N; UNDECORATE=3 produces name. LIB emits
+            # NO_PREFIX=2, which would wrongly retain @N for Win32 or lose
+            # the leading underscore for a decorated DLL export.
+            mode = 1 if export_names == 'decorated' else 3
+            struct.pack_into("<H", data, begin + 18, mode << 2)
             changed.append({"symbol": symbol, "archive_byte_offset": begin + 18,
-                            "before": 2 << 2, "after": 3 << 2})
+                            "before": 2 << 2, "after": mode << 2})
         offset = end + (size & 1)
         if offset > len(data):
             raise ValueError("Missing COFF archive member padding")
@@ -100,13 +127,14 @@ def undecorate_import_archive(path, dll, symbols):
     return changed
 
 
-def stdcall_import_library(tool, folder, dll, symbols):
+def undecorate_import_archive(path, dll, symbols):
+    """Preserve the existing Win32 import-name policy."""
+    return rewrite_stdcall_import_archive(path, dll, symbols)
+
+
+def stdcall_import_library(tool, folder, dll, symbols, export_names='undecorated'):
     """Return a library path and the exact name-mode adjustments made to it."""
-    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*\.dll", dll) or not symbols:
-        raise ValueError("Expected a named DLL and at least one import")
-    for name, stack_bytes in symbols.items():
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) or type(stack_bytes) is not int or not 0 <= stack_bytes <= 65532 or stack_bytes % 4:
-            raise ValueError("Expected an undecorated import name and x86 stack byte count")
+    validate_stdcall_imports(dll, symbols, export_names)
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     stem = dll[:-4].lower()
@@ -121,5 +149,5 @@ def stdcall_import_library(tool, folder, dll, symbols):
     command = [str(tool.compiler / "LIB.EXE"), "@" + response.name]
     log = tool.run(command if os.name == "nt" else ["wine", *command], folder)
     (folder / (stem + "-librarian.log")).write_text(log)
-    changed = undecorate_import_archive(library, dll, symbols)
+    changed = rewrite_stdcall_import_archive(library, dll, symbols, export_names)
     return library, changed

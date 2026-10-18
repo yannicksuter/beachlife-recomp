@@ -41,6 +41,13 @@ totaling 3,625 bytes. 16 functions also match all 974 raw bytes exactly. An
 the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 
+Prepared matching targets can opt into `stdcall_imports`, a DLL mapping with
+`export_names` (`decorated` or `undecorated`) and a `symbols` mapping from source
+names to x86 stack-byte counts. The build generates import metadata and verifies
+the requested names against both original and rebuilt PE import tables. It does
+not copy DLL code or execute the comparison image. Native service adaptations
+remain separate from this original-ABI link support.
+
 `beachlife_reconstructed_tga` compiles seven matched helpers with the modern
 compiler and host CRT. Its generated test executable checks data conversion
 and ownership; it does not link those helpers into the production launcher.
