@@ -1,4 +1,4 @@
-option(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS "Build tests for reconstructed TGA helpers" OFF)
+option(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS "Build tests for reconstructed subsystems" OFF)
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -44,3 +44,28 @@ else()
 endif()
 add_test(NAME reconstructed_tga COMMAND reconstructed_tga_tests)
 set_tests_properties(reconstructed_tga PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_files STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/file_size.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/file_loader.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/ble_loader.cpp"
+    "${CMAKE_SOURCE_DIR}/src/runtime/retail_files.cpp")
+target_include_directories(beachlife_reconstructed_files PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_compile_features(beachlife_reconstructed_files PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_files PUBLIC beachlife_data Threads::Threads)
+set_target_properties(beachlife_reconstructed_files PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_files verify_reconstructed_source)
+
+add_executable(reconstructed_files_tests tests/reconstructed_files.cpp)
+target_link_libraries(reconstructed_files_tests PRIVATE beachlife_reconstructed_files)
+set_target_properties(reconstructed_files_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_files_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_files_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+set(BEACHLIFE_RECONSTRUCTED_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/reconstructed-files-fixture"
+    CACHE STRING "Writable target-system directory for generated reconstructed file tests")
+add_test(NAME reconstructed_files COMMAND reconstructed_files_tests
+    "${BEACHLIFE_RECONSTRUCTED_FIXTURE_ROOT}")
+set_tests_properties(reconstructed_files PROPERTIES LABELS "reconstructed;headless")

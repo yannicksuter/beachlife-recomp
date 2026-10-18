@@ -67,15 +67,16 @@ patches apply to formatted source.
 
 ## Reconstructed subsystem tests
 
-The optional TGA target compiles seven reconstructed image helpers using the
-native compiler and CRT. It consumes a committed source export with faithful
-patches through the same preparation tool as dependencies. Enable it explicitly:
+The optional targets compile reconstructed image and file helpers using the
+native compiler. They consume a committed source export with faithful patches
+through the same preparation tool as dependencies. Enable them explicitly:
 
 ```sh
 cmake --preset release -B build/reconstructed-tga \
   -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
-cmake --build build/reconstructed-tga --target reconstructed_tga_tests --parallel
-ctest --test-dir build/reconstructed-tga -R '^reconstructed_tga$' --output-on-failure
+cmake --build build/reconstructed-tga \
+  --target reconstructed_tga_tests reconstructed_files_tests --parallel
+ctest --test-dir build/reconstructed-tga -R '^reconstructed_(tga|files)$' --output-on-failure
 ```
 
 `BUILD_TESTING` must be enabled. `cmake/Decomp.cmake` owns the full source commit
@@ -90,13 +91,31 @@ and its adjacent JSON manifest. Every library build, including an otherwise
 up-to-date build, verifies the revision, source hashes, ordered patch series
 and prepared files. Edit source or patches and reconfigure; never edit prepared
 files. The matching-only VC6 release wrapper is excluded in favor of the host
-CRT. The default build leaves this target disabled.
+CRT. The default build leaves these targets disabled.
 
 The generated fixtures check palette/pixel offsets, channel conversion, row
 orientation, raw and run-length packets, empty images and buffer ownership.
 They require no ISO or extracted data. The target is a native test executable;
 the production launcher still uses its existing decoder. A passing test does
 not establish a complete TGA parser, original ABI matching or gameplay.
+
+The file target runs the matched size, plain-file and BLE loaders through an
+explicit VFS session. Its portability patch preserves 32-bit size/count behavior,
+the period terminator and signed byte inversion on 64-bit hosts. Scoped bindings
+belong to one thread, restore nested sessions and keep open handles' mounts alive.
+Reads use the supplied `FileSource`; they never fall back to the process directory
+or reopen the ISO. Generated tests cover real folder reads, aliases, short reads,
+stdio error results, seek/position behavior, ownership and repeated sessions.
+`BEACHLIFE_RECONSTRUCTED_FIXTURE_ROOT` selects the generated fixture directory;
+it defaults to the build tree. For a Windows cross-build run through Wine, use
+a path on its C: drive if Wine exposes the Unix build path as a reparse point.
+
+The unchecked retail loaders require stable files with a successful second open
+and sizes from 1 through `INT32_MAX - 1`; BLE inversion additionally requires a
+complete read. Tests cover empty/missing files and size-only 32-bit truncation
+separately, without exercising invalid allocation/index domains or reading
+uninitialized tails. This target qualifies file services for reconstructed
+startup; it does not connect a complete game driver to Play.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
