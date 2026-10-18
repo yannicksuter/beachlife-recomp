@@ -59,6 +59,12 @@ def build_report(inventory, comparison, target, root):
             raise ValueError(f'Comparison input outside project or missing: {name}')
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             raise ValueError(f'Stale comparison input: {name}; rerun matching.')
+    if 'target_config' in comparison:
+        name = comparison['target_config']
+        if name not in comparison['input_sha256']:
+            raise ValueError('Compared target configuration has no fingerprint.')
+        if json.loads((root / name).read_text(encoding='utf-8')) != target:
+            raise ValueError('Target configuration differs from the compared export.')
     sections = []
     for section in inventory['sections']:
         start, end = address(section['start']), address(section['end_exclusive'])
@@ -264,14 +270,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--splits', type=Path, required=True)
     parser.add_argument('--comparison', type=Path, required=True)
-    parser.add_argument('--target', type=Path, default=ROOT / 'decomp/targets/beachlife-uk-1.1.json')
+    parser.add_argument('--target', type=Path, help='defaults to the compared target configuration')
     parser.add_argument('--source', type=Path, default=ROOT)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     try:
+        comparison = json.loads(args.comparison.read_text(encoding='utf-8'))
+        target_path = args.target or args.source / comparison.get(
+            'target_config', 'decomp/targets/beachlife-uk-1.1.json')
         report = build_report(json.loads(args.splits.read_text(encoding='utf-8')),
-                              json.loads(args.comparison.read_text(encoding='utf-8')),
-                              json.loads(args.target.read_text(encoding='utf-8')), args.source)
+                              comparison, json.loads(target_path.read_text(encoding='utf-8')),
+                              args.source)
         output = render(report)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(output, encoding='utf-8')

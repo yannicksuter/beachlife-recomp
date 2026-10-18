@@ -18,11 +18,13 @@ flowchart LR
 ## Source and build boundaries
 
 This repository owns both tracks. `src/` contains new bootstrap, launcher,
-data, runtime and platform code. `decomp/` holds faithful reconstructed retail
-source and matching configuration; no sibling checkout is required. The source
-preparation tool exports `decomp/` from a full local commit ID, records its tree
-and file hashes, and applies faithful patches in order. The opt-in native TGA
-test target already consumes that export; the future native game module will
+data, runtime and platform code. `decomp/` is the frozen reconstruction baseline;
+new retail methods and changes belong in `patches/beachlife-decomp/`. No sibling
+checkout is required. The source preparation tool exports the full local commit
+in `patches/beachlife-decomp/source.json` and records its tree and file hashes.
+Both builds apply `reconstruction-series`; native builds then apply the faithful
+portability `series`. Matching retains the original compiler and ABI. The opt-in
+native image and VFS file targets already consume that export; the future game module will
 use the same boundary. Intentional behavior changes stay in a
 separate optional series, with tweaks off by default. Third-party dependencies
 remain immutable pins; never edit their checkouts in place.
@@ -33,8 +35,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. Twelve reconstructed game functions match after address normalization,
-totaling 1,123 bytes. Six functions also match all 527 raw bytes exactly. An
+verified. 27 reconstructed game functions match after address normalization,
+totaling 2,002 bytes. 14 functions also match all 863 raw bytes exactly. An
 11-byte runtime release wrapper is verified separately as library support;
 the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
@@ -42,7 +44,17 @@ See [matching setup](../decomp/README.md).
 `beachlife_reconstructed_tga` compiles seven matched helpers with the modern
 compiler and host CRT. Its generated test executable checks data conversion
 and ownership; it does not link those helpers into the production launcher.
-The complete original parser and allocating constructor remain separate work.
+`beachlife_reconstructed_files` runs the three allocating/size helpers and the
+startup configuration reader through an explicit VFS binding with fixed-width
+size arithmetic. `beachlife_reconstructed_config` compiles four matched lexer
+helpers. `beachlife_reconstructed_config_tokens` exercises token initialization
+and cleanup through the host allocator. `beachlife_reconstructed_config_allocation`
+qualifies bounded table allocation with the legacy default failure result.
+These libraries have generated native tests; none is linked into production
+gameplay. Complete configuration and image
+parsers and the allocating image constructor remain separate work.
+The original timestamp methods use x86 assembly and remain outside the modern
+native targets until their clock adaptation is qualified.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.
 

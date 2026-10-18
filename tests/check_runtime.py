@@ -21,7 +21,7 @@ def check(executable):
         image.write_bytes(iso_files(content_files(screen=True)[0]))
         config = Path(temporary) / 'launcher.cfg'
         quoted = str(image).replace('\\', '\\\\').replace('"', '\\"')
-        config.write_text(f'beachlife-launcher 2\nsource.path "{quoted}"\n', encoding='utf-8')
+        config.write_text(f'beachlife-launcher 2\nsource.path "{quoted}"\n', encoding='utf-8', newline='\n')
         result = subprocess.run([str(Path(executable).resolve()), '--play', '--smoke-test', '--frames', '30',
                                  '--config', str(config), '--cache-directory', str(Path(temporary)/'cache')],
                                 capture_output=True, text=True, timeout=60)
@@ -35,7 +35,7 @@ def check(executable):
         print(result.stdout.strip())
         # The same window with the performance overlay (its fonts, usage sampler and drawing).
         config.write_text(f'beachlife-launcher 4\nsource.path "{quoted}"\ndisplay.fps_overlay on\n'
-                          'display.fps_overlay_corner bottom-left\n', encoding='utf-8')
+                          'display.fps_overlay_corner bottom-left\n', encoding='utf-8', newline='\n')
         overlay = subprocess.run([str(Path(executable).resolve()), '--play', '--smoke-test', '--frames', '30',
                                   '--config', str(config), '--cache-directory', str(Path(temporary)/'cache')],
                                  capture_output=True, text=True, timeout=60)

@@ -1,4 +1,4 @@
-option(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS "Build tests for reconstructed TGA helpers" OFF)
+option(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS "Build tests for reconstructed subsystems" OFF)
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -7,7 +7,14 @@ if(NOT BUILD_TESTING)
 endif()
 
 # The selected commit must exist locally; configuration never fetches source.
-set(BEACHLIFE_DECOMP_REVISION "c5ac13dc11dc5cb7b4f35ebdebd188b3efd7fda6")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/patches/beachlife-decomp/source.json")
+file(READ "${CMAKE_SOURCE_DIR}/patches/beachlife-decomp/source.json" BEACHLIFE_DECOMP_PIN)
+string(JSON BEACHLIFE_DECOMP_PIN_SIZE LENGTH "${BEACHLIFE_DECOMP_PIN}")
+if(NOT BEACHLIFE_DECOMP_PIN_SIZE EQUAL 1)
+    message(FATAL_ERROR "The reconstructed source pin must contain only a revision")
+endif()
+string(JSON BEACHLIFE_DECOMP_REVISION GET "${BEACHLIFE_DECOMP_PIN}" revision)
 set(BEACHLIFE_DECOMP_PREPARED "${CMAKE_BINARY_DIR}/prepared")
 set(BEACHLIFE_DECOMP_SOURCE "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/src")
 set(BEACHLIFE_DECOMP_PREPARE_COMMAND
@@ -44,3 +51,89 @@ else()
 endif()
 add_test(NAME reconstructed_tga COMMAND reconstructed_tga_tests)
 set_tests_properties(reconstructed_tga PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_files STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/file_size.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/file_loader.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/ble_loader.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_read.cpp"
+    "${CMAKE_SOURCE_DIR}/src/runtime/retail_files.cpp")
+target_include_directories(beachlife_reconstructed_files PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_compile_features(beachlife_reconstructed_files PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_files PUBLIC beachlife_data Threads::Threads)
+set_target_properties(beachlife_reconstructed_files PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_files verify_reconstructed_source)
+
+add_executable(reconstructed_files_tests tests/reconstructed_files.cpp)
+target_link_libraries(reconstructed_files_tests PRIVATE beachlife_reconstructed_files)
+set_target_properties(reconstructed_files_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_files_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_files_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+set(BEACHLIFE_RECONSTRUCTED_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/reconstructed-files-fixture"
+    CACHE STRING "Writable target-system directory for generated reconstructed file tests")
+add_test(NAME reconstructed_files COMMAND reconstructed_files_tests
+    "${BEACHLIFE_RECONSTRUCTED_FIXTURE_ROOT}")
+set_tests_properties(reconstructed_files PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_config STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_separator.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_name_delimiters.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_name_extent.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_value_extent.cpp")
+target_include_directories(beachlife_reconstructed_config PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_config PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_config PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_config verify_reconstructed_source)
+
+add_executable(reconstructed_config_tests tests/reconstructed_config.cpp)
+target_link_libraries(reconstructed_config_tests PRIVATE beachlife_reconstructed_config)
+set_target_properties(reconstructed_config_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_config_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_config_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_config COMMAND reconstructed_config_tests)
+set_tests_properties(reconstructed_config PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_config_tokens STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_cleanup.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_reset.cpp")
+target_include_directories(beachlife_reconstructed_config_tokens PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_config_tokens PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_config_tokens PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_config_tokens verify_reconstructed_source)
+
+add_executable(reconstructed_config_tokens_tests tests/reconstructed_config_tokens.cpp)
+target_link_libraries(reconstructed_config_tokens_tests PRIVATE beachlife_reconstructed_config_tokens)
+set_target_properties(reconstructed_config_tokens_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_config_tokens_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_config_tokens_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_config_tokens COMMAND reconstructed_config_tokens_tests)
+set_tests_properties(reconstructed_config_tokens PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_config_allocation STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_allocation.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_reset.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_cleanup.cpp")
+target_include_directories(beachlife_reconstructed_config_allocation PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_config_allocation PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_config_allocation PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_config_allocation verify_reconstructed_source)
+
+add_executable(reconstructed_config_allocation_tests tests/reconstructed_config_allocation.cpp)
+target_link_libraries(reconstructed_config_allocation_tests PRIVATE beachlife_reconstructed_config_allocation)
+set_target_properties(reconstructed_config_allocation_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_config_allocation_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_config_allocation_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_config_allocation COMMAND reconstructed_config_allocation_tests)
+set_tests_properties(reconstructed_config_allocation PROPERTIES LABELS "reconstructed;headless")

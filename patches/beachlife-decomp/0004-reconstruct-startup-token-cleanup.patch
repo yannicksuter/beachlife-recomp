@@ -1,0 +1,79 @@
+Reconstruct token-buffer cleanup using the verified delete boundary.
+Visit tokens in reverse order, releasing name, text and number before the array;
+retain the original fields and unsigned loop behavior.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,4 +1,5 @@
+ #include "tga_image.h"
++#include "startup_config_tokens.h"
+ extern "C"
+ {
+     int _fltused = 0;
+@@ -29,6 +30,9 @@
+ unsigned char fixture_palette_copy[3];
+ extern "C" void fixture_entry()
+ {
++    ConfigTokenBuffer fixture_config_tokens;
++    fixture_config_tokens.tokens = 0;
++    fixture_config_tokens.count = 0;
+     TgaImage fixture_tga_image(0, 0);
+     fixture_fatal = StartupFatal;
+     fixture_config_read = ReadConfigFileBuffer("generated.pis", &fixture_config_byte, 1);
+--- /dev/null
++++ b/src/startup_config_cleanup.cpp
+@@ -0,0 +1,14 @@
++#include "startup_config_tokens.h"
++
++// Descriptive class name; the original declaration and allocation spelling are unknown.
++// FUNCTION: BEACHLIFE 0x004ec920
++ConfigTokenBuffer::~ConfigTokenBuffer()
++{
++    for (unsigned int i = count; i--;)
++    {
++        delete[] tokens[i].name;
++        delete[] tokens[i].text;
++        delete tokens[i].number;
++    }
++    delete[] tokens;
++}
+--- /dev/null
++++ b/src/startup_config_tokens.h
+@@ -0,0 +1,22 @@
++#ifndef STARTUP_CONFIG_TOKENS_H
++#define STARTUP_CONFIG_TOKENS_H
++
++// Descriptive names; the original types and member declarations are unknown.
++struct ConfigToken
++{
++    char* name;
++    unsigned int kind;
++    char* text;
++    float* number;
++};
++
++class ConfigTokenBuffer
++{
++public:
++    ~ConfigTokenBuffer();
++
++    ConfigToken* tokens;
++    unsigned int count;
++};
++
++#endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -94,6 +94,12 @@
+       "size": 64,
+       "name": "ReadConfigFileBuffer",
+       "name_status": "descriptive, original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec920",
++      "size": 84,
++      "name": "ConfigTokenBuffer::~ConfigTokenBuffer",
++      "name_status": "descriptive, original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

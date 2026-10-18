@@ -3,8 +3,8 @@
 A native C++ port of **Beach Life** (Deep Red Games / Eidos, 2002), known in
 North America as **Virtual Resort: Spring Break**, for Windows, Linux and macOS.
 
-Faithful reconstruction lives in [decomp/](decomp/README.md) within this
-repository. New launcher, data, runtime and native platform code lives in
+Faithful reconstruction advances through [source patches](patches/README.md)
+over a pinned baseline in this repository. New launcher, data, runtime and native platform code lives in
 `src/`. The original executable never runs inside the port.
 
 ## Current status
@@ -78,20 +78,21 @@ CMakePresets.json     shared local/CI configure, build and test presets
 cmake/               platform configuration and toolchains
 src/bootstrap/       native entry point and command line
 src/data/            read-only game sources and the headless data tool
-decomp/              faithful reconstruction, target identity and matching tools
+decomp/              frozen reconstruction baseline and matching setup
 src/launcher/        graphical launcher, source selection and preferences
 src/platform/        native graphics (the game window), audio, input and file services
 src/runtime/         the game loop and reconstructed-game integration
 extern/              pinned dependency checkouts; builds use prepared exports
-patches/             faithful and optional tweak patch series
+patches/             reconstructed methods, native adaptations and optional tweaks
 assets/              launcher resources and their provenance
 tools/               versioning, packaging and release helpers
 tests/               generated-fixture and native startup checks
 docs/                architecture, building, installation and releases
 ```
 
-Retail code lives only in `decomp/`. Optional native subsystem tests consume
-revision-pinned exports and apply faithful patches in build trees; the production
+New retail reconstruction belongs in `patches/beachlife-decomp/`. Matching and
+optional native subsystem tests consume the pinned baseline plus ordered patches
+in build trees; the production
 game module is still ahead. See [subsystem tests](docs/BUILDING.md#reconstructed-subsystem-tests),
 [ARCHITECTURE](docs/ARCHITECTURE.md) and [patch rules](patches/README.md).
 

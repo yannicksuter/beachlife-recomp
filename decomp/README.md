@@ -1,7 +1,8 @@
 # Matching reconstruction
 
-This directory holds the faithful reconstruction and matching configuration
-inside the Beach Life project. New launcher, data and platform code remains in
+This directory holds the frozen reconstruction baseline and matching setup.
+New retail methods and changes are [patches](../patches/README.md), applied to a
+pinned export for comparison and native builds. New launcher, data and platform code remains in
 `../src/`. Matching uses the original x86 toolchain; native builds use modern
 C++20. Neither build runs the retail executable.
 
@@ -22,7 +23,8 @@ dominant Rich-header stamp. Its PDB also reports code-generator version
 12.00.8799.0. Other Rich records can come from linked libraries; they do not
 establish a different main compiler. Original compiler flags remain unknown.
 The fixture uses `/O2 /Ob0 /Zi /Gd /Gy` as an experiment, not a recovered recipe.
-Component hashes are pinned in [msvc6-sp4.json](msvc6-sp4.json); compiler
+Baseline component hashes are in [msvc6-sp4.json](msvc6-sp4.json); reconstruction
+patches extend the exported configuration when further headers are required. Compiler
 binaries, SDK files and original game files are never committed.
 
 ## Verify the target
@@ -88,6 +90,24 @@ This experiment uses `/MD` for the dynamic CRT declarations. It establishes
 the stdio ABI needed for a small helper, not a complete SDK/CRT environment or
 the original game's entire compiler configuration. The fixture is compiled and
 inspected; it does not execute retail code.
+
+The Windows API fixture checks the SDK declarations needed for application
+startup. It verifies x86 structure sizes, 17 decorated `stdcall` references,
+and their undecorated exports from Kernel32, User32, GDI32 and Ole32. The used
+SDK headers are hash-pinned in `win32-imports.json`. The pinned librarian builds
+import metadata from declarations; the tool sets each short import record's
+name mode so linking retains the correct export name. It copies no SDK library
+code and checks the actual linked PE imports.
+
+```sh
+python3 tools/matching.py platform-fixture --compiler /path/to/msvc6.4 \
+  --reccmp build/matching/venv/bin/reccmp-reccmp
+# Or: cmake --build --preset debug --target matching_platform_fixture
+```
+
+This optional fixture is compiled and inspected, never executed. It establishes
+the original Windows ABI for comparison; native platform adaptation and game
+startup remain separate work.
 
 ## Reconstructed functions
 

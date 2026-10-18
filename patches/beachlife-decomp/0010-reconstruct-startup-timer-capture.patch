@@ -1,0 +1,81 @@
+Reconstruct the hardware timestamp capture and its observed timer prefix.
+Preserve the original register saves and low/high word stores.
+A portable native clock remains a separate adaptation.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,6 +1,7 @@
+ #include "tga_image.h"
+ #include "startup_config_tokens.h"
+ #include "startup_config_scan.h"
++#include "startup_timer.h"
+ extern "C"
+ {
+     int _fltused = 0;
+@@ -32,6 +33,8 @@
+ unsigned char fixture_palette_copy[3];
+ extern "C" void fixture_entry()
+ {
++    StartupProfiler fixture_profiler;
++    fixture_profiler.Start();
+     ConfigToken fixture_config_token;
+     fixture_config_token.Reset();
+     ConfigTokenBuffer fixture_config_tokens;
+--- /dev/null
++++ b/src/startup_timer.h
+@@ -0,0 +1,17 @@
++#ifndef STARTUP_TIMER_H
++#define STARTUP_TIMER_H
++
++// Observed timer prefix from its capture/elapsed methods and WinMain reads.
++// Original class name and complete object extent remain unknown.
++struct StartupProfiler
++{
++    unsigned int start_low;
++    unsigned int start_high;
++    int elapsed_low;
++    unsigned int elapsed_high;
++    int overhead;
++
++    void Start();
++};
++
++#endif
+--- /dev/null
++++ b/src/startup_timer_capture.cpp
+@@ -0,0 +1,20 @@
++#include "startup_timer.h"
++
++// FUNCTION: BEACHLIFE 0x004ecf40
++void StartupProfiler::Start()
++{
++    // The original hardware probe preserves EAX, EDX and ECX explicitly.
++    __asm
++    {
++        push eax
++        push edx
++        push ecx
++        mov ecx, this
++        rdtsc
++        mov [ecx], eax
++        mov [ecx + 4], edx
++        pop ecx
++        pop edx
++        pop eax
++    }
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -130,6 +130,12 @@
+       "size": 14,
+       "name": "ConfigToken::Reset",
+       "name_status": "descriptive; original symbol and return declaration unknown"
++    },
++    {
++      "address": "0x004ecf40",
++      "size": 27,
++      "name": "StartupProfiler::Start",
++      "name_status": "descriptive; original class name and complete layout unknown"
+     }
+   ],
+   "library_functions": [

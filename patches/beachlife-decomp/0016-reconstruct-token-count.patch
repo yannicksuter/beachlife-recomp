@@ -1,0 +1,59 @@
+Reconstruct token counting through all five matched lexical helpers.
+Preserve the original scans and unchecked malformed-input behavior.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -52,6 +52,7 @@
+     fixture_config_offset = GetConfigNameExtent("generated", 9);
+     fixture_config_offset = GetConfigValueExtent("generated", 9);
+     fixture_config_offset = SeekConfigQuotedName("generated", 9);
++    fixture_config_offset = CountConfigTokens("'generated' 1\r", 14);
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- a/src/startup_config_scan.h
++++ b/src/startup_config_scan.h
+@@ -9,4 +9,6 @@
+ 
+ int SeekConfigQuotedName(const char* buffer, int size);
+ 
++int CountConfigTokens(const char* buffer, int size);
++
+ #endif
+--- /dev/null
++++ b/src/startup_config_token_count.cpp
+@@ -0,0 +1,19 @@
++#include "startup_config_scan.h"
++
++// Descriptive name; lexical preconditions and original unchecked behavior are retained.
++// FUNCTION: BEACHLIFE 0x004ec600
++int CountConfigTokens(const char* buffer, int size)
++{
++    int count = 0;
++    int index = SkipConfigSeparators(buffer, size);
++    while (HasConfigNameDelimiters(buffer + index, size - index))
++    {
++        index += SeekConfigQuotedName(buffer + index, size - index);
++        index += GetConfigNameExtent(buffer + index, size - index);
++        index += SkipConfigSeparators(buffer + index, size - index);
++        index += GetConfigValueExtent(buffer + index, size - index);
++        index += SkipConfigSeparators(buffer + index, size - index);
++        ++count;
++    }
++    return count;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -166,6 +166,12 @@
+       "size": 53,
+       "name": "SeekConfigQuotedName",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec600",
++      "size": 176,
++      "name": "CountConfigTokens",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

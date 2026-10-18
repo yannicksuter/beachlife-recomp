@@ -12,7 +12,8 @@ the investigation snapshot is a separate input.
 ## Generate a snapshot
 
 Run the [matching comparison](../decomp/README.md) first. Its `result.json`
-records hashes of the reconstructed source, comparison configuration and tool.
+records hashes of the prepared reconstructed source, baseline pin, applied
+reconstruction patches, comparison configuration and tools.
 The renderer rejects results whose inputs have changed.
 
 ```sh
@@ -25,7 +26,10 @@ python3 tools/decomp_progress.py \
 Open the HTML file directly in a browser. It has no server, external assets,
 analytics or automatic refresh. Regenerate it after updating either the audited
 inventory or the comparison evidence. `--source` and `--target` can select a
-different local checkout and matching-target JSON.
+different local checkout and matching-target JSON. By default the renderer uses
+the fingerprinted target configuration from the matching export, so newly patched
+methods are included. Inventory source paths refer to the prepared C++ files in
+that comparison; regenerate the matching export if they have been removed.
 
 ## Reading the percentages
 

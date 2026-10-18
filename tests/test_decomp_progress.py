@@ -177,6 +177,31 @@ class ProgressTests(unittest.TestCase):
                         '--output', str(output)], env=environment, check=True, capture_output=True)
         self.assertIn('Beach Life · été', output.read_text(encoding='utf-8'))
 
+    def test_cli_uses_fingerprinted_prepared_target(self):
+        target = self.root / 'prepared/targets/fixture.json'
+        target.parent.mkdir(parents=True)
+        target.write_text(json.dumps(self.target), encoding='utf-8')
+        name = target.relative_to(self.root).as_posix()
+        self.comparison['target_config'] = name
+        self.comparison['input_sha256'][name] = hashlib.sha256(target.read_bytes()).hexdigest()
+        self.assertEqual(self.report()['metrics']['matched_methods'], 1)
+        script = Path(__file__).resolve().parents[1] / 'tools/decomp_progress.py'
+        arguments = []
+        for flag, data in [('splits', self.inventory), ('comparison', self.comparison)]:
+            path = self.root / (flag + '.json')
+            path.write_text(json.dumps(data), encoding='utf-8')
+            arguments.extend(['--' + flag, str(path)])
+        output = self.root / 'index.html'
+        subprocess.run([sys.executable, str(script), *arguments, '--source', str(self.root),
+                        '--output', str(output)], check=True, capture_output=True)
+        self.assertTrue(output.is_file())
+        self.target['functions'] = []
+        with self.assertRaisesRegex(ValueError, 'differs from the compared export'):
+            self.report()
+        del self.comparison['input_sha256'][name]
+        with self.assertRaisesRegex(ValueError, 'no fingerprint'):
+            self.report()
+
 
 if __name__ == '__main__':
     unittest.main()

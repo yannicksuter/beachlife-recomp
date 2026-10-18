@@ -1,0 +1,55 @@
+Reconstruct the configuration buffer reader.
+Preserve the original return1 after a successful open even if fread or fclose
+fails; no terminator is appended.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -5,6 +5,9 @@
+ }
+ void StartupFatal(const char*, ...);
+ void (*volatile fixture_fatal)(const char*, ...);
++int ReadConfigFileBuffer(const char*, char*, unsigned int);
++volatile int fixture_config_read;
++char fixture_config_byte;
+ float GetGameVersion();
+ volatile float fixture_result;
+ long GetFileSize(const char*);
+@@ -28,6 +31,7 @@
+ {
+     TgaImage fixture_tga_image(0, 0);
+     fixture_fatal = StartupFatal;
++    fixture_config_read = ReadConfigFileBuffer("generated.pis", &fixture_config_byte, 1);
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/startup_config_read.cpp
+@@ -0,0 +1,13 @@
++#include <stdio.h>
++
++// Descriptive name; the original symbol and byte-count declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ec8e0
++int ReadConfigFileBuffer(const char* filename, char* buffer, unsigned int size)
++{
++    FILE* file = fopen(filename, "rb");
++    if (!file)
++        return 0;
++    fread(buffer, 1, size, file);
++    fclose(file);
++    return 1;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -88,6 +88,12 @@
+       "size": 41,
+       "name": "StartupFatal",
+       "name_status": "descriptive, original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec8e0",
++      "size": 64,
++      "name": "ReadConfigFileBuffer",
++      "name_status": "descriptive, original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

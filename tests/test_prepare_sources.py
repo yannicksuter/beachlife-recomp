@@ -11,6 +11,47 @@ from prepare_sources import prepare
 
 
 class PreparedSourceTests(unittest.TestCase):
+    def test_all_six_dependency_defaults_ignore_decomp_profiles(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, output = root / 'repo', root / 'prepared'
+            repo.mkdir()
+
+            def git(path, *args):
+                return subprocess.check_output(['git', '-C', str(path), *args], text=True,
+                                               stderr=subprocess.DEVNULL).strip()
+
+            git(repo, 'init', '-q')
+            names = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype')
+            for name in names:
+                checkout = repo / 'extern' / name
+                checkout.mkdir(parents=True)
+                git(checkout, 'init', '-q')
+                git(checkout, 'config', 'core.autocrlf', 'false')
+                (checkout / 'value.txt').write_bytes((name + '\n').encode())
+                git(checkout, 'add', 'value.txt')
+                git(checkout, '-c', 'user.name=Yannick Suter',
+                    '-c', 'user.email=yannick.suter@gmail.com',
+                    'commit', '-qm', 'test: generated dependency pin')
+                pin = git(checkout, 'rev-parse', 'HEAD')
+                git(repo, 'update-index', '--add', '--cacheinfo',
+                    '160000,' + pin + ',extern/' + name)
+                ignored = repo / 'patches' / name / 'reconstruction-series'
+                ignored.parent.mkdir(parents=True)
+                ignored.write_bytes(b'missing.patch\n')
+            identities = prepare(repo, output)
+            self.assertEqual([identity['name'] for identity in identities], list(names))
+            for name, identity in zip(names, identities):
+                self.assertEqual(set(identity), {'name', 'commit', 'patches'})
+                self.assertEqual(identity['patches'], [])
+                self.assertEqual((output / name / 'value.txt').read_bytes(),
+                                 (name + '\n').encode())
+            records = {p.name: p.read_bytes() for p in output.glob('*.json')}
+            for profile in ('native', 'matching'):
+                self.assertEqual(prepare(repo, output, verify=True, decomp_profile=profile),
+                                 identities)
+                self.assertEqual(records, {p.name: p.read_bytes() for p in output.glob('*.json')})
+
     def test_pin_ordered_patches_and_tamper_detection(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -223,7 +264,11 @@ class LocalDecompTests(unittest.TestCase):
         self.assertEqual(record['files']['src/value.cpp'], hashlib.sha256(b'third\n').hexdigest())
         self.assertEqual([p['path'] for p in record['identity']['patches']],
                          ['patches/beachlife-decomp/one.patch', 'patches/beachlife-decomp/two.patch'])
-        self.assertEqual(record['identity']['series']['sha256'], hashlib.sha256(series.read_bytes()).hexdigest())
+        self.assertEqual(record['identity']['profile'], 'native')
+        self.assertEqual(record['identity']['series'], [
+            {'path': 'patches/beachlife-decomp/reconstruction-series', 'sha256': None},
+            {'path': 'patches/beachlife-decomp/series',
+             'sha256': hashlib.sha256(series.read_bytes()).hexdigest()}])
         self.prepare(verify=True)
         series.write_bytes(b'two.patch\none.patch\n')
         with self.assertRaisesRegex(ValueError, 'stale'):
@@ -242,6 +287,207 @@ class LocalDecompTests(unittest.TestCase):
         two.unlink()
         with self.assertRaisesRegex(ValueError, 'Invalid patch entry'):
             self.prepare()
+
+    def profile_patches(self):
+        common = self.patch('common.patch', 'first', 'reconstructed')
+        native = self.patch('native.patch', 'reconstructed', 'native')
+        reconstruction = self.write('patches/beachlife-decomp/reconstruction-series',
+                                    b'common.patch\n')
+        adaptations = self.write('patches/beachlife-decomp/series', b'native.patch\n')
+        return common, native, reconstruction, adaptations
+
+    def test_profiles_share_reconstruction_before_native_adaptation(self):
+        import hashlib
+        common, native, reconstruction, adaptations = self.profile_patches()
+        common.write_bytes(common.read_bytes() +
+                           b'diff --git a/src/new.cpp b/src/new.cpp\n'
+                           b'new file mode 100644\n--- /dev/null\n+++ b/src/new.cpp\n'
+                           b'@@ -0,0 +1 @@\n+generated new reconstruction\n')
+        for profile, result, series, patches in (
+                ('native', b'native\n', [reconstruction, adaptations], [common, native]),
+                ('matching', b'reconstructed\n', [reconstruction], [common])):
+            with self.subTest(profile=profile):
+                self.output = self.root / ('prepared-' + profile)
+                # The omitted profile preserves the default native command.
+                kwargs = {} if profile == 'native' else {'decomp_profile': profile}
+                self.prepare(**kwargs)
+                self.prepare(verify=True, decomp_profile=profile)
+                target = self.output / 'beachlife-decomp'
+                self.assertEqual((target / 'src/value.cpp').read_bytes(), result)
+                self.assertEqual((target / 'src/new.cpp').read_bytes(),
+                                 b'generated new reconstruction\n')
+                record = self.record()
+                identity = record['identity']
+                self.assertEqual(identity['profile'], profile)
+                self.assertEqual(identity['series'], [
+                    {'path': p.relative_to(self.repo).as_posix(),
+                     'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in series])
+                self.assertEqual(identity['patches'], [
+                    {'path': p.relative_to(self.repo).as_posix(),
+                     'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in patches])
+                self.assertNotIn('src/new.cpp', record['source_files'])
+                self.assertIn('src/new.cpp', record['files'])
+        self.assertEqual((self.repo / 'decomp/src/value.cpp').read_bytes(), b'first\n')
+        self.assertFalse((self.repo / 'decomp/src/new.cpp').exists())
+
+    def test_profile_switch_is_stale_and_cannot_overwrite_modified_files(self):
+        self.profile_patches()
+        self.prepare()
+        target = self.output / 'beachlife-decomp/src/value.cpp'
+        for before, after, value in (('native', 'matching', b'reconstructed\n'),
+                                     ('matching', 'native', b'native\n')):
+            with self.subTest(before=before, after=after):
+                record = self.record()
+                original = target.read_bytes()
+                with self.assertRaisesRegex(ValueError, 'stale'):
+                    self.prepare(verify=True, decomp_profile=after)
+                self.assertEqual(self.record(), record)
+                self.assertEqual(target.read_bytes(), original)
+                target.write_bytes(b'local modification\n')
+                for verify in (False, True):
+                    with self.assertRaisesRegex(ValueError, 'was edited'):
+                        self.prepare(verify=verify, decomp_profile=after)
+                self.assertEqual(target.read_bytes(), b'local modification\n')
+                target.write_bytes(original)
+                self.prepare(decomp_profile=after)
+                self.assertEqual(target.read_bytes(), value)
+                self.assertEqual(self.record()['identity']['profile'], after)
+                self.prepare(verify=True, decomp_profile=after)
+
+    def test_profile_series_changes_are_scoped_and_fingerprinted(self):
+        common, native, reconstruction, adaptations = self.profile_patches()
+        for profile in ('native', 'matching'):
+            self.output = self.root / ('prepared-' + profile)
+            self.prepare(decomp_profile=profile)
+        for path, affected in ((adaptations, ('native',)), (native, ('native',)),
+                               (reconstruction, ('native', 'matching')),
+                               (common, ('native', 'matching'))):
+            with self.subTest(path=path.name):
+                path.write_bytes(path.read_bytes() + b'\n')
+                for profile in ('native', 'matching'):
+                    self.output = self.root / ('prepared-' + profile)
+                    if profile in affected:
+                        with self.assertRaisesRegex(ValueError, 'stale'):
+                            self.prepare(verify=True, decomp_profile=profile)
+                        self.prepare(decomp_profile=profile)
+                    self.prepare(verify=True, decomp_profile=profile)
+
+    def test_optional_series_absence_is_recorded_and_changes_are_stale(self):
+        native = self.repo / 'patches/beachlife-decomp/series'
+        native.unlink()
+        for profile in ('native', 'matching'):
+            self.output = self.root / ('prepared-' + profile)
+            self.prepare(decomp_profile=profile)
+            identity = self.record()['identity']
+            self.assertEqual(len(identity['series']), 2 if profile == 'native' else 1)
+            self.assertTrue(all(row['sha256'] is None for row in identity['series']))
+        self.write('patches/beachlife-decomp/reconstruction-series', b'# no patches yet\n')
+        for profile in ('native', 'matching'):
+            self.output = self.root / ('prepared-' + profile)
+            with self.assertRaisesRegex(ValueError, 'stale'):
+                self.prepare(verify=True, decomp_profile=profile)
+            self.prepare(decomp_profile=profile)
+        native.write_bytes(b'# native only\n')
+        self.output = self.root / 'prepared-matching'
+        self.prepare(verify=True, decomp_profile='matching')
+        self.output = self.root / 'prepared-native'
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            self.prepare(verify=True)
+        self.prepare()
+        self.prepare(verify=True)
+
+    def test_duplicates_and_malformed_entries_in_applicable_lists_are_rejected(self):
+        self.patch('one.patch', 'first', 'second')
+        reconstruction = self.repo / 'patches/beachlife-decomp/reconstruction-series'
+        adaptations = self.repo / 'patches/beachlife-decomp/series'
+        for series in (reconstruction, adaptations):
+            for body in (b'missing.patch\n', b'../escape.patch\n', b'/absolute.patch\n',
+                         b'C:\\escape.patch\n', b'bad\0name.patch\n', b'one.patch\none.patch\n'):
+                reconstruction.write_bytes(b'# empty\n')
+                adaptations.write_bytes(b'# empty\n')
+                series.write_bytes(body)
+                with self.subTest(series=series.name, body=body), self.assertRaisesRegex(
+                        ValueError, 'Invalid patch entry|Duplicate patch entry'):
+                    self.prepare()
+                self.assertFalse(self.output.exists())
+        reconstruction.write_bytes(b'one.patch\n')
+        adaptations.write_bytes(b'./one.patch\n')
+        with self.assertRaisesRegex(ValueError, 'Duplicate patch entry across series'):
+            self.prepare()
+        # The matching profile neither applies nor validates the native list.
+        adaptations.write_bytes(b'missing.patch\n')
+        self.prepare(decomp_profile='matching')
+        self.assertEqual((self.output / 'beachlife-decomp/src/value.cpp').read_bytes(), b'second\n')
+        self.prepare(verify=True, decomp_profile='matching')
+        with self.assertRaisesRegex(ValueError, 'Invalid patch entry'):
+            self.prepare()
+
+    def test_series_filename_and_profile_validation(self):
+        from prepare_sources import decomp_inputs, main, patch_paths
+        for filename in ('../series', 'folder/series', '/series', 'folder\\series',
+                         'series:stream', 'series\0', '', 'other-series'):
+            with self.subTest(filename=filename), self.assertRaisesRegex(
+                    ValueError, 'Invalid patch series filename'):
+                patch_paths(self.repo, 'beachlife-decomp', filename)
+        for profile in ('', '../native', 'other', None):
+            with self.subTest(profile=profile):
+                with self.assertRaisesRegex(ValueError, 'Invalid decomp profile'):
+                    self.prepare(decomp_profile=profile)
+                with self.assertRaisesRegex(ValueError, 'Invalid decomp profile'):
+                    decomp_inputs(self.repo, self.first, profile)
+        self.assertFalse(self.output.exists())
+        with self.assertRaises(SystemExit) as error:
+            main(['--output', str(self.output), '--decomp-profile', 'other'])
+        self.assertEqual(error.exception.code, 2)
+        reconstruction = self.repo / 'patches/beachlife-decomp/reconstruction-series'
+        reconstruction.mkdir()
+        with self.assertRaisesRegex(ValueError, 'Invalid patch series'):
+            self.prepare()
+        reconstruction.rmdir()
+        self.symlink(reconstruction, self.repo / 'host.txt')
+        with self.assertRaisesRegex(ValueError, 'symlinked'):
+            self.prepare(decomp_profile='matching')
+
+    def test_profiles_preserve_manifest_tamper_detection(self):
+        import hashlib
+        import json
+        self.profile_patches()
+        for profile in ('native', 'matching'):
+            with self.subTest(profile=profile):
+                self.output = self.root / ('prepared-' + profile)
+                self.prepare(decomp_profile=profile)
+                target = self.output / 'beachlife-decomp/src/value.cpp'
+                stamp = self.output / 'beachlife-decomp.json'
+                original_record = stamp.read_bytes()
+                record = self.record()
+                record['identity']['profile'] = 'tampered'
+                stamp.write_text(json.dumps(record))
+                with self.assertRaisesRegex(ValueError, 'stale'):
+                    self.prepare(verify=True, decomp_profile=profile)
+                stamp.write_bytes(original_record)
+                record = self.record()
+                target.write_bytes(b'altered output and matching manifest\n')
+                record['files']['src/value.cpp'] = hashlib.sha256(target.read_bytes()).hexdigest()
+                stamp.write_text(json.dumps(record))
+                for verify in (False, True):
+                    with self.assertRaisesRegex(ValueError, 'manifest or files were edited'):
+                        self.prepare(verify=verify, decomp_profile=profile)
+
+    def test_cli_selects_matching_and_defaults_to_native(self):
+        from prepare_sources import main
+        self.profile_patches()
+        args = ['--output', str(self.output), '--decomp-only', '--decomp-revision', self.first]
+        with patch('prepare_sources.ROOT', self.repo):
+            self.assertEqual(main([*args, '--decomp-profile', 'matching']), 0)
+            self.assertEqual(self.record()['identity']['profile'], 'matching')
+            self.assertEqual((self.output / 'beachlife-decomp/src/value.cpp').read_bytes(),
+                             b'reconstructed\n')
+            with self.assertRaises(SystemExit) as error:
+                main([*args, '--verify'])
+            self.assertEqual(error.exception.code, 1)
+            self.assertEqual(main(args), 0)
+            self.assertEqual(self.record()['identity']['profile'], 'native')
+            self.assertEqual((self.output / 'beachlife-decomp/src/value.cpp').read_bytes(), b'native\n')
 
     def test_export_and_manifest_tampering_cannot_be_reused(self):
         import hashlib

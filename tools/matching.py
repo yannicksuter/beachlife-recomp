@@ -8,8 +8,16 @@ import shutil
 import struct
 import subprocess
 
+if __package__:
+    from .matching_imports import coff_import_symbols, stdcall_import_library
+    from .prepare_sources import prepare
+else:
+    from matching_imports import coff_import_symbols, stdcall_import_library
+    from prepare_sources import prepare
+
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / 'decomp/targets/beachlife-uk-1.1.json'
+SOURCE_PIN = ROOT / 'patches/beachlife-decomp/source.json'
 
 
 def digest(path, algorithm='sha256'):
@@ -90,6 +98,7 @@ class Toolchain:
         if not args.compiler:
             raise ValueError('Set --compiler or BEACHLIFE_MSVC6 to the VC6 SP4 directory.')
         self.compiler = Path(args.compiler).resolve() / 'Bin'
+        self.decomp_root = getattr(args, 'decomp_root', ROOT / 'decomp')
         self.output = args.output.resolve()
         self.output.mkdir(parents=True, exist_ok=True)
         self.environment = os.environ.copy()
@@ -97,7 +106,7 @@ class Toolchain:
         if os.name != 'nt':
             self.environment.update(WINEPREFIX=str(self.prefix), WINEDEBUG='-all',
                                     WINEDLLOVERRIDES='mscoree,mshtml=')
-        pins = json.loads((ROOT / 'decomp/msvc6-sp4.json').read_text())
+        pins = json.loads((self.decomp_root / 'msvc6-sp4.json').read_text())
         for component in pins['components']:
             if digest(self.compiler / component['file']) != component['sha256']:
                 raise ValueError(f"Compiler component mismatch: {component['file']}")
@@ -134,7 +143,7 @@ class Toolchain:
 
     def runtime_library(self, folder):
         folder.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / 'decomp/msvcrt.def', folder / 'msvcrt.def')
+        shutil.copy2(self.decomp_root / 'msvcrt.def', folder / 'msvcrt.def')
         command = [str(self.compiler / 'LIB.EXE'), '/nologo', '/machine:IX86',
                    '/def:msvcrt.def', '/out:msvcrt-import.lib']
         log = self.run(command if os.name == 'nt' else ['wine', *command], folder)
@@ -231,6 +240,47 @@ def stdio_fixture(tool):
     print(json.dumps(result, indent=2))
 
 
+def platform_fixture(tool):
+    """Compile SDK declarations and verify both stdcall ABI and PE export names."""
+    specification = json.loads((ROOT / 'decomp/win32-imports.json').read_text())
+    if (specification['schema'], specification['architecture'],
+            specification['calling_convention']) != (1, 'x86', 'stdcall'):
+        raise ValueError('Unsupported platform import specification.')
+    headers = specification['headers_sha256']
+    for name, expected in headers.items():
+        if digest(tool.compiler.parent / 'Include' / name) != expected:
+            raise ValueError(f'Platform header mismatch: {name}')
+    folder = tool.output / 'platform'
+    libraries = []
+    adjustments = {}
+    for dll, symbols in specification['libraries'].items():
+        library, changed = stdcall_import_library(tool, folder, dll, symbols)
+        libraries.append(library.name)
+        adjustments[dll] = changed
+    source = ROOT / 'decomp/fixtures/platform.cpp'
+    binary, pdb = tool.build(folder, [source], 'platform', libraries,
+                            ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include')])
+    symbols = coff_import_symbols(folder / 'platform.obj')
+    expected_symbols = sorted(f'__imp__{name}@{size}'
+                              for functions in specification['libraries'].values()
+                              for name, size in functions.items())
+    if symbols != expected_symbols:
+        raise ValueError(f'Platform fixture has unexpected stdcall references: {symbols}')
+    imports = pe_imports(binary)
+    expected_imports = sorted((dll, name) for dll, names in specification['libraries'].items()
+                              for name in names)
+    actual_imports = sorted((dll, name) for dll, names in imports.items() for name in names)
+    if actual_imports != expected_imports:
+        raise ValueError(f'Platform fixture has unexpected PE imports: {imports}')
+    result = {'imports': imports, 'coff_import_symbols': symbols,
+              'headers_sha256': headers, 'pdb_created': pdb.is_file(),
+              'name_mode_adjustments': adjustments,
+              'fixture_sha256': digest(source), 'binary_sha256': digest(binary),
+              'scope': 'Generated compile/link fixture only; never executed. No SDK library code copied.'}
+    save(tool.output / 'platform-result.json', result)
+    print(json.dumps(result, indent=2))
+
+
 def fixture(tool):
     folder = tool.output / 'fixture'
     folder.mkdir(exist_ok=True)
@@ -262,55 +312,52 @@ def fixture(tool):
     print(json.dumps(result, indent=2))
 
 
+def prepare_game_source(args):
+    pin = json.loads(SOURCE_PIN.read_text())
+    if not isinstance(pin, dict) or set(pin) != {'revision'}:
+        raise ValueError('The reconstructed source pin must contain only a revision.')
+    output = args.output.resolve() / 'prepared'
+    prepare(ROOT, output, names=(), decomp_revision=pin['revision'], decomp_profile='matching')
+    args.decomp_root = output / 'beachlife-decomp'
+    args.prepared_manifest = output / 'beachlife-decomp.json'
+    args.decomp_revision = pin['revision']
+    if args.source is None:
+        args.source = args.decomp_root / 'src'
+
+
 def game(tool, args):
-    target = json.loads(TARGET.read_text())
+    metadata = tool.decomp_root
+    target_path = metadata / 'targets/beachlife-uk-1.1.json'
+    target = json.loads(target_path.read_text())
     original = verify_original(args.original, target)
     source = args.source.resolve()
     sources = sorted(source.rglob('*.cpp'))
-    support = ROOT / 'decomp/support'
+    support = metadata / 'support'
     support_sources = sorted(support.glob('*.cpp'))
     if not sources:
         raise ValueError('No matching source files found.')
-    # Keep progress reports tied to the source/configuration actually compared.
-    inputs = sorted(set([*sources, *source.rglob('*.h'), *support_sources, TARGET,
-                         ROOT / 'decomp/metadata.csv', ROOT / 'decomp/msvcrt.def',
-                         ROOT / 'decomp/msvc6-sp4.json', ROOT / 'decomp/requirements.txt',
-                         Path(__file__).resolve()]))
+    # The fixture is part of the patchable source export, never a game driver.
+    entry = metadata / 'fixtures/game.cpp'
+    if not entry.is_file():
+        raise ValueError('Prepared source has no comparison retention fixture.')
+    inputs = set([*sources, *source.rglob('*.h'),
+                  *(path for path in metadata.rglob('*') if path.is_file()),
+                  ROOT / 'tools/matching_imports.py', ROOT / 'tools/prepare_sources.py',
+                  Path(__file__).resolve()])
+    manifest_path = getattr(args, 'prepared_manifest', None)
+    if manifest_path is not None:
+        manifest = json.loads(manifest_path.read_text())
+        inputs.update([manifest_path, SOURCE_PIN])
+        inputs.update(ROOT / item['path'] for item in manifest['identity']['patches'])
+        inputs.update(ROOT / item['path'] for item in manifest['identity']['series']
+                      if item['sha256'] is not None)
+    inputs = sorted(inputs)
     def input_hashes():
         return {str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path): digest(path)
                 for path in inputs}
     fingerprints = input_hashes()
     folder = tool.output / 'game'
     folder.mkdir(parents=True, exist_ok=True)
-    entry = folder / 'entry.cpp'
-    entry.write_text('#include "tga_image.h"\n'
-                     'extern "C" { int _fltused = 0; }\n'
-                     'float GetGameVersion();\nvolatile float fixture_result;\n'
-                     'long GetFileSize(const char*);\nvolatile long fixture_size;\n'
-                     'char* LoadFile(const char*);\nchar* volatile fixture_file;\n'
-                     'char* LoadBleFile(const char*);\nchar* volatile fixture_buffer;\n'
-                     'unsigned int SoundNameHash(const char*);\nvolatile unsigned int fixture_hash;\n'
-                     'unsigned char* GetTgaPaletteData(unsigned char*, unsigned char, unsigned char);\n'
-                     'unsigned char* GetTgaPixelData(unsigned char*, unsigned char, unsigned short, unsigned char);\n'
-                     'void CopyTgaPalette(const unsigned char*, TgaImage*, int);\n'
-                     'void CopyTgaPixels(const unsigned char*, TgaImage*);\n'
-                     'void ExpandTgaRle(const unsigned char*, TgaImage*);\n'
-                     'unsigned char fixture_tga[18];\nunsigned char* volatile fixture_palette;\n'
-                     'unsigned char* volatile fixture_pixels;\n'
-                     'unsigned char fixture_palette_copy[3];\n'
-                     'extern "C" void fixture_entry() { TgaImage fixture_tga_image(0, 0); '
-                     'fixture_result = GetGameVersion(); '
-                     'fixture_size = GetFileSize("generated.bin"); '
-                     'fixture_file = LoadFile("generated.bin"); '
-                     'fixture_buffer = LoadBleFile("generated.ble"); '
-                     'fixture_hash = SoundNameHash("generated.wav"); '
-                     'fixture_palette = GetTgaPaletteData(fixture_tga, 0, 1); '
-                     'fixture_pixels = GetTgaPixelData(fixture_tga, 0, 0, 0); '
-                     'fixture_tga_image.palette = fixture_palette_copy; '
-                     'CopyTgaPalette(fixture_tga, &fixture_tga_image, 1); '
-                     'CopyTgaPixels(fixture_tga, &fixture_tga_image); '
-                     'ExpandTgaRle(fixture_tga, &fixture_tga_image); '
-                     'fixture_tga_image.palette = 0; }\n')
     library = tool.runtime_library(folder)
     binary, pdb = tool.build(folder, [*sources, *support_sources, entry], 'BeachLife', ['/fixed:no', library],
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
@@ -321,7 +368,7 @@ def game(tool, args):
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
         'filename': 'BeachLife.exe', 'source-root': [str(source), str(support)],
         'hash': {'sha256': target['sha256']},
-        'data-sources': [str(ROOT / 'decomp/metadata.csv')],
+        'data-sources': [str(metadata / 'metadata.csv')],
         'report': {'ignore-functions': ['fixture_entry']}}}})
     save(folder / 'reccmp-user.yml', {'targets': {'BEACHLIFE': {'path': str(original)}}})
     save(folder / 'reccmp-build.yml', {'project': '.', 'targets': {'BEACHLIFE': {
@@ -344,6 +391,9 @@ def game(tool, args):
         return functions
     functions = compare_functions(target['functions'])
     library_functions = compare_functions(target.get('library_functions', []))
+    if manifest_path is not None:
+        prepare(ROOT, manifest_path.parent, names=(), verify=True,
+                decomp_revision=args.decomp_revision, decomp_profile='matching')
     if input_hashes() != fingerprints:
         raise ValueError('Matching inputs changed during comparison; rerun the comparison.')
     result = {'target': target['id'], 'original_sha256': target['sha256'],
@@ -351,6 +401,9 @@ def game(tool, args):
               'functions': functions, 'scope': 'Only listed functions; whole-game denominator unknown.',
               'library_functions': library_functions,
               'input_sha256': fingerprints,
+              'target_config': str(target_path.relative_to(ROOT) if target_path.is_relative_to(ROOT) else target_path),
+              'source_root': str(source.relative_to(ROOT) if source.is_relative_to(ROOT) else source),
+              'source_revision': getattr(args, 'decomp_revision', None),
               'comparison_layout': 'Relocations enabled in rebuilt comparison image; original remains unchanged.'}
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
@@ -362,13 +415,13 @@ def game(tool, args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['verify', 'fixture', 'stdio-fixture', 'game'])
+    parser.add_argument('command', choices=['verify', 'fixture', 'stdio-fixture', 'platform-fixture', 'game'])
     parser.add_argument('--compiler', default=os.environ.get('BEACHLIFE_MSVC6'))
     parser.add_argument('--original', type=Path, default=ROOT / 'orig/analysis/disc/BeachLife.exe')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/matching')
     parser.add_argument('--prefix', type=Path, default=ROOT / 'build/matching/wine')
     parser.add_argument('--reccmp', default='reccmp-reccmp')
-    parser.add_argument('--source', type=Path, default=ROOT / 'decomp/src')
+    parser.add_argument('--source', type=Path, help='experimental source override; default is the matching export')
     parser.add_argument('--reports', type=Path, default=ROOT / 'orig/analysis/matching')
     args = parser.parse_args()
     try:
@@ -380,9 +433,12 @@ def main():
             fixture(Toolchain(args))
         elif args.command == 'stdio-fixture':
             stdio_fixture(Toolchain(args))
+        elif args.command == 'platform-fixture':
+            platform_fixture(Toolchain(args))
         else:
+            prepare_game_source(args)
             game(Toolchain(args), args)
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         parser.exit(1, str(error) + '\n')
 
 

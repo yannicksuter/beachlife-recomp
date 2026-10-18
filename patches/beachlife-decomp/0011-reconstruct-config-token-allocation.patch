@@ -1,0 +1,58 @@
+Reconstruct token-table allocation with actual reset and allocation dependencies.
+Preserve reverse initialization, overwritten old storage and unchanged count on failure.
+Unchecked count overflow remains part of the retail implementation.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -40,6 +40,7 @@
+     ConfigTokenBuffer fixture_config_tokens;
+     fixture_config_tokens.tokens = 0;
+     fixture_config_tokens.count = 0;
++    fixture_config_read = fixture_config_tokens.AllocateTokens(1);
+     TgaImage fixture_tga_image(0, 0);
+     fixture_fatal = StartupFatal;
+     fixture_config_read = ReadConfigFileBuffer("generated.pis", &fixture_config_byte, 1);
+--- /dev/null
++++ b/src/startup_config_token_allocation.cpp
+@@ -0,0 +1,16 @@
++#include "startup_config_tokens.h"
++
++// Descriptive name; the original symbol and declarations are unknown.
++// FUNCTION: BEACHLIFE 0x004ec7d0
++int ConfigTokenBuffer::AllocateTokens(unsigned int size)
++{
++    tokens = new ConfigToken[size];
++    if (tokens)
++    {
++        count = size;
++        while (size--)
++            tokens[size].Reset();
++        return 1;
++    }
++    return 0;
++}
+--- a/src/startup_config_tokens.h
++++ b/src/startup_config_tokens.h
+@@ -16,6 +16,7 @@
+ {
+ public:
+     ~ConfigTokenBuffer();
++    int AllocateTokens(unsigned int size);
+ 
+     ConfigToken* tokens;
+     unsigned int count;
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -136,6 +136,12 @@
+       "size": 27,
+       "name": "StartupProfiler::Start",
+       "name_status": "descriptive; original class name and complete layout unknown"
++    },
++    {
++      "address": "0x004ec7d0",
++      "size": 82,
++      "name": "ConfigTokenBuffer::AllocateTokens",
++      "name_status": "descriptive; original symbol and declarations unknown"
+     }
+   ],
+   "library_functions": [
