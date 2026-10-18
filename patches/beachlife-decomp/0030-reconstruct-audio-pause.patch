@@ -1,0 +1,76 @@
+Reconstruct stream pausing through the actual decorated Miles import.
+Preserve both gates and extend only the observed audio-state prefix.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -78,6 +78,7 @@
+     fixture_controller.Exit();
+     WindowAudioState fixture_audio = { 0 };
+     fixture_audio.MuteDigitalDriver();
++    fixture_audio.PauseAudioStream();
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- a/src/miles_imports.h
++++ b/src/miles_imports.h
+@@ -1,7 +1,8 @@
+ #ifndef MILES_IMPORTS_H
+ #define MILES_IMPORTS_H
+ 
+-// Observed x86 import ABI; the caller ignores the DLL's return register.
++// Observed x86 import ABIs; these callers ignore the DLL's return register.
+ extern "C" __declspec(dllimport) void __stdcall AIL_set_digital_master_volume(void* driver, int volume);
++extern "C" __declspec(dllimport) void __stdcall AIL_pause_stream(void* stream, int pause);
+ 
+ #endif
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -6,8 +6,11 @@
+ {
+     unsigned char enabled;
+     void* digital_driver;
++    unsigned char unknown_08[4];
++    void* stream;
+ 
+     void MuteDigitalDriver();
++    void PauseAudioStream();
+ };
+ 
+ #endif
+--- /dev/null
++++ b/src/window_audio_pause.cpp
+@@ -0,0 +1,9 @@
++#include "window_audio.h"
++#include "miles_imports.h"
++
++// FUNCTION: BEACHLIFE 0x004cff40
++void WindowAudioState::PauseAudioStream()
++{
++    if (enabled && stream)
++        AIL_pause_stream(stream, 1);
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -249,6 +249,12 @@
+       "address": "0x004cf6d0",
+       "size": 18,
+       "name": "WindowAudioState::MuteDigitalDriver",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004cff40",
++      "size": 22,
++      "name": "WindowAudioState::PauseAudioStream",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+@@ -277,7 +283,8 @@
+     "mss32.dll": {
+       "export_names": "decorated",
+       "symbols": {
+-        "AIL_set_digital_master_volume": 8
++        "AIL_set_digital_master_volume": 8,
++        "AIL_pause_stream": 8
+       }
+     }
+   }
