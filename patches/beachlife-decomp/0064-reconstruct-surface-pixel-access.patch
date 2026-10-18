@@ -1,0 +1,150 @@
+Reconstruct surface pixel access and its observed Lock boundary.
+Preserve the pre-lock prepared clear, signed result handling and
+existing shared surface prefixes.
+
+--- /dev/null
++++ b/src/startup_surface_pixel_access.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_renderer.h"
++#include "surface_error_sink.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0040e240
++unsigned short* ScreenRequestRenderer::AccessPixels()
++{
++    unsigned short* pixels = 0;
++    surfaces[current_surface]->prepared = 0;
++    if (!software_mode)
++    {
++        SurfaceDescription description;
++        memset(&description, 0, sizeof(description));
++        description.size = sizeof(description);
++        DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++        SurfaceResult result = surface->vtable->Lock(surface, 0, &description, 0, 0);
++        if (result >= 0)
++        {
++            pixels = (unsigned short*)description.pixels;
++            pixels_locked = 1;
++        }
++        else
++            IgnoreSurfaceError(result);
++    }
++    else
++    {
++        pixels = surfaces[current_surface]->pixels;
++        pixels_locked = 1;
++    }
++    return pixels;
++}
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -22,20 +22,26 @@
+     unsigned int height;
+     unsigned int pitch;
+     ScreenPoint position;
++    unsigned char prepared;
+ 
+     void Cleanup();
+ };
+ 
+ struct ScreenRequestRenderer
+ {
+-    unsigned char unknown_00[4];
++    unsigned char software_mode;
++    unsigned char unknown_01[3];
+     unsigned int width;
+     unsigned int height;
+     unsigned char unknown_0c[0x5c];
+     ScreenSurfacePosition** surfaces;
++    unsigned char unknown_6c[8];
++    int current_surface;
++    unsigned char pixels_locked;
+ 
+     int CreateSurface(int width, int height, int mode);
+     void PrepareSurface(int surface);
++    unsigned short* AccessPixels();
+     void CleanupSurface(int surface);
+     void PositionSurface(int surface, ScreenPoint position);
+ };
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -12,9 +12,27 @@
+ // The observed IDirectDrawSurface7 ABI prefix, not its complete declaration.
+ // HRESULT is a signed 32-bit result; unused method signatures remain opaque.
+ struct DirectDrawSurface7Prefix;
++struct SurfaceApiRectangle;
++
++struct SurfaceDescription
++{
++    unsigned int size;
++    unsigned int flags;
++    unsigned int height;
++    unsigned int width;
++    int pitch;
++    unsigned char unknown_14[0x10];
++    void* pixels;
++    unsigned char unknown_28[0x40];
++    unsigned int caps;
++    unsigned char unknown_6c[0x10];
++};
++
+ typedef int SurfaceResult;
+ typedef unsigned int(SURFACE_STDCALL* SurfaceReleaseMethod)(DirectDrawSurface7Prefix*);
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceStatusMethod)(DirectDrawSurface7Prefix*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(DirectDrawSurface7Prefix*,
++    SurfaceApiRectangle*, SurfaceDescription*, unsigned int, void*);
+ 
+ struct DirectDrawSurface7VtablePrefix
+ {
+@@ -22,7 +40,8 @@
+     SurfaceReleaseMethod Release;
+     void* unused_0c[21];
+     SurfaceStatusMethod IsLost;
+-    void* unused_64[2];
++    SurfaceLockMethod Lock;
++    void* unused_68;
+     SurfaceStatusMethod Restore;
+ };
+ 
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -54,6 +54,7 @@
+ unsigned char fixture_tga[18];
+ unsigned char* volatile fixture_palette;
+ unsigned char* volatile fixture_pixels;
++unsigned short* volatile fixture_surface_pixels;
+ unsigned char fixture_palette_copy[3];
+ extern "C" void fixture_entry()
+ {
+@@ -125,6 +126,8 @@
+     ScreenSurfacePosition* fixture_screen_surfaces[1] = { &fixture_screen_surface };
+     ScreenPoint fixture_screen_position = { 2, 3 };
+     fixture_screen_renderer.surfaces = fixture_screen_surfaces;
++    fixture_screen_renderer.software_mode = 1;
++    fixture_surface_pixels = fixture_screen_renderer.AccessPixels();
+     fixture_screen_renderer.PositionSurface(0, fixture_screen_position);
+     fixture_screen_surface.Cleanup();
+     fixture_screen_renderer.CleanupSurface(0);
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -30,3 +30,4 @@
+ 0x005a8918,global,4,?pool_chunk_end@@3PADA
+ 0x004123f0,function,289,?ReturnPool@@YAXPAXI@Z
+ 0x004d3890,function,1,?IgnoreSurfaceError@@YAXH@Z
++0x0040e240,function,131,?AccessPixels@ScreenRequestRenderer@@QAEPAGXZ
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -388,6 +388,12 @@
+       "size": 81,
+       "name": "ScreenRequestRenderer::CleanupSurface",
+       "name_status": "descriptive indexed cleanup; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x0040e240",
++      "size": 131,
++      "name": "ScreenRequestRenderer::AccessPixels",
++      "name_status": "descriptive pixel-access method; original class, symbol and exact declarations unknown"
+     }
+   ],
+   "library_functions": [
