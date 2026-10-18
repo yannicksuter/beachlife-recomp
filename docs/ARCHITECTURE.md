@@ -39,7 +39,7 @@ the dominant Rich-header record, and the generated PDB/comparison fixture is
 verified. 63 reconstructed game functions match after address normalization,
 totaling 4,942 bytes. 30 functions also match all 1,436 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Three methods totaling 344 bytes also match after address normalization; their
+Four methods totaling 633 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
 One of those methods matches all 94 raw bytes exactly.
 The full game layout remains unknown.
@@ -94,7 +94,7 @@ or unsupported input fails in the host preflight. Allocation failure during
 faithful construction terminates the process under a temporary default-allocator
 policy, including failures on other threads during that process-wide interval.
 It does not repair the original parser or claim arbitrary-input recovery.
-Image, input and cursor subsystem targets remain behind the optional test flag.
+Image, input, cursor and surface subsystem targets remain behind the optional test flag.
 The file helpers and game share the host-only `beachlife_retail_files` library,
 so there is one thread-local VFS binding. Reconstructed gameplay remains open.
 `beachlife_reconstructed_input` qualifies the two byte-state queries, transition
@@ -112,6 +112,12 @@ wrapper through a borrowed host provider. Its native patch preserves resource
 IDs, arguments, callback order and cached-state behavior. Generated providers
 qualify successful and failed loads, state publication and session lifetimes;
 actual cursor resources and platform backends remain separate.
+
+`beachlife_reconstructed_surfaces` exercises the position setter and both surface
+cleanup methods through generated ownership and Surface7 providers. Its tests
+verify the selected object, callback-visible state and final writes, including
+table changes during release. Surface creation and a rendering backend remain
+separate dependencies; this library is not connected to production gameplay.
 
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.
