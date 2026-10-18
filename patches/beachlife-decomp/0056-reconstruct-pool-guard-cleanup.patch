@@ -1,0 +1,76 @@
+Reconstruct the observed pool guard cleanup and its actual lock word.
+Preserve the unconditional word clear without accessing the receiver.
+Original class layout and generic library origin remain unknown.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,3 +1,4 @@
++#include "pool_lock_guard.h"
+ #include "startup_screen_renderer.h"
+ #include "startup_screen_placement.h"
+ #include "startup_controller_selection.h"
+@@ -120,6 +121,11 @@
+     fixture_screen_renderer.surfaces = fixture_screen_surfaces;
+     fixture_screen_renderer.PositionSurface(0, fixture_screen_position);
+     fixture_screen_surface.Cleanup();
++    {
++        PoolLockGuard fixture_pool_guard;
++        pool_lock_word = 1;
++    }
++    fixture_config_offset = pool_lock_word;
+     ScreenItem fixture_screen_item = { 0 };
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
+     FrameClock fixture_frame_clock = { 0 };
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -19,3 +19,4 @@
+ 0x004f4ea4,float,4,
+ 0x004f3328,float,4,
+ 0x004f3320,float,8,
++0x005a8908,data,4,?pool_lock_word@@3HA
+--- /dev/null
++++ b/src/pool_lock_guard.cpp
+@@ -0,0 +1,11 @@
++#include "pool_lock_guard.h"
++
++// GLOBAL: BEACHLIFE 0x005a8908
++int pool_lock_word = 0;
++
++// Descriptive destructor spelling for the observed no-argument member cleanup.
++// FUNCTION: BEACHLIFE 0x00412550
++PoolLockGuard::~PoolLockGuard()
++{
++    pool_lock_word = 0;
++}
+--- /dev/null
++++ b/src/pool_lock_guard.h
+@@ -0,0 +1,14 @@
++#ifndef POOL_LOCK_GUARD_H
++#define POOL_LOCK_GUARD_H
++
++// Descriptive 32-bit storage. Original type spelling and library origin are unknown.
++extern int pool_lock_word;
++
++// The observed cleanup ignores its receiver. This declaration does not recover
++// the original class size, data members, constructor or allocator identity.
++struct PoolLockGuard
++{
++    ~PoolLockGuard();
++};
++
++#endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -448,6 +448,12 @@
+       "size": 94,
+       "name": "FindScreenByName",
+       "name_status": "unclassified mixed generic/application provenance; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x00412550",
++      "size": 11,
++      "name": "PoolLockGuard::~PoolLockGuard",
++      "name_status": "unclassified generic pool cleanup; original class layout and library origin unknown"
+     }
+   ]
+ }
