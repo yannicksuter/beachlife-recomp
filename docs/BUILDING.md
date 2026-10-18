@@ -235,12 +235,15 @@ zero-or-one results, and compare the whole declared object representation and
 surrounding guards. Reset clears only the two observed words and two bytes;
 tests check their widths, unchanged fields and repeated-call idempotence.
 The declarations describe an observed prefix, not the complete retail input
-object. The fixture supports the earlier unsigned prefix and the recovered
-resource-pointer prefix, locating fields in the actual native layout rather
-than imposing x86 offsets on a 64-bit build. Pointer fields receive null or
-live fixture addresses, and typed values, padding and surrounding bytes remain
-part of the unchanged-representation checks. Qualifying this layout does not
-exercise the cursor setter or Win32 resources. Out-of-range queries, state
+object. The fixture supports the earlier unsigned prefix, the recovered
+resource-pointer prefix and its two observed signed-integer refinements. It
+checks relative field positions in the actual native layout rather than
+imposing x86 offsets on a 64-bit build. Pointer fields receive null or live
+fixture addresses; signed fields receive typed boundary and representative
+values. All typed values, padding and surrounding bytes remain part of the
+unchanged-representation checks. This target executes only the two queries and
+reset; layout compatibility does not exercise the integer getters, cursor
+setter or Win32 resources. Out-of-range queries, state
 production, device input and integration with the controller or game loop remain
 unqualified.
 

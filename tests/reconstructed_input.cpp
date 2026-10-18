@@ -20,6 +20,18 @@ using Representation = std::array<unsigned char, sizeof(GuardedInput)>;
 template <typename T>
 constexpr bool has_resource_instance = requires(T value) { value.resource_instance; };
 
+template <typename T> constexpr bool has_value_134 = requires(T value) { value.unknown_134; };
+
+template <typename T>
+constexpr bool has_value_138 = []
+{
+    if constexpr (requires(T value) { value.unknown_138; })
+    {
+        return std::is_same_v<decltype(T::unknown_138), int>;
+    }
+    return false;
+}();
+
 template <typename T> constexpr bool qualified_prefix()
 {
     static_assert(std::is_same_v<decltype(T::unknown_120), unsigned int>);
@@ -34,12 +46,33 @@ template <typename T> constexpr bool qualified_prefix()
         static_assert(std::is_same_v<decltype(T::cursor_identifier), int>);
         static_assert(std::is_same_v<decltype(T::unknown_00), unsigned char[0x10]>);
         static_assert(sizeof(T::unknown_14) == 9);
-        static_assert(sizeof(T::unknown_128) == 0x1c);
         static_assert(sizeof(T::unknown_148) == 0x4c8);
         static_assert(offsetof(T, resource_instance) == 0x10);
         static_assert(offsetof(T, unknown_14) == offsetof(T, resource_instance) + sizeof(void*));
         static_assert(offsetof(T, states) == offsetof(T, unknown_14) + sizeof(T::unknown_14));
-        static_assert(offsetof(T, cursor_identifier) == offsetof(T, unknown_128) + 0x1c);
+        if constexpr (has_value_134<T>)
+        {
+            static_assert(std::is_same_v<decltype(T::unknown_128), unsigned char[0xc]>);
+            static_assert(std::is_same_v<decltype(T::unknown_134), int>);
+            static_assert(offsetof(T, unknown_134) == offsetof(T, unknown_128) + 0xc);
+            static_assert(offsetof(T, unknown_138) == offsetof(T, unknown_134) + sizeof(int));
+            if constexpr (has_value_138<T>)
+            {
+                static_assert(std::is_same_v<decltype(T::unknown_13c), unsigned char[8]>);
+                static_assert(offsetof(T, unknown_13c) == offsetof(T, unknown_138) + sizeof(int));
+                static_assert(offsetof(T, cursor_identifier) == offsetof(T, unknown_13c) + 8);
+            }
+            else
+            {
+                static_assert(std::is_same_v<decltype(T::unknown_138), unsigned char[0xc]>);
+                static_assert(offsetof(T, cursor_identifier) == offsetof(T, unknown_138) + 0xc);
+            }
+        }
+        else
+        {
+            static_assert(std::is_same_v<decltype(T::unknown_128), unsigned char[0x1c]>);
+            static_assert(offsetof(T, cursor_identifier) == offsetof(T, unknown_128) + 0x1c);
+        }
         static_assert(offsetof(T, unknown_148) == offsetof(T, cursor_identifier) + sizeof(int));
         static_assert(offsetof(T, unknown_610) == offsetof(T, unknown_148) + 0x4c8);
     }
@@ -95,6 +128,7 @@ std::size_t predicate_cases = 0;
 std::size_t reset_cases = 0;
 std::size_t representation_checks = 0;
 std::array<std::size_t, 3> resource_cases{};
+std::array<std::array<std::size_t, 7>, 2> integer_cases{};
 const char* phase = "predicate";
 std::size_t current_case = 0;
 
@@ -133,6 +167,61 @@ template <typename T> void native_values(Representation& bytes, unsigned int see
             sizeof(cursor));
         ++resource_cases[choice];
     }
+    // Newly observed signed fields receive valid typed values too. They remain
+    // outside the three methods' write contract, just like the cursor field.
+    constexpr std::array<int, 7> integers{-2147483647 - 1, -300, -1, 0, 1, 0x12345678, 2147483647};
+    if constexpr (has_value_134<T>)
+    {
+        const auto choice = seed % integers.size();
+        const int first = integers[choice];
+        std::memcpy(bytes.data() + offsetof(GuardedInput, input) + offsetof(T, unknown_134),
+            &first,
+            sizeof(first));
+        ++integer_cases[0][choice];
+    }
+    if constexpr (has_value_138<T>)
+    {
+        const auto choice = (seed / integers.size()) % integers.size();
+        const int second = integers[choice];
+        std::memcpy(bytes.data() + offsetof(GuardedInput, input) + offsetof(T, unknown_138),
+            &second,
+            sizeof(second));
+        ++integer_cases[1][choice];
+    }
+}
+
+template <typename T> void report_integer_layout()
+{
+    std::cout << ",\"integer_fields\":"
+              << has_value_134<T> + has_value_138<T> << ",\"value_134_offset\":";
+    if constexpr (has_value_134<T>)
+    {
+        std::cout << offsetof(T, unknown_134);
+    }
+    else
+    {
+        std::cout << "null";
+    }
+    std::cout << ",\"value_138_offset\":";
+    if constexpr (has_value_138<T>)
+    {
+        std::cout << offsetof(T, unknown_138);
+    }
+    else
+    {
+        std::cout << "null";
+    }
+    std::cout << ",\"integer_values\":[";
+    for (std::size_t field = 0; field != integer_cases.size(); ++field)
+    {
+        std::cout << (field == 0 ? "[" : ",[");
+        for (std::size_t value = 0; value != integer_cases[field].size(); ++value)
+        {
+            std::cout << (value == 0 ? "" : ",") << integer_cases[field][value];
+        }
+        std::cout << ']';
+    }
+    std::cout << ']';
 }
 
 void patterned(GuardedInput& value, unsigned int seed)
@@ -260,7 +349,9 @@ int main()
             << ",\"reset_word_offset\":" << offsetof(InputState, unknown_120)
             << ",\"reset_byte_offset\":" << offsetof(InputState, unknown_610)
             << ",\"resource_values\":[" << resource_cases[0] << ',' << resource_cases[1] << ','
-            << resource_cases[2] << "]}\n";
+            << resource_cases[2] << ']';
+        report_integer_layout<InputState>();
+        std::cout << "}\n";
         return 0;
     }
     catch (const std::exception& error)
