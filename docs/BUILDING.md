@@ -65,6 +65,22 @@ numbers goes between `// clang-format off` and `// clang-format on` with a
 reason. Format a reconstructed file before writing patches for it, so the
 patches apply to formatted source.
 
+## Matching compiler options
+
+The prepared matching target JSON can declare `source_compile_options` for a
+qualified source file. It maps a unique game `.cpp` basename to a list containing
+`/GX`, `/Ob1`, or both. Unknown files, directory paths, duplicate flags and other
+options are rejected. Unlisted files retain the default compiler settings; the
+runtime release wrapper retains its existing `/O1` setting. Add target changes
+through a reconstruction patch and verify that all retained methods still match.
+These options do not change the native CMake build.
+
+A `/GX` entry adds a generated COFF definition of the absolute `__except_list=0`
+ABI symbol required for VC6's `FS:[0]` exception registration. The object has no
+code, data or sections. Actual CRT imports and comparison metadata must still be
+provided by the target; the tool does not synthesize exception handlers. Matching
+results record the selected source options and generated object's identity.
+
 ## Reconstructed subsystem tests
 
 The optional targets compile reconstructed image, file and configuration helpers using the

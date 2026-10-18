@@ -1,9 +1,18 @@
-"""Generate VC6 x86 stdcall import metadata without copying SDK libraries."""
+"""Generate VC6 x86 link metadata without copying SDK libraries."""
 
 from pathlib import Path
 import os
 import re
 import struct
+
+
+def vc6_exception_abi_object():
+    """Define VC6's absolute FS:[0] offset, with no code, data or sections."""
+    name = b'__except_list\0'
+    header = struct.pack('<HHIIIHH', 0x14c, 0, 0, 20, 1, 0, 0)
+    symbol = struct.pack('<IIIhHBB', 0, 4, 0, -1, 0, 2, 0)
+    strings = struct.pack('<I', 4 + len(name)) + name
+    return header + symbol + strings
 
 
 def coff_import_symbols(path):
