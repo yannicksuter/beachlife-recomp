@@ -154,6 +154,14 @@ pointers. It leaves the final four bytes of the 32-byte x86 object untouched.
 Verified callers assign pixel storage afterward. `TgaImage` and its field
 names are descriptive; the final field's meaning is still unknown.
 
+`src/tga_pixel_copy.cpp` reconstructs the 328-byte pixel copier at
+`0x004ea470`. It reverses rows for 8-, 24- and 32-bit images, converts BGR to
+RGB for the latter two formats, and preserves 32-bit alpha. Unsupported depths
+and signed nonpositive dimensions cause no pixel writes. The helper preserves
+unchecked buffers and sequential channel reads/writes, including their effects
+on overlapping storage. `CopyTgaPixels` is descriptive; the original symbol and
+exact declaration remain unknown.
+
 ```sh
 python3 tools/matching.py game --compiler /path/to/msvc6.4 \
   --reccmp build/matching/venv/bin/reccmp-reccmp
@@ -161,9 +169,9 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-All nine functions currently match after address normalization, totaling 497
-bytes. The filename hash, three TGA helpers and image constructor also match
-all 199 raw bytes exactly. Rebuilt constants/imports in the other functions
+All ten functions currently match after address normalization, totaling 825
+bytes. The filename hash, four TGA helpers and image constructor also match
+all 527 raw bytes exactly. Rebuilt constants/imports in the other functions
 have different addresses, so this is not a byte-identical executable or an
 established whole-program layout. The original has stripped relocations;
 `metadata.csv` identifies the known float and the
@@ -187,14 +195,15 @@ constant; a normalized match alone does not establish a complete binary match.
 
 Each reconstructed function has been checked with a deliberately incorrect
 source variant. Changing the BLE terminator, filename-hash signedness or TGA
-header offset, palette channel order or constructor pixel depth makes the
-comparison fail. Generated semantic tests additionally check the pure helpers'
-boundary values, palette copy overlap and untouched constructor storage.
-These checks establish the reported machine-code matches; they do not recover original variable names,
-class declarations or the full game's compiler flags.
+header offset, palette channel order, constructor pixel depth or pixel row
+direction makes the comparison fail. Generated semantic tests additionally
+check the pure helpers' boundary values, palette/pixel copy overlap and
+untouched constructor storage. These checks establish the reported machine-code
+matches; they do not recover original variable names, class declarations or
+the full game's compiler flags.
 
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There are nine annotated retail functions and no
+does not implement game startup. There are ten annotated retail functions and no
 established whole-game function denominator.
