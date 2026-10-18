@@ -1,0 +1,81 @@
+Reconstruct the startup formatter and its verified CRT imports.
+The original formats into a256-byte local buffer and exits with status0;
+it does not display a message. The comparison fixture retains its address only.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3,6 +3,8 @@
+ {
+     int _fltused = 0;
+ }
++void StartupFatal(const char*, ...);
++void (*volatile fixture_fatal)(const char*, ...);
+ float GetGameVersion();
+ volatile float fixture_result;
+ long GetFileSize(const char*);
+@@ -25,6 +27,7 @@
+ extern "C" void fixture_entry()
+ {
+     TgaImage fixture_tga_image(0, 0);
++    fixture_fatal = StartupFatal;
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- a/msvc6-sp4.json
++++ b/msvc6-sp4.json
+@@ -33,6 +33,14 @@
+     {
+       "file": "../Include/STDIO.H",
+       "sha256": "c4ad8b47e7d4b1c83af3d4f8a2bbc1dfba928e2315b790883c124bc5850ec6ad"
++    },
++    {
++      "file": "../Include/STDARG.H",
++      "sha256": "4ce271a2606bd1e1e2d5cb647469ca10ff1238d16f67d7057edbb6af23673a56"
++    },
++    {
++      "file": "../Include/STDLIB.H",
++      "sha256": "867b599a8ab87aa281842e61c61694fc76fcecd26d04f0ea525a0a97eb9a799f"
+     }
+   ]
+ }
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -7,3 +7,5 @@
+     fread
+     free
+     ??2@YAPAXI@Z
++    vsprintf
++    exit
+--- /dev/null
++++ b/src/startup_fatal.cpp
+@@ -0,0 +1,15 @@
++#include <stdarg.h>
++#include <stdio.h>
++#include <stdlib.h>
++
++// Descriptive name; the original symbol and exact declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ea170
++void StartupFatal(const char* format, ...)
++{
++    char message[256];
++    va_list arguments;
++    va_start(arguments, format);
++    vsprintf(message, format, arguments);
++    va_end(arguments);
++    exit(0);
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -82,6 +82,12 @@
+       "size": 249,
+       "name": "ExpandTgaRle",
+       "name_status": "descriptive, original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ea170",
++      "size": 41,
++      "name": "StartupFatal",
++      "name_status": "descriptive, original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [
