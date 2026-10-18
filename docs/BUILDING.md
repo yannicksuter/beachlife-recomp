@@ -89,21 +89,34 @@ Build the prepared configuration and VFS file libraries without test executables
 
 ```sh
 cmake --preset release -B build/reconstructed-config \
-  -DBUILD_TESTING=OFF -DBEACHLIFE_BUILD_RECONSTRUCTED_CONFIG=ON
+  -DBUILD_TESTING=OFF
 cmake --build build/reconstructed-config \
   --target beachlife_reconstructed_startup_config --parallel
 ```
 
 Consumers link `beachlife_reconstructed_startup_config`; its public dependencies
 provide the file, scanner, token, allocation, parser and loading libraries.
-This option uses the same pinned export and per-build verification as the tests
-below. It does not enable the image, input or cursor targets, or link reconstructed
-code into the launcher. Both reconstructed build options default to `OFF`.
-The VFS session and qualified input, allocation and lifetime limits below still
-apply to callers; building the libraries does not establish production startup.
-The host-only `beachlife_retail_files` library is shared with the default game
-target; normal Play binds its completed VFS on the game thread. This does not
-enable or link reconstructed source in the default build.
+Normal Play now requires these libraries, so the former
+`BEACHLIFE_BUILD_RECONSTRUCTED_CONFIG` switch is no longer needed. They use the
+same pinned export and per-build verification as the tests below. The historical
+commit in `patches/beachlife-decomp/source.json` must be available locally; CI's
+compiling jobs fetch full history. Configuration never fetches source itself.
+Packaging verifies the native reconstructed export again and records its baseline
+revision, source tree and ordered reconstruction/portability patch hashes in
+`SOURCE-MANIFEST.json`, alongside third-party dependency identities.
+Image, input and cursor subsystem targets remain optional.
+
+The game's `beachlife_startup_configuration` host library validates the audited
+1,242-byte English configuration, then constructs the real owner on the game
+thread before the loading fade. It retains the immutable input snapshot and
+the shared `beachlife_retail_files` binding through teardown. Unsupported input
+fails before the owner is published. During faithful construction, a temporary
+process-wide default allocation handler terminates on allocation failure;
+snapshot/preflight errors remain recoverable. The original parser is unchanged.
+`startup_configuration` runs generated owner/lifetime/rejection checks with
+both default and injected allocators, plus subprocess allocation-failure probes.
+Its wrapper requires both successful exit and an explicit completion marker,
+so an original zero-status fatal exit cannot pass the test.
 
 ## Reconstructed subsystem tests
 
@@ -119,11 +132,12 @@ cmake --build build/reconstructed-tga \
     reconstructed_config_tests reconstructed_config_tokens_tests \
     reconstructed_config_allocation_tests reconstructed_config_parser_tests \
     reconstructed_config_loading_tests reconstructed_startup_config_tests \
+    startup_configuration_tests startup_configuration_default_tests \
     reconstructed_input_tests reconstructed_cursor_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
-The test option also enables the configuration libraries and requires
+The test option requires
 `BUILD_TESTING`. `patches/beachlife-decomp/source.json` owns the
 full baseline commit pin shared with matching; that object must exist locally,
 so shallow checkouts may need more history before configuration. Configuration
@@ -142,7 +156,8 @@ Every library build, including an otherwise up-to-date build, verifies the
 revision, source hashes, ordered patch series
 and prepared files. Update reconstruction or portability patches and reconfigure; never edit prepared
 files. The matching-only VC6 release wrapper is excluded in favor of the host
-CRT. The default build leaves these targets disabled.
+CRT. Subsystem test executables remain opt-in; configuration and file libraries
+are part of normal Play.
 
 The generated fixtures check palette/pixel offsets, channel conversion, row
 orientation, raw and run-length packets, empty images and buffer ownership.
@@ -256,8 +271,9 @@ assumes a nonempty list; empty-owner destruction, general fatal-error paths,
 allocation failure and exception unwinding remain unqualified. The fixture's
 completion guard rejects an early zero-status fatal exit while preserving
 CTest's normal exit-code checks. `BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT` selects its separate
-generated folder, defaulting to the build tree. These targets do not link the
-owner or a complete startup driver into the production game.
+generated folder, defaulting to the build tree. Normal Play uses the separate
+host boundary described above; these broad subsystem fixtures do not establish
+a complete startup driver or menu.
 
 The input target checks two matched byte-state queries, transition reset and
 two signed-integer getters, plus the first-button transition getter.
@@ -303,7 +319,7 @@ bindings and thread isolation. Handles are borrowed fixture values; no game
 assets, Win32 resources or platform cursor backend are used. A missing provider
 or invalid session lifetime violates the host boundary's preconditions and
 terminates; this is separate from the retail API's null-result behavior.
-These optional libraries are not linked into production startup or gameplay.
+The optional image, input and cursor libraries are not linked into production gameplay.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
@@ -392,8 +408,11 @@ a window smoke that renders all six pages with SDL's dummy video driver and
 software renderer. Package smoke runs the same window check after extraction,
 proving that the artwork, icon and fonts travel with it. With a usable GPU,
 package smoke also opens the game window, prepares generated data, checks
-offline reuse and repair, and runs the hidden loop including the startup VFS
-read. Without one, it checks that the GPU error occurs before any cache or
+offline reuse and repair, verifies production rejection of unsupported
+configuration, and exercises the image preview. A separate generated runtime
+fixture uses the same launcher/runtime libraries and loading path with an
+internal configuration factory to test the successful game loop. Without a
+usable GPU, the checks ensure its error occurs before any cache or
 readiness is created and reports the skipped game-loading integration. The
 `launcher_content` test covers cancellation, source switches and mount lifetime;
 `startup_work` covers the order, progress, cancellation and errors of the work
@@ -402,8 +421,9 @@ check/prepare/mount/read worker without a GPU, including cancelled extraction,
 resumption, binding persistence, offline reuse and repair. It also checks the
 joined result through the actual thread-local file bridge: worker isolation,
 nested binding restoration, cancellation/failure, retained handles and teardown.
-The production call site binds only after successful normal-Play loading;
-headless coverage does not establish GPU presentation or reconstructed startup.
+The production call site constructs its configuration owner only after successful
+normal-Play work and an explicit join, before the loading fade. Headless coverage
+does not establish GPU presentation or a complete reconstructed startup driver.
 Generated fixtures cover
 pins, patch ordering, tampering, version changes, archive payloads, provenance,
 ABI bounds and release decisions.
@@ -429,8 +449,10 @@ state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
 then prepares or reuses game data behind its loading screen, as Play does. `--cache-directory folder`
 overrides the user cache for development. `--frames N` stops after N frames, and
 `--screenshot file.png` then saves the last one. The `game_startup` and
-`game_runtime` integration tests run it hidden on a generated ISO and are skipped
-where no display or GPU device exists, as on hosted CI runners.
+`game_runtime` integration tests exercise both the production input-rejection
+path and the positive generated runtime fixture. Preview checks still use the
+production binary. GPU checks are skipped where no display or usable device
+exists; the headless owner and allocation tests run independently.
 
 View a supported original TGA through the same worker and VFS:
 

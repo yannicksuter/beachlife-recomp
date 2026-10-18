@@ -11,7 +11,8 @@ def check(executable, expected):
     executable = str(Path(executable).resolve())
     for arguments in (["--help"],):
         output = subprocess.check_output([executable, *arguments], text=True)
-        assert "The game code is not reconstructed yet" in output, output
+        assert "loads the supported game configuration" in output, output
+        assert "gameplay are still in development" in output, output
     version = subprocess.check_output([executable, "--version"], text=True).strip()
     assert version == expected["build_version"], (version, expected)
     info = json.loads(subprocess.check_output([executable, "--build-info"], text=True))

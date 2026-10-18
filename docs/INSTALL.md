@@ -64,8 +64,10 @@ window or fullscreen, size, display, Fit or Stretch, VSync and the graphics API
 (Direct3D 12 or Vulkan on Windows, Metal on macOS, Vulkan on Linux). A graphics
 API that is not available is reported, never replaced by another one. Startup
 checks, ISO preparation and VFS loading run behind the in-game loading screen;
-its progress appears when the work takes longer than a moment. The game
-code is not reconstructed yet, so the window shows an empty picture with a
+its progress appears when the work takes longer than a moment. Normal Play
+also loads the supported English game configuration before the loading screen
+fades. Menu rendering and gameplay are still being reconstructed, so the window
+shows an empty picture with a
 small overlay naming the graphics API and frame rate. Esc or closing the window
 returns to the launcher.
 

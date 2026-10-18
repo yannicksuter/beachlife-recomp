@@ -23,9 +23,10 @@ new retail methods and changes belong in `patches/beachlife-decomp/`. No sibling
 checkout is required. The source preparation tool exports the full local commit
 in `patches/beachlife-decomp/source.json` and records its tree and file hashes.
 Both builds apply `reconstruction-series`; native builds then apply the faithful
-portability `series`. Matching retains the original compiler and ABI. The opt-in
-native image and VFS file targets already consume that export; the future game module will
-use the same boundary. Intentional behavior changes stay in a
+portability `series`. Matching retains the original compiler and ABI. Normal
+Play's configuration and VFS file libraries, plus optional native subsystem
+tests, consume that export. The remaining game code uses the same boundary.
+Intentional behavior changes stay in a
 separate optional series, with tweaks off by default. Third-party dependencies
 remain immutable pins; never edit their checkouts in place.
 
@@ -84,15 +85,18 @@ records, owner publication, duplicate names, copied strings, bounded values
 and global reset after destruction. Configuration lookup, empty-owner cleanup,
 general error/unwind paths and general floating-point parity remain separate,
 as do the complete image parser and allocating constructor.
-`BEACHLIFE_BUILD_RECONSTRUCTED_CONFIG` exposes this existing configuration/file
-library graph independently of `BUILD_TESTING`, through the same pinned export
-and verification target. The subsystem test option also enables it; test
-executables and the image, input and cursor libraries remain behind that option.
-Both options default to off. These libraries have generated native tests; none
-is linked into production gameplay. Their file helpers and the game share the
-host-only `beachlife_retail_files` library, so there is one thread-local VFS
-binding. A reconstructed runtime consumer still needs the qualified input/error
-domain and owner lifetime described above.
+The configuration/file libraries now build for normal Play independently of
+`BUILD_TESTING`, through the same pinned export and verification target.
+`beachlife_startup_configuration` owns the host input/lifetime boundary around
+the actual reconstructed constructor. It validates an immutable snapshot of
+the audited English configuration before publishing the retail owner; malformed
+or unsupported input fails in the host preflight. Allocation failure during
+faithful construction terminates the process under a temporary default-allocator
+policy, including failures on other threads during that process-wide interval.
+It does not repair the original parser or claim arbitrary-input recovery.
+Image, input and cursor subsystem targets remain behind the optional test flag.
+The file helpers and game share the host-only `beachlife_retail_files` library,
+so there is one thread-local VFS binding. Reconstructed gameplay remains open.
 `beachlife_reconstructed_input` qualifies the two byte-state queries, transition
 reset, two signed-integer getters and the first-button transition getter. Its
 generated tests cover all valid indices and byte values, bounded 32-bit getter
@@ -150,11 +154,15 @@ screen: a label, percentage and thin bar on black, adapted from Recharged. It
 appears only when startup takes longer than 0.3 s and fades out to the black
 the game starts from. The optional performance overlay (FPS, system GPU and CPU
 usage, also from Recharged) is host presentation only; the game never sees it.
-After successful normal-Play loading has joined its worker, the game thread
-binds the retained VFS through `retail_files::Session` until teardown. It releases
-that binding before the source and window. Prepare-only, preview, cancellation
-and failure do not create this game binding. This host integration does not call
-the reconstructed configuration loader or startup driver.
+After successful normal-Play loading explicitly joins its worker, a final
+loading phase constructs `StartupConfiguration` on the game thread before the
+fade. Its binding serves the checked immutable configuration snapshot and
+delegates other paths to the retained mount. The actual configuration owner
+survives through the loop and is destroyed before the binding, source and window.
+Prepare-only and preview omit this phase; cancellation and errors do not enter
+the game loop. Generated runtime tests use the same host libraries and loading
+path with an internal fixture factory. The application's public entry always
+uses the fixed retail identity; no runtime setting bypasses that check.
 Renderer-independent settings code handles UTF-8
 paths, bounded settings parsing, atomic replacement and basic source checks.
 

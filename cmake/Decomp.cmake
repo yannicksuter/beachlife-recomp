@@ -1,8 +1,4 @@
-option(BEACHLIFE_BUILD_RECONSTRUCTED_CONFIG "Build native reconstructed configuration libraries" OFF)
 option(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS "Build tests for reconstructed subsystems" OFF)
-if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_CONFIG AND NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
-    return()
-endif()
 if(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS AND NOT BUILD_TESTING)
     message(FATAL_ERROR "BEACHLIFE_BUILD_RECONSTRUCTED_TESTS requires BUILD_TESTING")
 endif()
@@ -105,6 +101,42 @@ target_compile_features(beachlife_reconstructed_startup_config PUBLIC cxx_std_20
 target_link_libraries(beachlife_reconstructed_startup_config PUBLIC beachlife_reconstructed_config_loading)
 set_target_properties(beachlife_reconstructed_startup_config PROPERTIES CXX_EXTENSIONS OFF)
 add_dependencies(beachlife_reconstructed_startup_config verify_reconstructed_source)
+
+# Normal Play constructs this host owner from its completed VFS mount. Its
+# implementation consumes prepared source; no retail input is required to build.
+add_library(beachlife_startup_configuration STATIC
+    src/runtime/startup_configuration.cpp src/runtime/config_snapshot.cpp)
+target_include_directories(beachlife_startup_configuration PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_compile_features(beachlife_startup_configuration PUBLIC cxx_std_20)
+target_link_libraries(beachlife_startup_configuration PRIVATE
+    beachlife_reconstructed_startup_config beachlife_formats)
+set_target_properties(beachlife_startup_configuration PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(beachlife_startup_configuration PRIVATE /W4 /WX)
+else()
+    target_compile_options(beachlife_startup_configuration PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(startup_configuration_tests tests/startup_configuration.cpp)
+    add_executable(startup_configuration_default_tests tests/startup_configuration.cpp)
+    target_compile_definitions(startup_configuration_default_tests PRIVATE
+        STARTUP_CONFIGURATION_DEFAULT_ALLOCATOR)
+    foreach(target startup_configuration_tests startup_configuration_default_tests)
+        target_link_libraries(${target} PRIVATE beachlife_startup_configuration
+            beachlife_reconstructed_startup_config beachlife_formats)
+        set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /W4 /WX)
+        else()
+            target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+    endforeach()
+    add_test(NAME startup_configuration
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_startup_configuration.py"
+            "$<TARGET_FILE:startup_configuration_tests>" "$<TARGET_FILE:startup_configuration_default_tests>")
+    set_tests_properties(startup_configuration PROPERTIES LABELS "reconstructed;headless")
+endif()
 
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()

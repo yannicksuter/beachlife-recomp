@@ -126,7 +126,13 @@ def package(build, output, source=ROOT, toolchain=None):
         copy(source, name)
     system = info["system"]
     if info.get("capability") == "launcher":
-        dependencies.extend(prepare(source, build / 'prepared', verify=True))
+        pin = json.loads(regular_file(source, 'patches/beachlife-decomp/source.json').read_text())
+        if (not isinstance(pin, dict) or set(pin) != {'revision'}
+                or not isinstance(pin['revision'], str)
+                or not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', pin['revision'])):
+            raise ValueError('The reconstructed source pin must contain only a full revision SHA.')
+        dependencies.extend(prepare(source, build / 'prepared', verify=True,
+                                    decomp_revision=pin['revision'], decomp_profile='native'))
         prefix = "beachlife.app/Contents/Resources/" if system == "macos" else ""
         for name in LAUNCHER_RESOURCES:
             copy(build, prefix + 'assets/launcher/' + name)

@@ -1,9 +1,11 @@
 #include "retail_files.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <new>
 #include <stdexcept>
 #include <utility>
 
@@ -31,10 +33,12 @@ bool usable(const File* file) noexcept
 }
 } // namespace
 
-Session::Session(std::shared_ptr<const data::FileSource> source)
+Session::Session(
+    std::shared_ptr<const data::FileSource> source, AllocationFailure allocation_failure)
     : source_(std::move(source))
     , previous_(current_session)
     , thread_(std::this_thread::get_id())
+    , allocation_failure_(allocation_failure)
 {
     if (!source_)
     {
@@ -68,6 +72,14 @@ File* open(const char* filename, const char* mode) noexcept
         const auto cursor = stream->tell();
         return new File{
             current_session->source_, std::move(stream), std::this_thread::get_id(), cursor};
+    }
+    catch (const std::bad_alloc&)
+    {
+        if (current_session->allocation_failure_ == AllocationFailure::terminate_process)
+        {
+            std::abort();
+        }
+        return nullptr;
     }
     catch (...)
     {

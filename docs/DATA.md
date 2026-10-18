@@ -116,16 +116,31 @@ Normal Play queues `ContentStartup::handoff` last with a fresh, single-use
 worker has joined. A late cancellation can leave a staged pointer, so pointer
 presence alone never starts a session. Failed or cancelled loading discards the
 result. Prepare-only and image-preview runs do not create this game handoff.
-After that success gate, normal Play constructs `retail_files::Session` on the
-game thread and retains it until game teardown. The binding is destroyed before
-the adopted source and window; nested sessions restore the previous binding.
+After that success gate, normal Play constructs `StartupConfiguration` on the
+game thread while the loading screen is still active. It reads
+`Data/Script/GameParameters.pis` once into an immutable snapshot and checks the
+audited 1,242-byte English file identity. The actual reconstructed constructor
+then performs its three file opens through that snapshot. Other file paths
+continue to use the retained mount. Missing, truncated or unsupported input
+reports a loading error before publishing the retail owner.
+
+The host owner retains its `retail_files::Session` until game teardown. The
+reconstructed configuration is destroyed first, then the binding, then its
+snapshot and mounted source; all precede the window. Nested sessions restore
+the previous binding.
 Open file handles retain their source and prepared-set lock independently of
 the session, and must be closed on their creating thread. Preparation workers
 never bind this interface. The headless test covers both sides of cancellation,
 rejected/reused results, prior errors, nested and absent bindings, bridge reads,
 offline sessions and source/stream lock lifetimes. The host bridge is shared by
-the game and optional reconstructed file libraries. This handoff does not link
-a reconstructed game driver or parse the startup configuration.
+the game and reconstructed file libraries. The caller-thread owner parses the
+supported configuration; the remaining startup driver and menu are incomplete.
+The original constructor has no qualified allocation-failure recovery. During
+its synchronous construction, the host installs a temporary process-wide
+allocation handler that terminates on default C++ allocation failure and restores
+the previous handler afterwards. This also applies to other threads during that
+short interval. Snapshot/preflight failures remain ordinary loading errors;
+the reconstructed parser and its failure behavior are unchanged.
 
 **Preview title screen** on Game files follows the same startup path and queues
 `Data/Screens/FrontScreen.tga` after mounting. The command-line equivalent is

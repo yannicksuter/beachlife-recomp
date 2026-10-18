@@ -48,7 +48,7 @@ add_library(beachlife_ui STATIC
     "${IMGUI_DIR}/backends/imgui_impl_sdlgpu3.cpp"
     "${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp"
     "${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp"
-    src/launcher/image.cpp)
+    src/launcher/image.cpp src/platform/app_icon.cpp)
 target_include_directories(beachlife_ui SYSTEM PUBLIC
     "${IMGUI_DIR}" "${IMGUI_DIR}/backends" "${IMGUI_DIR}/misc/cpp" "${IMGUI_DIR}/misc/freetype")
 target_include_directories(beachlife_ui SYSTEM PRIVATE "${BEACHLIFE_PREPARED}/stb")
@@ -99,12 +99,36 @@ elseif(APPLE)
     target_link_libraries(beachlife_system_usage PRIVATE "-framework IOKit" "-framework CoreFoundation")
 endif()
 
-target_sources(beachlife PRIVATE src/launcher/launcher.cpp src/launcher/ui.cpp)
-# The game window Play opens: SDL's GPU API (Direct3D 12, Vulkan or Metal) and the game loop.
-target_sources(beachlife PRIVATE src/runtime/runtime.cpp src/runtime/startup.cpp src/runtime/loading_view.cpp src/runtime/content_startup.cpp src/runtime/fps_overlay.cpp
-    src/platform/video_sdl_gpu.cpp src/platform/app_icon.cpp)
-target_include_directories(beachlife PRIVATE "${CMAKE_SOURCE_DIR}/src")
-target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core beachlife_system_usage beachlife_retail_files)
+# Both the application and generated runtime fixture use these exact host libraries.
+add_library(beachlife_launcher STATIC src/launcher/launcher.cpp src/launcher/ui.cpp)
+target_include_directories(beachlife_launcher PUBLIC "${CMAKE_SOURCE_DIR}/src"
+    PRIVATE "${BEACHLIFE_GENERATED}")
+target_link_libraries(beachlife_launcher PUBLIC beachlife_ui beachlife_launcher_core)
+add_dependencies(beachlife_launcher build_identity)
+
+# Play's game window and caller-thread startup, shared with the generated fixture.
+add_library(beachlife_runtime STATIC src/runtime/runtime.cpp src/runtime/startup.cpp
+    src/runtime/loading_view.cpp src/runtime/content_startup.cpp src/runtime/fps_overlay.cpp
+    src/platform/video_sdl_gpu.cpp)
+target_include_directories(beachlife_runtime PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_link_libraries(beachlife_runtime PUBLIC beachlife_ui beachlife_launcher_core
+    beachlife_system_usage beachlife_startup_configuration)
+foreach(target beachlife_launcher beachlife_runtime)
+    target_compile_features(${target} PUBLIC cxx_std_20)
+    set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endforeach()
+target_link_libraries(beachlife PRIVATE beachlife_launcher beachlife_runtime)
+
+# The fixture receives this explicit path because it is not a macOS app bundle.
+set(BEACHLIFE_RESOURCE_DIR "$<TARGET_FILE_DIR:beachlife>/assets/launcher")
+if(APPLE)
+    set(BEACHLIFE_RESOURCE_DIR "$<TARGET_FILE_DIR:beachlife>/../Resources/assets/launcher")
+endif()
 
 if(BUILD_TESTING)
     add_executable(launcher_content_tests tests/launcher_content.cpp)
@@ -112,8 +136,16 @@ if(BUILD_TESTING)
     add_test(NAME launcher_content
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_launcher_content.py"
             "$<TARGET_FILE:launcher_content_tests>")
+    add_executable(runtime_configuration_tests tests/runtime_configuration.cpp)
+    target_link_libraries(runtime_configuration_tests PRIVATE
+        beachlife_launcher beachlife_runtime beachlife_reconstructed_startup_config beachlife_formats)
+    if(WIN32)
+        set_target_properties(runtime_configuration_tests PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif()
+    add_dependencies(runtime_configuration_tests beachlife)
     add_test(NAME game_startup
-        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_startup.py" "$<TARGET_FILE:beachlife>")
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_startup.py"
+            "$<TARGET_FILE:beachlife>" "$<TARGET_FILE:runtime_configuration_tests>" "${BEACHLIFE_RESOURCE_DIR}")
     set_tests_properties(game_startup PROPERTIES SKIP_RETURN_CODE 77)
     # The work behind the game window's loading screen, without a window.
     add_executable(startup_work_tests tests/startup_work.cpp src/runtime/startup.cpp)
@@ -138,7 +170,8 @@ if(BUILD_TESTING)
     target_link_libraries(launcher_update_tests PRIVATE beachlife_launcher_core)
     # On a real GPU: game files, window, device, loop and clean exit; skipped where no GPU device exists.
     add_test(NAME game_runtime
-        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_runtime.py" "$<TARGET_FILE:beachlife>")
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_runtime.py"
+            "$<TARGET_FILE:beachlife>" "$<TARGET_FILE:runtime_configuration_tests>" "${BEACHLIFE_RESOURCE_DIR}")
     set_tests_properties(game_runtime PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME launcher_updates
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/launcher_update_fixture.py"
@@ -149,11 +182,6 @@ set_property(TARGET beachlife APPEND PROPERTY LINK_DEPENDS
     "${CMAKE_SOURCE_DIR}/assets/launcher/logo.png"
     "${IMGUI_DIR}/misc/fonts/Roboto-Medium.ttf")
 
-# SDL uses the bundle Resources directory on macOS and the executable directory elsewhere.
-set(BEACHLIFE_RESOURCE_DIR "$<TARGET_FILE_DIR:beachlife>/assets/launcher")
-if(APPLE)
-    set(BEACHLIFE_RESOURCE_DIR "$<TARGET_FILE_DIR:beachlife>/../Resources/assets/launcher")
-endif()
 add_custom_command(TARGET beachlife POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${BEACHLIFE_RESOURCE_DIR}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
