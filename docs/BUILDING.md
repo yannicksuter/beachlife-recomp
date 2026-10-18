@@ -234,10 +234,15 @@ Generated fixtures cover all 256 valid indices and byte values, require exact
 zero-or-one results, and compare the whole declared object representation and
 surrounding guards. Reset clears only the two observed words and two bytes;
 tests check their widths, unchanged fields and repeated-call idempotence.
-The current declarations describe an observed prefix containing unsigned bytes
-and words, not the complete retail input object. Pointer-bearing layouts need
-separate portability qualification. Out-of-range queries, state production,
-device input and integration with the controller or game loop remain unqualified.
+The declarations describe an observed prefix, not the complete retail input
+object. The fixture supports the earlier unsigned prefix and the recovered
+resource-pointer prefix, locating fields in the actual native layout rather
+than imposing x86 offsets on a 64-bit build. Pointer fields receive null or
+live fixture addresses, and typed values, padding and surrounding bytes remain
+part of the unchanged-representation checks. Qualifying this layout does not
+exercise the cursor setter or Win32 resources. Out-of-range queries, state
+production, device input and integration with the controller or game loop remain
+unqualified.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
