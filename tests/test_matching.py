@@ -280,6 +280,52 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(result['link_abi_support'], [])
         self.assertFalse((self.args.output / 'game/abi').exists())
 
+    def test_support_inline_options_are_scoped_and_fingerprinted(self):
+        support = self.metadata / 'support/iterator.cpp'
+        support.write_text('// generated container fixture\n')
+        self.target['source_compile_options'] = {'iterator.cpp': ['/Ob1']}
+        result = self.run_game()
+        self.assertEqual(self.build_arguments[2], {
+            self.metadata / 'support/operator_delete.cpp': ['/O1'], support: ['/Ob1']})
+        self.assertEqual(result['source_compile_options'], self.target['source_compile_options'])
+        self.assertEqual(result['input_sha256'][str(support)], matching.digest(support))
+        self.assertEqual(result['link_abi_support'], [])
+        self.assertFalse((self.args.output / 'game/abi').exists())
+
+    def test_support_options_preserve_size_optimization_and_add_exception_abi(self):
+        self.target['source_compile_options'] = {'operator_delete.cpp': ['/GX', '/Ob1']}
+        result = self.run_game()
+        self.assertEqual(self.build_arguments[2], {
+            self.metadata / 'support/operator_delete.cpp': ['/O1', '/GX', '/Ob1']})
+        abi = self.args.output / 'game/abi/vc6-except-list.obj'
+        self.assertEqual(self.build_arguments[0], ['/fixed:no', 'generated-import.lib', str(abi)])
+        self.assertEqual(result['source_compile_options'], self.target['source_compile_options'])
+        self.assertEqual(result['link_abi_support'][0]['sha256'], matching.digest(abi))
+        self.assertEqual(result['link_abi_support'][0]['absolute_symbols'], {'__except_list': 0})
+
+    def test_game_and_support_basename_collision_prevents_build(self):
+        (self.metadata / 'support/helper.cpp').write_text('// generated duplicate\n')
+        self.target['source_compile_options'] = {'helper.cpp': ['/Ob1']}
+        with self.assertRaisesRegex(ValueError, 'unique files'):
+            self.run_game()
+        self.assertEqual(self.calls, [])
+        self.assertFalse(self.args.output.exists())
+
+    def test_changed_support_source_is_rejected(self):
+        support = self.metadata / 'support/iterator.cpp'
+        support.write_text('// generated container fixture\n')
+        self.target['source_compile_options'] = {'iterator.cpp': ['/Ob1']}
+
+        def change_after_build(*args, **kwargs):
+            result = self.build(*args, **kwargs)
+            support.write_text('// changed during compilation\n')
+            return result
+
+        with patch.object(self.tool, 'build', side_effect=change_after_build):
+            with self.assertRaisesRegex(ValueError, 'Matching inputs changed'):
+                self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'build', 'compare'])
+
     def test_invalid_configuration_fails_before_any_build_tool(self):
         bad = [None, [], True, '/GX', {'helper.cpp': '/GX'}, {'helper.cpp': [True]},
                {'helper.cpp': [['/GX']]}, {'helper.cpp': ['/GX', '/GX']},
@@ -288,7 +334,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
                {'sub/helper.cpp': ['/GX']}, {'sub\\helper.cpp': ['/GX']},
                {'C:helper.cpp': ['/GX']}, {'/helper.cpp': ['/GX']},
                {'helper.cpp\n': ['/GX']}, {'missing.cpp': ['/GX']},
-               {'operator_delete.cpp': ['/GX']}]
+               {'game.cpp': ['/GX']}]
         for configured in bad:
             with self.subTest(configured=configured):
                 self.target['source_compile_options'] = configured
