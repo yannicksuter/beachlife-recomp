@@ -30,8 +30,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. Eight reconstructed functions match after address normalization,
-totaling 454 bytes. Four helpers also match their raw bytes
+verified. Nine reconstructed functions match after address normalization,
+totaling 497 bytes. Five functions also match their raw bytes
 exactly; the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 

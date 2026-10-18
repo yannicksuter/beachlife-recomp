@@ -144,9 +144,15 @@ is descriptive; the original symbol and exact declaration remain unknown.
 image offset `0x14` on x86. The signed count skips writes when nonpositive;
 the image pointer is still accessed first. Source and destination remain
 unchecked, and sequential byte reads/writes preserve the original behavior
-for overlapping buffers. `CopyTgaPalette` and the partial `TgaImage` layout
-are descriptive, with the preceding fields left opaque; original names and
-the full type declaration remain unknown.
+for overlapping buffers. `CopyTgaPalette` and the observed `TgaImage` layout
+are descriptive; original names and the full type declaration remain unknown.
+
+`src/tga_image_constructor.cpp` reconstructs the 43-byte non-allocating image
+constructor at `0x004ea2b0`. It preserves the supplied dimensions without
+validation, sets 16 bits and two bytes per pixel, and clears the three buffer
+pointers. It leaves the final four bytes of the 32-byte x86 object untouched.
+Verified callers assign pixel storage afterward. `TgaImage` and its field
+names are descriptive; the final field's meaning is still unknown.
 
 ```sh
 python3 tools/matching.py game --compiler /path/to/msvc6.4 \
@@ -155,12 +161,12 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-All eight functions currently match after address normalization, totaling 454
-bytes. The filename hash and the three TGA helpers also match all 156 raw
-bytes exactly. Rebuilt constants/imports in the other functions have different
-addresses, so this is not a byte-identical executable or an established
-whole-program layout. The original
-has stripped relocations; `metadata.csv` identifies the known float and the
+All nine functions currently match after address normalization, totaling 497
+bytes. The filename hash, three TGA helpers and image constructor also match
+all 199 raw bytes exactly. Rebuilt constants/imports in the other functions
+have different addresses, so this is not a byte-identical executable or an
+established whole-program layout. The original has stripped relocations;
+`metadata.csv` identifies the known float and the
 binary-read-mode string and names the verified operator-new import thunk as
 library code. The comparison build keeps relocations so reccmp can identify
 rebuilt literals. The game comparison adds `/MD /G6` to the fixture flags:
@@ -181,14 +187,14 @@ constant; a normalized match alone does not establish a complete binary match.
 
 Each reconstructed function has been checked with a deliberately incorrect
 source variant. Changing the BLE terminator, filename-hash signedness or TGA
-header offset or palette channel order makes the comparison fail. Generated
-semantic tests additionally check the pure helpers' boundary values and palette
-copy overlap behavior. These checks establish the
-reported machine-code matches; they do not recover original variable names,
+header offset, palette channel order or constructor pixel depth makes the
+comparison fail. Generated semantic tests additionally check the pure helpers'
+boundary values, palette copy overlap and untouched constructor storage.
+These checks establish the reported machine-code matches; they do not recover original variable names,
 class declarations or the full game's compiler flags.
 
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There are eight annotated game functions and no
+does not implement game startup. There are nine annotated retail functions and no
 established whole-game function denominator.
