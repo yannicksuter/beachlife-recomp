@@ -1,7 +1,8 @@
 # Matching reconstruction
 
-This directory holds the faithful reconstruction and matching configuration
-inside the Beach Life project. New launcher, data and platform code remains in
+This directory holds the frozen reconstruction baseline and matching setup.
+New retail methods and changes are [patches](../patches/README.md), applied to a
+pinned export for comparison and native builds. New launcher, data and platform code remains in
 `../src/`. Matching uses the original x86 toolchain; native builds use modern
 C++20. Neither build runs the retail executable.
 
@@ -22,7 +23,8 @@ dominant Rich-header stamp. Its PDB also reports code-generator version
 12.00.8799.0. Other Rich records can come from linked libraries; they do not
 establish a different main compiler. Original compiler flags remain unknown.
 The fixture uses `/O2 /Ob0 /Zi /Gd /Gy` as an experiment, not a recovered recipe.
-Component hashes are pinned in [msvc6-sp4.json](msvc6-sp4.json); compiler
+Baseline component hashes are in [msvc6-sp4.json](msvc6-sp4.json); reconstruction
+patches extend the exported configuration when further headers are required. Compiler
 binaries, SDK files and original game files are never committed.
 
 ## Verify the target

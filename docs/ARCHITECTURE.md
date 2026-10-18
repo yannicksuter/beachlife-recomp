@@ -18,11 +18,13 @@ flowchart LR
 ## Source and build boundaries
 
 This repository owns both tracks. `src/` contains new bootstrap, launcher,
-data, runtime and platform code. `decomp/` holds faithful reconstructed retail
-source and matching configuration; no sibling checkout is required. The source
-preparation tool exports `decomp/` from a full local commit ID, records its tree
-and file hashes, and applies faithful patches in order. The opt-in native TGA
-test target already consumes that export; the future native game module will
+data, runtime and platform code. `decomp/` is the frozen reconstruction baseline;
+new retail methods and changes belong in `patches/beachlife-decomp/`. No sibling
+checkout is required. The source preparation tool exports the full local commit
+in `patches/beachlife-decomp/source.json` and records its tree and file hashes.
+Both builds apply `reconstruction-series`; native builds then apply the faithful
+portability `series`. Matching retains the original compiler and ABI. The opt-in
+native image and VFS file targets already consume that export; the future game module will
 use the same boundary. Intentional behavior changes stay in a
 separate optional series, with tweaks off by default. Third-party dependencies
 remain immutable pins; never edit their checkouts in place.
@@ -42,7 +44,10 @@ See [matching setup](../decomp/README.md).
 `beachlife_reconstructed_tga` compiles seven matched helpers with the modern
 compiler and host CRT. Its generated test executable checks data conversion
 and ownership; it does not link those helpers into the production launcher.
-The complete original parser and allocating constructor remain separate work.
+`beachlife_reconstructed_files` runs the three file helpers through an explicit
+VFS binding with fixed-width size arithmetic. Both libraries have generated
+native tests; neither is linked into production gameplay. The complete original
+parser and allocating constructor remain separate work.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.
 

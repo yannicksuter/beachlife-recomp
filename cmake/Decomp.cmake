@@ -7,7 +7,14 @@ if(NOT BUILD_TESTING)
 endif()
 
 # The selected commit must exist locally; configuration never fetches source.
-set(BEACHLIFE_DECOMP_REVISION "c5ac13dc11dc5cb7b4f35ebdebd188b3efd7fda6")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/patches/beachlife-decomp/source.json")
+file(READ "${CMAKE_SOURCE_DIR}/patches/beachlife-decomp/source.json" BEACHLIFE_DECOMP_PIN)
+string(JSON BEACHLIFE_DECOMP_PIN_SIZE LENGTH "${BEACHLIFE_DECOMP_PIN}")
+if(NOT BEACHLIFE_DECOMP_PIN_SIZE EQUAL 1)
+    message(FATAL_ERROR "The reconstructed source pin must contain only a revision")
+endif()
+string(JSON BEACHLIFE_DECOMP_REVISION GET "${BEACHLIFE_DECOMP_PIN}" revision)
 set(BEACHLIFE_DECOMP_PREPARED "${CMAKE_BINARY_DIR}/prepared")
 set(BEACHLIFE_DECOMP_SOURCE "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/src")
 set(BEACHLIFE_DECOMP_PREPARE_COMMAND

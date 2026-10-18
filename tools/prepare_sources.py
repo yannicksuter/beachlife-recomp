@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype')
 DECOMP = 'beachlife-decomp'
+DECOMP_PROFILES = ('native', 'matching')
 
 
 def git(root, *args):
@@ -44,18 +45,22 @@ def no_symlinks(path, root):
         path = path.parent
 
 
-def patch_paths(source, name):
+def patch_paths(source, name, series_filename='series'):
+    if series_filename not in ('series', 'reconstruction-series'):
+        raise ValueError('Invalid patch series filename')
     folder = Path(source) / 'patches' / name
-    series = folder / 'series'
+    series = folder / series_filename
     no_symlinks(series, Path(source))
     result = []
     if series.exists():
-        for line in series.read_text().splitlines():
+        if not series.is_file():
+            raise ValueError(f'Invalid patch series: {series}')
+        for line in series.read_text(encoding='utf-8').splitlines():
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
             path = folder / line
-            if (Path(line).is_absolute() or '\\' in line or ':' in line
+            if (Path(line).is_absolute() or '\\' in line or ':' in line or '\0' in line
                     or '..' in Path(line).parts or path.is_symlink()
                     or not path.is_file() or not path.resolve().is_relative_to(folder.resolve())):
                 raise ValueError(f'Invalid patch entry: {line}')
@@ -83,7 +88,9 @@ def inputs(source, name):
     return submodule, identity, patches
 
 
-def decomp_inputs(source, revision):
+def decomp_inputs(source, revision, decomp_profile='native'):
+    if decomp_profile not in DECOMP_PROFILES:
+        raise ValueError('Invalid decomp profile; choose native or matching')
     if not isinstance(revision, str) or not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', revision):
         raise ValueError('The decomp revision must be a full local commit SHA')
     if Path(git(source, 'rev-parse', '--show-toplevel')).resolve() != source:
@@ -113,11 +120,20 @@ def decomp_inputs(source, revision):
         files[name] = hashlib.sha256(body).hexdigest()
     if not files:
         raise ValueError('The selected commit has no decomp source files')
-    patches = patch_paths(source, DECOMP)
-    series = source / 'patches' / DECOMP / 'series'
+    series_names = ('reconstruction-series', 'series') if decomp_profile == 'native' else ('reconstruction-series',)
+    patches, series, seen = [], [], set()
+    for filename in series_names:
+        for path in patch_paths(source, DECOMP, filename):
+            resolved = path.resolve()
+            if resolved in seen:
+                raise ValueError(f'Duplicate patch entry across series: {path.name}')
+            seen.add(resolved)
+            patches.append(path)
+        path = source / 'patches' / DECOMP / filename
+        series.append({'path': path.relative_to(source).as_posix(),
+                       'sha256': sha256(path) if path.is_file() else None})
     identity = {'name': DECOMP, 'commit': revision, 'subtree': 'decomp', 'tree': tree,
-                'series': {'path': series.relative_to(source).as_posix(),
-                           'sha256': sha256(series) if series.is_file() else None},
+                'profile': decomp_profile, 'series': series,
                 'patches': [{'path': p.relative_to(source).as_posix(), 'sha256': sha256(p)} for p in patches]}
     return identity, patches, files
 
@@ -141,7 +157,8 @@ def export_tree(repository, revision, archive, staged):
                 target.chmod(member.mode & 0o777)
 
 
-def prepare(source, output, names=DEPENDENCIES, verify=False, decomp_revision=None):
+def prepare(source, output, names=DEPENDENCIES, verify=False, decomp_revision=None,
+            decomp_profile='native'):
     source, requested_output = Path(source).resolve(), Path(output).absolute()
     if requested_output.is_symlink():
         raise ValueError('Prepared output cannot be symlinked')
@@ -157,7 +174,9 @@ def prepare(source, output, names=DEPENDENCIES, verify=False, decomp_revision=No
         raise ValueError('Invalid dependency name; use decomp_revision for the local export')
     if len(set(names)) != len(names):
         raise ValueError('Duplicate prepared dependency name')
-    local = decomp_inputs(source, decomp_revision) if decomp_revision is not None else None
+    if decomp_profile not in DECOMP_PROFILES:
+        raise ValueError('Invalid decomp profile; choose native or matching')
+    local = decomp_inputs(source, decomp_revision, decomp_profile) if decomp_revision is not None else None
     if not verify:
         output.mkdir(parents=True, exist_ok=True)
     identities = []
@@ -230,13 +249,16 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--verify', action='store_true')
     parser.add_argument('--decomp-revision', help='full local commit SHA containing decomp/')
+    parser.add_argument('--decomp-profile', choices=DECOMP_PROFILES, default='native',
+                        help='local decomp patch profile (default: native)')
     parser.add_argument('--decomp-only', action='store_true', help='skip third-party dependencies')
     args = parser.parse_args(argv)
     if args.decomp_only and not args.decomp_revision:
         parser.error('--decomp-only requires --decomp-revision')
     try:
         prepare(ROOT, args.output, names=() if args.decomp_only else DEPENDENCIES,
-                verify=args.verify, decomp_revision=args.decomp_revision)
+                verify=args.verify, decomp_revision=args.decomp_revision,
+                decomp_profile=args.decomp_profile)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, str(error) + '\n')
     return 0

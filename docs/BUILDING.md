@@ -79,17 +79,18 @@ cmake --build build/reconstructed-tga \
 ctest --test-dir build/reconstructed-tga -R '^reconstructed_(tga|files)$' --output-on-failure
 ```
 
-`BUILD_TESTING` must be enabled. `cmake/Decomp.cmake` owns the full source commit
-pin; that object must exist locally, so shallow checkouts may need more history
-before configuration. Configuration never fetches it. To advance the source,
-commit the reconstructed increment first, then update the pin in a separate
-native integration change. Uncommitted edits under `decomp/` are rejected;
+`BUILD_TESTING` must be enabled. `patches/beachlife-decomp/source.json` owns the
+full baseline commit pin shared with matching; that object must exist locally,
+so shallow checkouts may need more history before configuration. Configuration
+never fetches it. New reconstructed increments are patches listed in
+`reconstruction-series`; native portability patches follow in `series`.
+Keep the baseline intact. Uncommitted edits under `decomp/` are rejected;
 unrelated host edits do not affect the export.
 
 Configuration prepares `build/reconstructed-tga/prepared/beachlife-decomp/`
 and its adjacent JSON manifest. Every library build, including an otherwise
 up-to-date build, verifies the revision, source hashes, ordered patch series
-and prepared files. Edit source or patches and reconfigure; never edit prepared
+and prepared files. Update reconstruction or portability patches and reconfigure; never edit prepared
 files. The matching-only VC6 release wrapper is excluded in favor of the host
 CRT. The default build leaves these targets disabled.
 
