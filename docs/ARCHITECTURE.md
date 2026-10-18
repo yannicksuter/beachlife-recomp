@@ -48,8 +48,10 @@ and ownership; it does not link those helpers into the production launcher.
 startup configuration reader through an explicit VFS binding with fixed-width
 size arithmetic. `beachlife_reconstructed_config` compiles four matched lexer
 helpers. `beachlife_reconstructed_config_tokens` exercises token initialization
-and cleanup through the host allocator. These libraries have generated native
-tests; none is linked into production gameplay. Complete configuration and image
+and cleanup through the host allocator. `beachlife_reconstructed_config_allocation`
+qualifies bounded table allocation with the legacy default failure result.
+These libraries have generated native tests; none is linked into production
+gameplay. Complete configuration and image
 parsers and the allocating image constructor remain separate work.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.

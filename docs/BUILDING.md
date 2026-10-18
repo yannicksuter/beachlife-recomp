@@ -76,7 +76,8 @@ cmake --preset release -B build/reconstructed-tga \
   -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
 cmake --build build/reconstructed-tga \
   --target reconstructed_tga_tests reconstructed_files_tests \
-    reconstructed_config_tests reconstructed_config_tokens_tests --parallel
+    reconstructed_config_tests reconstructed_config_tokens_tests \
+    reconstructed_config_allocation_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -133,8 +134,15 @@ These helpers do not yet form a complete configuration parser.
 The token lifecycle target runs matched initialization and cleanup through the
 host C++ allocator. Generated fixtures verify borrowed data remains unchanged,
 owned scalar and array allocations are released once in the original order,
-and owner fields and surrounding guards are unchanged. The token allocator and
-complete parser remain separate integration work.
+and owner fields and surrounding guards are unchanged.
+
+The allocation target adds a native `std::nothrow` adaptation for the legacy
+default allocator's null-on-failure result. Generated fixtures check bounded
+table sizes, zero-size allocation, initialized records and injected failures.
+They preserve the overwritten old pointer and unchanged count on failure;
+test-owned storage is recovered separately. Custom allocation handlers and
+oversized or wrapping counts remain unqualified. The complete parser remains
+separate integration work.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
