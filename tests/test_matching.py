@@ -202,6 +202,22 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertIn(str(self.sdk_pin), result['input_sha256'])
         self.assertFalse((self.args.output / 'game/abi').exists())
 
+    def test_comparator_error_rejects_even_complete_matching_rows(self):
+        self.register_generated_functions()
+        compare = self.tool.run
+
+        def rejected_metadata(arguments, folder):
+            compare(arguments, folder)
+            return "[ERROR] In csv file fixture.csv: CsvInvalidEntityTypeError: line 1, 'data'\n"
+
+        self.tool.run = rejected_metadata
+        with patch.object(matching, 'read_va', return_value=b'data'):
+            with self.assertRaisesRegex(ValueError, 'Comparator reported an error'):
+                self.run_game()
+        self.assertIn('CsvInvalidEntityTypeError',
+                      (self.args.reports / 'comparison.log').read_text())
+        self.assertFalse((self.args.reports / 'result.json').exists())
+
     def test_missing_or_changed_sdk_header_prevents_build(self):
         original = self.sdk_header.read_bytes()
         for contents in (None, original + b'changed'):

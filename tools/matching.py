@@ -527,6 +527,8 @@ def game(tool, args):
     output = tool.run([tool.reccmp, '--target', 'BEACHLIFE', '--json',
                        str(reports / 'comparison.json'), '--no-color'], folder)
     (reports / 'comparison.log').write_text(output)
+    if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
+        raise ValueError('Comparator reported an error; inspect comparison.log.')
     report = json.loads((reports / 'comparison.json').read_text())
     def compare_functions(items):
         functions = []
