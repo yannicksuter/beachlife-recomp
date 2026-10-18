@@ -1,0 +1,102 @@
+Reconstruct the observed surface ownership cleanup.
+Preserve the active gate, buffer deletion, Surface7 release and field clears.
+Keep interface pointers and unrelated entry state unchanged.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -119,6 +119,7 @@
+     ScreenPoint fixture_screen_position = { 2, 3 };
+     fixture_screen_renderer.surfaces = fixture_screen_surfaces;
+     fixture_screen_renderer.PositionSurface(0, fixture_screen_position);
++    fixture_screen_surface.Cleanup();
+     ScreenItem fixture_screen_item = { 0 };
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
+     FrameClock fixture_frame_clock = { 0 };
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -13,11 +13,14 @@
+ // HRESULT is a signed 32-bit result; unused method signatures remain opaque.
+ struct DirectDrawSurface7Prefix;
+ typedef int SurfaceResult;
++typedef unsigned int(SURFACE_STDCALL* SurfaceReleaseMethod)(DirectDrawSurface7Prefix*);
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceStatusMethod)(DirectDrawSurface7Prefix*);
+ 
+ struct DirectDrawSurface7VtablePrefix
+ {
+-    void* unused_00[24];
++    void* unused_00[2];
++    SurfaceReleaseMethod Release;
++    void* unused_0c[21];
+     SurfaceStatusMethod IsLost;
+     void* unused_64[2];
+     SurfaceStatusMethod Restore;
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -1,5 +1,7 @@
+ #ifndef STARTUP_SCREEN_RENDERER_H
+ #define STARTUP_SCREEN_RENDERER_H
++
++#include "startup_directdraw_surface.h"
+ 
+ // Observed two-word value and prefixes; original names and declarations unknown.
+ struct ScreenPoint
+@@ -10,8 +12,18 @@
+ 
+ struct ScreenSurfacePosition
+ {
+-    unsigned char unknown_00[0x1c];
++    unsigned char active;
++    unsigned char software;
++    unsigned char unknown_02[2];
++    unsigned short* pixels;
++    DirectDrawSurface7Prefix* surface;
++    unsigned char unknown_0c[4];
++    unsigned int width;
++    unsigned int height;
++    unsigned int pitch;
+     ScreenPoint position;
++
++    void Cleanup();
+ };
+ 
+ struct ScreenRequestRenderer
+--- /dev/null
++++ b/src/startup_surface_cleanup.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040ba60
++void ScreenSurfacePosition::Cleanup()
++{
++    if (active)
++    {
++        if (software)
++        {
++            delete[] pixels;
++            pixels = 0;
++        }
++        else
++        {
++            surface->vtable->Release(surface);
++        }
++        active = 0;
++        width = 0;
++        height = 0;
++        pitch = 0;
++    }
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -376,6 +376,12 @@
+       "size": 27,
+       "name": "ScreenRequestRenderer::PositionSurface",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x0040ba60",
++      "size": 69,
++      "name": "ScreenSurfacePosition::Cleanup",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [
