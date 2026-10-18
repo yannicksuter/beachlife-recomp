@@ -339,3 +339,26 @@ endif()
 add_test(NAME reconstructed_pool_lock COMMAND reconstructed_pool_lock_tests)
 set_tests_properties(reconstructed_pool_lock PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
+
+add_library(beachlife_reconstructed_surface_pixels STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_pixel_access.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/surface_error_sink.cpp")
+target_include_directories(beachlife_reconstructed_surface_pixels PUBLIC
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_surface_pixels PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_surface_pixels PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_surface_pixels verify_reconstructed_source)
+
+add_executable(reconstructed_surface_pixels_tests tests/reconstructed_surface_pixels.cpp)
+target_link_libraries(reconstructed_surface_pixels_tests PRIVATE
+    beachlife_reconstructed_surface_pixels)
+set_target_properties(reconstructed_surface_pixels_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_surface_pixels_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_surface_pixels_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_surface_pixels COMMAND reconstructed_surface_pixels_tests)
+set_tests_properties(reconstructed_surface_pixels PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)

@@ -66,7 +66,7 @@ struct Frame
 {
     unsigned char before[32];
     ScreenSurfacePosition object;
-    unsigned char prepared; // Observed adjacent byte; not needed by Cleanup declaration.
+    unsigned char prepared; // Extra trailing canary, separate from object.prepared.
     unsigned char after[32];
 };
 

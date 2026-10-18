@@ -134,7 +134,8 @@ cmake --build build/reconstructed-tga \
     reconstructed_config_loading_tests reconstructed_startup_config_tests \
     startup_configuration_tests startup_configuration_default_tests \
     reconstructed_input_tests reconstructed_cursor_tests \
-    reconstructed_surfaces_tests reconstructed_pool_lock_tests --parallel
+    reconstructed_surfaces_tests reconstructed_surface_pixels_tests \
+    reconstructed_pool_lock_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -167,6 +168,13 @@ verifies the wait sequence and cleanup on normal and exceptional host lifetimes.
 Its deterministic single-threaded provider exercises no operating-system
 synchronization. Concurrent behavior, original parent unwind machinery and
 production use remain separate qualification steps.
+
+The surface-pixel target compiles the actual pixel-access method and error
+handler. Generated lock providers check descriptor initialization, arguments,
+signed success results and state changes during the callback. The same fixture
+covers software pixels, null results, valid table aliases and unchanged guards.
+Native layouts follow the compiled pointer types; these tests require no graphics
+device and do not qualify original x86 object layouts or a rendering backend.
 
 The generated fixtures check palette/pixel offsets, channel conversion, row
 orientation, raw and run-length packets, empty images and buffer ownership.

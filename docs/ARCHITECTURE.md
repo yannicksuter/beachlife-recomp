@@ -119,6 +119,13 @@ verify the selected object, callback-visible state and final writes, including
 table changes during release. Surface creation and a rendering backend remain
 separate dependencies; this library is not connected to production gameplay.
 
+`beachlife_reconstructed_surface_pixels` exercises the pixel-access method and
+its actual error sink. Generated lock providers verify descriptor initialization,
+signed result handling, software pixels and state changes during a callback.
+The same prepared headers retain the existing surface ownership tests. These
+headless checks do not initialize a graphics device or connect rendering to the
+game; original surface creation and the rendering backend remain open.
+
 `beachlife_reconstructed_pool_lock` tests the exported acquisition method and
 cleanup against one shared 32-bit word. Generated providers verify fast and
 fallback acquisition, wait values, adaptive state and cleanup after normal or
