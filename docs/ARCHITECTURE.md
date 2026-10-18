@@ -46,8 +46,8 @@ compiler and host CRT. Its generated test executable checks data conversion
 and ownership; it does not link those helpers into the production launcher.
 `beachlife_reconstructed_files` runs the three allocating/size helpers and the
 startup configuration reader through an explicit VFS binding with fixed-width
-size arithmetic. `beachlife_reconstructed_config` compiles six matched helpers
-for scanning and counting tokens. `beachlife_reconstructed_config_tokens` exercises
+size arithmetic. `beachlife_reconstructed_config` compiles eight matched helpers
+for scanning, counting tokens and classifying values. `beachlife_reconstructed_config_tokens` exercises
 token initialization and cleanup through the host allocator.
 `beachlife_reconstructed_config_allocation`
 qualifies bounded table allocation with the legacy default failure result.

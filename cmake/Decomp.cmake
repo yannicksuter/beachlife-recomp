@@ -84,7 +84,9 @@ add_library(beachlife_reconstructed_config STATIC
     "${BEACHLIFE_DECOMP_SOURCE}/startup_config_name_extent.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_config_value_extent.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_config_quote_seeker.cpp"
-    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_count.cpp")
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_count.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_string_extent.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_value_classifier.cpp")
 target_include_directories(beachlife_reconstructed_config PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
 target_compile_features(beachlife_reconstructed_config PUBLIC cxx_std_20)
 set_target_properties(beachlife_reconstructed_config PROPERTIES CXX_EXTENSIONS OFF)

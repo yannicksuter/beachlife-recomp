@@ -625,6 +625,166 @@ void constructed_tokens_and_mixed_scanners()
     expect(counter_excluded != 0, "Malformed counter inputs were not screened out.");
 }
 
+// These value helpers have distinct domains: only the quoted-extent helper can
+// receive null for a nonpositive size. The classifier always reads byte zero.
+struct ValueExpected
+{
+    int quoted_extent;
+    int kind;
+};
+
+std::size_t value_cases = 0;
+std::size_t value_null_cases = 0;
+std::size_t value_nonpositive_cases = 0;
+std::size_t value_numeric_precedence_cases = 0;
+
+ValueExpected value_oracle(std::span<const unsigned char> bytes, int size)
+{
+    const auto counted = bytes.first(static_cast<std::size_t>(std::max(size, 0)));
+    const auto first = std::find(counted.begin(), counted.end(), '"');
+    const auto second =
+        first == counted.end() ? counted.end() : std::find(first + 1, counted.end(), '"');
+    const int extent = second == counted.end() ? 0 : static_cast<int>(second - counted.begin()) + 1;
+    constexpr std::string_view numeric_prefixes = "0123456789.-";
+    const bool numeric =
+        numeric_prefixes.find(static_cast<char>(bytes.front())) != std::string_view::npos;
+    // Full delimiter counting is independent of the original countdown loop.
+    const bool quoted = std::count(counted.begin(), counted.end(), '"') >= 2;
+    return {extent, numeric ? 2 : (quoted ? 1 : 0)};
+}
+
+void check_values(const Bytes& bytes, int size)
+{
+    if (bytes.empty() || (size > 0 && static_cast<std::size_t>(size) > bytes.size()))
+    {
+        throw std::logic_error("Value fixtures require byte zero and their positive extent.");
+    }
+    const auto expected = value_oracle(bytes, size);
+    const auto allocation = static_cast<std::size_t>(std::max(size, 1));
+    std::unique_ptr<char[]> storage(new char[allocation]);
+    std::memcpy(storage.get(), bytes.data(), allocation);
+    const auto unchanged = [&]
+    {
+        expect(std::memcmp(storage.get(), bytes.data(), allocation) == 0,
+            "A configuration value helper modified its input.");
+    };
+    expect(GetConfigQuotedValueExtent(storage.get(), size) == expected.quoted_extent,
+        "Quoted value extent differs from the independent delimiter-position model.");
+    unchanged();
+    expect(ClassifyConfigValue(storage.get(), size) == expected.kind,
+        "Value classifier differs from the numeric-prefix and quote-count model.");
+    unchanged();
+    ++value_cases;
+    if (size <= 0)
+    {
+        ++value_nonpositive_cases;
+    }
+    if (expected.kind == 2 && expected.quoted_extent != 0)
+    {
+        ++value_numeric_precedence_cases;
+    }
+}
+
+void known_values(const Bytes& bytes, int size, const ValueExpected& expected)
+{
+    const auto generated = value_oracle(bytes, size);
+    expect(generated.quoted_extent == expected.quoted_extent && generated.kind == expected.kind,
+        "Generated value expectations differ from a literal case.");
+    check_values(bytes, size);
+}
+
+void value_preconditions_and_known_results()
+{
+    for (const int size : {0, -1, -2, -31, std::numeric_limits<int>::min()})
+    {
+        expect(GetConfigQuotedValueExtent(nullptr, size) == 0,
+            "Nonpositive quoted value extents must not read the buffer.");
+        ++value_null_cases;
+    }
+    known_values({'-'}, std::numeric_limits<int>::min(), {0, 2});
+    known_values({'+'}, 0, {0, 0});
+    known_values({'.'}, 0, {0, 2});
+    known_values({'0'}, -1, {0, 2});
+    known_values({'"'}, 0, {0, 0});
+    known_values({'"'}, 1, {0, 0});
+    known_values({'"', '"'}, 2, {2, 1});
+    known_values({'a', '"', 'b', '"', '"'}, 5, {4, 1});
+    known_values({'0', '"', '"'}, 3, {3, 2});
+    known_values({'-', '"', '"'}, 3, {3, 2});
+    known_values({'.', '"', '"'}, 3, {3, 2});
+    known_values({'+', '"', '"'}, 3, {3, 1});
+    known_values({' ', '1', '"', '"'}, 4, {4, 1});
+    known_values({'\\', '"', '\\', '"'}, 4, {4, 1});
+    known_values({0, '"', 0x80, '"'}, 4, {4, 1});
+    known_values({'\'', '\''}, 2, {0, 0});
+    known_values({'x', '"', '"'}, 2, {0, 0});
+    known_values({'x', '"', '"'}, 3, {3, 1});
+}
+
+void exhaustive_value_inputs()
+{
+    for (unsigned int first = 0; first != 256; ++first)
+    {
+        const auto byte = static_cast<unsigned char>(first);
+        for (const int size : {std::numeric_limits<int>::min(), -1024, -31, -1, 0, 1})
+        {
+            check_values({byte}, size);
+        }
+        for (unsigned int second = 0; second != 256; ++second)
+        {
+            const auto next = static_cast<unsigned char>(second);
+            check_values({byte, next}, 1);
+            check_values({byte, next}, 2);
+            check_values({byte, next, '"'}, 3);
+        }
+        check_values({byte, '"', 0, 0x80, '"', '\\'}, 6);
+    }
+}
+
+void bounded_value_quotes_and_mixtures()
+{
+    for (const std::size_t size : {2, 3, 4, 7, 16, 31, 64, 129})
+    {
+        for (const unsigned char fill : {97, 0, 128, 92})
+        {
+            Bytes bytes(size, fill);
+            check_values(bytes, static_cast<int>(size));
+            for (std::size_t first = 0; first < size; ++first)
+            {
+                bytes[first] = '"';
+                check_values(bytes, static_cast<int>(size));
+                for (std::size_t second = first + 1; second < size; ++second)
+                {
+                    bytes[second] = '"';
+                    // The second quote is respectively outside and inside the
+                    // declared range. Allocations stop at that exact boundary.
+                    check_values(bytes, static_cast<int>(second));
+                    check_values(bytes, static_cast<int>(second + 1));
+                    bytes[second] = fill;
+                }
+                bytes[first] = fill;
+            }
+        }
+    }
+    std::uint32_t state = 0x4ec4a0u;
+    for (unsigned int run = 0; run != 4096; ++run)
+    {
+        const auto size = static_cast<std::size_t>(1 + run % 257);
+        Bytes bytes(size);
+        for (auto& byte : bytes)
+        {
+            state = state * 1664525u + 1013904223u;
+            byte = static_cast<unsigned char>(state >> 24);
+        }
+        for (std::size_t index = run % 11; index < size; index += 11)
+        {
+            bytes[index] = '"';
+        }
+        check_values(bytes, static_cast<int>(size));
+        check_values(bytes, static_cast<int>(run % (size + 1)));
+    }
+}
+
 } // namespace
 
 int main()
@@ -642,6 +802,15 @@ int main()
                   << " generated lexer cases, " << seeker_cases << " seeker cases and "
                   << counter_cases << " safe counter cases; " << counter_excluded
                   << " unsafe counter inputs excluded\n";
+        const auto previous_checks = checks;
+        value_preconditions_and_known_results();
+        exhaustive_value_inputs();
+        bounded_value_quotes_and_mixtures();
+        std::cout << checks - previous_checks << " value-helper checks passed across "
+                  << value_cases << " generated cases and " << value_null_cases
+                  << " null extent cases (" << value_nonpositive_cases << " nonpositive extents, "
+                  << value_numeric_precedence_cases << " numeric-prefix precedence cases); "
+                  << checks << " total checks\n";
     }
     catch (const std::exception& error)
     {
