@@ -35,8 +35,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 22 reconstructed game functions match after address normalization,
-totaling 1,617 bytes. 12 functions also match all 750 raw bytes exactly. An
+verified. 23 reconstructed game functions match after address normalization,
+totaling 1,677 bytes. 13 functions also match all 810 raw bytes exactly. An
 11-byte runtime release wrapper is verified separately as library support;
 the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
@@ -51,8 +51,8 @@ helpers. `beachlife_reconstructed_config_tokens` exercises token initialization
 and cleanup through the host allocator. These libraries have generated native
 tests; none is linked into production gameplay. Complete configuration and image
 parsers and the allocating image constructor remain separate work.
-The original timestamp capture uses x86 assembly and remains outside the modern
-native targets until its clock adaptation is qualified.
+The original timestamp methods use x86 assembly and remain outside the modern
+native targets until their clock adaptation is qualified.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.
 
