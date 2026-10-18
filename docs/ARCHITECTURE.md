@@ -36,9 +36,9 @@ is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
 verified. 51 reconstructed game functions match after address normalization,
-totaling 4,263 bytes. 22 functions also match all 1,090 raw bytes exactly. An
-11-byte runtime release wrapper is verified separately as library support;
-the full game layout remains unknown.
+totaling 4,263 bytes. 22 functions also match all 1,090 raw bytes exactly.
+Separate reconstructed library support totals 22 bytes across two methods.
+The full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 
 Prepared matching targets can opt into `stdcall_imports`, a DLL mapping with
