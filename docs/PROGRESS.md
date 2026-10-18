@@ -76,6 +76,15 @@ manually. The current comparison result supplies completed scores and raw-byte
 status for every method registered in the matching target. Address annotations,
 source fingerprints, target identity and method sizes must agree.
 
+Functions with unresolved provenance can use the optional
+`unclassified_functions` target and result group. Its records have the same
+`name`, `address` and `size` fields as game entries, use `FUNCTION` annotations,
+and require split `kind: unclassified`. They pass the same strict comparison;
+missing or nonmatching entries fail the run. Raw byte equality is reported
+separately. Addresses must be unique across game, library and unclassified
+groups. The report shows unclassified matches separately and excludes them
+from game and library totals until their classification is established.
+
 The three linkage/execution fields are booleans backed by separate build/test
 evidence. Native tests do not imply runtime linkage. `note` states the remaining
 work; optional top-level `native_note` describes native test scope. Names are
