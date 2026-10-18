@@ -99,6 +99,9 @@ below. It does not enable the image, input or cursor targets, or link reconstruc
 code into the launcher. Both reconstructed build options default to `OFF`.
 The VFS session and qualified input, allocation and lifetime limits below still
 apply to callers; building the libraries does not establish production startup.
+The host-only `beachlife_retail_files` library is shared with the default game
+target; normal Play binds its completed VFS on the game thread. This does not
+enable or link reconstructed source in the default build.
 
 ## Reconstructed subsystem tests
 
@@ -389,7 +392,11 @@ readiness is created and reports the skipped game-loading integration. The
 `startup_work` covers the order, progress, cancellation and errors of the work
 behind the game window's loading screen. `content_startup` runs its real
 check/prepare/mount/read worker without a GPU, including cancelled extraction,
-resumption, binding persistence, offline reuse and repair.
+resumption, binding persistence, offline reuse and repair. It also checks the
+joined result through the actual thread-local file bridge: worker isolation,
+nested binding restoration, cancellation/failure, retained handles and teardown.
+The production call site binds only after successful normal-Play loading;
+headless coverage does not establish GPU presentation or reconstructed startup.
 Generated fixtures cover
 pins, patch ordering, tampering, version changes, archive payloads, provenance,
 ABI bounds and release decisions.

@@ -6,6 +6,7 @@
 #include "runtime/content_startup.h"
 #include "runtime/fps_overlay.h"
 #include "runtime/loading_view.h"
+#include "runtime/retail_files.h"
 #include "runtime/startup.h"
 
 #include "imgui.h"
@@ -18,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -223,6 +225,8 @@ int run_game(const Options& options)
     // future game consumers; they must die before it and the window do. A staged
     // result alone is insufficient: a leave during loading never reaches here.
     std::shared_ptr<const data::FileSource> game_content;
+    // Destroy the caller-thread binding before releasing its retained source.
+    std::optional<retail_files::Session> game_files;
     if (game_result)
     {
         game_content = std::move(game_result->source);
@@ -230,6 +234,7 @@ int run_game(const Options& options)
         {
             throw std::runtime_error("Loading completed without mounted game data.");
         }
+        game_files.emplace(game_content);
     }
     if (!options.preview_screen.empty())
     {

@@ -60,6 +60,13 @@ add_dependencies(beachlife_ui verify_prepared)
 # in-place updates. HTTPS goes through the system (WinHTTP, or the system's libcurl
 # loaded at run time); unpacking packages uses the pinned zlib (cmake/Cabinet.cmake).
 find_package(Threads REQUIRED)
+# One thread-local VFS binding shared by the game and reconstructed file helpers.
+add_library(beachlife_retail_files STATIC src/runtime/retail_files.cpp)
+target_include_directories(beachlife_retail_files PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_compile_features(beachlife_retail_files PUBLIC cxx_std_20)
+set_target_properties(beachlife_retail_files PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(beachlife_retail_files PUBLIC beachlife_data Threads::Threads)
+
 add_library(beachlife_launcher_core STATIC
     src/launcher/settings.cpp
     src/launcher/content_service.cpp
@@ -97,7 +104,7 @@ target_sources(beachlife PRIVATE src/launcher/launcher.cpp src/launcher/ui.cpp)
 target_sources(beachlife PRIVATE src/runtime/runtime.cpp src/runtime/startup.cpp src/runtime/loading_view.cpp src/runtime/content_startup.cpp src/runtime/fps_overlay.cpp
     src/platform/video_sdl_gpu.cpp src/platform/app_icon.cpp)
 target_include_directories(beachlife PRIVATE "${CMAKE_SOURCE_DIR}/src")
-target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core beachlife_system_usage)
+target_link_libraries(beachlife PRIVATE beachlife_ui beachlife_launcher_core beachlife_system_usage beachlife_retail_files)
 
 if(BUILD_TESTING)
     add_executable(launcher_content_tests tests/launcher_content.cpp)
@@ -123,7 +130,7 @@ if(BUILD_TESTING)
     add_test(NAME fps_overlay_layout COMMAND fps_overlay_layout_tests)
     add_executable(content_startup_tests tests/content_startup.cpp src/runtime/content_startup.cpp src/runtime/startup.cpp)
     target_include_directories(content_startup_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
-    target_link_libraries(content_startup_tests PRIVATE beachlife_launcher_core)
+    target_link_libraries(content_startup_tests PRIVATE beachlife_launcher_core beachlife_retail_files)
     add_test(NAME content_startup
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_content_startup.py" "$<TARGET_FILE:content_startup_tests>")
     # Packages written the way tools/package_build.py writes them, then the C++ checks.

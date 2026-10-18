@@ -88,8 +88,10 @@ library graph independently of `BUILD_TESTING`, through the same pinned export
 and verification target. The subsystem test option also enables it; test
 executables and the image, input and cursor libraries remain behind that option.
 Both options default to off. These libraries have generated native tests; none
-is linked into production gameplay. A runtime consumer still needs the explicit
-VFS session, qualified input/error domain and owner lifetime described above.
+is linked into production gameplay. Their file helpers and the game share the
+host-only `beachlife_retail_files` library, so there is one thread-local VFS
+binding. A reconstructed runtime consumer still needs the qualified input/error
+domain and owner lifetime described above.
 `beachlife_reconstructed_input` qualifies the two byte-state queries, transition
 reset, two signed-integer getters and the first-button transition getter. Its
 generated tests cover all valid indices and byte values, bounded 32-bit getter
@@ -147,6 +149,11 @@ screen: a label, percentage and thin bar on black, adapted from Recharged. It
 appears only when startup takes longer than 0.3 s and fades out to the black
 the game starts from. The optional performance overlay (FPS, system GPU and CPU
 usage, also from Recharged) is host presentation only; the game never sees it.
+After successful normal-Play loading has joined its worker, the game thread
+binds the retained VFS through `retail_files::Session` until teardown. It releases
+that binding before the source and window. Prepare-only, preview, cancellation
+and failure do not create this game binding. This host integration does not call
+the reconstructed configuration loader or startup driver.
 Renderer-independent settings code handles UTF-8
 paths, bounded settings parsing, atomic replacement and basic source checks.
 

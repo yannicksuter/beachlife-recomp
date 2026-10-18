@@ -1,5 +1,6 @@
 #include "runtime/content_startup.h"
 #include "data/content_prepare.h"
+#include "runtime/retail_files.h"
 
 #include <algorithm>
 #include <atomic>
@@ -9,10 +10,13 @@
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <source_location>
 
 using namespace beachlife;
 using namespace std::chrono_literals;
+namespace files = runtime::retail_files;
+using BridgeFile = std::unique_ptr<files::File, decltype(&files::close)>;
 
 void expect(bool value, const std::source_location& where = std::source_location::current())
 {
@@ -220,7 +224,29 @@ void check_repair_locked(const std::filesystem::path& image, const std::filesyst
     expect(locked);
 }
 
-void check_handoff(const std::filesystem::path& image, const std::filesystem::path& cache)
+void check_bridge_bytes(files::File* file, std::string_view expected)
+{
+    expect(file != nullptr);
+    files::Position position = 0;
+    expect(files::seek(file, 0, files::SeekOrigin::end) == 0);
+    expect(files::position(file, &position) == 0 && position == expected.size());
+    expect(files::seek(file, 0, files::SeekOrigin::begin) == 0);
+    std::string actual(expected.size(), '\0');
+    expect(files::read(actual.data(), 1, actual.size(), file) == actual.size());
+    expect(actual == expected);
+    expect(files::position(file, &position) == 0 && position == expected.size());
+    unsigned char extra = 0;
+    expect(files::read(&extra, 1, 1, file) == 0);
+}
+
+void check_bound_bytes(const char* path, std::string_view expected)
+{
+    BridgeFile file(files::open(path, "rb"), files::close);
+    check_bridge_bytes(file.get(), expected);
+}
+
+void check_handoff(
+    const std::filesystem::path& image, const std::filesystem::path& cache, bool nested)
 {
     namespace fs = std::filesystem;
     using Result = runtime::ContentStartup::Result;
@@ -229,6 +255,27 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
     const auto offline = image.parent_path() / "handoff-offline.iso";
     launcher::Settings settings;
     settings.source = launcher::path_utf8(fs::absolute(image).lexically_normal());
+    expect(files::open("BeachLife.ini", "rb") == nullptr);
+    auto previous_probe = std::make_shared<Probe>();
+    previous_probe->body = {'p', 'r', 'i', 'o', 'r'};
+    previous_probe->declared = previous_probe->available = previous_probe->body.size();
+    std::optional<files::Session> previous;
+    if (nested)
+    {
+        previous.emplace(std::make_shared<ProbeSource>(previous_probe));
+    }
+    const auto check_previous = [&]
+    {
+        if (nested)
+        {
+            check_bound_bytes("BeachLife.ini", "prior");
+        }
+        else
+        {
+            expect(files::open("BeachLife.ini", "rb") == nullptr);
+        }
+    };
+    check_previous();
 
     // Rejected destinations do not start work. Queuing consumes a fresh result
     // even if its eventual work fails, so it cannot carry a stale prior source.
@@ -261,6 +308,7 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
         expect(!result->source);
         reject_handoff(content, result);
     }
+    check_previous();
 
     const auto complete = [&](bool cached)
     {
@@ -280,11 +328,14 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
                     [run = std::move(step.run), &worker](runtime::StartupProgress& progress)
                     {
                         worker = std::this_thread::get_id();
+                        expect(files::open("BeachLife.ini", "rb") == nullptr);
                         run(progress);
+                        expect(files::open("BeachLife.ini", "rb") == nullptr);
                     }}});
             settle(work);
             work.rethrow();
             expect(work.status().ready && work.status().step == 3);
+            check_previous(); // worker publication never changes the caller's binding
         } // Join before accessing the worker's result or observation fields.
         expect(worker != caller && worker != std::thread::id{});
         expect(prepared != cached);
@@ -313,6 +364,28 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
     settings = launcher::load_settings(config);
     expect(!settings.content.identity.empty());
 
+    // Adopt only a joined, successful result. The binding retains its source;
+    // an open bridge handle then retains both source and lock after the binding.
+    source = complete(true);
+    weak = source;
+    BridgeFile retained(nullptr, files::close);
+    {
+        files::Session game_files(source);
+        source.reset();
+        expect(!weak.expired());
+        check_bound_bytes("BeachLife.ini", "[Fixture]\nLanguage=English\n");
+        retained.reset(files::open("Data/loose.txt", "rb"));
+        expect(retained != nullptr);
+        check_repair_locked(image, cache);
+    }
+    check_previous();
+    expect(!weak.expired());
+    check_repair_locked(image, cache);
+    check_bridge_bytes(retained.get(), std::string_view("loose file\0\xff", 12));
+    retained.reset();
+    expect(weak.expired());
+    expect(data::prepare_content(image, cache).files_reused == 5);
+
     // Repeated warm and disconnected sessions use fresh results and the saved
     // mount. Each survives the startup owner, and each releases its last lock.
     for (bool disconnected : {false, true})
@@ -323,11 +396,14 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
         }
         source = complete(true);
         weak = source;
-        auto file = source->open("BeachLife.ini");
-        check_bytes(*file, "[Fixture]\nLanguage=English\n");
-        file.reset();
-        source.reset();
+        {
+            files::Session game_files(source);
+            source.reset();
+            expect(!weak.expired());
+            check_bound_bytes("BeachLife.ini", "[Fixture]\nLanguage=English\n");
+        }
         expect(weak.expired());
+        check_previous();
         if (disconnected)
         {
             fs::rename(offline, image);
@@ -364,6 +440,7 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
         expect(!result->source);
         reject_handoff(content, result);
     }
+    check_previous();
     expect(data::prepare_content(image, cache).files_reused == 5);
 
     for (bool staged : {false, true})
@@ -379,6 +456,7 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
                 {step.label,
                     [run = std::move(step.run), &gate, staged](runtime::StartupProgress& progress)
                     {
+                        expect(files::open("BeachLife.ini", "rb") == nullptr);
                         if (staged)
                         {
                             run(progress);
@@ -388,10 +466,12 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
                         {
                             run(progress);
                         }
+                        expect(files::open("BeachLife.ini", "rb") == nullptr);
                     }}});
             gate.wait();
             const auto status = work->status();
             expect(status.step == 2 && !status.ready && !status.failed);
+            check_previous();
             work->cancel();
             gate.release();
             work.reset(); // join before reading or discarding the staged result
@@ -410,10 +490,37 @@ void check_handoff(const std::filesystem::path& image, const std::filesystem::pa
         expect(weak.expired());
         expect(data::prepare_content(image, cache).files_reused == 5);
         expect(launcher::load_settings(config) == settings);
+        check_previous();
     }
+
+    // Leaving after work completes still discards the result without binding.
+    source = complete(true);
+    check_previous();
+    source.reset();
+    expect(data::prepare_content(image, cache).files_reused == 5);
+
+    // A later game-thread exception tears down its binding and retained source.
+    bool raised = false;
+    try
+    {
+        auto adopted = complete(true);
+        weak = adopted;
+        files::Session game_files(std::move(adopted));
+        check_bound_bytes("BeachLife.ini", "[Fixture]\nLanguage=English\n");
+        throw std::runtime_error("Generated game-thread failure");
+    }
+    catch (const std::runtime_error& error)
+    {
+        raised = std::string_view(error.what()) == "Generated game-thread failure";
+    }
+    expect(raised && weak.expired());
+    check_previous();
     source = complete(true); // cancellation/errors cannot poison the next Play
     source.reset();
     expect(data::prepare_content(image, cache).files_reused == 5);
+    check_previous();
+    previous.reset();
+    expect(files::open("BeachLife.ini", "rb") == nullptr);
 }
 
 void check_preview(const std::filesystem::path& image, const std::filesystem::path& cache)
@@ -737,7 +844,9 @@ int main(int argc, char** argv)
         const std::filesystem::path image(argv[1]), cache(argv[2]);
         check_setup(image, cache.parent_path() / "setup-cache");
         check_late_cancel(image, cache.parent_path() / "late-cancel-cache");
-        check_handoff(image, cache.parent_path() / "handoff-cache");
+        expect(files::open("BeachLife.ini", "rb") == nullptr);
+        check_handoff(image, cache.parent_path() / "handoff-cache", false);
+        check_handoff(image, cache.parent_path() / "nested-handoff-cache", true);
         const auto prepared = data::prepare_content(image, cache);
         const auto offline = image.parent_path() / "offline.iso";
         std::filesystem::rename(image, offline);
@@ -768,6 +877,7 @@ int main(int argc, char** argv)
         expect(weak.expired());
         expect(data::prepare_content(image, cache).files_reused == 5);
         check_preview(image, cache);
+        expect(files::open("BeachLife.ini", "rb") == nullptr);
 
         // Observe real byte progress before the next controlled read completes.
         auto probe = std::make_shared<Probe>();
@@ -858,6 +968,8 @@ int main(int argc, char** argv)
             << "Queued VFS ownership, byte progress, limits and read errors passed.\n"
             << "Completed VFS handoff, single-use results, joined cancellation, offline sessions "
                "and source/stream lock ownership passed.\n"
+            << "Caller-thread VFS binding, worker isolation, nested restoration, bridge reads "
+               "and retained-handle teardown passed.\n"
             << "Screen preview pixels, offline mount lifetime, errors and cancellation passed.\n";
         return 0;
     }

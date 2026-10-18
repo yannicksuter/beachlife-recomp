@@ -33,11 +33,10 @@ add_library(beachlife_reconstructed_files STATIC
     "${BEACHLIFE_DECOMP_SOURCE}/file_size.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/file_loader.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/ble_loader.cpp"
-    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_read.cpp"
-    "${CMAKE_SOURCE_DIR}/src/runtime/retail_files.cpp")
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_read.cpp")
 target_include_directories(beachlife_reconstructed_files PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_compile_features(beachlife_reconstructed_files PUBLIC cxx_std_20)
-target_link_libraries(beachlife_reconstructed_files PUBLIC beachlife_data Threads::Threads)
+target_link_libraries(beachlife_reconstructed_files PUBLIC beachlife_retail_files)
 set_target_properties(beachlife_reconstructed_files PROPERTIES CXX_EXTENSIONS OFF)
 add_dependencies(beachlife_reconstructed_files verify_reconstructed_source)
 

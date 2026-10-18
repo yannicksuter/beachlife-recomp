@@ -116,12 +116,16 @@ Normal Play queues `ContentStartup::handoff` last with a fresh, single-use
 worker has joined. A late cancellation can leave a staged pointer, so pointer
 presence alone never starts a session. Failed or cancelled loading discards the
 result. Prepare-only and image-preview runs do not create this game handoff.
-The retained source survives the startup object and queued work. Future
-thread-local file bindings must be created on their consumer's thread after
-that success gate and destroyed before the source. The headless test covers
-both sides of cancellation, rejected/reused results, prior errors and independent
-source/stream lock lifetimes. This handoff does not link a reconstructed game
-driver or parse the startup configuration.
+After that success gate, normal Play constructs `retail_files::Session` on the
+game thread and retains it until game teardown. The binding is destroyed before
+the adopted source and window; nested sessions restore the previous binding.
+Open file handles retain their source and prepared-set lock independently of
+the session, and must be closed on their creating thread. Preparation workers
+never bind this interface. The headless test covers both sides of cancellation,
+rejected/reused results, prior errors, nested and absent bindings, bridge reads,
+offline sessions and source/stream lock lifetimes. The host bridge is shared by
+the game and optional reconstructed file libraries. This handoff does not link
+a reconstructed game driver or parse the startup configuration.
 
 **Preview title screen** on Game files follows the same startup path and queues
 `Data/Screens/FrontScreen.tga` after mounting. The command-line equivalent is
