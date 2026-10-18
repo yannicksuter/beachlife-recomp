@@ -93,7 +93,7 @@ cmake --preset release -B build/reconstructed-tga \
 cmake --build build/reconstructed-tga \
   --target reconstructed_tga_tests reconstructed_files_tests \
     reconstructed_config_tests reconstructed_config_tokens_tests \
-    reconstructed_config_allocation_tests --parallel
+    reconstructed_config_allocation_tests reconstructed_config_parser_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -148,7 +148,7 @@ nonpositive size; quote seeking needs an extra readable byte after a positive
 extent. Tests retain the earlier exact-boundary checks and screen composed
 counter inputs with an independent read-bound model before running unchecked
 code. Malformed cases outside that domain are excluded explicitly. These
-helpers do not yet form a complete configuration parser. Value classification
+helpers are also used by the separate token-parser target. Value classification
 checks the numeric prefix before counting quotes and requires readable byte zero
 even for nonpositive sizes. The separate quoted-value helper returns the extent
 through the second double quote, wherever it occurs; it does not validate string
@@ -164,8 +164,20 @@ default allocator's null-on-failure result. Generated fixtures check bounded
 table sizes, zero-size allocation, initialized records and injected failures.
 They preserve the overwritten old pointer and unchanged count on failure;
 test-owned storage is recovered separately. Custom allocation handlers and
-oversized or wrapping counts remain unqualified. The complete parser remains
-separate integration work.
+oversized or wrapping counts remain unqualified.
+
+The token-parser target adds matched name/value assignment, decimal-prefix
+conversion and token parsing. Generated fixtures check copied bytes, terminators,
+record order and retained old allocations against an independent byte model.
+Callers provide initialized records with enough capacity and one readable
+lookahead byte; the parser does not enforce capacity or update the stored count.
+Unsafe composed inputs are screened before executing unchecked source. Numeric
+fixtures use exact integers of magnitude at most 1,000,000 with at most one zero
+fractional digit, including signed zero. General fractional parity with the
+original x87 arithmetic, allocation failure and invalid pointer/extent domains
+remain unqualified. The setters use ordinary successful host allocations here;
+the allocation target's failure adaptation does not extend to these methods.
+This target does not load configuration files or connect a game startup driver.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and

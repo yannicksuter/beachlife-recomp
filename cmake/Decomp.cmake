@@ -141,3 +141,26 @@ else()
 endif()
 add_test(NAME reconstructed_config_allocation COMMAND reconstructed_config_allocation_tests)
 set_tests_properties(reconstructed_config_allocation PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_config_parser STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_name.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_decimal.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_value.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_parser.cpp")
+target_include_directories(beachlife_reconstructed_config_parser PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_config_parser PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_config_parser PUBLIC
+    beachlife_reconstructed_config beachlife_reconstructed_config_tokens)
+set_target_properties(beachlife_reconstructed_config_parser PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_config_parser verify_reconstructed_source)
+
+add_executable(reconstructed_config_parser_tests tests/reconstructed_config_parser.cpp)
+target_link_libraries(reconstructed_config_parser_tests PRIVATE beachlife_reconstructed_config_parser)
+set_target_properties(reconstructed_config_parser_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_config_parser_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_config_parser_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_config_parser COMMAND reconstructed_config_parser_tests)
+set_tests_properties(reconstructed_config_parser PROPERTIES LABELS "reconstructed;headless")

@@ -51,8 +51,13 @@ for scanning, counting tokens and classifying values. `beachlife_reconstructed_c
 token initialization and cleanup through the host allocator.
 `beachlife_reconstructed_config_allocation`
 qualifies bounded table allocation with the legacy default failure result.
+`beachlife_reconstructed_config_parser` combines matched name/value assignment,
+decimal-prefix conversion and token parsing with the existing scanner and token
+libraries. Generated fixtures qualify bounded records and ownership with
+successful allocations; arbitrary fractional arithmetic and allocation failure
+remain separate boundaries.
 These libraries have generated native tests; none is linked into production
-gameplay. Complete configuration and image parsers and the allocating image
+gameplay. Configuration file orchestration, the complete image parser and the allocating image
 constructor remain separate work.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
