@@ -8,6 +8,7 @@ Dear ImGui with settings/source logic independent of rendering.
 ```mermaid
 flowchart LR
     decomp[decomp: reconstructed retail source] --> pin[Revision export and patches]
+    pin --> tests[Native subsystem tests]
     pin --> game[Future native game module]
     launcher[New launcher and runtime] --> game
     game --> platform[New platform services]
@@ -18,9 +19,11 @@ flowchart LR
 
 This repository owns both tracks. `src/` contains new bootstrap, launcher,
 data, runtime and platform code. `decomp/` holds faithful reconstructed retail
-source and matching configuration; no sibling checkout is required. The future
-native game module will consume a revision-identified export of that source
-with faithful portability patches. Intentional behavior changes stay in a
+source and matching configuration; no sibling checkout is required. The source
+preparation tool exports `decomp/` from a full local commit ID, records its tree
+and file hashes, and applies faithful patches in order. The opt-in native TGA
+test target already consumes that export; the future native game module will
+use the same boundary. Intentional behavior changes stay in a
 separate optional series, with tweaks off by default. Third-party dependencies
 remain immutable pins; never edit their checkouts in place.
 
@@ -35,6 +38,13 @@ totaling 1,123 bytes. Six functions also match all 527 raw bytes exactly. An
 11-byte runtime release wrapper is verified separately as library support;
 the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
+
+`beachlife_reconstructed_tga` compiles seven matched helpers with the modern
+compiler and host CRT. Its generated test executable checks data conversion
+and ownership; it does not link those helpers into the production launcher.
+The complete original parser and allocating constructor remain separate work.
+See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
+for the pinned build and verification commands.
 
 The host is 64-bit. x86_64 and ARM64 are distinct architectures, even though
 both targets use little-endian storage. File/save layouts, pointer widths,

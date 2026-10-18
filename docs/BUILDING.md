@@ -1,8 +1,8 @@
 # Building
 
-The current executable is the graphical launcher. Gameplay and content-language
-detection are not implemented yet. Building requires no original game files or
-decomp source.
+The current executable is the graphical launcher and native runtime. Gameplay
+and broader content-language detection are not implemented yet. Building requires
+no original game files or matching compiler.
 
 ## Requirements and presets
 
@@ -64,6 +64,45 @@ adds braces but does not change behavior. Only line numbers (`__LINE__`,
 numbers goes between `// clang-format off` and `// clang-format on` with a
 reason. Format a reconstructed file before writing patches for it, so the
 patches apply to formatted source.
+
+## Reconstructed subsystem tests
+
+The optional TGA target compiles seven reconstructed image helpers using the
+native compiler and CRT. It consumes a committed source export with faithful
+patches through the same preparation tool as dependencies. Enable it explicitly:
+
+```sh
+cmake --preset release -B build/reconstructed-tga \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
+cmake --build build/reconstructed-tga --target reconstructed_tga_tests --parallel
+ctest --test-dir build/reconstructed-tga -R '^reconstructed_tga$' --output-on-failure
+```
+
+`BUILD_TESTING` must be enabled. `cmake/Decomp.cmake` owns the full source commit
+pin; that object must exist locally, so shallow checkouts may need more history
+before configuration. Configuration never fetches it. To advance the source,
+commit the reconstructed increment first, then update the pin in a separate
+native integration change. Uncommitted edits under `decomp/` are rejected;
+unrelated host edits do not affect the export.
+
+Configuration prepares `build/reconstructed-tga/prepared/beachlife-decomp/`
+and its adjacent JSON manifest. Every library build, including an otherwise
+up-to-date build, verifies the revision, source hashes, ordered patch series
+and prepared files. Edit source or patches and reconfigure; never edit prepared
+files. The matching-only VC6 release wrapper is excluded in favor of the host
+CRT. The default build leaves this target disabled.
+
+The generated fixtures check palette/pixel offsets, channel conversion, row
+orientation, raw and run-length packets, empty images and buffer ownership.
+They require no ISO or extracted data. The target is a native test executable;
+the production launcher still uses its existing decoder. A passing test does
+not establish a complete TGA parser, original ABI matching or gameplay.
+
+For a separate Linux sanitizer build, add
+`-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
+`-DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'` at configuration.
+Windows cross builds need an explicit execution environment to run CTest,
+as described below. Hosted CI and hardware qualification remain separate checks.
 
 ## Linux
 

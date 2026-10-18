@@ -90,6 +90,7 @@ tests/               generated-fixture and native startup checks
 docs/                architecture, building, installation and releases
 ```
 
-Retail code lives only in `decomp/`. The port will consume revision-identified
-exports and apply patches to build trees. New host code lives here. See
+Retail code lives only in `decomp/`. Optional native subsystem tests consume
+revision-pinned exports and apply faithful patches in build trees; the production
+game module is still ahead. See [subsystem tests](docs/BUILDING.md#reconstructed-subsystem-tests),
 [ARCHITECTURE](docs/ARCHITECTURE.md) and [patch rules](patches/README.md).

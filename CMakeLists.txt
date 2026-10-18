@@ -106,6 +106,7 @@ endif()
 include(cmake/Launcher.cmake)
 include(cmake/Cabinet.cmake)
 include(cmake/Matching.cmake)
+include(cmake/Decomp.cmake)
 
 if(BUILD_TESTING)
     add_test(NAME bootstrap_cli
