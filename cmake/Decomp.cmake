@@ -215,3 +215,23 @@ set(BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/re
 add_test(NAME reconstructed_startup_config COMMAND reconstructed_startup_config_tests
     "${BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT}")
 set_tests_properties(reconstructed_startup_config PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_input STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_state_predicate.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_state_one.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_input_transition_reset.cpp")
+target_include_directories(beachlife_reconstructed_input PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_input PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_input PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_input verify_reconstructed_source)
+
+add_executable(reconstructed_input_tests tests/reconstructed_input.cpp)
+target_link_libraries(reconstructed_input_tests PRIVATE beachlife_reconstructed_input)
+set_target_properties(reconstructed_input_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_input_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_input_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_input COMMAND reconstructed_input_tests)
+set_tests_properties(reconstructed_input PROPERTIES LABELS "reconstructed;headless")

@@ -94,7 +94,8 @@ cmake --build build/reconstructed-tga \
   --target reconstructed_tga_tests reconstructed_files_tests \
     reconstructed_config_tests reconstructed_config_tokens_tests \
     reconstructed_config_allocation_tests reconstructed_config_parser_tests \
-    reconstructed_config_loading_tests reconstructed_startup_config_tests --parallel
+    reconstructed_config_loading_tests reconstructed_startup_config_tests \
+    reconstructed_input_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -227,6 +228,16 @@ completion guard rejects an early zero-status fatal exit while preserving
 CTest's normal exit-code checks. `BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT` selects its separate
 generated folder, defaulting to the build tree. These targets do not link the
 owner or a complete startup driver into the production game.
+
+The input target checks two matched byte-state queries and transition reset.
+Generated fixtures cover all 256 valid indices and byte values, require exact
+zero-or-one results, and compare the whole declared object representation and
+surrounding guards. Reset clears only the two observed words and two bytes;
+tests check their widths, unchanged fields and repeated-call idempotence.
+The current declarations describe an observed prefix containing unsigned bytes
+and words, not the complete retail input object. Pointer-bearing layouts need
+separate portability qualification. Out-of-range queries, state production,
+device input and integration with the controller or game loop remain unqualified.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and

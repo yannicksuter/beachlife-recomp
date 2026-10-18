@@ -79,6 +79,11 @@ general error/unwind paths and general floating-point parity remain separate,
 as do the complete image parser and allocating constructor.
 These libraries have generated native tests; none is linked into production
 gameplay.
+`beachlife_reconstructed_input` qualifies the two byte-state queries and
+transition reset over the observed unsigned prefix. Its generated tests cover
+all valid indices and byte values, exact returned bytes, clear widths,
+unchanged storage and idempotence. Pointer-bearing layouts, input production,
+device services and controller integration remain separate qualifications.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
