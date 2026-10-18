@@ -164,6 +164,20 @@ def check(executable, api_test):
         finally:
             held.terminate(); held.communicate(timeout=10)
         assert json.loads(run('prepare', ascii_image, api_cache))['reused'] == 5
+
+        # System ancestors can be aliases, as with macOS /var -> /private/var.
+        # Public preparation resolves them before using the low-level storage API.
+        if host_links:
+            actual = base/'api-real'; actual.mkdir()
+            alias = base/'api-alias'
+            try:
+                alias.symlink_to(actual, target_is_directory=True)
+            except OSError:
+                print('Ancestor alias check unavailable: host lacks link privileges.')
+            else:
+                (actual/'source.iso').write_bytes(original)
+                subprocess.run([api_test, str(alias/'source.iso'), str(alias/'cache')],
+                               check=True, timeout=30)
     print('ISO preparation, identity, offline VFS, repair, path safety and process-lock recovery passed.')
 
 

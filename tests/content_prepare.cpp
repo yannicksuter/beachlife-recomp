@@ -168,7 +168,9 @@ int main(int argc, char** argv)
         expect(prepare_content(image, changing_cache).files_reused == 5);
 
         // Write/publication failure leaves the original destination untouched.
-        const auto scratch = cache.parent_path() / "staging";
+        // The low-level staging API requires canonical ancestors, unlike the
+        // public preparation API (which accepts aliases such as macOS /var).
+        const auto scratch = std::filesystem::canonical(cache.parent_path()) / "staging";
         std::filesystem::create_directory(scratch);
         std::filesystem::create_directory(scratch / "directory");
         {
