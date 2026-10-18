@@ -94,3 +94,7 @@ Retail code lives only in `decomp/`. Optional native subsystem tests consume
 revision-pinned exports and apply faithful patches in build trees; the production
 game module is still ahead. See [subsystem tests](docs/BUILDING.md#reconstructed-subsystem-tests),
 [ARCHITECTURE](docs/ARCHITECTURE.md) and [patch rules](patches/README.md).
+
+The [progress report tool](docs/PROGRESS.md) turns a local audited split inventory
+and matching results into an offline HTML overview of methods, source units,
+matching, native linking and unmapped coverage.

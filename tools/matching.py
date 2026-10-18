@@ -271,6 +271,15 @@ def game(tool, args):
     support_sources = sorted(support.glob('*.cpp'))
     if not sources:
         raise ValueError('No matching source files found.')
+    # Keep progress reports tied to the source/configuration actually compared.
+    inputs = sorted(set([*sources, *source.rglob('*.h'), *support_sources, TARGET,
+                         ROOT / 'decomp/metadata.csv', ROOT / 'decomp/msvcrt.def',
+                         ROOT / 'decomp/msvc6-sp4.json', ROOT / 'decomp/requirements.txt',
+                         Path(__file__).resolve()]))
+    def input_hashes():
+        return {str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path): digest(path)
+                for path in inputs}
+    fingerprints = input_hashes()
     folder = tool.output / 'game'
     folder.mkdir(parents=True, exist_ok=True)
     entry = folder / 'entry.cpp'
@@ -335,10 +344,13 @@ def game(tool, args):
         return functions
     functions = compare_functions(target['functions'])
     library_functions = compare_functions(target.get('library_functions', []))
+    if input_hashes() != fingerprints:
+        raise ValueError('Matching inputs changed during comparison; rerun the comparison.')
     result = {'target': target['id'], 'original_sha256': target['sha256'],
               'compiler': 'VC6 SP4 / C2 12.0.8799.0', 'reccmp': '0.1.7',
               'functions': functions, 'scope': 'Only listed functions; whole-game denominator unknown.',
               'library_functions': library_functions,
+              'input_sha256': fingerprints,
               'comparison_layout': 'Relocations enabled in rebuilt comparison image; original remains unchanged.'}
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
