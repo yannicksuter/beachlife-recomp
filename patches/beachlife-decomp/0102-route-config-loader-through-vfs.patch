@@ -1,0 +1,61 @@
+Route the configuration loader through the existing mounted VFS.
+
+Preserve three opens, unchecked seek/position/read results and the final NUL.
+Keep the legacy low-32-bit count and nonthrowing temporary allocation result.
+Only bounded, fully initialized buffer domains and successful temporary/payload
+allocations are qualified; no missing-data repair or null guard is added.
+
+--- a/src/startup_config_load_parse.cpp
++++ b/src/startup_config_load_parse.cpp
+@@ -1,31 +1,38 @@
+ #include "startup_config_tokens.h"
+ #include "startup_config_scan.h"
+-#include <stdio.h>
++#include "runtime/retail_files.h"
++
++#include <bit>
++#include <cstdint>
++#include <new>
++
++namespace files = beachlife::runtime::retail_files;
+ 
+ int ReadConfigFileBuffer(const char* filename, char* buffer, unsigned int size);
+ 
+-static inline int GetUncheckedConfigFileSize(const char* filename)
++static inline std::int32_t GetUncheckedConfigFileSize(const char* filename)
+ {
+-    FILE* file = fopen(filename, "rb");
++    files::File* file = files::open(filename, "rb");
+     if (!file)
+         return 0;
+-    fpos_t position;
+-    fseek(file, 0, SEEK_END);
+-    fgetpos(file, &position);
+-    fclose(file);
+-    return (int)position;
++    files::Position position;
++    files::seek(file, 0, files::SeekOrigin::end);
++    files::position(file, &position);
++    files::close(file);
++    return files::low_position(position);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004ec830
+ void ConfigTokenBuffer::LoadAndParse(const char* filename)
+ {
+-    FILE* file = fopen(filename, "rb");
++    files::File* file = files::open(filename, "rb");
+     if (!file)
+         return;
+-    fclose(file);
+-    int size = GetUncheckedConfigFileSize(filename) + 1;
+-    char* buffer = new char[size];
+-    ReadConfigFileBuffer(filename, buffer, size);
++    files::close(file);
++    const std::uint32_t bytes = static_cast<std::uint32_t>(GetUncheckedConfigFileSize(filename)) + 1u;
++    const std::int32_t size = std::bit_cast<std::int32_t>(bytes);
++    char* buffer = new (std::nothrow) char[bytes];
++    ReadConfigFileBuffer(filename, buffer, bytes);
+     buffer[size - 1] = 0;
+     if (AllocateTokens(CountConfigTokens(buffer, size)))
+         ParseTokens(buffer, size);

@@ -1,0 +1,83 @@
+Reconstruct configuration entry appending through the actual allocator.
+Preserve fixed buffers, list publication order and unchecked copies.
+Original declarations remain descriptive; native callers must respect the bounded domain.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -66,7 +66,10 @@
+     fixture_config_tokens.ParseTokens("generated", 9);
+     StartupConfig* owner = fixture_owner;
+     if (owner)
++    {
++        owner->Append("generated", false, 7, 1.0f, 0);
+         owner->~StartupConfig();
++    }
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/startup_config_append.cpp
+@@ -0,0 +1,38 @@
++#include "startup_config_owner.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004ecdb0
++void StartupConfig::Append(const char* name, bool flag, int integer, float number, const char* text)
++{
++    StartupConfigNode* node;
++    if (head)
++    {
++        StartupConfigNode* last = head;
++        while (last->next)
++        {
++            last = last->next;
++        }
++        last->next = new StartupConfigNode;
++        node = last->next;
++    }
++    else
++    {
++        head = new StartupConfigNode;
++        node = head;
++    }
++    node->next = 0;
++    strcpy(node->name, name);
++    node->flag = flag;
++    node->integer = integer;
++    node->number = number;
++    if (text)
++    {
++        node->text = new char[256];
++        strcpy(node->text, text);
++    }
++    else
++    {
++        node->text = 0;
++    }
++}
+--- a/src/startup_config_owner.h
++++ b/src/startup_config_owner.h
+@@ -28,6 +28,7 @@
+ {
+     StartupConfigNode* head;
+     ~StartupConfig();
++    void Append(const char* name, bool flag, int integer, float number, const char* text);
+ };
+ 
+ #endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -214,6 +214,12 @@
+       "size": 116,
+       "name": "StartupConfig::~StartupConfig",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ecdb0",
++      "size": 224,
++      "name": "StartupConfig::Append",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

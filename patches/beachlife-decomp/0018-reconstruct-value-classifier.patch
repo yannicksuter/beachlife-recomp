@@ -1,0 +1,63 @@
+Reconstruct numeric-prefix and double-quote value classification.
+Preserve numeric precedence and the byte-zero read for nonpositive extents.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -54,6 +54,7 @@
+     fixture_config_offset = SeekConfigQuotedName("generated", 9);
+     fixture_config_offset = CountConfigTokens("'generated' 1\r", 14);
+     fixture_config_offset = GetConfigQuotedValueExtent("generated", 9);
++    fixture_config_offset = ClassifyConfigValue("generated", 9);
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- a/src/startup_config_scan.h
++++ b/src/startup_config_scan.h
+@@ -13,4 +13,6 @@
+ 
+ int GetConfigQuotedValueExtent(const char* buffer, int size);
+ 
++int ClassifyConfigValue(const char* buffer, int size);
++
+ #endif
+--- /dev/null
++++ b/src/startup_config_value_classifier.cpp
+@@ -0,0 +1,23 @@
++#include "startup_config_scan.h"
++
++// FUNCTION: BEACHLIFE 0x004ec4a0
++int ClassifyConfigValue(const char* buffer, int size)
++{
++    if ((buffer[0] >= '0' && buffer[0] <= '9') || buffer[0] == '.' || buffer[0] == '-')
++    {
++        return 2;
++    }
++    int remaining = 2;
++    for (int index = 0; index < size; ++index)
++    {
++        if (buffer[index] == '"')
++        {
++            --remaining;
++            if (remaining == 0)
++            {
++                return 1;
++            }
++        }
++    }
++    return 0;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -178,6 +178,12 @@
+       "size": 41,
+       "name": "GetConfigQuotedValueExtent",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec4a0",
++      "size": 70,
++      "name": "ClassifyConfigValue",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

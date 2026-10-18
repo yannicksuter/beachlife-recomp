@@ -1,0 +1,75 @@
+Reconstruct token value assignment through the matched classifier and converter.
+Preserve allocation/publication order, positional text slicing and overwritten storage.
+Modern numeric qualification remains bounded separately from x87 matching.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -61,6 +61,7 @@
+     {
+         StartupConfigOwnerState fixture_owner_state;
+     }
++    fixture_config_token.AssignValue("7", 1);
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/startup_config_token_value.cpp
+@@ -0,0 +1,33 @@
++#include "startup_config_tokens.h"
++#include "startup_config_scan.h"
++#include "startup_config_decimal.h"
++
++// FUNCTION: BEACHLIFE 0x004ec580
++void ConfigToken::AssignValue(const char* buffer, int size)
++{
++    kind = ClassifyConfigValue(buffer, size);
++    switch (kind)
++    {
++    case 2:
++    {
++        float* value = new float;
++        *value = ConvertConfigDecimalPrefix(buffer);
++        number = value;
++        break;
++    }
++    case 1:
++        int length = GetConfigQuotedValueExtent(buffer, size);
++        if (length)
++        {
++            char* value = new char[length - 1];
++            length -= 2;
++            value[length] = 0;
++            while (length--)
++            {
++                value[length] = buffer[length + 1];
++            }
++            text = value;
++        }
++        break;
++    }
++}
+--- a/src/startup_config_tokens.h
++++ b/src/startup_config_tokens.h
+@@ -6,6 +6,7 @@
+ {
+     void Reset();
+     void AssignName(const char* buffer, int size);
++    void AssignValue(const char* buffer, int size);
+ 
+     char* name;
+     unsigned int kind;
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -196,6 +196,12 @@
+       "size": 11,
+       "name": "StartupConfigOwnerState::~StartupConfigOwnerState",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec580",
++      "size": 126,
++      "name": "ConfigToken::AssignValue",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

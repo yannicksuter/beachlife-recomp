@@ -1,0 +1,92 @@
+Reconstruct decimal-prefix conversion with the original x87 arithmetic.
+Identify the five verified float constants in the stripped original image.
+Preserve rounding and unsupported grammar; modern floating-point parity is separate.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2,6 +2,7 @@
+ #include "startup_config_tokens.h"
+ #include "startup_config_scan.h"
+ #include "startup_timer.h"
++#include "startup_config_decimal.h"
+ extern "C"
+ {
+     int _fltused = 0;
+@@ -55,6 +56,7 @@
+     fixture_config_offset = CountConfigTokens("'generated' 1\r", 14);
+     fixture_config_offset = GetConfigQuotedValueExtent("generated", 9);
+     fixture_config_offset = ClassifyConfigValue("generated", 9);
++    fixture_result = ConvertConfigDecimalPrefix("generated");
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -3,3 +3,8 @@
+ 0x004fc204,string,3,
+ 0x004ee6fc,library,6,??2@YAPAXI@Z
+ 0x004ee72a,library,6,_free
++0x004f3318,float,4,
++0x004f335c,float,4,
++0x004f3350,float,4,
++0x004f3518,float,4,
++0x004f3f04,float,4,
+--- /dev/null
++++ b/src/startup_config_decimal.cpp
+@@ -0,0 +1,31 @@
++#include "startup_config_decimal.h"
++
++// FUNCTION: BEACHLIFE 0x004ec400
++float ConvertConfigDecimalPrefix(const char* buffer)
++{
++    float sign = 1.0f;
++    int index = 0;
++    if (buffer[0] == '-')
++    {
++        sign = -1.0f;
++        index = 1;
++    }
++    float result = 0.0f;
++    while (buffer[index] >= '0' && buffer[index] <= '9')
++    {
++        result = result * 10.0f + (buffer[index] - '0');
++        ++index;
++    }
++    if (buffer[index] == '.')
++    {
++        float factor = 1.0f;
++        ++index;
++        while (buffer[index] >= '0' && buffer[index] <= '9')
++        {
++            factor *= 0.1f;
++            result += (buffer[index] - '0') * factor;
++            ++index;
++        }
++    }
++    return result * sign;
++}
+--- /dev/null
++++ b/src/startup_config_decimal.h
+@@ -0,0 +1,7 @@
++#ifndef STARTUP_CONFIG_DECIMAL_H
++#define STARTUP_CONFIG_DECIMAL_H
++
++// Descriptive name; the original declaration is not known from the x87 return.
++float ConvertConfigDecimalPrefix(const char* buffer);
++
++#endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -184,6 +184,12 @@
+       "size": 70,
+       "name": "ClassifyConfigValue",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec400",
++      "size": 146,
++      "name": "ConvertConfigDecimalPrefix",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

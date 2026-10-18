@@ -35,24 +35,45 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 27 reconstructed game functions match after address normalization,
-totaling 2,002 bytes. 14 functions also match all 863 raw bytes exactly. An
+verified. 41 reconstructed game functions match after address normalization,
+totaling 3,673 bytes. 17 functions also match all 982 raw bytes exactly. An
 11-byte runtime release wrapper is verified separately as library support;
 the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
+
+Prepared matching targets can opt into `stdcall_imports`, a DLL mapping with
+`export_names` (`decorated` or `undecorated`) and a `symbols` mapping from source
+names to x86 stack-byte counts. The build generates import metadata and verifies
+the requested names against both original and rebuilt PE import tables. It does
+not copy DLL code or execute the comparison image. Native service adaptations
+remain separate from this original-ABI link support.
 
 `beachlife_reconstructed_tga` compiles seven matched helpers with the modern
 compiler and host CRT. Its generated test executable checks data conversion
 and ownership; it does not link those helpers into the production launcher.
 `beachlife_reconstructed_files` runs the three allocating/size helpers and the
 startup configuration reader through an explicit VFS binding with fixed-width
-size arithmetic. `beachlife_reconstructed_config` compiles four matched lexer
-helpers. `beachlife_reconstructed_config_tokens` exercises token initialization
-and cleanup through the host allocator. `beachlife_reconstructed_config_allocation`
+size arithmetic. `beachlife_reconstructed_config` compiles eight matched helpers
+for scanning, counting tokens and classifying values. `beachlife_reconstructed_config_tokens` exercises
+token initialization and cleanup through the host allocator.
+`beachlife_reconstructed_config_allocation`
 qualifies bounded table allocation with the legacy default failure result.
+`beachlife_reconstructed_config_parser` combines matched name/value assignment,
+decimal-prefix conversion and token parsing with the existing scanner and token
+libraries. Generated fixtures qualify bounded records and ownership with
+successful allocations; arbitrary fractional arithmetic and allocation failure
+remain separate boundaries.
+`beachlife_reconstructed_config_loading` connects the matched file orchestration
+to those libraries through the existing VFS reader. Generated files qualify the
+three-open sequence, fixed-width sizes, bounded complete reads, token allocation
+failure and ownership after the mount ends. Uninitialized read tails, unchecked
+temporary/payload allocation failure and arbitrary numeric parity remain outside
+the executed domain.
 These libraries have generated native tests; none is linked into production
-gameplay. Complete configuration and image
-parsers and the allocating image constructor remain separate work.
+gameplay. The real configuration filename constructor is qualified through the
+VFS, including field initialization before the first open and the selected `2.5`
+float value. Typed outer-owner integration and general floating-point parity
+remain separate, as do the complete image parser and allocating constructor.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)

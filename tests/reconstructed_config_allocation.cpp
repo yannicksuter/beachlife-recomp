@@ -98,15 +98,14 @@ void expect(bool value, const char* message)
 struct GuardedOwner
 {
     std::array<unsigned char, owner_guard_size> before;
-    ConfigTokenBuffer owner;
+    // No VFS session is bound while the real filename constructor runs.
+    ConfigTokenBuffer owner{"Data/generated-unbound.pis"};
     std::array<unsigned char, owner_guard_size> after;
 
     GuardedOwner()
     {
         before.fill(0x93);
         after.fill(0x6c);
-        owner.tokens = nullptr;
-        owner.count = 0;
     }
 
     void verify() const

@@ -368,8 +368,8 @@ void test_unpack(const fs::path& fixtures, const fs::path& work)
               manifest.files.size() == 5,
         "Unpacked manifest");
     check(read(linux_root / "docs/NEW.md") == "only in the new package\n", "Unpacked file");
-    check(fs::exists(linux_root / ("LICENSES/dependencies/" + std::string(60, 'a') + "/" +
-                                      std::string(60, 'b') + "/LICENSE")),
+    check(read(linux_root / ("LICENSES/dependencies/" + std::string(35, 'a') + "/" +
+                                std::string(35, 'b') + "/LICENSE")) == "license text\n",
         "Long pax path");
 #ifndef _WIN32
     check((fs::status(linux_root / "beachlife").permissions() & fs::perms::owner_exec) !=

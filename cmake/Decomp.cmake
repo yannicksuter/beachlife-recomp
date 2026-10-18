@@ -82,7 +82,11 @@ add_library(beachlife_reconstructed_config STATIC
     "${BEACHLIFE_DECOMP_SOURCE}/startup_config_separator.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_config_name_delimiters.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_config_name_extent.cpp"
-    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_value_extent.cpp")
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_value_extent.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_quote_seeker.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_count.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_string_extent.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_value_classifier.cpp")
 target_include_directories(beachlife_reconstructed_config PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
 target_compile_features(beachlife_reconstructed_config PUBLIC cxx_std_20)
 set_target_properties(beachlife_reconstructed_config PROPERTIES CXX_EXTENSIONS OFF)
@@ -108,7 +112,7 @@ set_target_properties(beachlife_reconstructed_config_tokens PROPERTIES CXX_EXTEN
 add_dependencies(beachlife_reconstructed_config_tokens verify_reconstructed_source)
 
 add_executable(reconstructed_config_tokens_tests tests/reconstructed_config_tokens.cpp)
-target_link_libraries(reconstructed_config_tokens_tests PRIVATE beachlife_reconstructed_config_tokens)
+target_link_libraries(reconstructed_config_tokens_tests PRIVATE beachlife_reconstructed_config_loading)
 set_target_properties(reconstructed_config_tokens_tests PROPERTIES CXX_EXTENSIONS OFF)
 if(MSVC)
     target_compile_options(reconstructed_config_tokens_tests PRIVATE /W4 /WX)
@@ -128,7 +132,7 @@ set_target_properties(beachlife_reconstructed_config_allocation PROPERTIES CXX_E
 add_dependencies(beachlife_reconstructed_config_allocation verify_reconstructed_source)
 
 add_executable(reconstructed_config_allocation_tests tests/reconstructed_config_allocation.cpp)
-target_link_libraries(reconstructed_config_allocation_tests PRIVATE beachlife_reconstructed_config_allocation)
+target_link_libraries(reconstructed_config_allocation_tests PRIVATE beachlife_reconstructed_config_loading)
 set_target_properties(reconstructed_config_allocation_tests PROPERTIES CXX_EXTENSIONS OFF)
 if(MSVC)
     target_compile_options(reconstructed_config_allocation_tests PRIVATE /W4 /WX)
@@ -137,3 +141,51 @@ else()
 endif()
 add_test(NAME reconstructed_config_allocation COMMAND reconstructed_config_allocation_tests)
 set_tests_properties(reconstructed_config_allocation PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_config_parser STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_name.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_decimal.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_value.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_token_parser.cpp")
+target_include_directories(beachlife_reconstructed_config_parser PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_config_parser PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_config_parser PUBLIC
+    beachlife_reconstructed_config beachlife_reconstructed_config_tokens)
+set_target_properties(beachlife_reconstructed_config_parser PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_config_parser verify_reconstructed_source)
+
+add_executable(reconstructed_config_parser_tests tests/reconstructed_config_parser.cpp)
+target_link_libraries(reconstructed_config_parser_tests PRIVATE beachlife_reconstructed_config_loading)
+set_target_properties(reconstructed_config_parser_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_config_parser_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_config_parser_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_config_parser COMMAND reconstructed_config_parser_tests)
+set_tests_properties(reconstructed_config_parser PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_config_loading STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_buffer_constructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_load_parse.cpp")
+target_include_directories(beachlife_reconstructed_config_loading PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_config_loading PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_config_loading PUBLIC
+    beachlife_reconstructed_files beachlife_reconstructed_config_parser
+    beachlife_reconstructed_config_allocation)
+set_target_properties(beachlife_reconstructed_config_loading PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_config_loading verify_reconstructed_source)
+
+add_executable(reconstructed_config_loading_tests tests/reconstructed_config_loading.cpp)
+target_link_libraries(reconstructed_config_loading_tests PRIVATE beachlife_reconstructed_config_loading)
+set_target_properties(reconstructed_config_loading_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_config_loading_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_config_loading_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+set(BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/reconstructed-config-fixture"
+    CACHE STRING "Writable target-system directory for generated configuration loading tests")
+add_test(NAME reconstructed_config_loading COMMAND reconstructed_config_loading_tests
+    "${BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT}")
+set_tests_properties(reconstructed_config_loading PROPERTIES LABELS "reconstructed;headless")

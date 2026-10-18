@@ -1,10 +1,17 @@
 import hashlib
 import importlib.util
+import contextlib
+import io
+import json
 from pathlib import Path
 import struct
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 spec = importlib.util.spec_from_file_location('matching', Path(__file__).resolve().parents[1] / 'tools/matching.py')
 matching = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(matching)
@@ -104,6 +111,204 @@ class MatchingInputTests(unittest.TestCase):
             path.write_bytes(data[:450])
             with self.assertRaises(ValueError):
                 matching.read_va(path, 0x401000, 4)
+
+
+class MatchingCompilerOptionsTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.source = self.root / 'source'
+        self.source.mkdir()
+        (self.source / 'helper.cpp').write_text('int fixture() { return 1; }\n')
+        self.metadata = self.root / 'metadata'
+        for name in ('fixtures', 'support', 'targets'):
+            (self.metadata / name).mkdir(parents=True)
+        (self.metadata / 'fixtures/game.cpp').write_text('void fixture_entry() {}\n')
+        (self.metadata / 'support/operator_delete.cpp').write_text('// generated fixture\n')
+        self.original = self.root / 'generated.bin'
+        data = b'generated identity only; no executable code'
+        self.original.write_bytes(data)
+        self.target = {'id': 'generated', 'size': len(data),
+                       'sha1': hashlib.sha1(data).hexdigest(),
+                       'sha256': hashlib.sha256(data).hexdigest(), 'functions': []}
+        self.args = SimpleNamespace(source=self.source, original=self.original,
+                                    output=self.root / 'output', reports=self.root / 'reports')
+        self.calls = []
+        self.build_arguments = None
+        self.tamper = False
+        self.tamper_import = False
+        self.tool = SimpleNamespace(decomp_root=self.metadata, output=self.args.output,
+                                    compiler=self.root / 'compiler/Bin', reccmp='generated-comparator',
+                                    native=str, runtime_library=self.runtime_library,
+                                    build=self.build, run=self.compare)
+
+    def runtime_library(self, folder):
+        self.calls.append('runtime_library')
+        return 'generated-import.lib'
+
+    def build(self, folder, sources, name, extra_link=(), extra_compile=(), source_flags=None):
+        self.calls.append('build')
+        self.build_arguments = (extra_link, extra_compile, source_flags)
+        if self.tamper:
+            path = folder / 'abi/vc6-except-list.obj'
+            path.write_bytes(path.read_bytes()[:-1] + b'X')
+        if self.tamper_import:
+            path = folder / 'imports/fixture/fixture-import.lib'
+            path.write_bytes(path.read_bytes() + b'changed')
+        return folder / 'generated.exe', folder / 'generated.pdb'
+
+    def compare(self, arguments, folder):
+        self.calls.append('compare')
+        report = Path(arguments[arguments.index('--json') + 1])
+        report.write_text(json.dumps({'data': []}))
+        return ''
+
+    def run_game(self):
+        (self.metadata / 'targets/beachlife-uk-1.1.json').write_text(json.dumps(self.target))
+        with contextlib.redirect_stdout(io.StringIO()):
+            matching.game(self.tool, self.args)
+        return json.loads((self.args.reports / 'result.json').read_text())
+
+    def test_default_build_keeps_existing_options_and_no_eh_object(self):
+        result = self.run_game()
+        link, compile_options, source_flags = self.build_arguments
+        self.assertEqual(link, ['/fixed:no', 'generated-import.lib'])
+        self.assertEqual(compile_options[:2], ['/MD', '/G6'])
+        self.assertEqual(source_flags, {self.metadata / 'support/operator_delete.cpp': ['/O1']})
+        self.assertEqual(result['source_compile_options'], {})
+        self.assertEqual(result['link_abi_support'], [])
+        self.assertFalse((self.args.output / 'game/abi').exists())
+
+    def test_only_selected_game_source_gets_options_and_eh_link_object(self):
+        self.target['source_compile_options'] = {'helper.cpp': ['/GX', '/Ob1']}
+        result = self.run_game()
+        link, _, source_flags = self.build_arguments
+        self.assertEqual(source_flags, {self.metadata / 'support/operator_delete.cpp': ['/O1'],
+                                        self.source / 'helper.cpp': ['/GX', '/Ob1']})
+        abi = self.args.output / 'game/abi/vc6-except-list.obj'
+        self.assertEqual(link, ['/fixed:no', 'generated-import.lib', str(abi)])
+        self.assertEqual(result['source_compile_options'], self.target['source_compile_options'])
+        self.assertEqual(result['link_abi_support'][0]['sha256'], hashlib.sha256(abi.read_bytes()).hexdigest())
+        self.assertEqual(result['link_abi_support'][0]['absolute_symbols'], {'__except_list': 0})
+        self.assertEqual(self.calls, ['runtime_library', 'build', 'compare'])
+
+    def test_inline_option_alone_does_not_add_exception_support(self):
+        self.target['source_compile_options'] = {'helper.cpp': ['/Ob1']}
+        result = self.run_game()
+        self.assertEqual(self.build_arguments[2][self.source / 'helper.cpp'], ['/Ob1'])
+        self.assertEqual(result['link_abi_support'], [])
+        self.assertFalse((self.args.output / 'game/abi').exists())
+
+    def test_invalid_configuration_fails_before_any_build_tool(self):
+        bad = [None, [], True, '/GX', {'helper.cpp': '/GX'}, {'helper.cpp': [True]},
+               {'helper.cpp': [['/GX']]}, {'helper.cpp': ['/GX', '/GX']},
+               {'helper.cpp': ['/GX-']}, {'helper.cpp': ['/O1']}, {'helper.cpp': ['/Ob2']},
+               {'helper.cpp': ['/Iother']}, {'../helper.cpp': ['/GX']},
+               {'sub/helper.cpp': ['/GX']}, {'sub\\helper.cpp': ['/GX']},
+               {'C:helper.cpp': ['/GX']}, {'/helper.cpp': ['/GX']},
+               {'helper.cpp\n': ['/GX']}, {'missing.cpp': ['/GX']},
+               {'operator_delete.cpp': ['/GX']}]
+        for configured in bad:
+            with self.subTest(configured=configured):
+                self.target['source_compile_options'] = configured
+                with self.assertRaises(ValueError):
+                    self.run_game()
+                self.assertEqual(self.calls, [])
+                self.assertFalse(self.args.output.exists())
+
+    def test_ambiguous_basename_is_rejected(self):
+        nested = self.source / 'nested'
+        nested.mkdir()
+        (nested / 'helper.cpp').write_text('int other_fixture() { return 2; }\n')
+        self.target['source_compile_options'] = {'helper.cpp': ['/GX']}
+        with self.assertRaises(ValueError):
+            self.run_game()
+        self.assertEqual(self.calls, [])
+
+    def test_changed_generated_eh_object_is_rejected_before_comparison(self):
+        self.target['source_compile_options'] = {'helper.cpp': ['/GX']}
+        self.tamper = True
+        with self.assertRaisesRegex(ValueError, 'ABI object changed'):
+            self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'build'])
+
+    def set_stdcall_policy(self, mode='decorated'):
+        self.target['stdcall_imports'] = {
+            'fixture.dll': {'export_names': mode, 'symbols': {'FixtureCall': 8}}}
+
+    def generated_import_library(self, tool, folder, dll, symbols, mode):
+        self.calls.append('import_library')
+        self.assertIs(tool, self.tool)
+        self.assertEqual((dll, symbols), ('fixture.dll', {'FixtureCall': 8}))
+        self.assertEqual(mode, self.target['stdcall_imports'][dll]['export_names'])
+        folder.mkdir(parents=True)
+        library = folder / 'fixture-import.lib'
+        library.write_bytes(b'generated import metadata fixture')
+        return library, [{'symbol': '_FixtureCall@8', 'before': 8,
+                          'after': 4 if mode == 'decorated' else 12}]
+
+    def test_stdcall_policy_checks_original_and_rebuilt_export_names(self):
+        for mode, name in [('decorated', '_FixtureCall@8'), ('undecorated', 'FixtureCall')]:
+            with self.subTest(mode=mode):
+                self.set_stdcall_policy(mode)
+                self.calls.clear()
+                library = self.args.output / 'game/imports/fixture/fixture-import.lib'
+                if library.exists():
+                    library.unlink()
+                    library.parent.rmdir()
+                original = {'fixture.dll': {name: '0x401000', 'OtherOriginalImport': '0x401004'}}
+                rebuilt = {'fixture.dll': {name: '0x402000'}}
+                with patch.object(matching, 'stdcall_import_library', self.generated_import_library), \
+                        patch.object(matching, 'pe_imports', side_effect=[original, rebuilt]):
+                    result = self.run_game()
+                self.assertEqual(self.calls, ['runtime_library', 'import_library', 'build', 'compare'])
+                self.assertIn(str(library), self.build_arguments[0])
+                self.assertEqual(result['original_stdcall_imports'], {'fixture.dll': {name: '0x401000'}})
+                self.assertEqual(result['compiled_stdcall_imports'], rebuilt)
+                self.assertEqual(result['stdcall_import_libraries'][0]['sha256'],
+                                 hashlib.sha256(library.read_bytes()).hexdigest())
+
+    def test_invalid_stdcall_configuration_fails_before_build_tools(self):
+        policy = {'export_names': 'decorated', 'symbols': {'FixtureCall': 8}}
+        bad = [None, [], True, {'fixture.dll': {}}, {'fixture.dll': policy | {'extra': 1}},
+               {'fixture.dll': policy | {'export_names': 'ordinal'}},
+               {'fixture.dll': policy | {'symbols': {'FixtureCall': True}}},
+               {'../fixture.dll': policy}, {'MSVCRT.dll': policy},
+               {'fixture.dll': policy, 'Fixture.dll': policy}]
+        for configured in bad:
+            with self.subTest(configured=configured):
+                self.target['stdcall_imports'] = configured
+                with self.assertRaises(ValueError):
+                    self.run_game()
+                self.assertEqual(self.calls, [])
+                self.assertFalse(self.args.output.exists())
+
+    def test_missing_original_stdcall_identity_fails_before_build_tools(self):
+        self.set_stdcall_policy()
+        with patch.object(matching, 'pe_imports', return_value={'fixture.dll': {'FixtureCall@8': '0x401000'}}):
+            with self.assertRaisesRegex(ValueError, 'PE import identity'):
+                self.run_game()
+        self.assertEqual(self.calls, [])
+        self.assertFalse(self.args.output.exists())
+
+    def test_wrong_rebuilt_stdcall_identity_fails_before_comparison(self):
+        self.set_stdcall_policy()
+        original = {'fixture.dll': {'_FixtureCall@8': '0x401000'}}
+        with patch.object(matching, 'stdcall_import_library', self.generated_import_library), \
+                patch.object(matching, 'pe_imports', side_effect=[original, {'fixture.dll': {'FixtureCall@8': '0x402000'}}]):
+            with self.assertRaisesRegex(ValueError, 'PE import identity'):
+                self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'import_library', 'build'])
+
+    def test_changed_import_archive_fails_before_comparison(self):
+        self.set_stdcall_policy()
+        self.tamper_import = True
+        with patch.object(matching, 'stdcall_import_library', self.generated_import_library), \
+                patch.object(matching, 'pe_imports', return_value={'fixture.dll': {'_FixtureCall@8': '0x401000'}}):
+            with self.assertRaisesRegex(ValueError, 'import library changed'):
+                self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'import_library', 'build'])
 
 
 if __name__ == '__main__':
