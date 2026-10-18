@@ -285,6 +285,7 @@ def game(tool, args):
                      'unsigned char* GetTgaPixelData(unsigned char*, unsigned char, unsigned short, unsigned char);\n'
                      'void CopyTgaPalette(const unsigned char*, TgaImage*, int);\n'
                      'void CopyTgaPixels(const unsigned char*, TgaImage*);\n'
+                     'void ExpandTgaRle(const unsigned char*, TgaImage*);\n'
                      'unsigned char fixture_tga[18];\nunsigned char* volatile fixture_palette;\n'
                      'unsigned char* volatile fixture_pixels;\n'
                      'unsigned char fixture_palette_copy[3];\n'
@@ -299,6 +300,7 @@ def game(tool, args):
                      'fixture_tga_image.palette = fixture_palette_copy; '
                      'CopyTgaPalette(fixture_tga, &fixture_tga_image, 1); '
                      'CopyTgaPixels(fixture_tga, &fixture_tga_image); '
+                     'ExpandTgaRle(fixture_tga, &fixture_tga_image); '
                      'fixture_tga_image.palette = 0; }\n')
     library = tool.runtime_library(folder)
     binary, pdb = tool.build(folder, [*sources, *support_sources, entry], 'BeachLife', ['/fixed:no', library],

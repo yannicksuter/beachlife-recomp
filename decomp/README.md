@@ -169,6 +169,14 @@ previous release and leaves every field unchanged. VC6 lowers these trivial
 array deletions to scalar operator delete. The original class name remains
 unknown.
 
+`src/tga_rle.cpp` reconstructs the 249-byte RLE expansion helper at
+`0x004ea5c0`. It allocates a temporary image, expands raw and repeated-color
+packets, passes the result to `CopyTgaPixels`, then releases the temporary.
+Packet counts use the low seven header bits plus one; the high bit selects a
+repeated color. It preserves unchecked sizes, source reads and output writes,
+including the four-byte local color buffer and unclamped packet counts.
+`ExpandTgaRle` is descriptive; the original symbol and declaration are unknown.
+
 `support/operator_delete.cpp` supplies the separate 11-byte C++ runtime wrapper
 at `0x004ee6d6`, forwarding to the verified MSVCRT `free` import. It is library
 support, excluded from the game-method count. The matching build appends `/O1`
@@ -183,8 +191,8 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
-All eleven game functions currently match after address normalization, totaling
-874 bytes. The filename hash, four TGA helpers and image constructor also match
+All twelve game functions currently match after address normalization, totaling
+1,123 bytes. The filename hash, four TGA helpers and image constructor also match
 all 527 raw bytes exactly. Rebuilt constants/imports in the other functions
 have different addresses, so this is not a byte-identical executable or an
 established whole-program layout. The original has stripped relocations;
@@ -212,16 +220,16 @@ Each reconstructed function has been checked with a deliberately incorrect
 source variant. Changing the BLE terminator, filename-hash signedness or TGA
 header offset, palette channel order, constructor pixel depth or pixel row
 direction makes the comparison fail. Adding a pixel-null guard to the
-destructor or changing the release wrapper's forwarded pointer also fails.
-Generated semantic tests additionally check the pure helpers' boundary values,
-palette/pixel copy overlap and
-untouched constructor storage, plus destructor release order and unchanged
-fields. These checks establish the reported machine-code matches; they do not
-recover original variable names, class declarations or
-the full game's compiler flags.
+destructor, changing the RLE packet flag or changing the release wrapper's
+forwarded pointer also fails. Generated semantic tests additionally check the
+pure helpers' boundary values, palette/pixel copy overlap, untouched constructor
+storage, destructor release order and unchanged fields, and raw/run RLE packet
+boundaries with temporary allocation/release pairing. These checks establish
+the reported machine-code matches; they do not recover original variable names,
+class declarations or the full game's compiler flags.
 
 Reports containing original-derived comparisons stay in ignored
 `orig/analysis/matching/`. Generated entry code only keeps reconstructed
 functions in the comparison image; it is excluded from game progress and
-does not implement game startup. There are eleven annotated game functions and
+does not implement game startup. There are twelve annotated game functions and
 no established whole-game function denominator.
