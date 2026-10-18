@@ -230,7 +230,7 @@ generated folder, defaulting to the build tree. These targets do not link the
 owner or a complete startup driver into the production game.
 
 The input target checks two matched byte-state queries, transition reset and
-two signed-integer getters.
+two signed-integer getters, plus the first-button transition getter.
 Generated fixtures cover all 256 valid indices and byte values, require exact
 zero-or-one results, and compare the whole declared object representation and
 surrounding guards. Reset clears only the two observed words and two bytes;
@@ -239,6 +239,11 @@ Getter fixtures compare exact signed returns against independent supplied
 values over the complete signed 16-bit domain, 32-bit boundaries, walking-bit
 patterns and deterministic generated pairs. Both calls must leave the whole
 object and its guards unchanged; reported call counts are fixture entry calls.
+The first-button getter has 1,033 generated cases covering unsigned 32-bit
+boundaries and every value in each byte lane. Its neighboring button word differs
+before reset; exact returns and whole-object guards are checked before and after the
+real transition reset. These are bounded value/sequence tests, not device events
+or a claim about which physical button the first word represents.
 The declarations describe an observed prefix, not the complete retail input
 object. The current target requires the recovered resource-pointer prefix and
 both observed signed-integer fields. It checks relative field positions in the

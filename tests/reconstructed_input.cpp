@@ -125,6 +125,8 @@ static_assert(std::numeric_limits<int>::digits == 31);
 static_assert(has_value_134<InputState> && has_value_138<InputState>);
 static_assert(std::is_same_v<decltype(&InputState::ReadValue134), int (InputState::*)() const>);
 static_assert(std::is_same_v<decltype(&InputState::ReadValue138), int (InputState::*)() const>);
+static_assert(std::is_same_v<decltype(&InputState::ReadFirstButtonTransition),
+    unsigned int (InputState::*)() const>);
 static_assert(qualified_prefix<InputState>());
 static_assert(offsetof(GuardedInput, input) == 32);
 static_assert(offsetof(GuardedInput, after) == 32 + sizeof(InputState));
@@ -154,6 +156,8 @@ std::size_t predicate_cases = 0;
 std::size_t reset_cases = 0;
 std::size_t representation_checks = 0;
 std::size_t getter_cases = 0;
+std::size_t first_button_cases = 0;
+std::size_t first_button_fixture_calls = 0;
 std::size_t getter_fixture_calls = 0;
 std::array<std::size_t, 4> getter_domains{};
 std::array<std::size_t, 3> resource_cases{};
@@ -490,6 +494,56 @@ void getters()
         getter_case(first, second, 3);
     }
 }
+
+void first_button_case(unsigned int expected)
+{
+    phase = "first-button";
+    current_case = first_button_cases;
+    GuardedInput value;
+    patterned(value, static_cast<unsigned int>(first_button_cases * 29u + 7u));
+    value.input.unknown_120 = expected;
+    value.input.unknown_124 = ~expected;
+    const InputState& input = value.input;
+    const auto before = snapshot(value);
+    ++first_button_fixture_calls;
+    require(input.ReadFirstButtonTransition() == expected,
+        "First-button read lost bits or used the adjacent button field.");
+    require_representation(value, before, "First-button read changed the object or its guards.");
+    auto after_reset = before;
+    for (const auto offset : cleared_bytes)
+    {
+        after_reset[offsetof(GuardedInput, input) + offset] = 0;
+    }
+    value.input.ResetTransition();
+    require_representation(
+        value, after_reset, "First-button sequence changed bytes outside the reset contract.");
+    ++first_button_fixture_calls;
+    require(input.ReadFirstButtonTransition() == 0,
+        "First-button read did not observe the transition reset.");
+    require_representation(
+        value, after_reset, "First-button read changed the reset object or its guards.");
+    ++first_button_cases;
+}
+
+void first_buttons()
+{
+    // Before reset the second button differs. High bits must remain values, not
+    // be truncated or converted to a Boolean before Intro compares against one.
+    constexpr std::array<unsigned int, 9> values{
+        0u, 1u, 2u, 0x7fffffffu, 0x80000000u, 0xffffffffu, 0x01234567u, 0xaaaaaaaau, 0x55555555u};
+    for (const auto value : values)
+    {
+        first_button_case(value);
+    }
+    for (unsigned int lane = 0; lane != 4; ++lane)
+    {
+        const auto shift = lane * 8u;
+        for (unsigned int byte = 0; byte != 256; ++byte)
+        {
+            first_button_case((0xa55ac33cu & ~(0xffu << shift)) | (byte << shift));
+        }
+    }
+}
 } // namespace
 
 int main()
@@ -501,12 +555,15 @@ int main()
         const auto query_reset_checks = checks;
         const auto query_reset_representation_checks = representation_checks;
         getters();
+        first_buttons();
         std::cout
-            << "{\"cases\":" << predicate_cases + reset_cases + getter_cases
+            << "{\"cases\":" << predicate_cases + reset_cases + getter_cases + first_button_cases
             << ",\"checks\":" << checks << ",\"predicate_cases\":" << predicate_cases
             << ",\"reset_cases\":" << reset_cases
             << ",\"query_reset_checks\":" << query_reset_checks
             << ",\"query_reset_representation_checks\":" << query_reset_representation_checks
+            << ",\"first_button_cases\":" << first_button_cases
+            << ",\"first_button_fixture_calls\":" << first_button_fixture_calls
             << ",\"getter_cases\":" << getter_cases
             << ",\"getter_fixture_calls\":" << getter_fixture_calls << ",\"getter_domain_cases\":["
             << getter_domains[0] << ',' << getter_domains[1] << ',' << getter_domains[2] << ','

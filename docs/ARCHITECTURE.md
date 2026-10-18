@@ -85,10 +85,11 @@ general error/unwind paths and general floating-point parity remain separate,
 as do the complete image parser and allocating constructor.
 These libraries have generated native tests; none is linked into production
 gameplay.
-`beachlife_reconstructed_input` qualifies the two byte-state queries and
-transition reset over the observed unsigned prefix. Its generated tests cover
-all valid indices and byte values, exact returned bytes, clear widths,
-unchanged storage and idempotence. The observed pointer-bearing prefix is
+`beachlife_reconstructed_input` qualifies the two byte-state queries, transition
+reset, two signed-integer getters and the first-button transition getter. Its
+generated tests cover all valid indices and byte values, bounded 32-bit getter
+values, exact returns, clear widths, unchanged storage and idempotence. The
+first-button getter is also exercised before and after the actual reset. The observed pointer-bearing prefix is
 qualified with valid null and live handles. Input production, device services
 and controller integration remain separate qualifications.
 The original timestamp methods use x86 assembly and remain outside the modern
