@@ -94,7 +94,7 @@ cmake --build build/reconstructed-tga \
   --target reconstructed_tga_tests reconstructed_files_tests \
     reconstructed_config_tests reconstructed_config_tokens_tests \
     reconstructed_config_allocation_tests reconstructed_config_parser_tests \
-    reconstructed_config_loading_tests --parallel
+    reconstructed_config_loading_tests reconstructed_startup_config_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -209,9 +209,24 @@ valid after the session ends and are released by the actual destructor.
 Construction cases retain the same bounded failure domains and exercise real
 folder mounts, comments and exact integers from -2048 through 2048. The selected
 literal `2.5` is separately checked against float32 bits `0x40200000`, directly
-and through construction. Other nonzero fractions, changed floating-point modes,
-the outer configuration owner and the production startup driver remain separate
-qualification boundaries.
+and through construction. Other nonzero fractions and changed floating-point
+modes remain outside this qualification.
+
+The startup-configuration target constructs the actual outer owner through the
+same VFS and token-loading library. It checks publication of the owner and a null
+list head before the first open, ordered typed records, duplicate names, copied
+strings, case-sensitive lowercase `true`, appended records and actual cleanup
+with global reset. Generated configurations are nonempty, with names and text
+of at most 255 bytes. Embedded NULs retain the original C-string prefix behavior.
+Numeric cases cover every integer from -2048 through 2048 and sample exact
+integers up to magnitude 1,000,000, with at most one zero fractional digit,
+signed zero and the separately qualified `2.5` literal. The original destructor
+assumes a nonempty list; empty-owner destruction, general fatal-error paths,
+allocation failure and exception unwinding remain unqualified. The fixture's
+completion guard rejects an early zero-status fatal exit while preserving
+CTest's normal exit-code checks. `BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT` selects its separate
+generated folder, defaulting to the build tree. These targets do not link the
+owner or a complete startup driver into the production game.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and

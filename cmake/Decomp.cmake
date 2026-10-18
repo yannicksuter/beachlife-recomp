@@ -189,3 +189,29 @@ set(BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/rec
 add_test(NAME reconstructed_config_loading COMMAND reconstructed_config_loading_tests
     "${BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT}")
 set_tests_properties(reconstructed_config_loading PROPERTIES LABELS "reconstructed;headless")
+
+add_library(beachlife_reconstructed_startup_config STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_owner_constructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_owner_destructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_append.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_config_owner_reset.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_fatal.cpp")
+target_include_directories(beachlife_reconstructed_startup_config PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_startup_config PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_startup_config PUBLIC beachlife_reconstructed_config_loading)
+set_target_properties(beachlife_reconstructed_startup_config PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_startup_config verify_reconstructed_source)
+
+add_executable(reconstructed_startup_config_tests tests/reconstructed_startup_config.cpp)
+target_link_libraries(reconstructed_startup_config_tests PRIVATE beachlife_reconstructed_startup_config)
+set_target_properties(reconstructed_startup_config_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_startup_config_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_startup_config_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+set(BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/reconstructed-startup-fixture"
+    CACHE STRING "Writable target-system directory for generated startup configuration tests")
+add_test(NAME reconstructed_startup_config COMMAND reconstructed_startup_config_tests
+    "${BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT}")
+set_tests_properties(reconstructed_startup_config PROPERTIES LABELS "reconstructed;headless")

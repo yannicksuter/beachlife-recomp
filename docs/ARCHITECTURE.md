@@ -69,11 +69,16 @@ three-open sequence, fixed-width sizes, bounded complete reads, token allocation
 failure and ownership after the mount ends. Uninitialized read tails, unchecked
 temporary/payload allocation failure and arbitrary numeric parity remain outside
 the executed domain.
+The real configuration filename constructor is qualified through the VFS,
+including field initialization before the first open and the selected `2.5`
+float value. `beachlife_reconstructed_startup_config` adds the actual outer
+owner, append and cleanup chain. Its generated tests qualify nonempty typed
+records, owner publication, duplicate names, copied strings, bounded values
+and global reset after destruction. Configuration lookup, empty-owner cleanup,
+general error/unwind paths and general floating-point parity remain separate,
+as do the complete image parser and allocating constructor.
 These libraries have generated native tests; none is linked into production
-gameplay. The real configuration filename constructor is qualified through the
-VFS, including field initialization before the first open and the selected `2.5`
-float value. Typed outer-owner integration and general floating-point parity
-remain separate, as do the complete image parser and allocating constructor.
+gameplay.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
