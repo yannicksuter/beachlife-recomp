@@ -70,10 +70,10 @@ failure and ownership after the mount ends. Uninitialized read tails, unchecked
 temporary/payload allocation failure and arbitrary numeric parity remain outside
 the executed domain.
 These libraries have generated native tests; none is linked into production
-gameplay. Fixtures construct configuration buffers through the real filename
-constructor before binding the VFS; loading during construction remains a separate
-qualification step. The complete image parser and allocating image constructor
-also remain separate work.
+gameplay. The real configuration filename constructor is qualified through the
+VFS, including field initialization before the first open and the selected `2.5`
+float value. Typed outer-owner integration and general floating-point parity
+remain separate, as do the complete image parser and allocating constructor.
 The original timestamp methods use x86 assembly and remain outside the modern
 native targets until their clock adaptation is qualified.
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)

@@ -1,6 +1,7 @@
 #include "data/folder_source.h"
 #include "data/source.h"
 #include "runtime/retail_files.h"
+#include "startup_config_decimal.h"
 #include "startup_config_tokens.h"
 
 #include <algorithm>
@@ -59,6 +60,9 @@ struct State
     std::vector<Event> events;
     unsigned int opens = 0;
     unsigned int closes = 0;
+    const ConfigTokenBuffer* constructing_owner = nullptr;
+    bool first_open_seen = false;
+    bool initialized_before_open = false;
 };
 
 class ScriptedFile final : public beachlife::data::SourceFile
@@ -150,6 +154,12 @@ class ScriptedSource final : public beachlife::data::FileSource
     {
         const auto stage = ++state_->opens;
         state_->events.push_back({Operation::open, stage});
+        if (stage == 1 && state_->constructing_owner)
+        {
+            state_->first_open_seen = true;
+            state_->initialized_before_open =
+                !state_->constructing_owner->tokens && state_->constructing_owner->count == 0;
+        }
         if (path != state_->scenario.path || stage == state_->scenario.failed_open)
         {
             if (state_->scenario.throwing_open)
@@ -256,6 +266,10 @@ std::size_t previous_tables = 0;
 std::size_t high_positions = 0;
 std::size_t grown_files = 0;
 std::size_t folder_cases = 0;
+std::size_t construction_cases = 0;
+std::size_t construction_folder_cases = 0;
+std::size_t initialization_observations = 0;
+std::size_t exact_numeric_cases = 0;
 
 void expect(bool value, const char* message)
 {
@@ -412,7 +426,7 @@ void verify_records(const ConfigTokenBuffer& owner, const std::vector<Record>& e
         if (wanted.kind == 2)
         {
             expect(token.number && std::bit_cast<std::uint32_t>(*token.number) == wanted.number,
-                "Loaded numeric value differs from the exact integer oracle.");
+                "Loaded numeric value differs from the qualified bit oracle.");
         }
         else
         {
@@ -438,6 +452,55 @@ void load(OwnerFixture& fixture, const char* path, bool fail_table)
         throw;
     }
     allocation_probe::active = false;
+}
+
+void verify_io(const State& observed, const Scenario& scenario, std::size_t temporary)
+{
+    expect(observed.opens == (scenario.failed_open == 1 ? 1u : 3u),
+        "Probe/size/read open count changed.");
+    expect(observed.closes == (scenario.failed_open == 1 ? 0u
+                                  : scenario.failed_open ? 2u
+                                                         : 3u),
+        "A source handle escaped the loader call.");
+    std::uint64_t read_bytes = 0;
+    std::vector<std::pair<Operation, unsigned int>> protocol;
+    for (const auto& event : observed.events)
+    {
+        if (event.operation == Operation::read)
+        {
+            expect(event.stage == 3 && event.amount <= temporary && event.amount <= 256 * 1024,
+                "Loader read from the wrong handle or exceeded its requested extent.");
+            read_bytes += event.result;
+        }
+        else
+        {
+            protocol.emplace_back(event.operation, event.stage);
+        }
+    }
+    std::vector<std::pair<Operation, unsigned int>> expected_protocol{{Operation::open, 1}};
+    if (scenario.failed_open != 1)
+    {
+        expected_protocol.emplace_back(Operation::close, 1);
+        expected_protocol.emplace_back(Operation::open, 2);
+        if (scenario.failed_open != 2)
+        {
+            expected_protocol.emplace_back(Operation::seek, 2);
+            expected_protocol.emplace_back(Operation::position, 2);
+            expected_protocol.emplace_back(Operation::close, 2);
+        }
+        expected_protocol.emplace_back(Operation::open, 3);
+        if (scenario.failed_open != 3)
+        {
+            expected_protocol.emplace_back(Operation::close, 3);
+        }
+    }
+    expect(protocol == expected_protocol, "Probe/size/read handle ordering changed.");
+    const auto available = scenario.payload.size() + scenario.growth.size();
+    const auto expected_read =
+        (scenario.failed_open == 1 || scenario.failed_open == 3)
+            ? 0u
+            : std::min<std::uint64_t>({temporary, available, scenario.read_stop});
+    expect(read_bytes == expected_read, "Reader did not consume the full allocated-byte request.");
 }
 
 void check(const Document& input, Scenario scenario, bool previous = false, bool fail_table = false)
@@ -500,51 +563,7 @@ void check(const Document& input, Scenario scenario, bool previous = false, bool
             verify_records(fixture.owner, empty_size ? empty : input.records);
         }
     }
-    expect(observed->opens == (scenario.failed_open == 1 ? 1u : 3u),
-        "Probe/size/read open count changed.");
-    expect(observed->closes == (scenario.failed_open == 1 ? 0u
-                                   : scenario.failed_open ? 2u
-                                                          : 3u),
-        "A source handle escaped the loader call.");
-    std::uint64_t read_bytes = 0;
-    std::vector<std::pair<Operation, unsigned int>> protocol;
-    for (const auto& event : observed->events)
-    {
-        if (event.operation == Operation::read)
-        {
-            expect(event.stage == 3 && event.amount <= temporary && event.amount <= 256 * 1024,
-                "Loader read from the wrong handle or exceeded its requested extent.");
-            read_bytes += event.result;
-        }
-        else
-        {
-            protocol.emplace_back(event.operation, event.stage);
-        }
-    }
-    std::vector<std::pair<Operation, unsigned int>> expected_protocol{{Operation::open, 1}};
-    if (scenario.failed_open != 1)
-    {
-        expected_protocol.emplace_back(Operation::close, 1);
-        expected_protocol.emplace_back(Operation::open, 2);
-        if (scenario.failed_open != 2)
-        {
-            expected_protocol.emplace_back(Operation::seek, 2);
-            expected_protocol.emplace_back(Operation::position, 2);
-            expected_protocol.emplace_back(Operation::close, 2);
-        }
-        expected_protocol.emplace_back(Operation::open, 3);
-        if (scenario.failed_open != 3)
-        {
-            expected_protocol.emplace_back(Operation::close, 3);
-        }
-    }
-    expect(protocol == expected_protocol, "Probe/size/read handle ordering changed.");
-    const auto available = input.bytes.size() + scenario.growth.size();
-    const auto expected_read =
-        (scenario.failed_open == 1 || scenario.failed_open == 3)
-            ? 0u
-            : std::min<std::uint64_t>({temporary, available, scenario.read_stop});
-    expect(read_bytes == expected_read, "Reader did not consume the full allocated-byte request.");
+    verify_io(*observed, scenario, temporary);
     second_failures += scenario.failed_open == 2;
     third_failures += scenario.failed_open == 3;
     seek_failures += scenario.failed_seek;
@@ -553,6 +572,271 @@ void check(const Document& input, Scenario scenario, bool previous = false, bool
     high_positions += scenario.reported_size > std::numeric_limits<std::uint32_t>::max();
     grown_files += !scenario.growth.empty();
     ++cases;
+}
+
+// Only the owner storage is prefilled. The constructor's temporary remains an
+// exact-size allocation, so sanitizers can observe its real read boundary.
+struct ConstructionStorage
+{
+    static constexpr std::size_t guard = alignof(ConfigTokenBuffer);
+    alignas(
+        ConfigTokenBuffer) std::array<unsigned char, sizeof(ConfigTokenBuffer) + 2 * guard> bytes;
+    ConfigTokenBuffer* owner = nullptr;
+
+    ConstructionStorage()
+    {
+        bytes.fill(0xa5);
+    }
+    ~ConstructionStorage()
+    {
+        if (owner)
+        {
+            owner->~ConfigTokenBuffer();
+        }
+    }
+    ConfigTokenBuffer* address()
+    {
+        return reinterpret_cast<ConfigTokenBuffer*>(bytes.data() + guard);
+    }
+    void construct(const char* path, bool fail_table = false)
+    {
+        allocation_probe::observed = {};
+        allocation_probe::fail_table = fail_table;
+        allocation_probe::active = true;
+        try
+        {
+            owner = new (bytes.data() + guard) ConfigTokenBuffer(path);
+        }
+        catch (...)
+        {
+            allocation_probe::active = false;
+            throw;
+        }
+        allocation_probe::active = false;
+    }
+    void verify_guards() const
+    {
+        expect(std::all_of(bytes.begin(),
+                   bytes.begin() + guard,
+                   [](unsigned char value)
+                   {
+                       return value == 0xa5;
+                   }) &&
+                   std::all_of(bytes.end() - guard,
+                       bytes.end(),
+                       [](unsigned char value)
+                       {
+                           return value == 0xa5;
+                       }),
+            "Construction changed bytes adjacent to its owner.");
+    }
+    void destroy()
+    {
+        const auto before = bytes;
+        owner->~ConfigTokenBuffer();
+        owner = nullptr;
+        expect(bytes == before, "Actual cleanup changed its constructed owner storage.");
+    }
+};
+
+void construct_check(const Document& input, Scenario scenario, bool fail_table = false)
+{
+    const bool empty_size =
+        scenario.failed_open == 2 || scenario.failed_seek || input.bytes.empty();
+    if (scenario.failed_position || (scenario.failed_open == 3 && !empty_size) ||
+        ((scenario.read_stop != std::numeric_limits<std::size_t>::max() ||
+             scenario.throwing_read) &&
+            !empty_size) ||
+        static_cast<std::uint32_t>(scenario.reported_size) != input.bytes.size())
+    {
+        throw std::logic_error("Constructor case is outside the fully initialized loader domain.");
+    }
+    scenario.payload = input.bytes;
+    auto observed = loading_fixture::state(scenario);
+    ConstructionStorage storage;
+    observed->constructing_owner = storage.address();
+    std::weak_ptr<ScriptedSource> weak_source;
+    {
+        auto source = std::make_shared<ScriptedSource>(observed);
+        weak_source = source;
+        files::Session session(source);
+        storage.construct(scenario.path.c_str(), fail_table);
+    }
+    expect(observed->first_open_seen && observed->initialized_before_open,
+        "Constructor did not initialize null tokens and count0 before its first open.");
+    ++initialization_observations;
+    expect(weak_source.expired(), "Constructed owner retained its source after the session ended.");
+    storage.verify_guards();
+    const auto& allocations = allocation_probe::observed;
+    expect(!allocations.unexpected, "Construction performed an unexpected nonthrowing allocation.");
+    const std::size_t temporary = empty_size ? 1 : input.bytes.size() + 1;
+    const std::size_t count = empty_size ? 0 : input.records.size();
+    if (scenario.failed_open == 1)
+    {
+        expect(!storage.owner->tokens && storage.owner->count == 0,
+            "First-open failure did not retain constructor initialization.");
+        expect(allocations.calls == 0, "Failed construction probe allocated a temporary or table.");
+    }
+    else
+    {
+        expect(allocations.calls == 2 && allocations.bytes[0] == temporary &&
+                   allocations.bytes[1] == count * sizeof(ConfigToken),
+            "Temporary/table allocation sizes differ from the independent document model.");
+        expect(allocations.memory[0] != nullptr,
+            "Constructor temporary allocation was not successful.");
+        if (fail_table)
+        {
+            expect(!storage.owner->tokens && storage.owner->count == 0 && !allocations.memory[1],
+                "Constructor table failure did not preserve its initialized empty state.");
+        }
+        else
+        {
+            expect(storage.owner->tokens == allocations.memory[1],
+                "Constructor did not publish its actual table allocation.");
+            const std::vector<Record> empty;
+            verify_records(*storage.owner, empty_size ? empty : input.records);
+        }
+    }
+    verify_io(*observed, scenario, temporary);
+    storage.destroy();
+    ++construction_cases;
+    ++cases;
+}
+
+void constructed_cases()
+{
+    for (const unsigned int count : {0u, 1u, 2u, 3u, 7u, 16u})
+    {
+        for (unsigned int variant = 0; variant != 16; ++variant)
+        {
+            const auto input = document(count, variant);
+            for (const std::uint64_t high : {0ULL, 0x100000000ULL, 0x200000000ULL})
+            {
+                for (const std::size_t chunk : {1u, 7u, 1024u})
+                {
+                    Scenario scenario;
+                    scenario.reported_size = high + input.bytes.size();
+                    scenario.read_chunk = chunk;
+                    construct_check(input, scenario);
+                    scenario.growth = {'x', 'y'};
+                    construct_check(input, scenario);
+                    construct_check(input, scenario, true);
+                }
+            }
+            for (const unsigned int stage : {1u, 2u})
+            {
+                Scenario scenario;
+                scenario.reported_size = input.bytes.size();
+                scenario.failed_open = stage;
+                construct_check(input, scenario);
+                scenario.throwing_open = true;
+                construct_check(input, scenario);
+            }
+            Scenario failed_seek;
+            failed_seek.reported_size = input.bytes.size();
+            failed_seek.failed_seek = true;
+            construct_check(input, failed_seek);
+            for (const bool throws : {false, true})
+            {
+                failed_seek.read_stop = 0;
+                failed_seek.throwing_read = throws;
+                construct_check(input, failed_seek);
+            }
+        }
+    }
+    Scenario empty_read_failure;
+    empty_read_failure.failed_open = 3;
+    construct_check(document(0), empty_read_failure);
+    empty_read_failure.throwing_open = true;
+    construct_check(document(0), empty_read_failure, true);
+
+    // Comments contain no name delimiters and end in CR before any record.
+    // The independently constructed records are unchanged by these prefix bytes.
+    auto commented = document(7);
+    const std::string comment = "// generated comment\r\n\t";
+    commented.bytes.insert(commented.bytes.begin(), comment.begin(), comment.end());
+    Scenario scenario;
+    scenario.reported_size = commented.bytes.size();
+    construct_check(commented, scenario);
+}
+
+Document numeric_document(const std::string& spelling, std::uint32_t bits)
+{
+    Document result;
+    const std::string name = "generated-number";
+    const std::string encoded = "'" + name + "' " + spelling + "\r\n";
+    result.bytes.assign(encoded.begin(), encoded.end());
+    result.records.push_back({Bytes(name.begin(), name.end()), 2, {}, bits});
+    return result;
+}
+
+void constructed_numbers()
+{
+    // The selected noninteger2.5 has exact expected float32 bits. This does not
+    // extend qualification to arbitrary decimals or altered floating-point modes.
+    for (const char* literal : {"2.5", "2.5\r"})
+    {
+        expect(std::bit_cast<std::uint32_t>(ConvertConfigDecimalPrefix(literal)) == 0x40200000u,
+            "The selected2.5 literal differs from its exact float32 bit oracle.");
+    }
+    for (int integer = -2048; integer <= 2048; ++integer)
+    {
+        auto spelling = std::to_string(integer);
+        if (integer % 2 == 0)
+        {
+            spelling += ".0";
+        }
+        const auto input =
+            numeric_document(spelling, std::bit_cast<std::uint32_t>(static_cast<float>(integer)));
+        Scenario scenario;
+        scenario.reported_size = input.bytes.size();
+        construct_check(input, scenario);
+        ++exact_numeric_cases;
+    }
+    const auto fraction = numeric_document("2.5", 0x40200000u);
+    for (const std::size_t chunk : {1u, 7u, 1024u})
+    {
+        Scenario scenario;
+        scenario.reported_size = fraction.bytes.size();
+        scenario.read_chunk = chunk;
+        construct_check(fraction, scenario);
+        ++exact_numeric_cases;
+    }
+}
+
+void construction_folder_inputs(const std::filesystem::path& root)
+{
+    std::filesystem::create_directories(root / "Data");
+    for (const unsigned int count : {0u, 1u, 2u, 7u, 16u})
+    {
+        const auto input = document(count);
+        const auto filename = "generated-constructor-" + std::to_string(count) + ".pis";
+        const auto path = root / "Data" / filename;
+        {
+            std::ofstream output(path, std::ios::binary | std::ios::trunc);
+            output.write(reinterpret_cast<const char*>(input.bytes.data()),
+                static_cast<std::streamsize>(input.bytes.size()));
+            if (!output)
+            {
+                throw std::runtime_error("Could not write generated constructor fixture.");
+            }
+        }
+        ConstructionStorage storage;
+        {
+            auto source = std::make_shared<data::FolderSource>(
+                root, std::vector<data::SourceEntry>{{"Data/" + filename, input.bytes.size()}});
+            files::Session session(source);
+            const auto logical = ".\\dAtA\\GENERATED-CONSTRUCTOR-" + std::to_string(count) + ".PIS";
+            storage.construct(logical.c_str());
+        }
+        storage.verify_guards();
+        verify_records(*storage.owner, input.records);
+        storage.destroy();
+        std::filesystem::remove(path);
+        ++construction_folder_cases;
+        ++construction_cases;
+        ++cases;
+    }
 }
 
 void mounted_cases()
@@ -679,6 +963,11 @@ int main(int argc, char** argv)
         {
             throw std::runtime_error("Pass a generated fixture directory.");
         }
+        constructed_cases();
+        constructed_numbers();
+        construction_folder_inputs(std::filesystem::path(argv[1]));
+        const auto construction_checks = checks;
+        const auto construction_records = records;
         unbound_cases();
         mounted_cases();
         folder_inputs(std::filesystem::path(argv[1]));
@@ -686,6 +975,10 @@ int main(int argc, char** argv)
                    read_failures && table_failures && previous_tables && high_positions &&
                    grown_files && folder_cases,
             "Required loading scenarios were not exercised.");
+        const auto retained_loading_checks = checks - construction_checks;
+        const auto retained_loading_records = records - construction_records;
+        expect(initialization_observations && construction_folder_cases && exact_numeric_cases,
+            "Required constructor scenarios were not exercised.");
         std::cout << "{\"cases\":" << cases << ",\"checks\":" << checks
                   << ",\"records\":" << records << ",\"first_open_failures\":" << first_failures
                   << ",\"second_open_failures\":" << second_failures
@@ -695,7 +988,15 @@ int main(int argc, char** argv)
                   << ",\"table_failures\":" << table_failures
                   << ",\"previous_tables\":" << previous_tables
                   << ",\"high_positions\":" << high_positions << ",\"grown_files\":" << grown_files
-                  << ",\"folder_cases\":" << folder_cases << "}\n";
+                  << ",\"folder_cases\":" << folder_cases
+                  << ",\"construction_cases\":" << construction_cases
+                  << ",\"construction_checks\":" << construction_checks
+                  << ",\"construction_records\":" << construction_records
+                  << ",\"initialization_observations\":" << initialization_observations
+                  << ",\"construction_folder_cases\":" << construction_folder_cases
+                  << ",\"exact_numeric_cases\":" << exact_numeric_cases
+                  << ",\"retained_loading_checks\":" << retained_loading_checks
+                  << ",\"retained_loading_records\":" << retained_loading_records << "}\n";
         return 0;
     }
     catch (const std::exception& error)

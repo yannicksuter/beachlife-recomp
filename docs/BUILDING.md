@@ -201,10 +201,17 @@ parity remain unqualified. Tests also load generated files from a real folder an
 check that parsed allocations outlive the VFS session.
 `BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT` selects their separate output
 directory, defaulting to the build tree; Windows cross tests can use a Wine C:
-path. Fixtures now create owners through the real filename constructor with no
-VFS bound, before allocation observations or mounted loading cases begin. Loading
-during construction and the production startup driver remain separate
-qualification steps.
+path. Existing subsystem fixtures create owners with no VFS bound before their
+own observations. Additional loading cases construct the real owner while a
+source is mounted: prefilled storage and a first-open observer check that the
+table pointer and count are initialized before I/O. Generated records remain
+valid after the session ends and are released by the actual destructor.
+Construction cases retain the same bounded failure domains and exercise real
+folder mounts, comments and exact integers from -2048 through 2048. The selected
+literal `2.5` is separately checked against float32 bits `0x40200000`, directly
+and through construction. Other nonzero fractions, changed floating-point modes,
+the outer configuration owner and the production startup driver remain separate
+qualification boundaries.
 
 For a separate Linux sanitizer build, add
 `-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
