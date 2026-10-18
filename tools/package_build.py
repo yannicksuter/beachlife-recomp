@@ -175,7 +175,7 @@ def package(build, output, source=ROOT, toolchain=None):
                        "ole32.dll", "shell32.dll", "version.dll", "winmm.dll",
                        "cfgmgr32.dll", "comdlg32.dll", "gdi32.dll", "imm32.dll",
                        "oleaut32.dll", "setupapi.dll", "shlwapi.dll", "rpcrt4.dll",
-                       "dinput8.dll", "dxgi.dll", "d3d11.dll", "d3d12.dll", "hid.dll", "winhttp.dll"}
+                       "dinput8.dll", "dxgi.dll", "d3d11.dll", "d3d12.dll", "hid.dll", "winhttp.dll", "pdh.dll"}
         for name, path in [(executable, build / executable)] + [(n, toolchain / "x86_64-w64-mingw32/bin" / n) for n in WINDOWS_DLLS]:
             report = subprocess.check_output([str(toolchain / "bin/llvm-objdump"), "-p", str(path)], text=True)
             imports = re.findall(r'DLL Name:\s*(\S+)', report)

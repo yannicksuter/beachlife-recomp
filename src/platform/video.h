@@ -16,35 +16,46 @@ struct ImDrawData;
 // ImGui overlay. One implementation uses SDL's GPU API, which runs on Direct3D 12
 // and Vulkan on Windows, Metal on macOS and Vulkan on Linux; another provider
 // could replace it behind this interface.
-namespace beachlife::platform {
+namespace beachlife::platform
+{
 
 // A frame in the game's resolution: 32-bit RGBA (red in the lowest byte), row by row.
-struct Frame {
+struct Frame
+{
     int width = 0, height = 0;
     std::vector<std::uint32_t> pixels;
 };
 
-enum class GraphicsApi { Automatic, Direct3D12, Vulkan, Metal };
+enum class GraphicsApi
+{
+    Automatic,
+    Direct3D12,
+    Vulkan,
+    Metal
+};
 
-struct VideoSettings {
+struct VideoSettings
+{
     std::string title = "Beach Life";
-    bool fullscreen = false;   // borderless, at the display's own resolution
+    bool fullscreen = false;        // borderless, at the display's own resolution
     int width = 1280, height = 960; // the window's size when not fullscreen
-    int display = 0;           // 0 is the primary display, otherwise its 1-based position
+    int display = 0;                // 0 is the primary display, otherwise its 1-based position
     bool vsync = true;
-    bool stretch = false;      // fill the window instead of keeping the frame's proportions
+    bool stretch = false; // fill the window instead of keeping the frame's proportions
     GraphicsApi api = GraphicsApi::Automatic;
-    bool hidden = false;       // checks and screenshots
+    bool hidden = false; // checks and screenshots
 };
 
 // What the video layer actually got.
-struct VideoInfo {
+struct VideoInfo
+{
     std::string api;          // SDL's driver name: "vulkan", "direct3d12" or "metal"
     std::string present_mode; // "vsync", "mailbox" or "immediate"
 };
 
-class Video {
-public:
+class Video
+{
+  public:
     virtual ~Video() = default;
     virtual SDL_Window* window() const = 0;
     virtual const VideoInfo& info() const = 0;
@@ -63,6 +74,7 @@ std::unique_ptr<Video> create_video(const VideoSettings& settings);
 
 // Where a frame lands in a window of the given pixel size: all of it when
 // stretching, otherwise the largest centred rectangle with the frame's proportions.
-SDL_Rect frame_rect(int frame_width, int frame_height, int window_width, int window_height, bool stretch);
+SDL_Rect frame_rect(
+    int frame_width, int frame_height, int window_width, int window_height, bool stretch);
 
 } // namespace beachlife::platform

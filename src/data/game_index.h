@@ -2,9 +2,11 @@
 
 #include "cabinet.h"
 
-namespace beachlife::data {
+namespace beachlife::data
+{
 
-struct GameAsset {
+struct GameAsset
+{
     std::string path;
     std::uint64_t size = 0;
     std::size_t cabinet_index = 0;
@@ -13,7 +15,8 @@ struct GameAsset {
     std::string source_path;
 };
 
-struct GameIndex {
+struct GameIndex
+{
     std::string profile = "uk-english-v1";
     std::string language = "en";
     std::vector<GameAsset> files;

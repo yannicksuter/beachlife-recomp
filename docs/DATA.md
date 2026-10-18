@@ -86,6 +86,8 @@ selection and opens the game window immediately. Its `runtime::ContentStartup`
 steps run the shared synchronous `launcher::open_content` check/preparation API
 on the existing startup worker: validate the cache, prepare or repair if needed,
 mount `PreparedSource`, save the offline binding, then read `BeachLife.ini`.
+A binding that cannot be saved only loses that offline memory; the game still
+starts. A set published just before the player leaves is still remembered.
 The loading screen shows the actual preparation phases and their byte progress.
 Each preparation phase has an equal share within that startup step; percentages
 measure completed work, not estimated remaining time.
@@ -108,17 +110,34 @@ The `content_startup` test exercises the complete loading worker without a
 graphics device: preparation, cancellation/resume, saved/offline reads, repair,
 mount lifetime, progress and storage failures.
 
+**Preview title screen** on Game files follows the same startup path and queues
+`Data/Screens/FrontScreen.tga` after mounting. The command-line equivalent is
+`beachlife --play --preview-screen Data/Screens/FrontScreen.tga`; another supported
+TGA logical path may be selected. It works offline after preparation. The decoder
+reads through `FileSource`, produces top-left RGBA pixels and supports indexed
+and truecolor images, raw or RLE, with both image origins. Unsupported encodings,
+invalid palette references, truncated packets and oversized inputs fail clearly.
+Input is limited to 128 MiB and output to 16M pixels. Palette/index and alpha
+layouts must agree; some non-screen retail TGAs require further format research.
+
+The image read runs on the loading worker with byte progress and cancellation.
+Only a complete result reaches the GPU; the queued source retains its mount lock.
+No image is bundled or written back to the cache. `tga_images` covers generated
+format/range fixtures, and `content_startup` checks preview pixels, offline reads,
+failure propagation and cancellation before presentation.
+
 Launcher settings format 3 remembers the prepared identity and the absolute ISO
 path, size and modification time; format 4 adds the performance overlay, and
 formats 1 to 3 still load. Normal startup
 checks that stamp and the prepared manifest/files, or uses the remembered set
-when the ISO is absent. This quick source check is not a content hash: a change
+when the ISO is absent or unreachable (removed media, a drive without its disc). This quick source check is not a content hash: a change
 that preserves both size and timestamp needs explicit **Verify and repair** or
 reselection. Reselecting even the same path clears remembered readiness. Full
 preparation/repair fingerprints the ISO and verifies the assets. The binding
 and prepared contents stay outside application packages and updates.
 
-`beachlife --play` uses the same setup path with saved settings. The development
+`beachlife --play` uses the same setup path with saved settings, without opening
+the launcher. Settings it cannot read stop it with that error and stay untouched. The development
 option `--cache-directory folder` selects another cache parent; use the same
 override on later launches. It does not change the persisted default location.
 

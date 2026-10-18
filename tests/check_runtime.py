@@ -18,7 +18,7 @@ UNAVAILABLE = ("is not available on this computer", "Cannot start the game", "Ca
 def check(executable):
     with tempfile.TemporaryDirectory(prefix='beachlife-runtime-') as temporary:
         image = Path(temporary) / 'source.iso'
-        image.write_bytes(iso_files(content_files()[0]))
+        image.write_bytes(iso_files(content_files(screen=True)[0]))
         config = Path(temporary) / 'launcher.cfg'
         quoted = str(image).replace('\\', '\\\\').replace('"', '\\"')
         config.write_text(f'beachlife-launcher 2\nsource.path "{quoted}"\n', encoding='utf-8')
@@ -40,6 +40,20 @@ def check(executable):
                                   '--config', str(config), '--cache-directory', str(Path(temporary)/'cache')],
                                  capture_output=True, text=True, timeout=60)
         assert overlay.returncode == 0 and ' 30 frames' in overlay.stdout, overlay.stdout + overlay.stderr
+        # A selected asset follows the same setup/worker/GPU path. The ISO may
+        # be disconnected after preparation; the image is read from the VFS.
+        image.unlink()
+        preview = subprocess.run([str(Path(executable).resolve()), '--play', '--smoke-test', '--frames', '2',
+                                  '--preview-screen', 'Data/Screens/FrontScreen.tga',
+                                  '--config', str(config), '--cache-directory', str(Path(temporary)/'cache')],
+                                 capture_output=True, text=True, timeout=60)
+        assert preview.returncode == 0 and ' 2 frames' in preview.stdout, preview.stdout + preview.stderr
+        assert 'Screen preview: Data/Screens/FrontScreen.tga, 4 x 2 pixels read through VFS.' in preview.stdout, preview.stdout
+        missing = subprocess.run([str(Path(executable).resolve()), '--play', '--smoke-test', '--frames', '1',
+                                  '--preview-screen', 'Data/Screens/missing.tga',
+                                  '--config', str(config), '--cache-directory', str(Path(temporary)/'cache')],
+                                 capture_output=True, text=True, timeout=60)
+        assert missing.returncode == 1 and 'Game runtime:' not in missing.stdout and missing.stderr, missing
     return 0
 
 

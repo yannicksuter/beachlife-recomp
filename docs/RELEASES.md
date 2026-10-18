@@ -1,8 +1,9 @@
 # Pull requests and releases
 
 `main` is development. `stable` is the default release branch and receives
-promotions through PRs from this repository's `main`. The repository stays
-private. Actions artifacts and releases require repository access.
+promotions through PRs from this repository's `main`. Published releases and
+test prereleases are public so the launcher's updater can retrieve them.
+Draft candidates remain unpublished until the owner approves publication.
 
 ## One version source
 
@@ -98,7 +99,7 @@ an up-to-date branch and these checks from GitHub Actions:
 
 Keep the default Actions token read-only. Only publication/cleanup jobs receive
 contents-write. The release jobs depend on the complete aggregate gate,
-including the Windows execution checks. Preserve repository privacy. A personal
+including the Windows execution checks. A personal
 repository uses its available owner/admin roles rather than an organization
 team copied from another repository.
 

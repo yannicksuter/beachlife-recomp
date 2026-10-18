@@ -3,9 +3,11 @@
 #include <memory>
 #include <optional>
 
-namespace beachlife::platform {
+namespace beachlife::platform
+{
 
-struct SystemUsage {
+struct SystemUsage
+{
     std::optional<double> cpu_percent;
     std::optional<double> gpu_percent;
 };
@@ -14,15 +16,16 @@ struct SystemUsage {
 // device/engine, never a sum of engines that can execute concurrently. Missing
 // counters stay unavailable. Sampling runs every 500 ms on a private worker;
 // the presentation thread only copies the latest result. Create only when used.
-class SystemUsageMonitor {
-public:
+class SystemUsageMonitor
+{
+  public:
     SystemUsageMonitor();
     ~SystemUsageMonitor();
     SystemUsageMonitor(const SystemUsageMonitor&) = delete;
     SystemUsageMonitor& operator=(const SystemUsageMonitor&) = delete;
     SystemUsage latest() const;
 
-private:
+  private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

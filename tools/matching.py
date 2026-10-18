@@ -141,7 +141,7 @@ class Toolchain:
         (folder / 'imports.log').write_text(log)
         return 'msvcrt-import.lib'
 
-    def build(self, folder, sources, name, extra_link=(), extra_compile=()):
+    def build(self, folder, sources, name, extra_link=(), extra_compile=(), source_flags=None):
         folder.mkdir(parents=True, exist_ok=True)
         objects, logs = [], []
         for source in sources:
@@ -150,7 +150,8 @@ class Toolchain:
                 raise ValueError('Matching source basenames must be unique.')
             objects.append(obj)
             flags = ['/nologo', '/c', '/O2', '/Ob0', '/Zi', '/Gd', '/Gy',
-                     '/Fdcompile.pdb', '/Fo' + obj, *extra_compile, self.native(source)]
+                     '/Fdcompile.pdb', '/Fo' + obj, *extra_compile,
+                     *(source_flags or {}).get(source, ()), self.native(source)]
             self.response(folder / 'compile.rsp', flags)
             command = [str(self.compiler / 'CL.EXE'), '@compile.rsp']
             logs.append(self.run(command if os.name == 'nt' else ['wine', *command], folder))
@@ -266,23 +267,59 @@ def game(tool, args):
     original = verify_original(args.original, target)
     source = args.source.resolve()
     sources = sorted(source.rglob('*.cpp'))
+    support = ROOT / 'decomp/support'
+    support_sources = sorted(support.glob('*.cpp'))
     if not sources:
         raise ValueError('No matching source files found.')
+    # Keep progress reports tied to the source/configuration actually compared.
+    inputs = sorted(set([*sources, *source.rglob('*.h'), *support_sources, TARGET,
+                         ROOT / 'decomp/metadata.csv', ROOT / 'decomp/msvcrt.def',
+                         ROOT / 'decomp/msvc6-sp4.json', ROOT / 'decomp/requirements.txt',
+                         Path(__file__).resolve()]))
+    def input_hashes():
+        return {str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path): digest(path)
+                for path in inputs}
+    fingerprints = input_hashes()
     folder = tool.output / 'game'
     folder.mkdir(parents=True, exist_ok=True)
     entry = folder / 'entry.cpp'
-    entry.write_text('extern "C" { int _fltused = 0; }\n'
+    entry.write_text('#include "tga_image.h"\n'
+                     'extern "C" { int _fltused = 0; }\n'
                      'float GetGameVersion();\nvolatile float fixture_result;\n'
                      'long GetFileSize(const char*);\nvolatile long fixture_size;\n'
-                     'extern "C" void fixture_entry() { fixture_result = GetGameVersion(); '
-                     'fixture_size = GetFileSize("generated.bin"); }\n')
+                     'char* LoadFile(const char*);\nchar* volatile fixture_file;\n'
+                     'char* LoadBleFile(const char*);\nchar* volatile fixture_buffer;\n'
+                     'unsigned int SoundNameHash(const char*);\nvolatile unsigned int fixture_hash;\n'
+                     'unsigned char* GetTgaPaletteData(unsigned char*, unsigned char, unsigned char);\n'
+                     'unsigned char* GetTgaPixelData(unsigned char*, unsigned char, unsigned short, unsigned char);\n'
+                     'void CopyTgaPalette(const unsigned char*, TgaImage*, int);\n'
+                     'void CopyTgaPixels(const unsigned char*, TgaImage*);\n'
+                     'void ExpandTgaRle(const unsigned char*, TgaImage*);\n'
+                     'unsigned char fixture_tga[18];\nunsigned char* volatile fixture_palette;\n'
+                     'unsigned char* volatile fixture_pixels;\n'
+                     'unsigned char fixture_palette_copy[3];\n'
+                     'extern "C" void fixture_entry() { TgaImage fixture_tga_image(0, 0); '
+                     'fixture_result = GetGameVersion(); '
+                     'fixture_size = GetFileSize("generated.bin"); '
+                     'fixture_file = LoadFile("generated.bin"); '
+                     'fixture_buffer = LoadBleFile("generated.ble"); '
+                     'fixture_hash = SoundNameHash("generated.wav"); '
+                     'fixture_palette = GetTgaPaletteData(fixture_tga, 0, 1); '
+                     'fixture_pixels = GetTgaPixelData(fixture_tga, 0, 0, 0); '
+                     'fixture_tga_image.palette = fixture_palette_copy; '
+                     'CopyTgaPalette(fixture_tga, &fixture_tga_image, 1); '
+                     'CopyTgaPixels(fixture_tga, &fixture_tga_image); '
+                     'ExpandTgaRle(fixture_tga, &fixture_tga_image); '
+                     'fixture_tga_image.palette = 0; }\n')
     library = tool.runtime_library(folder)
-    binary, pdb = tool.build(folder, [*sources, entry], 'BeachLife', ['/fixed:no', library],
-                            ['/MD', '/I' + tool.native(tool.compiler.parent / 'Include')])
+    binary, pdb = tool.build(folder, [*sources, *support_sources, entry], 'BeachLife', ['/fixed:no', library],
+                            ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
+                             '/I' + tool.native(source)],
+                            source_flags={support / 'operator_delete.cpp': ['/O1']})
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
-        'filename': 'BeachLife.exe', 'source-root': [str(source)],
+        'filename': 'BeachLife.exe', 'source-root': [str(source), str(support)],
         'hash': {'sha256': target['sha256']},
         'data-sources': [str(ROOT / 'decomp/metadata.csv')],
         'report': {'ignore-functions': ['fixture_entry']}}}})
@@ -295,22 +332,32 @@ def game(tool, args):
                        str(reports / 'comparison.json'), '--no-color'], folder)
     (reports / 'comparison.log').write_text(output)
     report = json.loads((reports / 'comparison.json').read_text())
-    functions = []
-    for item in target['functions']:
-        row = next((row for row in report['data'] if int(row['address'], 16) == int(item['address'], 16)), None)
-        if row is None:
-            raise ValueError(f"Comparator did not find {item['name']}.")
-        exact = read_va(original, int(item['address'], 16), item['size']) == read_va(binary, int(row['recomp'], 16), item['size'])
-        functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
-                          'normalized_match': row['matching'], 'exact_bytes': exact})
+    def compare_functions(items):
+        functions = []
+        for item in items:
+            row = next((row for row in report['data'] if int(row['address'], 16) == int(item['address'], 16)), None)
+            if row is None:
+                raise ValueError(f"Comparator did not find {item['name']}.")
+            exact = read_va(original, int(item['address'], 16), item['size']) == read_va(binary, int(row['recomp'], 16), item['size'])
+            functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
+                              'normalized_match': row['matching'], 'exact_bytes': exact})
+        return functions
+    functions = compare_functions(target['functions'])
+    library_functions = compare_functions(target.get('library_functions', []))
+    if input_hashes() != fingerprints:
+        raise ValueError('Matching inputs changed during comparison; rerun the comparison.')
     result = {'target': target['id'], 'original_sha256': target['sha256'],
               'compiler': 'VC6 SP4 / C2 12.0.8799.0', 'reccmp': '0.1.7',
               'functions': functions, 'scope': 'Only listed functions; whole-game denominator unknown.',
+              'library_functions': library_functions,
+              'input_sha256': fingerprints,
               'comparison_layout': 'Relocations enabled in rebuilt comparison image; original remains unchanged.'}
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
     if any(item['normalized_match'] != 1 for item in functions):
         raise ValueError('One or more annotated functions do not match.')
+    if any(item['normalized_match'] != 1 for item in library_functions):
+        raise ValueError('One or more library support functions do not match.')
 
 
 def main():

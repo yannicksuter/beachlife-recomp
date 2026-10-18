@@ -15,6 +15,13 @@ def check(executable):
         assert result.returncode == 0, result.stdout + result.stderr
         assert 'Launcher window, artwork, fonts and pages verified.' in result.stdout, result.stdout
         assert not (Path(temporary) / 'launcher.cfg').exists(), 'Smoke must not create user preferences'
+        # Without a home or local data folder there is nowhere to prepare files,
+        # but the launcher still opens (the Game files page says why).
+        bare = {key: value for key, value in env.items() if key not in ('HOME', 'XDG_DATA_HOME', 'LOCALAPPDATA')}
+        result = subprocess.run([str(Path(executable).resolve()), '--smoke-test', '--config',
+                                 str(Path(temporary) / 'launcher.cfg')], env=bare,
+                                capture_output=True, text=True, timeout=45)
+        assert result.returncode == 0, result.stdout + result.stderr
 
 
 if __name__ == '__main__':

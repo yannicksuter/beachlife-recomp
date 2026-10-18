@@ -11,13 +11,23 @@ TABLE = DESCRIPTOR + 0x600
 RECORDS = TABLE + 0x100
 
 
-def content_files():
+def screen_tga():
+    """A generated 4x2 indexed RLE image, stored bottom-up like the original screens."""
+    header = struct.pack('<BBBHHBHHHHBB', 0, 1, 9, 0, 4, 24, 0, 0, 4, 2, 8, 0)
+    palette = bytes((0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255))
+    # Top row: red, green, blue, white. Bottom row: white, blue, green, red.
+    return header + palette + bytes((7, 3, 2, 1, 0, 0, 1, 2, 3))
+
+
+def content_files(*, screen=False):
     assets = [('BeachLife.ini', b'[Fixture]\nLanguage=English\n', False),
               ('Data/Script/sample.pis', b'generated fixture\n', False),
               ('Data/Sprites/test.dat', bytes(range(256))*300, False),
               ('Data/empty.bin', b'', False),
               ('Data/loose.txt', b'loose file\x00\xff', True),
               ('Setup.exe', b'not game content', False)]
+    if screen:
+        assets[1] = ('Data/Screens/FrontScreen.tga', screen_tga(), False)
     header = bytearray(16384)
     struct.pack_into('<5I', header, 0, 0x28635349, 0x01006000, 0, DESCRIPTOR, 0x600)
     directories = list(dict.fromkeys(str(PurePosixPath(path).parent).replace('.', '') for path, _, _ in assets))

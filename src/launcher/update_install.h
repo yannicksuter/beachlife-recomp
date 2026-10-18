@@ -10,22 +10,28 @@
 // (tools/package_build.py) lists every file it installs in SOURCE-MANIFEST.json;
 // only those files are replaced, so anything else in the folder stays. Work
 // happens in <package>/.update.
-namespace beachlife::launcher {
+namespace beachlife::launcher
+{
 
 inline constexpr const char* package_manifest = "SOURCE-MANIFEST.json";
 
-struct PackageFile {
+struct PackageFile
+{
     std::string path; // relative, '/' separated
     std::string sha256;
     std::uint64_t bytes = 0;
     unsigned mode = 0644;
 };
 
-struct PackageManifest {
+struct PackageManifest
+{
     std::string version, platform, architecture;
     std::vector<PackageFile> files; // without SOURCE-MANIFEST.json itself
     // The package id in the archive names, e.g. steamdeck-x86_64.
-    std::string package() const { return platform + "-" + architecture; }
+    std::string package() const
+    {
+        return platform + "-" + architecture;
+    }
 };
 
 // Throws std::runtime_error for a missing, malformed or unsafe manifest.
@@ -41,15 +47,18 @@ std::filesystem::path package_folder(const std::filesystem::path& program_folder
 // and folders inside the package are accepted, every file the manifest lists
 // must match its size and SHA-256, and nothing else may be in it. `cancelled` is
 // polled; cancelling throws.
-std::filesystem::path unpack_package(const std::filesystem::path& archive, const std::filesystem::path& destination,
-                                     const std::function<bool()>& cancelled = {});
+std::filesystem::path unpack_package(const std::filesystem::path& archive,
+    const std::filesystem::path& destination,
+    const std::function<bool()>& cancelled = {});
 
 // Replaces the package installed in `base` by the unpacked package in `staged`:
 // each file either manifest lists moves to `backup` (when present), then the new
 // files move in, the manifest last. Any failure moves everything back and
 // rethrows. `before_move` (tests) sees each relative path first.
-void replace_package(const std::filesystem::path& base, const std::filesystem::path& staged,
-                     const std::filesystem::path& backup, const std::function<void(const std::string&)>& before_move = {});
+void replace_package(const std::filesystem::path& base,
+    const std::filesystem::path& staged,
+    const std::filesystem::path& backup,
+    const std::function<void(const std::string&)>& before_move = {});
 
 // <base>/.update: downloads, the unpacked package and the previous files.
 std::filesystem::path update_folder(const std::filesystem::path& base);
@@ -63,8 +72,9 @@ std::string install_blocker(const std::filesystem::path& base);
 std::string finish_updates(const std::filesystem::path& base);
 
 // Marks the folder while files move, so that finish_updates can complete the move.
-void install_staged_package(const std::filesystem::path& base, const std::filesystem::path& staged,
-                            const std::filesystem::path& backup);
+void install_staged_package(const std::filesystem::path& base,
+    const std::filesystem::path& staged,
+    const std::filesystem::path& backup);
 
 // The launcher program in `base` to start after an update.
 std::filesystem::path installed_launcher(const std::filesystem::path& base);

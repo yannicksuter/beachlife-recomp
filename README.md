@@ -19,6 +19,10 @@ from an ISO, reads installer cabinets and prepares verified local game data
 for a read-only VFS. Play opens the game window, then checks, prepares and mounts
 those files on a worker behind its loading screen. Completed setup works with
 the ISO disconnected.
+**Game files → Preview title screen** displays the original title artwork from
+the prepared data in the native window. The preview uses the selected graphics
+API and display settings; Esc returns to the launcher. It is an image viewer,
+not the reconstructed game menu.
 The observed English data layout is supported; broader language detection and
 gameplay are still ahead. Play opens the game window on
 Direct3D 12, Vulkan or Metal and runs an empty game loop until the game code is
@@ -86,6 +90,11 @@ tests/               generated-fixture and native startup checks
 docs/                architecture, building, installation and releases
 ```
 
-Retail code lives only in `decomp/`. The port will consume revision-identified
-exports and apply patches to build trees. New host code lives here. See
+Retail code lives only in `decomp/`. Optional native subsystem tests consume
+revision-pinned exports and apply faithful patches in build trees; the production
+game module is still ahead. See [subsystem tests](docs/BUILDING.md#reconstructed-subsystem-tests),
 [ARCHITECTURE](docs/ARCHITECTURE.md) and [patch rules](patches/README.md).
+
+The [progress report tool](docs/PROGRESS.md) turns a local audited split inventory
+and matching results into an offline HTML overview of methods, source units,
+matching, native linking and unmapped coverage.

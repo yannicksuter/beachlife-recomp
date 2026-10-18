@@ -1,8 +1,8 @@
 # Building
 
-The current executable is the graphical launcher. Gameplay and content-language
-detection are not implemented yet. Building requires no original game files or
-decomp source.
+The current executable is the graphical launcher and native runtime. Gameplay
+and broader content-language detection are not implemented yet. Building requires
+no original game files or matching compiler.
 
 ## Requirements and presets
 
@@ -38,6 +38,71 @@ Configuration exports each clean pin into the build directory, applies any order
 `patches/<name>/series`,
 and records file hashes. Every build rejects edited checkouts, edited prepared
 files or stale patch identities. Put changes in patch files, never in `extern/`.
+
+## Source formatting
+
+All C and C++ sources in `src/`, `tests/` and `decomp/` use clang-format at the
+version pinned in `tools/requirements-format.txt`. Patch releases can format
+differently, so the tool refuses any other version. Install the pinned wheel
+once, then format the work tree:
+
+```sh
+python3 -m venv build/format-venv
+build/format-venv/bin/pip install -r tools/requirements-format.txt
+python3 tools/format_sources.py
+python3 tools/format_sources.py --check
+```
+
+Paths limit either command to files or folders. Tracked and new files are
+included; submodules, ignored files and `orig/` are not. `--check` prints the
+differences and fails without changing anything; the Linux CI job runs it.
+
+The root `.clang-format` is the native C++20 style. `decomp/.clang-format` keeps
+include order and C++98 `> >` for the VC6 compiler. Formatting moves lines and
+adds braces but does not change behavior. Only line numbers (`__LINE__`,
+`std::source_location`) can differ in the output. Code that must keep its line
+numbers goes between `// clang-format off` and `// clang-format on` with a
+reason. Format a reconstructed file before writing patches for it, so the
+patches apply to formatted source.
+
+## Reconstructed subsystem tests
+
+The optional TGA target compiles seven reconstructed image helpers using the
+native compiler and CRT. It consumes a committed source export with faithful
+patches through the same preparation tool as dependencies. Enable it explicitly:
+
+```sh
+cmake --preset release -B build/reconstructed-tga \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
+cmake --build build/reconstructed-tga --target reconstructed_tga_tests --parallel
+ctest --test-dir build/reconstructed-tga -R '^reconstructed_tga$' --output-on-failure
+```
+
+`BUILD_TESTING` must be enabled. `cmake/Decomp.cmake` owns the full source commit
+pin; that object must exist locally, so shallow checkouts may need more history
+before configuration. Configuration never fetches it. To advance the source,
+commit the reconstructed increment first, then update the pin in a separate
+native integration change. Uncommitted edits under `decomp/` are rejected;
+unrelated host edits do not affect the export.
+
+Configuration prepares `build/reconstructed-tga/prepared/beachlife-decomp/`
+and its adjacent JSON manifest. Every library build, including an otherwise
+up-to-date build, verifies the revision, source hashes, ordered patch series
+and prepared files. Edit source or patches and reconfigure; never edit prepared
+files. The matching-only VC6 release wrapper is excluded in favor of the host
+CRT. The default build leaves this target disabled.
+
+The generated fixtures check palette/pixel offsets, channel conversion, row
+orientation, raw and run-length packets, empty images and buffer ownership.
+They require no ISO or extracted data. The target is a native test executable;
+the production launcher still uses its existing decoder. A passing test does
+not establish a complete TGA parser, original ABI matching or gameplay.
+
+For a separate Linux sanitizer build, add
+`-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
+`-DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'` at configuration.
+Windows cross builds need an explicit execution environment to run CTest,
+as described below. Hosted CI and hardware qualification remain separate checks.
 
 ## Linux
 
@@ -155,6 +220,18 @@ overrides the user cache for development. `--frames N` stops after N frames, and
 `--screenshot file.png` then saves the last one. The `game_startup` and
 `game_runtime` integration tests run it hidden on a generated ISO and are skipped
 where no display or GPU device exists, as on hosted CI runners.
+
+View a supported original TGA through the same worker and VFS:
+
+```sh
+./build/debug/beachlife --play --preview-screen Data/Screens/FrontScreen.tga
+```
+
+The selected ISO or prepared cache supplies the image. This explicit preview
+also appears as **Preview title screen** on the launcher's Game files page;
+it does not execute a reconstructed menu. `tga_images` tests generated decoder
+fixtures, `content_startup` checks image progress/cancellation and offline mount
+lifetime, and `game_runtime` presents a generated image when a GPU is available.
 
 The `launcher_updates` test writes packages the way `tools/package_build.py`
 does, plus damaged and hostile archives, and checks the update rules,

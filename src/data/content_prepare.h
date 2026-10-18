@@ -5,28 +5,36 @@
 #include <functional>
 #include <stdexcept>
 
-namespace beachlife::data {
+namespace beachlife::data
+{
 
-struct PrepareProgress {
+struct PrepareProgress
+{
     // fingerprint, checking, extracting, confirming, ready; bytes are per phase.
     std::string phase, path;
     std::uint64_t completed_bytes = 0, total_bytes = 0;
     std::size_t completed_files = 0, total_files = 0;
 };
 
-struct PrepareOptions {
+struct PrepareOptions
+{
     // Called synchronously on the preparing thread. Run preparation on a
     // worker and publish progress snapshots for the loading screen.
     std::function<void(const PrepareProgress&)> progress;
     std::function<bool()> cancelled;
 };
 
-class PreparationCancelled : public std::runtime_error {
-public:
-    PreparationCancelled() : std::runtime_error("Content preparation cancelled.") {}
+class PreparationCancelled : public std::runtime_error
+{
+  public:
+    PreparationCancelled()
+        : std::runtime_error("Content preparation cancelled.")
+    {
+    }
 };
 
-struct PrepareResult {
+struct PrepareResult
+{
     std::filesystem::path root;
     ContentManifest manifest;
     std::size_t files_reused = 0, files_written = 0;

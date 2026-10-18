@@ -8,23 +8,28 @@
 
 struct ImFont;
 
-namespace beachlife::platform {
+namespace beachlife::platform
+{
 class Video;
 struct Frame;
-}
+} // namespace beachlife::platform
 
-namespace beachlife::runtime {
+namespace beachlife::runtime
+{
 
 // The loading screen shown before the game starts: a label and percentage over a
 // thin progress bar, centred on black. It fades in only when the startup work
 // takes longer than a moment and fades out to the black the game starts from.
 // Presentation only: ImGui draws over the game's back buffer before the game runs.
 // Adapted from Recharged's graphics preparation screen.
-class LoadingView {
-public:
+class LoadingView
+{
+  public:
     // `background` is the game's back buffer, black until its first frame. A
     // missing font is an error: the package is incomplete.
-    LoadingView(platform::Video& video, const platform::Frame& background, const std::filesystem::path& font);
+    LoadingView(platform::Video& video,
+        const platform::Frame& background,
+        const std::filesystem::path& font);
     // One frame while the work runs: its label, and its share when known
     // (none sweeps a short segment across the bar).
     void draw(const std::string& label, std::optional<float> share);
@@ -32,7 +37,7 @@ public:
     // once a black frame has been presented and nothing remains shown.
     bool draw_finished();
 
-private:
+  private:
     using Clock = std::chrono::steady_clock;
     void frame(bool finished, const std::optional<float>* share);
     void build_font(float size, float density);

@@ -3,9 +3,11 @@
 
 #include <vector>
 
-namespace beachlife::launcher {
+namespace beachlife::launcher
+{
 
-struct Artwork {
+struct Artwork
+{
     SDL_Texture* sharp = nullptr;
     SDL_Texture* soft = nullptr; // Blurred at load time for frosted panels; the file is unchanged.
     float width = 0, height = 0;
@@ -17,10 +19,11 @@ bool load_artwork(SDL_Renderer* renderer, const char* path, Artwork& artwork);
 // A PNG drawn at its exact on-screen size. The renderer has no mipmaps, so the picture is
 // area-averaged (with premultiplied alpha) to the pixel width it is shown at whenever that
 // changes, then uploaded with straight alpha, which every renderer, software too, blends.
-struct Picture {
+struct Picture
+{
     std::vector<unsigned char> pixels; // full size, premultiplied RGBA
     float width = 0, height = 0;
-    SDL_Texture* texture = nullptr;    // `pixels` resampled to `texture_width`
+    SDL_Texture* texture = nullptr; // `pixels` resampled to `texture_width`
     int texture_width = 0;
 };
 bool load_picture(const char* path, Picture& picture);

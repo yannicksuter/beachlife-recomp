@@ -8,6 +8,7 @@ Dear ImGui with settings/source logic independent of rendering.
 ```mermaid
 flowchart LR
     decomp[decomp: reconstructed retail source] --> pin[Revision export and patches]
+    pin --> tests[Native subsystem tests]
     pin --> game[Future native game module]
     launcher[New launcher and runtime] --> game
     game --> platform[New platform services]
@@ -18,9 +19,11 @@ flowchart LR
 
 This repository owns both tracks. `src/` contains new bootstrap, launcher,
 data, runtime and platform code. `decomp/` holds faithful reconstructed retail
-source and matching configuration; no sibling checkout is required. The future
-native game module will consume a revision-identified export of that source
-with faithful portability patches. Intentional behavior changes stay in a
+source and matching configuration; no sibling checkout is required. The source
+preparation tool exports `decomp/` from a full local commit ID, records its tree
+and file hashes, and applies faithful patches in order. The opt-in native TGA
+test target already consumes that export; the future native game module will
+use the same boundary. Intentional behavior changes stay in a
 separate optional series, with tweaks off by default. Third-party dependencies
 remain immutable pins; never edit their checkouts in place.
 
@@ -30,9 +33,18 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. The version getter and file-size helper match after address
-normalization, totaling 113 bytes; the full game layout remains unknown.
+verified. Twelve reconstructed game functions match after address normalization,
+totaling 1,123 bytes. Six functions also match all 527 raw bytes exactly. An
+11-byte runtime release wrapper is verified separately as library support;
+the full game layout remains unknown.
 See [matching setup](../decomp/README.md).
+
+`beachlife_reconstructed_tga` compiles seven matched helpers with the modern
+compiler and host CRT. Its generated test executable checks data conversion
+and ownership; it does not link those helpers into the production launcher.
+The complete original parser and allocating constructor remain separate work.
+See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
+for the pinned build and verification commands.
 
 The host is 64-bit. x86_64 and ARM64 are distinct architectures, even though
 both targets use little-endian storage. File/save layouts, pointer widths,
@@ -74,6 +86,13 @@ the game starts from. The optional performance overlay (FPS, system GPU and CPU
 usage, also from Recharged) is host presentation only; the game never sees it.
 Renderer-independent settings code handles UTF-8
 paths, bounded settings parsing, atomic replacement and basic source checks.
+
+The explicit image-preview mode uses the same worker and prepared VFS to load
+a selected TGA into an RGBA frame. It supports the palette-based RLE images in
+the game's screen directory. The video layer presents the decoded frame using
+the configured Fit/Stretch mode; the overlay identifies it as an image preview.
+Normal Play still runs the empty loop. This decoder is new host tooling, separate
+from reconstruction of the retail image loader.
 
 The retail DirectDraw/GDI operations determine whether adaptation belongs at
 the API boundary or at a narrow game-renderer interface. That mapping remains

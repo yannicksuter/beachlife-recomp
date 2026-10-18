@@ -10,12 +10,16 @@
 #include <system_error>
 #include <utility>
 
-namespace beachlife::launcher {
-namespace {
+namespace beachlife::launcher
+{
+namespace
+{
 namespace fs = std::filesystem;
 
-platform::HttpRequest github_request(const std::string& url, const BuildIdentity& build,
-                                     const std::shared_ptr<platform::HttpCancel>& cancel) {
+platform::HttpRequest github_request(const std::string& url,
+    const BuildIdentity& build,
+    const std::shared_ptr<platform::HttpCancel>& cancel)
+{
     platform::HttpRequest request;
     request.url = url;
     request.user_agent = "BeachLife/" + build.version;
@@ -24,208 +28,359 @@ platform::HttpRequest github_request(const std::string& url, const BuildIdentity
     return request;
 }
 
-std::string github_failure(long status) {
-    if (status == 403 || status == 429) return "GitHub is limiting requests from this network; try again later.";
-    if (status == 404) return "The project's releases were not found on GitHub.";
+std::string github_failure(long status)
+{
+    if (status == 403 || status == 429)
+    {
+        return "GitHub is limiting requests from this network; try again later.";
+    }
+    if (status == 404)
+    {
+        return "The project's releases were not found on GitHub.";
+    }
     return "GitHub answered with error " + std::to_string(status) + ".";
 }
 
-std::string stamp() {
+std::string stamp()
+{
     static unsigned counter = 0;
     return std::to_string(std::time(nullptr)) + "-" + std::to_string(++counter);
 }
 
 // Removes `folder` when it holds no files (only empty folders).
-void remove_if_empty(const fs::path& folder) {
+void remove_if_empty(const fs::path& folder)
+{
     std::error_code error;
     for (const auto& entry : fs::recursive_directory_iterator(folder, error))
-        if (!entry.is_directory()) return;
+    {
+        if (!entry.is_directory())
+        {
+            return;
+        }
+    }
     fs::remove_all(folder, error);
 }
 } // namespace
 
-UpdateService::UpdateService(BuildIdentity build, fs::path base) : build_(std::move(build)), base_(std::move(base)) {
+UpdateService::UpdateService(BuildIdentity build, fs::path base)
+    : build_(std::move(build))
+    , base_(std::move(base))
+{
     // The installed package names its platform (the Steam Deck build of Linux, say).
-    try {
-        if (!base_.empty()) build_.package = read_package_manifest(base_ / package_manifest).package();
-    } catch (const std::exception&) {}
+    try
+    {
+        if (!base_.empty())
+        {
+            build_.package = read_package_manifest(base_ / package_manifest).package();
+        }
+    }
+    catch (const std::exception&)
+    {
+    }
 }
 
-UpdateService::~UpdateService() {
+UpdateService::~UpdateService()
+{
     cancel();
-    if (worker_.joinable()) worker_.join();
+    if (worker_.joinable())
+    {
+        worker_.join();
+    }
 }
 
-void UpdateService::set(const std::function<void(Status&)>& change) {
+void UpdateService::set(const std::function<void(Status&)>& change)
+{
     const std::lock_guard lock(mutex_);
     change(status_);
 }
 
-UpdateService::Status UpdateService::snapshot() const {
+UpdateService::Status UpdateService::snapshot() const
+{
     const std::lock_guard lock(mutex_);
     return status_;
 }
 
-void UpdateService::cancel() {
+void UpdateService::cancel()
+{
     const std::lock_guard lock(mutex_);
-    if (cancel_) cancel_->cancel();
+    if (cancel_)
+    {
+        cancel_->cancel();
+    }
 }
 
-void UpdateService::start(std::shared_ptr<platform::HttpCancel> cancel, const std::function<void(Status&)>& begin,
-                          std::function<void()> task) {
+void UpdateService::start(std::shared_ptr<platform::HttpCancel> cancel,
+    const std::function<void(Status&)>& begin,
+    std::function<void()> task)
+{
     std::shared_ptr<platform::HttpCancel> previous;
     {
         const std::lock_guard lock(mutex_);
         previous = std::exchange(cancel_, std::move(cancel));
     }
-    if (previous) previous->cancel();
-    if (worker_.joinable()) worker_.join();
+    if (previous)
+    {
+        previous->cancel();
+    }
+    if (worker_.joinable())
+    {
+        worker_.join();
+    }
     set(begin); // shows at once, before the next snapshot()
     worker_ = std::thread(std::move(task));
 }
 
-void UpdateService::check(UpdateChannel channel) {
+void UpdateService::check(UpdateChannel channel)
+{
     {
         const std::lock_guard lock(mutex_);
         // An installation is never interrupted.
-        if (status_.state == State::Downloading || status_.state == State::Installing || status_.state == State::Installed)
+        if (status_.state == State::Downloading || status_.state == State::Installing ||
+            status_.state == State::Installed)
+        {
             return;
+        }
     }
     auto cancel = std::make_shared<platform::HttpCancel>();
-    start(cancel, [channel](Status& status) {
-        status.state = State::Checking;
-        status.channel = channel;
-        status.error.clear();
-        status.offer.reset();
-        status.install_blocker.clear();
-    }, [this, channel, cancel] { run_check(channel, cancel); });
+    start(
+        cancel,
+        [channel](Status& status)
+        {
+            status.state = State::Checking;
+            status.channel = channel;
+            status.error.clear();
+            status.offer.reset();
+            status.install_blocker.clear();
+        },
+        [this, channel, cancel]
+        {
+            run_check(channel, cancel);
+        });
 }
 
-void UpdateService::install() {
+void UpdateService::install()
+{
     std::optional<PublishedBuild> offer;
     {
         const std::lock_guard lock(mutex_);
-        if ((status_.state != State::Available && status_.state != State::InstallFailed) || !status_.offer ||
-            !status_.install_blocker.empty())
+        if ((status_.state != State::Available && status_.state != State::InstallFailed) ||
+            !status_.offer || !status_.install_blocker.empty())
+        {
             return;
+        }
         offer = status_.offer;
     }
     auto cancel = std::make_shared<platform::HttpCancel>();
-    start(cancel, [](Status& status) {
-        status.state = State::Downloading;
-        status.error.clear();
-        status.received = status.total = 0;
-    }, [this, offer = *offer, cancel] { run_install(offer, cancel); });
+    start(
+        cancel,
+        [](Status& status)
+        {
+            status.state = State::Downloading;
+            status.error.clear();
+            status.received = status.total = 0;
+        },
+        [this, offer = *offer, cancel]
+        {
+            run_install(offer, cancel);
+        });
 }
 
-void UpdateService::run_check(UpdateChannel channel, std::shared_ptr<platform::HttpCancel> cancel) {
-    try {
-        const auto answer = platform::http_get(github_request(releases_api_url(build_.repository), build_, cancel));
-        if (answer.status != 200) throw std::runtime_error(github_failure(answer.status));
+void UpdateService::run_check(UpdateChannel channel, std::shared_ptr<platform::HttpCancel> cancel)
+{
+    try
+    {
+        const auto answer =
+            platform::http_get(github_request(releases_api_url(build_.repository), build_, cancel));
+        if (answer.status != 200)
+        {
+            throw std::runtime_error(github_failure(answer.status));
+        }
         const auto published = parse_releases(platform::parse_json(answer.body));
         const PublishedBuild* found = find_update(build_, channel, published);
-        if (!found) {
-            set([](Status& status) {
-                status.state = State::UpToDate;
-                status.checked = std::time(nullptr);
-            });
+        if (!found)
+        {
+            set(
+                [](Status& status)
+                {
+                    status.state = State::UpToDate;
+                    status.checked = std::time(nullptr);
+                });
             return;
         }
         PublishedBuild offer = *found;
         const std::string blocker = install_blocker(base_);
-        set([&](Status& status) {
-            status.state = State::Available;
-            status.offer = std::move(offer);
-            status.install_blocker = blocker;
-            status.checked = std::time(nullptr);
-        });
-    } catch (const platform::HttpError& error) {
-        if (error.cancelled()) set([](Status& status) { status.state = State::Idle; });
-        else set([&](Status& status) {
-            status.state = State::CheckFailed;
-            status.error = error.what();
-        });
-    } catch (const std::exception& error) {
-        set([&](Status& status) {
-            status.state = State::CheckFailed;
-            status.error = error.what();
-        });
+        set(
+            [&](Status& status)
+            {
+                status.state = State::Available;
+                status.offer = std::move(offer);
+                status.install_blocker = blocker;
+                status.checked = std::time(nullptr);
+            });
+    }
+    catch (const platform::HttpError& error)
+    {
+        if (error.cancelled())
+        {
+            set(
+                [](Status& status)
+                {
+                    status.state = State::Idle;
+                });
+        }
+        else
+        {
+            set(
+                [&](Status& status)
+                {
+                    status.state = State::CheckFailed;
+                    status.error = error.what();
+                });
+        }
+    }
+    catch (const std::exception& error)
+    {
+        set(
+            [&](Status& status)
+            {
+                status.state = State::CheckFailed;
+                status.error = error.what();
+            });
     }
 }
 
-void UpdateService::run_install(PublishedBuild offer, std::shared_ptr<platform::HttpCancel> cancel) {
+void UpdateService::run_install(PublishedBuild offer, std::shared_ptr<platform::HttpCancel> cancel)
+{
     const fs::path folder = update_folder(base_);
     const std::string id = stamp();
     const fs::path download = folder / ("download-" + id), staged = folder / ("staged-" + id);
     const fs::path backup = folder / ("previous-" + id);
-    auto cleanup = [&] {
+    auto cleanup = [&]
+    {
         std::error_code error;
         fs::remove_all(download, error);
         fs::remove_all(staged, error);
     };
-    try {
+    try
+    {
         const PackageAsset* asset = offer.package_for(build_.package);
-        if (!asset) throw std::runtime_error("This release has no package for " + build_.package + ".");
+        if (!asset)
+        {
+            throw std::runtime_error("This release has no package for " + build_.package + ".");
+        }
         std::string expected = expected_sha256(*asset, {});
         if (expected.empty())
-            if (const PackageAsset* sums = offer.checksums()) {
+        {
+            if (const PackageAsset* sums = offer.checksums())
+            {
                 const auto reply = platform::http_get(github_request(sums->url, build_, cancel));
-                if (reply.status == 200) expected = expected_sha256(*asset, reply.body);
+                if (reply.status == 200)
+                {
+                    expected = expected_sha256(*asset, reply.body);
+                }
             }
-        if (expected.empty()) throw std::runtime_error("The release has no checksum for " + asset->name + ".");
+        }
+        if (expected.empty())
+        {
+            throw std::runtime_error("The release has no checksum for " + asset->name + ".");
+        }
 
         fs::create_directories(download);
         const fs::path archive = download / platform::utf8_path(asset->name);
         auto request = github_request(asset->url, build_, cancel);
         request.headers = {"Accept: application/octet-stream"};
         request.stall_timeout = 60;
-        const long status = platform::http_download(request, archive, [&](std::uint64_t received, std::uint64_t total) {
-            set([&](Status& state) {
-                state.received = received;
-                state.total = total ? total : asset->size;
+        const long status = platform::http_download(request,
+            archive,
+            [&](std::uint64_t received, std::uint64_t total)
+            {
+                set(
+                    [&](Status& state)
+                    {
+                        state.received = received;
+                        state.total = total ? total : asset->size;
+                    });
             });
-        });
-        if (status != 200) throw std::runtime_error("The download failed with error " + std::to_string(status) + ".");
-        if (asset->size && fs::file_size(archive) != asset->size) throw std::runtime_error("The download is incomplete.");
+        if (status != 200)
+        {
+            throw std::runtime_error(
+                "The download failed with error " + std::to_string(status) + ".");
+        }
+        if (asset->size && fs::file_size(archive) != asset->size)
+        {
+            throw std::runtime_error("The download is incomplete.");
+        }
         if (platform::sha256_file(archive) != expected)
+        {
             throw std::runtime_error("The download is damaged (its checksum does not match).");
+        }
 
-        set([](Status& state) { state.state = State::Installing; });
-        const fs::path root = unpack_package(archive, staged, [&] { return cancel->cancelled(); });
+        set(
+            [](Status& state)
+            {
+                state.state = State::Installing;
+            });
+        const fs::path root = unpack_package(archive,
+            staged,
+            [&]
+            {
+                return cancel->cancelled();
+            });
         const auto incoming = read_package_manifest(root / package_manifest);
         const PortVersion version = parse_version(incoming.version);
         if (compare_versions(version, offer.version) != 0 || version.commit != offer.version.commit)
-            throw std::runtime_error("The package holds version " + incoming.version + ", not the one offered.");
-        if (cancel->cancelled()) throw platform::HttpError("Cancelled", true);
+        {
+            throw std::runtime_error(
+                "The package holds version " + incoming.version + ", not the one offered.");
+        }
+        if (cancel->cancelled())
+        {
+            throw platform::HttpError("Cancelled", true);
+        }
         install_staged_package(base_, root, backup);
         cleanup();
-        set([](Status& state) { state.state = State::Installed; });
-    } catch (const std::exception& error) {
+        set(
+            [](Status& state)
+            {
+                state.state = State::Installed;
+            });
+    }
+    catch (const std::exception& error)
+    {
         cleanup();
         remove_if_empty(backup);
         const auto* http = dynamic_cast<const platform::HttpError*>(&error);
         const bool cancelled = cancel->cancelled() || (http && http->cancelled());
-        set([&](Status& state) {
-            state.state = cancelled ? State::Available : State::InstallFailed;
-            state.error = cancelled ? std::string() : std::string(error.what());
-        });
+        set(
+            [&](Status& state)
+            {
+                state.state = cancelled ? State::Available : State::InstallFailed;
+                state.error = cancelled ? std::string() : std::string(error.what());
+            });
     }
 }
 
-bool UpdateService::preview(std::string_view state) {
-    if (build_.package.empty()) build_.package = "linux-x86_64";
+bool UpdateService::preview(std::string_view state)
+{
+    if (build_.package.empty())
+    {
+        build_.package = "linux-x86_64";
+    }
     const PortVersion self = parse_version(build_.version);
-    auto made_up = [&](bool test, int pull_request, PortVersion version) {
+    auto made_up = [&](bool test, int pull_request, PortVersion version)
+    {
         PublishedBuild offer;
         offer.test = test;
         offer.pull_request = pull_request;
         offer.version = std::move(version);
-        offer.tag = test ? "test-pr" + std::to_string(pull_request) + "-" + offer.version.commit : "v" + version_number(offer.version);
+        offer.tag = test ? "test-pr" + std::to_string(pull_request) + "-" + offer.version.commit
+                         : "v" + version_number(offer.version);
         offer.page = test ? pull_request_page_url(build_.repository, pull_request)
                           : releases_page_url(build_.repository) + "/tag/" + offer.tag;
-        offer.published = std::time(nullptr)-3*3600;
+        offer.published = std::time(nullptr) - 3 * 3600;
         PackageAsset asset;
-        asset.name = "beachlife-" + version_number(offer.version) + "+g" + offer.version.commit + "-" + build_.package + ".tar.gz";
+        asset.name = "beachlife-" + version_number(offer.version) + "+g" + offer.version.commit +
+                     "-" + build_.package + ".tar.gz";
         asset.url = offer.page;
         asset.size = 9713229;
         offer.assets.push_back(std::move(asset));
@@ -235,35 +390,61 @@ bool UpdateService::preview(std::string_view state) {
     ++next.patch;
     next.commit = "4f2a9c81d03e";
     Status status;
-    status.checked = std::time(nullptr)-120;
-    if (state == "uptodate") status.state = State::UpToDate;
-    else if (state == "checking") status.state = State::Checking;
-    else if (state == "failed") {
+    status.checked = std::time(nullptr) - 120;
+    if (state == "uptodate")
+    {
+        status.state = State::UpToDate;
+    }
+    else if (state == "checking")
+    {
+        status.state = State::Checking;
+    }
+    else if (state == "failed")
+    {
         status.state = State::CheckFailed;
         status.error = "Could not resolve host: api.github.com";
-    } else if (state == "available" || state == "blocked" || state == "downloading" || state == "installing" ||
-               state == "installfailed") {
+    }
+    else if (state == "available" || state == "blocked" || state == "downloading" ||
+             state == "installing" || state == "installfailed")
+    {
         status.offer = made_up(false, 0, next);
-        status.state = state == "downloading" ? State::Downloading : state == "installing" ? State::Installing
-            : state == "installfailed" ? State::InstallFailed : State::Available;
-        if (state == "blocked") status.install_blocker = "This copy was not unpacked from a release package, so it cannot update itself.";
-        if (state == "installfailed") status.error = "The download is damaged (its checksum does not match).";
+        status.state = state == "downloading"     ? State::Downloading
+                       : state == "installing"    ? State::Installing
+                       : state == "installfailed" ? State::InstallFailed
+                                                  : State::Available;
+        if (state == "blocked")
+        {
+            status.install_blocker =
+                "This copy was not unpacked from a release package, so it cannot update itself.";
+        }
+        if (state == "installfailed")
+        {
+            status.error = "The download is damaged (its checksum does not match).";
+        }
         status.received = 4598323;
         status.total = 9713229;
-    } else if (state == "test") {
+    }
+    else if (state == "test")
+    {
         PortVersion version = self.valid() ? self : parse_version("0.0.1");
         version.commit = "b81e07c4a2d9";
         status.channel = UpdateChannel::Test;
         status.offer = made_up(true, 3, version);
         status.state = State::Available;
-    } else if (state == "back") {
+    }
+    else if (state == "back")
+    {
         build_.origin = BuildOrigin::Test;
         build_.pull_request = 3;
         PortVersion release = self.valid() ? self : parse_version("0.0.1");
         release.commit = "6144eb682311";
         status.offer = made_up(false, 0, release);
         status.state = State::Available;
-    } else return false;
+    }
+    else
+    {
+        return false;
+    }
     const std::lock_guard lock(mutex_);
     status_ = std::move(status);
     return true;
