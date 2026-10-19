@@ -39,9 +39,9 @@ the dominant Rich-header record, and the generated PDB/comparison fixture is
 verified. 70 reconstructed game functions match after address normalization,
 totaling 5,331 bytes. 33 functions also match all 1,544 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Nine methods totaling 1,161 bytes also match after address normalization; their
+Ten methods totaling 1,179 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
-Three of those methods match all 106 raw bytes exactly.
+Four of those methods match all 124 raw bytes exactly.
 The full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 
@@ -171,6 +171,10 @@ through the actual virtual preparation callback. It reloads the current link and
 sentinel after each callback, preserving changes made during traversal. Generated
 native fixtures check those transitions with real base lifetime; complete Dialog
 construction, destruction and production screen integration remain unqualified.
+
+Linear child-link construction stores the supplied child pointer and clears
+the next link. Its original destructor and the owning container's lifetime
+remain separate reconstruction steps; this method has no native lifetime test.
 
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
