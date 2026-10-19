@@ -36,12 +36,12 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 67 reconstructed game functions match after address normalization,
-totaling 5,181 bytes. 33 functions also match all 1,544 raw bytes exactly.
+verified. 71 reconstructed game functions match after address normalization,
+totaling 5,385 bytes. 34 functions also match all 1,598 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Nine methods totaling 1,161 bytes also match after address normalization; their
+Twelve methods totaling 1,406 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
-Three of those methods match all 106 raw bytes exactly.
+Four of those methods match all 124 raw bytes exactly.
 The full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 
@@ -143,14 +143,62 @@ concurrent access and original parent unwind behavior remain unqualified.
 Screen rectangle retrieval, relative movement, saved-position restoration and
 preparation-state updates are reconstructed. Positioning starts from the saved
 rectangle on each call, then applies the requested horizontal and vertical
-offsets. Full screen construction and dialog dispatch remain separate steps.
+offsets. Complete screen construction and remaining dialog behavior are separate
+steps.
+
+The base screen-item constructor copies the supplied rectangle into its current
+and saved positions, initializes the observed state and marks the item prepared.
+Its ordinary destructor releases owned text through scalar deletion. The shared
+observed class prefix ends at the preparation state; the child pointer, name and
+child ring belong to the observed Dialog tail. Active entries hold Dialog
+pointers, and insertion and lookup share the same entry and value-node types.
+Native fixtures use the real base lifetime methods and check construction,
+cleanup and dispatch; the complete virtual table, derived lifetimes and deleting
+wrapper remain unqualified.
+
+`beachlife_reconstructed_screen_item` makes those lifetime and callback checks
+repeatable through an optional native test target. Generated objects use the
+prepared methods and one shared declaration; paired host allocation providers
+belong only to the test executable. Name lookup uses generated Dialog objects
+with initialized borrowed fields and a live child sentinel. The native profile's
+conditional inherited-constructor declaration is enabled consistently for this
+test archive and its consumers; it supplies no original Dialog lifetime.
+The target retains placement checks and does not connect these objects to
+production screens.
+
+Dialog preparation calls the base state update, then visits its child ring
+through the actual virtual preparation callback. It reloads the current link and
+sentinel after each callback, preserving changes made during traversal. Generated
+native fixtures check those transitions with real base lifetime; complete Dialog
+construction, destruction and production screen integration remain unqualified.
+
+Dialog positioning visits children with the observed type values 3 and 8,
+passing the parent's current left and top coordinates to their virtual position
+callback. It ignores its own two arguments and reloads coordinates, links and
+the sentinel as traversal proceeds. The native screen-item target includes the
+actual override; generated callback tests cover filtering and traversal changes.
+The selected retail child implementations remain separate dependencies.
+
+Linear child-link construction stores the supplied child pointer and clears
+the next link. Its original destructor and the owning container's lifetime
+remain separate reconstruction steps; this method has no native lifetime test.
 
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
 Insertion preserves the observed iterator calling convention and link updates.
 Allocation shares one inline pool-lock guard definition with the existing
-consumers. The native profile derives pool slots from the actual node size and
-explicitly starts the byte-storage, free-link and node lifetimes.
+consumers. The native profile derives active-entry pool slots from the actual
+node size and explicitly starts the byte-storage, free-link and node lifetimes.
+
+Saved-position node allocation and insertion have their own reconstructed payload
+specialization, using the same pool and compiler cleanup contract. Insertion
+preserves the typed reference, iterator result and observed link-update order.
+These methods are qualified for matching. The native profile sizes saved-node
+slots from the host type and explicitly starts node and free-link lifetimes.
+The optional `beachlife_reconstructed_screen_placements` archive composes node
+allocation, insertion, lookup and recycling. Generated caller-owned records
+qualify duplicate-group selection, unchanged miss outputs and repeated cleanup;
+complete store lifetime and production integration remain separate steps.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test

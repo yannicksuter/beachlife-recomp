@@ -1,0 +1,155 @@
+Reconstruct the ordinary screen-item destructor.
+Use the observed polymorphic prefix and preserve owned storage release.
+
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -9,21 +9,35 @@
+     int bottom;
+ };
+ 
+-// Observed prefix only; the original complete class and names are unknown.
++// Observed prefix only; the complete original class and names are unknown.
++// Unresolved slots reserve observed ordinals, not recovered callable signatures
++// or a claim that those original methods were pure. Later slots remain unknown.
++// VTABLE: BEACHLIFE 0x004f462c
+ struct ScreenItem
+ {
+-    unsigned char unknown_00[4];
++    virtual ~ScreenItem();
++    virtual void Unresolved04() = 0;
++    virtual void Unresolved08() = 0;
++    virtual void Unresolved0c() = 0;
++    virtual void Unresolved10() = 0;
++    virtual void ApplyPosition(int dx, int dy);
++    virtual void MarkPrepared();
++    virtual void Unresolved1c() = 0;
++    virtual void Unresolved20() = 0;
++    virtual void Unresolved24() = 0;
++    virtual void Unresolved28() = 0;
++    virtual void MoveRectangle(int dx, int dy);
++
+     ScreenRectangle rectangle;
+     ScreenRectangle saved_rectangle;
+-    unsigned char unknown_24[0x1f];
++    unsigned char unknown_24[0x18];
++    char* owned_text;
++    unsigned char unknown_40[3];
+     unsigned char preparation_flag;
+     unsigned char unknown_44[4];
+     const char* name;
+ 
+     ScreenRectangle GetRectangle() const;
+-    void MoveRectangle(int dx, int dy);
+-    void ApplyPosition(int dx, int dy);
+-    void MarkPrepared();
+ };
+ 
+ #endif
+--- /dev/null
++++ b/src/startup_screen_item_destructor.cpp
+@@ -0,0 +1,9 @@
++#include "startup_screen_item.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004ada20
++ScreenItem::~ScreenItem()
++{
++    if (owned_text)
++        ::operator delete(owned_text);
++}
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -25,6 +25,36 @@
+ #include "startup_controller.h"
+ #include "startup_config_decimal.h"
+ #include "startup_config_owner.h"
++extern "C" int __cdecl _purecall();
++
++// Generated comparison-only subtype: no original constructor or unresolved
++// slot implementation is claimed. Never execute this comparison image.
++struct GeneratedScreenItem : ScreenItem
++{
++    GeneratedScreenItem()
++    {
++        rectangle.left = rectangle.top = rectangle.right = rectangle.bottom = 0;
++        saved_rectangle = rectangle;
++        for (unsigned int i = 0; i != sizeof(unknown_24); ++i)
++            unknown_24[i] = 0;
++        for (unsigned int j = 0; j != sizeof(unknown_40); ++j)
++            unknown_40[j] = 0;
++        for (unsigned int k = 0; k != sizeof(unknown_44); ++k)
++            unknown_44[k] = 0;
++        owned_text = 0;
++        preparation_flag = 0;
++        name = "generated";
++    }
++    virtual void Unresolved04() { _purecall(); }
++    virtual void Unresolved08() { _purecall(); }
++    virtual void Unresolved0c() { _purecall(); }
++    virtual void Unresolved10() { _purecall(); }
++    virtual void Unresolved1c() { _purecall(); }
++    virtual void Unresolved20() { _purecall(); }
++    virtual void Unresolved24() { _purecall(); }
++    virtual void Unresolved28() { _purecall(); }
++};
++
+ extern "C"
+ {
+     int _fltused = 0;
+@@ -146,16 +176,16 @@
+     ReturnPool(&fixture_return_node, 16);
+     IgnoreSurfaceError(-1);
+     fixture_config_offset = fixture_chunk_count;
+-    ScreenItem fixture_screen_item = { 0 };
+-    fixture_screen_item.MarkPrepared();
++    GeneratedScreenItem fixture_screen_item;
++    fixture_screen_item.ScreenItem::MarkPrepared();
+     fixture_screen_preparation = fixture_screen_item.preparation_flag;
+-    fixture_screen_item.MoveRectangle(3, -7);
++    fixture_screen_item.ScreenItem::MoveRectangle(3, -7);
+     fixture_screen_movement = fixture_screen_item.rectangle.bottom;
+     fixture_screen_item.saved_rectangle.left = -23;
+     fixture_screen_item.saved_rectangle.top = 71;
+     fixture_screen_item.saved_rectangle.right = 19;
+     fixture_screen_item.saved_rectangle.bottom = -31;
+-    fixture_screen_item.ApplyPosition(5, -9);
++    fixture_screen_item.ScreenItem::ApplyPosition(5, -9);
+     ::fixture_screen_position = fixture_screen_item.rectangle.bottom;
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
+     FrameClock fixture_frame_clock = { 0 };
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -33,6 +33,8 @@
+ 0x0040e240,function,131,?AccessPixels@ScreenRequestRenderer@@QAEPAGXZ
+ 0x004b2ff0,function,189,?CreateNode@CircularList@@QAEPAUCircularListValueNode@@ABQAUActiveScreenEntry@@@Z
+ 0x004b2fb0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUActiveScreenEntry@@@Z
+-0x004adce0,function,5,?MarkPrepared@ScreenItem@@QAEXXZ
+-0x004add40,function,28,?MoveRectangle@ScreenItem@@QAEXHH@Z
+-0x004ada70,function,75,?ApplyPosition@ScreenItem@@QAEXHH@Z
++0x004adce0,function,5,?MarkPrepared@ScreenItem@@UAEXXZ
++0x004add40,function,28,?MoveRectangle@ScreenItem@@UAEXHH@Z
++0x004ada70,function,75,?ApplyPosition@ScreenItem@@UAEXHH@Z
++0x004ada20,function,21,??1ScreenItem@@UAE@XZ
++0x004ee920,library,6,__purecall
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -11,3 +11,4 @@
+     exit
+     __CxxFrameHandler
+     _ftol
++    _purecall
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -412,6 +412,12 @@
+       "size": 75,
+       "name": "ScreenItem::ApplyPosition",
+       "name_status": "descriptive saved-rectangle positioning; original class/type names and hierarchy unknown"
++    },
++    {
++      "address": "0x004ada20",
++      "size": 21,
++      "name": "ScreenItem::~ScreenItem",
++      "name_status": "descriptive ordinary destructor; observed partial polymorphic prefix, complete class and deleting wrapper unresolved"
+     }
+   ],
+   "library_functions": [

@@ -1,0 +1,94 @@
+Reconstruct linear child-link construction.
+Preserve payload publication before clearing the next link.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,3 +1,6 @@
++#include "startup_screen_child_link.h"
++#include <NEW.H>
++#include <STDDEF.H>
+ #include "pool_chunk_acquire.h"
+ #include "pool_lock_acquire.h"
+ #include "pool_lock_guard.h"
+@@ -88,8 +91,27 @@
+ unsigned char* volatile fixture_pixels;
+ unsigned short* volatile fixture_surface_pixels;
+ unsigned char fixture_palette_copy[3];
++typedef char child_link_size_check[sizeof(ScreenChildLink) == 8 ? 1 : -1];
++typedef char child_link_next_offset_check[offsetof(ScreenChildLink, next) == 0 ? 1 : -1];
++typedef char child_link_item_offset_check[offsetof(ScreenChildLink, item) == 4 ? 1 : -1];
++
++// Unexecuted retention fixture. Storage and payload are supplied externally.
++// It does not construct a ScreenItem or claim a complete child-link lifetime.
++extern "C"
++{
++    void* volatile fixture_child_link_storage;
++    ScreenItem* volatile fixture_child_link_item;
++    ScreenChildLink* volatile fixture_child_link_result;
++
++    void fixture_child_link_construction()
++    {
++        fixture_child_link_result = new (fixture_child_link_storage) ScreenChildLink(fixture_child_link_item);
++    }
++}
++
+ extern "C" void fixture_entry()
+ {
++    fixture_child_link_construction();
+     StartupProfiler fixture_profiler;
+     fixture_profiler.Start();
+     fixture_profiler.Stop();
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -40,3 +40,4 @@
+ 0x004ee920,library,6,__purecall
+ 0x004ad990,function,93,??0ScreenItem@@QAE@UScreenRectangle@@@Z
+ 0x004a5ec0,function,36,?MarkPrepared@ScreenDialog@@UAEXXZ
++0x004adda0,function,18,??0ScreenChildLink@@QAE@PAUScreenItem@@@Z
+--- /dev/null
++++ b/src/startup_screen_child_link.h
+@@ -0,0 +1,18 @@
++#ifndef STARTUP_SCREEN_CHILD_LINK_H
++#define STARTUP_SCREEN_CHILD_LINK_H
++
++struct ScreenItem;
++
++// Observed linear child link, distinct from the circular child ring.
++// Original class/template identity and ownership outside each caller are unknown.
++struct ScreenChildLink
++{
++    ScreenChildLink* next;
++    ScreenItem* item;
++
++    ScreenChildLink(ScreenItem* value);
++    // Actual destructor at 0x004addc0 remains unreconstructed.
++    ~ScreenChildLink();
++};
++
++#endif
+--- /dev/null
++++ b/src/startup_screen_child_link_constructor.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_child_link.h"
++
++// FUNCTION: BEACHLIFE 0x004adda0
++ScreenChildLink::ScreenChildLink(ScreenItem* value)
++    : item(value)
++{
++    next = 0;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -567,6 +567,12 @@
+       "size": 38,
+       "name": "CircularList::Insert",
+       "name_status": "descriptive observed list insertion; original class, exact declarations and library provenance unknown"
++    },
++    {
++      "address": "0x004adda0",
++      "size": 18,
++      "name": "ScreenChildLink::ScreenChildLink",
++      "name_status": "descriptive linear-link constructor; original class, template and library provenance unknown"
+     }
+   ],
+   "runtime_stdcall_imports": {

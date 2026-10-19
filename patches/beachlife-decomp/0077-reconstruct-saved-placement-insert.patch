@@ -1,0 +1,83 @@
+Reconstruct typed saved-placement list insertion.
+Preserve node creation, link order and iterator return ABI.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -20,6 +20,9 @@
+ SavedScreenPlacement* volatile fixture_saved_payload;
+ SavedScreenPlacement fixture_saved = { 2, 3, 7 };
+ SavedScreenPlacement* fixture_saved_pointer = &fixture_saved;
++CircularListNode fixture_placement_head = { &fixture_placement_head, &fixture_placement_head };
++CircularList fixture_placement_list = { &fixture_placement_head };
++CircularListNode* volatile fixture_placement_inserted;
+ #include "startup_frame_clock.h"
+ #include "../src/startup_screen_item.h"
+ #include "../src/startup_screen_dialog.h"
+@@ -237,6 +240,7 @@
+     fixture_value_node = fixture_list.CreateNode(fixture_active_entry);
+     fixture_saved_node = fixture_list.CreateNode(fixture_saved_pointer);
+     fixture_saved_payload = fixture_saved_node->placement;
++    fixture_placement_inserted = fixture_placement_list.Insert(fixture_placement_list.End(), fixture_saved_pointer).node;
+     fixture_list_node = fixture_list.Insert(fixture_list.Begin(), fixture_active_entry).node;
+     CircularListIterator fixture_search_result;
+     fixture_search_result.node = 0;
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -43,3 +43,4 @@
+ 0x004adda0,function,18,??0ScreenChildLink@@QAE@PAUScreenItem@@@Z
+ 0x004a5c70,function,54,?ApplyPosition@ScreenDialog@@UAEXHH@Z
+ 0x004e8110,function,189,?CreateNode@CircularList@@QAEPAUSavedScreenPlacementNode@@ABQAUSavedScreenPlacement@@@Z
++0x004e80a0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUSavedScreenPlacement@@@Z
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -39,6 +39,7 @@
+     CircularListIterator End() const;
+     CircularListIterator Begin() const;
+     CircularListIterator Insert(CircularListIterator position, ActiveScreenEntry* const& entry);
++    CircularListIterator Insert(CircularListIterator position, SavedScreenPlacement* const& placement);
+     CircularListValueNode* CreateNode(ActiveScreenEntry* const& entry);
+     SavedScreenPlacementNode* CreateNode(SavedScreenPlacement* const& placement);
+ };
+--- /dev/null
++++ b/src/startup_placement_insert.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_placement.h"
++
++// FUNCTION: BEACHLIFE 0x004e80a0
++CircularListIterator CircularList::Insert(CircularListIterator position, SavedScreenPlacement* const& placement)
++{
++    SavedScreenPlacementNode* node = CreateNode(placement);
++    CircularListNode* previous = position.node->previous;
++    node->next = position.node;
++    node->previous = previous;
++    previous->next = node;
++    position.node->previous = node;
++    CircularListIterator result;
++    result.node = node;
++    return result;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -498,6 +498,9 @@
+     "startup_placement_node.cpp": [
+       "/GX",
+       "/Ob1"
++    ],
++    "startup_placement_insert.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -589,6 +592,12 @@
+       "size": 189,
+       "name": "CircularList::CreateNode(SavedScreenPlacement*)",
+       "name_status": "descriptive typed saved-placement node overload; original generic type, spelling and provenance unknown"
++    },
++    {
++      "address": "0x004e80a0",
++      "size": 38,
++      "name": "CircularList::Insert(SavedScreenPlacement* const&)",
++      "name_status": "descriptive typed pointer specialization; original generic declaration and code origin unclassified"
+     }
+   ],
+   "runtime_stdcall_imports": {

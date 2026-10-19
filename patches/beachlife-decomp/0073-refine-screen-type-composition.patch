@@ -1,0 +1,176 @@
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -35,13 +35,11 @@
+     GeneratedScreenItem(ScreenRectangle initial)
+         : ScreenItem(initial)
+     {
+-        for (unsigned int i = 0; i != sizeof(unknown_28); ++i)
+-            unknown_28[i] = 0;
++        kind_28 = 0;
++        for (unsigned int i = 0; i != sizeof(unknown_2c); ++i)
++            unknown_2c[i] = 0;
+         for (unsigned int j = 0; j != sizeof(unknown_31); ++j)
+             unknown_31[j] = 0;
+-        for (unsigned int k = 0; k != sizeof(unknown_44); ++k)
+-            unknown_44[k] = 0;
+-        name = "generated";
+     }
+     virtual void Unresolved04() { _purecall(); }
+     virtual void Unresolved08() { _purecall(); }
+--- /dev/null
++++ b/src/startup_active_screen.h
+@@ -0,0 +1,17 @@
++#ifndef STARTUP_ACTIVE_SCREEN_H
++#define STARTUP_ACTIVE_SCREEN_H
++
++struct ScreenDialog;
++struct ScreenRequestContext;
++
++// Observed active-screen entry, allocated as 16 bytes on original x86.
++// Names, integer signedness and the complete context class remain descriptive.
++struct ActiveScreenEntry
++{
++    ScreenDialog* item;
++    int surface;
++    int state;
++    ScreenRequestContext* context;
++};
++
++#endif
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -1,5 +1,7 @@
+ #ifndef STARTUP_LIST_H
+ #define STARTUP_LIST_H
++
++#include "startup_active_screen.h"
+ 
+ // Observed node prefix only; the original value type is unknown.
+ struct CircularListNode
+@@ -18,8 +20,6 @@
+     {
+     }
+ };
+-
+-struct ActiveScreenEntry;
+ 
+ // Observed pointer payload at x86+8. This prefix does not define the 16-byte
+ // allocator slot or recover the original generic node declaration.
+--- /dev/null
++++ b/src/startup_screen_children.h
+@@ -0,0 +1,19 @@
++#ifndef STARTUP_SCREEN_CHILDREN_H
++#define STARTUP_SCREEN_CHILDREN_H
++
++struct ScreenItem;
++
++// Observed circular child ring, distinct from the active-screen value nodes.
++struct ScreenChildNode
++{
++    ScreenChildNode* next;
++    ScreenChildNode* previous;
++    ScreenItem* item;
++};
++
++struct ScreenChildRing
++{
++    ScreenChildNode* head;
++};
++
++#endif
+--- a/src/startup_screen_dialog.h
++++ b/src/startup_screen_dialog.h
+@@ -2,24 +2,14 @@
+ #define STARTUP_SCREEN_DIALOG_H
+ 
+ #include "startup_screen_item.h"
+-
+-// Observed child-ring prefix; this payload is distinct from ActiveScreenEntry.
+-struct ScreenChildNode
+-{
+-    ScreenChildNode* next;
+-    ScreenChildNode* previous;
+-    ScreenItem* item;
+-};
+-
+-struct ScreenChildRing
+-{
+-    ScreenChildNode* head;
+-};
++#include "startup_screen_children.h"
+ 
+ // Observed derived prefix only. Original complete construction, destruction,
+ // hierarchy and virtual table remain unqualified.
+ struct ScreenDialog : ScreenItem
+ {
++    ScreenItem* child_44;
++    const char* name;
+     unsigned char unknown_4c[0x2c];
+     ScreenChildRing children;
+ 
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -9,7 +9,8 @@
+     int bottom;
+ };
+ 
+-// Observed prefix only; the complete original class and names are unknown.
++// Observed common prefix through preparation_flag; subtype tails differ.
++// The complete original class, integer discriminator type and names are unknown.
+ // Unresolved slots reserve observed ordinals, not recovered callable signatures
+ // or a claim that those original methods were pure. Later slots remain unknown.
+ // VTABLE: BEACHLIFE 0x004f462c
+@@ -31,7 +32,8 @@
+     ScreenRectangle rectangle;
+     ScreenRectangle saved_rectangle;
+     float elapsed_24;
+-    unsigned char unknown_28[8];
++    int kind_28;
++    unsigned char unknown_2c[4];
+     unsigned char state_30;
+     unsigned char unknown_31[3];
+     int last_x;
+@@ -41,8 +43,6 @@
+     unsigned char state_41;
+     unsigned char state_42;
+     unsigned char preparation_flag;
+-    unsigned char unknown_44[4];
+-    const char* name;
+ 
+     ScreenItem(ScreenRectangle initial);
+ 
+--- a/src/startup_screen_name_search.cpp
++++ b/src/startup_screen_name_search.cpp
+@@ -8,7 +8,7 @@
+     CircularListIterator current = first;
+     while (current.node != last.node)
+     {
+-        ScreenListNode* node = static_cast<ScreenListNode*>(current.node);
++        CircularListValueNode* node = static_cast<CircularListValueNode*>(current.node);
+         if (strcmp(node->entry->item->name, name) == 0)
+         {
+             break;
+--- a/src/startup_screen_name_search.h
++++ b/src/startup_screen_name_search.h
+@@ -2,19 +2,9 @@
+ #define STARTUP_SCREEN_NAME_SEARCH_H
+ 
+ #include "startup_list.h"
+-#include "startup_screen_item.h"
++#include "startup_screen_dialog.h"
+ 
+-// Observed entry and node prefixes; remaining fields and original names are unknown.
+-struct ScreenListEntry
+-{
+-    ScreenItem* item;
+-};
+-
+-struct ScreenListNode : CircularListNode
+-{
+-    ScreenListEntry* entry;
+-};
+-
++// Search uses the actual active-screen payload and CircularListValueNode.
+ // Explicit representation of the observed cdecl result-pointer ABI.
+ // The original iterator type and C++ return declaration remain unknown.
+ CircularListIterator* FindScreenByName(CircularListIterator* result,

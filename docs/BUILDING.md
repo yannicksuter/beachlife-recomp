@@ -121,8 +121,9 @@ so an original zero-status fatal exit cannot pass the test.
 ## Reconstructed subsystem tests
 
 The optional targets compile reconstructed image, file, configuration, input,
-surface, pool-lock and screen-list helpers using the native compiler. They consume a committed source export with faithful patches
-through the same preparation tool as dependencies. Enable them explicitly:
+surface, pool-lock, screen-list, screen-item and screen-registry helpers using the native compiler.
+They consume a committed source export with faithful patches through the same
+preparation tool as dependencies. Enable them explicitly:
 
 ```sh
 cmake --preset release -B build/reconstructed-tga \
@@ -135,7 +136,8 @@ cmake --build build/reconstructed-tga \
     startup_configuration_tests startup_configuration_default_tests \
     reconstructed_input_tests reconstructed_cursor_tests \
     reconstructed_surfaces_tests reconstructed_surface_pixels_tests \
-    reconstructed_pool_lock_tests reconstructed_screen_list_tests --parallel
+    reconstructed_pool_lock_tests reconstructed_screen_list_tests \
+    reconstructed_screen_item_tests reconstructed_screen_registry_tests reconstructed_screen_placements_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -181,6 +183,33 @@ the missing retail list destructor. The target disables LTO and uses the same
 deterministic platform provider as the pool-lock test. Null-return scavenging,
 retry after allocation failure, original CRT failure behavior, operating-system
 concurrency and production screen ownership remain outside its tested domain.
+
+The screen-item target exercises the actual constructor, ordinary destructor,
+rectangle callbacks and retained list/search helpers with generated live objects.
+It checks initial state, repeated positioning, bounded movement, virtual calls,
+owned-text release and unchanged surrounding storage. Paired scalar allocation
+and deletion providers live only in the test executable and use the host CRT.
+Name lookup uses the same active-entry and value-node declarations as insertion,
+with genuine generated Dialog objects. The optional archive publishes
+`BEACHLIFE_DECOMP_TEST_OBJECTS=1` to its consumers so every translation unit sees
+the same conditional inherited-constructor declaration. That native facility is
+off by default and supplies no original Dialog constructor or cleanup. The
+actual Dialog preparation and positioning methods supply their generated
+virtual-table entries; the positioning override is linked from its own source.
+The target disables LTO and links no VC6 release support. It requires no ISO;
+complete derived lifetimes, original allocation-failure behavior and production
+screen rendering remain separate work.
+
+The screen-registry target connects actual insertion and name lookup in one
+archive, with one owner for each iterator, pool and screen method. Generated
+live Dialog objects use the same test-only construction facility. Literal
+expectations cover empty and missing names, duplicates, ordering, bounded
+subranges, pointer identity and recycled-node reuse; lookup preserves the graph
+and object state. Paired scalar allocation providers and the deterministic
+uncontended lock provider belong only to the test executable. The actual Dialog
+positioning override is linked for the generated virtual table; this fixture
+does not exercise that callback. No original Dialog or list lifetime, allocation
+failure, operating-system concurrency, menu flow or production use is claimed.
 
 The surface-pixel target compiles the actual pixel-access method and error
 handler. Generated lock providers check descriptor initialization, arguments,
@@ -525,3 +554,15 @@ Windows embeds `assets/app/icon.ico` using the native resource compiler. All
 windows load the matching PNG from package resources. macOS builds the ICNS
 bundle resource using the system `sips` and `iconutil`; these tools are required
 on the macOS build host. No original ISO is needed to build the app icons.
+
+The optional `reconstructed_screen_placements_tests` target links one nine-source
+archive containing the actual saved-placement node builder, insertion, lookup,
+iterators and pool methods. Generated caller-owned records exercise first-match
+selection for duplicate signed groups, full-width coordinates, unchanged miss
+outputs, read-only graph checks, node identity, same-type slot reuse and repeated
+cleanup. The native profile preserves the eight-byte pool quantum while giving
+each host-sized node and free link its actual C++ lifetime. Test-only scalar
+allocation and deterministic lock providers cover successful, uncontended use.
+This does not provide the original store/list constructor or destructor,
+allocation-failure behavior, concurrency, cross-type slot reuse or production
+linkage.
