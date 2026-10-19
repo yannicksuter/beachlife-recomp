@@ -845,3 +845,44 @@ effects. It uses live native queue storage and preserves the original clipping
 and rectangle-partition behavior. Unsupported modes with the unscaled flag clear,
 overflow, allocation failure and full renderer/surface lifetime remain outside
 this bounded test; it does not present an image.
+
+The experimental `reconstructed_renderer_tga_draw_tests` target composes the
+complete TGA drawing method with the real clipping/rectangle queue, four indexed
+blitters, surface pixel access and allocated TGA image lifetime. Generated
+literal cases cover pixels, clipping side effects and live COM Lock/Unlock
+selection. This headless subsystem test does not establish surface creation,
+GPU presentation or the original Intro screen.
+
+
+The experimental `reconstructed_renderer_rectangle_fill_tests` target checks the
+complete rectangle-fill method with real surface pixel access and error handling.
+Generated cases cover full-buffer clipping, preserved upper pixel bits, dense
+16-bit pairs and odd tails, empty spans, and live COM Lock/Unlock state changes.
+Its guarded typed renderer includes the real native rectangle queue. This
+headless test does not establish surface creation, GPU presentation or the
+original Intro screen.
+
+
+The experimental `reconstructed_frame_fill_styles_tests` target checks the real
+colour converter and Frame drawing helpers for styles 2, 3 and 7 with actual
+rectangle filling. Generated cases preserve the wide-red conversion quirk,
+border overlap, clipping, captured renderer and live bounds during COM callbacks.
+The fixture uses the existing renderer global and real native queue storage;
+it does not construct a complete Frame or claim GPU presentation.
+
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the optional
+`reconstructed_font_measurement_tests` target exercises the reconstructed font
+renderer constructor and its three text measurement methods. Generated typed
+data covers kerning, wrapping, unsigned arithmetic, a valid text/data alias and
+preservation of borrowed state. The bounded cases exclude nonterminating input
+and scratch copies without room for a terminator. This does not implement font
+loading, full font ownership or destruction, or screen text rendering.
+
+
+The experimental `reconstructed_renderer_line_tests` target exercises all four
+line rasterizers, the renderer line method and Frame style 6 using guarded pixel
+buffers. Literal cases preserve direct-pixel upper bits, packed edge quirks,
+endpoint and clipping behavior, and live COM/renderer state changes. The fixture
+uses the actual colour converter, pixel access and renderer global. It does not
+construct a complete Frame or renderer or claim GPU presentation.

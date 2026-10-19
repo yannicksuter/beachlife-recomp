@@ -1,0 +1,331 @@
+diff --git a/src/startup_renderer_line_direct_x.cpp b/src/startup_renderer_line_direct_x.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_line_direct_x.cpp
+@@ -0,0 +1,50 @@
++#include "startup_renderer_line_raster.h"
++#include "startup_screen_renderer.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00411560
++void RasterLineDirectX(int x, int y, int delta_x, int delta_y, int direction,
++    unsigned int colour, unsigned short* pixels, unsigned int stride)
++{
++    int twice_y = delta_y + delta_y;
++    int diagonal = twice_y - (delta_x + delta_x);
++    int error = twice_y - delta_x;
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    if (static_cast<unsigned int>(x) < renderer->width && static_cast<unsigned int>(y) < renderer->height)
++    {
++        int offset = (y * static_cast<int>(stride) + x) * 4;
++        unsigned char* destination = reinterpret_cast<unsigned char*>(pixels) + offset;
++        unsigned int pixel;
++        memcpy(&pixel, destination, sizeof(pixel));
++        pixel = (pixel & 0xffff0000u) + (colour & 0xffffu);
++        memcpy(destination, &pixel, sizeof(pixel));
++    }
++
++    if (delta_x != 0)
++    {
++        int row_offset = y * static_cast<int>(stride);
++        int remaining = delta_x;
++        do
++        {
++            if (error >= 0)
++            {
++                ++y;
++                row_offset += static_cast<int>(stride);
++                error += diagonal;
++            }
++            else
++                error += twice_y;
++            x += direction;
++            renderer = screen_request_renderer;
++            if (static_cast<unsigned int>(x) < renderer->width && static_cast<unsigned int>(y) < renderer->height)
++            {
++                int offset = (row_offset + x) * 4;
++                unsigned char* destination = reinterpret_cast<unsigned char*>(pixels) + offset;
++                unsigned int pixel;
++                memcpy(&pixel, destination, sizeof(pixel));
++                pixel = (pixel & 0xffff0000u) + (colour & 0xffffu);
++                memcpy(destination, &pixel, sizeof(pixel));
++            }
++        } while (--remaining != 0);
++    }
++}
+diff --git a/src/startup_renderer_line_direct_y.cpp b/src/startup_renderer_line_direct_y.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_line_direct_y.cpp
+@@ -0,0 +1,50 @@
++#include "startup_renderer_line_raster.h"
++#include "startup_screen_renderer.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00411640
++void RasterLineDirectY(int x, int y, int delta_x, int delta_y, int direction,
++    unsigned int colour, unsigned short* pixels, unsigned int stride)
++{
++    int twice_x = delta_x + delta_x;
++    int diagonal = twice_x - (delta_y + delta_y);
++    int error = twice_x - delta_y;
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    if (static_cast<unsigned int>(x) < renderer->width && static_cast<unsigned int>(y) < renderer->height)
++    {
++        int offset = (y * static_cast<int>(stride) + x) * 4;
++        unsigned char* destination = reinterpret_cast<unsigned char*>(pixels) + offset;
++        unsigned int pixel;
++        memcpy(&pixel, destination, sizeof(pixel));
++        pixel = (pixel & 0xffff0000u) + (colour & 0xffffu);
++        memcpy(destination, &pixel, sizeof(pixel));
++    }
++
++    if (delta_y != 0)
++    {
++        int row_offset = y * static_cast<int>(stride);
++        int remaining = delta_y;
++        do
++        {
++            if (error >= 0)
++            {
++                x += direction;
++                error += diagonal;
++            }
++            else
++                error += twice_x;
++            row_offset += static_cast<int>(stride);
++            ++y;
++            renderer = screen_request_renderer;
++            if (static_cast<unsigned int>(x) < renderer->width && static_cast<unsigned int>(y) < renderer->height)
++            {
++                int offset = (row_offset + x) * 4;
++                unsigned char* destination = reinterpret_cast<unsigned char*>(pixels) + offset;
++                unsigned int pixel;
++                memcpy(&pixel, destination, sizeof(pixel));
++                pixel = (pixel & 0xffff0000u) + (colour & 0xffffu);
++                memcpy(destination, &pixel, sizeof(pixel));
++            }
++        } while (--remaining != 0);
++    }
++}
+diff --git a/src/startup_renderer_line_packed_x.cpp b/src/startup_renderer_line_packed_x.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_line_packed_x.cpp
+@@ -0,0 +1,34 @@
++#include "startup_renderer_line_raster.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x00411710
++void RasterLinePackedX(int x, int y, int delta_x, int delta_y, int direction,
++    unsigned int colour, unsigned short* pixels, unsigned int stride)
++{
++    int twice_y = delta_y + delta_y;
++    int diagonal = twice_y - (delta_x + delta_x);
++    int error = twice_y - delta_x;
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    if (static_cast<unsigned int>(x) < renderer->width && static_cast<unsigned int>(y) < renderer->height)
++        pixels[y * static_cast<int>(stride) + x] = static_cast<unsigned short>(colour);
++
++    if (delta_x != 0)
++    {
++        int row_offset = y * static_cast<int>(stride);
++        int remaining = delta_x;
++        do
++        {
++            if (error >= 0)
++            {
++                ++y;
++                row_offset += static_cast<int>(stride);
++                error += diagonal;
++            }
++            else
++                error += twice_y;
++            x += direction;
++            if (static_cast<unsigned int>(x) < screen_request_renderer->width - 1u && static_cast<unsigned int>(y) < screen_request_renderer->height - 1u)
++                pixels[row_offset + x] = static_cast<unsigned short>(colour);
++        } while (--remaining != 0);
++    }
++}
+diff --git a/src/startup_renderer_line_packed_y.cpp b/src/startup_renderer_line_packed_y.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_line_packed_y.cpp
+@@ -0,0 +1,35 @@
++#include "startup_renderer_line_raster.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004117e0
++void RasterLinePackedY(int x, int y, int delta_x, int delta_y, int direction,
++    unsigned int colour, unsigned short* pixels, unsigned int stride)
++{
++    int twice_x = delta_x + delta_x;
++    int diagonal = twice_x - (delta_y + delta_y);
++    int error = twice_x - delta_y;
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    if (static_cast<unsigned int>(x) < renderer->width && static_cast<unsigned int>(y) < renderer->height)
++        pixels[y * static_cast<int>(stride) + x] = static_cast<unsigned short>(colour);
++
++    if (delta_y != 0)
++    {
++        int row_offset = y * static_cast<int>(stride);
++        int remaining = delta_y;
++        do
++        {
++            if (error >= 0)
++            {
++                x += direction;
++                error += diagonal;
++            }
++            else
++                error += twice_x;
++            row_offset += static_cast<int>(stride);
++            ++y;
++            renderer = screen_request_renderer;
++            if (static_cast<unsigned int>(x) < renderer->width && static_cast<unsigned int>(y) < renderer->height)
++                pixels[row_offset + x] = static_cast<unsigned short>(colour);
++        } while (--remaining != 0);
++    }
++}
+diff --git a/src/startup_renderer_line.cpp b/src/startup_renderer_line.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_line.cpp
+@@ -0,0 +1,75 @@
++#include "startup_screen_renderer.h"
++#include "startup_renderer_line_raster.h"
++
++// FUNCTION: BEACHLIFE 0x004118a0
++void ScreenRequestRenderer::DrawLine(int x1, int y1, int x2, int y2, unsigned int colour)
++{
++    if (x1 >= clip_rectangle.width || x2 < 0 || y1 >= clip_rectangle.height || y2 <= 0)
++        return;
++
++    if (y1 > y2)
++    {
++        int saved = y1;
++        y1 = y2;
++        y2 = saved;
++        saved = x1;
++        x1 = x2;
++        x2 = saved;
++    }
++    int delta_y = y2 - y1;
++    int delta_x = x2 - x1;
++
++    if (unscaled_clip_5c)
++    {
++        unsigned short* pixels = AccessPixels();
++        if (!pixels)
++            return;
++        ScreenRequestRenderer* position_renderer = screen_request_renderer;
++        ScreenSurfacePosition* position_entry = position_renderer->surfaces[position_renderer->current_surface];
++        int position_x = position_entry->position.x;
++        int position_y = position_entry->position.y;
++        x1 -= position_x;
++        y1 -= position_y;
++        unsigned int pitch = surfaces[current_surface]->pitch;
++
++        if (delta_x > 0)
++        {
++            if (delta_x > delta_y)
++                RasterLinePackedX(x1, y1, delta_x, delta_y, 1, colour, pixels, pitch >> 1);
++            else
++                RasterLinePackedY(x1, y1, delta_x, delta_y, 1, colour, pixels, pitch >> 1);
++        }
++        else
++        {
++            delta_x = -delta_x;
++            if (delta_x > delta_y)
++                RasterLinePackedX(x1, y1, delta_x, delta_y, -1, colour, pixels, pitch >> 1);
++            else
++                RasterLinePackedY(x1, y1, delta_x, delta_y, -1, colour, pixels, pitch >> 1);
++        }
++
++        if (!software_mode)
++        {
++            DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++            surface->vtable->Unlock(surface, 0);
++        }
++        pixels_locked = 0;
++        return;
++    }
++
++    if (delta_x > 0)
++    {
++        if (delta_x > delta_y)
++            RasterLineDirectX(x1, y1, delta_x, delta_y, 1, colour, pixels_1c, width);
++        else
++            RasterLineDirectY(x1, y1, delta_x, delta_y, 1, colour, pixels_1c, width);
++    }
++    else
++    {
++        delta_x = -delta_x;
++        if (delta_x > delta_y)
++            RasterLineDirectX(x1, y1, delta_x, delta_y, -1, colour, pixels_1c, width);
++        else
++            RasterLineDirectY(x1, y1, delta_x, delta_y, -1, colour, pixels_1c, width);
++    }
++}
+diff --git a/src/startup_screen_frame_style6.cpp b/src/startup_screen_frame_style6.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_frame_style6.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_frame_draw.h"
++#include "startup_screen_item.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004c7ec0
++void DrawFrameStyle6(const ScreenRectangle& rectangle)
++{
++    int top = rectangle.top;
++    int left = rectangle.left;
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    int width = rectangle.right - left - 1;
++    unsigned int colour = renderer->ConvertColour(37, 66, 189);
++    int right = width + left - 1;
++    ++left;
++    renderer->DrawLine(left, top, right, top, colour);
++
++    colour = renderer->ConvertColour(147, 178, 253);
++    renderer->DrawLine(left, top + 1, right, top + 1, colour);
++
++    colour = renderer->ConvertColour(187, 208, 255);
++    renderer->DrawLine(left, top + 2, right, top + 2, colour);
++}
+diff --git a/src/startup_renderer_line_raster.h b/src/startup_renderer_line_raster.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_line_raster.h
+@@ -0,0 +1,17 @@
++#ifndef STARTUP_RENDERER_LINE_RASTER_H
++#define STARTUP_RENDERER_LINE_RASTER_H
++
++// Observed cdecl eight-word raster calls, each RET0 with caller cleanup.
++// Names describe the selected axis and storage route, not original spelling.
++// Direct storage uses four-byte slots; packed storage uses two-byte slots.
++// Only declarations are supplied here; each actual implementation is required.
++void RasterLineDirectX(int x, int y, int delta_x, int delta_y, int direction,
++    unsigned int colour, unsigned short* pixels, unsigned int stride); // 0x00411560
++void RasterLineDirectY(int x, int y, int delta_x, int delta_y, int direction,
++    unsigned int colour, unsigned short* pixels, unsigned int stride); // 0x00411640
++void RasterLinePackedX(int x, int y, int delta_x, int delta_y, int direction,
++    unsigned int colour, unsigned short* pixels, unsigned int stride); // 0x00411710
++void RasterLinePackedY(int x, int y, int delta_x, int delta_y, int direction,
++    unsigned int colour, unsigned short* pixels, unsigned int stride); // 0x004117e0
++
++#endif
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -64,6 +64,9 @@
+     // Actual 0x00411a60; full 32-bit result retains the observed format-zero mask.
+     unsigned int ConvertColour(int red, int green, int blue);
+ 
++    // Actual 0x004118a0; five observed stack words and RET20.
++    void DrawLine(int x1, int y1, int x2, int y2, unsigned int colour);
++
+     // Actual 0x0040c0f0; complete fill implementation remains a dependency.
+     void FillRectangle(const ScreenRectangle& bounds, unsigned int colour);
+ 

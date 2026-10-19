@@ -1,0 +1,97 @@
+diff --git a/src/startup_screen_dialog_resource_destructor.cpp b/src/startup_screen_dialog_resource_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_destructor.cpp
+@@ -0,0 +1,11 @@
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00412ae0
++ScreenDialogResource::~ScreenDialogResource()
++{
++    if (name)
++        ::operator delete(name);
++    word_2c = 0;
++}
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -461,8 +461,53 @@
+     }
+ }
+ 
++#include "startup_screen_dialog_resource.h"
++
++// Comparison-only valid raw storage and separately owned scalar name, or null.
++// The supplied record is borrowed and remains live. This image is never run.
++typedef char resource_destructor_pointer_width[sizeof(void*) == 4 ? 1 : -1];
++typedef char resource_destructor_word_width[sizeof(unsigned int) == 4 ? 1 : -1];
++typedef char resource_destructor_extent[sizeof(ScreenDialogResource) == 56 ? 1 : -1];
++typedef char resource_destructor_name_offset[offsetof(ScreenDialogResource, name) == 0 ? 1 : -1];
++typedef char resource_destructor_word_offset[offsetof(ScreenDialogResource, word_2c) == 44 ? 1 : -1];
++typedef char resource_destructor_record_offset[offsetof(ScreenDialogResource, record) == 48 ? 1 : -1];
++
++enum
++{
++    resource_destructor_clear_offset = offsetof(ScreenDialogResource, word_2c)
++};
++
++extern "C"
++{
++    void* volatile fixture_resource_dtor_storage;
++    char* volatile fixture_resource_dtor_owned_name;
++    ScreenDialogResourceRecord* volatile fixture_resource_dtor_record;
++    volatile unsigned char fixture_resource_dtor_word_bytes[4];
++    volatile unsigned int fixture_resource_dtor_completed;
++
++    void fixture_resource_destruction()
++    {
++        unsigned char* const storage = static_cast<unsigned char*>(fixture_resource_dtor_storage);
++        ScreenDialogResource* const resource = new (storage) ScreenDialogResource;
++        fixture_resource_dtor_completed = 0;
++        if (resource)
++        {
++            resource->name = fixture_resource_dtor_owned_name;
++            resource->record = fixture_resource_dtor_record;
++            resource->word_2c = 0x2468ace0U;
++            resource->~ScreenDialogResource();
++            fixture_resource_dtor_word_bytes[0] = storage[resource_destructor_clear_offset + 0];
++            fixture_resource_dtor_word_bytes[1] = storage[resource_destructor_clear_offset + 1];
++            fixture_resource_dtor_word_bytes[2] = storage[resource_destructor_clear_offset + 2];
++            fixture_resource_dtor_word_bytes[3] = storage[resource_destructor_clear_offset + 3];
++            fixture_resource_dtor_completed = 1;
++        }
++    }
++}
++
+ extern "C" void fixture_entry()
+ {
++    fixture_resource_destruction();
+     fixture_resource_construction();
+     fixture_gui_register();
+     fixture_gui_rectangle();
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -56,3 +56,4 @@
+ 0x004addc0,function,148,??1ScreenChildLink@@QAE@XZ
+ 0x004ab5b0,function,345,?RegisterItem@GuiParserState@@QAEXPAUScreenItem@@E@Z
+ 0x00412aa0,function,56,??0ScreenDialogResource@@QAE@XZ
++0x00412ae0,function,27,??1ScreenDialogResource@@QAE@XZ
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -658,6 +658,12 @@
+       "size": 56,
+       "name": "ScreenDialogResource::ScreenDialogResource",
+       "name_status": "descriptive call-free resource wrapper constructor; original class, source spelling and provenance unclassified"
++    },
++    {
++      "address": "0x00412ae0",
++      "size": 27,
++      "name": "ScreenDialogResource::~ScreenDialogResource",
++      "name_status": "descriptive resource wrapper destructor; original class, source spelling and provenance unclassified"
+     }
+   ],
+   "runtime_stdcall_imports": {

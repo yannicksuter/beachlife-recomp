@@ -977,3 +977,182 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_renderer_clip PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Complete drawing composes actual clipping, pixels, kernels and image lifetime.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_tga_draw STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_tga_draw.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_tga_draw PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_tga_draw PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_tga_draw PUBLIC
+        beachlife_reconstructed_renderer_clip
+        beachlife_reconstructed_indexed_palette_blit
+        beachlife_reconstructed_renderer_blit_kernels
+        beachlife_reconstructed_surface_pixels)
+    add_dependencies(beachlife_reconstructed_renderer_tga_draw verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_tga_draw_tests
+        tests/reconstructed_renderer_tga_draw.cpp)
+    target_link_libraries(reconstructed_renderer_tga_draw_tests PRIVATE
+        beachlife_reconstructed_renderer_tga_draw beachlife_reconstructed_tga)
+    set_target_properties(beachlife_reconstructed_renderer_tga_draw
+        reconstructed_renderer_tga_draw_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_tga_draw PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_tga_draw_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_tga_draw PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_tga_draw_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_tga_draw_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_tga_draw COMMAND reconstructed_renderer_tga_draw_tests)
+    set_tests_properties(reconstructed_renderer_tga_draw PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+
+# The fill method uses the actual pixel-access/error-sink source and COM boundary.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_rectangle_fill STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_rectangle_fill.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_rectangle_fill PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_rectangle_fill PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_rectangle_fill PUBLIC
+        beachlife_reconstructed_surface_pixels)
+    add_dependencies(beachlife_reconstructed_renderer_rectangle_fill verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_rectangle_fill_tests
+        tests/reconstructed_renderer_rectangle_fill.cpp)
+    target_link_libraries(reconstructed_renderer_rectangle_fill_tests PRIVATE
+        beachlife_reconstructed_renderer_rectangle_fill)
+    set_target_properties(beachlife_reconstructed_renderer_rectangle_fill
+        reconstructed_renderer_rectangle_fill_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_rectangle_fill PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_rectangle_fill_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_rectangle_fill PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_rectangle_fill_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_rectangle_fill_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_rectangle_fill
+        COMMAND reconstructed_renderer_rectangle_fill_tests)
+    set_tests_properties(reconstructed_renderer_rectangle_fill PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+
+# These frame helpers use the actual fill/converter and existing renderer owner.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_frame_fill_styles STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_colour.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style2.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style3.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style7.cpp")
+    target_include_directories(beachlife_reconstructed_frame_fill_styles PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_frame_fill_styles PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_frame_fill_styles PUBLIC
+        beachlife_reconstructed_renderer_rectangle_fill
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_frame_fill_styles verify_reconstructed_source)
+
+    add_executable(reconstructed_frame_fill_styles_tests tests/reconstructed_frame_fill_styles.cpp)
+    target_link_libraries(reconstructed_frame_fill_styles_tests PRIVATE
+        beachlife_reconstructed_frame_fill_styles)
+    set_target_properties(beachlife_reconstructed_frame_fill_styles
+        reconstructed_frame_fill_styles_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_frame_fill_styles PRIVATE /GL-)
+        target_compile_options(reconstructed_frame_fill_styles_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_frame_fill_styles PRIVATE -fno-lto)
+        target_compile_options(reconstructed_frame_fill_styles_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_frame_fill_styles_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_frame_fill_styles COMMAND reconstructed_frame_fill_styles_tests)
+    set_tests_properties(reconstructed_frame_fill_styles PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+
+# Experimental font measurement uses the real constructor and borrowed typed data.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_font_measurement STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_renderer_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_measure_text.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_count_wrapped_lines.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_measure_wrapped_text.cpp")
+    target_include_directories(beachlife_reconstructed_font_measurement PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_font_measurement PUBLIC cxx_std_20)
+    # Retain the sole actual renderer global owner and its real linked children.
+    target_link_libraries(beachlife_reconstructed_font_measurement PUBLIC
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_font_measurement verify_reconstructed_source)
+
+    add_executable(reconstructed_font_measurement_tests
+        tests/reconstructed_font_measurement.cpp)
+    target_link_libraries(reconstructed_font_measurement_tests PRIVATE
+        beachlife_reconstructed_font_measurement)
+    set_target_properties(beachlife_reconstructed_font_measurement
+        reconstructed_font_measurement_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_font_measurement PRIVATE /GL-)
+        target_compile_options(reconstructed_font_measurement_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_font_measurement PRIVATE -fno-lto)
+        target_compile_options(reconstructed_font_measurement_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_font_measurement_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_font_measurement COMMAND reconstructed_font_measurement_tests)
+    set_tests_properties(reconstructed_font_measurement PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+
+# Real line rasterization and Style6 share the existing colour and renderer owners.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_line STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line_direct_x.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line_direct_y.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line_packed_x.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line_packed_y.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style6.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_line PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_line PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_line PUBLIC
+        beachlife_reconstructed_frame_fill_styles)
+    add_dependencies(beachlife_reconstructed_renderer_line verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_line_tests tests/reconstructed_renderer_line.cpp)
+    target_link_libraries(reconstructed_renderer_line_tests PRIVATE
+        beachlife_reconstructed_renderer_line)
+    set_target_properties(beachlife_reconstructed_renderer_line
+        reconstructed_renderer_line_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_line PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_line_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_line PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_line_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_line_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_line COMMAND reconstructed_renderer_line_tests)
+    set_tests_properties(reconstructed_renderer_line PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

@@ -1,0 +1,103 @@
+diff --git a/src/startup_directdraw_surface.h b/src/startup_directdraw_surface.h
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -34,6 +34,9 @@
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(DirectDrawSurface7Prefix*,
+     SurfaceApiRectangle*, SurfaceDescription*, unsigned int, void*);
+ 
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceUnlockMethod)(DirectDrawSurface7Prefix*,
++    SurfaceApiRectangle*);
++
+ struct DirectDrawSurface7VtablePrefix
+ {
+     void* unused_00[2];
+@@ -43,6 +46,8 @@
+     SurfaceLockMethod Lock;
+     void* unused_68;
+     SurfaceStatusMethod Restore;
++    void* unused_70[4];
++    SurfaceUnlockMethod Unlock;
+ };
+ 
+ struct DirectDrawSurface7Prefix
+diff --git a/src/startup_renderer_tga_draw.cpp b/src/startup_renderer_tga_draw.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_tga_draw.cpp
+@@ -0,0 +1,76 @@
++#include "startup_screen_renderer.h"
++#include "startup_screen_item.h"
++#include "indexed_palette_blit.h"
++#include "tga_image.h"
++
++// FUNCTION: BEACHLIFE 0x0040c550
++void ScreenRequestRenderer::DrawTga(const ScreenPoint& destination, const ScreenRectangle& bounds,
++    TgaImage* image, int mode, unsigned int flags, unsigned int extra)
++{
++    int destination_x = destination.x;
++    int destination_y = destination.y;
++    int source_left = bounds.left;
++    int source_top = bounds.top;
++    int source_right = bounds.right;
++    int source_bottom = bounds.bottom;
++
++    if (source_right == 0 || source_bottom == 0)
++    {
++        source_right = image->width + source_left;
++        source_bottom = image->height + source_top;
++    }
++
++    if (!ClipRectangle(destination_x, destination_y, source_left, source_top, source_right, source_bottom))
++    {
++        return;
++    }
++
++    int destination_stride = static_cast<int>(width);
++    const unsigned char* source = image->pixels;
++    int source_stride = image->width;
++    const unsigned short* palette = image->converted_palette;
++    unsigned short* destination_pixels = pixels_1c;
++
++    switch (mode)
++    {
++    case 0:
++        if (flags & 1)
++        {
++            int draw_height = source_bottom - source_top;
++            if (static_cast<unsigned int>(destination_y + draw_height) >= height)
++            {
++                return;
++            }
++            IndexedPaletteBlitTransparent(source, source_stride, destination_pixels, destination_stride, source_left, source_top, destination_x, destination_y, source_right - source_left, draw_height, palette);
++        }
++        else
++        {
++            IndexedPaletteBlit(source, source_stride, destination_pixels, destination_stride, source_left, source_top, destination_x, destination_y, source_right - source_left, source_bottom - source_top, palette);
++        }
++        return;
++
++    case 10:
++        IndexedPaletteBlitMasked(source, source_stride, destination_pixels, destination_stride, source_left, source_top, destination_x, destination_y, source_right - source_left, source_bottom - source_top, palette, extra);
++        return;
++
++    case 11:
++    {
++        unsigned short* locked_pixels = AccessPixels();
++        if (!locked_pixels)
++        {
++            return;
++        }
++        IndexedPaletteBlitPacked(source, source_stride, locked_pixels, surfaces[current_surface]->pitch, source_left, source_top, 0, 0, source_right - source_left, source_bottom - source_top, palette);
++        if (!software_mode)
++        {
++            DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++            surface->vtable->Unlock(surface, 0);
++        }
++        pixels_locked = 0;
++        return;
++    }
++
++    default:
++        return;
++    }
++}

@@ -1,0 +1,99 @@
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -61,6 +61,9 @@
+     RendererRectangleQueue dirty_rectangles;
+     int dirty_rectangle_count;
+ 
++    // Actual 0x0040c0f0; complete fill implementation remains a dependency.
++    void FillRectangle(const ScreenRectangle& bounds, unsigned int colour);
++
+     int CreateSurface(int width, int height, int mode);
+     void PrepareSurface(int surface);
+     unsigned short* AccessPixels();
+diff --git a/src/startup_renderer_rectangle_fill.cpp b/src/startup_renderer_rectangle_fill.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_rectangle_fill.cpp
+@@ -0,0 +1,81 @@
++#include "startup_screen_renderer.h"
++#include "startup_screen_item.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0040c0f0
++void ScreenRequestRenderer::FillRectangle(const ScreenRectangle& bounds, unsigned int colour)
++{
++    int left = bounds.left;
++    int top = bounds.top;
++    int draw_width = bounds.right - left;
++    int draw_height = bounds.bottom - top;
++    if (top < 0)
++    {
++        draw_height += top;
++        top = 0;
++    }
++    if (left < 0)
++    {
++        draw_width += left;
++        left = 0;
++    }
++    int initial_width = static_cast<int>(width);
++    if (draw_width + left > initial_width)
++        draw_width = initial_width - left;
++    if (draw_height + top > static_cast<int>(height))
++        draw_height = static_cast<int>(height) - top;
++
++    if (unscaled_clip_5c)
++    {
++        unsigned short* pixels = AccessPixels();
++        if (!pixels)
++            return;
++        ScreenSurfacePosition* entry = surfaces[current_surface];
++        int position_x = entry->position.x;
++        int pitch_words = static_cast<int>(entry->pitch >> 1);
++        int position_y = entry->position.y;
++        int offset = (top - position_y) * pitch_words;
++        offset -= position_x;
++        offset += left;
++        unsigned int pair = colour & 0xffffu;
++        pair |= pair << 16;
++        for (int rows = draw_height; rows > 0; --rows)
++        {
++            if (draw_width > 0)
++            {
++                int column = 0;
++                for (int pairs = draw_width >> 1; pairs != 0; --pairs)
++                {
++                    memcpy(pixels + offset + column, &pair, sizeof(pair));
++                    column += 2;
++                }
++                if (draw_width & 1)
++                    pixels[offset + column] = static_cast<unsigned short>(colour);
++            }
++            offset += pitch_words;
++        }
++        if (!software_mode)
++        {
++            DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++            surface->vtable->Unlock(surface, 0);
++        }
++        pixels_locked = 0;
++        return;
++    }
++
++    int row_offset = (initial_width * top + left) * 4;
++    unsigned char* pixels = reinterpret_cast<unsigned char*>(pixels_1c);
++    for (int rows = draw_height; rows > 0; --rows)
++    {
++        int offset = row_offset;
++        for (int columns = draw_width; columns > 0; --columns)
++        {
++            unsigned int pixel;
++            memcpy(&pixel, pixels + offset, sizeof(pixel));
++            pixel = (pixel & 0xffff0000u) + (colour & 0xffffu);
++            memcpy(pixels + offset, &pixel, sizeof(pixel));
++            offset += 4;
++        }
++        row_offset += static_cast<int>(width) * 4;
++    }
++}
