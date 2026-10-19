@@ -947,3 +947,33 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_renderer_rectangle_queue PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# The clip method uses the actual native rectangle accumulator and value queue.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_clip STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_clip.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_clip PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_clip PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_clip PUBLIC
+        beachlife_reconstructed_renderer_rectangle_queue)
+    add_dependencies(beachlife_reconstructed_renderer_clip verify_reconstructed_source)
+    add_executable(reconstructed_renderer_clip_tests tests/reconstructed_renderer_clip.cpp)
+    target_link_libraries(reconstructed_renderer_clip_tests PRIVATE
+        beachlife_reconstructed_renderer_clip)
+    set_target_properties(beachlife_reconstructed_renderer_clip
+        reconstructed_renderer_clip_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_clip PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_clip_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_clip PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_clip_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_clip_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_clip COMMAND reconstructed_renderer_clip_tests)
+    set_tests_properties(reconstructed_renderer_clip PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

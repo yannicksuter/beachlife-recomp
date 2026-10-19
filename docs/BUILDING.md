@@ -836,3 +836,12 @@ original missed-overlap behavior. The surface and GUI rectangle tests use typed
 renderer snapshots for this profile. These tests cover valid queues and
 successful host allocation; original allocator, failure, locking and timing
 behavior are not reproduced by the storage adaptation.
+
+The experimental `reconstructed_renderer_clip` test exercises the real clipping
+method followed by the native dirty-rectangle accumulator. Literal cases cover
+the three defined scale modes, the active unscaled override, signed coordinates,
+logical half extents, edge equality, mutable argument aliases and ordered queue
+effects. It uses live native queue storage and preserves the original clipping
+and rectangle-partition behavior. Unsupported modes with the unscaled flag clear,
+overflow, allocation failure and full renderer/surface lifetime remain outside
+this bounded test; it does not present an image.
