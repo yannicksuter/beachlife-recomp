@@ -254,6 +254,14 @@ sanitizers and Windows cross-builds under Wine; each changed-behaviour control i
 rejected. Complete parser and widget lifetimes and the connection to screen
 construction remain separate steps.
 
+The prepared GUI declarations share the observed parser context and registration
+fields, a one-item callback argument and the item word written during
+registration. Compile-time witnesses verify the observed 32-bit prefix and
+generated callback ABI; all existing method matches are retained. These fields
+prepare the shared types for context and registration reconstruction. Complete
+parser construction and the unresolved callback implementations remain separate
+work.
+
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
 executable supplies scoped scalar allocation and deterministic platform calls;
