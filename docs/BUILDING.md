@@ -598,3 +598,16 @@ advance; the other 252 values, including NUL and high bytes, remain unconsumed.
 The existing integer fixture and its expectations remain unchanged. Both tests
 use the same prepared parser declaration and guarded live prefixes, without
 supplying original parser/manager lifetimes or qualifying GUI construction.
+
+
+The optional `reconstructed_gui_text_tests` target selects the actual text,
+whitespace and integer readers from the same archive. Literal bytes, output
+terminators and cursor positions cover text stops, whitespace, optional delimiter
+consumption, repeated calls and sequential reader handoffs. Embedded NULs and
+high bytes are compared as bytes; shorter results must preserve the old output
+tail. Whole-object and buffer guards check that the readers change only their
+specified outputs and cursor. Inputs and outputs are disjoint, every scanned
+byte is accessible, and output capacity is sufficient. The existing integer and
+whitespace fixtures remain unchanged. This covers bounded reader behavior;
+original parser/manager lifetimes, unbounded or overlapping buffers, widget
+construction and gameplay remain outside this target.

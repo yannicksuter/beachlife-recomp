@@ -233,7 +233,12 @@ change whitespace classification or arithmetic are rejected.
 The GUI text argument reader preserves the original byte-copy, whitespace and
 delimiter rules, including copying embedded NUL bytes. Its complete body matches
 the retail bytes, and a changed brace delimiter is rejected. Callers must supply
-accessible input and enough output storage; native text validation follows separately.
+accessible input and enough output storage. The optional native text target checks
+literal output and cursor expectations, every byte value, long bounded copies and
+sequences with the real whitespace and integer readers. All three targets pass
+Linux Release, sanitizers and Windows cross-builds under Wine with their respective
+changed-behaviour controls rejected. Full parser construction and production
+integration remain separate steps.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
