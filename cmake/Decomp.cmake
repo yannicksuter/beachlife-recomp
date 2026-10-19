@@ -629,3 +629,39 @@ foreach(BEACHLIFE_RECTANGLE_FATAL_CASE IN ITEMS fatal_right fatal_bottom fatal_r
     set_tests_properties(reconstructed_gui_rectangle_${BEACHLIFE_RECTANGLE_FATAL_CASE}
         PROPERTIES LABELS "reconstructed;headless" TIMEOUT 30)
 endforeach()
+
+# Experimental reconstructed methods are opt-in and separate from strict matching.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    # Context history borrows real generated items and uses the actual link lifetime.
+    add_library(beachlife_reconstructed_gui_context STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_context.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_child_link_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_child_link_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_prepare.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_position.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_move.cpp")
+    target_include_directories(beachlife_reconstructed_gui_context PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_context PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_gui_context verify_reconstructed_source)
+
+    add_executable(reconstructed_gui_context_tests tests/reconstructed_gui_context.cpp)
+    target_link_libraries(reconstructed_gui_context_tests PRIVATE
+        beachlife_reconstructed_gui_context)
+    set_target_properties(beachlife_reconstructed_gui_context reconstructed_gui_context_tests
+        PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_context PRIVATE /GL-)
+        target_compile_options(reconstructed_gui_context_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_context PRIVATE -fno-lto)
+        target_compile_options(reconstructed_gui_context_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_context_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_context COMMAND reconstructed_gui_context_tests)
+    set_tests_properties(reconstructed_gui_context PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

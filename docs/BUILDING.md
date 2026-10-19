@@ -652,3 +652,24 @@ whitespace and text fixtures remain unchanged and use the same prepared parser
 declaration. Inputs keep every reached byte and signed intermediate valid.
 These bounded cases do not supply original parser, renderer or derived-widget
 lifetimes, validate the diagnostic text, or establish gameplay.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` (default OFF), the optional
+`reconstructed_gui_context_tests` target exercises the reconstructed context
+push and child-link lifetime with generated live screen items. Literal histories
+cover empty and existing chains, duplicate/null contexts, allocation-time field
+reloads and two labelled host allocation exceptions. The executable's scoped
+scalar allocator uses guarded real storage. A separate native portability patch
+preserves the original post-allocation context reload while retaining both ordinary
+new expressions. Cleanup clears every borrowed payload before the actual link
+destructor runs, then ends the real generated/base item lifetimes.
+Whole-state and storage guards check unrelated data. The source is exported through
+the `native-experimental` profile; its compiler comparison remains a partial match
+and is separate from the strict matching registry. This bounded target does
+not establish owning-payload deletion, context pop, original allocation-failure
+semantics, full parser/derived-screen lifetimes or gameplay.
+
+```sh
+cmake --preset release -B build/experimental-context -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-context --target reconstructed_gui_context_tests
+ctest --test-dir build/experimental-context -R '^reconstructed_gui_context$' --output-on-failure
+```
