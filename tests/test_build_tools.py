@@ -44,6 +44,7 @@ class VersionTests(unittest.TestCase):
         config = {'project_version': '0.1.0', 'channel': 'dev', 'pull_request': '0', 'run_id': '0'}
         first = build_version.identity(self.root, config)
         self.assertFalse(first['dirty'])
+        self.assertEqual(first['decomp_profile'], 'native')
         (self.root / 'note.txt').write_text('edit')
         self.assertTrue(build_version.identity(self.root, config)['dirty'])
         git('add', 'note.txt')
@@ -54,14 +55,27 @@ class VersionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_version.identity(self.root, {**config, 'channel': 'test'})
 
+    def test_experimental_identity_cannot_be_a_release(self):
+        config = {'project_version': '0.1.0', 'channel': 'dev', 'pull_request': '0',
+                  'run_id': '0', 'decomp_profile': 'native-experimental'}
+        with patch.object(build_version, 'git_output', side_effect=['a' * 40, '', '1']):
+            self.assertEqual(build_version.identity(self.root, config)['decomp_profile'],
+                             'native-experimental')
+        with self.assertRaisesRegex(ValueError, 'requires a dev or test build'):
+            build_version.identity(self.root, {**config, 'channel': 'release'})
+        for profile in ('matching', 'unknown', None):
+            with self.subTest(profile=profile), self.assertRaisesRegex(ValueError, 'Unknown native'):
+                build_version.identity(self.root, {**config, 'decomp_profile': profile})
 
-def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corrupt=False):
+
+def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corrupt=False,
+                    profile='native'):
     platform, architecture = target.rsplit('-', 1)
     system = 'linux' if platform == 'steamdeck' else platform
     version = '0.1.0+g' + sha[:12]
     info = {'project_version': '0.1.0', 'build_version': version, 'commit': sha, 'dirty': False,
             'channel': channel, 'run_id': 7, 'platform': platform, 'system': system, 'architecture': architecture,
-            'capability': 'launcher'}
+            'capability': 'launcher', 'decomp_profile': profile}
     data = {name: b'fixture' for name in packages.payload_names(info)}
     manifest = {'format': 1, 'build': info, 'files': {
         name: {'sha256': packages.digest(body), 'bytes': len(body), 'mode': 0o644} for name, body in data.items()}}
@@ -109,6 +123,17 @@ class PackageTests(unittest.TestCase):
                 path = fixture_archive(self.root, target, extra=extra, corrupt=corrupt)
                 with self.assertRaises(ValueError):
                     packages.inspect_package(path)
+
+    def test_archive_rejects_experimental_release_and_mixed_profiles(self):
+        for target in packages.TARGETS:
+            fixture_archive(self.root, target)
+        fixture_archive(self.root, 'linux-x86_64', profile='native-experimental')
+        with self.assertRaisesRegex(ValueError, 'source profiles differ'):
+            packages.verify_set(self.root, '0.1.0', 'a' * 40, 'test', 7)
+        archive = fixture_archive(self.root, 'linux-x86_64', channel='release',
+                                  profile='native-experimental')
+        with self.assertRaisesRegex(ValueError, 'requires a dev or test build'):
+            packages.inspect_package(archive)
 
     def test_symlink_input_is_rejected(self):
         (self.root / 'real').write_text('data')

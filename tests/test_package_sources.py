@@ -86,13 +86,14 @@ class PackageSourceTests(unittest.TestCase):
                  'commit', '-qm', 'test: update generated package fixture')
         return self.git(root, 'rev-parse', 'HEAD')
 
-    def refresh_build_identity(self):
+    def refresh_build_identity(self, profile='native'):
         self.info = {'project_version': '0.0.1', 'build_version': '0.0.1+fixture',
                      'commit': self.git(self.repo, 'rev-parse', 'HEAD'), 'commit_time': 1,
                      'dirty': bool(self.git(self.repo, 'status', '--porcelain=v1',
                                            '--untracked-files=normal')),
                      'channel': 'dev', 'platform': 'linux', 'system': 'linux',
-                     'architecture': 'x86_64', 'capability': 'launcher'}
+                     'architecture': 'x86_64', 'capability': 'launcher',
+                     'decomp_profile': profile}
         self.write(self.build / 'generated/build-info.json', json.dumps(self.info).encode())
 
     def assert_rejected(self, message):
@@ -127,6 +128,49 @@ class PackageSourceTests(unittest.TestCase):
             for p in self.prepared.rglob('*') if p.is_file()})
         self.assertEqual(set(payload), packages.payload_names(self.info) | {'SOURCE-MANIFEST.json'})
         self.assertFalse(any(name.startswith(('decomp/', 'patches/', 'orig/')) for name in payload))
+
+    @unittest.skipIf(os.name == 'nt', 'Synthetic ELF packaging requires POSIX executable permissions')
+    def test_experimental_package_preserves_selected_profile_and_patch_hashes(self):
+        self.write(self.patch_root / 'experimental.patch',
+                   b'diff --git a/src/experimental.cpp b/src/experimental.cpp\n'
+                   b'new file mode 100644\n--- /dev/null\n+++ b/src/experimental.cpp\n'
+                   b'@@ -0,0 +1 @@\n+generated experimental source\n')
+        self.write(self.patch_root / 'experimental-series', b'experimental.patch\n')
+        identities = prepare(self.repo, self.prepared, decomp_revision=self.revision,
+                             decomp_profile='native-experimental')
+        self.refresh_build_identity('native-experimental')
+        archive = packages.package(self.build, self.output, source=self.repo)
+        manifest, payload = packages.inspect_package(archive)
+        self.assertEqual(manifest['build']['decomp_profile'], 'native-experimental')
+        self.assertEqual(manifest['dependencies'], identities)
+        self.assertEqual([Path(row['path']).name for row in identities[-1]['series']],
+                         ['reconstruction-series', 'experimental-series', 'series'])
+        self.assertEqual((self.export / 'src/experimental.cpp').read_bytes(),
+                         b'generated experimental source\n')
+        self.assertFalse(any(name.startswith(('decomp/', 'patches/', 'orig/')) for name in payload))
+
+    def test_package_cannot_substitute_native_and_experimental_exports(self):
+        for prepared, requested in (('native', 'native-experimental'),
+                                    ('native-experimental', 'native')):
+            with self.subTest(prepared=prepared, requested=requested):
+                prepare(self.repo, self.prepared, decomp_revision=self.revision,
+                        decomp_profile=prepared)
+                self.refresh_build_identity(requested)
+                with self.assertRaisesRegex(ValueError, 'Prepared beachlife-decomp is stale'):
+                    packages.package(self.build, self.output, source=self.repo)
+                self.assertFalse(self.output.exists())
+
+    def test_package_rejects_experimental_release_and_unknown_profile(self):
+        for profile, channel, message in (
+                ('native-experimental', 'release', 'requires a dev or test build'),
+                ('matching', 'dev', 'Unknown native reconstructed source profile')):
+            with self.subTest(profile=profile, channel=channel):
+                self.refresh_build_identity(profile)
+                self.info['channel'] = channel
+                self.write(self.build / 'generated/build-info.json', json.dumps(self.info).encode())
+                with self.assertRaisesRegex(ValueError, message):
+                    packages.package(self.build, self.output, source=self.repo)
+                self.assertFalse(self.output.exists())
 
     def test_missing_native_export_is_rejected_without_repair(self):
         shutil.rmtree(self.export)

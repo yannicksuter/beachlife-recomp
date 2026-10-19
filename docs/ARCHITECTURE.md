@@ -30,16 +30,25 @@ Intentional behavior changes stay in a
 separate optional series, with tweaks off by default. Third-party dependencies
 remain immutable pins; never edit their checkouts in place.
 
+The optional `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME` build uses the
+`native-experimental` export. It inserts `experimental-series` between the
+reconstruction and portability series for complete, behavior-tested methods
+whose byte matching is still in progress. Matching and ordinary native exports
+retain their existing source selection. Build and package metadata identify the
+profile; experimental sources are restricted to development and test channels.
+Missing functions still require real implementations, and experimental native
+execution is tracked separately from matching and production integration.
+
 The matching build uses the original 32-bit compiler and compares functions
 against the target executable. The native build uses CMake/Ninja and modern
 C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 73 reconstructed game functions match after address normalization,
-totaling 5,566 bytes. 34 functions also match all 1,598 raw bytes exactly.
+verified. 77 reconstructed game functions match after address normalization,
+totaling 6,890 bytes. 37 functions also match all 1,972 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Twelve methods totaling 1,406 bytes also match after address normalization; their
+Thirteen methods totaling 1,461 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
 Four of those methods match all 124 raw bytes exactly.
 The full game layout remains unknown.

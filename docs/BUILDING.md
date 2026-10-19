@@ -163,6 +163,34 @@ files. The matching-only VC6 release wrapper is excluded in favor of the host
 CRT. Subsystem test executables remain opt-in; configuration and file libraries
 are part of normal Play.
 
+### Experimental reconstructed code
+
+Fully implemented reconstructions can be qualified with native behavior tests
+while original-compiler byte matching continues. Enable this source selection
+explicitly in a separate build directory:
+
+```sh
+cmake --preset release -B build/experimental \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
+cmake --build build/experimental --parallel
+ctest --test-dir build/experimental -L reconstructed --output-on-failure
+```
+
+The `release` preset selects compiler optimization; the build channel remains
+`dev`. The option defaults to `OFF` and is rejected with the `release` channel.
+It selects the `native-experimental` prepared-source profile, applying
+`reconstruction-series`, then `experimental-series`, then the native portability
+`series`. Ordinary native and matching builds ignore `experimental-series`.
+The preparation CLI also accepts `--decomp-profile native-experimental`.
+
+Build metadata records `decomp_profile`; packaging verifies that exact profile
+and records its ordered patch hashes. Packages with different source profiles
+cannot form one release matrix. Enabling the option does not complete a missing
+game controller or menu. Each experimental subsystem still needs real source,
+behavior tests and an explicit runtime connection. A native test pass does not
+count as a byte match or establish production gameplay.
+
 The pool-lock target compiles the unchanged acquisition and cleanup methods
 against a test-only platform provider. It checks that both methods use the same
 32-bit word, preserves adaptive state across fast and fallback acquisition, and

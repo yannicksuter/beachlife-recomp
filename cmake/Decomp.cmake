@@ -17,7 +17,8 @@ set(BEACHLIFE_DECOMP_SOURCE "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/src")
 set(BEACHLIFE_DECOMP_PREPARE_COMMAND
     "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/prepare_sources.py"
     --output "${BEACHLIFE_DECOMP_PREPARED}"
-    --decomp-revision "${BEACHLIFE_DECOMP_REVISION}" --decomp-only)
+    --decomp-revision "${BEACHLIFE_DECOMP_REVISION}"
+    --decomp-profile "${BEACHLIFE_DECOMP_PROFILE}" --decomp-only)
 execute_process(COMMAND ${BEACHLIFE_DECOMP_PREPARE_COMMAND} COMMAND_ERROR_IS_FATAL ANY)
 add_custom_target(verify_reconstructed_source
     COMMAND ${BEACHLIFE_DECOMP_PREPARE_COMMAND} --verify
