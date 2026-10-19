@@ -753,3 +753,19 @@ cmake --preset release -B build/experimental-context-pop -DBEACHLIFE_BUILD_RECON
 cmake --build build/experimental-context-pop --target reconstructed_gui_pop_tests
 ctest --test-dir build/experimental-context-pop -R '^reconstructed_gui_pop($|_fatal_)' --output-on-failure
 ```
+
+With experimental reconstructed tests enabled, `reconstructed_tga_palette_tests`
+exercises the actual image constructor, RGB555/RGB565 palette conversion and image
+destructor from the shared TGA archive. Its generated cases cover literal colors,
+all channel byte values, mixed palettes, zero/nonzero flag selection, guarded
+storage, repeated conversion and host allocation exceptions. The conversion
+always allocates 256 halfwords and replaces the old converted-palette pointer.
+The fixture observes the original overwrite leak and reclaims that old array
+after the actual image destructor releases its current buffers.
+
+Build with `cmake --build build/release --target reconstructed_tga_palette_tests`
+and run `ctest --test-dir build/release -R '^reconstructed_tga_palette$' --output-on-failure`.
+Both `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` are required. These checks use generated
+images and a paired host array-allocation provider; renderer integration and
+original allocation-failure behavior require separate qualification.

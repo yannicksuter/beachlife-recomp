@@ -779,3 +779,23 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         reconstructed_gui_pop_fatal_history PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Palette conversion shares the existing prepared TGA lifetime owners.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    target_sources(beachlife_reconstructed_tga PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/tga_palette_convert.cpp")
+    add_executable(reconstructed_tga_palette_tests tests/reconstructed_tga_palette.cpp)
+    target_link_libraries(reconstructed_tga_palette_tests PRIVATE beachlife_reconstructed_tga)
+    set_target_properties(reconstructed_tga_palette_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_tga_palette_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_tga_palette_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tga_palette_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_tga_palette COMMAND reconstructed_tga_palette_tests)
+    set_tests_properties(reconstructed_tga_palette PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
