@@ -1082,3 +1082,40 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_frame_fill_styles PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+
+# Experimental font measurement uses the real constructor and borrowed typed data.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_font_measurement STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_renderer_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_measure_text.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_count_wrapped_lines.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_measure_wrapped_text.cpp")
+    target_include_directories(beachlife_reconstructed_font_measurement PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_font_measurement PUBLIC cxx_std_20)
+    # Retain the sole actual renderer global owner and its real linked children.
+    target_link_libraries(beachlife_reconstructed_font_measurement PUBLIC
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_font_measurement verify_reconstructed_source)
+
+    add_executable(reconstructed_font_measurement_tests
+        tests/reconstructed_font_measurement.cpp)
+    target_link_libraries(reconstructed_font_measurement_tests PRIVATE
+        beachlife_reconstructed_font_measurement)
+    set_target_properties(beachlife_reconstructed_font_measurement
+        reconstructed_font_measurement_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_font_measurement PRIVATE /GL-)
+        target_compile_options(reconstructed_font_measurement_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_font_measurement PRIVATE -fno-lto)
+        target_compile_options(reconstructed_font_measurement_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_font_measurement_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_font_measurement COMMAND reconstructed_font_measurement_tests)
+    set_tests_properties(reconstructed_font_measurement PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

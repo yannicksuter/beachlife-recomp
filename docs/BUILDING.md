@@ -869,3 +869,12 @@ rectangle filling. Generated cases preserve the wide-red conversion quirk,
 border overlap, clipping, captured renderer and live bounds during COM callbacks.
 The fixture uses the existing renderer global and real native queue storage;
 it does not construct a complete Frame or claim GPU presentation.
+
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the optional
+`reconstructed_font_measurement_tests` target exercises the reconstructed font
+renderer constructor and its three text measurement methods. Generated typed
+data covers kerning, wrapping, unsigned arithmetic, a valid text/data alias and
+preservation of borrowed state. The bounded cases exclude nonterminating input
+and scratch copies without room for a terminator. This does not implement font
+loading, full font ownership or destruction, or screen text rendering.
