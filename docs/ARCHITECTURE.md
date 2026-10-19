@@ -222,6 +222,10 @@ Release, address/undefined/leak sanitizers and Windows cross-builds under Wine;
 a changed multiplier is rejected in each configuration. Complete parser
 construction, widget dispatch and production integration remain separate steps.
 
+The GUI whitespace helper advances the parser cursor over spaces, carriage
+returns, line feeds and tabs. Its complete body also matches the retail bytes.
+The caller remains responsible for providing an accessible terminating byte.
+
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
 executable supplies scoped scalar allocation and deterministic platform calls;
