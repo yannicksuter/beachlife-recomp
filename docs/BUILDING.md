@@ -189,6 +189,12 @@ rectangle callbacks and retained list/search helpers with generated live objects
 It checks initial state, repeated positioning, bounded movement, virtual calls,
 owned-text release and unchanged surrounding storage. Paired scalar allocation
 and deletion providers live only in the test executable and use the host CRT.
+Name lookup uses the same active-entry and value-node declarations as insertion,
+with genuine generated Dialog objects. The optional archive publishes
+`BEACHLIFE_DECOMP_TEST_OBJECTS=1` to its consumers so every translation unit sees
+the same conditional inherited-constructor declaration. That native facility is
+off by default and supplies no original Dialog constructor or cleanup. The
+actual Dialog preparation source supplies the intermediate virtual-table entry.
 The target disables LTO and links no VC6 release support. It requires no ISO;
 complete derived lifetimes, original allocation-failure behavior and production
 screen rendering remain separate work.

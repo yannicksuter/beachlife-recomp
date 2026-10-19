@@ -13,12 +13,6 @@
 #include <new>
 #include <type_traits>
 
-// Generated identity objects; reconstructed code only stores these pointers.
-struct ActiveScreenEntry
-{
-    unsigned identity;
-};
-
 namespace
 {
 constexpr unsigned max_nodes = 192;
@@ -441,7 +435,7 @@ void run_sequence(unsigned mode, unsigned schedule)
     std::array<ActiveScreenEntry, 16> payloads;
     for (unsigned n = 0; n < payloads.size(); ++n)
     {
-        payloads[n].identity = n + 100;
+        payloads[n] = {nullptr, 0, static_cast<int>(n + 100), nullptr};
     }
     for (operation = 0; operation < 128; ++operation)
     {
@@ -499,7 +493,7 @@ void run_allocation_failure(unsigned failed_call)
 {
     start_case(failed_call);
     Ring ring;
-    ActiveScreenEntry payload{71};
+    ActiveScreenEntry payload{nullptr, 0, 71, nullptr};
     ActiveScreenEntry* value = &payload;
     const unsigned successes = failed_call == 0 ? 0 : 82;
     for (operation = 0; operation < successes; ++operation)
@@ -560,7 +554,7 @@ void run_single_remaining_slot()
                 heaps[0].size == 48,
         "actual one-block setup differs");
     operation = 1;
-    ActiveScreenEntry payload{9};
+    ActiveScreenEntry payload{nullptr, 0, 9, nullptr};
     ActiveScreenEntry* value = &payload;
     auto* node = ring.insert(0, 0, value, 0);
     require(address(node) == address(heaps[0].bytes) + 24 && allocation_count == 1,

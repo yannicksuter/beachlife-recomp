@@ -149,15 +149,22 @@ steps.
 The base screen-item constructor copies the supplied rectangle into its current
 and saved positions, initializes the observed state and marks the item prepared.
 Its ordinary destructor releases owned text through scalar deletion. The shared
-observed class prefix supports the known virtual callbacks. Native fixtures use
-these real lifetime methods and check construction, cleanup and dispatch; the
-complete virtual table, derived lifetimes and deleting wrapper remain unqualified.
+observed class prefix ends at the preparation state; the child pointer, name and
+child ring belong to the observed Dialog tail. Active entries hold Dialog
+pointers, and insertion and lookup share the same entry and value-node types.
+Native fixtures use the real base lifetime methods and check construction,
+cleanup and dispatch; the complete virtual table, derived lifetimes and deleting
+wrapper remain unqualified.
 
 `beachlife_reconstructed_screen_item` makes those lifetime and callback checks
 repeatable through an optional native test target. Generated objects use the
 prepared methods and one shared declaration; paired host allocation providers
-belong only to the test executable. The target also retains the screen-search
-and placement checks and does not connect these objects to production screens.
+belong only to the test executable. Name lookup uses generated Dialog objects
+with initialized borrowed fields and a live child sentinel. The native profile's
+conditional inherited-constructor declaration is enabled consistently for this
+test archive and its consumers; it supplies no original Dialog lifetime.
+The target retains placement checks and does not connect these objects to
+production screens.
 
 Dialog preparation calls the base state update, then visits its child ring
 through the actual virtual preparation callback. It reloads the current link and

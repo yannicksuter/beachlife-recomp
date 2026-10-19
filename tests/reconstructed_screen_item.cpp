@@ -1,4 +1,5 @@
 #include "startup_list_adaptor.h"
+#include "startup_screen_dialog.h"
 #include "startup_screen_item.h"
 #include "startup_screen_name_search.h"
 #include "startup_screen_placement.h"
@@ -48,10 +49,61 @@ struct GeneratedScreenItem : ScreenItem
         : ScreenItem(initial)
     {
         // Only fields left untouched by the actual reconstructed constructor.
-        std::memset(unknown_28, 0, sizeof(unknown_28));
+        kind_28 = 0;
+        std::memset(unknown_2c, 0, sizeof(unknown_2c));
         std::memset(unknown_31, 0, sizeof(unknown_31));
-        std::memset(unknown_44, 0, sizeof(unknown_44));
+    }
+    void Unresolved04() override
+    {
+        fail("unresolved slot invoked");
+    }
+    void Unresolved08() override
+    {
+        fail("unresolved slot invoked");
+    }
+    void Unresolved0c() override
+    {
+        fail("unresolved slot invoked");
+    }
+    void Unresolved10() override
+    {
+        fail("unresolved slot invoked");
+    }
+    void Unresolved1c() override
+    {
+        fail("unresolved slot invoked");
+    }
+    void Unresolved20() override
+    {
+        fail("unresolved slot invoked");
+    }
+    void Unresolved24() override
+    {
+        fail("unresolved slot invoked");
+    }
+    void Unresolved28() override
+    {
+        fail("unresolved slot invoked");
+    }
+};
+
+struct GeneratedNamedDialog final : ScreenDialog
+{
+    ScreenChildNode sentinel;
+
+    explicit GeneratedNamedDialog(ScreenRectangle initial)
+        : ScreenDialog(initial)
+    {
+        // Explicit test-object facility reaches the real base constructor.
+        // Derived tail fields are generated borrowed data, not retail lifetime.
+        kind_28 = 4;
+        std::memset(unknown_2c, 0, sizeof(unknown_2c));
+        std::memset(unknown_31, 0, sizeof(unknown_31));
+        child_44 = nullptr;
         name = "generated";
+        std::memset(unknown_4c, 0, sizeof(unknown_4c));
+        sentinel = {&sentinel, &sentinel, nullptr};
+        children.head = &sentinel;
     }
     void Unresolved04() override
     {
@@ -156,9 +208,10 @@ GeneratedScreenItem* construct(Frame& frame, unsigned int seed, unsigned int fla
     item->state_30 = static_cast<unsigned char>(seed + 5);
     item->last_x = -static_cast<int>(seed);
     item->last_y = static_cast<int>(seed + 7);
-    for (std::size_t i = 0; i < sizeof(item->unknown_28); ++i)
+    item->kind_28 = static_cast<int>(seed % 65536) - 32768;
+    for (std::size_t i = 0; i < sizeof(item->unknown_2c); ++i)
     {
-        item->unknown_28[i] = static_cast<unsigned char>(seed + i * 79);
+        item->unknown_2c[i] = static_cast<unsigned char>(seed + i * 79);
     }
     for (std::size_t i = 0; i < sizeof(item->unknown_31); ++i)
     {
@@ -167,12 +220,7 @@ GeneratedScreenItem* construct(Frame& frame, unsigned int seed, unsigned int fla
     item->state_40 = static_cast<unsigned char>(seed + 11);
     item->state_41 = static_cast<unsigned char>(seed + 13);
     item->state_42 = static_cast<unsigned char>(seed + 17);
-    for (std::size_t i = 0; i < sizeof(item->unknown_44); ++i)
-    {
-        item->unknown_44[i] = static_cast<unsigned char>(seed + i * 19);
-    }
     item->preparation_flag = static_cast<unsigned char>(flag);
-    item->name = seed % 2 == 0 ? "borrowed-even" : "borrowed-odd";
     require(typeid(*item) == typeid(GeneratedScreenItem), "invalid generated subtype");
     return item;
 }
@@ -236,8 +284,10 @@ void construction_matrix()
                     // Their preconstruction storage contents and dead stores are not a modern
                     // compiler preservation claim; retail's untouched offsets are audited
                     // statically.
-                    require(std::strcmp(item->name, "generated") == 0,
-                        "generated borrowed name differs");
+                    require(item->kind_28 == 0 && item->unknown_2c[0] == 0 &&
+                                item->unknown_2c[1] == 0 && item->unknown_2c[2] == 0 &&
+                                item->unknown_2c[3] == 0,
+                        "generated discriminator initialization differs");
                     for (unsigned char byte : frame.before)
                     {
                         require(byte == guard, "constructor damaged leading guard");
@@ -371,14 +421,14 @@ void retained_lists()
     constexpr const char* queries[] = {
         "Alpha", "alphabet", "alpha", "", "Long-shared-prefix-X", "missing"};
     constexpr int expected_index[] = {0, 1, -1, 3, 4, -1};
-    GeneratedScreenItem items[5] = {GeneratedScreenItem(ScreenRectangle{1, 2, 3, 4}),
-        GeneratedScreenItem(ScreenRectangle{-1, -2, -3, -4}),
-        GeneratedScreenItem(ScreenRectangle{0, 0, 0, 0}),
-        GeneratedScreenItem(ScreenRectangle{9, 7, 5, 3}),
-        GeneratedScreenItem(ScreenRectangle{-21, 13, 17, -9})};
-    ScreenListEntry entries[5];
-    ScreenListNode nodes[5];
-    CircularListNode sentinel;
+    GeneratedNamedDialog items[5] = {GeneratedNamedDialog(ScreenRectangle{1, 2, 3, 4}),
+        GeneratedNamedDialog(ScreenRectangle{-1, -2, -3, -4}),
+        GeneratedNamedDialog(ScreenRectangle{0, 0, 0, 0}),
+        GeneratedNamedDialog(ScreenRectangle{9, 7, 5, 3}),
+        GeneratedNamedDialog(ScreenRectangle{-21, 13, 17, -9})};
+    ActiveScreenEntry entries[5]{};
+    CircularListValueNode nodes[5]{};
+    CircularListNode sentinel{};
     CircularList list;
     list.head = &sentinel;
     for (unsigned int count = 0; count <= 5; ++count)
@@ -388,7 +438,7 @@ void retained_lists()
         for (unsigned int i = 0; i < count; ++i)
         {
             items[i].name = names[i];
-            entries[i].item = &items[i];
+            entries[i] = {&items[i], static_cast<int>(i), -static_cast<int>(i), nullptr};
             nodes[i].entry = &entries[i];
             nodes[i].previous = i ? &nodes[i - 1] : &sentinel;
             nodes[i].next = i + 1 < count ? &nodes[i + 1] : &sentinel;
@@ -408,12 +458,18 @@ void retained_lists()
                 expected_index[q] >= 0 && static_cast<unsigned int>(expected_index[q]) < count
                     ? &nodes[expected_index[q]]
                     : &sentinel;
-            std::array<std::array<unsigned char, sizeof(GeneratedScreenItem)>, 5> before{};
+            std::array<std::array<unsigned char, sizeof(GeneratedNamedDialog)>, 5> before{};
             for (unsigned int i = 0; i != 5; ++i)
             {
                 std::memcpy(
                     before[i].data(), static_cast<const void*>(&items[i]), sizeof(items[i]));
             }
+            std::array<unsigned char, sizeof(entries)> entries_before{};
+            std::array<unsigned char, sizeof(nodes)> nodes_before{};
+            std::array<unsigned char, sizeof(sentinel)> sentinel_before{};
+            std::memcpy(entries_before.data(), entries, sizeof(entries));
+            std::memcpy(nodes_before.data(), nodes, sizeof(nodes));
+            std::memcpy(sentinel_before.data(), &sentinel, sizeof(sentinel));
             require(FindScreenByName(&result, begin, end, queries[q]) == &result &&
                         result.node == expected,
                 "retained first-name lookup differs");
@@ -425,6 +481,11 @@ void retained_lists()
                             sizeof(items[i])) == 0,
                     "name lookup modified polymorphic item");
             }
+            require(std::memcmp(entries_before.data(), entries, sizeof(entries)) == 0 &&
+                        std::memcmp(nodes_before.data(), nodes, sizeof(nodes)) == 0 &&
+                        std::memcmp(sentinel_before.data(), &sentinel, sizeof(sentinel)) == 0,
+                "name lookup modified typed entry graph");
+            byte_checks += sizeof(entries) + sizeof(nodes) + sizeof(sentinel);
             ++retained_cases;
             ++cases;
         }
