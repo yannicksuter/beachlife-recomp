@@ -230,6 +230,11 @@ sequential use of the integer reader, with guards around the complete observed
 state. Both reader tests pass the same native configurations, and controls that
 change whitespace classification or arithmetic are rejected.
 
+The GUI text argument reader preserves the original byte-copy, whitespace and
+delimiter rules, including copying embedded NUL bytes. Its complete body matches
+the retail bytes, and a changed brace delimiter is rejected. Callers must supply
+accessible input and enough output storage; native text validation follows separately.
+
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
 executable supplies scoped scalar allocation and deterministic platform calls;
