@@ -180,8 +180,11 @@ actual override; generated callback tests cover filtering and traversal changes.
 The selected retail child implementations remain separate dependencies.
 
 Linear child-link construction stores the supplied child pointer and clears
-the next link. Its original destructor and the owning container's lifetime
-remain separate reconstruction steps; this method has no native lifetime test.
+the next link. The reconstructed destructor invokes virtual deletion for a
+non-null child with a type value from 0 through 22. It leaves other type values
+alone and does not release the link's own storage. Construction and destruction
+are qualified for matching; native payload and owning-container lifetimes
+remain separate integration steps.
 
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
