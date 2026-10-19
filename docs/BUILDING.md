@@ -845,3 +845,10 @@ effects. It uses live native queue storage and preserves the original clipping
 and rectangle-partition behavior. Unsupported modes with the unscaled flag clear,
 overflow, allocation failure and full renderer/surface lifetime remain outside
 this bounded test; it does not present an image.
+
+The experimental `reconstructed_renderer_tga_draw_tests` target composes the
+complete TGA drawing method with the real clipping/rectangle queue, four indexed
+blitters, surface pixel access and allocated TGA image lifetime. Generated
+literal cases cover pixels, clipping side effects and live COM Lock/Unlock
+selection. This headless subsystem test does not establish surface creation,
+GPU presentation or the original Intro screen.

@@ -977,3 +977,38 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_renderer_clip PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Complete drawing composes actual clipping, pixels, kernels and image lifetime.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_tga_draw STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_tga_draw.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_tga_draw PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_tga_draw PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_tga_draw PUBLIC
+        beachlife_reconstructed_renderer_clip
+        beachlife_reconstructed_indexed_palette_blit
+        beachlife_reconstructed_renderer_blit_kernels
+        beachlife_reconstructed_surface_pixels)
+    add_dependencies(beachlife_reconstructed_renderer_tga_draw verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_tga_draw_tests
+        tests/reconstructed_renderer_tga_draw.cpp)
+    target_link_libraries(reconstructed_renderer_tga_draw_tests PRIVATE
+        beachlife_reconstructed_renderer_tga_draw beachlife_reconstructed_tga)
+    set_target_properties(beachlife_reconstructed_renderer_tga_draw
+        reconstructed_renderer_tga_draw_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_tga_draw PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_tga_draw_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_tga_draw PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_tga_draw_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_tga_draw_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_tga_draw COMMAND reconstructed_renderer_tga_draw_tests)
+    set_tests_properties(reconstructed_renderer_tga_draw PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
