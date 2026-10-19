@@ -121,7 +121,7 @@ so an original zero-status fatal exit cannot pass the test.
 ## Reconstructed subsystem tests
 
 The optional targets compile reconstructed image, file, configuration, input,
-surface and pool-lock helpers using the native compiler. They consume a committed source export with faithful patches
+surface, pool-lock and screen-list helpers using the native compiler. They consume a committed source export with faithful patches
 through the same preparation tool as dependencies. Enable them explicitly:
 
 ```sh
@@ -135,7 +135,7 @@ cmake --build build/reconstructed-tga \
     startup_configuration_tests startup_configuration_default_tests \
     reconstructed_input_tests reconstructed_cursor_tests \
     reconstructed_surfaces_tests reconstructed_surface_pixels_tests \
-    reconstructed_pool_lock_tests --parallel
+    reconstructed_pool_lock_tests reconstructed_screen_list_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -168,6 +168,19 @@ verifies the wait sequence and cleanup on normal and exceptional host lifetimes.
 Its deterministic single-threaded provider exercises no operating-system
 synchronization. Concurrent behavior, original parent unwind machinery and
 production use remain separate qualification steps.
+
+The screen-list target combines the actual node builder, insertion, Begin/End,
+chunk allocator, recycling and shared lock code. Its native patch sizes slots
+for the compiled node and establishes storage and recycled-object lifetimes.
+A scoped scalar-new replacement lives only in the test executable, leaving
+the prepared methods unchanged. A fixed real-storage ledger checks allocation
+sizes and order; an independent sequence checks both list links, payloads,
+sentinels, reuse, guards and cleanup after labelled host allocation exceptions.
+Checked fixture teardown releases its own backing storage. It does not implement
+the missing retail list destructor. The target disables LTO and uses the same
+deterministic platform provider as the pool-lock test. Null-return scavenging,
+retry after allocation failure, original CRT failure behavior, operating-system
+concurrency and production screen ownership remain outside its tested domain.
 
 The surface-pixel target compiles the actual pixel-access method and error
 handler. Generated lock providers check descriptor initialization, arguments,

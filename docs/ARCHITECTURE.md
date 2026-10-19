@@ -143,10 +143,17 @@ concurrent access and original parent unwind behavior remain unqualified.
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
 Insertion preserves the observed iterator calling convention and link updates.
-Allocation shares one inline
-pool-lock guard definition with the existing consumers. Its fixed 16-byte retail
-slot cannot hold the corresponding 64-bit node; native allocation and object
-lifetimes require a separate faithful portability patch before runtime use.
+Allocation shares one inline pool-lock guard definition with the existing
+consumers. The native profile derives pool slots from the actual node size and
+explicitly starts the byte-storage, free-link and node lifetimes.
+
+`beachlife_reconstructed_screen_list` exercises those prepared methods together,
+including insertion, traversal, chunk allocation and recycling. The test
+executable supplies scoped scalar allocation and deterministic platform calls;
+the archive retains its ordinary allocation expressions. Independent sequence
+and allocation checks cover successful bounded storage and labelled host
+exceptions. Original allocation-failure behavior, concurrent access, screen
+ownership and production integration remain separate gates.
 
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.

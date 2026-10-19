@@ -362,3 +362,37 @@ endif()
 add_test(NAME reconstructed_surface_pixels COMMAND reconstructed_surface_pixels_tests)
 set_tests_properties(reconstructed_surface_pixels PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
+
+# The fixture supplies scoped scalar allocation and deterministic platform calls;
+# every reconstructed method is compiled unchanged from the native export.
+add_library(beachlife_reconstructed_screen_list STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_list_node.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_list_insert.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_begin.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_end.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_chunk_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_return.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_guard.cpp")
+target_include_directories(beachlife_reconstructed_screen_list PUBLIC
+    "${CMAKE_SOURCE_DIR}/tests/providers/pool_lock" "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_screen_list PUBLIC cxx_std_20)
+add_dependencies(beachlife_reconstructed_screen_list verify_reconstructed_source)
+
+add_executable(reconstructed_screen_list_tests tests/reconstructed_screen_list.cpp)
+target_link_libraries(reconstructed_screen_list_tests PRIVATE
+    beachlife_reconstructed_screen_list)
+set_target_properties(beachlife_reconstructed_screen_list reconstructed_screen_list_tests
+    PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+if(MSVC)
+    target_compile_options(beachlife_reconstructed_screen_list PRIVATE /GL-)
+    target_compile_options(reconstructed_screen_list_tests PRIVATE /GL- /W4 /WX)
+else()
+    target_compile_options(beachlife_reconstructed_screen_list PRIVATE -fno-lto)
+    target_compile_options(reconstructed_screen_list_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_screen_list_tests PRIVATE -fno-lto)
+endif()
+add_test(NAME reconstructed_screen_list COMMAND reconstructed_screen_list_tests)
+set_tests_properties(reconstructed_screen_list PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)
