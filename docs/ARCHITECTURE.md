@@ -193,8 +193,12 @@ node size and explicitly starts the byte-storage, free-link and node lifetimes.
 Saved-position node allocation and insertion have their own reconstructed payload
 specialization, using the same pool and compiler cleanup contract. Insertion
 preserves the typed reference, iterator result and observed link-update order.
-These methods are qualified for matching; native storage adaptation remains a
-separate step.
+These methods are qualified for matching. The native profile sizes saved-node
+slots from the host type and explicitly starts node and free-link lifetimes.
+The optional `beachlife_reconstructed_screen_placements` archive composes node
+allocation, insertion, lookup and recycling. Generated caller-owned records
+qualify duplicate-group selection, unchanged miss outputs and repeated cleanup;
+complete store lifetime and production integration remain separate steps.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test

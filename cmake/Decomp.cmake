@@ -484,3 +484,39 @@ endif()
 add_test(NAME reconstructed_screen_registry COMMAND reconstructed_screen_registry_tests)
 set_tests_properties(reconstructed_screen_registry PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
+
+# Actual saved-placement allocation, insertion and lookup share one source
+# closure. Generated fixtures own borrowed records and deterministic providers.
+add_library(beachlife_reconstructed_screen_placements STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_placement_node.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_placement_insert.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_begin.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_end.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_chunk_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_return.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_guard.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_placement.cpp")
+target_include_directories(beachlife_reconstructed_screen_placements PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/providers/pool_lock"
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_screen_placements PUBLIC cxx_std_20)
+add_dependencies(beachlife_reconstructed_screen_placements verify_reconstructed_source)
+
+add_executable(reconstructed_screen_placements_tests tests/reconstructed_screen_placements.cpp)
+target_link_libraries(reconstructed_screen_placements_tests PRIVATE
+    beachlife_reconstructed_screen_placements)
+set_target_properties(beachlife_reconstructed_screen_placements reconstructed_screen_placements_tests
+    PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+if(MSVC)
+    target_compile_options(beachlife_reconstructed_screen_placements PRIVATE /GL-)
+    target_compile_options(reconstructed_screen_placements_tests PRIVATE /GL- /W4 /WX)
+else()
+    target_compile_options(beachlife_reconstructed_screen_placements PRIVATE -fno-lto)
+    target_compile_options(reconstructed_screen_placements_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_screen_placements_tests PRIVATE -fno-lto)
+endif()
+add_test(NAME reconstructed_screen_placements COMMAND reconstructed_screen_placements_tests)
+set_tests_properties(reconstructed_screen_placements PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)

@@ -137,7 +137,7 @@ cmake --build build/reconstructed-tga \
     reconstructed_input_tests reconstructed_cursor_tests \
     reconstructed_surfaces_tests reconstructed_surface_pixels_tests \
     reconstructed_pool_lock_tests reconstructed_screen_list_tests \
-    reconstructed_screen_item_tests reconstructed_screen_registry_tests --parallel
+    reconstructed_screen_item_tests reconstructed_screen_registry_tests reconstructed_screen_placements_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -554,3 +554,15 @@ Windows embeds `assets/app/icon.ico` using the native resource compiler. All
 windows load the matching PNG from package resources. macOS builds the ICNS
 bundle resource using the system `sips` and `iconutil`; these tools are required
 on the macOS build host. No original ISO is needed to build the app icons.
+
+The optional `reconstructed_screen_placements_tests` target links one nine-source
+archive containing the actual saved-placement node builder, insertion, lookup,
+iterators and pool methods. Generated caller-owned records exercise first-match
+selection for duplicate signed groups, full-width coordinates, unchanged miss
+outputs, read-only graph checks, node identity, same-type slot reuse and repeated
+cleanup. The native profile preserves the eight-byte pool quantum while giving
+each host-sized node and free link its actual C++ lifetime. Test-only scalar
+allocation and deterministic lock providers cover successful, uncontended use.
+This does not provide the original store/list constructor or destructor,
+allocation-failure behavior, concurrency, cross-type slot reuse or production
+linkage.
