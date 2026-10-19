@@ -36,8 +36,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 67 reconstructed game functions match after address normalization,
-totaling 5,181 bytes. 33 functions also match all 1,544 raw bytes exactly.
+verified. 70 reconstructed game functions match after address normalization,
+totaling 5,331 bytes. 33 functions also match all 1,544 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
 Nine methods totaling 1,161 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
@@ -143,7 +143,8 @@ concurrent access and original parent unwind behavior remain unqualified.
 Screen rectangle retrieval, relative movement, saved-position restoration and
 preparation-state updates are reconstructed. Positioning starts from the saved
 rectangle on each call, then applies the requested horizontal and vertical
-offsets. Complete screen construction and dialog dispatch remain separate steps.
+offsets. Complete screen construction and remaining dialog behavior are separate
+steps.
 
 The base screen-item constructor copies the supplied rectangle into its current
 and saved positions, initializes the observed state and marks the item prepared.
@@ -157,6 +158,12 @@ repeatable through an optional native test target. Generated objects use the
 prepared methods and one shared declaration; paired host allocation providers
 belong only to the test executable. The target also retains the screen-search
 and placement checks and does not connect these objects to production screens.
+
+Dialog preparation calls the base state update, then visits its child ring
+through the actual virtual preparation callback. It reloads the current link and
+sentinel after each callback, preserving changes made during traversal. Generated
+native fixtures check those transitions with real base lifetime; complete Dialog
+construction, destruction and production screen integration remain unqualified.
 
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
