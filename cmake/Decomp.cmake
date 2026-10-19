@@ -688,3 +688,37 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_tga_parser PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 60)
 endif()
+
+# The filename wrapper uses the real reconstructed parser and scoped VFS helpers.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_tga_files STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/tga_file_loader.cpp")
+    target_include_directories(beachlife_reconstructed_tga_files PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_tga_files PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_tga_files PUBLIC
+        beachlife_reconstructed_tga beachlife_reconstructed_files)
+    add_dependencies(beachlife_reconstructed_tga_files verify_reconstructed_source)
+
+    add_executable(reconstructed_tga_files_tests tests/reconstructed_tga_files.cpp)
+    target_link_libraries(reconstructed_tga_files_tests PRIVATE
+        beachlife_reconstructed_tga_files)
+    set_target_properties(beachlife_reconstructed_tga_files reconstructed_tga_files_tests
+        PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_tga_files PRIVATE /GL-)
+        target_compile_options(reconstructed_tga_files_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_tga_files PRIVATE -fno-lto)
+        target_compile_options(reconstructed_tga_files_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tga_files_tests PRIVATE -fno-lto)
+    endif()
+    set(BEACHLIFE_RECONSTRUCTED_TGA_FILES_ROOT
+        "${CMAKE_CURRENT_BINARY_DIR}/tga-files-fixture"
+        CACHE STRING "Writable target-system directory for generated TGA file tests")
+    add_test(NAME reconstructed_tga_files COMMAND reconstructed_tga_files_tests
+        "${BEACHLIFE_RECONSTRUCTED_TGA_FILES_ROOT}")
+    set_tests_properties(reconstructed_tga_files PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 60)
+endif()

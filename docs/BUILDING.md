@@ -695,3 +695,21 @@ cmake --preset release -B build/experimental-tga -DBEACHLIFE_BUILD_RECONSTRUCTED
 cmake --build build/experimental-tga --target reconstructed_tga_tests reconstructed_tga_parser_tests
 ctest --test-dir build/experimental-tga -R '^reconstructed_tga(_parser)?$' --output-on-failure
 ```
+
+With experimental source enabled, `reconstructed_tga_files_tests` loads generated
+TGA files through the actual folder VFS and reconstructed file, parser and image
+cleanup methods. Nine calls cover an unbound session, missing and empty files,
+header rejection, case/separator aliases and small indexed/RGB raw and RLE images.
+The fixture checks that the temporary file array is released before returned
+pixels are used, including normal parser rejection. Its paired array allocator
+observes real host storage; the retail methods and VFS are not replaced.
+
+These cases require stable complete files and bounded parser inputs. They do not
+qualify short reads, malformed files, the original input leak when parsing throws,
+renderer palette conversion, widget activation or a game frame.
+
+```sh
+cmake --preset release -B build/experimental-tga-files -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-tga-files --target reconstructed_tga_files_tests
+ctest --test-dir build/experimental-tga-files -R '^reconstructed_tga_files$' --output-on-failure
+```
