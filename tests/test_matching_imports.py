@@ -84,6 +84,23 @@ class ImportMetadataTests(unittest.TestCase):
         self.assertEqual(changes[0]['symbol'], '_FixtureCall@8')
         self.assertIn(b'_FixtureCall@8\0fixture.dll\0', after)
 
+    def test_vc6_throw_keeps_the_export_underscore_and_only_changes_name_mode(self):
+        before = b'!<arch>\n' + archive_member(
+            short_import(name='__CxxThrowException@8', dll='MSVCRT.dll'))
+        self.path.write_bytes(before)
+        changes = rewrite_stdcall_import_archive(
+            self.path, 'MSVCRT.dll', {'_CxxThrowException': 8})
+        after = self.path.read_bytes()
+        self.assertEqual([n for n, (a, b) in enumerate(zip(before, after)) if a != b],
+                         [8 + 60 + 18])
+        self.assertEqual(len(before), len(after))
+        self.assertEqual(after[8 + 60 + 18], 3 << 2)
+        self.assertEqual(changes[0]['symbol'], '__CxxThrowException@8')
+        self.assertIn(b'__CxxThrowException@8\0MSVCRT.dll\0', after)
+        # IMPORT_NAME_UNDECORATE removes exactly the COFF decoration prefix
+        # and suffix; the underscore belonging to the export name survives.
+        self.assertEqual(changes[0]['symbol'][1:].split('@', 1)[0], '_CxxThrowException')
+
     def test_import_policy_fails_before_files_or_librarian_calls(self):
         folder = self.path.parent / 'not-created'
         bad = [('../fixture.dll', {'FixtureCall': 8}, 'decorated'),
@@ -95,6 +112,10 @@ class ImportMetadataTests(unittest.TestCase):
                ('fixture.dll', {'FixtureCall': -4}, 'decorated'),
                ('fixture.dll', {'FixtureCall@8': 8}, 'decorated'),
                ('fixture.dll', {'FixtureCall\n': 8}, 'decorated'),
+               ('fixture.dll', {'_CxxThrowException': 8}, 'undecorated'),
+               ('MSVCRT.dll', {'_CxxThrowException': 4}, 'undecorated'),
+               ('MSVCRT.dll', {'_CxxThrowException': 8}, 'decorated'),
+               ('MSVCRT.dll', {'_UnknownRuntime': 8}, 'undecorated'),
                ('fixture.dll', {'FixtureCall': 8}, 'ordinal'),
                ('fixture.dll', {'FixtureCall': 8}, [])]
         for dll, symbols, mode in bad:

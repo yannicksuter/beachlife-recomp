@@ -56,6 +56,13 @@ the requested names against both original and rebuilt PE import tables. It does
 not copy DLL code or execute the comparison image. Native service adaptations
 remain separate from this original-ABI link support.
 
+The separate `runtime_stdcall_imports` policy currently accepts only
+`{"_CxxThrowException": 8}` from `MSVCRT.dll`. It verifies the original export
+and generates its exact VC6 import metadata alongside the existing CRT route.
+Results distinguish a linked runtime import from one discarded after the
+compiler removes its call. Rebuilt CRT import names must exist in the original
+image; an omitted import does not establish executed exception handling.
+
 `beachlife_reconstructed_tga` compiles seven matched helpers with the modern
 compiler and host CRT. Its generated test executable checks data conversion
 and ownership; it does not link those helpers into the production launcher.

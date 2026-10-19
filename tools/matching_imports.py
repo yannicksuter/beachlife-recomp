@@ -63,7 +63,11 @@ def validate_stdcall_imports(dll, symbols, export_names='undecorated'):
     if export_names not in ('undecorated', 'decorated'):
         raise ValueError('Expected undecorated or decorated export names.')
     for name, stack_bytes in symbols.items():
-        if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) or
+        runtime_throw = (dll == 'MSVCRT.dll' and name == '_CxxThrowException' and
+                         type(stack_bytes) is int and stack_bytes == 8 and
+                         export_names == 'undecorated')
+        if (not isinstance(name, str) or
+                (not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) and not runtime_throw) or
                 type(stack_bytes) is not int or not 0 <= stack_bytes <= 65532 or stack_bytes % 4):
             raise ValueError('Expected an undecorated source name and x86 stack byte count.')
 
