@@ -143,13 +143,14 @@ concurrent access and original parent unwind behavior remain unqualified.
 Screen rectangle retrieval, relative movement, saved-position restoration and
 preparation-state updates are reconstructed. Positioning starts from the saved
 rectangle on each call, then applies the requested horizontal and vertical
-offsets. Full screen construction and dialog dispatch remain separate steps.
+offsets. Complete screen construction and dialog dispatch remain separate steps.
 
-The ordinary screen-item destructor is reconstructed and releases its owned
-text through scalar deletion. The shared observed class prefix now supports
-the known virtual callbacks. Native fixtures construct real objects and check
-cleanup and dispatch; the complete virtual table and deleting wrapper remain
-unqualified.
+The base screen-item constructor copies the supplied rectangle into its current
+and saved positions, initializes the observed state and marks the item prepared.
+Its ordinary destructor releases owned text through scalar deletion. The shared
+observed class prefix supports the known virtual callbacks. Native fixtures use
+these real lifetime methods and check construction, cleanup and dispatch; the
+complete virtual table, derived lifetimes and deleting wrapper remain unqualified.
 
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
