@@ -36,8 +36,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 71 reconstructed game functions match after address normalization,
-totaling 5,385 bytes. 34 functions also match all 1,598 raw bytes exactly.
+verified. 72 reconstructed game functions match after address normalization,
+totaling 5,511 bytes. 34 functions also match all 1,598 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
 Twelve methods totaling 1,406 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
@@ -199,6 +199,11 @@ The optional `beachlife_reconstructed_screen_placements` archive composes node
 allocation, insertion, lookup and recycling. Generated caller-owned records
 qualify duplicate-group selection, unchanged miss outputs and repeated cleanup;
 complete store lifetime and production integration remain separate steps.
+
+Saved-position writes update the first record with the requested group, or
+allocate a record and append it through the reconstructed insertion method.
+The writer matches the complete original body, including both return paths.
+Native writer qualification and the manager's save wrapper are separate steps.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
