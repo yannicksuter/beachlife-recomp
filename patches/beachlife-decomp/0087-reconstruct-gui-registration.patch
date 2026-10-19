@@ -1,0 +1,190 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -31,9 +31,9 @@
+ typedef char saved_placement_write_size_check[sizeof(SavedScreenPlacement) == 12 ? 1 : -1];
+ typedef char saved_placement_write_store_offset_check[offsetof(ScreenPlacementStore, saved) == 0x28 ? 1 : -1];
+ #include "startup_frame_clock.h"
+-#include "../src/startup_screen_item.h"
++#include "startup_screen_item.h"
+ #include "startup_screen_manager.h"
+-#include "../src/startup_screen_dialog.h"
++#include "startup_screen_dialog.h"
+ #include "tga_image.h"
+ #include "startup_config_tokens.h"
+ #include "startup_config_scan.h"
+@@ -67,6 +67,80 @@
+     virtual void Unresolved24() { _purecall(); }
+     virtual void Unresolved28() { _purecall(); }
+ };
++
++// Insert after the existing GeneratedScreenItem declaration in the private
++// comparison fixture; call fixture_gui_register first from fixture_entry.
++// Generated callback/observations only. This comparison image is never run.
++extern "C"
++{
++    ScreenItem* volatile fixture_register_callback_receiver;
++    ScreenItem* volatile fixture_register_callback_item;
++    volatile unsigned int fixture_register_callback_calls;
++    ScreenChildLink* volatile fixture_register_registry_head;
++    ScreenChildLink* volatile fixture_register_registry_tail;
++    ScreenChildLink* volatile fixture_register_items_head;
++    ScreenChildLink* volatile fixture_register_items_tail;
++    ScreenItem* volatile fixture_register_last_item;
++    volatile unsigned int fixture_register_parser_word;
++    volatile unsigned int fixture_register_item_word;
++}
++
++struct GeneratedRegisterReceiver : GeneratedScreenItem
++{
++    GuiParserState* parser;
++
++    GeneratedRegisterReceiver(ScreenRectangle initial, GuiParserState* owner)
++        : GeneratedScreenItem(initial)
++        , parser(owner)
++    {
++    }
++
++    virtual void Unresolved10(ScreenItem* item)
++    {
++        fixture_register_callback_receiver = this;
++        fixture_register_callback_item = item;
++        ++fixture_register_callback_calls;
++        parser->word_38 = 0x2468ace0U;
++    }
++};
++
++extern "C" void fixture_gui_register()
++{
++    GuiParserState parser = { 0 };
++    ScreenRectangle initial = { 7, -11, 103, 219 };
++    GeneratedScreenItem item(initial);
++    GeneratedRegisterReceiver receiver(initial, &parser);
++    parser.alternate_context_14 = &receiver;
++    parser.word_38 = 0x13579bdfU;
++    fixture_register_callback_calls = 0;
++    parser.RegisterItem(&item, 1);
++    fixture_register_registry_head = parser.registry_head;
++    fixture_register_registry_tail = parser.registry_tail;
++    fixture_register_items_head = parser.items_head;
++    fixture_register_items_tail = parser.items_tail;
++    fixture_register_last_item = parser.last_registered_item;
++    fixture_register_parser_word = parser.word_38;
++    fixture_register_item_word = item.word_2c;
++
++    // Both lists borrow the still-live generated item. Clear every payload
++    // before the real owning link destructor/release; never read a freed link.
++    while (parser.registry_head)
++    {
++        ScreenChildLink* first = parser.registry_head;
++        parser.registry_head = first->next;
++        first->item = 0;
++        delete first;
++    }
++    parser.registry_tail = 0;
++    while (parser.items_head)
++    {
++        ScreenChildLink* first = parser.items_head;
++        parser.items_head = first->next;
++        first->item = 0;
++        delete first;
++    }
++    parser.items_tail = 0;
++}
+ 
+ extern "C"
+ {
+@@ -330,6 +404,7 @@
+ 
+ extern "C" void fixture_entry()
+ {
++    fixture_gui_register();
+     fixture_gui_rectangle();
+     fixture_gui_text();
+     fixture_gui_whitespace();
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -54,3 +54,4 @@
+ 0x005a88b0,global,4,?screen_request_renderer@@3PAUScreenRequestRenderer@@A
+ 0x0057f268,string,106,
+ 0x004addc0,function,148,??1ScreenChildLink@@QAE@XZ
++0x004ab5b0,function,345,?RegisterItem@GuiParserState@@QAEXPAUScreenItem@@E@Z
+diff --git a/src/startup_gui_register.cpp b/src/startup_gui_register.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_gui_register.cpp
+@@ -0,0 +1,47 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_child_link.h"
++#include "startup_screen_item.h"
++
++// FUNCTION: BEACHLIFE 0x004ab5b0
++void GuiParserState::RegisterItem(ScreenItem* item, unsigned char named)
++{
++    if (named)
++    {
++        if (registry_tail == 0)
++        {
++            registry_head = registry_tail = new ScreenChildLink(item);
++        }
++        else
++        {
++            registry_tail->next = new ScreenChildLink(item);
++            registry_tail = registry_tail->next;
++        }
++    }
++
++    if (items_tail == 0)
++    {
++        items_head = items_tail = new ScreenChildLink(item);
++    }
++    else
++    {
++        items_tail->next = new ScreenChildLink(item);
++        items_tail = items_tail->next;
++    }
++
++    if (alternate_context_14)
++    {
++        alternate_context_14->Unresolved10(item);
++    }
++    else if (alternate_context_10)
++    {
++        alternate_context_10->Unresolved10(item);
++    }
++    else if (current_context)
++    {
++        current_context->Unresolved10(item);
++    }
++
++    unsigned int word = word_38;
++    last_registered_item = item;
++    item->word_2c = word;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -472,6 +472,12 @@
+       "size": 950,
+       "name": "GuiParserState::ReadRectangle",
+       "name_status": "descriptive application rectangle reader and observed parser prefix; original class, declaration and complete lifetimes unknown"
++    },
++    {
++      "address": "0x004ab5b0",
++      "size": 345,
++      "name": "GuiParserState::RegisterItem",
++      "name_status": "descriptive application registration method and observed parser prefix; original class, declaration and complete hierarchy unknown"
+     }
+   ],
+   "library_functions": [
+@@ -540,6 +546,9 @@
+     ],
+     "startup_placement_write.cpp": [
+       "/Ob1"
++    ],
++    "startup_gui_register.cpp": [
++      "/GX"
+     ]
+   },
+   "stdcall_imports": {
