@@ -36,8 +36,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 66 reconstructed game functions match after address normalization,
-totaling 5,106 bytes. 32 functions also match all 1,469 raw bytes exactly.
+verified. 67 reconstructed game functions match after address normalization,
+totaling 5,181 bytes. 33 functions also match all 1,544 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
 Nine methods totaling 1,161 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
@@ -139,6 +139,11 @@ fallback acquisition, wait values, adaptive state and cleanup after normal or
 exceptional host lifetimes. The test providers use distinct symbols so they can
 coexist with the host CRT's system imports. Operating-system synchronization,
 concurrent access and original parent unwind behavior remain unqualified.
+
+Screen rectangle retrieval, relative movement, saved-position restoration and
+preparation-state updates are reconstructed. Positioning starts from the saved
+rectangle on each call, then applies the requested horizontal and vertical
+offsets. Full screen construction and dialog dispatch remain separate steps.
 
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
