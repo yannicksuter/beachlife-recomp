@@ -555,9 +555,10 @@ windows load the matching PNG from package resources. macOS builds the ICNS
 bundle resource using the system `sips` and `iconutil`; these tools are required
 on the macOS build host. No original ISO is needed to build the app icons.
 
-The optional `reconstructed_screen_placements_tests` target links one ten-source
+The optional `reconstructed_screen_placements_tests` target links one eleven-source
 archive containing the actual saved-placement node builder, insertion, writer,
-lookup, iterators and pool methods. Generated caller-owned records retain the
+manager save wrapper, lookup, iterators and pool methods. Generated caller-owned
+records retain the
 list/query checks for duplicate signed groups, full-width coordinates, unchanged
 miss outputs, read-only graphs, node identity, same-type slot reuse and repeated
 cleanup. The writer additionally creates real 12-byte records and updates only
@@ -565,9 +566,15 @@ the first matching record, including owned/borrowed duplicates and identical
 writes. Literal expected allocation sequences distinguish record storage from
 node-pool storage and require updates to allocate nothing. Generated teardown
 returns nodes, deletes owned records once and leaves borrowed records alive.
+Additional generated manager/game prefixes exercise both mode-6 suppression
+paths and route saves through the actual game global to two live stores. Literal
+coordinates/groups and whole-object guards check first-match updates, untouched
+rectangle right/bottom fields, other-store preservation and allocation-free
+suppressed or identical saves. The original list/writer scenarios stay intact;
+direct wrapper calls are counted separately from their nested writer behavior.
 The native profile preserves the eight-byte pool quantum while giving each
 host-sized node and free link its actual C++ lifetime. Test-only paired scalar
 allocation and deterministic lock providers cover successful, uncontended use.
-This does not provide the original store/list constructor or destructor,
-allocation-failure behavior, concurrency, cross-type slot reuse or production
-linkage.
+This does not provide the original manager/game/store/list constructor or
+destructor, allocation-failure behavior, concurrency, cross-type slot reuse,
+Dialog movement or production linkage.

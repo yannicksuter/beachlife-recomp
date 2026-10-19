@@ -207,8 +207,11 @@ allocate a record and append it through the reconstructed insertion method.
 The writer matches the complete original body, including both return paths.
 The reconstructed manager wrapper suppresses saving when either the current
 or previous mode equals 6. Otherwise it forwards the rectangle's left/top and
-group through the actual game placement pointer. Native wrapper tests and
-complete manager lifetime remain separate steps.
+group through the actual game placement pointer. The optional saved-placement
+target exercises this wrapper with generated manager and game prefixes, checking
+both suppression gates, routing between stores, first-match updates and unchanged
+owner state. Complete manager and game lifetimes and production integration
+remain separate steps.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
