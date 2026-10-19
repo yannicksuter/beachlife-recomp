@@ -439,3 +439,48 @@ endif()
 add_test(NAME reconstructed_screen_item COMMAND reconstructed_screen_item_tests)
 set_tests_properties(reconstructed_screen_item PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
+
+# One source closure connects actual screen insertion to name lookup. The
+# generated fixture owns its allocation and deterministic platform providers.
+add_library(beachlife_reconstructed_screen_registry STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_list_node.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_list_insert.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_begin.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_end.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_chunk_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_return.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_guard.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_name_search.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_constructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_destructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_prepare.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_position.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_move.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_prepare.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_position.cpp")
+target_include_directories(beachlife_reconstructed_screen_registry PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/providers/pool_lock"
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_definitions(beachlife_reconstructed_screen_registry PUBLIC
+    BEACHLIFE_DECOMP_TEST_OBJECTS=1)
+target_compile_features(beachlife_reconstructed_screen_registry PUBLIC cxx_std_20)
+add_dependencies(beachlife_reconstructed_screen_registry verify_reconstructed_source)
+
+add_executable(reconstructed_screen_registry_tests tests/reconstructed_screen_registry.cpp)
+target_link_libraries(reconstructed_screen_registry_tests PRIVATE
+    beachlife_reconstructed_screen_registry)
+set_target_properties(beachlife_reconstructed_screen_registry reconstructed_screen_registry_tests
+    PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+if(MSVC)
+    target_compile_options(beachlife_reconstructed_screen_registry PRIVATE /GL-)
+    target_compile_options(reconstructed_screen_registry_tests PRIVATE /GL- /W4 /WX)
+else()
+    target_compile_options(beachlife_reconstructed_screen_registry PRIVATE -fno-lto)
+    target_compile_options(reconstructed_screen_registry_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_screen_registry_tests PRIVATE -fno-lto)
+endif()
+add_test(NAME reconstructed_screen_registry COMMAND reconstructed_screen_registry_tests)
+set_tests_properties(reconstructed_screen_registry PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)

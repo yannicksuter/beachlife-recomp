@@ -121,7 +121,7 @@ so an original zero-status fatal exit cannot pass the test.
 ## Reconstructed subsystem tests
 
 The optional targets compile reconstructed image, file, configuration, input,
-surface, pool-lock, screen-list and screen-item helpers using the native compiler.
+surface, pool-lock, screen-list, screen-item and screen-registry helpers using the native compiler.
 They consume a committed source export with faithful patches through the same
 preparation tool as dependencies. Enable them explicitly:
 
@@ -137,7 +137,7 @@ cmake --build build/reconstructed-tga \
     reconstructed_input_tests reconstructed_cursor_tests \
     reconstructed_surfaces_tests reconstructed_surface_pixels_tests \
     reconstructed_pool_lock_tests reconstructed_screen_list_tests \
-    reconstructed_screen_item_tests --parallel
+    reconstructed_screen_item_tests reconstructed_screen_registry_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -199,6 +199,17 @@ virtual-table entries; the positioning override is linked from its own source.
 The target disables LTO and links no VC6 release support. It requires no ISO;
 complete derived lifetimes, original allocation-failure behavior and production
 screen rendering remain separate work.
+
+The screen-registry target connects actual insertion and name lookup in one
+archive, with one owner for each iterator, pool and screen method. Generated
+live Dialog objects use the same test-only construction facility. Literal
+expectations cover empty and missing names, duplicates, ordering, bounded
+subranges, pointer identity and recycled-node reuse; lookup preserves the graph
+and object state. Paired scalar allocation providers and the deterministic
+uncontended lock provider belong only to the test executable. The actual Dialog
+positioning override is linked for the generated virtual table; this fixture
+does not exercise that callback. No original Dialog or list lifetime, allocation
+failure, operating-system concurrency, menu flow or production use is claimed.
 
 The surface-pixel target compiles the actual pixel-access method and error
 handler. Generated lock providers check descriptor initialization, arguments,
