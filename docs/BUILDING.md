@@ -861,3 +861,11 @@ Generated cases cover full-buffer clipping, preserved upper pixel bits, dense
 Its guarded typed renderer includes the real native rectangle queue. This
 headless test does not establish surface creation, GPU presentation or the
 original Intro screen.
+
+
+The experimental `reconstructed_frame_fill_styles_tests` target checks the real
+colour converter and Frame drawing helpers for styles 2, 3 and 7 with actual
+rectangle filling. Generated cases preserve the wide-red conversion quirk,
+border overlap, clipping, captured renderer and live bounds during COM callbacks.
+The fixture uses the existing renderer global and real native queue storage;
+it does not construct a complete Frame or claim GPU presentation.

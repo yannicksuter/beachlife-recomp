@@ -1046,3 +1046,39 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_renderer_rectangle_fill PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+
+# These frame helpers use the actual fill/converter and existing renderer owner.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_frame_fill_styles STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_colour.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style2.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style3.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style7.cpp")
+    target_include_directories(beachlife_reconstructed_frame_fill_styles PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_frame_fill_styles PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_frame_fill_styles PUBLIC
+        beachlife_reconstructed_renderer_rectangle_fill
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_frame_fill_styles verify_reconstructed_source)
+
+    add_executable(reconstructed_frame_fill_styles_tests tests/reconstructed_frame_fill_styles.cpp)
+    target_link_libraries(reconstructed_frame_fill_styles_tests PRIVATE
+        beachlife_reconstructed_frame_fill_styles)
+    set_target_properties(beachlife_reconstructed_frame_fill_styles
+        reconstructed_frame_fill_styles_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_frame_fill_styles PRIVATE /GL-)
+        target_compile_options(reconstructed_frame_fill_styles_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_frame_fill_styles PRIVATE -fno-lto)
+        target_compile_options(reconstructed_frame_fill_styles_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_frame_fill_styles_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_frame_fill_styles COMMAND reconstructed_frame_fill_styles_tests)
+    set_tests_properties(reconstructed_frame_fill_styles PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
