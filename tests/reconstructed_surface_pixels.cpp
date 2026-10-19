@@ -1,4 +1,8 @@
 #include "startup_screen_renderer.h"
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+#include "renderer_queue_test_state.h"
+#include <cstdlib>
+#endif
 #include <array>
 #include <climits>
 #include <cstddef>
@@ -8,7 +12,9 @@
 #include <type_traits>
 
 static_assert(sizeof(SurfaceResult) == 4 && INT_MAX == 2147483647);
+#if !defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
 static_assert(std::is_standard_layout_v<ScreenRequestRenderer>);
+#endif
 static_assert(std::is_standard_layout_v<ScreenSurfacePosition>);
 
 template <class T> struct Guarded
@@ -37,7 +43,20 @@ struct Fixture
     Guarded<Pixels> pixels[3];
 };
 
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+struct State
+{
+    ScreenRequestRenderer renderer;
+    std::array<unsigned char, 32> renderer_before;
+    std::array<unsigned char, 32> renderer_after;
+    std::array<unsigned char, sizeof(Fixture::entries)> entries;
+    std::array<unsigned char, sizeof(Fixture::devices)> devices;
+    std::array<unsigned char, sizeof(Fixture::tables)> tables;
+    std::array<unsigned char, sizeof(Fixture::pixels)> pixels;
+};
+#else
 using State = std::array<unsigned char, sizeof(Fixture)>;
+#endif
 
 struct Scenario
 {
@@ -74,6 +93,99 @@ std::size_t cases;
 std::size_t provider_calls;
 std::size_t byte_checks;
 
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+State snapshot(const Fixture& value)
+{
+    State result{};
+    result.renderer = value.renderer.value;
+    std::memcpy(
+        result.renderer_before.data(), value.renderer.before, result.renderer_before.size());
+    std::memcpy(result.renderer_after.data(), value.renderer.after, result.renderer_after.size());
+    std::memcpy(result.entries.data(), value.entries, result.entries.size());
+    std::memcpy(result.devices.data(), value.devices, result.devices.size());
+    std::memcpy(result.tables.data(), value.tables, result.tables.size());
+    std::memcpy(result.pixels.data(), value.pixels, result.pixels.size());
+    return result;
+}
+
+bool equal_state(const Fixture& fixture, const State& expected)
+{
+    byte_checks += renderer_queue_test::compared_bytes(expected.renderer) +
+                   expected.renderer_before.size() + expected.renderer_after.size() +
+                   expected.entries.size() + expected.devices.size() + expected.tables.size() +
+                   expected.pixels.size();
+    return renderer_queue_test::equal(fixture.renderer.value, expected.renderer) &&
+           std::memcmp(fixture.renderer.before,
+               expected.renderer_before.data(),
+               expected.renderer_before.size()) == 0 &&
+           std::memcmp(fixture.renderer.after,
+               expected.renderer_after.data(),
+               expected.renderer_after.size()) == 0 &&
+           std::memcmp(fixture.entries, expected.entries.data(), expected.entries.size()) == 0 &&
+           std::memcmp(fixture.devices, expected.devices.data(), expected.devices.size()) == 0 &&
+           std::memcmp(fixture.tables, expected.tables.data(), expected.tables.size()) == 0 &&
+           std::memcmp(fixture.pixels, expected.pixels.data(), expected.pixels.size()) == 0;
+}
+
+template <class T>
+void expect_write(State& state, const Fixture& fixture, const T& field, const T& value)
+{
+    // Preserve the old literal write recipe. Only four renderer members can
+    // be its destinations; expected writes use their actual declared types.
+    if constexpr (std::is_same_v<T, int>)
+    {
+        if (&field == &fixture.renderer.value.current_surface)
+        {
+            state.renderer.current_surface = value;
+            return;
+        }
+    }
+    if constexpr (std::is_same_v<T, ScreenSurfacePosition**>)
+    {
+        if (&field == &fixture.renderer.value.surfaces)
+        {
+            state.renderer.surfaces = value;
+            return;
+        }
+    }
+    if constexpr (std::is_same_v<T, unsigned char>)
+    {
+        if (&field == &fixture.renderer.value.software_mode)
+        {
+            state.renderer.software_mode = value;
+            return;
+        }
+        if (&field == &fixture.renderer.value.pixels_locked)
+        {
+            state.renderer.pixels_locked = value;
+            return;
+        }
+    }
+    // Other destinations remain within one of these actual trivial component
+    // arrays. Never compute an offset across the nontrivial enclosing Fixture.
+    const auto address = reinterpret_cast<std::uintptr_t>(&field);
+    const auto write_block = [&](auto& expected, const auto& block)
+    {
+        static_assert(std::is_trivially_copyable_v<std::remove_cvref_t<decltype(block)>>);
+        const auto begin = reinterpret_cast<std::uintptr_t>(&block);
+        if (address < begin || address - begin > sizeof(block) ||
+            sizeof(value) > sizeof(block) - (address - begin))
+        {
+            return false;
+        }
+        std::memcpy(expected.data() + (address - begin), &value, sizeof(value));
+        return true;
+    };
+    if (write_block(state.entries, fixture.entries) ||
+        write_block(state.devices, fixture.devices) || write_block(state.tables, fixture.tables) ||
+        write_block(state.pixels, fixture.pixels))
+    {
+        return;
+    }
+    std::fputs("expected write escaped declared fixture components\n", stderr);
+    std::exit(2);
+}
+#else
 State snapshot(const Fixture& value)
 {
     State result;
@@ -94,6 +206,8 @@ void expect_write(State& state, const Fixture& fixture, const T& field, const T&
                         reinterpret_cast<const unsigned char*>(&fixture);
     std::memcpy(state.data() + offset, &value, sizeof(value));
 }
+
+#endif
 
 template <std::size_t N> void fill(unsigned char (&bytes)[N], unsigned int seed)
 {
@@ -247,11 +361,16 @@ bool run(const Scenario& scenario)
     Fixture fixture{};
     fill_guards(fixture.renderer, 0x31);
     ScreenRequestRenderer& renderer = fixture.renderer.value;
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    renderer_queue_test::initialize(renderer, 0x23);
+#endif
     renderer.software_mode = static_cast<unsigned char>(scenario.gate);
     fill(renderer.unknown_01, 17);
     renderer.width = 640;
     renderer.height = 480;
+#if !defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
     fill(renderer.unknown_0c, 0x23);
+#endif
     fill(renderer.unknown_6c, 0x93);
     renderer.current_surface = static_cast<int>(scenario.slot) - static_cast<int>(scenario.base);
     renderer.pixels_locked = static_cast<unsigned char>(scenario.locked);

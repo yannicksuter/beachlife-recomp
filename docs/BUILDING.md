@@ -827,3 +827,12 @@ cmake --preset release -B build/experimental-activation -DBEACHLIFE_BUILD_RECONS
 cmake --build build/experimental-activation --target reconstructed_screen_activation_tests
 ctest --test-dir build/experimental-activation -R '^reconstructed_screen_activation$' --output-on-failure
 ```
+
+With the experimental option enabled, `reconstructed_renderer_rectangle_queue`
+exercises the reconstructed dirty-rectangle accumulator using a native
+`std::deque` for value storage. Generated cases cover containment, swap-last
+removal, first-overlap and recursive append order, edge contacts and the
+original missed-overlap behavior. The surface and GUI rectangle tests use typed
+renderer snapshots for this profile. These tests cover valid queues and
+successful host allocation; original allocator, failure, locking and timing
+behavior are not reproduced by the storage adaptation.

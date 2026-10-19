@@ -1,4 +1,7 @@
 #include "startup_screen_renderer.h"
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+#include "renderer_queue_test_state.h"
+#endif
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -17,8 +20,10 @@ static_assert(sizeof(int) == 4 && std::numeric_limits<int>::digits == 31);
 static_assert(sizeof(unsigned int) == 4);
 static_assert(std::is_standard_layout_v<ScreenSurfacePosition>);
 static_assert(std::is_trivially_copyable_v<ScreenSurfacePosition>);
+#if !defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
 static_assert(std::is_standard_layout_v<ScreenRequestRenderer>);
 static_assert(std::is_trivially_copyable_v<ScreenRequestRenderer>);
+#endif
 static_assert(sizeof(ScreenPoint) == 2 * sizeof(int));
 static_assert(std::is_same_v<decltype(&ScreenRequestRenderer::PositionSurface),
     void (ScreenRequestRenderer::*)(int, ScreenPoint)>);
@@ -76,6 +81,25 @@ struct RendererFrame
     ScreenRequestRenderer renderer;
     unsigned char after[32];
 };
+
+void check_renderer_frame(
+    const RendererFrame* actual, const RendererFrame* expected, const char* message)
+{
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    ++representation_checks;
+    byte_checks += sizeof(actual->before) + sizeof(actual->after) +
+                   renderer_queue_test::compared_bytes(expected->renderer);
+    check(
+        std::equal(
+            std::begin(actual->before), std::end(actual->before), std::begin(expected->before)) &&
+            std::equal(
+                std::begin(actual->after), std::end(actual->after), std::begin(expected->after)) &&
+            renderer_queue_test::equal(actual->renderer, expected->renderer),
+        message);
+#else
+    check_bytes(actual, expected, sizeof(RendererFrame), message);
+#endif
+}
 
 struct TableFrame
 {
@@ -190,10 +214,8 @@ void provider_event(unsigned route)
         &current->initial,
         sizeof(Frame),
         "object changed before provider returned");
-    check_bytes(current->renderer,
-        &current->initial_renderer,
-        sizeof(RendererFrame),
-        "renderer changed before provider returned");
+    check_renderer_frame(
+        current->renderer, &current->initial_renderer, "renderer changed before provider returned");
     check_bytes(current->table,
         &current->initial_table,
         sizeof(TableFrame),
@@ -270,7 +292,13 @@ void run_cleanup(Method method,
     RendererFrame renderer;
     std::memset(&table, 0x67, sizeof(table));
     std::memset(&alternate, 0xd5, sizeof(alternate));
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    std::fill(std::begin(renderer.before), std::end(renderer.before), 0x96);
+    std::fill(std::begin(renderer.after), std::end(renderer.after), 0x96);
+    renderer_queue_test::initialize(renderer.renderer, 0x96);
+#else
     std::memset(&renderer, 0x96, sizeof(renderer));
+#endif
     for (unsigned n = 0; n < 8; ++n)
     {
         table.entries[n] = &decoy.object;
@@ -288,8 +316,13 @@ void run_cleanup(Method method,
     std::memcpy(&original_table, &table, sizeof(table));
     std::memcpy(&expected_table, &table, sizeof(table));
     std::memcpy(&saved_alternate, &alternate, sizeof(alternate));
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    original_renderer = renderer;
+    expected_renderer = renderer;
+#else
     std::memcpy(&original_renderer, &renderer, sizeof(renderer));
     std::memcpy(&expected_renderer, &renderer, sizeof(renderer));
+#endif
 
     Context context{};
     context.actual = &actual;
@@ -302,7 +335,11 @@ void run_cleanup(Method method,
     context.replacement_surface = &replacement;
     context.replacement_pixels = replacement_pixels;
     context.renderer = &renderer;
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    context.initial_renderer = renderer;
+#else
     std::memcpy(&context.initial_renderer, &renderer, sizeof(renderer));
+#endif
     context.table = &table;
     std::memcpy(&context.initial_table, &table, sizeof(table));
     context.alternate = alternate.entries;
@@ -365,14 +402,20 @@ void run_cleanup(Method method,
         saved_replacement_pixels,
         sizeof(replacement_pixels),
         "replacement pixel buffer changed");
-    check_bytes(&renderer, &expected_renderer, sizeof(renderer), "renderer write set differs");
+    check_renderer_frame(&renderer, &expected_renderer, "renderer write set differs");
     check_bytes(&table, &expected_table, sizeof(table), "table write set differs");
     check_bytes(&alternate, &saved_alternate, sizeof(alternate), "alternate table changed");
     check_bytes(&decoy, &saved_decoy, sizeof(decoy), "unselected entry changed");
     // Restore only generated table bindings so a repeat selects the same live
     // object, including through an aliased entry. Provider mutations were
     // already checked against the independent expected state above.
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    // Only the generated table binding was mutated by this provider. All other
+    // typed fields, queue values/count and guards were already checked above.
+    renderer.renderer.surfaces = original_renderer.renderer.surfaces;
+#else
     std::memcpy(&renderer, &original_renderer, sizeof(renderer));
+#endif
     std::memcpy(&table, &original_table, sizeof(table));
     // A second invocation must observe the cleared gate and leave everything.
     std::memcpy(&context.initial, &actual, sizeof(actual));
@@ -392,8 +435,7 @@ void run_cleanup(Method method,
     current = nullptr;
     check(context.events == 0, "inactive repeat invoked a provider");
     check_bytes(&actual, &expected, sizeof(Frame), "inactive repeat changed object");
-    check_bytes(
-        &renderer, &original_renderer, sizeof(renderer), "inactive repeat changed renderer");
+    check_renderer_frame(&renderer, &original_renderer, "inactive repeat changed renderer");
     check_bytes(&table, &original_table, sizeof(table), "inactive repeat changed table");
     check_bytes(
         &alternate, &saved_alternate, sizeof(alternate), "inactive repeat changed alternate");
@@ -426,6 +468,30 @@ using Renderer = Guarded<ScreenRequestRenderer>;
 using Surface = Guarded<ScreenSurfacePosition>;
 using Table = Guarded<std::array<ScreenSurfacePosition*, 8>>;
 using Surfaces = std::array<Surface, 8>;
+
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+Renderer snapshot(const Renderer& value)
+{
+    return value;
+}
+
+void unchanged(const Renderer& value, const Renderer& expected, const char* name)
+{
+    ++representation_checks;
+    byte_checks += value.before.size() + value.after.size() +
+                   renderer_queue_test::compared_bytes(expected.value);
+    check(value.before == expected.before && value.after == expected.after &&
+              renderer_queue_test::equal(value.value, expected.value),
+        name);
+}
+
+void patterned(Renderer& value, unsigned int salt)
+{
+    value.before.fill(static_cast<unsigned char>(salt));
+    value.after.fill(static_cast<unsigned char>(salt ^ 0xd5U));
+    renderer_queue_test::initialize(value.value, salt);
+}
+#endif
 
 template <typename T> std::array<unsigned char, sizeof(T)> snapshot(const T& value)
 {

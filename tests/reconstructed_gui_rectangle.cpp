@@ -1,6 +1,9 @@
 #include "startup_gui_parser.h"
 #include "startup_screen_item.h"
 #include "startup_screen_renderer.h"
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+#include "renderer_queue_test_state.h"
+#endif
 
 #include <array>
 #include <climits>
@@ -437,8 +440,9 @@ struct ParentStorage
     std::array<unsigned char, guard_size> after{};
 };
 
-// No static nontrivial owner can destroy the observations before atexit runs.
-// The parent is constructed explicitly in byte storage, not as a static object.
+// The parent is constructed explicitly in byte storage. In the experimental
+// queue profile the observation owner is initialized before exit callbacks are
+// registered, so its real deque members remain alive during their checks.
 struct Observation
 {
     const Literal* literal{};
@@ -452,14 +456,38 @@ struct Observation
     ScreenRequestRenderer* expected_renderer{};
     std::array<char, input_capacity> input_before{};
     std::array<unsigned char, sizeof(GuiParserState)> parser_before{};
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    ScreenRequestRenderer renderer_before{};
+#else
     std::array<unsigned char, sizeof(ScreenRequestRenderer)> renderer_before{};
+#endif
     std::array<unsigned char, sizeof(GeneratedParent)> parent_before{};
     bool parent_live{};
     bool fatal_armed{};
     bool reader_returned{};
 };
 
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+Observation* observed_pointer{};
+
+Observation& observation_owner()
+{
+    static Observation value{};
+    return value;
+}
+
+Observation& observation()
+{
+    return *observed_pointer;
+}
+#else
 Observation observed{};
+
+Observation& observation()
+{
+    return observed;
+}
+#endif
 
 static_assert(CHAR_BIT == 8);
 static_assert(sizeof(int) == 4 && sizeof(unsigned int) == 4);
@@ -468,8 +496,10 @@ static_assert(std::numeric_limits<unsigned int>::digits == 32);
 static_assert(sizeof(ScreenRectangle) == 16);
 static_assert(std::is_standard_layout_v<GuiParserState>);
 static_assert(std::is_trivially_copyable_v<GuiParserState>);
+#if !defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
 static_assert(std::is_trivially_copyable_v<ScreenRequestRenderer>);
 static_assert(std::is_trivially_destructible_v<Observation>);
+#endif
 static_assert(std::is_trivially_destructible_v<Literal>);
 
 void unchanged(const void* actual, const void* expected, std::size_t size, const char* reason)
@@ -505,12 +535,14 @@ template <typename T> void initialize_guards(T& value)
 
 void parent_guards()
 {
+    auto& observed = observation();
     guard(observed.parent_storage.before, 0xa5, "parent leading guard changed");
     guard(observed.parent_storage.after, 0x5a, "parent trailing guard changed");
 }
 
 void prepare(const Literal& literal)
 {
+    auto& observed = observation();
     current_case = literal.name;
     require(!observed.parent_live, "previous parent is still live");
     require(
@@ -548,14 +580,20 @@ void prepare(const Literal& literal)
     observed.parser.value.word_38 = 0xa5a55a5aU;
 
     observed.output.value = {-1111, 2222, -3333, 4444};
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    renderer_queue_test::initialize(observed.renderer.value, 0x34);
+#else
     observed.renderer.value = {};
+#endif
     observed.renderer.value.width = literal.dimensions.width;
     observed.renderer.value.height = literal.dimensions.height;
     observed.renderer.value.current_surface = -37;
     std::memset(
         observed.renderer.value.unknown_01, 0x12, sizeof(observed.renderer.value.unknown_01));
+#if !defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
     std::memset(
         observed.renderer.value.unknown_0c, 0x34, sizeof(observed.renderer.value.unknown_0c));
+#endif
     std::memset(
         observed.renderer.value.unknown_6c, 0x56, sizeof(observed.renderer.value.unknown_6c));
     observed.expected_renderer = literal.dimensions.present ? &observed.renderer.value : nullptr;
@@ -576,13 +614,18 @@ void prepare(const Literal& literal)
     observed.input_before = observed.input.bytes;
     std::memcpy(
         observed.parser_before.data(), &observed.parser.value, observed.parser_before.size());
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    observed.renderer_before = observed.renderer.value;
+#else
     std::memcpy(
         observed.renderer_before.data(), &observed.renderer.value, observed.renderer_before.size());
+#endif
     ++counters.cases;
 }
 
 void verify_observation()
 {
+    auto& observed = observation();
     const auto& literal = *observed.literal;
     const auto& value = observed.output.value;
     require(static_cast<std::uint32_t>(value.left) == literal.expected.rectangle[0],
@@ -614,10 +657,16 @@ void verify_observation()
         same = (parser_bytes[i] == observed.parser_before[i]) && same;
     }
     require(same, "parser changed outside cursor");
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    counters.byte_checks += renderer_queue_test::compared_bytes(observed.renderer_before);
+    require(renderer_queue_test::equal(observed.renderer.value, observed.renderer_before),
+        "renderer changed");
+#else
     unchanged(&observed.renderer.value,
         observed.renderer_before.data(),
         observed.renderer_before.size(),
         "renderer changed");
+#endif
     require(screen_request_renderer == observed.expected_renderer, "renderer global changed");
     unchanged(observed.input.bytes.data(),
         observed.input_before.data(),
@@ -649,6 +698,7 @@ void verify_observation()
 
 void finish_normal_case()
 {
+    auto& observed = observation();
     const auto destructions = counters.destructions;
     if (observed.parent_live)
     {
@@ -676,6 +726,7 @@ void normal_completion_guard()
 
 void fatal_observer()
 {
+    auto& observed = observation();
     // An unexpected exit during construction must not inspect an incomplete object.
     if (!observed.fatal_armed || observed.literal == nullptr)
     {
@@ -705,6 +756,7 @@ void fatal_observer()
 
 int run_normal()
 {
+    auto& observed = observation();
     if (std::atexit(normal_completion_guard) != 0)
     {
         fail("normal observer registration failed");
@@ -740,6 +792,7 @@ int run_normal()
 
 [[noreturn]] void run_fatal(const Literal& literal)
 {
+    auto& observed = observation();
     current_case = literal.name;
     if (std::atexit(fatal_observer) != 0)
     {
@@ -756,6 +809,11 @@ int run_normal()
 
 int main(int argc, char** argv)
 {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    // Construction and static destruction registration finish before either
+    // later atexit callback is registered. Both see live deque members.
+    observed_pointer = &observation_owner();
+#endif
     if (argc == 1)
     {
         return run_normal();
