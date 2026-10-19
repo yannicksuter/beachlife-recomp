@@ -259,6 +259,11 @@ void initialize_manager(Guarded<ScreenManager>& object, std::size_t seed)
     object.value.active.head = nullptr;
     object.value.mode = -123;
     object.value.previous_mode = 456;
+#if defined(BEACHLIFE_DECOMP_SCREEN_ACTIVATION)
+    object.value.auxiliary_130 = nullptr;
+    object.value.item_134 = nullptr;
+    object.value.value_138 = 0.0f;
+#endif
 }
 
 void run_session(

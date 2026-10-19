@@ -854,3 +854,55 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_renderer_blit_kernels PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# One real activation closure supplies the concrete base slot to its consumers.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_activation STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_activation.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_item_clear.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_auxiliary_clear.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_intro_globals.cpp")
+    target_include_directories(beachlife_reconstructed_screen_activation PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_activation PUBLIC cxx_std_20)
+    target_compile_definitions(beachlife_reconstructed_screen_activation PUBLIC
+        BEACHLIFE_DECOMP_SCREEN_ACTIVATION=1)
+    add_dependencies(beachlife_reconstructed_screen_activation verify_reconstructed_source)
+
+    foreach(BEACHLIFE_ACTIVATION_CONSUMER IN ITEMS
+        beachlife_reconstructed_screen_item
+        beachlife_reconstructed_screen_registry
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_gui_context)
+        target_link_libraries(${BEACHLIFE_ACTIVATION_CONSUMER} PUBLIC
+            beachlife_reconstructed_screen_activation)
+    endforeach()
+    # These aggregate-only consumers need the expanded field initialization,
+    # without pulling any activation or base-lifetime owner into their images.
+    foreach(BEACHLIFE_ACTIVATION_PREFIX_CONSUMER IN ITEMS
+        beachlife_reconstructed_gui_integer
+        beachlife_reconstructed_screen_placements)
+        target_compile_definitions(${BEACHLIFE_ACTIVATION_PREFIX_CONSUMER} PUBLIC
+            BEACHLIFE_DECOMP_SCREEN_ACTIVATION=1)
+    endforeach()
+
+    add_executable(reconstructed_screen_activation_tests
+        tests/reconstructed_screen_activation.cpp)
+    target_link_libraries(reconstructed_screen_activation_tests PRIVATE
+        beachlife_reconstructed_screen_item)
+    set_target_properties(beachlife_reconstructed_screen_activation
+        reconstructed_screen_activation_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_activation PRIVATE /GL-)
+        target_compile_options(reconstructed_screen_activation_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_activation PRIVATE -fno-lto)
+        target_compile_options(reconstructed_screen_activation_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_activation_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_screen_activation COMMAND reconstructed_screen_activation_tests)
+    set_tests_properties(reconstructed_screen_activation PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

@@ -809,3 +809,21 @@ cmake --preset release -B build/experimental-blit-kernels -DBEACHLIFE_BUILD_RECO
 cmake --build build/experimental-blit-kernels --target reconstructed_renderer_blit_kernels_tests
 ctest --test-dir build/experimental-blit-kernels -R '^reconstructed_renderer_blit_kernels$' --output-on-failure
 ```
+
+With experimental reconstructed tests enabled,
+`reconstructed_screen_activation_tests` exercises the real item activation,
+manager notification and auxiliary clear methods with the reconstructed item
+constructor and destructor. Literal cases and all 256 activation bytes check
+routing, exact byte values, borrowed peer lifetimes and preserved object fields.
+The generated manager and auxiliary prefixes do not qualify their complete
+retail construction or widget/Intro lifetimes.
+
+The affected item, registry, placement and GUI tests also consume this coherent
+experimental declaration. Default native tests retain their existing declaration
+and use the same fixtures through a test profile definition.
+
+```sh
+cmake --preset release -B build/experimental-activation -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-activation --target reconstructed_screen_activation_tests
+ctest --test-dir build/experimental-activation -R '^reconstructed_screen_activation$' --output-on-failure
+```

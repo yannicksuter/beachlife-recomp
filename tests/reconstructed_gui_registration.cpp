@@ -261,7 +261,7 @@ struct GeneratedItem final : ScreenItem
     {
         require(false, "unobserved item slot called");
     }
-    void Unresolved24() override
+    void Unresolved24(unsigned char) override
     {
         require(false, "unobserved item slot called");
     }

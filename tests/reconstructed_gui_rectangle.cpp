@@ -402,7 +402,11 @@ struct GeneratedParent final : ScreenItem
     {
         fail("unresolved parent slot invoked");
     }
+#if defined(BEACHLIFE_DECOMP_SCREEN_ACTIVATION)
+    void Unresolved24(unsigned char) override
+#else
     void Unresolved24() override
+#endif
     {
         fail("unresolved parent slot invoked");
     }

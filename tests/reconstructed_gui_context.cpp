@@ -445,7 +445,7 @@ struct GeneratedItem final : ScreenItem
     {
         require(false, "unresolved item slot invoked");
     }
-    void Unresolved24() override
+    void Unresolved24(unsigned char) override
     {
         require(false, "unresolved item slot invoked");
     }
