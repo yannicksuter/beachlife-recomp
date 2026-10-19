@@ -39,7 +39,7 @@ the dominant Rich-header record, and the generated PDB/comparison fixture is
 verified. 71 reconstructed game functions match after address normalization,
 totaling 5,385 bytes. 34 functions also match all 1,598 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Eleven methods totaling 1,368 bytes also match after address normalization; their
+Twelve methods totaling 1,406 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
 Four of those methods match all 124 raw bytes exactly.
 The full game layout remains unknown.
@@ -190,10 +190,11 @@ Allocation shares one inline pool-lock guard definition with the existing
 consumers. The native profile derives active-entry pool slots from the actual
 node size and explicitly starts the byte-storage, free-link and node lifetimes.
 
-Saved-position node allocation has its own reconstructed payload specialization,
-using the same pool and compiler cleanup contract. Its original-sized slots are
-qualified for matching; native adaptation and typed insertion remain separate
-steps.
+Saved-position node allocation and insertion have their own reconstructed payload
+specialization, using the same pool and compiler cleanup contract. Insertion
+preserves the typed reference, iterator result and observed link-update order.
+These methods are qualified for matching; native storage adaptation remains a
+separate step.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
