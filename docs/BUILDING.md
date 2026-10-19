@@ -673,3 +673,25 @@ cmake --preset release -B build/experimental-context -DBEACHLIFE_BUILD_RECONSTRU
 cmake --build build/experimental-context --target reconstructed_gui_context_tests
 ctest --test-dir build/experimental-context -R '^reconstructed_gui_context$' --output-on-failure
 ```
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the existing reconstructed TGA
+archive also includes the allocating image constructor and complete buffer parser.
+`reconstructed_tga_parser_tests` checks generated raw/RLE indexed, RGB and RGBA
+images, including an 800×600 indexed screen. Literal outputs cover row order,
+channel conversion, palette tails, alpha, origin handling, zero dimensions and
+unsupported-type ownership quirks. Test-only allocation tracking observes the
+original leaks before reclaiming its own storage; the existing helper fixture
+remains unchanged. The constructor's partial compiler match remains separate
+from these behavioral tests.
+
+The raw parser has no input-length argument. These tests supply complete bounded
+buffers and representable sizes; truncated data, oversized palette writes,
+RLE packet overruns and signed arithmetic overflow are outside its safe domain.
+This target does not implement filename/VFS loading, renderer palette conversion,
+widget activation or a game frame.
+
+```sh
+cmake --preset release -B build/experimental-tga -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-tga --target reconstructed_tga_tests reconstructed_tga_parser_tests
+ctest --test-dir build/experimental-tga -R '^reconstructed_tga(_parser)?$' --output-on-failure
+```

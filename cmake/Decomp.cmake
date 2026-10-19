@@ -665,3 +665,26 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_gui_context PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# The full TGA parser is available only in the experimental prepared profile.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    target_sources(beachlife_reconstructed_tga PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/tga_image_allocation.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tga_buffer_parser.cpp")
+    add_executable(reconstructed_tga_parser_tests tests/reconstructed_tga_parser.cpp)
+    target_link_libraries(reconstructed_tga_parser_tests PRIVATE beachlife_reconstructed_tga)
+    set_target_properties(beachlife_reconstructed_tga reconstructed_tga_parser_tests
+        PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_tga PRIVATE /GL-)
+        target_compile_options(reconstructed_tga_parser_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_tga PRIVATE -fno-lto)
+        target_compile_options(reconstructed_tga_parser_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tga_parser_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_tga_parser COMMAND reconstructed_tga_parser_tests)
+    set_tests_properties(reconstructed_tga_parser PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 60)
+endif()
