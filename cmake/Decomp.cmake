@@ -752,3 +752,30 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_indexed_palette_blit PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Context pop shares the actual push and item/link lifetime implementation.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    target_sources(beachlife_reconstructed_gui_context PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_pop.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_fatal.cpp")
+    add_executable(reconstructed_gui_pop_tests tests/reconstructed_gui_pop.cpp)
+    target_link_libraries(reconstructed_gui_pop_tests PRIVATE
+        beachlife_reconstructed_gui_context)
+    set_target_properties(reconstructed_gui_pop_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_gui_pop_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_gui_pop_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_pop_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_pop COMMAND reconstructed_gui_pop_tests)
+    add_test(NAME reconstructed_gui_pop_fatal_empty
+        COMMAND reconstructed_gui_pop_tests --fatal-empty)
+    add_test(NAME reconstructed_gui_pop_fatal_history
+        COMMAND reconstructed_gui_pop_tests --fatal-history)
+    set_tests_properties(reconstructed_gui_pop reconstructed_gui_pop_fatal_empty
+        reconstructed_gui_pop_fatal_history PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

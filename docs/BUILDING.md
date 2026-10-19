@@ -732,3 +732,24 @@ cmake --preset release -B build/experimental-indexed-blit -DBEACHLIFE_BUILD_RECO
 cmake --build build/experimental-indexed-blit --target reconstructed_indexed_palette_blit_tests
 ctest --test-dir build/experimental-indexed-blit -R '^reconstructed_indexed_palette_blit$' --output-on-failure
 ```
+
+With experimental source enabled, `reconstructed_gui_pop_tests` exercises context
+pop together with the real context push, child-link lifetime and generated items
+using the reconstructed base lifetime. Twelve literal scenarios cover empty,
+single and multiple history links, repeated/null borrowed payloads, and push/pop
+round trips. Whole-state and allocation guards check published pointers,
+surviving links and borrowed-item survival at deallocation. The existing context
+push fixture remains unchanged.
+
+Two separate fatal cases call the real `StartupFatal` and CRT termination route.
+An exit observer verifies preserved state and fixture cleanup; returning from
+that branch fails the test. These bounded finite histories do not establish
+arbitrary pointer/cycle behavior, concurrent mutation, full parser/derived-screen
+lifetimes or gameplay. The method's partial compiler comparison remains separate
+from experimental native behavior qualification.
+
+```sh
+cmake --preset release -B build/experimental-context-pop -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-context-pop --target reconstructed_gui_pop_tests
+ctest --test-dir build/experimental-context-pop -R '^reconstructed_gui_pop($|_fatal_)' --output-on-failure
+```
