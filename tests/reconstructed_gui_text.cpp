@@ -402,6 +402,21 @@ void run_session(std::span<const unsigned char> input,
     reader.value.manager = manager;
     reader.value.cursor = initial_cursor;
     reader.value.buffer = buffer;
+    // Only untouched prefix representation is exercised here; context lifetimes
+    // and registration remain separate from these reader cases.
+    reader.value.current_context = nullptr;
+    reader.value.alternate_context_10 = nullptr;
+    reader.value.alternate_context_14 = nullptr;
+    reader.value.context_head = nullptr;
+    reader.value.previous_context = nullptr;
+    reader.value.last_registered_item = nullptr;
+    std::memset(reader.value.unknown_24, 0x5a, sizeof(reader.value.unknown_24));
+    reader.value.registry_head = nullptr;
+    reader.value.items_head = nullptr;
+    reader.value.items_tail = nullptr;
+    reader.value.registry_tail = nullptr;
+    reader.value.word_38 = 0xa5a50000U ^ static_cast<unsigned int>(sessions);
+
     Guarded<int> output{};
     guard(output, sessions + 41);
     int expected_value = output_seeds[sessions % output_seeds.size()];

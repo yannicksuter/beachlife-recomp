@@ -50,7 +50,7 @@ struct GeneratedScreenItem : ScreenItem
     {
         // Only fields left untouched by the actual reconstructed constructor.
         kind_28 = 0;
-        std::memset(unknown_2c, 0, sizeof(unknown_2c));
+        word_2c = 0;
         std::memset(unknown_31, 0, sizeof(unknown_31));
     }
     void Unresolved04() override
@@ -65,7 +65,7 @@ struct GeneratedScreenItem : ScreenItem
     {
         fail("unresolved slot invoked");
     }
-    void Unresolved10() override
+    void Unresolved10(ScreenItem*) override
     {
         fail("unresolved slot invoked");
     }
@@ -97,7 +97,7 @@ struct GeneratedNamedDialog final : ScreenDialog
         // Explicit test-object facility reaches the real base constructor.
         // Derived tail fields are generated borrowed data, not retail lifetime.
         kind_28 = 4;
-        std::memset(unknown_2c, 0, sizeof(unknown_2c));
+        word_2c = 0;
         std::memset(unknown_31, 0, sizeof(unknown_31));
         child_44 = nullptr;
         name = "generated";
@@ -117,7 +117,7 @@ struct GeneratedNamedDialog final : ScreenDialog
     {
         fail("unresolved slot invoked");
     }
-    void Unresolved10() override
+    void Unresolved10(ScreenItem*) override
     {
         fail("unresolved slot invoked");
     }
@@ -147,7 +147,7 @@ struct Frame
 };
 using Bytes = std::array<unsigned char, sizeof(Frame)>;
 using Corners = std::array<int, 4>;
-static_assert(sizeof(int) == 4);
+static_assert(sizeof(int) == 4 && sizeof(unsigned int) == 4);
 static_assert(sizeof(ScreenRectangle) == 16);
 
 struct ReleaseObservation
@@ -209,10 +209,13 @@ GeneratedScreenItem* construct(Frame& frame, unsigned int seed, unsigned int fla
     item->last_x = -static_cast<int>(seed);
     item->last_y = static_cast<int>(seed + 7);
     item->kind_28 = static_cast<int>(seed % 65536) - 32768;
-    for (std::size_t i = 0; i < sizeof(item->unknown_2c); ++i)
+    // Form the same four bytes as before, then initialize the real unsigned word.
+    std::array<unsigned char, sizeof(item->word_2c)> word_bytes{};
+    for (std::size_t i = 0; i < word_bytes.size(); ++i)
     {
-        item->unknown_2c[i] = static_cast<unsigned char>(seed + i * 79);
+        word_bytes[i] = static_cast<unsigned char>(seed + i * 79);
     }
+    item->word_2c = std::bit_cast<unsigned int>(word_bytes);
     for (std::size_t i = 0; i < sizeof(item->unknown_31); ++i)
     {
         item->unknown_31[i] = static_cast<unsigned char>(seed + i * 37);
@@ -284,9 +287,7 @@ void construction_matrix()
                     // Their preconstruction storage contents and dead stores are not a modern
                     // compiler preservation claim; retail's untouched offsets are audited
                     // statically.
-                    require(item->kind_28 == 0 && item->unknown_2c[0] == 0 &&
-                                item->unknown_2c[1] == 0 && item->unknown_2c[2] == 0 &&
-                                item->unknown_2c[3] == 0,
+                    require(item->kind_28 == 0 && item->word_2c == 0,
                         "generated discriminator initialization differs");
                     for (unsigned char byte : frame.before)
                     {

@@ -16,6 +16,7 @@
 
 namespace
 {
+static_assert(sizeof(unsigned int) == 4);
 unsigned session = 0;
 unsigned operation = 0;
 unsigned long long checks = 0;
@@ -200,7 +201,7 @@ struct GeneratedDialog final : ScreenDialog
         // Explicit generated construction facility reaches only the real base
         // lifetime. Borrowed Dialog tail data is not original derived lifetime.
         kind_28 = 4;
-        std::memset(unknown_2c, 0x67, sizeof(unknown_2c));
+        word_2c = 0x67676767U;
         std::memset(unknown_31, 0x53, sizeof(unknown_31));
         child_44 = nullptr;
         name = label;
@@ -225,7 +226,7 @@ struct GeneratedDialog final : ScreenDialog
     {
         require(false, "unresolved generated slot invoked");
     }
-    void Unresolved10() override
+    void Unresolved10(ScreenItem*) override
     {
         require(false, "unresolved generated slot invoked");
     }

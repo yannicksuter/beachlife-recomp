@@ -257,10 +257,12 @@ construction remain separate steps.
 The prepared GUI declarations share the observed parser context and registration
 fields, a one-item callback argument and the item word written during
 registration. Compile-time witnesses verify the observed 32-bit prefix and
-generated callback ABI; all existing method matches are retained. These fields
-prepare the shared types for context and registration reconstruction. Complete
-parser construction and the unresolved callback implementations remain separate
-work.
+generated callback ABI; all existing method matches are retained. Seven native
+fixture targets use the same typed declarations and pass Linux Release,
+sanitizers and Windows cross-builds under Wine, including their changed-behaviour
+controls. These fields prepare the shared types for context and registration
+reconstruction. Complete parser construction and the unresolved callback
+implementations remain separate work.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test

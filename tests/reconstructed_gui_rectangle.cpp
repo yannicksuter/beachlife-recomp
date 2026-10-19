@@ -367,7 +367,7 @@ struct GeneratedParent final : ScreenItem
     {
         // Initialize only fields untouched by the actual base constructor.
         kind_28 = 0x13579;
-        std::memset(unknown_2c, 0x36, sizeof(unknown_2c));
+        word_2c = 0x36363636U;
         std::memset(unknown_31, 0x69, sizeof(unknown_31));
         ++counters.constructions;
     }
@@ -390,7 +390,7 @@ struct GeneratedParent final : ScreenItem
     {
         fail("unresolved parent slot invoked");
     }
-    void Unresolved10() override
+    void Unresolved10(ScreenItem*) override
     {
         fail("unresolved parent slot invoked");
     }
@@ -529,6 +529,20 @@ void prepare(const Literal& literal)
     observed.parser.value.manager = nullptr;
     observed.parser.value.cursor = literal.initial_cursor;
     observed.parser.value.buffer = observed.input.bytes.data();
+    // Valid untouched prefix state; no context or registry method is executed.
+    observed.parser.value.current_context = nullptr;
+    observed.parser.value.alternate_context_10 = nullptr;
+    observed.parser.value.alternate_context_14 = nullptr;
+    observed.parser.value.context_head = nullptr;
+    observed.parser.value.previous_context = nullptr;
+    observed.parser.value.last_registered_item = nullptr;
+    std::memset(observed.parser.value.unknown_24, 0x5a, sizeof(observed.parser.value.unknown_24));
+    observed.parser.value.registry_head = nullptr;
+    observed.parser.value.items_head = nullptr;
+    observed.parser.value.items_tail = nullptr;
+    observed.parser.value.registry_tail = nullptr;
+    observed.parser.value.word_38 = 0xa5a55a5aU;
+
     observed.output.value = {-1111, 2222, -3333, 4444};
     observed.renderer.value = {};
     observed.renderer.value.width = literal.dimensions.width;
