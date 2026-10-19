@@ -878,3 +878,11 @@ data covers kerning, wrapping, unsigned arithmetic, a valid text/data alias and
 preservation of borrowed state. The bounded cases exclude nonterminating input
 and scratch copies without room for a terminator. This does not implement font
 loading, full font ownership or destruction, or screen text rendering.
+
+
+The experimental `reconstructed_renderer_line_tests` target exercises all four
+line rasterizers, the renderer line method and Frame style 6 using guarded pixel
+buffers. Literal cases preserve direct-pixel upper bits, packed edge quirks,
+endpoint and clipping behavior, and live COM/renderer state changes. The fixture
+uses the actual colour converter, pixel access and renderer global. It does not
+construct a complete Frame or renderer or claim GPU presentation.

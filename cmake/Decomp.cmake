@@ -1119,3 +1119,40 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_font_measurement PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+
+# Real line rasterization and Style6 share the existing colour and renderer owners.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_line STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line_direct_x.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line_direct_y.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line_packed_x.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line_packed_y.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_line.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style6.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_line PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_line PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_line PUBLIC
+        beachlife_reconstructed_frame_fill_styles)
+    add_dependencies(beachlife_reconstructed_renderer_line verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_line_tests tests/reconstructed_renderer_line.cpp)
+    target_link_libraries(reconstructed_renderer_line_tests PRIVATE
+        beachlife_reconstructed_renderer_line)
+    set_target_properties(beachlife_reconstructed_renderer_line
+        reconstructed_renderer_line_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_line PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_line_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_line PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_line_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_line_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_line COMMAND reconstructed_renderer_line_tests)
+    set_tests_properties(reconstructed_renderer_line PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
