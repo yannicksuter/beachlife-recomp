@@ -334,7 +334,8 @@ class LocalDecompTests(unittest.TestCase):
         self.profile_patches()
         self.prepare()
         target = self.output / 'beachlife-decomp/src/value.cpp'
-        for before, after, value in (('native', 'matching', b'reconstructed\n'),
+        for before, after, value in (('native', 'native-experimental', b'native\n'),
+                                     ('native-experimental', 'matching', b'reconstructed\n'),
                                      ('matching', 'native', b'native\n')):
             with self.subTest(before=before, after=after):
                 record = self.record()
@@ -353,6 +354,66 @@ class LocalDecompTests(unittest.TestCase):
                 self.assertEqual(target.read_bytes(), value)
                 self.assertEqual(self.record()['identity']['profile'], after)
                 self.prepare(verify=True, decomp_profile=after)
+
+    def test_experimental_profile_is_opt_in_and_ordered(self):
+        import hashlib
+        common, native, reconstruction, adaptations = self.profile_patches()
+        common.write_bytes(common.read_bytes() +
+                           b'diff --git a/src/helper.cpp b/src/helper.cpp\n'
+                           b'new file mode 100644\n--- /dev/null\n+++ b/src/helper.cpp\n'
+                           b'@@ -0,0 +1 @@\n+common helper\n')
+        experimental = self.write('patches/beachlife-decomp/experimental.patch',
+                                  b'diff --git a/src/helper.cpp b/src/helper.cpp\n'
+                                  b'--- a/src/helper.cpp\n+++ b/src/helper.cpp\n'
+                                  b'@@ -1 +1 @@\n-common helper\n+experimental helper\n')
+        series = self.write('patches/beachlife-decomp/experimental-series',
+                            b'experimental.patch\n')
+        for profile, value, helper, ordered_series, patches in (
+                ('matching', b'reconstructed\n', b'common helper\n', [reconstruction], [common]),
+                ('native', b'native\n', b'common helper\n', [reconstruction, adaptations],
+                 [common, native]),
+                ('native-experimental', b'native\n', b'experimental helper\n',
+                 [reconstruction, series, adaptations], [common, experimental, native])):
+            with self.subTest(profile=profile):
+                self.output = self.root / ('prepared-' + profile)
+                self.prepare(decomp_profile=profile)
+                self.prepare(verify=True, decomp_profile=profile)
+                target = self.output / 'beachlife-decomp/src'
+                self.assertEqual((target / 'value.cpp').read_bytes(), value)
+                self.assertEqual((target / 'helper.cpp').read_bytes(), helper)
+                identity = self.record()['identity']
+                self.assertEqual(identity['profile'], profile)
+                for key, paths in (('series', ordered_series), ('patches', patches)):
+                    self.assertEqual(identity[key], [
+                        {'path': p.relative_to(self.repo).as_posix(),
+                         'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths])
+        for path in (series, experimental):
+            path.write_bytes(path.read_bytes() + b'\n')
+            for profile in ('matching', 'native', 'native-experimental'):
+                self.output = self.root / ('prepared-' + profile)
+                if profile == 'native-experimental':
+                    with self.assertRaisesRegex(ValueError, 'stale'):
+                        self.prepare(verify=True, decomp_profile=profile)
+                    self.prepare(decomp_profile=profile)
+                self.prepare(verify=True, decomp_profile=profile)
+        self.assertEqual((self.repo / 'decomp/src/value.cpp').read_bytes(), b'first\n')
+        self.assertFalse((self.repo / 'decomp/src/helper.cpp').exists())
+
+    def test_experimental_series_rejects_invalid_entries_and_duplicates(self):
+        self.profile_patches()
+        series = self.write('patches/beachlife-decomp/experimental-series', b'missing.patch\n')
+        for body, message in ((b'missing.patch\n', 'Invalid patch entry'),
+                              (b'../escape.patch\n', 'Invalid patch entry'),
+                              (b'common.patch\n', 'Duplicate patch entry across series')):
+            with self.subTest(body=body):
+                series.write_bytes(body)
+                with self.assertRaisesRegex(ValueError, message):
+                    self.prepare(decomp_profile='native-experimental')
+                # Only the explicitly selected profile reads this series.
+                for profile in ('native', 'matching'):
+                    self.output = self.root / ('prepared-' + profile)
+                    self.prepare(decomp_profile=profile)
+                    self.prepare(verify=True, decomp_profile=profile)
 
     def test_profile_series_changes_are_scoped_and_fingerprinted(self):
         common, native, reconstruction, adaptations = self.profile_patches()
@@ -452,7 +513,7 @@ class LocalDecompTests(unittest.TestCase):
         import hashlib
         import json
         self.profile_patches()
-        for profile in ('native', 'matching'):
+        for profile in ('native', 'matching', 'native-experimental'):
             with self.subTest(profile=profile):
                 self.output = self.root / ('prepared-' + profile)
                 self.prepare(decomp_profile=profile)

@@ -163,6 +163,34 @@ files. The matching-only VC6 release wrapper is excluded in favor of the host
 CRT. Subsystem test executables remain opt-in; configuration and file libraries
 are part of normal Play.
 
+### Experimental reconstructed code
+
+Fully implemented reconstructions can be qualified with native behavior tests
+while original-compiler byte matching continues. Enable this source selection
+explicitly in a separate build directory:
+
+```sh
+cmake --preset release -B build/experimental \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
+cmake --build build/experimental --parallel
+ctest --test-dir build/experimental -L reconstructed --output-on-failure
+```
+
+The `release` preset selects compiler optimization; the build channel remains
+`dev`. The option defaults to `OFF` and is rejected with the `release` channel.
+It selects the `native-experimental` prepared-source profile, applying
+`reconstruction-series`, then `experimental-series`, then the native portability
+`series`. Ordinary native and matching builds ignore `experimental-series`.
+The preparation CLI also accepts `--decomp-profile native-experimental`.
+
+Build metadata records `decomp_profile`; packaging verifies that exact profile
+and records its ordered patch hashes. Packages with different source profiles
+cannot form one release matrix. Enabling the option does not complete a missing
+game controller or menu. Each experimental subsystem still needs real source,
+behavior tests and an explicit runtime connection. A native test pass does not
+count as a byte match or establish production gameplay.
+
 The pool-lock target compiles the unchanged acquisition and cleanup methods
 against a test-only platform provider. It checks that both methods use the same
 32-bit word, preserves adaptive state across fast and fallback acquisition, and
@@ -611,3 +639,209 @@ byte is accessible, and output capacity is sufficient. The existing integer and
 whitespace fixtures remain unchanged. This covers bounded reader behavior;
 original parser/manager lifetimes, unbounded or overlapping buffers, widget
 construction and gameplay remain outside this target.
+
+
+The optional `reconstructed_gui_rectangle_tests` target exercises the actual
+rectangle reader, whitespace helper, rectangle getter and base screen lifetime
+with generated inputs. Literal results cover flag ordering, unsigned centering,
+optional parent bounds, degenerate parents and cursor/delimiter quirks. Three
+separate fatal cases use the real fatal reporter and host C runtime; an exit
+observer checks output, cursor, guards and the absence of a normal return. The
+normal suite also rejects an unexpected early successful exit. The integer,
+whitespace and text fixtures remain unchanged and use the same prepared parser
+declaration. Inputs keep every reached byte and signed intermediate valid.
+These bounded cases do not supply original parser, renderer or derived-widget
+lifetimes, validate the diagnostic text, or establish gameplay.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` (default OFF), the optional
+`reconstructed_gui_context_tests` target exercises the reconstructed context
+push and child-link lifetime with generated live screen items. Literal histories
+cover empty and existing chains, duplicate/null contexts, allocation-time field
+reloads and two labelled host allocation exceptions. The executable's scoped
+scalar allocator uses guarded real storage. A separate native portability patch
+preserves the original post-allocation context reload while retaining both ordinary
+new expressions. Cleanup clears every borrowed payload before the actual link
+destructor runs, then ends the real generated/base item lifetimes.
+Whole-state and storage guards check unrelated data. The source is exported through
+the `native-experimental` profile; its compiler comparison remains a partial match
+and is separate from the strict matching registry. This bounded target does
+not establish owning-payload deletion, context pop, original allocation-failure
+semantics, full parser/derived-screen lifetimes or gameplay.
+
+```sh
+cmake --preset release -B build/experimental-context -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-context --target reconstructed_gui_context_tests
+ctest --test-dir build/experimental-context -R '^reconstructed_gui_context$' --output-on-failure
+```
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the existing reconstructed TGA
+archive also includes the allocating image constructor and complete buffer parser.
+`reconstructed_tga_parser_tests` checks generated raw/RLE indexed, RGB and RGBA
+images, including an 800×600 indexed screen. Literal outputs cover row order,
+channel conversion, palette tails, alpha, origin handling, zero dimensions and
+unsupported-type ownership quirks. Test-only allocation tracking observes the
+original leaks before reclaiming its own storage; the existing helper fixture
+remains unchanged. The constructor's partial compiler match remains separate
+from these behavioral tests.
+
+The raw parser has no input-length argument. These tests supply complete bounded
+buffers and representable sizes; truncated data, oversized palette writes,
+RLE packet overruns and signed arithmetic overflow are outside its safe domain.
+This target does not implement filename/VFS loading, renderer palette conversion,
+widget activation or a game frame.
+
+```sh
+cmake --preset release -B build/experimental-tga -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-tga --target reconstructed_tga_tests reconstructed_tga_parser_tests
+ctest --test-dir build/experimental-tga -R '^reconstructed_tga(_parser)?$' --output-on-failure
+```
+
+With experimental source enabled, `reconstructed_tga_files_tests` loads generated
+TGA files through the actual folder VFS and reconstructed file, parser and image
+cleanup methods. Nine calls cover an unbound session, missing and empty files,
+header rejection, case/separator aliases and small indexed/RGB raw and RLE images.
+The fixture checks that the temporary file array is released before returned
+pixels are used, including normal parser rejection. Its paired array allocator
+observes real host storage; the retail methods and VFS are not replaced.
+
+These cases require stable complete files and bounded parser inputs. They do not
+qualify short reads, malformed files, the original input leak when parsing throws,
+renderer palette conversion, widget activation or a game frame.
+
+```sh
+cmake --preset release -B build/experimental-tga-files -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-tga-files --target reconstructed_tga_files_tests
+ctest --test-dir build/experimental-tga-files -R '^reconstructed_tga_files$' --output-on-failure
+```
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`,
+`reconstructed_indexed_palette_blit_tests` exercises the reconstructed indexed
+palette blit through its own one-source archive. Source rows use a byte stride;
+destination rows use four-byte slots, and only the first halfword of each slot
+is written. The generated fixture checks literal palette words, all 256 indices,
+unequal strides and origins, zero extents, and preservation of every other buffer
+word and guard. Palette index zero is copied normally.
+
+The tested domain uses separate live buffers, bounded nonnegative dimensions,
+positive strides and representable integer arithmetic. This subsystem does not
+connect renderer storage or GPU presentation. Its partial compiler comparison
+remains separate from native behavior qualification.
+
+```sh
+cmake --preset release -B build/experimental-indexed-blit -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-indexed-blit --target reconstructed_indexed_palette_blit_tests
+ctest --test-dir build/experimental-indexed-blit -R '^reconstructed_indexed_palette_blit$' --output-on-failure
+```
+
+With experimental source enabled, `reconstructed_gui_pop_tests` exercises context
+pop together with the real context push, child-link lifetime and generated items
+using the reconstructed base lifetime. Twelve literal scenarios cover empty,
+single and multiple history links, repeated/null borrowed payloads, and push/pop
+round trips. Whole-state and allocation guards check published pointers,
+surviving links and borrowed-item survival at deallocation. The existing context
+push fixture remains unchanged.
+
+Two separate fatal cases call the real `StartupFatal` and CRT termination route.
+An exit observer verifies preserved state and fixture cleanup; returning from
+that branch fails the test. These bounded finite histories do not establish
+arbitrary pointer/cycle behavior, concurrent mutation, full parser/derived-screen
+lifetimes or gameplay. The method's partial compiler comparison remains separate
+from experimental native behavior qualification.
+
+```sh
+cmake --preset release -B build/experimental-context-pop -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-context-pop --target reconstructed_gui_pop_tests
+ctest --test-dir build/experimental-context-pop -R '^reconstructed_gui_pop($|_fatal_)' --output-on-failure
+```
+
+With experimental reconstructed tests enabled, `reconstructed_tga_palette_tests`
+exercises the actual image constructor, RGB555/RGB565 palette conversion and image
+destructor from the shared TGA archive. Its generated cases cover literal colors,
+all channel byte values, mixed palettes, zero/nonzero flag selection, guarded
+storage, repeated conversion and host allocation exceptions. The conversion
+always allocates 256 halfwords and replaces the old converted-palette pointer.
+The fixture observes the original overwrite leak and reclaims that old array
+after the actual image destructor releases its current buffers.
+
+Build with `cmake --build build/release --target reconstructed_tga_palette_tests`
+and run `ctest --test-dir build/release -R '^reconstructed_tga_palette$' --output-on-failure`.
+Both `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` are required. These checks use generated
+images and a paired host array-allocation provider; renderer integration and
+original allocation-failure behavior require separate qualification.
+
+With experimental reconstructed tests enabled,
+`reconstructed_gui_registration_tests` exercises the actual registration method
+and shared child-link and screen-item lifetimes. Literal cases cover named and
+unnamed insertion into two distinct lists, append order, repeated borrowed
+payloads, callback priority, receiver aliases and the final word read after a
+callback. Generated callbacks observe the real virtual interface; they do not
+implement missing retail attachment behavior.
+
+The fixture preserves the observed replacement behavior when a live list head
+has a null tail. It retains those orphaned links, clears all borrowed payloads,
+and calls the actual link destructor and paired host deletion before ending item
+lifetimes. These finite successful-allocation cases do not establish arbitrary
+graph safety, allocation or callback failure handling, full parser ownership,
+real attachment behavior or gameplay. Existing push and pop fixtures are unchanged.
+
+Build with `cmake --build build/experimental-context --target reconstructed_gui_registration_tests`
+and run `ctest --test-dir build/experimental-context -R '^reconstructed_gui_registration$' --output-on-failure`.
+Both `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` are required.
+
+With experimental reconstructed tests enabled,
+`reconstructed_renderer_blit_kernels_tests` exercises the transparent, packed and
+masked indexed blitters through one three-source archive. All three skip zero
+indices. Transparent and masked output preserve the upper halfword of each
+four-byte destination slot; packed output uses adjacent halfwords, rounds its
+byte pitch down to a halfword count, and ignores destination Y.
+
+Twenty-two literal cases check palette words, mask bits, padded and overlapping
+rows, zero extents and a live palette/output alias in each kernel. Whole typed
+buffers and guards preserve every unlisted element. The tested arithmetic and
+array spans are bounded; negative extents, arithmetic overflow, arbitrary
+cross-type aliasing and renderer/GPU integration are separate. The existing
+nontransparent indexed-blit target and source remain unchanged.
+
+```sh
+cmake --preset release -B build/experimental-blit-kernels -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-blit-kernels --target reconstructed_renderer_blit_kernels_tests
+ctest --test-dir build/experimental-blit-kernels -R '^reconstructed_renderer_blit_kernels$' --output-on-failure
+```
+
+With experimental reconstructed tests enabled,
+`reconstructed_screen_activation_tests` exercises the real item activation,
+manager notification and auxiliary clear methods with the reconstructed item
+constructor and destructor. Literal cases and all 256 activation bytes check
+routing, exact byte values, borrowed peer lifetimes and preserved object fields.
+The generated manager and auxiliary prefixes do not qualify their complete
+retail construction or widget/Intro lifetimes.
+
+The affected item, registry, placement and GUI tests also consume this coherent
+experimental declaration. Default native tests retain their existing declaration
+and use the same fixtures through a test profile definition.
+
+```sh
+cmake --preset release -B build/experimental-activation -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-activation --target reconstructed_screen_activation_tests
+ctest --test-dir build/experimental-activation -R '^reconstructed_screen_activation$' --output-on-failure
+```
+
+With the experimental option enabled, `reconstructed_renderer_rectangle_queue`
+exercises the reconstructed dirty-rectangle accumulator using a native
+`std::deque` for value storage. Generated cases cover containment, swap-last
+removal, first-overlap and recursive append order, edge contacts and the
+original missed-overlap behavior. The surface and GUI rectangle tests use typed
+renderer snapshots for this profile. These tests cover valid queues and
+successful host allocation; original allocator, failure, locking and timing
+behavior are not reproduced by the storage adaptation.
+
+The experimental `reconstructed_renderer_clip` test exercises the real clipping
+method followed by the native dirty-rectangle accumulator. Literal cases cover
+the three defined scale modes, the active unscaled override, signed coordinates,
+logical half extents, edge equality, mutable argument aliases and ordered queue
+effects. It uses live native queue storage and preserves the original clipping
+and rectangle-partition behavior. Unsupported modes with the unscaled flag clear,
+overflow, allocation failure and full renderer/surface lifetime remain outside
+this bounded test; it does not present an image.

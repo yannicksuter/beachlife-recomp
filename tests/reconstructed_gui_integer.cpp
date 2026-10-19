@@ -316,6 +316,11 @@ void initialize_manager(Guarded<ScreenManager>& object, std::size_t seed)
     object.value.active.head = nullptr;
     object.value.mode = -123;
     object.value.previous_mode = 456;
+#if defined(BEACHLIFE_DECOMP_SCREEN_ACTIVATION)
+    object.value.auxiliary_130 = nullptr;
+    object.value.item_134 = nullptr;
+    object.value.value_138 = 0.0f;
+#endif
 }
 
 void run_session(
@@ -344,6 +349,21 @@ void run_session(
     reader.value.manager = manager;
     reader.value.cursor = initial_cursor;
     reader.value.buffer = buffer;
+    // Only untouched prefix representation is exercised here; context lifetimes
+    // and registration remain separate from these reader cases.
+    reader.value.current_context = nullptr;
+    reader.value.alternate_context_10 = nullptr;
+    reader.value.alternate_context_14 = nullptr;
+    reader.value.context_head = nullptr;
+    reader.value.previous_context = nullptr;
+    reader.value.last_registered_item = nullptr;
+    std::memset(reader.value.unknown_24, 0x5a, sizeof(reader.value.unknown_24));
+    reader.value.registry_head = nullptr;
+    reader.value.items_head = nullptr;
+    reader.value.items_tail = nullptr;
+    reader.value.registry_tail = nullptr;
+    reader.value.word_38 = 0xa5a50000U ^ static_cast<unsigned int>(sessions);
+
     for (const auto& step : steps)
     {
         require(step.cursor < input.size(), "fixture expected cursor is not readable");

@@ -17,6 +17,11 @@ def identity(source, config, git="git"):
         raise ValueError("CMake version changed; reconfigure before building")
     if result["channel"] not in ("dev", "test", "release"):
         raise ValueError("Unknown build channel")
+    result["decomp_profile"] = result.get("decomp_profile", "native")
+    if result["decomp_profile"] not in ("native", "native-experimental"):
+        raise ValueError("Unknown native reconstructed source profile")
+    if result["decomp_profile"] == "native-experimental" and result["channel"] == "release":
+        raise ValueError("Experimental reconstructed code requires a dev or test build")
     for field in ("pull_request", "run_id"):
         if not re.fullmatch(r"\d+", str(result[field])):
             raise ValueError(f"Invalid {field}")

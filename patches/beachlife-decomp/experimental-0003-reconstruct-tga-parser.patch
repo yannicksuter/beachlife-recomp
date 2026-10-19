@@ -1,0 +1,164 @@
+diff --git a/src/tga_image.h b/src/tga_image.h
+--- a/src/tga_image.h
++++ b/src/tga_image.h
+@@ -14,5 +14,8 @@
+     unsigned char unknown_1c[4];
+ 
+     TgaImage(int image_width, int image_height);
++    TgaImage(int image_width, int image_height, int image_depth, unsigned char has_palette);
+     ~TgaImage();
+ };
++
++TgaImage* ParseTgaBuffer(unsigned char* buffer);
+diff --git a/src/tga_image_allocation.cpp b/src/tga_image_allocation.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/tga_image_allocation.cpp
+@@ -0,0 +1,42 @@
++#include "tga_image.h"
++
++#include <cstdint>
++#include <string.h>
++
++// Descriptive class name; the original symbol and declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ea200
++TgaImage::TgaImage(int image_width, int image_height, int image_depth, unsigned char has_palette)
++{
++    pixels = 0;
++    palette = 0;
++    width = image_width;
++    height = image_height;
++    bytes_per_pixel = image_depth / 8;
++    bits_per_pixel = image_depth;
++    converted_palette = 0;
++    pixels = new unsigned char[bytes_per_pixel * width * height];
++    std::uint32_t pixel_bytes = bytes_per_pixel;
++    pixel_bytes *= height;
++    pixel_bytes *= width;
++    memset(pixels, 0, pixel_bytes);
++    if (has_palette)
++    {
++        palette = new unsigned char[768];
++        memset(palette, 0, 768);
++    }
++    switch (image_depth)
++    {
++    case 1:
++        unknown_1c[0] = 2;
++        unknown_1c[1] = 0;
++        unknown_1c[2] = 0;
++        unknown_1c[3] = 0;
++        break;
++    case 8:
++        unknown_1c[0] = 0;
++        unknown_1c[1] = 0;
++        unknown_1c[2] = 0;
++        unknown_1c[3] = 0;
++        break;
++    }
++}
+diff --git a/src/tga_buffer_parser.cpp b/src/tga_buffer_parser.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/tga_buffer_parser.cpp
+@@ -0,0 +1,100 @@
++#include "tga_image.h"
++
++unsigned char* GetTgaPaletteData(unsigned char* buffer, unsigned char id_length,
++    unsigned char has_color_map);
++unsigned char* GetTgaPixelData(unsigned char* buffer, unsigned char id_length,
++    unsigned short palette_length, unsigned char has_color_map);
++void CopyTgaPalette(const unsigned char* source, TgaImage* image, int count);
++void CopyTgaPixels(const unsigned char* source, TgaImage* image);
++void ExpandTgaRle(const unsigned char* source, TgaImage* image);
++
++// Descriptive name; the original symbol and declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ea6c0
++TgaImage* ParseTgaBuffer(unsigned char* buffer)
++{
++    unsigned char* cursor = buffer;
++    unsigned char id_length = *cursor++;
++    unsigned char create_palette = 0;
++    unsigned char color_map_type = *cursor++;
++    unsigned char image_type = *cursor++;
++    unsigned short palette_first = static_cast<unsigned short>(cursor[0] | (static_cast<unsigned int>(cursor[1]) << 8));
++    cursor += 2;
++    unsigned short palette_length = static_cast<unsigned short>(cursor[0] | (static_cast<unsigned int>(cursor[1]) << 8));
++    cursor += 2;
++    unsigned char palette_depth = *cursor++;
++    cursor += 4;
++    unsigned short width = static_cast<unsigned short>(cursor[0] | (static_cast<unsigned int>(cursor[1]) << 8));
++    cursor += 2;
++    unsigned short height = static_cast<unsigned short>(cursor[0] | (static_cast<unsigned int>(cursor[1]) << 8));
++    cursor += 2;
++    unsigned char depth = *cursor++;
++    unsigned char descriptor = *cursor++;
++
++    switch (depth)
++    {
++    case 8:
++        if (color_map_type)
++        {
++            create_palette = 1;
++            if (palette_depth != 24)
++            {
++                return 0;
++            }
++        }
++        break;
++    case 24:
++    case 32:
++        if (color_map_type)
++        {
++            return 0;
++        }
++        break;
++    default:
++        return 0;
++    }
++    if (palette_first)
++    {
++        return 0;
++    }
++    unsigned char orientation = descriptor & 0x30;
++    if (orientation)
++    {
++        return 0;
++    }
++
++    TgaImage* image = new TgaImage(width, height, depth, create_palette);
++    if (!image)
++    {
++        return 0;
++    }
++    switch (image_type)
++    {
++    case 1:
++    {
++        unsigned char* palette_data = GetTgaPaletteData(buffer, id_length, color_map_type);
++        CopyTgaPalette(palette_data, image, palette_length);
++    }
++    case 2:
++    {
++        unsigned char* pixel_data = GetTgaPixelData(buffer, id_length, palette_length, color_map_type);
++        CopyTgaPixels(pixel_data, image);
++        break;
++    }
++    case 9:
++    {
++        unsigned char* palette_data = GetTgaPaletteData(buffer, id_length, color_map_type);
++        CopyTgaPalette(palette_data, image, palette_length);
++    }
++    case 10:
++    {
++        unsigned char* pixel_data = GetTgaPixelData(buffer, id_length, palette_length, color_map_type);
++        ExpandTgaRle(pixel_data, image);
++        break;
++    }
++    case 0:
++    case 3:
++    case 11:
++        return 0;
++    }
++    return image;
++}

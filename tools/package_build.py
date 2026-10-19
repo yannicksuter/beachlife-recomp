@@ -39,6 +39,15 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def native_decomp_profile(info):
+    profile = info.get('decomp_profile', 'native')
+    if profile not in ('native', 'native-experimental'):
+        raise ValueError('Unknown native reconstructed source profile')
+    if profile == 'native-experimental' and info['channel'] == 'release':
+        raise ValueError('Experimental reconstructed code requires a dev or test build')
+    return profile
+
+
 def regular_file(root, relative):
     root = Path(root).resolve()
     path = root / relative
@@ -131,8 +140,9 @@ def package(build, output, source=ROOT, toolchain=None):
                 or not isinstance(pin['revision'], str)
                 or not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', pin['revision'])):
             raise ValueError('The reconstructed source pin must contain only a full revision SHA.')
+        profile = native_decomp_profile(info)
         dependencies.extend(prepare(source, build / 'prepared', verify=True,
-                                    decomp_revision=pin['revision'], decomp_profile='native'))
+                                    decomp_revision=pin['revision'], decomp_profile=profile))
         prefix = "beachlife.app/Contents/Resources/" if system == "macos" else ""
         for name in LAUNCHER_RESOURCES:
             copy(build, prefix + 'assets/launcher/' + name)
@@ -251,6 +261,7 @@ def inspect_package(path):
         raise ValueError("Missing package manifest")
     manifest = json.loads(files["SOURCE-MANIFEST.json"][0])
     info = manifest["build"]
+    native_decomp_profile(info)
     if manifest.get("format") != 1 or info["platform"] + '-' + info["architecture"] not in TARGETS:
         raise ValueError("Unsupported package format or target")
     if info["system"] != ("linux" if info["platform"] == "steamdeck" else info["platform"]):
@@ -273,9 +284,11 @@ def inspect_package(path):
 def verify_set(directory, version, sha, channel, run_id=None):
     paths = sorted(p for p in Path(directory).iterdir() if p.name.endswith(('.zip', '.tar.gz')))
     found = set()
+    profiles = set()
     for path in paths:
         manifest, _ = inspect_package(path)
         info = manifest["build"]
+        profiles.add(native_decomp_profile(info))
         target = info["platform"] + '-' + info["architecture"]
         expected_version = version + '+g' + sha[:12]
         extension = '.zip' if info["system"] == 'windows' else '.tar.gz'
@@ -290,6 +303,8 @@ def verify_set(directory, version, sha, channel, run_id=None):
         found.add(target)
     if found != set(TARGETS):
         raise ValueError(f"Incomplete package matrix: {sorted(found)}")
+    if len(profiles) != 1:
+        raise ValueError("Package reconstructed source profiles differ")
     checksums = Path(directory) / 'SHA256SUMS'
     checksums.write_text(''.join(f'{digest(p.read_bytes())}  {p.name}\n' for p in paths))
     return [*paths, checksums]

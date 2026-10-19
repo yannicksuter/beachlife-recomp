@@ -17,7 +17,11 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype')
 DECOMP = 'beachlife-decomp'
-DECOMP_PROFILES = ('native', 'matching')
+DECOMP_PROFILES = {
+    'native': ('reconstruction-series', 'series'),
+    'matching': ('reconstruction-series',),
+    'native-experimental': ('reconstruction-series', 'experimental-series', 'series'),
+}
 
 
 def git(root, *args):
@@ -46,7 +50,7 @@ def no_symlinks(path, root):
 
 
 def patch_paths(source, name, series_filename='series'):
-    if series_filename not in ('series', 'reconstruction-series'):
+    if series_filename not in ('series', 'reconstruction-series', 'experimental-series'):
         raise ValueError('Invalid patch series filename')
     folder = Path(source) / 'patches' / name
     series = folder / series_filename
@@ -90,7 +94,7 @@ def inputs(source, name):
 
 def decomp_inputs(source, revision, decomp_profile='native'):
     if decomp_profile not in DECOMP_PROFILES:
-        raise ValueError('Invalid decomp profile; choose native or matching')
+        raise ValueError('Invalid decomp profile; choose ' + ', '.join(DECOMP_PROFILES))
     if not isinstance(revision, str) or not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', revision):
         raise ValueError('The decomp revision must be a full local commit SHA')
     if Path(git(source, 'rev-parse', '--show-toplevel')).resolve() != source:
@@ -120,7 +124,7 @@ def decomp_inputs(source, revision, decomp_profile='native'):
         files[name] = hashlib.sha256(body).hexdigest()
     if not files:
         raise ValueError('The selected commit has no decomp source files')
-    series_names = ('reconstruction-series', 'series') if decomp_profile == 'native' else ('reconstruction-series',)
+    series_names = DECOMP_PROFILES[decomp_profile]
     patches, series, seen = [], [], set()
     for filename in series_names:
         for path in patch_paths(source, DECOMP, filename):
@@ -175,7 +179,7 @@ def prepare(source, output, names=DEPENDENCIES, verify=False, decomp_revision=No
     if len(set(names)) != len(names):
         raise ValueError('Duplicate prepared dependency name')
     if decomp_profile not in DECOMP_PROFILES:
-        raise ValueError('Invalid decomp profile; choose native or matching')
+        raise ValueError('Invalid decomp profile; choose ' + ', '.join(DECOMP_PROFILES))
     local = decomp_inputs(source, decomp_revision, decomp_profile) if decomp_revision is not None else None
     if not verify:
         output.mkdir(parents=True, exist_ok=True)

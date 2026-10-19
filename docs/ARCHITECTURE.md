@@ -30,16 +30,25 @@ Intentional behavior changes stay in a
 separate optional series, with tweaks off by default. Third-party dependencies
 remain immutable pins; never edit their checkouts in place.
 
+The optional `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME` build uses the
+`native-experimental` export. It inserts `experimental-series` between the
+reconstruction and portability series for complete, behavior-tested methods
+whose byte matching is still in progress. Matching and ordinary native exports
+retain their existing source selection. Build and package metadata identify the
+profile; experimental sources are restricted to development and test channels.
+Missing functions still require real implementations, and experimental native
+execution is tracked separately from matching and production integration.
+
 The matching build uses the original 32-bit compiler and compares functions
 against the target executable. The native build uses CMake/Ninja and modern
 C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 73 reconstructed game functions match after address normalization,
-totaling 5,566 bytes. 34 functions also match all 1,598 raw bytes exactly.
+verified. 77 reconstructed game functions match after address normalization,
+totaling 6,890 bytes. 37 functions also match all 1,972 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Twelve methods totaling 1,406 bytes also match after address normalization; their
+Thirteen methods totaling 1,461 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
 Four of those methods match all 124 raw bytes exactly.
 The full game layout remains unknown.
@@ -180,8 +189,11 @@ actual override; generated callback tests cover filtering and traversal changes.
 The selected retail child implementations remain separate dependencies.
 
 Linear child-link construction stores the supplied child pointer and clears
-the next link. Its original destructor and the owning container's lifetime
-remain separate reconstruction steps; this method has no native lifetime test.
+the next link. The reconstructed destructor invokes virtual deletion for a
+non-null child with a type value from 0 through 22. It leaves other type values
+alone and does not release the link's own storage. Construction and destruction
+are qualified for matching; native payload and owning-container lifetimes
+remain separate integration steps.
 
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
@@ -244,8 +256,22 @@ The GUI rectangle reader preserves the original coordinate parsing, alignment
 flags, parent-relative placement and upper-bound error path. Its complete body
 matches with verified call and data addresses; a changed centering shift is
 rejected. The original delimiter handling and arithmetic quirks remain intact.
-Native rectangle validation and its connection to screen construction follow
-separately.
+The optional native target checks literal coordinates and cursor positions,
+constructed parent bounds, untouched state and three separate fatal exits through
+the real reporter. Rectangle and existing reader tests pass Linux Release,
+sanitizers and Windows cross-builds under Wine; each changed-behaviour control is
+rejected. Complete parser and widget lifetimes and the connection to screen
+construction remain separate steps.
+
+The prepared GUI declarations share the observed parser context and registration
+fields, a one-item callback argument and the item word written during
+registration. Compile-time witnesses verify the observed 32-bit prefix and
+generated callback ABI; all existing method matches are retained. Seven native
+fixture targets use the same typed declarations and pass Linux Release,
+sanitizers and Windows cross-builds under Wine, including their changed-behaviour
+controls. These fields prepare the shared types for context and registration
+reconstruction. Complete parser construction and the unresolved callback
+implementations remain separate work.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test

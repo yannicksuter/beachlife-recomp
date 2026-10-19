@@ -1,0 +1,145 @@
+Reconstruct the observed screen activation and manager clear path.
+
+Keep the byte-valued virtual slot, exact zero/nonzero behavior and real global.
+The manager and auxiliary declarations remain partial observed prefixes.
+
+diff --git a/src/startup_intro_globals.cpp b/src/startup_intro_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..487883bdad0485d8440a58035ee63e5ee39c0b12
+--- /dev/null
++++ b/src/startup_intro_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x005baed8
++ScreenManager* screen_manager;
+diff --git a/src/startup_screen_item.h b/src/startup_screen_item.h
+index 49f9bcac8862c91bad55eb4c612805d239b2ddb2..33d42034ab141284371d7c1abe7bedc400f960ed 100644
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -26,7 +26,8 @@
+     virtual void MarkPrepared();
+     virtual void Unresolved1c() = 0;
+     virtual void Unresolved20() = 0;
+-    virtual void Unresolved24() = 0;
++    // Observed low-byte argument at original slot+0x24.
++    virtual void Unresolved24(unsigned char enabled);
+     virtual void Unresolved28() = 0;
+     virtual void MoveRectangle(int dx, int dy);
+ 
+diff --git a/src/startup_screen_item_activation.cpp b/src/startup_screen_item_activation.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1037490ee09e4e09a07400811378e2efbf266046
+--- /dev/null
++++ b/src/startup_screen_item_activation.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004ada40
++void ScreenItem::Unresolved24(unsigned char enabled)
++{
++    state_30 = enabled;
++    if (!enabled)
++    {
++        screen_manager->ClearItemReference(this);
++        elapsed_24 = 0.0f;
++    }
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 9cf13c82ead87d09895bad6eb32e92c19217841f..4956e82ef8ebb8c0aa756e4f7789670854bf8b4d 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -3,6 +3,8 @@
+ 
+ #include "startup_list.h"
+ 
++struct ScreenItem;
++struct ScreenManagerAuxiliaryState;
+ struct ScreenChildLink;
+ struct ScreenPlacementStore;
+ struct ScreenRectangle;
+@@ -29,11 +31,16 @@
+     unsigned char unknown_c0[0x68];
+     int mode;
+     int previous_mode;
++    ScreenManagerAuxiliaryState* auxiliary_130;
++    ScreenItem* item_134;
++    float value_138;
+ 
++    void ClearItemReference(ScreenItem* item);
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+     void SavePlacement(const ScreenRectangle& rectangle, int group);
+ };
+ 
+ extern ScreenRequestGamePrefix* screen_request_game;
++extern ScreenManager* screen_manager;
+ 
+ #endif
+diff --git a/src/startup_screen_manager_auxiliary.h b/src/startup_screen_manager_auxiliary.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a6cdb6541dfc11f3ab6a9b60e498aed3fa4fdb9f
+--- /dev/null
++++ b/src/startup_screen_manager_auxiliary.h
+@@ -0,0 +1,13 @@
++#ifndef STARTUP_SCREEN_MANAGER_AUXILIARY_H
++#define STARTUP_SCREEN_MANAGER_AUXILIARY_H
++
++// Observed nonpolymorphic prefix only; complete type and lifetime are unknown.
++struct ScreenManagerAuxiliaryState
++{
++    unsigned int word_00;
++    unsigned char state_04;
++
++    void ClearState();
++};
++
++#endif
+diff --git a/src/startup_screen_manager_auxiliary_clear.cpp b/src/startup_screen_manager_auxiliary_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..85c58c26cdc79edfc50cafea0ca7dd679c0091af
+--- /dev/null
++++ b/src/startup_screen_manager_auxiliary_clear.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager_auxiliary.h"
++
++// FUNCTION: BEACHLIFE 0x004c1330
++void ScreenManagerAuxiliaryState::ClearState()
++{
++    state_04 = 0;
++}
+diff --git a/src/startup_screen_manager_item_clear.cpp b/src/startup_screen_manager_item_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5c2fa736985a6625e1b0827e6aa840a46ba3acfc
+--- /dev/null
++++ b/src/startup_screen_manager_item_clear.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_manager_auxiliary.h"
++
++// GLOBAL: BEACHLIFE 0x004f4684
++const float screen_item_clear_value = 2.5f;
++
++// FUNCTION: BEACHLIFE 0x004af6b0
++void ScreenManager::ClearItemReference(ScreenItem* item)
++{
++    if (item_134 == item)
++    {
++        auxiliary_130->ClearState();
++        item_134 = 0;
++        value_138 = screen_item_clear_value;
++    }
++}
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index bad183ff19277d68110b1493841024c5156ab9c8..b9c5371208501607766290e87e27f1adc37d652a 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -64,7 +64,7 @@
+     virtual void Unresolved10(ScreenItem*) { _purecall(); }
+     virtual void Unresolved1c() { _purecall(); }
+     virtual void Unresolved20() { _purecall(); }
+-    virtual void Unresolved24() { _purecall(); }
++    virtual void Unresolved24(unsigned char) { _purecall(); }
+     virtual void Unresolved28() { _purecall(); }
+ };
+ 

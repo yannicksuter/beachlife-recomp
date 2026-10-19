@@ -1,0 +1,117 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -54,15 +54,14 @@
+         : ScreenItem(initial)
+     {
+         kind_28 = 0;
+-        for (unsigned int i = 0; i != sizeof(unknown_2c); ++i)
+-            unknown_2c[i] = 0;
++        word_2c = 0;
+         for (unsigned int j = 0; j != sizeof(unknown_31); ++j)
+             unknown_31[j] = 0;
+     }
+     virtual void Unresolved04() { _purecall(); }
+     virtual void Unresolved08() { _purecall(); }
+     virtual void Unresolved0c() { _purecall(); }
+-    virtual void Unresolved10() { _purecall(); }
++    virtual void Unresolved10(ScreenItem*) { _purecall(); }
+     virtual void Unresolved1c() { _purecall(); }
+     virtual void Unresolved20() { _purecall(); }
+     virtual void Unresolved24() { _purecall(); }
+@@ -162,7 +161,21 @@
+ typedef char gui_int_manager_offset_check[offsetof(GuiParserState, manager) == 0 ? 1 : -1];
+ typedef char gui_int_cursor_offset_check[offsetof(GuiParserState, cursor) == 4 ? 1 : -1];
+ typedef char gui_int_buffer_offset_check[offsetof(GuiParserState, buffer) == 8 ? 1 : -1];
+-typedef char gui_int_prefix_size_check[sizeof(GuiParserState) == 12 ? 1 : -1];
++typedef char gui_int_prefix_size_check[sizeof(GuiParserState) == 0x3c ? 1 : -1];
++typedef char gui_context_current_check[offsetof(GuiParserState, current_context) == 0x0c ? 1 : -1];
++typedef char gui_context_alternate10_check[offsetof(GuiParserState, alternate_context_10) == 0x10 ? 1 : -1];
++typedef char gui_context_alternate14_check[offsetof(GuiParserState, alternate_context_14) == 0x14 ? 1 : -1];
++typedef char gui_context_head_check[offsetof(GuiParserState, context_head) == 0x18 ? 1 : -1];
++typedef char gui_context_previous_check[offsetof(GuiParserState, previous_context) == 0x1c ? 1 : -1];
++typedef char gui_registered_item_check[offsetof(GuiParserState, last_registered_item) == 0x20 ? 1 : -1];
++typedef char gui_opaque24_check[offsetof(GuiParserState, unknown_24) == 0x24 ? 1 : -1];
++typedef char gui_registry_head_check[offsetof(GuiParserState, registry_head) == 0x28 ? 1 : -1];
++typedef char gui_items_head_check[offsetof(GuiParserState, items_head) == 0x2c ? 1 : -1];
++typedef char gui_items_tail_check[offsetof(GuiParserState, items_tail) == 0x30 ? 1 : -1];
++typedef char gui_registry_tail_check[offsetof(GuiParserState, registry_tail) == 0x34 ? 1 : -1];
++typedef char gui_word38_check[offsetof(GuiParserState, word_38) == 0x38 ? 1 : -1];
++typedef char gui_word_width_check[sizeof(unsigned int) == 4 ? 1 : -1];
++
+ extern "C"
+ {
+     char fixture_gui_input[] = " \t12),Q";
+@@ -213,7 +226,7 @@
+ typedef char gui_text_manager_offset_check[offsetof(GuiParserState, manager) == 0 ? 1 : -1];
+ typedef char gui_text_cursor_offset_check[offsetof(GuiParserState, cursor) == 4 ? 1 : -1];
+ typedef char gui_text_buffer_offset_check[offsetof(GuiParserState, buffer) == 8 ? 1 : -1];
+-typedef char gui_text_prefix_size_check[sizeof(GuiParserState) == 12 ? 1 : -1];
++typedef char gui_text_prefix_size_check[sizeof(GuiParserState) == 0x3c ? 1 : -1];
+ 
+ extern "C"
+ {
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -4,18 +4,36 @@
+ struct ScreenManager;
+ struct ScreenRectangle;
+ struct ScreenItem;
++struct ScreenChildLink;
+ 
+-// Observed parser prefix only. Its complete layout and lifetime are unresolved.
++// Observed x86 parser prefix through +0x3b only, not the complete allocation.
++// Host pointer layout differs. Complete original layout and lifetime are unresolved.
+ struct GuiParserState
+ {
+     ScreenManager* manager;
+     unsigned int cursor;
+     const char* buffer;
++    ScreenItem* current_context;
++    ScreenItem* alternate_context_10;
++    ScreenItem* alternate_context_14;
++    ScreenChildLink* context_head;
++    ScreenItem* previous_context;
++    ScreenItem* last_registered_item;
++    unsigned char unknown_24[4];
++    ScreenChildLink* registry_head;
++    ScreenChildLink* items_head;
++    ScreenChildLink* items_tail;
++    ScreenChildLink* registry_tail;
++    // Observed 32-bit publication only; its original type and meaning are unknown.
++    unsigned int word_38;
+ 
+     void ReadInteger(int& value, bool consume_delimiter);
+     void SkipWhitespace();
+     void ReadText(char* text);
+     void ReadRectangle(ScreenRectangle& rectangle, const ScreenItem* parent);
++    void PushContext(ScreenItem* item);
++    void PopContext();
++    void RegisterItem(ScreenItem* item, unsigned char named);
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_item.h b/src/startup_screen_item.h
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -20,7 +20,8 @@
+     virtual void Unresolved04() = 0;
+     virtual void Unresolved08() = 0;
+     virtual void Unresolved0c() = 0;
+-    virtual void Unresolved10() = 0;
++    // The one-item argument is observed; the original implementation is unresolved.
++    virtual void Unresolved10(ScreenItem* item) = 0;
+     virtual void ApplyPosition(int dx, int dy);
+     virtual void MarkPrepared();
+     virtual void Unresolved1c() = 0;
+@@ -33,7 +34,8 @@
+     ScreenRectangle saved_rectangle;
+     float elapsed_24;
+     int kind_28;
+-    unsigned char unknown_2c[4];
++    // Observed 32-bit publication; signedness and semantic meaning remain unknown.
++    unsigned int word_2c;
+     unsigned char state_30;
+     unsigned char unknown_31[3];
+     int last_x;

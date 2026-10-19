@@ -13,6 +13,15 @@ set(BEACHLIFE_BUILD_CHANNEL "dev" CACHE STRING "Build origin: dev, test or relea
 set_property(CACHE BEACHLIFE_BUILD_CHANNEL PROPERTY STRINGS dev test release)
 set(BEACHLIFE_BUILD_PULL_REQUEST "0" CACHE STRING "Source pull request number")
 set(BEACHLIFE_BUILD_RUN "0" CACHE STRING "GitHub Actions run ID")
+option(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
+    "Enable behavior-tested reconstructed code that is still being byte matched" OFF)
+set(BEACHLIFE_DECOMP_PROFILE native)
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    if(BEACHLIFE_BUILD_CHANNEL STREQUAL "release")
+        message(FATAL_ERROR "Experimental reconstructed code requires a dev or test build")
+    endif()
+    set(BEACHLIFE_DECOMP_PROFILE native-experimental)
+endif()
 
 if(WIN32)
     set(BEACHLIFE_SYSTEM windows)

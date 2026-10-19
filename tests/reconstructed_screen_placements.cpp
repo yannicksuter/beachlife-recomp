@@ -1081,6 +1081,11 @@ struct ManagerFrame
         std::memset(value.unknown_c0, pattern, sizeof(value.unknown_c0));
         sentinel = {&sentinel, &sentinel};
         value.active.head = &sentinel;
+#if defined(BEACHLIFE_DECOMP_SCREEN_ACTIVATION)
+        value.auxiliary_130 = nullptr;
+        value.item_134 = nullptr;
+        value.value_138 = 0.0f;
+#endif
     }
 };
 struct GameFrame
