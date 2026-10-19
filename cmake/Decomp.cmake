@@ -485,11 +485,12 @@ add_test(NAME reconstructed_screen_registry COMMAND reconstructed_screen_registr
 set_tests_properties(reconstructed_screen_registry PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
 
-# Actual saved-placement allocation, insertion and lookup share one source
-# closure. Generated fixtures own borrowed records and deterministic providers.
+# Actual saved-placement allocation, insertion, writes and lookup share one
+# source closure. Generated fixtures track owned and borrowed records.
 add_library(beachlife_reconstructed_screen_placements STATIC
     "${BEACHLIFE_DECOMP_SOURCE}/startup_placement_node.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_placement_insert.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_placement_write.cpp"
     "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_begin.cpp"
     "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_end.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/pool_chunk_acquire.cpp"

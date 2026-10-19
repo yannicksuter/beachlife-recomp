@@ -555,13 +555,18 @@ windows load the matching PNG from package resources. macOS builds the ICNS
 bundle resource using the system `sips` and `iconutil`; these tools are required
 on the macOS build host. No original ISO is needed to build the app icons.
 
-The optional `reconstructed_screen_placements_tests` target links one nine-source
-archive containing the actual saved-placement node builder, insertion, lookup,
-iterators and pool methods. Generated caller-owned records exercise first-match
-selection for duplicate signed groups, full-width coordinates, unchanged miss
-outputs, read-only graph checks, node identity, same-type slot reuse and repeated
-cleanup. The native profile preserves the eight-byte pool quantum while giving
-each host-sized node and free link its actual C++ lifetime. Test-only scalar
+The optional `reconstructed_screen_placements_tests` target links one ten-source
+archive containing the actual saved-placement node builder, insertion, writer,
+lookup, iterators and pool methods. Generated caller-owned records retain the
+list/query checks for duplicate signed groups, full-width coordinates, unchanged
+miss outputs, read-only graphs, node identity, same-type slot reuse and repeated
+cleanup. The writer additionally creates real 12-byte records and updates only
+the first matching record, including owned/borrowed duplicates and identical
+writes. Literal expected allocation sequences distinguish record storage from
+node-pool storage and require updates to allocate nothing. Generated teardown
+returns nodes, deletes owned records once and leaves borrowed records alive.
+The native profile preserves the eight-byte pool quantum while giving each
+host-sized node and free link its actual C++ lifetime. Test-only paired scalar
 allocation and deterministic lock providers cover successful, uncontended use.
 This does not provide the original store/list constructor or destructor,
 allocation-failure behavior, concurrency, cross-type slot reuse or production

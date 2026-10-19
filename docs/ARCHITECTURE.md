@@ -196,8 +196,10 @@ preserves the typed reference, iterator result and observed link-update order.
 These methods are qualified for matching. The native profile sizes saved-node
 slots from the host type and explicitly starts node and free-link lifetimes.
 The optional `beachlife_reconstructed_screen_placements` archive composes node
-allocation, insertion, lookup and recycling. Generated caller-owned records
-qualify duplicate-group selection, unchanged miss outputs and repeated cleanup;
+allocation, insertion, writes, lookup and recycling. Generated fixtures qualify
+first-match updates among owned and borrowed duplicates, unchanged miss outputs,
+allocation-free updates, node reuse and repeated cleanup. Teardown returns nodes
+and deletes each owned record once while leaving borrowed records alive;
 complete store lifetime and production integration remain separate steps.
 
 Saved-position writes update the first record with the requested group, or
@@ -205,8 +207,8 @@ allocate a record and append it through the reconstructed insertion method.
 The writer matches the complete original body, including both return paths.
 The reconstructed manager wrapper suppresses saving when either the current
 or previous mode equals 6. Otherwise it forwards the rectangle's left/top and
-group through the actual game placement pointer. Native writer/wrapper tests
-and complete manager lifetime remain separate steps.
+group through the actual game placement pointer. Native wrapper tests and
+complete manager lifetime remain separate steps.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
