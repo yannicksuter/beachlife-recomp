@@ -152,6 +152,12 @@ observed class prefix supports the known virtual callbacks. Native fixtures use
 these real lifetime methods and check construction, cleanup and dispatch; the
 complete virtual table, derived lifetimes and deleting wrapper remain unqualified.
 
+`beachlife_reconstructed_screen_item` makes those lifetime and callback checks
+repeatable through an optional native test target. Generated objects use the
+prepared methods and one shared declaration; paired host allocation providers
+belong only to the test executable. The target also retains the screen-search
+and placement checks and does not connect these objects to production screens.
+
 Screen-list insertion and node allocation are reconstructed for the matching
 target, including the node's compiler-generated cleanup and exception metadata.
 Insertion preserves the observed iterator calling convention and link updates.

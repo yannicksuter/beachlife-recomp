@@ -121,8 +121,9 @@ so an original zero-status fatal exit cannot pass the test.
 ## Reconstructed subsystem tests
 
 The optional targets compile reconstructed image, file, configuration, input,
-surface, pool-lock and screen-list helpers using the native compiler. They consume a committed source export with faithful patches
-through the same preparation tool as dependencies. Enable them explicitly:
+surface, pool-lock, screen-list and screen-item helpers using the native compiler.
+They consume a committed source export with faithful patches through the same
+preparation tool as dependencies. Enable them explicitly:
 
 ```sh
 cmake --preset release -B build/reconstructed-tga \
@@ -135,7 +136,8 @@ cmake --build build/reconstructed-tga \
     startup_configuration_tests startup_configuration_default_tests \
     reconstructed_input_tests reconstructed_cursor_tests \
     reconstructed_surfaces_tests reconstructed_surface_pixels_tests \
-    reconstructed_pool_lock_tests reconstructed_screen_list_tests --parallel
+    reconstructed_pool_lock_tests reconstructed_screen_list_tests \
+    reconstructed_screen_item_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -181,6 +183,15 @@ the missing retail list destructor. The target disables LTO and uses the same
 deterministic platform provider as the pool-lock test. Null-return scavenging,
 retry after allocation failure, original CRT failure behavior, operating-system
 concurrency and production screen ownership remain outside its tested domain.
+
+The screen-item target exercises the actual constructor, ordinary destructor,
+rectangle callbacks and retained list/search helpers with generated live objects.
+It checks initial state, repeated positioning, bounded movement, virtual calls,
+owned-text release and unchanged surrounding storage. Paired scalar allocation
+and deletion providers live only in the test executable and use the host CRT.
+The target disables LTO and links no VC6 release support. It requires no ISO;
+complete derived lifetimes, original allocation-failure behavior and production
+screen rendering remain separate work.
 
 The surface-pixel target compiles the actual pixel-access method and error
 handler. Generated lock providers check descriptor initialization, arguments,

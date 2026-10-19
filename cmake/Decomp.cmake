@@ -396,3 +396,40 @@ endif()
 add_test(NAME reconstructed_screen_list COMMAND reconstructed_screen_list_tests)
 set_tests_properties(reconstructed_screen_list PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
+
+# Generated objects exercise the real lifetime and callbacks. Allocation/release
+# providers belong only to this test executable; no VC6 support body is linked.
+add_library(beachlife_reconstructed_screen_item STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_constructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_destructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_rectangle.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_prepare.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_position.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_move.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_name_search.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_placement.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_list_adaptor.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_begin.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_end.cpp")
+target_include_directories(beachlife_reconstructed_screen_item PUBLIC
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_screen_item PUBLIC cxx_std_20)
+add_dependencies(beachlife_reconstructed_screen_item verify_reconstructed_source)
+
+add_executable(reconstructed_screen_item_tests tests/reconstructed_screen_item.cpp)
+target_link_libraries(reconstructed_screen_item_tests PRIVATE
+    beachlife_reconstructed_screen_item)
+set_target_properties(beachlife_reconstructed_screen_item reconstructed_screen_item_tests
+    PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+if(MSVC)
+    target_compile_options(beachlife_reconstructed_screen_item PRIVATE /GL-)
+    target_compile_options(reconstructed_screen_item_tests PRIVATE /GL- /W4 /WX)
+else()
+    target_compile_options(beachlife_reconstructed_screen_item PRIVATE -fno-lto)
+    target_compile_options(reconstructed_screen_item_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_screen_item_tests PRIVATE -fno-lto)
+endif()
+add_test(NAME reconstructed_screen_item COMMAND reconstructed_screen_item_tests)
+set_tests_properties(reconstructed_screen_item PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)
