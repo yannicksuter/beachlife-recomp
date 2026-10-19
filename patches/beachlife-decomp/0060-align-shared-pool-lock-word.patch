@@ -1,0 +1,62 @@
+Use one consistently typed shared pool lock word.
+Pass the actual SDK LONG storage to acquisition and release it through
+the observed cleanup without an extra lock object or pointer cast.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -29,7 +29,6 @@
+ void (*volatile fixture_fatal)(const char*, ...);
+ int ReadConfigFileBuffer(const char*, char*, unsigned int);
+ volatile int fixture_config_read;
+-LONG fixture_pool_lock;
+ typedef char PoolLockWordIs32Bits[(sizeof(LONG) == 4 && sizeof(unsigned int) == 4) ? 1 : -1];
+ volatile int fixture_config_offset;
+ char fixture_config_byte;
+@@ -128,10 +127,9 @@
+     fixture_screen_renderer.CleanupSurface(0);
+     {
+         PoolLockGuard fixture_pool_guard;
+-        pool_lock_word = 1;
++        AcquirePoolLock(&pool_lock_word);
+     }
+     fixture_config_offset = pool_lock_word;
+-    AcquirePoolLock(&fixture_pool_lock);
+     int fixture_chunk_count = 1;
+     fixture_file = AcquirePoolChunk(8, fixture_chunk_count);
+     fixture_config_offset = fixture_chunk_count;
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -19,7 +19,7 @@
+ 0x004f4ea4,float,4,
+ 0x004f3328,float,4,
+ 0x004f3320,float,8,
+-0x005a8908,global,4,?pool_lock_word@@3HA
++0x005a8908,global,4,?pool_lock_word@@3JA
+ 0x00411df0,function,239,?AcquirePoolLock@@YAXPAJ@Z
+ 0x004fc40c,global,4,?pool_spin_limit@@3IA
+ 0x005a890c,global,4,?pool_last_spin@@3IA
+--- a/src/pool_lock_guard.h
++++ b/src/pool_lock_guard.h
+@@ -1,8 +1,10 @@
+ #ifndef POOL_LOCK_GUARD_H
+ #define POOL_LOCK_GUARD_H
+ 
++#include <windows.h>
++
+ // Descriptive 32-bit storage. Original type spelling and library origin are unknown.
+-extern int pool_lock_word;
++extern LONG pool_lock_word;
+ 
+ // The observed cleanup ignores its receiver. This declaration does not recover
+ // the original class size, data members, constructor or allocator identity.
+--- a/src/pool_lock_guard.cpp
++++ b/src/pool_lock_guard.cpp
+@@ -1,7 +1,7 @@
+ #include "pool_lock_guard.h"
+ 
+ // GLOBAL: BEACHLIFE 0x005a8908
+-int pool_lock_word = 0;
++LONG pool_lock_word = 0;
+ 
+ // Descriptive destructor spelling for the observed no-argument member cleanup.
+ // FUNCTION: BEACHLIFE 0x00412550

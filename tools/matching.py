@@ -387,6 +387,38 @@ def verify_stdcall_pe_imports(binary, configured, exact):
     return verified
 
 
+def game_runtime_stdcall_imports(target):
+    """Opt into the evidenced VC6 throw ABI without changing the cdecl CRT route."""
+    configured = target.get('runtime_stdcall_imports', {})
+    if (not isinstance(configured, dict) or
+            any(name != '_CxxThrowException' or type(count) is not int or count != 8
+                for name, count in configured.items())):
+        raise ValueError('Only the observed _CxxThrowException runtime stdcall import is supported.')
+    return dict(configured)
+
+
+def verify_runtime_original_imports(binary, configured):
+    if not configured:
+        return {}
+    actual = pe_imports(binary).get('MSVCRT.dll', {})
+    if not set(configured) <= set(actual):
+        raise ValueError('Original runtime PE import identity mismatch.')
+    return actual
+
+
+def verify_runtime_compiled_imports(binary, configured, original):
+    if not configured:
+        return {}
+    actual = pe_imports(binary).get('MSVCRT.dll', {})
+    if not set(actual) <= set(original):
+        raise ValueError('Rebuilt runtime PE imports contain an unverified identity.')
+    # VC6 can retain an undefined COFF throw symbol after removing its catch
+    # code. LINK resolves that symbol but discards the unused import. Absence
+    # here is recorded; it is not evidence of an executed runtime dependency.
+    return {'linked': {name: actual[name] for name in sorted(configured) if name in actual},
+            'omitted': sorted(set(configured) - set(actual))}
+
+
 def game_target(metadata):
     """Validate every registered group before invoking matching build tools."""
     path = metadata / 'targets/beachlife-uk-1.1.json'
@@ -450,7 +482,9 @@ def game(tool, args):
         raise ValueError('No matching source files found.')
     compile_options = game_source_compile_options(target, [*sources, *support_sources])
     stdcall_imports = game_stdcall_imports(target)
+    runtime_imports = game_runtime_stdcall_imports(target)
     original_stdcall_imports = verify_stdcall_pe_imports(original, stdcall_imports, exact=False)
+    original_runtime_imports = verify_runtime_original_imports(original, runtime_imports)
     # The fixture is part of the patchable source export, never a game driver.
     entry = metadata / 'fixtures/game.cpp'
     if not entry.is_file():
@@ -486,6 +520,15 @@ def game(tool, args):
             'symbols': policy['symbols'],
             'library': str(library_path.relative_to(ROOT) if library_path.is_relative_to(ROOT) else library_path),
             'sha256': digest(library_path), 'name_mode_adjustments': adjustments})
+    runtime_libraries = []
+    if runtime_imports:
+        library_path, adjustments = stdcall_import_library(
+            tool, folder / 'imports/runtime', 'MSVCRT.dll', runtime_imports, 'undecorated')
+        link_flags.append(tool.native(library_path))
+        runtime_libraries.append({
+            'dll': 'MSVCRT.dll', 'export_names': 'undecorated', 'symbols': runtime_imports,
+            'library': str(library_path.relative_to(ROOT) if library_path.is_relative_to(ROOT) else library_path),
+            'sha256': digest(library_path), 'name_mode_adjustments': adjustments})
     abi_support = []
     if any('/GX' in flags for flags in compile_options.values()):
         abi_object = folder / 'abi/vc6-except-list.obj'
@@ -507,11 +550,12 @@ def game(tool, args):
         raise ValueError('SDK header pins changed during the build.')
     if abi_support and abi_object.read_bytes() != abi_bytes:
         raise ValueError('Generated VC6 exception ABI object changed during the build.')
-    for library_record in import_libraries:
+    for library_record in [*import_libraries, *runtime_libraries]:
         library_path = ROOT / library_record['library']
         if digest(library_path) != library_record['sha256']:
             raise ValueError('Generated stdcall import library changed during the build.')
     compiled_stdcall_imports = verify_stdcall_pe_imports(binary, stdcall_imports, exact=True)
+    compiled_runtime_imports = verify_runtime_compiled_imports(binary, runtime_imports, original_runtime_imports)
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
@@ -561,6 +605,10 @@ def game(tool, args):
               'stdcall_import_libraries': import_libraries,
               'original_stdcall_imports': original_stdcall_imports,
               'compiled_stdcall_imports': compiled_stdcall_imports,
+              'runtime_stdcall_import_libraries': runtime_libraries,
+              'original_runtime_stdcall_imports': {
+                  name: original_runtime_imports[name] for name in sorted(runtime_imports)},
+              'compiled_runtime_stdcall_imports': compiled_runtime_imports,
               'input_sha256': fingerprints,
               'target_config': str(target_path.relative_to(ROOT) if target_path.is_relative_to(ROOT) else target_path),
               'source_root': str(source.relative_to(ROOT) if source.is_relative_to(ROOT) else source),

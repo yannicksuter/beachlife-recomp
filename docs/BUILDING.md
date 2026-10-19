@@ -120,8 +120,8 @@ so an original zero-status fatal exit cannot pass the test.
 
 ## Reconstructed subsystem tests
 
-The optional targets compile reconstructed image, file, configuration, input and
-surface helpers using the native compiler. They consume a committed source export with faithful patches
+The optional targets compile reconstructed image, file, configuration, input,
+surface, pool-lock and screen-list helpers using the native compiler. They consume a committed source export with faithful patches
 through the same preparation tool as dependencies. Enable them explicitly:
 
 ```sh
@@ -134,7 +134,8 @@ cmake --build build/reconstructed-tga \
     reconstructed_config_loading_tests reconstructed_startup_config_tests \
     startup_configuration_tests startup_configuration_default_tests \
     reconstructed_input_tests reconstructed_cursor_tests \
-    reconstructed_surfaces_tests --parallel
+    reconstructed_surfaces_tests reconstructed_surface_pixels_tests \
+    reconstructed_pool_lock_tests reconstructed_screen_list_tests --parallel
 ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
 ```
 
@@ -159,6 +160,34 @@ and prepared files. Update reconstruction or portability patches and reconfigure
 files. The matching-only VC6 release wrapper is excluded in favor of the host
 CRT. Subsystem test executables remain opt-in; configuration and file libraries
 are part of normal Play.
+
+The pool-lock target compiles the unchanged acquisition and cleanup methods
+against a test-only platform provider. It checks that both methods use the same
+32-bit word, preserves adaptive state across fast and fallback acquisition, and
+verifies the wait sequence and cleanup on normal and exceptional host lifetimes.
+Its deterministic single-threaded provider exercises no operating-system
+synchronization. Concurrent behavior, original parent unwind machinery and
+production use remain separate qualification steps.
+
+The screen-list target combines the actual node builder, insertion, Begin/End,
+chunk allocator, recycling and shared lock code. Its native patch sizes slots
+for the compiled node and establishes storage and recycled-object lifetimes.
+A scoped scalar-new replacement lives only in the test executable, leaving
+the prepared methods unchanged. A fixed real-storage ledger checks allocation
+sizes and order; an independent sequence checks both list links, payloads,
+sentinels, reuse, guards and cleanup after labelled host allocation exceptions.
+Checked fixture teardown releases its own backing storage. It does not implement
+the missing retail list destructor. The target disables LTO and uses the same
+deterministic platform provider as the pool-lock test. Null-return scavenging,
+retry after allocation failure, original CRT failure behavior, operating-system
+concurrency and production screen ownership remain outside its tested domain.
+
+The surface-pixel target compiles the actual pixel-access method and error
+handler. Generated lock providers check descriptor initialization, arguments,
+signed success results and state changes during the callback. The same fixture
+covers software pixels, null results, valid table aliases and unchanged guards.
+Native layouts follow the compiled pointer types; these tests require no graphics
+device and do not qualify original x86 object layouts or a rendering backend.
 
 The generated fixtures check palette/pixel offsets, channel conversion, row
 orientation, raw and run-length packets, empty images and buffer ownership.

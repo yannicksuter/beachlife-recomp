@@ -36,12 +36,12 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 63 reconstructed game functions match after address normalization,
-totaling 4,942 bytes. 30 functions also match all 1,436 raw bytes exactly.
+verified. 67 reconstructed game functions match after address normalization,
+totaling 5,181 bytes. 33 functions also match all 1,544 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Four methods totaling 633 bytes also match after address normalization; their
+Nine methods totaling 1,161 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
-One of those methods matches all 94 raw bytes exactly.
+Three of those methods match all 106 raw bytes exactly.
 The full game layout remains unknown.
 See [matching setup](../decomp/README.md).
 
@@ -55,6 +55,13 @@ names to x86 stack-byte counts. The build generates import metadata and verifies
 the requested names against both original and rebuilt PE import tables. It does
 not copy DLL code or execute the comparison image. Native service adaptations
 remain separate from this original-ABI link support.
+
+The separate `runtime_stdcall_imports` policy currently accepts only
+`{"_CxxThrowException": 8}` from `MSVCRT.dll`. It verifies the original export
+and generates its exact VC6 import metadata alongside the existing CRT route.
+Results distinguish a linked runtime import from one discarded after the
+compiler removes its call. Rebuilt CRT import names must exist in the original
+image; an omitted import does not establish executed exception handling.
 
 `beachlife_reconstructed_tga` compiles seven matched helpers with the modern
 compiler and host CRT. Its generated test executable checks data conversion
@@ -94,7 +101,7 @@ or unsupported input fails in the host preflight. Allocation failure during
 faithful construction terminates the process under a temporary default-allocator
 policy, including failures on other threads during that process-wide interval.
 It does not repair the original parser or claim arbitrary-input recovery.
-Image, input, cursor and surface subsystem targets remain behind the optional test flag.
+Image, input, cursor, surface and pool-lock targets remain behind the optional test flag.
 The file helpers and game share the host-only `beachlife_retail_files` library,
 so there is one thread-local VFS binding. Reconstructed gameplay remains open.
 `beachlife_reconstructed_input` qualifies the two byte-state queries, transition
@@ -118,6 +125,40 @@ cleanup methods through generated ownership and Surface7 providers. Its tests
 verify the selected object, callback-visible state and final writes, including
 table changes during release. Surface creation and a rendering backend remain
 separate dependencies; this library is not connected to production gameplay.
+
+`beachlife_reconstructed_surface_pixels` exercises the pixel-access method and
+its actual error sink. Generated lock providers verify descriptor initialization,
+signed result handling, software pixels and state changes during a callback.
+The same prepared headers retain the existing surface ownership tests. These
+headless checks do not initialize a graphics device or connect rendering to the
+game; original surface creation and the rendering backend remain open.
+
+`beachlife_reconstructed_pool_lock` tests the exported acquisition method and
+cleanup against one shared 32-bit word. Generated providers verify fast and
+fallback acquisition, wait values, adaptive state and cleanup after normal or
+exceptional host lifetimes. The test providers use distinct symbols so they can
+coexist with the host CRT's system imports. Operating-system synchronization,
+concurrent access and original parent unwind behavior remain unqualified.
+
+Screen rectangle retrieval, relative movement, saved-position restoration and
+preparation-state updates are reconstructed. Positioning starts from the saved
+rectangle on each call, then applies the requested horizontal and vertical
+offsets. Full screen construction and dialog dispatch remain separate steps.
+
+Screen-list insertion and node allocation are reconstructed for the matching
+target, including the node's compiler-generated cleanup and exception metadata.
+Insertion preserves the observed iterator calling convention and link updates.
+Allocation shares one inline pool-lock guard definition with the existing
+consumers. The native profile derives pool slots from the actual node size and
+explicitly starts the byte-storage, free-link and node lifetimes.
+
+`beachlife_reconstructed_screen_list` exercises those prepared methods together,
+including insertion, traversal, chunk allocation and recycling. The test
+executable supplies scoped scalar allocation and deterministic platform calls;
+the archive retains its ordinary allocation expressions. Independent sequence
+and allocation checks cover successful bounded storage and labelled host
+exceptions. Original allocation-failure behavior, concurrent access, screen
+ownership and production integration remain separate gates.
 
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.

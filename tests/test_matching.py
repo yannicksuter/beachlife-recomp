@@ -452,6 +452,92 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
                 self.run_game()
         self.assertEqual(self.calls, ['runtime_library', 'import_library', 'build'])
 
+    def runtime_stdcall_library(self, tool, folder, dll, symbols, mode):
+        self.calls.append('runtime_stdcall_library')
+        self.assertIs(tool, self.tool)
+        self.assertEqual((dll, symbols, mode),
+                         ('MSVCRT.dll', {'_CxxThrowException': 8}, 'undecorated'))
+        folder.mkdir(parents=True)
+        library = folder / 'msvcrt-import.lib'
+        library.write_bytes(b'generated runtime import metadata fixture')
+        return library, [{'symbol': '__CxxThrowException@8', 'before': 8, 'after': 12}]
+
+    def test_runtime_import_policy_preserves_linked_and_omitted_results(self):
+        self.target['runtime_stdcall_imports'] = {'_CxxThrowException': 8}
+        original = {'MSVCRT.dll': {'_CxxThrowException': '0x401000', 'malloc': '0x401004'}}
+        for present in [False, True]:
+            with self.subTest(present=present):
+                self.calls.clear()
+                library = self.args.output / 'game/imports/runtime/msvcrt-import.lib'
+                if library.exists():
+                    library.unlink()
+                    library.parent.rmdir()
+                rebuilt = {'MSVCRT.dll': {'malloc': '0x402004'}}
+                if present:
+                    rebuilt['MSVCRT.dll']['_CxxThrowException'] = '0x402000'
+                with patch.object(matching, 'stdcall_import_library', self.runtime_stdcall_library), \
+                        patch.object(matching, 'pe_imports', side_effect=[original, rebuilt]):
+                    result = self.run_game()
+                self.assertEqual(self.calls, ['runtime_library', 'runtime_stdcall_library', 'build', 'compare'])
+                self.assertIn(str(library), self.build_arguments[0])
+                self.assertEqual(result['original_runtime_stdcall_imports'],
+                                 {'_CxxThrowException': '0x401000'})
+                self.assertEqual(result['compiled_runtime_stdcall_imports'], {
+                    'linked': {'_CxxThrowException': '0x402000'} if present else {},
+                    'omitted': [] if present else ['_CxxThrowException']})
+                self.assertEqual(result['runtime_stdcall_import_libraries'][0]['sha256'],
+                                 hashlib.sha256(library.read_bytes()).hexdigest())
+
+    def test_invalid_runtime_import_policy_fails_before_build_tools(self):
+        for configured in [None, [], True, {'_CxxThrowException': True},
+                           {'_CxxThrowException': 4}, {'_CxxThrowException@8': 8},
+                           {'CxxThrowException': 8}, {'OtherRuntime': 8}]:
+            with self.subTest(configured=configured):
+                self.target['runtime_stdcall_imports'] = configured
+                with self.assertRaises(ValueError):
+                    self.run_game()
+                self.assertEqual(self.calls, [])
+                self.assertFalse(self.args.output.exists())
+
+    def test_runtime_import_requires_the_original_export_identity(self):
+        self.target['runtime_stdcall_imports'] = {'_CxxThrowException': 8}
+        with patch.object(matching, 'pe_imports', return_value={
+                'MSVCRT.dll': {'CxxThrowException': '0x401000'}}):
+            with self.assertRaisesRegex(ValueError, 'Original runtime PE import'):
+                self.run_game()
+        self.assertEqual(self.calls, [])
+        self.assertFalse(self.args.output.exists())
+
+    def test_runtime_import_rejects_unverified_rebuilt_names(self):
+        self.target['runtime_stdcall_imports'] = {'_CxxThrowException': 8}
+        original = {'MSVCRT.dll': {'_CxxThrowException': '0x401000'}}
+        rebuilt = {'MSVCRT.dll': {'CxxThrowException@8': '0x402000'}}
+        with patch.object(matching, 'stdcall_import_library', self.runtime_stdcall_library), \
+                patch.object(matching, 'pe_imports', side_effect=[original, rebuilt]):
+            with self.assertRaisesRegex(ValueError, 'unverified identity'):
+                self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'runtime_stdcall_library', 'build'])
+        self.assertFalse(self.args.reports.exists())
+
+    def test_changed_runtime_import_archive_fails_before_comparison(self):
+        self.target['runtime_stdcall_imports'] = {'_CxxThrowException': 8}
+        build = self.tool.build
+
+        def changed_archive(*args, **kwargs):
+            result = build(*args, **kwargs)
+            path = self.args.output / 'game/imports/runtime/msvcrt-import.lib'
+            path.write_bytes(path.read_bytes() + b'changed')
+            return result
+
+        self.tool.build = changed_archive
+        with patch.object(matching, 'stdcall_import_library', self.runtime_stdcall_library), \
+                patch.object(matching, 'pe_imports', return_value={
+                    'MSVCRT.dll': {'_CxxThrowException': '0x401000'}}):
+            with self.assertRaisesRegex(ValueError, 'import library changed'):
+                self.run_game()
+        self.assertEqual(self.calls, ['runtime_library', 'runtime_stdcall_library', 'build'])
+        self.assertFalse(self.args.reports.exists())
+
     def register_generated_functions(self):
         for key, name, address in [('functions', 'game_fixture', '0x1000'),
                                    ('library_functions', 'library_fixture', '0x1020'),

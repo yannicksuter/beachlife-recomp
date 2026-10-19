@@ -1,0 +1,239 @@
+Reconstruct pool return with shared acquisition source.
+Preserve the observed volatile lock storage and old SDK boundary,
+with one implementation body and one definition of adaptive state.
+
+--- /dev/null
++++ b/src/pool_return.cpp
+@@ -0,0 +1,13 @@
++#include "pool_return.h"
++#include "pool_lock_acquire_inline.h"
++
++// FUNCTION: BEACHLIFE 0x004123f0
++void ReturnPool(void* memory, unsigned int bytes)
++{
++    PoolChunkLink* node = static_cast<PoolChunkLink*>(memory);
++    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
++    AcquirePoolLockBody(&pool_lock_word);
++    node->next = *bucket;
++    *bucket = node;
++    pool_lock_word = 0;
++}
+--- /dev/null
++++ b/src/pool_return.h
+@@ -0,0 +1,9 @@
++#ifndef POOL_RETURN_H
++#define POOL_RETURN_H
++
++#include "pool_chunk_acquire.h"
++#include "pool_lock_guard.h"
++
++void ReturnPool(void* memory, unsigned int bytes);
++
++#endif
+--- a/src/pool_lock_acquire.cpp
++++ b/src/pool_lock_acquire.cpp
+@@ -1,4 +1,4 @@
+-#include "pool_lock_acquire.h"
++#include "pool_lock_acquire_inline.h"
+ 
+ // GLOBAL: BEACHLIFE 0x004fc40c
+ unsigned int pool_spin_limit = 30;
+@@ -6,45 +6,7 @@
+ unsigned int pool_last_spin = 0;
+ 
+ // FUNCTION: BEACHLIFE 0x00411df0
+-void AcquirePoolLock(LONG* lock)
++void AcquirePoolLock(volatile LONG* lock)
+ {
+-    if (InterlockedExchange(lock, 1) == 0)
+-        return;
+-    const unsigned int spin_limit = pool_spin_limit;
+-    const unsigned int last_spin = pool_last_spin;
+-    // The observed four repeated squares each read this word twice and write
+-    // it back. Unsigned arithmetic preserves the evidenced low32-bit wrap.
+-    volatile unsigned int delay = 17;
+-    for (unsigned int spin = 0; spin < spin_limit; ++spin)
+-    {
+-        if (spin >= last_spin / 2 && *lock == 0)
+-        {
+-            if (InterlockedExchange(lock, 1) == 0)
+-            {
+-                pool_last_spin = spin;
+-                pool_spin_limit = 1000;
+-                return;
+-            }
+-        }
+-        else
+-        {
+-            delay = delay * delay;
+-            delay = delay * delay;
+-            delay = delay * delay;
+-            delay = delay * delay;
+-        }
+-    }
+-    pool_spin_limit = 30;
+-    for (int attempt = 6;; ++attempt)
+-    {
+-        int capped = attempt;
+-        if (capped > 27)
+-            capped = 27;
+-        if (InterlockedExchange(lock, 1) == 0)
+-            return;
+-        if (capped <= 20)
+-            Sleep(0);
+-        else
+-            Sleep(1u << (capped - 20));
+-    }
++    AcquirePoolLockBody(lock);
+ }
+--- a/src/pool_lock_acquire.h
++++ b/src/pool_lock_acquire.h
+@@ -6,6 +6,6 @@
+ // Descriptive adaptive-spin state; original declarations and origin unknown.
+ extern unsigned int pool_spin_limit;
+ extern unsigned int pool_last_spin;
+-void AcquirePoolLock(LONG* lock);
++void AcquirePoolLock(volatile LONG* lock);
+ 
+ #endif
+--- /dev/null
++++ b/src/pool_lock_acquire_inline.h
+@@ -0,0 +1,51 @@
++#ifndef POOL_LOCK_ACQUIRE_INLINE_H
++#define POOL_LOCK_ACQUIRE_INLINE_H
++
++#include "pool_lock_acquire.h"
++
++// Shared source for the observed standalone and inlined acquisition bodies.
++// This factoring does not identify the original template or class declaration.
++inline void AcquirePoolLockBody(volatile LONG* lock)
++{
++    if (InterlockedExchange(const_cast<LONG*>(lock), 1) == 0)
++        return;
++    const unsigned int spin_limit = pool_spin_limit;
++    const unsigned int last_spin = pool_last_spin;
++    // The observed four repeated squares each read this word twice and write
++    // it back. Unsigned arithmetic preserves the evidenced low32-bit wrap.
++    volatile unsigned int delay = 17;
++    for (unsigned int spin = 0; spin < spin_limit; ++spin)
++    {
++        if (spin >= last_spin / 2 && *lock == 0)
++        {
++            if (InterlockedExchange(const_cast<LONG*>(lock), 1) == 0)
++            {
++                pool_last_spin = spin;
++                pool_spin_limit = 1000;
++                return;
++            }
++        }
++        else
++        {
++            delay = delay * delay;
++            delay = delay * delay;
++            delay = delay * delay;
++            delay = delay * delay;
++        }
++    }
++    pool_spin_limit = 30;
++    for (int attempt = 6;; ++attempt)
++    {
++        int capped = attempt;
++        if (capped > 27)
++            capped = 27;
++        if (InterlockedExchange(const_cast<LONG*>(lock), 1) == 0)
++            return;
++        if (capped <= 20)
++            Sleep(0);
++        else
++            Sleep(1u << (capped - 20));
++    }
++}
++
++#endif
+--- a/src/pool_lock_guard.cpp
++++ b/src/pool_lock_guard.cpp
+@@ -1,7 +1,7 @@
+ #include "pool_lock_guard.h"
+ 
+ // GLOBAL: BEACHLIFE 0x005a8908
+-LONG pool_lock_word = 0;
++volatile LONG pool_lock_word = 0;
+ 
+ // Descriptive destructor spelling for the observed no-argument member cleanup.
+ // FUNCTION: BEACHLIFE 0x00412550
+--- a/src/pool_lock_guard.h
++++ b/src/pool_lock_guard.h
+@@ -4,7 +4,7 @@
+ #include <windows.h>
+ 
+ // Descriptive 32-bit storage. Original type spelling and library origin are unknown.
+-extern LONG pool_lock_word;
++extern volatile LONG pool_lock_word;
+ 
+ // The observed cleanup ignores its receiver. This declaration does not recover
+ // the original class size, data members, constructor or allocator identity.
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,6 +1,7 @@
+ #include "pool_chunk_acquire.h"
+ #include "pool_lock_acquire.h"
+ #include "pool_lock_guard.h"
++#include "pool_return.h"
+ #include "startup_screen_renderer.h"
+ #include "startup_screen_placement.h"
+ #include "startup_controller_selection.h"
+@@ -133,6 +134,8 @@
+     fixture_config_offset = pool_lock_word;
+     int fixture_chunk_count = 1;
+     fixture_file = AcquirePoolChunk(8, fixture_chunk_count);
++    PoolChunkLink fixture_return_node;
++    ReturnPool(&fixture_return_node, 16);
+     fixture_config_offset = fixture_chunk_count;
+     ScreenItem fixture_screen_item = { 0 };
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -19,8 +19,8 @@
+ 0x004f4ea4,float,4,
+ 0x004f3328,float,4,
+ 0x004f3320,float,8,
+-0x005a8908,global,4,?pool_lock_word@@3JA
+-0x00411df0,function,239,?AcquirePoolLock@@YAXPAJ@Z
++0x005a8908,global,4,?pool_lock_word@@3JC
++0x00411df0,function,239,?AcquirePoolLock@@YAXPCJ@Z
+ 0x004fc40c,global,4,?pool_spin_limit@@3IA
+ 0x005a890c,global,4,?pool_last_spin@@3IA
+ 0x00412970,function,289,?AcquirePoolChunk@@YAPADIAAH@Z
+@@ -28,3 +28,4 @@
+ 0x005a8910,global,4,?pool_heap_bytes@@3IA
+ 0x005a8914,global,4,?pool_chunk_begin@@3PADA
+ 0x005a8918,global,4,?pool_chunk_end@@3PADA
++0x004123f0,function,289,?ReturnPool@@YAXPAXI@Z
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -433,6 +433,12 @@
+     ],
+     "startup_list_adaptor.cpp": [
+       "/Ob1"
++    ],
++    "pool_lock_acquire.cpp": [
++      "/Ob1"
++    ],
++    "pool_return.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -488,6 +494,12 @@
+       "size": 11,
+       "name": "CircularListIteratorAdaptor::CircularListIteratorAdaptor",
+       "name_status": "descriptive iterator adaptor; original type, exact declarations and library identity unknown"
++    },
++    {
++      "address": "0x004123f0",
++      "size": 289,
++      "name": "ReturnPool",
++      "name_status": "unclassified pool return; original symbol, exact declarations and library provenance unknown"
+     }
+   ]
+ }

@@ -316,3 +316,83 @@ else()
 endif()
 add_test(NAME reconstructed_surfaces COMMAND reconstructed_surfaces_tests)
 set_tests_properties(reconstructed_surfaces PROPERTIES LABELS "reconstructed;headless")
+
+# This isolated test provider supplies deterministic platform calls to the
+# unchanged reconstructed methods. It is not linked into the game runtime.
+add_library(beachlife_reconstructed_pool_lock STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_guard.cpp")
+target_include_directories(beachlife_reconstructed_pool_lock PUBLIC
+    "${CMAKE_SOURCE_DIR}/tests/providers/pool_lock" "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_pool_lock PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_pool_lock PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_pool_lock verify_reconstructed_source)
+
+add_executable(reconstructed_pool_lock_tests tests/reconstructed_pool_lock.cpp)
+target_link_libraries(reconstructed_pool_lock_tests PRIVATE beachlife_reconstructed_pool_lock)
+set_target_properties(reconstructed_pool_lock_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_pool_lock_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_pool_lock_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_pool_lock COMMAND reconstructed_pool_lock_tests)
+set_tests_properties(reconstructed_pool_lock PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)
+
+add_library(beachlife_reconstructed_surface_pixels STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_pixel_access.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/surface_error_sink.cpp")
+target_include_directories(beachlife_reconstructed_surface_pixels PUBLIC
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_surface_pixels PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_surface_pixels PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_surface_pixels verify_reconstructed_source)
+
+add_executable(reconstructed_surface_pixels_tests tests/reconstructed_surface_pixels.cpp)
+target_link_libraries(reconstructed_surface_pixels_tests PRIVATE
+    beachlife_reconstructed_surface_pixels)
+set_target_properties(reconstructed_surface_pixels_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+    target_compile_options(reconstructed_surface_pixels_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(reconstructed_surface_pixels_tests PRIVATE
+        -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME reconstructed_surface_pixels COMMAND reconstructed_surface_pixels_tests)
+set_tests_properties(reconstructed_surface_pixels PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)
+
+# The fixture supplies scoped scalar allocation and deterministic platform calls;
+# every reconstructed method is compiled unchanged from the native export.
+add_library(beachlife_reconstructed_screen_list STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_list_node.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_list_insert.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_begin.cpp"
+    "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp/support/startup_list_end.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_chunk_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_return.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_acquire.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/pool_lock_guard.cpp")
+target_include_directories(beachlife_reconstructed_screen_list PUBLIC
+    "${CMAKE_SOURCE_DIR}/tests/providers/pool_lock" "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_screen_list PUBLIC cxx_std_20)
+add_dependencies(beachlife_reconstructed_screen_list verify_reconstructed_source)
+
+add_executable(reconstructed_screen_list_tests tests/reconstructed_screen_list.cpp)
+target_link_libraries(reconstructed_screen_list_tests PRIVATE
+    beachlife_reconstructed_screen_list)
+set_target_properties(beachlife_reconstructed_screen_list reconstructed_screen_list_tests
+    PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+if(MSVC)
+    target_compile_options(beachlife_reconstructed_screen_list PRIVATE /GL-)
+    target_compile_options(reconstructed_screen_list_tests PRIVATE /GL- /W4 /WX)
+else()
+    target_compile_options(beachlife_reconstructed_screen_list PRIVATE -fno-lto)
+    target_compile_options(reconstructed_screen_list_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_screen_list_tests PRIVATE -fno-lto)
+endif()
+add_test(NAME reconstructed_screen_list COMMAND reconstructed_screen_list_tests)
+set_tests_properties(reconstructed_screen_list PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)
