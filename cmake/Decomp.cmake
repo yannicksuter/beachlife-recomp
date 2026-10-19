@@ -522,3 +522,29 @@ endif()
 add_test(NAME reconstructed_screen_placements COMMAND reconstructed_screen_placements_tests)
 set_tests_properties(reconstructed_screen_placements PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
+
+# The actual GUI integer reader uses a generated guarded prefix and byte fixture.
+add_library(beachlife_reconstructed_gui_integer STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_integer.cpp")
+target_include_directories(beachlife_reconstructed_gui_integer PUBLIC
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_gui_integer PUBLIC cxx_std_20)
+add_dependencies(beachlife_reconstructed_gui_integer verify_reconstructed_source)
+
+add_executable(reconstructed_gui_integer_tests tests/reconstructed_gui_integer.cpp)
+target_link_libraries(reconstructed_gui_integer_tests PRIVATE
+    beachlife_reconstructed_gui_integer)
+set_target_properties(beachlife_reconstructed_gui_integer reconstructed_gui_integer_tests
+    PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+if(MSVC)
+    target_compile_options(beachlife_reconstructed_gui_integer PRIVATE /GL-)
+    target_compile_options(reconstructed_gui_integer_tests PRIVATE /GL- /W4 /WX)
+else()
+    target_compile_options(beachlife_reconstructed_gui_integer PRIVATE -fno-lto)
+    target_compile_options(reconstructed_gui_integer_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_gui_integer_tests PRIVATE -fno-lto)
+endif()
+add_test(NAME reconstructed_gui_integer COMMAND reconstructed_gui_integer_tests)
+set_tests_properties(reconstructed_gui_integer PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)

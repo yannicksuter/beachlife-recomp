@@ -215,9 +215,12 @@ remain separate steps.
 
 The reconstructed GUI integer argument reader preserves the original whitespace,
 delimiter and arithmetic rules for signed input bytes. Its complete body matches
-the retail executable byte for byte. It uses the observed parser prefix; complete
-parser construction, widget dispatch and native qualification remain separate
-steps.
+the retail executable byte for byte. The optional native integer-reader target
+checks literal and generated inputs, repeated calls, cursor movement and untouched
+surrounding state through guarded live prefixes. The bounded cases pass Linux
+Release, address/undefined/leak sanitizers and Windows cross-builds under Wine;
+a changed multiplier is rejected in each configuration. Complete parser
+construction, widget dispatch and production integration remain separate steps.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
