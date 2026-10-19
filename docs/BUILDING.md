@@ -611,3 +611,16 @@ byte is accessible, and output capacity is sufficient. The existing integer and
 whitespace fixtures remain unchanged. This covers bounded reader behavior;
 original parser/manager lifetimes, unbounded or overlapping buffers, widget
 construction and gameplay remain outside this target.
+
+
+The optional `reconstructed_gui_rectangle_tests` target exercises the actual
+rectangle reader, whitespace helper, rectangle getter and base screen lifetime
+with generated inputs. Literal results cover flag ordering, unsigned centering,
+optional parent bounds, degenerate parents and cursor/delimiter quirks. Three
+separate fatal cases use the real fatal reporter and host C runtime; an exit
+observer checks output, cursor, guards and the absence of a normal return. The
+normal suite also rejects an unexpected early successful exit. The integer,
+whitespace and text fixtures remain unchanged and use the same prepared parser
+declaration. Inputs keep every reached byte and signed intermediate valid.
+These bounded cases do not supply original parser, renderer or derived-widget
+lifetimes, validate the diagnostic text, or establish gameplay.

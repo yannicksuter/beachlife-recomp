@@ -586,3 +586,45 @@ endif()
 add_test(NAME reconstructed_gui_text COMMAND reconstructed_gui_text_tests)
 set_tests_properties(reconstructed_gui_text PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
+
+# Bounded rectangle parsing uses the real reporter and generated parent objects.
+# Whitespace is selected once from the existing shared GUI reader archive.
+add_library(beachlife_reconstructed_gui_rectangle STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_rectangle.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_rectangle.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_fatal.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_constructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_destructor.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_prepare.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_position.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_move.cpp")
+target_include_directories(beachlife_reconstructed_gui_rectangle PUBLIC
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_gui_rectangle PUBLIC cxx_std_20)
+target_link_libraries(beachlife_reconstructed_gui_rectangle PUBLIC
+    beachlife_reconstructed_gui_integer)
+add_dependencies(beachlife_reconstructed_gui_rectangle verify_reconstructed_source)
+
+add_executable(reconstructed_gui_rectangle_tests tests/reconstructed_gui_rectangle.cpp)
+target_link_libraries(reconstructed_gui_rectangle_tests PRIVATE
+    beachlife_reconstructed_gui_rectangle)
+set_target_properties(beachlife_reconstructed_gui_rectangle reconstructed_gui_rectangle_tests
+    PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+if(MSVC)
+    target_compile_options(beachlife_reconstructed_gui_rectangle PRIVATE /GL-)
+    target_compile_options(reconstructed_gui_rectangle_tests PRIVATE /GL- /W4 /WX)
+else()
+    target_compile_options(beachlife_reconstructed_gui_rectangle PRIVATE -fno-lto)
+    target_compile_options(reconstructed_gui_rectangle_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_gui_rectangle_tests PRIVATE -fno-lto)
+endif()
+add_test(NAME reconstructed_gui_rectangle COMMAND reconstructed_gui_rectangle_tests)
+set_tests_properties(reconstructed_gui_rectangle PROPERTIES
+    LABELS "reconstructed;headless" TIMEOUT 30)
+foreach(BEACHLIFE_RECTANGLE_FATAL_CASE IN ITEMS fatal_right fatal_bottom fatal_reversed)
+    add_test(NAME reconstructed_gui_rectangle_${BEACHLIFE_RECTANGLE_FATAL_CASE}
+        COMMAND reconstructed_gui_rectangle_tests --fatal ${BEACHLIFE_RECTANGLE_FATAL_CASE})
+    set_tests_properties(reconstructed_gui_rectangle_${BEACHLIFE_RECTANGLE_FATAL_CASE}
+        PROPERTIES LABELS "reconstructed;headless" TIMEOUT 30)
+endforeach()

@@ -247,8 +247,12 @@ The GUI rectangle reader preserves the original coordinate parsing, alignment
 flags, parent-relative placement and upper-bound error path. Its complete body
 matches with verified call and data addresses; a changed centering shift is
 rejected. The original delimiter handling and arithmetic quirks remain intact.
-Native rectangle validation and its connection to screen construction follow
-separately.
+The optional native target checks literal coordinates and cursor positions,
+constructed parent bounds, untouched state and three separate fatal exits through
+the real reporter. Rectangle and existing reader tests pass Linux Release,
+sanitizers and Windows cross-builds under Wine; each changed-behaviour control is
+rejected. Complete parser and widget lifetimes and the connection to screen
+construction remain separate steps.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
