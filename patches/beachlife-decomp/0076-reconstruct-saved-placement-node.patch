@@ -1,0 +1,136 @@
+Reconstruct typed saved-placement node allocation.
+Preserve the shared pool and compiler exception cleanup.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -16,6 +16,10 @@
+ #include "startup_list_adaptor.h"
+ CircularListNode* volatile fixture_list_node;
+ CircularListValueNode* volatile fixture_value_node;
++SavedScreenPlacementNode* volatile fixture_saved_node;
++SavedScreenPlacement* volatile fixture_saved_payload;
++SavedScreenPlacement fixture_saved = { 2, 3, 7 };
++SavedScreenPlacement* fixture_saved_pointer = &fixture_saved;
+ #include "startup_frame_clock.h"
+ #include "../src/startup_screen_item.h"
+ #include "../src/startup_screen_dialog.h"
+@@ -231,6 +235,8 @@
+     fixture_list_node = fixture_adaptor.current.node;
+     ActiveScreenEntry* fixture_active_entry = 0;
+     fixture_value_node = fixture_list.CreateNode(fixture_active_entry);
++    fixture_saved_node = fixture_list.CreateNode(fixture_saved_pointer);
++    fixture_saved_payload = fixture_saved_node->placement;
+     fixture_list_node = fixture_list.Insert(fixture_list.Begin(), fixture_active_entry).node;
+     CircularListIterator fixture_search_result;
+     fixture_search_result.node = 0;
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -42,3 +42,4 @@
+ 0x004a5ec0,function,36,?MarkPrepared@ScreenDialog@@UAEXXZ
+ 0x004adda0,function,18,??0ScreenChildLink@@QAE@PAUScreenItem@@@Z
+ 0x004a5c70,function,54,?ApplyPosition@ScreenDialog@@UAEXHH@Z
++0x004e8110,function,189,?CreateNode@CircularList@@QAEPAUSavedScreenPlacementNode@@ABQAUSavedScreenPlacement@@@Z
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -2,6 +2,9 @@
+ #define STARTUP_LIST_H
+ 
+ #include "startup_active_screen.h"
++
++struct SavedScreenPlacement;
++struct SavedScreenPlacementNode;
+ 
+ // Observed node prefix only; the original value type is unknown.
+ struct CircularListNode
+@@ -37,6 +40,7 @@
+     CircularListIterator Begin() const;
+     CircularListIterator Insert(CircularListIterator position, ActiveScreenEntry* const& entry);
+     CircularListValueNode* CreateNode(ActiveScreenEntry* const& entry);
++    SavedScreenPlacementNode* CreateNode(SavedScreenPlacement* const& placement);
+ };
+ 
+ #endif
+--- /dev/null
++++ b/src/startup_placement_node.cpp
+@@ -0,0 +1,55 @@
++#include "startup_screen_placement.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e8110
++SavedScreenPlacementNode* CircularList::CreateNode(SavedScreenPlacement* const& placement)
++{
++    PoolChunkLink* block;
++    {
++        AcquirePoolLock(&pool_lock_word);
++        PoolLockGuard guard;
++        block = pool_chunk_buckets[1];
++        if (block)
++        {
++            pool_chunk_buckets[1] = block->next;
++        }
++        else
++        {
++            int count = 20;
++            char* chunk = AcquirePoolChunk(16, count);
++            block = reinterpret_cast<PoolChunkLink*>(chunk);
++            if (count != 1)
++            {
++                PoolChunkLink* next = reinterpret_cast<PoolChunkLink*>(chunk + 16);
++                pool_chunk_buckets[1] = next;
++                for (int index = 1;; ++index)
++                {
++                    PoolChunkLink* current = next;
++                    next = reinterpret_cast<PoolChunkLink*>(reinterpret_cast<char*>(next) + 16);
++                    if (count - 1 == index)
++                    {
++                        current->next = 0;
++                        break;
++                    }
++                    current->next = next;
++                }
++            }
++        }
++    }
++    SavedScreenPlacementNode* result = reinterpret_cast<SavedScreenPlacementNode*>(block);
++    try
++    {
++        new (&result->placement) SavedScreenPlacement*(placement);
++    }
++    catch (...)
++    {
++        ReturnPool(result, 16);
++        throw;
++    }
++    return result;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -494,6 +494,10 @@
+     ],
+     "startup_list_insert.cpp": [
+       "/Ob1"
++    ],
++    "startup_placement_node.cpp": [
++      "/GX",
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -579,6 +583,12 @@
+       "size": 18,
+       "name": "ScreenChildLink::ScreenChildLink",
+       "name_status": "descriptive linear-link constructor; original class, template and library provenance unknown"
++    },
++    {
++      "address": "0x004e8110",
++      "size": 189,
++      "name": "CircularList::CreateNode(SavedScreenPlacement*)",
++      "name_status": "descriptive typed saved-placement node overload; original generic type, spelling and provenance unknown"
+     }
+   ],
+   "runtime_stdcall_imports": {
