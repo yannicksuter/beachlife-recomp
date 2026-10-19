@@ -722,3 +722,33 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_tga_files PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 60)
 endif()
+
+# Append after the existing optional reconstructed-test gate in Decomp.cmake.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_indexed_palette_blit STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/indexed_palette_blit.cpp")
+    target_include_directories(beachlife_reconstructed_indexed_palette_blit PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_indexed_palette_blit PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_indexed_palette_blit verify_reconstructed_source)
+
+    add_executable(reconstructed_indexed_palette_blit_tests
+        tests/reconstructed_indexed_palette_blit.cpp)
+    target_link_libraries(reconstructed_indexed_palette_blit_tests PRIVATE
+        beachlife_reconstructed_indexed_palette_blit)
+    set_target_properties(beachlife_reconstructed_indexed_palette_blit
+        reconstructed_indexed_palette_blit_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_indexed_palette_blit PRIVATE /GL-)
+        target_compile_options(reconstructed_indexed_palette_blit_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_indexed_palette_blit PRIVATE -fno-lto)
+        target_compile_options(reconstructed_indexed_palette_blit_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_indexed_palette_blit_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_indexed_palette_blit COMMAND reconstructed_indexed_palette_blit_tests)
+    set_tests_properties(reconstructed_indexed_palette_blit PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

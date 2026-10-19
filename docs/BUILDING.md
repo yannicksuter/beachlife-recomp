@@ -713,3 +713,22 @@ cmake --preset release -B build/experimental-tga-files -DBEACHLIFE_BUILD_RECONST
 cmake --build build/experimental-tga-files --target reconstructed_tga_files_tests
 ctest --test-dir build/experimental-tga-files -R '^reconstructed_tga_files$' --output-on-failure
 ```
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`,
+`reconstructed_indexed_palette_blit_tests` exercises the reconstructed indexed
+palette blit through its own one-source archive. Source rows use a byte stride;
+destination rows use four-byte slots, and only the first halfword of each slot
+is written. The generated fixture checks literal palette words, all 256 indices,
+unequal strides and origins, zero extents, and preservation of every other buffer
+word and guard. Palette index zero is copied normally.
+
+The tested domain uses separate live buffers, bounded nonnegative dimensions,
+positive strides and representable integer arithmetic. This subsystem does not
+connect renderer storage or GPU presentation. Its partial compiler comparison
+remains separate from native behavior qualification.
+
+```sh
+cmake --preset release -B build/experimental-indexed-blit -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-indexed-blit --target reconstructed_indexed_palette_blit_tests
+ctest --test-dir build/experimental-indexed-blit -R '^reconstructed_indexed_palette_blit$' --output-on-failure
+```
