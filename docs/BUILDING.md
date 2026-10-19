@@ -852,3 +852,12 @@ blitters, surface pixel access and allocated TGA image lifetime. Generated
 literal cases cover pixels, clipping side effects and live COM Lock/Unlock
 selection. This headless subsystem test does not establish surface creation,
 GPU presentation or the original Intro screen.
+
+
+The experimental `reconstructed_renderer_rectangle_fill_tests` target checks the
+complete rectangle-fill method with real surface pixel access and error handling.
+Generated cases cover full-buffer clipping, preserved upper pixel bits, dense
+16-bit pairs and odd tails, empty spans, and live COM Lock/Unlock state changes.
+Its guarded typed renderer includes the real native rectangle queue. This
+headless test does not establish surface creation, GPU presentation or the
+original Intro screen.

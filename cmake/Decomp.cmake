@@ -1012,3 +1012,37 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_renderer_tga_draw PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+
+# The fill method uses the actual pixel-access/error-sink source and COM boundary.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_rectangle_fill STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_rectangle_fill.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_rectangle_fill PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_rectangle_fill PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_rectangle_fill PUBLIC
+        beachlife_reconstructed_surface_pixels)
+    add_dependencies(beachlife_reconstructed_renderer_rectangle_fill verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_rectangle_fill_tests
+        tests/reconstructed_renderer_rectangle_fill.cpp)
+    target_link_libraries(reconstructed_renderer_rectangle_fill_tests PRIVATE
+        beachlife_reconstructed_renderer_rectangle_fill)
+    set_target_properties(beachlife_reconstructed_renderer_rectangle_fill
+        reconstructed_renderer_rectangle_fill_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_rectangle_fill PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_rectangle_fill_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_rectangle_fill PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_rectangle_fill_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_rectangle_fill_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_rectangle_fill
+        COMMAND reconstructed_renderer_rectangle_fill_tests)
+    set_tests_properties(reconstructed_renderer_rectangle_fill PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
