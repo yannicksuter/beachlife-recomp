@@ -588,3 +588,13 @@ borrowed manager prefixes are checked for unintended writes. All reached bytes
 are accessible and every signed intermediate stays representable; missing
 bounds checks and arithmetic quirks are preserved. This qualifies the bounded
 reader, not original parser/manager lifetimes, widget construction or gameplay.
+
+
+The optional `reconstructed_gui_whitespace_tests` target selects the real
+whitespace and integer helpers from that same archive. Constructed run lengths,
+all 256 boundary-byte values, repeated calls and literal sequential inputs check
+cursor-only whitespace writes and the integer handoff. Four whitespace bytes
+advance; the other 252 values, including NUL and high bytes, remain unconsumed.
+The existing integer fixture and its expectations remain unchanged. Both tests
+use the same prepared parser declaration and guarded live prefixes, without
+supplying original parser/manager lifetimes or qualifying GUI construction.

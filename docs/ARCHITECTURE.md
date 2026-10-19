@@ -225,6 +225,10 @@ construction, widget dispatch and production integration remain separate steps.
 The GUI whitespace helper advances the parser cursor over spaces, carriage
 returns, line feeds and tabs. Its complete body also matches the retail bytes.
 The caller remains responsible for providing an accessible terminating byte.
+Its optional native target checks every boundary byte, repeated skipping and
+sequential use of the integer reader, with guards around the complete observed
+state. Both reader tests pass the same native configurations, and controls that
+change whitespace classification or arithmetic are rejected.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
