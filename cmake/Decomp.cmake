@@ -799,3 +799,25 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_tga_palette PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Registration shares the real context, link and screen-item lifetime owners.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    target_sources(beachlife_reconstructed_gui_context PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_register.cpp")
+    add_executable(reconstructed_gui_registration_tests
+        tests/reconstructed_gui_registration.cpp)
+    target_link_libraries(reconstructed_gui_registration_tests PRIVATE
+        beachlife_reconstructed_gui_context)
+    set_target_properties(reconstructed_gui_registration_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_gui_registration_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_gui_registration_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_registration_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_registration COMMAND reconstructed_gui_registration_tests)
+    set_tests_properties(reconstructed_gui_registration PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

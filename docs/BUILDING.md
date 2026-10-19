@@ -769,3 +769,23 @@ Both `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
 `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` are required. These checks use generated
 images and a paired host array-allocation provider; renderer integration and
 original allocation-failure behavior require separate qualification.
+
+With experimental reconstructed tests enabled,
+`reconstructed_gui_registration_tests` exercises the actual registration method
+and shared child-link and screen-item lifetimes. Literal cases cover named and
+unnamed insertion into two distinct lists, append order, repeated borrowed
+payloads, callback priority, receiver aliases and the final word read after a
+callback. Generated callbacks observe the real virtual interface; they do not
+implement missing retail attachment behavior.
+
+The fixture preserves the observed replacement behavior when a live list head
+has a null tail. It retains those orphaned links, clears all borrowed payloads,
+and calls the actual link destructor and paired host deletion before ending item
+lifetimes. These finite successful-allocation cases do not establish arbitrary
+graph safety, allocation or callback failure handling, full parser ownership,
+real attachment behavior or gameplay. Existing push and pop fixtures are unchanged.
+
+Build with `cmake --build build/experimental-context --target reconstructed_gui_registration_tests`
+and run `ctest --test-dir build/experimental-context -R '^reconstructed_gui_registration$' --output-on-failure`.
+Both `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` are required.
