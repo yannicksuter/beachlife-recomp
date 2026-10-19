@@ -213,6 +213,12 @@ both suppression gates, routing between stores, first-match updates and unchange
 owner state. Complete manager and game lifetimes and production integration
 remain separate steps.
 
+The reconstructed GUI integer argument reader preserves the original whitespace,
+delimiter and arithmetic rules for signed input bytes. Its complete body matches
+the retail executable byte for byte. It uses the observed parser prefix; complete
+parser construction, widget dispatch and native qualification remain separate
+steps.
+
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
 executable supplies scoped scalar allocation and deterministic platform calls;
