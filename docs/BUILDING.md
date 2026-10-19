@@ -194,7 +194,8 @@ with genuine generated Dialog objects. The optional archive publishes
 `BEACHLIFE_DECOMP_TEST_OBJECTS=1` to its consumers so every translation unit sees
 the same conditional inherited-constructor declaration. That native facility is
 off by default and supplies no original Dialog constructor or cleanup. The
-actual Dialog preparation source supplies the intermediate virtual-table entry.
+actual Dialog preparation and positioning methods supply their generated
+virtual-table entries; the positioning override is linked from its own source.
 The target disables LTO and links no VC6 release support. It requires no ISO;
 complete derived lifetimes, original allocation-failure behavior and production
 screen rendering remain separate work.

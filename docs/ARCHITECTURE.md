@@ -36,8 +36,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 70 reconstructed game functions match after address normalization,
-totaling 5,331 bytes. 33 functions also match all 1,544 raw bytes exactly.
+verified. 71 reconstructed game functions match after address normalization,
+totaling 5,385 bytes. 34 functions also match all 1,598 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
 Ten methods totaling 1,179 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
@@ -171,6 +171,13 @@ through the actual virtual preparation callback. It reloads the current link and
 sentinel after each callback, preserving changes made during traversal. Generated
 native fixtures check those transitions with real base lifetime; complete Dialog
 construction, destruction and production screen integration remain unqualified.
+
+Dialog positioning visits children with the observed type values 3 and 8,
+passing the parent's current left and top coordinates to their virtual position
+callback. It ignores its own two arguments and reloads coordinates, links and
+the sentinel as traversal proceeds. The native screen-item target includes the
+actual override; generated callback tests cover filtering and traversal changes.
+The selected retail child implementations remain separate dependencies.
 
 Linear child-link construction stores the supplied child pointer and clears
 the next link. Its original destructor and the owning container's lifetime

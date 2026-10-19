@@ -400,6 +400,7 @@ set_tests_properties(reconstructed_screen_list PROPERTIES
 # Generated objects exercise the real lifetime and callbacks. Allocation/release
 # providers belong only to this test executable; no VC6 support body is linked.
 add_library(beachlife_reconstructed_screen_item STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_position.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_prepare.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_constructor.cpp"
     "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_destructor.cpp"
