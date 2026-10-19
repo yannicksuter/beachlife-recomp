@@ -240,6 +240,13 @@ Linux Release, sanitizers and Windows cross-builds under Wine with their respect
 changed-behaviour controls rejected. Full parser construction and production
 integration remain separate steps.
 
+The GUI rectangle reader preserves the original coordinate parsing, alignment
+flags, parent-relative placement and upper-bound error path. Its complete body
+matches with verified call and data addresses; a changed centering shift is
+rejected. The original delimiter handling and arithmetic quirks remain intact.
+Native rectangle validation and its connection to screen construction follow
+separately.
+
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
 executable supplies scoped scalar allocation and deterministic platform calls;
