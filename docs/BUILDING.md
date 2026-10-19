@@ -789,3 +789,23 @@ Build with `cmake --build build/experimental-context --target reconstructed_gui_
 and run `ctest --test-dir build/experimental-context -R '^reconstructed_gui_registration$' --output-on-failure`.
 Both `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
 `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` are required.
+
+With experimental reconstructed tests enabled,
+`reconstructed_renderer_blit_kernels_tests` exercises the transparent, packed and
+masked indexed blitters through one three-source archive. All three skip zero
+indices. Transparent and masked output preserve the upper halfword of each
+four-byte destination slot; packed output uses adjacent halfwords, rounds its
+byte pitch down to a halfword count, and ignores destination Y.
+
+Twenty-two literal cases check palette words, mask bits, padded and overlapping
+rows, zero extents and a live palette/output alias in each kernel. Whole typed
+buffers and guards preserve every unlisted element. The tested arithmetic and
+array spans are bounded; negative extents, arithmetic overflow, arbitrary
+cross-type aliasing and renderer/GPU integration are separate. The existing
+nontransparent indexed-blit target and source remain unchanged.
+
+```sh
+cmake --preset release -B build/experimental-blit-kernels -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-blit-kernels --target reconstructed_renderer_blit_kernels_tests
+ctest --test-dir build/experimental-blit-kernels -R '^reconstructed_renderer_blit_kernels$' --output-on-failure
+```

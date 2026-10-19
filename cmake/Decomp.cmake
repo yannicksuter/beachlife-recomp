@@ -821,3 +821,36 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_gui_registration PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# These three call-free kernels complete the indexed DrawTga kernel family.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_blit_kernels STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/indexed_palette_blit_transparent.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/indexed_palette_blit_packed.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/indexed_palette_blit_masked.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_blit_kernels PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_blit_kernels PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_renderer_blit_kernels verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_blit_kernels_tests
+        tests/reconstructed_renderer_blit_kernels.cpp)
+    target_link_libraries(reconstructed_renderer_blit_kernels_tests PRIVATE
+        beachlife_reconstructed_renderer_blit_kernels)
+    set_target_properties(beachlife_reconstructed_renderer_blit_kernels
+        reconstructed_renderer_blit_kernels_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_blit_kernels PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_blit_kernels_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_blit_kernels PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_blit_kernels_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_blit_kernels_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_blit_kernels
+        COMMAND reconstructed_renderer_blit_kernels_tests)
+    set_tests_properties(reconstructed_renderer_blit_kernels PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
