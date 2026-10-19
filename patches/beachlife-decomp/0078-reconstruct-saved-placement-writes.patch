@@ -1,0 +1,98 @@
+Reconstruct saved screen placement writes.
+Preserve first-match updates and unchecked typed allocation/insertion.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -23,6 +23,12 @@
+ CircularListNode fixture_placement_head = { &fixture_placement_head, &fixture_placement_head };
+ CircularList fixture_placement_list = { &fixture_placement_head };
+ CircularListNode* volatile fixture_placement_inserted;
++SavedScreenPlacement* volatile fixture_written_placement;
++volatile int fixture_written_x;
++volatile int fixture_written_y;
++volatile int fixture_written_group;
++typedef char saved_placement_write_size_check[sizeof(SavedScreenPlacement) == 12 ? 1 : -1];
++typedef char saved_placement_write_store_offset_check[offsetof(ScreenPlacementStore, saved) == 0x28 ? 1 : -1];
+ #include "startup_frame_clock.h"
+ #include "../src/startup_screen_item.h"
+ #include "../src/startup_screen_dialog.h"
+@@ -183,6 +189,12 @@
+     fixture_placement_end.previous = &fixture_placement_end;
+     fixture_placement.saved.head = &fixture_placement_end;
+     fixture_placement.FindPlacement(0, 0, 0);
++    fixture_placement.WritePlacement(17, -9, 5);
++    SavedScreenPlacement* fixture_written = static_cast<SavedScreenPlacementNode*>(fixture_placement.saved.head->next)->placement;
++    fixture_written_placement = fixture_written;
++    fixture_written_x = fixture_written->x;
++    fixture_written_y = fixture_written->y;
++    fixture_written_group = fixture_written->group;
+     ScreenRequestRenderer fixture_screen_renderer = { 0 };
+     ScreenSurfacePosition fixture_screen_surface = { 0 };
+     ScreenSurfacePosition* fixture_screen_surfaces[1] = { &fixture_screen_surface };
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -44,3 +44,4 @@
+ 0x004a5c70,function,54,?ApplyPosition@ScreenDialog@@UAEXHH@Z
+ 0x004e8110,function,189,?CreateNode@CircularList@@QAEPAUSavedScreenPlacementNode@@ABQAUSavedScreenPlacement@@@Z
+ 0x004e80a0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUSavedScreenPlacement@@@Z
++0x004e6830,function,126,?WritePlacement@ScreenPlacementStore@@QAEXHHH@Z
+--- /dev/null
++++ b/src/startup_placement_write.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_placement.h"
++
++// FUNCTION: BEACHLIFE 0x004e6830
++void ScreenPlacementStore::WritePlacement(int x, int y, int group)
++{
++    SavedScreenPlacement* placement;
++    for (CircularListNode* current = saved.head->next; current != saved.head; current = current->next)
++    {
++        placement = static_cast<SavedScreenPlacementNode*>(current)->placement;
++        if (placement->group == group)
++        {
++            placement->x = x;
++            placement->y = y;
++            return;
++        }
++    }
++    placement = new SavedScreenPlacement;
++    placement->group = group;
++    placement->x = x;
++    placement->y = y;
++    saved.Insert(saved.End(), placement);
++}
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -22,6 +22,7 @@
+     CircularList saved;
+ 
+     bool FindPlacement(int group, int* x, int* y);
++    void WritePlacement(int x, int y, int group);
+ };
+ 
+ #endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -436,6 +436,12 @@
+       "size": 54,
+       "name": "ScreenDialog::ApplyPosition",
+       "name_status": "descriptive filtered child positioning and partial derived prefix; complete original Dialog and selected subtype lifetimes unqualified"
++    },
++    {
++      "address": "0x004e6830",
++      "size": 126,
++      "name": "ScreenPlacementStore::WritePlacement",
++      "name_status": "descriptive observed application placement writer; original class, complete lifetime and spelling unknown"
+     }
+   ],
+   "library_functions": [
+@@ -500,6 +506,9 @@
+       "/Ob1"
+     ],
+     "startup_placement_insert.cpp": [
++      "/Ob1"
++    ],
++    "startup_placement_write.cpp": [
+       "/Ob1"
+     ]
+   },

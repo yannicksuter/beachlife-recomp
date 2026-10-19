@@ -36,8 +36,8 @@ C++20 compilers. These are different build products; a successful native build
 is not a matching result.
 The initial candidate is Visual C++ 6.0 SP4. Its compiler stamp agrees with
 the dominant Rich-header record, and the generated PDB/comparison fixture is
-verified. 71 reconstructed game functions match after address normalization,
-totaling 5,385 bytes. 34 functions also match all 1,598 raw bytes exactly.
+verified. 73 reconstructed game functions match after address normalization,
+totaling 5,566 bytes. 34 functions also match all 1,598 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
 Twelve methods totaling 1,406 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
@@ -196,9 +196,56 @@ preserves the typed reference, iterator result and observed link-update order.
 These methods are qualified for matching. The native profile sizes saved-node
 slots from the host type and explicitly starts node and free-link lifetimes.
 The optional `beachlife_reconstructed_screen_placements` archive composes node
-allocation, insertion, lookup and recycling. Generated caller-owned records
-qualify duplicate-group selection, unchanged miss outputs and repeated cleanup;
+allocation, insertion, writes, lookup and recycling. Generated fixtures qualify
+first-match updates among owned and borrowed duplicates, unchanged miss outputs,
+allocation-free updates, node reuse and repeated cleanup. Teardown returns nodes
+and deletes each owned record once while leaving borrowed records alive;
 complete store lifetime and production integration remain separate steps.
+
+Saved-position writes update the first record with the requested group, or
+allocate a record and append it through the reconstructed insertion method.
+The writer matches the complete original body, including both return paths.
+The reconstructed manager wrapper suppresses saving when either the current
+or previous mode equals 6. Otherwise it forwards the rectangle's left/top and
+group through the actual game placement pointer. The optional saved-placement
+target exercises this wrapper with generated manager and game prefixes, checking
+both suppression gates, routing between stores, first-match updates and unchanged
+owner state. Complete manager and game lifetimes and production integration
+remain separate steps.
+
+The reconstructed GUI integer argument reader preserves the original whitespace,
+delimiter and arithmetic rules for signed input bytes. Its complete body matches
+the retail executable byte for byte. The optional native integer-reader target
+checks literal and generated inputs, repeated calls, cursor movement and untouched
+surrounding state through guarded live prefixes. The bounded cases pass Linux
+Release, address/undefined/leak sanitizers and Windows cross-builds under Wine;
+a changed multiplier is rejected in each configuration. Complete parser
+construction, widget dispatch and production integration remain separate steps.
+
+The GUI whitespace helper advances the parser cursor over spaces, carriage
+returns, line feeds and tabs. Its complete body also matches the retail bytes.
+The caller remains responsible for providing an accessible terminating byte.
+Its optional native target checks every boundary byte, repeated skipping and
+sequential use of the integer reader, with guards around the complete observed
+state. Both reader tests pass the same native configurations, and controls that
+change whitespace classification or arithmetic are rejected.
+
+The GUI text argument reader preserves the original byte-copy, whitespace and
+delimiter rules, including copying embedded NUL bytes. Its complete body matches
+the retail bytes, and a changed brace delimiter is rejected. Callers must supply
+accessible input and enough output storage. The optional native text target checks
+literal output and cursor expectations, every byte value, long bounded copies and
+sequences with the real whitespace and integer readers. All three targets pass
+Linux Release, sanitizers and Windows cross-builds under Wine with their respective
+changed-behaviour controls rejected. Full parser construction and production
+integration remain separate steps.
+
+The GUI rectangle reader preserves the original coordinate parsing, alignment
+flags, parent-relative placement and upper-bound error path. Its complete body
+matches with verified call and data addresses; a changed centering shift is
+rejected. The original delimiter handling and arithmetic quirks remain intact.
+Native rectangle validation and its connection to screen construction follow
+separately.
 
 `beachlife_reconstructed_screen_list` exercises those prepared methods together,
 including insertion, traversal, chunk allocation and recycling. The test
