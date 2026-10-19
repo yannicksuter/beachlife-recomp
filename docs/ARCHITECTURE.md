@@ -39,7 +39,7 @@ the dominant Rich-header record, and the generated PDB/comparison fixture is
 verified. 64 reconstructed game functions match after address normalization,
 totaling 5,073 bytes. 30 functions also match all 1,436 raw bytes exactly.
 Separate reconstructed library support totals 35 bytes across three methods.
-Seven methods totaling 934 bytes also match after address normalization; their
+Eight methods totaling 1,123 bytes also match after address normalization; their
 game/library provenance remains unclassified and is counted separately.
 Three of those methods match all 106 raw bytes exactly.
 The full game layout remains unknown.
@@ -139,6 +139,12 @@ fallback acquisition, wait values, adaptive state and cleanup after normal or
 exceptional host lifetimes. The test providers use distinct symbols so they can
 coexist with the host CRT's system imports. Operating-system synchronization,
 concurrent access and original parent unwind behavior remain unqualified.
+
+Screen-list node allocation is reconstructed for the matching target, including
+its compiler-generated cleanup and exception metadata. It shares one inline
+pool-lock guard definition with the existing consumers. Its fixed 16-byte retail
+slot cannot hold the corresponding 64-bit node; native allocation and object
+lifetimes require a separate faithful portability patch before runtime use.
 
 See [reconstructed subsystem tests](BUILDING.md#reconstructed-subsystem-tests)
 for the pinned build and verification commands.
