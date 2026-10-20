@@ -45,7 +45,8 @@ class UpdateService
         UpdateChannel channel = UpdateChannel::Release;
         std::string error; // CheckFailed, InstallFailed
         std::optional<PublishedBuild> offer;
-        std::string install_blocker; // why Update can only open the release page
+        std::optional<PullRequestInfo> pull; // a test build offer's pull request, when known
+        std::string install_blocker;         // why Update can only open the release page
         std::uint64_t received = 0, total = 0;
         std::int64_t checked = 0; // when the last check succeeded, seconds since 1970
     };

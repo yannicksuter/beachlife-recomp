@@ -551,7 +551,8 @@ For an actual desktop screenshot (then exit), use:
 preselects a disc image without saving it automatically. Screenshot and smoke
 runs never check for updates; `--update-preview STATE` shows a made-up update
 state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
-`downloading`, `failed` or `installfailed`).
+`downloading`, `failed` or `installfailed`); a `-dialog` suffix (`test-dialog`)
+also opens the update dialog.
 
 `--play` opens the game window with saved settings (or `--config` and `--source`),
 then prepares or reuses game data behind its loading screen, as Play does. `--cache-directory folder`

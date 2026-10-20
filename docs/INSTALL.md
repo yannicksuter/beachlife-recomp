@@ -88,6 +88,11 @@ performance monitoring access).
 The footer's left side checks for updates: the refresh button checks now, the
 **Release / Test** switch chooses between published releases and pull requests'
 test builds (saved at once), and the status shows what the last check found.
+When the check at start finds a newer build, the **Update** dialog opens with
+its release notes (or, for a test build, its pull request's description); the
+refresh button and the switch also open it for a switch to a test build or back
+to a release. **Later** closes it (after the switch it also restores the previous
+choice); the footer's button opens it again. Nothing is installed without asking.
 **Update** (or **Install**, for a switch to a test build or back to a release)
 downloads the package for your system, checks it against GitHub's SHA-256,
 verifies every file against its `SOURCE-MANIFEST.json`, replaces only the

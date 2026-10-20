@@ -78,6 +78,7 @@ struct PackageAsset
 struct PublishedBuild
 {
     std::string tag, title, page;
+    std::string notes; // the release's Markdown body
     bool test = false;
     int pull_request = 0; // test builds
     PortVersion version;
@@ -92,6 +93,15 @@ struct PublishedBuild
 // and test builds; drafts, other prereleases and entries without a recognizable
 // version are left out.
 std::vector<PublishedBuild> parse_releases(const platform::JsonValue& releases);
+
+// A test build's pull request (GET /repos/{owner}/{name}/pulls/{number}): its
+// title and description are the build's notes.
+struct PullRequestInfo
+{
+    int number = 0;
+    std::string title, body, page;
+};
+PullRequestInfo parse_pull_request(const platform::JsonValue& pull);
 
 // The newest build the channel offers that has a package for this build and is
 // newer than it, or null. A test build follows its pull request's test builds
@@ -130,5 +140,6 @@ std::string format_utc_time(std::int64_t seconds); // "2026-10-17 17:58 UTC"
 std::string releases_api_url(const std::string& repository);
 std::string releases_page_url(const std::string& repository);
 std::string pull_request_page_url(const std::string& repository, int number);
+std::string pull_request_api_url(const std::string& repository, int number);
 
 } // namespace beachlife::launcher

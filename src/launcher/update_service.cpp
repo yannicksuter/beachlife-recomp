@@ -150,6 +150,7 @@ void UpdateService::check(UpdateChannel channel)
             status.channel = channel;
             status.error.clear();
             status.offer.reset();
+            status.pull.reset();
             status.install_blocker.clear();
         },
         [this, channel, cancel]
@@ -208,12 +209,37 @@ void UpdateService::run_check(UpdateChannel channel, std::shared_ptr<platform::H
             return;
         }
         PublishedBuild offer = *found;
+        // A test build's notes are its pull request's description.
+        std::optional<PullRequestInfo> pull;
+        if (offer.test)
+        {
+            try
+            {
+                const auto reply = platform::http_get(github_request(
+                    pull_request_api_url(build_.repository, offer.pull_request), build_, cancel));
+                if (reply.status == 200)
+                {
+                    pull = parse_pull_request(platform::parse_json(reply.body));
+                }
+            }
+            catch (const platform::HttpError& error)
+            {
+                if (error.cancelled())
+                {
+                    throw;
+                }
+            }
+            catch (const std::exception&)
+            {
+            }
+        }
         const std::string blocker = install_blocker(base_);
         set(
             [&](Status& status)
             {
                 status.state = State::Available;
                 status.offer = std::move(offer);
+                status.pull = std::move(pull);
                 status.install_blocker = blocker;
                 status.checked = std::time(nullptr);
             });
@@ -389,6 +415,14 @@ bool UpdateService::preview(std::string_view state)
     PortVersion next = self.valid() ? self : parse_version("0.0.1");
     ++next.patch;
     next.commit = "4f2a9c81d03e";
+    const std::string release_notes =
+        "A made-up release that shows how release notes look in the launcher.\n\n"
+        "## Launcher\n- **Updates** ask before they install and restart the launcher; settings "
+        "stay.\n- The `Release / Test` switch chooses between releases and test builds.\n\n"
+        "## Game\n- More of the reconstructed front end runs natively.";
+    const std::string pull_notes =
+        "Promotes `main` to `stable`.\n\n## To try\n- Switch to **Test** in the footer and "
+        "install this build.\n- Switch back to **Release** to return to the official release.";
     Status status;
     status.checked = std::time(nullptr) - 120;
     if (state == "uptodate")
@@ -408,6 +442,8 @@ bool UpdateService::preview(std::string_view state)
              state == "installing" || state == "installfailed")
     {
         status.offer = made_up(false, 0, next);
+        status.offer->title = "Beach Life " + version_number(next);
+        status.offer->notes = release_notes;
         status.state = state == "downloading"     ? State::Downloading
                        : state == "installing"    ? State::Installing
                        : state == "installfailed" ? State::InstallFailed
@@ -430,6 +466,13 @@ bool UpdateService::preview(std::string_view state)
         version.commit = "b81e07c4a2d9";
         status.channel = UpdateChannel::Test;
         status.offer = made_up(true, 3, version);
+        status.offer->title = "Beach Life test build: PR #3";
+        PullRequestInfo pull;
+        pull.number = 3;
+        pull.title = "Promote main to stable";
+        pull.body = pull_notes;
+        pull.page = status.offer->page;
+        status.pull = std::move(pull);
         status.state = State::Available;
     }
     else if (state == "back")
@@ -439,6 +482,8 @@ bool UpdateService::preview(std::string_view state)
         PortVersion release = self.valid() ? self : parse_version("0.0.1");
         release.commit = "6144eb682311";
         status.offer = made_up(false, 0, release);
+        status.offer->title = "Beach Life " + version_number(release);
+        status.offer->notes = release_notes;
         status.state = State::Available;
     }
     else

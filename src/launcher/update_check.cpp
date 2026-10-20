@@ -271,6 +271,7 @@ std::vector<PublishedBuild> parse_releases(const platform::JsonValue& releases)
         }
         build.title = item["name"].text();
         build.page = item["html_url"].text();
+        build.notes = item["body"].text();
         build.published = parse_utc_time(item["published_at"].text());
         for (const auto& entry : item["assets"].items())
         {
@@ -303,6 +304,16 @@ std::vector<PublishedBuild> parse_releases(const platform::JsonValue& releases)
         builds.push_back(std::move(build));
     }
     return builds;
+}
+
+PullRequestInfo parse_pull_request(const platform::JsonValue& pull)
+{
+    PullRequestInfo info;
+    info.number = static_cast<int>(pull["number"].integer().value_or(0));
+    info.title = pull["title"].text();
+    info.body = pull["body"].text();
+    info.page = pull["html_url"].text();
+    return info;
 }
 
 const PublishedBuild* find_update(
@@ -526,6 +537,11 @@ std::string releases_page_url(const std::string& repository)
 std::string pull_request_page_url(const std::string& repository, int number)
 {
     return "https://github.com/" + repository + "/pull/" + std::to_string(number);
+}
+
+std::string pull_request_api_url(const std::string& repository, int number)
+{
+    return "https://api.github.com/repos/" + repository + "/pulls/" + std::to_string(number);
 }
 
 } // namespace beachlife::launcher

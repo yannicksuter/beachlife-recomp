@@ -1,6 +1,7 @@
 // The launcher's update check and in-place installation without network: JSON,
 // SHA-256, GitHub's release answers, the choice of an update, and unpacking and
 // installing packages tests/launcher_update_fixture.py writes like tools/package_build.py.
+#include "launcher/release_notes.h"
 #include "launcher/update_check.h"
 #include "launcher/update_install.h"
 #include "platform/json.h"
@@ -537,6 +538,38 @@ void test_install(const fs::path& fixtures, const fs::path& work)
 }
 } // namespace
 
+void test_notes()
+{
+    const auto blocks = parse_release_notes(
+        "Intro **bold** and `code`,\r\nwrapped [link](https://x/y) ![img](a.png)<br>\n\n"
+        "<!-- hidden -->## Changes ##\n- one\n  - nested\n3) three\n\n---\n```\nraw *text*\n```\n");
+    check(blocks.size() == 7, "Notes blocks");
+    if (blocks.size() == 7)
+    {
+        const auto& intro = blocks[0].spans;
+        check(blocks[0].kind == NoteBlock::Kind::Paragraph && intro.size() == 7 &&
+                  intro[1].style == NoteSpan::Style::Strong && intro[1].text == "bold" &&
+                  intro[3].style == NoteSpan::Style::Code && intro[4].text == ", wrapped " &&
+                  intro[5].style == NoteSpan::Style::Link && intro[5].text == "link" &&
+                  intro[6].text == " ",
+            "Notes paragraph spans, lines joined, images and tags dropped");
+        check(blocks[1].kind == NoteBlock::Kind::Heading && blocks[1].level == 2 &&
+                  blocks[1].spans[0].text == "Changes",
+            "Notes heading after a comment");
+        check(blocks[2].kind == NoteBlock::Kind::Item && blocks[2].level == 0 &&
+                  blocks[3].level == 1 && blocks[4].marker == "3.",
+            "Notes list items");
+        check(blocks[5].kind == NoteBlock::Kind::Rule && blocks[6].kind == NoteBlock::Kind::Code &&
+                  blocks[6].spans[0].text == "raw *text*",
+            "Notes rule and code");
+    }
+    const auto pull = parse_pull_request(platform::parse_json(
+        R"({"number":3,"title":"Promote","body":null,"html_url":"https://github.com/o/r/pull/3"})"));
+    check(pull.number == 3 && pull.title == "Promote" && pull.body.empty() &&
+              pull_request_api_url("o/r", 3) == "https://api.github.com/repos/o/r/pulls/3",
+        "Pull request description");
+}
+
 int main(int argc, char** argv)
 {
     if (argc != 2)
@@ -554,6 +587,7 @@ int main(int argc, char** argv)
         test_sha256();
         test_versions();
         test_releases();
+        test_notes();
         test_unpack(fixtures, work);
         test_install(fixtures, work);
     }

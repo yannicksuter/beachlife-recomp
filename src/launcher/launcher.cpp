@@ -3,6 +3,7 @@
 #include "content_service.h"
 #include "image.h"
 #include "platform/app_icon.h"
+#include "release_notes.h"
 #include "ui.h"
 #include "update_install.h"
 #include "update_service.h"
@@ -16,10 +17,12 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
@@ -49,6 +52,14 @@ void require(bool condition, const char* message)
     {
         throw std::runtime_error(std::string(message) + ": " + SDL_GetError());
     }
+}
+
+// A download's size, "9.3 MB".
+std::string megabytes(std::uint64_t bytes)
+{
+    char text[32];
+    std::snprintf(text, sizeof text, "%.1f MB", static_cast<double>(bytes) / (1024.0 * 1024.0));
+    return text;
 }
 
 // The settings file: --config, or launcher.cfg in the per-user preferences folder.
@@ -191,6 +202,7 @@ class Launcher
             consume_dialog();
             poll_content();
             update_ = updates_->snapshot();
+            prompt_update();
             // The new files are in place: restart into them, after any unsaved settings.
             if (update_.state == UpdateService::State::Installed && !restart_)
             {
@@ -227,6 +239,7 @@ class Launcher
                 }
                 close_requested_ = false;
             }
+            draw_update_dialog();
             if (!draw_close_prompt())
             {
                 running = false;
@@ -379,14 +392,22 @@ class Launcher
         }
         if (!options_.update_preview.empty())
         {
-            if (!updates_->preview(options_.update_preview))
+            // "<state>-dialog" also opens the update dialog.
+            std::string state = options_.update_preview;
+            constexpr std::string_view dialog = "-dialog";
+            update_dialog_ = state.size() > dialog.size() && state.ends_with(dialog);
+            if (update_dialog_)
+            {
+                state.resize(state.size() - dialog.size());
+            }
+            if (!updates_->preview(state))
             {
                 throw std::runtime_error("Unknown update preview state.");
             }
         }
         else if (settings_.updates.check && !offline)
         {
-            updates_->check(update_channel());
+            check_updates(UpdatePrompt::Newer, update_channel());
         }
         ramp_ = create_ramp(renderer_);
         spot_ = create_spot(renderer_);
@@ -1674,11 +1695,59 @@ class Launcher
                                                              : UpdateChannel::Release;
     }
 
-    // The Release / Test switch is saved at once, without other unsaved changes, and checks again.
+    // The update dialog opens by itself when a check finds a build: after the start
+    // only for a newer one; after the refresh button or the Release / Test switch also
+    // for a switch to a test build or the way back to the release.
+    enum class UpdatePrompt
+    {
+        None,
+        Newer,
+        Any
+    };
+
+    void check_updates(UpdatePrompt prompt, UpdateChannel channel)
+    {
+        update_prompt_ = prompt;
+        updates_->check(channel);
+    }
+
+    // Once the check that asked for it is done: the dialog, when it found what was asked.
+    void prompt_update()
+    {
+        if (update_prompt_ == UpdatePrompt::None || update_.state == UpdateService::State::Checking)
+        {
+            return;
+        }
+        if (update_.state == UpdateService::State::Available && update_.offer)
+        {
+            const auto& build = updates_->build();
+            const OfferKind kind = classify_offer(build, *update_.offer);
+            update_dialog_ = update_prompt_ == UpdatePrompt::Any || kind == OfferKind::Update ||
+                             (kind == OfferKind::TestBuild && is_newer(build, *update_.offer));
+        }
+        // Nothing to install: the switch stands.
+        if (!update_dialog_)
+        {
+            switch_from_.reset();
+        }
+        update_prompt_ = UpdatePrompt::None;
+    }
+
+    // The Release / Test switch is saved at once, without other unsaved changes, and
+    // checks again. It holds when something gets installed or nothing is offered; Later
+    // in the update dialog brings the previous choice back, since nothing changed.
     void select_channel(UpdateChannel channel)
     {
-        const UpdateChoice choice =
-            channel == UpdateChannel::Test ? UpdateChoice::Test : UpdateChoice::Release;
+        if (!switch_from_)
+        {
+            switch_from_ = settings_.updates.channel;
+        }
+        save_channel(channel == UpdateChannel::Test ? UpdateChoice::Test : UpdateChoice::Release);
+        check_updates(UpdatePrompt::Any, channel);
+    }
+
+    void save_channel(UpdateChoice choice)
+    {
         settings_.updates.channel = choice;
         Settings stored = saved_;
         stored.updates.channel = choice;
@@ -1691,7 +1760,33 @@ class Launcher
         {
             show_notice(error.what());
         }
-        updates_->check(channel);
+    }
+
+    // Later (or Escape) in the update dialog.
+    void dismiss_update_dialog()
+    {
+        ImGui::CloseCurrentPopup();
+        if (switch_from_)
+        {
+            const UpdateChoice previous = *switch_from_;
+            switch_from_.reset();
+            save_channel(previous);
+            check_updates(UpdatePrompt::None, update_channel());
+        }
+    }
+
+    void install_update()
+    {
+        switch_from_.reset();
+        updates_->install();
+    }
+
+    void open_page(const std::string& url)
+    {
+        if (!SDL_OpenURL(url.c_str()))
+        {
+            show_notice(std::string("Cannot open the page: ") + SDL_GetError());
+        }
     }
 
     void draw_footer(ImDrawList* draw, ImVec2 display, float side, float footer)
@@ -1759,7 +1854,7 @@ class Launcher
         if (ui::icon_button(
                 "refresh", Icon::Refresh, "Check for updates", {left, top}, height, !busy))
         {
-            updates_->check(update_channel());
+            check_updates(UpdatePrompt::Any, update_channel());
         }
         left += height + dp(10);
         int channel = update_channel() == UpdateChannel::Test ? 1 : 0;
@@ -1906,16 +2001,17 @@ class Launcher
             return;
         }
         const ImVec2 button{at.x + room - action_width, at.y - height * 0.5f};
-        if (update_.state == State::Available && update_.install_blocker.empty())
+        if (update_.state == State::Available)
         {
+            // The dialog shows what the build changes before anything is installed.
             if (ui::primary_button("update",
                     action.c_str(),
                     Icon::Download,
                     button,
                     {action_width, height},
-                    !content_status_.busy() && !play_))
+                    !play_))
             {
-                updates_->install();
+                update_dialog_ = true;
             }
         }
         else if (ui::secondary_button("update",
@@ -1932,10 +2028,6 @@ class Launcher
             else if (update_.state == State::InstallFailed)
             {
                 updates_->install();
-            }
-            else if (!SDL_OpenURL(update_.offer->page.c_str()))
-            {
-                show_notice(std::string("Cannot open the page: ") + SDL_GetError());
             }
         }
     }
@@ -2067,6 +2159,474 @@ class Launcher
         return open;
     }
 
+    // What the offered build is and changes, then its download and installation, over
+    // the dimmed launcher.
+    void draw_update_dialog()
+    {
+        if (update_dialog_ && update_.offer)
+        {
+            ImGui::OpenPopup("Update");
+        }
+        update_dialog_ = false;
+        const auto display = ImGui::GetIO().DisplaySize;
+        ImGui::SetNextWindowPos(
+            {display.x * 0.5f, display.y * 0.5f}, ImGuiCond_Always, {0.5f, 0.5f});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {dp(28), dp(24)});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, dp(18));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1);
+        if (ImGui::BeginPopupModal("Update",
+                nullptr,
+                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
+                    ImGuiWindowFlags_NoMove))
+        {
+            // A new check, or the installed update restarting, ends the dialog.
+            if (!update_.offer || update_.state == UpdateService::State::Installed)
+            {
+                ImGui::CloseCurrentPopup();
+            }
+            else
+            {
+                draw_update_contents(*update_.offer, std::min(dp(560), display.x - dp(104)));
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleVar(3);
+    }
+
+    void draw_update_contents(const PublishedBuild& offer, float width)
+    {
+        using State = UpdateService::State;
+        auto* draw = ImGui::GetWindowDrawList();
+        const auto& build = updates_->build();
+        const OfferKind kind = classify_offer(build, offer);
+        const ImVec4 tint = kind == OfferKind::Update      ? color::sun
+                            : kind == OfferKind::TestBuild ? color::amber
+                                                           : color::lagoon;
+        const float caption = ui::font_size(Font::Caption);
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        float y = pos.y;
+
+        // What kind of build it is, which one and its title.
+        const char* overline = kind == OfferKind::TestBuild       ? "INSTALL TEST BUILD"
+                               : kind == OfferKind::BackToRelease ? "INSTALL RELEASE"
+                               : offer.test                       ? "NEW TEST BUILD"
+                                                                  : "UPDATE AVAILABLE";
+        ui::icon(draw, Icon::Download, {pos.x + dp(8), y + caption * 0.5f}, dp(15), col(tint));
+        ui::tracked(draw, Font::Caption, {pos.x + dp(24), y}, col(tint), overline, dp(1.4f));
+        y += caption + dp(10);
+        const std::string headline = offer.test
+                                         ? "Pull request #" + std::to_string(offer.pull_request)
+                                         : "Version " + version_number(offer.version);
+        ui::text_bold(draw, Font::Heading, {pos.x, y}, col(color::text), headline.c_str());
+        y += ui::font_size(Font::Heading) + dp(6);
+        std::string title = offer.test && update_.pull && !update_.pull->title.empty()
+                                ? update_.pull->title
+                                : offer.title;
+        if (title == "Beach Life " + version_number(offer.version))
+        {
+            title.clear(); // the headline says it
+        }
+        if (!title.empty())
+        {
+            ui::text(draw, Font::Body, {pos.x, y}, col(color::muted), title.c_str(), width);
+            y += ui::text_size(Font::Body, title.c_str(), width).y;
+        }
+        y += dp(12);
+
+        // From the running build to the offered one (equal numbers differ in their
+        // commits), then its date and the download's size.
+        const PortVersion mine = parse_version(build.version);
+        const bool same_number = compare_versions(mine, offer.version) == 0;
+        auto describe = [same_number](const PortVersion& version, const std::string& what)
+        {
+            std::string text = version_number(version);
+            if (same_number && !version.commit.empty())
+            {
+                text += " (" + version.commit.substr(0, 8) + ")";
+            }
+            return text + "  \xC2\xB7  " + what;
+        };
+        const std::string from = describe(mine,
+            build.origin == BuildOrigin::Release ? "Release"
+            : build.origin == BuildOrigin::Test
+                ? "Test build #" + std::to_string(build.pull_request)
+                : "Local build");
+        const std::string to = describe(offer.version,
+            offer.test ? "Test build #" + std::to_string(offer.pull_request) : "Release");
+        ui::text(draw, Font::Caption, {pos.x, y}, col(color::muted), from.c_str());
+        float x = pos.x + ui::text_size(Font::Caption, from.c_str()).x + dp(8);
+        ui::icon(draw, Icon::Chevron, {x + dp(7), y + caption * 0.55f}, dp(14), col(color::dim));
+        x += dp(22);
+        ui::text(draw, Font::Caption, {x, y}, col(ui::mix(color::text, tint, 0.3f)), to.c_str());
+        y += caption + dp(6);
+        const PackageAsset* asset = offer.package_for(build.package);
+        std::string meta = offer.published ? "Published " + format_utc_time(offer.published) : "";
+        if (asset && asset->size)
+        {
+            meta += (meta.empty() ? "" : "  \xC2\xB7  ") + megabytes(asset->size);
+        }
+        if (!meta.empty())
+        {
+            ui::text(draw, Font::Caption, {pos.x, y}, col(color::dim), meta.c_str());
+            y += caption + dp(6);
+        }
+        y += dp(14);
+
+        // A box of text with an icon: what a switch means, or what went wrong.
+        auto callout = [&](const std::string& text, const ImVec4& ink, Icon kind_icon)
+        {
+            const float inner = width - dp(56);
+            const float height = ui::text_size(Font::Body, text.c_str(), inner).y + dp(24);
+            draw->AddRectFilled({pos.x, y}, {pos.x + width, y + height}, col(ink, 0.08f), dp(12));
+            draw->AddRect({pos.x, y}, {pos.x + width, y + height}, col(ink, 0.28f), dp(12));
+            ui::icon(draw,
+                kind_icon,
+                {pos.x + dp(22), y + dp(12) + ui::font_size(Font::Body) * 0.55f},
+                dp(17),
+                col(ink));
+            ui::text(draw,
+                Font::Body,
+                {pos.x + dp(42), y + dp(12)},
+                col(color::text, 0.9f),
+                text.c_str(),
+                inner);
+            y += height + dp(18);
+        };
+        bool explained = false;
+        if (kind != OfferKind::Update)
+        {
+            std::string meaning;
+            if (kind == OfferKind::TestBuild && build.origin == BuildOrigin::Test)
+            {
+                meaning = "This replaces test build #" + std::to_string(build.pull_request) +
+                          " by test build #" + std::to_string(offer.pull_request) +
+                          ", whose updates you then get. Release in the footer takes you back "
+                          "to the official release.";
+            }
+            else if (kind == OfferKind::TestBuild)
+            {
+                meaning = "Test builds have changes that are not released yet, to try them "
+                          "early; they can have new problems. Release in the footer takes you "
+                          "back.";
+            }
+            else
+            {
+                meaning = "This replaces your test build by the official release: changes that "
+                          "are not released yet go away. Your settings stay.";
+            }
+            callout(meaning, tint, kind == OfferKind::TestBuild ? Icon::Warning : Icon::Info);
+            explained = true;
+        }
+
+        // The release notes, or the test build's pull request description; the text
+        // fades out where it scrolls.
+        ui::tracked(draw,
+            Font::Caption,
+            {pos.x, y},
+            col(color::dim),
+            offer.test ? "PULL REQUEST" : "RELEASE NOTES",
+            dp(1.2f));
+        y += caption + dp(10);
+        const std::string& source = offer.test && update_.pull ? update_.pull->body : offer.notes;
+        if (source != notes_source_)
+        {
+            notes_source_ = source;
+            notes_ = parse_release_notes(source);
+        }
+        float notes_room = ImGui::GetIO().DisplaySize.y * 0.36f;
+        notes_room -= explained ? dp(64) : 0;
+        notes_room -=
+            update_.state == State::InstallFailed || !update_.install_blocker.empty() ? dp(56) : 0;
+        ImGui::SetCursorScreenPos({pos.x, y});
+        ImGui::SetNextWindowSizeConstraints(
+            {0, dp(24)}, {FLT_MAX, std::clamp(notes_room, dp(90), dp(320))});
+        ImGui::BeginChild("##notes",
+            {width, 0},
+            ImGuiChildFlags_AutoResizeY,
+            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoNav);
+        {
+            const float text_width =
+                ImGui::GetContentRegionAvail().x - (ImGui::GetScrollMaxY() > 0 ? dp(10) : 0);
+            if (notes_.empty())
+            {
+                const char* none = "No notes were published for this build.";
+                ui::text(ImGui::GetWindowDrawList(),
+                    Font::Body,
+                    ImGui::GetCursorScreenPos(),
+                    col(color::muted),
+                    none,
+                    text_width);
+                ImGui::Dummy({text_width, ui::text_size(Font::Body, none, text_width).y});
+            }
+            else
+            {
+                draw_release_notes(notes_, text_width);
+            }
+            const float scroll = ImGui::GetScrollY(), scroll_max = ImGui::GetScrollMaxY();
+            if (scroll_max > 0)
+            {
+                auto* notes_draw = ImGui::GetWindowDrawList();
+                const ImVec2 at = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+                const float fade = dp(28), right = at.x + size.x - ImGui::GetStyle().ScrollbarSize;
+                const ImVec4 fill = ImGui::GetStyleColorVec4(ImGuiCol_PopupBg);
+                const ImU32 solid = col(fill), clear = col(fill, 0);
+                if (scroll < scroll_max - 0.5f)
+                {
+                    notes_draw->AddRectFilledMultiColor({at.x, at.y + size.y - fade},
+                        {right, at.y + size.y},
+                        clear,
+                        clear,
+                        solid,
+                        solid);
+                }
+                if (scroll > 0.5f)
+                {
+                    notes_draw->AddRectFilledMultiColor(
+                        at, {right, at.y + fade}, solid, solid, clear, clear);
+                }
+            }
+        }
+        ImGui::EndChild();
+        y = ImGui::GetItemRectMax().y + dp(18);
+
+        // Progress or problems, above the actions.
+        if (update_.state == State::Downloading)
+        {
+            const float fraction =
+                update_.total
+                    ? std::min(1.0f,
+                          static_cast<float>(update_.received) / static_cast<float>(update_.total))
+                    : 0.0f;
+            draw->AddRectFilled(
+                {pos.x, y}, {pos.x + width, y + dp(4)}, col(color::white, 0.12f), dp(2));
+            if (fraction > 0)
+            {
+                ui::gradient(draw,
+                    {pos.x, y},
+                    {pos.x + std::max(dp(4), width * fraction), y + dp(4)},
+                    col(color::sun),
+                    col(color::coral),
+                    dp(2),
+                    true);
+            }
+            y += dp(12);
+            const std::string progress =
+                "Downloading  \xC2\xB7  " + megabytes(update_.received) +
+                (update_.total ? " of " + megabytes(update_.total) : std::string());
+            ui::text(draw, Font::Caption, {pos.x, y}, col(color::muted), progress.c_str());
+            if (update_.total)
+            {
+                const std::string percent =
+                    std::to_string(update_.received * 100 / update_.total) + "%";
+                ui::text(draw,
+                    Font::Caption,
+                    {pos.x + width - ui::text_size(Font::Caption, percent.c_str()).x, y},
+                    col(color::text),
+                    percent.c_str());
+            }
+            y += caption + dp(18);
+        }
+        else if (update_.state == State::Installing)
+        {
+            ui::spinner(draw, {pos.x + dp(8), y + caption * 0.5f}, dp(6), col(color::lagoon));
+            ui::text(draw,
+                Font::Caption,
+                {pos.x + dp(24), y},
+                col(color::muted),
+                "Installing\xE2\x80\xA6");
+            y += caption + dp(18);
+        }
+        else if (update_.state == State::InstallFailed)
+        {
+            callout(update_.error, color::coral, Icon::Warning);
+        }
+        else if (!update_.install_blocker.empty())
+        {
+            callout(update_.install_blocker +
+                        " Download the package and unpack it over this folder instead.",
+                color::muted,
+                Icon::Info);
+        }
+
+        // The build's page on GitHub on the left, the actions on the right.
+        draw->AddRectFilled({pos.x, y}, {pos.x + width, y + 1}, col(color::white, 0.08f));
+        y += dp(18);
+        const float height = dp(42), right = pos.x + width;
+        if (ui::secondary_button(
+                "update_page", "GitHub", Icon::Link, {pos.x, y}, {dp(124), height}))
+        {
+            open_page(offer.page);
+        }
+        const bool can_install = !content_status_.busy() && !play_;
+        const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        if (update_.state == State::Downloading)
+        {
+            if (ui::secondary_button(
+                    "update_cancel", "Cancel", Icon::None, {right - dp(108), y}, {dp(108), height}))
+            {
+                updates_->cancel();
+            }
+            // The download goes on in the footer.
+            if (ui::secondary_button(
+                    "update_hide", "Hide", Icon::None, {right - dp(226), y}, {dp(108), height}) ||
+                escape)
+            {
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        else if (update_.state == State::Installing)
+        {
+            ui::primary_button("update_install",
+                "Installing\xE2\x80\xA6",
+                Icon::None,
+                {right - dp(160), y},
+                {dp(160), height},
+                false);
+        }
+        else
+        {
+            const bool blocked = !update_.install_blocker.empty();
+            const char* action = update_.state == State::InstallFailed ? "Retry"
+                                 : blocked                             ? "Download"
+                                 : kind == OfferKind::Update           ? "Update"
+                                                                       : "Install";
+            if (ui::primary_button("update_install",
+                    action,
+                    Icon::Download,
+                    {right - dp(160), y},
+                    {dp(160), height},
+                    blocked || can_install))
+            {
+                if (blocked)
+                {
+                    open_page(offer.page);
+                }
+                else
+                {
+                    install_update();
+                }
+            }
+            if (!blocked && !can_install &&
+                ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            {
+                ImGui::SetTooltip("%s",
+                    play_ ? "Close the game window first."
+                          : "Wait until your game files are checked.");
+            }
+            if (ui::secondary_button(
+                    "update_later", "Later", Icon::None, {right - dp(278), y}, {dp(108), height}) ||
+                escape)
+            {
+                dismiss_update_dialog();
+            }
+        }
+    }
+
+    // Notes blocks at the cursor, wrapped to `width`; words flow across their spans.
+    static void draw_release_notes(const std::vector<NoteBlock>& blocks, float width)
+    {
+        auto* draw = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        float y = origin.y;
+        bool first = true;
+        for (const auto& block : blocks)
+        {
+            const bool heading = block.kind == NoteBlock::Kind::Heading;
+            const Font which =
+                heading ? (block.level <= 1 ? Font::Heading : Font::Label) : Font::Body;
+            ImFont* font = ui::font(which);
+            const float size = ui::font_size(which), line_height = size * 1.35f;
+            if (!first)
+            {
+                y += heading                               ? dp(14)
+                     : block.kind == NoteBlock::Kind::Item ? dp(4)
+                     : block.kind == NoteBlock::Kind::Code ? 0.0f
+                                                           : dp(8);
+            }
+            first = false;
+            if (block.kind == NoteBlock::Kind::Rule)
+            {
+                draw->AddRectFilled({origin.x, y + dp(6)},
+                    {origin.x + width, y + dp(6) + 1},
+                    col(color::white, 0.08f));
+                y += dp(12);
+                continue;
+            }
+            const float indent = block.kind == NoteBlock::Kind::Item
+                                     ? dp(20) * static_cast<float>(block.level + 1)
+                                     : 0;
+            const float left = origin.x + indent, right = origin.x + width;
+            if (block.kind == NoteBlock::Kind::Item)
+            {
+                if (block.marker.empty())
+                {
+                    draw->AddCircleFilled(
+                        {left - dp(10), y + line_height * 0.5f}, dp(2.6f), col(color::sun, 0.85f));
+                }
+                else
+                {
+                    const float mark = ui::text_size(which, block.marker.c_str()).x;
+                    ui::text(draw,
+                        which,
+                        {left - dp(6) - mark, y + (line_height - size) * 0.5f},
+                        col(color::muted),
+                        block.marker.c_str());
+                }
+            }
+            // A line breaks before a word that does not fit; a single word wider than
+            // the column overflows it.
+            float x = left;
+            for (const auto& span : block.spans)
+            {
+                const ImVec4 ink = span.style == NoteSpan::Style::Strong ? color::text
+                                   : span.style == NoteSpan::Style::Code
+                                       ? ui::mix(color::lagoon, color::text, 0.25f)
+                                   : span.style == NoteSpan::Style::Link ? color::sun
+                                   : heading ? color::text
+                                             : ui::mix(color::muted, color::text, 0.5f);
+                const std::string& text = span.text;
+                std::size_t at = 0;
+                while (at < text.size())
+                {
+                    std::size_t end = text.find(' ', at);
+                    end = end == std::string::npos ? text.size() : end + 1;
+                    const char* begin = text.c_str() + at;
+                    const char* stop = text.c_str() + end;
+                    const char* visible = stop;
+                    while (visible > begin && visible[-1] == ' ')
+                    {
+                        --visible;
+                    }
+                    const float word = font->CalcTextSizeA(size, FLT_MAX, 0, begin, visible).x;
+                    const float advance = font->CalcTextSizeA(size, FLT_MAX, 0, begin, stop).x;
+                    if (x > left && x + word > right)
+                    {
+                        x = left;
+                        y += line_height;
+                        if (begin == visible)
+                        {
+                            at = end; // spaces at a line start
+                            continue;
+                        }
+                    }
+                    if (visible > begin)
+                    {
+                        draw->AddText(font,
+                            size,
+                            {x, y + (line_height - size) * 0.5f},
+                            col(ink),
+                            begin,
+                            visible);
+                    }
+                    x += advance;
+                    at = end;
+                }
+            }
+            y += line_height;
+        }
+        ImGui::Dummy({width, std::max(0.0f, y - origin.y)});
+    }
+
     void browse()
     {
         static const SDL_DialogFileFilter filters[] = {{"ISO disc image", "iso"}};
@@ -2154,6 +2714,11 @@ class Launcher
     fs::path package_;
     std::unique_ptr<UpdateService> updates_;
     UpdateService::Status update_;
+    UpdatePrompt update_prompt_ = UpdatePrompt::None;
+    bool update_dialog_ = false;
+    std::optional<UpdateChoice> switch_from_;
+    std::string notes_source_;
+    std::vector<NoteBlock> notes_;
     bool restart_ = false, notice_success_ = false, play_ = false;
     double notice_until_ = 0;
 };
