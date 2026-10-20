@@ -999,3 +999,12 @@ replacement, unconditional cleanup and preservation of opaque storage. The
 fixture uses the existing renderer global and typed native renderer/deque.
 Truncated files and dynamic exception injection are outside this bounded
 qualification; it does not implement the full resource manager or Intro flow.
+
+The experimental `reconstructed_resource_frame_loaders_tests` target exercises
+the whole-frame and selected-plane raw loaders with generated temporary files,
+real resource Frame lifetimes and the shared file descriptor/cursor. A native
+CRT bridge preserves the original signed 32-bit relative seek and unsigned
+cursor arithmetic. The finite cases cover partial reads, a failed backward seek,
+metadata reuse, allocation exceptions and the original overwritten-owner leaks.
+These checks do not establish the sprite codec, mounted game-file integration
+or the complete resource-manager lifetime.
