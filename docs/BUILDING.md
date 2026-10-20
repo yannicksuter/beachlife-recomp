@@ -152,7 +152,9 @@ The test option requires
 full baseline commit pin shared with matching; that object must exist locally,
 so shallow checkouts may need more history before configuration. Configuration
 never fetches it. New reconstructed increments are patches listed in
-`reconstruction-series`; native portability patches follow in `series`.
+`reconstruction-series`; native compatibility patches in `native-pre-series`
+restore declarations needed before optional experimental composition. Native
+portability patches follow in `series`.
 Keep the baseline intact. Uncommitted edits under `decomp/` are rejected;
 unrelated host edits do not affect the export.
 
@@ -186,8 +188,8 @@ ctest --test-dir build/experimental -L reconstructed --output-on-failure
 The `release` preset selects compiler optimization; the build channel remains
 `dev`. The option defaults to `OFF` and is rejected with the `release` channel.
 It selects the `native-experimental` prepared-source profile, applying
-`reconstruction-series`, then `experimental-series`, then the native portability
-`series`. Ordinary native and matching builds ignore `experimental-series`.
+`reconstruction-series`, then `native-pre-series`, then `experimental-series`,
+then the native portability `series`. Ordinary native and matching builds ignore `experimental-series`.
 The preparation CLI also accepts `--decomp-profile native-experimental`.
 
 Build metadata records `decomp_profile`; packaging verifies that exact profile

@@ -267,6 +267,7 @@ class LocalDecompTests(unittest.TestCase):
         self.assertEqual(record['identity']['profile'], 'native')
         self.assertEqual(record['identity']['series'], [
             {'path': 'patches/beachlife-decomp/reconstruction-series', 'sha256': None},
+            {'path': 'patches/beachlife-decomp/native-pre-series', 'sha256': None},
             {'path': 'patches/beachlife-decomp/series',
              'sha256': hashlib.sha256(series.read_bytes()).hexdigest()}])
         self.prepare(verify=True)
@@ -304,7 +305,9 @@ class LocalDecompTests(unittest.TestCase):
                            b'new file mode 100644\n--- /dev/null\n+++ b/src/new.cpp\n'
                            b'@@ -0,0 +1 @@\n+generated new reconstruction\n')
         for profile, result, series, patches in (
-                ('native', b'native\n', [reconstruction, adaptations], [common, native]),
+                ('native', b'native\n',
+                 [reconstruction, self.repo / 'patches/beachlife-decomp/native-pre-series',
+                  adaptations], [common, native]),
                 ('matching', b'reconstructed\n', [reconstruction], [common])):
             with self.subTest(profile=profile):
                 self.output = self.root / ('prepared-' + profile)
@@ -321,7 +324,8 @@ class LocalDecompTests(unittest.TestCase):
                 self.assertEqual(identity['profile'], profile)
                 self.assertEqual(identity['series'], [
                     {'path': p.relative_to(self.repo).as_posix(),
-                     'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in series])
+                     'sha256': hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None}
+                    for p in series])
                 self.assertEqual(identity['patches'], [
                     {'path': p.relative_to(self.repo).as_posix(),
                      'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in patches])
@@ -370,10 +374,12 @@ class LocalDecompTests(unittest.TestCase):
                             b'experimental.patch\n')
         for profile, value, helper, ordered_series, patches in (
                 ('matching', b'reconstructed\n', b'common helper\n', [reconstruction], [common]),
-                ('native', b'native\n', b'common helper\n', [reconstruction, adaptations],
+                ('native', b'native\n', b'common helper\n',
+                 [reconstruction, self.repo / 'patches/beachlife-decomp/native-pre-series', adaptations],
                  [common, native]),
                 ('native-experimental', b'native\n', b'experimental helper\n',
-                 [reconstruction, series, adaptations], [common, experimental, native])):
+                 [reconstruction, self.repo / 'patches/beachlife-decomp/native-pre-series',
+                  series, adaptations], [common, experimental, native])):
             with self.subTest(profile=profile):
                 self.output = self.root / ('prepared-' + profile)
                 self.prepare(decomp_profile=profile)
@@ -386,7 +392,8 @@ class LocalDecompTests(unittest.TestCase):
                 for key, paths in (('series', ordered_series), ('patches', patches)):
                     self.assertEqual(identity[key], [
                         {'path': p.relative_to(self.repo).as_posix(),
-                         'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths])
+                         'sha256': hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None}
+                        for p in paths])
         for path in (series, experimental):
             path.write_bytes(path.read_bytes() + b'\n')
             for profile in ('matching', 'native', 'native-experimental'):
@@ -398,6 +405,43 @@ class LocalDecompTests(unittest.TestCase):
                 self.prepare(verify=True, decomp_profile=profile)
         self.assertEqual((self.repo / 'decomp/src/value.cpp').read_bytes(), b'first\n')
         self.assertFalse((self.repo / 'decomp/src/helper.cpp').exists())
+
+    def test_native_pre_series_precedes_experimental_and_is_fingerprinted(self):
+        common, native, reconstruction, adaptations = self.profile_patches()
+        common.write_bytes(common.read_bytes() +
+                           b'diff --git a/src/header.h b/src/header.h\n'
+                           b'new file mode 100644\n--- /dev/null\n+++ b/src/header.h\n'
+                           b'@@ -0,0 +1 @@\n+matching declaration\n')
+        early = self.write('patches/beachlife-decomp/early.patch',
+                           b'diff --git a/src/header.h b/src/header.h\n'
+                           b'--- a/src/header.h\n+++ b/src/header.h\n'
+                           b'@@ -1 +1 @@\n-matching declaration\n+native declaration\n')
+        before = self.write('patches/beachlife-decomp/native-pre-series', b'early.patch\n')
+        experimental = self.write('patches/beachlife-decomp/experimental.patch',
+                                  b'diff --git a/src/header.h b/src/header.h\n'
+                                  b'--- a/src/header.h\n+++ b/src/header.h\n'
+                                  b'@@ -1 +1 @@\n-native declaration\n+experimental declaration\n')
+        self.write('patches/beachlife-decomp/experimental-series', b'experimental.patch\n')
+        for profile, header, patches in (
+                ('matching', b'matching declaration\n', [common]),
+                ('native', b'native declaration\n', [common, early, native]),
+                ('native-experimental', b'experimental declaration\n',
+                 [common, early, experimental, native])):
+            self.output = self.root / ('prepared-' + profile)
+            self.prepare(decomp_profile=profile)
+            self.prepare(verify=True, decomp_profile=profile)
+            self.assertEqual((self.output / 'beachlife-decomp/src/header.h').read_bytes(), header)
+            self.assertEqual([row['path'] for row in self.record()['identity']['patches']],
+                             [path.relative_to(self.repo).as_posix() for path in patches])
+        for changed in (before, early):
+            changed.write_bytes(changed.read_bytes() + b'\n')
+            for profile in ('matching', 'native', 'native-experimental'):
+                self.output = self.root / ('prepared-' + profile)
+                if profile != 'matching':
+                    with self.assertRaisesRegex(ValueError, 'stale'):
+                        self.prepare(verify=True, decomp_profile=profile)
+                    self.prepare(decomp_profile=profile)
+                self.prepare(verify=True, decomp_profile=profile)
 
     def test_experimental_series_rejects_invalid_entries_and_duplicates(self):
         self.profile_patches()
@@ -440,7 +484,7 @@ class LocalDecompTests(unittest.TestCase):
             self.output = self.root / ('prepared-' + profile)
             self.prepare(decomp_profile=profile)
             identity = self.record()['identity']
-            self.assertEqual(len(identity['series']), 2 if profile == 'native' else 1)
+            self.assertEqual(len(identity['series']), 3 if profile == 'native' else 1)
             self.assertTrue(all(row['sha256'] is None for row in identity['series']))
         self.write('patches/beachlife-decomp/reconstruction-series', b'# no patches yet\n')
         for profile in ('native', 'matching'):
@@ -461,10 +505,12 @@ class LocalDecompTests(unittest.TestCase):
         self.patch('one.patch', 'first', 'second')
         reconstruction = self.repo / 'patches/beachlife-decomp/reconstruction-series'
         adaptations = self.repo / 'patches/beachlife-decomp/series'
-        for series in (reconstruction, adaptations):
+        pre_native = self.repo / 'patches/beachlife-decomp/native-pre-series'
+        for series in (reconstruction, pre_native, adaptations):
             for body in (b'missing.patch\n', b'../escape.patch\n', b'/absolute.patch\n',
                          b'C:\\escape.patch\n', b'bad\0name.patch\n', b'one.patch\none.patch\n'):
                 reconstruction.write_bytes(b'# empty\n')
+                pre_native.write_bytes(b'# empty\n')
                 adaptations.write_bytes(b'# empty\n')
                 series.write_bytes(body)
                 with self.subTest(series=series.name, body=body), self.assertRaisesRegex(
