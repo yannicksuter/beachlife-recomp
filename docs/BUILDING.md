@@ -980,3 +980,13 @@ classification, repeated reads and ownership cleanup, including the original
 replacement leaks. The bounded test requires little-endian scalar widths and
 accessible full reads; it does not qualify truncated files, resource file-owner
 initialization, raw frame-bank loading or rendering.
+
+With the experimental option enabled, `reconstructed_resource_file_producer_tests`
+exercises the complete resource loader against generated metadata and raw data
+files, using the real Record/Frame parser and lifetime methods. It checks bounded
+reads, descriptor publication, palette marks, repeated loads and explicit cleanup
+of allocations the loader leaves owned or abandoned. The fixture creates and
+removes a fresh directory supplied through `BEACHLIFE_RESOURCE_FILE_TEST_ROOT`.
+Windows uses the original path spelling; POSIX uses its path separators and CRT.
+This does not qualify mounted game-file access, short metadata reads, arbitrary
+palette formats or the original Intro.

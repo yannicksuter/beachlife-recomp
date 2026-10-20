@@ -1473,3 +1473,53 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_resource_record_metadata PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Resource loading shares genuine Record/Frame owners and the renderer global.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_resource_frame_file STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_frame_file.cpp")
+    target_include_directories(beachlife_reconstructed_resource_frame_file PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_frame_file PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_resource_frame_file verify_reconstructed_source)
+
+    add_library(beachlife_reconstructed_resource_file_producer STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_load.cpp")
+    target_include_directories(beachlife_reconstructed_resource_file_producer PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_file_producer PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_file_producer PUBLIC
+        beachlife_reconstructed_resource_frame_file
+        beachlife_reconstructed_resource_record_metadata
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_resource_file_producer verify_reconstructed_source)
+
+    add_executable(reconstructed_resource_file_producer_tests
+        tests/reconstructed_resource_file_producer.cpp)
+    target_link_libraries(reconstructed_resource_file_producer_tests PRIVATE
+        beachlife_reconstructed_resource_file_producer)
+    add_dependencies(reconstructed_resource_file_producer_tests verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_resource_frame_file
+        beachlife_reconstructed_resource_file_producer
+        reconstructed_resource_file_producer_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_frame_file PRIVATE /GL-)
+        target_compile_options(beachlife_reconstructed_resource_file_producer PRIVATE /GL-)
+        target_compile_options(reconstructed_resource_file_producer_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_frame_file PRIVATE -fno-lto)
+        target_compile_options(beachlife_reconstructed_resource_file_producer PRIVATE -fno-lto)
+        target_compile_options(reconstructed_resource_file_producer_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_file_producer_tests PRIVATE -fno-lto)
+    endif()
+    set(BEACHLIFE_RESOURCE_FILE_TEST_ROOT
+        "${CMAKE_CURRENT_BINARY_DIR}/resource-file-producer-data"
+        CACHE STRING "Fresh generated-file directory for the resource producer test")
+    add_test(NAME reconstructed_resource_file_producer
+        COMMAND reconstructed_resource_file_producer_tests
+            "${BEACHLIFE_RESOURCE_FILE_TEST_ROOT}")
+    set_tests_properties(reconstructed_resource_file_producer PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
