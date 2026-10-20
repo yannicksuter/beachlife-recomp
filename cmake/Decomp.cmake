@@ -1439,3 +1439,37 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_resource_record_lifetime PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Resource record metadata uses the real Record and Frame lifetime archives.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_resource_record_metadata STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_record_metadata.cpp")
+    target_include_directories(beachlife_reconstructed_resource_record_metadata PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_record_metadata PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_record_metadata PUBLIC
+        beachlife_reconstructed_resource_record_lifetime)
+    add_dependencies(beachlife_reconstructed_resource_record_metadata verify_reconstructed_source)
+
+    add_executable(reconstructed_resource_record_metadata_tests
+        tests/reconstructed_resource_record_metadata.cpp)
+    target_link_libraries(reconstructed_resource_record_metadata_tests PRIVATE
+        beachlife_reconstructed_resource_record_metadata)
+    add_dependencies(reconstructed_resource_record_metadata_tests verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_resource_record_metadata
+        reconstructed_resource_record_metadata_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_record_metadata PRIVATE /GL-)
+        target_compile_options(reconstructed_resource_record_metadata_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_record_metadata PRIVATE -fno-lto)
+        target_compile_options(reconstructed_resource_record_metadata_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_record_metadata_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_record_metadata
+        COMMAND reconstructed_resource_record_metadata_tests)
+    set_tests_properties(reconstructed_resource_record_metadata PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

@@ -971,3 +971,12 @@ constructed Records with separately owned names, and releases its borrowed
 wrappers before those Records. The common resource header is checked with the
 existing Frame metadata test. These checks cover initialized, successfully
 allocated inputs; they do not establish the complete file owner or game flow.
+
+The experimental `reconstructed_resource_record_metadata_tests` target exercises
+resource record metadata through the actual Record and Frame constructors,
+destructors, metadata readers and scalar allocation boundary. Generated complete
+binary files cover palette formats, frame metadata, C-locale ASCII name
+classification, repeated reads and ownership cleanup, including the original
+replacement leaks. The bounded test requires little-endian scalar widths and
+accessible full reads; it does not qualify truncated files, resource file-owner
+initialization, raw frame-bank loading or rendering.
