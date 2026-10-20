@@ -1,4 +1,11 @@
+#include "data/folder_source.h"
+#include "pool_chunk_acquire.h"
+#include "pool_lock_guard.h"
+#include "renderer_queue_test_state.h"
+#include "runtime/resource_files.h"
+#include "startup_screen_dialog_frame_file.h"
 #include "startup_screen_dialog_resource.h"
+#include "startup_screen_palette_modifiers.h"
 
 #include <array>
 #include <climits>
@@ -7,20 +14,35 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <memory>
 #include <new>
+#include <span>
+#include <stdexcept>
+#include <system_error>
 #include <type_traits>
+#include <vector>
 
 namespace
 {
+namespace fs = std::filesystem;
+namespace files = beachlife::runtime::resource_files;
+namespace data = beachlife::data;
+using Lookup = ScreenDialogResourceLookup;
+using Node = ScreenDialogResourceNode;
 static_assert(sizeof(unsigned int) == 4);
 static_assert(std::is_standard_layout_v<ScreenDialogResourceRecord>);
 static_assert(std::is_standard_layout_v<ScreenDialogResourceLookup>);
 static_assert(!std::is_polymorphic_v<ScreenDialogResource>);
 static_assert(sizeof(void*) == 4 || sizeof(void*) == 8);
 static_assert(sizeof(ScreenDialogResourceRecord) == (sizeof(void*) == 8 ? 56 : 36));
-static_assert(sizeof(ScreenDialogResourceLookup) == (sizeof(void*) == 8 ? 32 : 20));
-static_assert(offsetof(ScreenDialogResourceLookup, record_count) == (sizeof(void*) == 8 ? 16 : 12));
-static_assert(offsetof(ScreenDialogResourceLookup, records) == (sizeof(void*) == 8 ? 24 : 16));
+static_assert(!std::is_aggregate_v<Lookup> && !std::is_trivially_destructible_v<Lookup>);
+static_assert(sizeof(Lookup) == (sizeof(void*) == 8 ? 456 : 432));
+static_assert(offsetof(Lookup, record_count) == (sizeof(void*) == 8 ? 24 : 12));
+static_assert(offsetof(Lookup, records) == (sizeof(void*) == 8 ? 32 : 16));
+static_assert(offsetof(Lookup, loaded_resources) == (sizeof(void*) == 8 ? 40 : 20));
+static_assert(offsetof(Lookup, recent_names) == (sizeof(void*) == 8 ? 56 : 32));
 
 constexpr std::array<std::uint32_t, 4> before_guard{
     0x12345678U, 0x9abcdef0U, 0x16543210U, 0xfedcba98U};
@@ -127,6 +149,145 @@ bool check(bool value)
     return value;
 }
 
+void require(bool value, const char* message)
+{
+    if (!value)
+    {
+        throw std::runtime_error(message);
+    }
+}
+
+// These empty generated files let the genuine owner establish all of its
+// lifetime dependencies. They do not replace any game constructor or loader.
+struct OwnerFiles
+{
+    fs::path root;
+    explicit OwnerFiles(const fs::path& directory)
+        : root(directory)
+    {
+        require(!fs::exists(root), "generated owner directory already exists");
+        fs::create_directories(root / "Data/Sprites");
+        const std::array<unsigned char, 28> metadata{}; // Full header, word, zero records.
+        const std::array<unsigned char, 24> raw{};
+        const std::array<unsigned char, 2304> palette{};
+        write("Data/Sprites/BLSprite.hdr", metadata);
+        write("Data/Sprites/BLSprite.Dat", raw);
+        write("Data/Sprites/PaletteModifiers.bin", palette);
+    }
+    ~OwnerFiles()
+    {
+        std::error_code ignored;
+        fs::remove_all(root, ignored);
+    }
+    void write(const char* name, std::span<const unsigned char> bytes) const
+    {
+        std::ofstream output(root / name, std::ios::binary);
+        output.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
+        output.close();
+        require(bool(output), "generated owner file write failed");
+    }
+    std::shared_ptr<const data::FileSource> mount() const
+    {
+        return std::make_shared<data::FolderSource>(root,
+            std::vector<data::SourceEntry>{{"Data/Sprites/BLSprite.hdr", 28},
+                {"Data/Sprites/BLSprite.Dat", 24},
+                {"Data/Sprites/PaletteModifiers.bin", 2304}});
+    }
+};
+
+// A real free pool slot becomes the resource ring's real sentinel and returns
+// to PoolChunkLink lifetime after genuine owner destruction. No refill path.
+struct PoolBacking
+{
+    std::array<unsigned char, 16> before{};
+    alignas(Node) unsigned char storage[(sizeof(Node) + 7u) & ~7u]{};
+    std::array<unsigned char, 16> after{};
+    static constexpr unsigned bucket = (sizeof(storage) - 1u) / 8u;
+
+    PoolBacking()
+    {
+        require(pool_lock_word == 0 && pool_chunk_begin == nullptr && pool_chunk_end == nullptr &&
+                    pool_heap_bytes == 0,
+            "pool state must start empty");
+        for (auto* entry : pool_chunk_buckets)
+        {
+            require(entry == nullptr, "pool free root must start empty");
+        }
+        before.fill(0x39);
+        after.fill(0xc6);
+        pool_chunk_buckets[bucket] = ::new (static_cast<void*>(storage)) PoolChunkLink{nullptr};
+    }
+    ~PoolBacking()
+    {
+        pool_chunk_buckets[bucket] = nullptr;
+    }
+    bool restored() const
+    {
+        const auto* link = pool_chunk_buckets[bucket];
+        bool okay = check(static_cast<const void*>(link) == storage);
+        if (okay)
+        {
+            okay &= check(link->next == nullptr);
+        }
+        okay &= check(pool_lock_word == 0 && pool_chunk_begin == nullptr &&
+                      pool_chunk_end == nullptr && pool_heap_bytes == 0);
+        for (unsigned i = 0; i < 16; ++i)
+        {
+            okay &= check(before[i] == 0x39 && after[i] == 0xc6);
+            if (i != bucket)
+            {
+                okay &= check(pool_chunk_buckets[i] == nullptr);
+            }
+        }
+        return okay;
+    }
+};
+
+struct Environment
+{
+    ScreenRequestRenderer renderer{};
+    Environment()
+    {
+        require(screen_request_renderer == nullptr && screen_dialog_resources == nullptr &&
+                    screen_dialog_palette_modifiers == nullptr && screen_dialog_frame_file == -1 &&
+                    screen_dialog_frame_cursor == 0,
+            "resource owner globals must start empty");
+        renderer_queue_test::initialize(renderer, 31);
+        renderer.format_44 = 0;
+        screen_request_renderer = &renderer;
+    }
+    ~Environment()
+    {
+        // The actual owner intentionally retains its closed descriptor globally.
+        screen_dialog_frame_file = -1;
+        screen_dialog_frame_cursor = 0;
+        screen_request_renderer = nullptr;
+    }
+};
+
+struct BorrowedRecords
+{
+    Lookup& owner;
+    int count;
+    ScreenDialogResourceRecord** table;
+    BorrowedRecords(Lookup& value, int borrowed_count, ScreenDialogResourceRecord** borrowed)
+        : owner(value)
+        , count(value.record_count)
+        , table(value.records)
+    {
+        require(count == 0 && table != nullptr, "bootstrap owner is not empty");
+        owner.record_count = borrowed_count;
+        owner.records = borrowed;
+    }
+    ~BorrowedRecords()
+    {
+        // Restore before any borrowed Record ends, including control failures.
+        owner.record_count = count;
+        owner.records = table;
+    }
+};
+
 void set_name(Name& destination, const char* source)
 {
     destination.fill('\x6d');
@@ -151,14 +312,13 @@ bool record_members(const ScreenDialogResourceRecord& record)
            record.palettes == nullptr && record.format_18 == 1 && record.word_1c == 0;
 }
 
-bool run_case(const Case& example)
+bool run_case(const Case& example, Guarded<Lookup>& lookup)
 {
     std::array<Guarded<Name>, 3> names;
     std::array<Guarded<Name>, 2> requests;
     std::array<Guarded<ScreenDialogResourceRecord>, 3> records;
     std::array<const char*, 3> record_names{};
     Guarded<std::array<ScreenDialogResourceRecord*, 3>> entries;
-    Guarded<ScreenDialogResourceLookup> lookup;
     for (std::size_t i = 0; i < names.size(); ++i)
     {
         set_name(names[i].value, example.names[i]);
@@ -180,15 +340,38 @@ bool run_case(const Case& example)
     {
         set_name(requests[i].value, example.calls[i].request);
     }
-    lookup.value.metadata_file = nullptr;
-    lookup.value.data_file = -1;
+    const auto* metadata = lookup.value.metadata_file;
+    const int descriptor = lookup.value.data_file;
+    const auto* palette = lookup.value.palette_modifiers;
+    const auto* head = lookup.value.loaded_resources.head;
+    const unsigned word = lookup.value.word_1c;
+    require(metadata != nullptr && descriptor >= 3 && palette != nullptr && head != nullptr &&
+                head->next == head && head->previous == head,
+        "genuine owner dependencies are missing");
     std::array<unsigned char, 4> opaque;
     for (std::size_t i = 0; i < opaque.size(); ++i)
     {
-        lookup.value.unknown_08[i] = opaque[i] = static_cast<unsigned char>(0x30 + i);
+        lookup.value.unknown_18[i] = opaque[i] = static_cast<unsigned char>(0x30 + i);
     }
-    lookup.value.record_count = example.count;
-    lookup.value.records = entries.value.data();
+    for (auto& recent : lookup.value.recent_names)
+    {
+        std::memset(recent, 0x6d, sizeof(recent));
+        recent[0] = '\0';
+    }
+    std::array<unsigned char, sizeof(Lookup::recent_names)> recent{};
+    std::memcpy(recent.data(), lookup.value.recent_names, recent.size());
+    const BorrowedRecords borrowed(lookup.value, example.count, entries.value.data());
+    const auto owner_unchanged = [&]
+    {
+        return lookup.value.metadata_file == metadata && lookup.value.data_file == descriptor &&
+               lookup.value.palette_modifiers == palette &&
+               lookup.value.loaded_resources.head == head && head->next == head &&
+               head->previous == head && lookup.value.word_1c == word &&
+               screen_dialog_resources == &lookup.value &&
+               screen_dialog_palette_modifiers == palette &&
+               screen_dialog_frame_file == descriptor && screen_dialog_frame_cursor == 24 &&
+               std::memcmp(recent.data(), lookup.value.recent_names, recent.size()) == 0;
+    };
     const auto saved_names = names;
     const auto saved_requests = requests;
     const auto saved_entries = entries.value;
@@ -252,12 +435,12 @@ bool run_case(const Case& example)
         }
         okay &= check(lookup.intact() && entries.intact());
         okay &= check(lookup.value.record_count == example.count);
-        okay &= check(lookup.value.metadata_file == nullptr && lookup.value.data_file == -1);
+        okay &= check(owner_unchanged());
         okay &=
             check(lookup.value.records == entries.value.data() && entries.value == saved_entries);
         for (std::size_t n = 0; n < opaque.size(); ++n)
         {
-            okay &= check(lookup.value.unknown_08[n] == opaque[n]);
+            okay &= check(lookup.value.unknown_18[n] == opaque[n]);
         }
     }
     if (example.call_count == 2 && results[0] && results[1])
@@ -291,7 +474,7 @@ bool run_case(const Case& example)
         }
     }
     okay &= check(lookup.intact() && entries.intact());
-    okay &= check(lookup.value.metadata_file == nullptr && lookup.value.data_file == -1);
+    okay &= check(owner_unchanged());
     // Real Record destructors now release the independently owned record names.
     // All borrowed wrapper observations ended above; no record/name read follows
     // destruction, and the preserved nonzero reference counts do not block it.
@@ -299,34 +482,61 @@ bool run_case(const Case& example)
 }
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
-    if (!std::setlocale(LC_CTYPE, "C"))
+    if (argc != 2 || !std::setlocale(LC_CTYPE, "C"))
     {
         return 3;
     }
-    for (std::size_t i = 0; i < cases.size(); ++i)
+    try
     {
-        if (!run_case(cases[i]))
+        OwnerFiles inputs{fs::path(argv[1])};
+        Environment environment;
+        files::Session session(inputs.mount());
+        PoolBacking pool;
         {
-            std::fprintf(
-                stderr, "case %zu (%s): resource lookup result differs\n", i, cases[i].label);
+            Guarded<Lookup> lookup;
+            require(lookup.value.record_count == 0 && lookup.value.records != nullptr,
+                "genuine bootstrap graph differs");
+            for (std::size_t i = 0; i < cases.size(); ++i)
+            {
+                if (!run_case(cases[i], lookup))
+                {
+                    std::fprintf(stderr,
+                        "case %zu (%s): resource lookup result differs\n",
+                        i,
+                        cases[i].label);
+                    return 2;
+                }
+            }
+        }
+        require(screen_dialog_resources == nullptr && screen_dialog_palette_modifiers == nullptr,
+            "owner registration survived destruction");
+        if (!pool.restored())
+        {
+            std::fprintf(stderr, "resource lookup owner did not return its ring storage\n");
             return 2;
         }
+        std::printf("{\"sessions\":%zu,\"calls\":%zu,\"direct_find\":%zu,\"lookup\":%zu,"
+                    "\"record_lifetimes\":%zu,\"owned_names\":%zu,\"checks\":%zu,"
+                    "\"record_size\":%zu,\"lookup_size\":%zu,\"count_offset\":%zu,\"records_"
+                    "offset\":%zu}\n",
+            cases.size(),
+            calls,
+            direct_calls,
+            lookup_calls,
+            record_lifetimes,
+            owned_names,
+            checks,
+            sizeof(ScreenDialogResourceRecord),
+            sizeof(ScreenDialogResourceLookup),
+            offsetof(ScreenDialogResourceLookup, record_count),
+            offsetof(ScreenDialogResourceLookup, records));
+        return 0;
     }
-    std::printf(
-        "{\"sessions\":%zu,\"calls\":%zu,\"direct_find\":%zu,\"lookup\":%zu,"
-        "\"record_lifetimes\":%zu,\"owned_names\":%zu,\"checks\":%zu,"
-        "\"record_size\":%zu,\"lookup_size\":%zu,\"count_offset\":%zu,\"records_offset\":%zu}\n",
-        cases.size(),
-        calls,
-        direct_calls,
-        lookup_calls,
-        record_lifetimes,
-        owned_names,
-        checks,
-        sizeof(ScreenDialogResourceRecord),
-        sizeof(ScreenDialogResourceLookup),
-        offsetof(ScreenDialogResourceLookup, record_count),
-        offsetof(ScreenDialogResourceLookup, records));
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "resource lookup setup: %s\n", error.what());
+        return 3;
+    }
 }

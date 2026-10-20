@@ -34,7 +34,7 @@ static_assert(std::extent_v<decltype(ScreenManager::fonts_2c)> == 10);
 static_assert(sizeof(void*) != 4 || offsetof(ScreenManager, fonts_2c) == 0x2c);
 static_assert(sizeof(void*) != 4 || offsetof(ScreenManager, unknown_54) == 0x54);
 static_assert(sizeof(void*) != 4 || sizeof(ScreenManager) == 0x13c);
-static_assert(sizeof(void*) != 8 || sizeof(ScreenManager) == 384);
+static_assert(sizeof(void*) != 8 || sizeof(ScreenManager) == 424);
 static_assert(sizeof(void*) != 4 || offsetof(ScreenManagerAuxiliaryState, text_08) == 8);
 static_assert(sizeof(void*) != 4 || offsetof(ScreenManagerAuxiliaryState, frame_24) == 0x24);
 static_assert(sizeof(void*) != 4 || sizeof(ScreenManagerAuxiliaryState) == 0x28);
@@ -380,7 +380,7 @@ void initialize(Environment& e, const Literal& literal, const unsigned short* in
 
     auto& manager = e.manager.value;
     manager.renderer = &e.renderer.value;
-    renderer_queue_test::pattern(manager.unknown_04, 0x45);
+    std::fill(std::begin(manager.fonts_04), std::end(manager.fonts_04), nullptr);
     renderer_queue_test::pattern(manager.unknown_54, 0x56);
     renderer_queue_test::pattern(manager.unknown_90, 0x67);
     renderer_queue_test::pattern(manager.unknown_c0, 0x78);
@@ -514,7 +514,7 @@ void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
                 m.previous_mode == n.previous_mode && m.auxiliary_130 == n.auxiliary_130 &&
                 m.item_134 == n.item_134 && m.value_138 == n.value_138 &&
                 std::equal(std::begin(m.fonts_2c), std::end(m.fonts_2c), std::begin(n.fonts_2c)) &&
-                renderer_queue_test::same_bytes(m.unknown_04, n.unknown_04) &&
+                std::equal(std::begin(m.fonts_04), std::end(m.fonts_04), std::begin(n.fonts_04)) &&
                 renderer_queue_test::same_bytes(m.unknown_54, n.unknown_54) &&
                 renderer_queue_test::same_bytes(m.unknown_90, n.unknown_90) &&
                 renderer_queue_test::same_bytes(m.unknown_c0, n.unknown_c0),

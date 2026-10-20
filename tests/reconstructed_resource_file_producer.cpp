@@ -1,6 +1,11 @@
+#include "data/folder_source.h"
+#include "pool_chunk_acquire.h"
+#include "pool_lock_guard.h"
 #include "renderer_queue_test_state.h"
+#include "runtime/resource_files.h"
 #include "startup_screen_dialog_frame_file.h"
 #include "startup_screen_dialog_resource.h"
+#include "startup_screen_palette_modifiers.h"
 
 #include <array>
 #include <bit>
@@ -12,27 +17,27 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <new>
+#include <optional>
 #include <span>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include <fcntl.h>
-#if defined(_WIN32)
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
 
 using Record = ScreenDialogResourceRecord;
 using Frame = ScreenDialogResourceFrame;
 using Lookup = ScreenDialogResourceLookup;
 namespace fs = std::filesystem;
+namespace files = beachlife::runtime::resource_files;
+namespace data = beachlife::data;
 static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && sizeof(unsigned int) == 4);
 static_assert(sizeof(unsigned short) == 2 && sizeof(float) == 4);
 static_assert(std::endian::native == std::endian::little);
-static_assert(std::is_aggregate_v<Lookup> && std::is_standard_layout_v<Lookup>);
+static_assert(!std::is_aggregate_v<Lookup> && std::is_standard_layout_v<Lookup>);
+static_assert(sizeof(void*) == 8 && sizeof(Lookup) == 456);
+static_assert(offsetof(Lookup, record_count) == 24 && offsetof(Lookup, records) == 32);
 static_assert(std::is_standard_layout_v<Record> && std::is_standard_layout_v<Frame>);
 static_assert(!std::is_polymorphic_v<Record> && !std::is_polymorphic_v<Frame>);
 static_assert(sizeof(void*) == 4 || sizeof(void*) == 8);
@@ -47,6 +52,8 @@ struct Totals
     std::size_t sessions = 0, calls = 0, records = 0, frames = 0, palettes = 0;
     std::size_t allocations = 0, releases = 0, graph_cleanups = 0, closed_descriptors = 0;
     std::size_t metadata_bytes = 0, data_bytes = 0, checks = 0;
+    std::size_t owner_constructions = 0, owner_destructions = 0, bootstrap_cleanups = 0;
+    std::size_t owner_palette_releases = 0, io_forwardings = 0;
 } totals;
 char label[64] = "setup";
 const char* first_error = nullptr;
@@ -79,30 +86,18 @@ void expect(bool condition, const char* reason)
 
 long long position(int descriptor)
 {
-#if defined(_WIN32)
-    return _lseek(descriptor, 0, SEEK_CUR);
-#else
-    return lseek(descriptor, 0, SEEK_CUR);
-#endif
+    return files::seek_descriptor(descriptor, 0, SEEK_CUR);
 }
 
-int open_readonly(const fs::path& path)
+int open_readonly(const char* path)
 {
-#if defined(_WIN32)
-    return _open(path.string().c_str(), _O_RDONLY | _O_BINARY);
-#else
-    return open(path.string().c_str(), O_RDONLY);
-#endif
+    return files::open_descriptor(path, 0x8000);
 }
 
 void close_descriptor(int descriptor)
 {
     necessary(descriptor >= 0, "cleanup received invalid descriptor");
-#if defined(_WIN32)
-    necessary(_close(descriptor) == 0, "descriptor close failed");
-#else
-    necessary(close(descriptor) == 0, "descriptor close failed");
-#endif
+    necessary(files::close_descriptor(descriptor) == 0, "descriptor close failed");
     ++totals.closed_descriptors;
 }
 
@@ -158,7 +153,8 @@ std::size_t request_count = 0, request_next = 0;
 std::array<Allocation, 128> allocations;
 std::size_t allocation_count = 0;
 Lookup* observed_lookup = nullptr;
-std::array<unsigned char, sizeof(FILE*)> closed_stream_representation{};
+std::array<unsigned char, sizeof(files::Stream*)> closed_stream_representation{};
+ScreenDialogPaletteModifiers* bootstrap_palette = nullptr;
 bool stream_captured = false;
 std::array<int, 4> expected_marks{};
 int expected_record_count = 0, prior_global_descriptor = -1;
@@ -217,10 +213,12 @@ void* allocate(std::size_t bytes)
     {
         necessary(
             observed_lookup->metadata_file, "metadata stream not published before allocation");
-        expect(std::ftell(observed_lookup->metadata_file) == 28,
+        std::uint64_t cursor = 0;
+        expect(files::stream_position(observed_lookup->metadata_file, cursor) && cursor == 28,
             "metadata header consumed length differs");
-        std::memcpy(
-            closed_stream_representation.data(), &observed_lookup->metadata_file, sizeof(FILE*));
+        std::memcpy(closed_stream_representation.data(),
+            &observed_lookup->metadata_file,
+            sizeof(files::Stream*));
         stream_captured = true;
     }
     if (r.role == Role::record && r.record == 1 && second_renderer)
@@ -300,6 +298,15 @@ void release(void* pointer) noexcept
         std::free(a.raw);
         a.raw = nullptr;
         ++totals.releases;
+        return;
+    }
+    // The real palette owner was constructed during the unobserved bootstrap.
+    // Its exact saved pointer, not a size guess, is the sole extra game release.
+    if (phase == Phase::destruction && pointer == bootstrap_palette)
+    {
+        bootstrap_palette = nullptr;
+        ++totals.owner_palette_releases;
+        std::free(pointer);
         return;
     }
     fail("untracked or duplicate game scalar delete");
@@ -518,24 +525,98 @@ void unchanged_files(const Files& files)
     }
 }
 
+// A fixture routing boundary only: every open is forwarded to a genuine
+// FolderSource and returns its genuine SourceFile unchanged. Changing the
+// manifest is the mounted equivalent of the former current-directory switch.
+class MountedSource final : public data::FileSource
+{
+  public:
+    void select(const fs::path& directory)
+    {
+        std::vector<data::SourceEntry> entries;
+        for (const char* name : {"data/sprites/BLSprite.hdr",
+                 "data/sprites/BLSprite.Dat",
+                 "data/sprites/PaletteModifiers.bin",
+                 "held.bin"})
+        {
+            if (fs::exists(directory / name))
+            {
+                entries.push_back({name, fs::file_size(directory / name)});
+            }
+        }
+        current_ = std::make_shared<data::FolderSource>(directory, std::move(entries));
+    }
+    std::unique_ptr<data::SourceFile> open(std::string_view path) const override
+    {
+        necessary(bool(current_), "mounted source has no selected generated manifest");
+        return current_->open(path);
+    }
+
+  private:
+    std::shared_ptr<const data::FileSource> current_;
+};
+
+// This backing is alive before real ring construction and after ReturnPool
+// starts its new PoolChunkLink lifetime. No ended Node is inspected.
+struct PoolBacking
+{
+    using Node = ScreenDialogResourceNode;
+    std::array<unsigned char, 16> before{};
+    alignas(Node) unsigned char storage[(sizeof(Node) + 7u) & ~7u]{};
+    std::array<unsigned char, 16> after{};
+    static constexpr unsigned bucket = (sizeof(storage) - 1u) / 8u;
+    PoolBacking()
+    {
+        necessary(pool_lock_word == 0 && pool_chunk_begin == nullptr && pool_chunk_end == nullptr &&
+                      pool_heap_bytes == 0,
+            "bootstrap pool is not empty");
+        for (auto* root : pool_chunk_buckets)
+        {
+            necessary(root == nullptr, "bootstrap pool has an existing free root");
+        }
+        before.fill(0xa7);
+        after.fill(0x7a);
+        pool_chunk_buckets[bucket] = ::new (static_cast<void*>(storage)) PoolChunkLink{nullptr};
+    }
+    ~PoolBacking()
+    {
+        pool_chunk_buckets[bucket] = nullptr;
+    }
+    void restored() const
+    {
+        auto* link = pool_chunk_buckets[bucket];
+        expect(static_cast<const void*>(link) == storage && link->next == nullptr,
+            "real owner ring did not return its sentinel");
+        expect(pool_lock_word == 0 && pool_chunk_begin == nullptr && pool_chunk_end == nullptr &&
+                   pool_heap_bytes == 0,
+            "real owner ring changed bounded pool state");
+        for (std::size_t i = 0; i < before.size(); ++i)
+        {
+            expect(before[i] == 0xa7 && after[i] == 0x7a, "ring backing guards changed");
+        }
+    }
+};
+
 struct GuardedLookup
 {
-    std::array<unsigned char, 16> before;
-    Lookup value{};
-    std::array<unsigned char, 16> after;
+    std::array<unsigned char, 16> before{};
+    Lookup value;
+    std::array<unsigned char, 16> after{};
+    ScreenDialogPaletteModifiers* palette;
+    ScreenDialogResourceNode* sentinel;
 
     GuardedLookup()
+        : palette(value.palette_modifiers)
+        , sentinel(value.loaded_resources.head)
     {
         before.fill(0xa7);
         after.fill(0x7a);
-        value.metadata_file = nullptr;
-        value.data_file = -1;
-        value.record_count = 0;
-        value.records = nullptr;
-        for (unsigned char& byte : value.unknown_08)
+        for (unsigned char& byte : value.unknown_18)
         {
             byte = 0x39;
         }
+        // The old unknown_08 prefix is now a genuine typed palette owner.
+        // Do not pattern-fill that pointer or the real ring.
     }
     void guards() const
     {
@@ -547,9 +628,17 @@ struct GuardedLookup
         {
             expect(byte == 0x7a, "lookup suffix guard changed");
         }
-        for (unsigned char byte : value.unknown_08)
+        for (unsigned char byte : value.unknown_18)
         {
             expect(byte == 0x39, "lookup opaque member changed");
+        }
+        expect(value.palette_modifiers == palette && value.loaded_resources.head == sentinel &&
+                   sentinel->next == sentinel && sentinel->previous == sentinel &&
+                   value.word_1c == 0,
+            "Load changed genuine owner members outside its fields");
+        for (const auto& name : value.recent_names)
+        {
+            expect(name[0] == 0, "Load changed the initial recent-name prefix");
         }
     }
 };
@@ -650,8 +739,9 @@ Graph inspect_graph(Lookup& lookup, std::span<const RecordPlan> plans, bool rend
 
 void destroy_graph(const Graph& graph)
 {
-    // The borrowed Lookup prefix has no invented destructor. Saved live owner
-    // receipts drive real Record/Frame destruction; the table has scalar storage.
+    // Only a graph actually overwritten by repeated Load reaches this path.
+    // Saved live receipts drive real Record/Frame destruction; the final graph
+    // remains owned by the genuine Lookup destructor.
     {
         Trace trace(Phase::destruction);
         for (std::size_t i = 0; i < graph.count; ++i)
@@ -702,10 +792,11 @@ void finish()
 int invoke(GuardedLookup& lookup,
     std::span<const RecordPlan> plans,
     const Files& files,
+    MountedSource& mounted,
     ScreenRequestRenderer& renderer,
     ScreenRequestRenderer* alternate = nullptr)
 {
-    fs::current_path(files.directory);
+    mounted.select(files.directory);
     prepare_requests(plans, files.has_data);
     observed_lookup = &lookup.value;
     prior_global_descriptor = screen_dialog_frame_file;
@@ -724,11 +815,11 @@ int invoke(GuardedLookup& lookup,
     totals.data_bytes += files.has_data ? static_cast<std::size_t>(expected_data_position) : 0;
     expect(request_next == request_count, "scalar request sequence incomplete");
     necessary(stream_captured, "live metadata stream was not observed");
-    // The FILE has been closed by Load. Read only the member's representation,
-    // never its dangling pointer value and never the closed FILE itself.
-    expect(
-        std::memcmp(
-            &lookup.value.metadata_file, closed_stream_representation.data(), sizeof(FILE*)) == 0,
+    // The mounted token remains live but closed until Session teardown. Keep
+    // the exact retained-pointer representation oracle without a FILE cast.
+    expect(std::memcmp(&lookup.value.metadata_file,
+               closed_stream_representation.data(),
+               sizeof(files::Stream*)) == 0,
         "closed metadata pointer member was cleared or changed");
     lookup.guards();
     if (files.has_data)
@@ -777,6 +868,92 @@ struct Renderers
     }
 };
 
+// One real owner spans every observed Load in a case. Its initial empty graph
+// is reclaimed before the fixture graph is installed; its final graph is freed
+// by the actual Lookup destructor. The Session outlives all retained tokens.
+struct OwnerScope
+{
+    std::shared_ptr<MountedSource> mounted = std::make_shared<MountedSource>();
+    files::Session session{mounted};
+    PoolBacking backing;
+    Renderers renderers;
+    std::optional<GuardedLookup> lookup;
+
+    explicit OwnerScope(const fs::path& root)
+    {
+        necessary(
+            !bootstrap_palette && !screen_dialog_resources && !screen_dialog_palette_modifiers,
+            "another genuine resource owner is live");
+        const Files initial = make_files(root / "bootstrap", {}, 24);
+        const std::array<unsigned char, 12 * 64 * 3> palette{};
+        write_file(initial.directory / "data/sprites/PaletteModifiers.bin", palette);
+        mounted->select(initial.directory);
+        screen_request_renderer = &renderers.first;
+        lookup.emplace();
+        ++totals.owner_constructions;
+        auto& value = lookup->value;
+        necessary(screen_dialog_resources == &value && value.record_count == 0 && value.records &&
+                      value.data_file >= 0 && value.palette_modifiers,
+            "genuine bootstrap owner construction failed");
+        bootstrap_palette = value.palette_modifiers;
+        std::uint64_t cursor = 0x81;
+        expect(!files::stream_position(value.metadata_file, cursor) && cursor == 0x81,
+            "closed bootstrap metadata observer changed its output");
+        // The actual constructor owns this empty table and descriptor. Release
+        // them before later fixture Loads overwrite their owning fields.
+        ::operator delete(value.records);
+        necessary(files::close_descriptor(value.data_file) == 0,
+            "bootstrap owned descriptor cleanup failed");
+        value.records = nullptr;
+        value.record_count = 0;
+        value.data_file = -1;
+        ++totals.bootstrap_cleanups;
+        screen_dialog_frame_file = -1;
+        screen_dialog_frame_cursor = 0;
+        unchanged_files(initial);
+    }
+    OwnerScope(const OwnerScope&) = delete;
+    OwnerScope& operator=(const OwnerScope&) = delete;
+    ~OwnerScope()
+    {
+        close();
+        screen_dialog_frame_file = -1;
+        screen_dialog_frame_cursor = 0;
+        screen_request_renderer = nullptr;
+    }
+    void close()
+    {
+        if (!lookup)
+        {
+            return;
+        }
+        lookup->guards();
+        const auto table = reinterpret_cast<std::uintptr_t>(lookup->value.records);
+        bool traced_graph = false;
+        for (std::size_t i = 0; i < allocation_count; ++i)
+        {
+            traced_graph |= allocations[i].live && allocations[i].role == Role::record_table &&
+                            allocations[i].address == table;
+        }
+        const int descriptor = lookup->value.data_file;
+        {
+            Trace trace(Phase::destruction);
+            lookup.reset();
+        }
+        ++totals.owner_destructions;
+        totals.graph_cleanups += traced_graph;
+        expect(!screen_dialog_resources && !screen_dialog_palette_modifiers && !bootstrap_palette,
+            "genuine owner destructor left a registration or palette owner");
+        if (descriptor >= 0)
+        {
+            expect(position(descriptor) == -1, "genuine owner did not close its final descriptor");
+            ++totals.closed_descriptors;
+        }
+        backing.restored();
+        renderers.unchanged();
+    }
+};
+
 void single_case(const fs::path& root,
     const char* name,
     std::span<const RecordPlan> plans,
@@ -787,19 +964,26 @@ void single_case(const fs::path& root,
 {
     begin(name);
     const Files files = make_files(root / name, plans, data_length, data_exists);
-    GuardedLookup lookup;
-    Renderers renderers;
+    OwnerScope context(root / name);
+    auto& lookup = *context.lookup;
+    auto& renderers = context.renderers;
     int held = -1;
     if (held_descriptor)
     {
         const std::array<unsigned char, 3> held_bytes = {0x23, 0x45, 0x67};
         write_file(files.directory / "held.bin", held_bytes);
-        held = open_readonly(files.directory / "held.bin");
+        context.mounted->select(files.directory);
+        held = open_readonly("held.bin");
         necessary(held >= 0, "held descriptor open failed");
     }
     screen_dialog_frame_file = held;
     screen_dialog_frame_cursor = 0x12345678U;
-    invoke(lookup, plans, files, renderers.first, renderer_changes ? &renderers.second : nullptr);
+    invoke(lookup,
+        plans,
+        files,
+        *context.mounted,
+        renderers.first,
+        renderer_changes ? &renderers.second : nullptr);
     const Graph graph = inspect_graph(lookup.value, plans, renderer_changes);
     if (held >= 0)
     {
@@ -807,12 +991,12 @@ void single_case(const fs::path& root,
             "existing shared descriptor was consumed or reused");
     }
     renderers.unchanged();
-    destroy_graph(graph);
+    lookup.guards();
+    context.close();
     if (held >= 0)
     {
         close_descriptor(held);
     }
-    lookup.guards();
     finish();
 }
 
@@ -821,22 +1005,23 @@ void metadata_missing(const fs::path& root)
     begin("metadata-missing");
     const fs::path directory = root / label;
     fs::create_directories(directory);
-    fs::current_path(directory);
     const std::array<unsigned char, 3> contents = {7, 11, 13};
     write_file(directory / "held.bin", contents);
-    const int held = open_readonly(directory / "held.bin");
+    OwnerScope context(directory);
+    context.mounted->select(directory);
+    const int held = open_readonly("held.bin");
     necessary(held >= 0, "held descriptor open failed");
-    FILE* previous_stream = std::fopen((directory / "held.bin").string().c_str(), "rb");
-    necessary(previous_stream, "prior borrowed FILE open failed");
-    // Genuine Records with no owned children. Load must not inspect or replace
-    // this prior table/count on the metadata-open failure path.
+    files::Stream* previous_stream = files::open_stream("held.bin", "rb");
+    necessary(previous_stream, "prior borrowed stream open failed");
+    // Genuine Records with no owned children. The actual owner temporarily
+    // borrows this table only for the unchanged metadata-open failure oracle.
     std::array<Record, 7> previous_records;
     std::array<Record*, 7> previous_table;
     for (std::size_t i = 0; i < previous_table.size(); ++i)
     {
         previous_table[i] = &previous_records[i];
     }
-    GuardedLookup lookup;
+    auto& lookup = *context.lookup;
     lookup.value.metadata_file = previous_stream;
     lookup.value.data_file = held;
     lookup.value.record_count = 7;
@@ -858,10 +1043,15 @@ void metadata_missing(const fs::path& root)
     expect(
         screen_dialog_frame_file == held && screen_dialog_frame_cursor == 91 && position(held) == 0,
         "metadata failure changed prior descriptor/cursor");
-    expect(std::fgetc(previous_stream) == 7, "overwritten borrowed FILE was closed");
-    necessary(std::fclose(previous_stream) == 0, "prior borrowed FILE cleanup failed");
-    close_descriptor(held);
+    unsigned char byte = 0;
+    expect(files::read_stream(&byte, 1, 1, previous_stream) == 1 && byte == 7,
+        "overwritten borrowed FILE was closed");
+    necessary(files::close_stream(previous_stream) == 0, "prior borrowed stream cleanup failed");
     lookup.guards();
+    // No borrowed stack Record may reach the owning destructor.
+    lookup.value.records = nullptr;
+    lookup.value.record_count = 0;
+    context.close();
     finish();
 }
 
@@ -872,14 +1062,15 @@ void repeated_load(const fs::path& root)
     const std::array<RecordPlan, 1> second = {{{"gail", 3, 1, {{{3, 63, 0}, {}}}, false, 3}}};
     const Files a = make_files(root / label / "first", first, 29);
     const Files b = make_files(root / label / "second", second, 7);
-    GuardedLookup lookup;
-    Renderers renderers;
+    OwnerScope context(root / label);
+    auto& lookup = *context.lookup;
+    auto& renderers = context.renderers;
     screen_dialog_frame_file = -1;
     screen_dialog_frame_cursor = 0;
-    invoke(lookup, first, a, renderers.first);
+    invoke(lookup, first, a, *context.mounted, renderers.first);
     const Graph first_graph = inspect_graph(lookup.value, first, false);
     const std::size_t retained_owners = allocation_count;
-    invoke(lookup, second, b, renderers.first);
+    invoke(lookup, second, b, *context.mounted, renderers.first);
     const Graph second_graph = inspect_graph(lookup.value, second, false);
     expect(first_graph.table != second_graph.table &&
                first_graph.descriptor != second_graph.descriptor,
@@ -896,12 +1087,12 @@ void repeated_load(const fs::path& root)
                screen_dialog_frame_file == first_graph.descriptor &&
                screen_dialog_frame_cursor == 7,
         "repeated load descriptor/cursor asymmetry differs");
-    // Both graphs are genuine and remain independently owned. Cleanup uses
-    // snapshots taken while live, not the overwritten Lookup table.
+    // Reclaim only the genuinely overwritten graph from its live snapshot.
+    // The final graph stays attached to the real owner until its destructor.
     destroy_graph(first_graph);
-    destroy_graph(second_graph);
     renderers.unchanged();
     lookup.guards();
+    context.close();
     finish();
 }
 
@@ -960,6 +1151,83 @@ void run(const fs::path& root)
 }
 } // namespace
 
+// Transparent test-link observations of the actual resource I/O boundary.
+// Names are taken from its qualified Linux ELF object. Host allocations/frees
+// cannot consume the game's scalar ledger; all arguments/results/side effects
+// still belong to the real function. No wrapper is linked into gameplay.
+extern "C" files::Stream* __real__ZN9beachlife7runtime14resource_files11open_streamEPKcS3_(
+    const char* path, const char* mode) noexcept;
+extern "C" files::Stream* __wrap__ZN9beachlife7runtime14resource_files11open_streamEPKcS3_(
+    const char* path, const char* mode) noexcept
+{
+    Trace host(Phase::outside);
+    ++totals.io_forwardings;
+    return __real__ZN9beachlife7runtime14resource_files11open_streamEPKcS3_(path, mode);
+}
+
+extern "C" std::size_t __real__ZN9beachlife7runtime14resource_files11read_streamEPvmmPNS1_6StreamE(
+    void* buffer, std::size_t size, std::size_t count, files::Stream* stream) noexcept;
+extern "C" std::size_t __wrap__ZN9beachlife7runtime14resource_files11read_streamEPvmmPNS1_6StreamE(
+    void* buffer, std::size_t size, std::size_t count, files::Stream* stream) noexcept
+{
+    Trace host(Phase::outside);
+    ++totals.io_forwardings;
+    return __real__ZN9beachlife7runtime14resource_files11read_streamEPvmmPNS1_6StreamE(
+        buffer, size, count, stream);
+}
+
+extern "C" int __real__ZN9beachlife7runtime14resource_files12close_streamEPNS1_6StreamE(
+    files::Stream* stream) noexcept;
+extern "C" int __wrap__ZN9beachlife7runtime14resource_files12close_streamEPNS1_6StreamE(
+    files::Stream* stream) noexcept
+{
+    Trace host(Phase::outside);
+    ++totals.io_forwardings;
+    return __real__ZN9beachlife7runtime14resource_files12close_streamEPNS1_6StreamE(stream);
+}
+
+extern "C" int __real__ZN9beachlife7runtime14resource_files15open_descriptorEPKci(
+    const char* path, int flags) noexcept;
+extern "C" int __wrap__ZN9beachlife7runtime14resource_files15open_descriptorEPKci(
+    const char* path, int flags) noexcept
+{
+    Trace host(Phase::outside);
+    ++totals.io_forwardings;
+    return __real__ZN9beachlife7runtime14resource_files15open_descriptorEPKci(path, flags);
+}
+
+extern "C" int __real__ZN9beachlife7runtime14resource_files15read_descriptorEiPvj(
+    int descriptor, void* buffer, unsigned int bytes) noexcept;
+extern "C" int __wrap__ZN9beachlife7runtime14resource_files15read_descriptorEiPvj(
+    int descriptor, void* buffer, unsigned int bytes) noexcept
+{
+    Trace host(Phase::outside);
+    ++totals.io_forwardings;
+    return __real__ZN9beachlife7runtime14resource_files15read_descriptorEiPvj(
+        descriptor, buffer, bytes);
+}
+
+extern "C" int __real__ZN9beachlife7runtime14resource_files15seek_descriptorEiji(
+    int descriptor, unsigned int displacement, int origin) noexcept;
+extern "C" int __wrap__ZN9beachlife7runtime14resource_files15seek_descriptorEiji(
+    int descriptor, unsigned int displacement, int origin) noexcept
+{
+    Trace host(Phase::outside);
+    ++totals.io_forwardings;
+    return __real__ZN9beachlife7runtime14resource_files15seek_descriptorEiji(
+        descriptor, displacement, origin);
+}
+
+extern "C" int __real__ZN9beachlife7runtime14resource_files16close_descriptorEi(
+    int descriptor) noexcept;
+extern "C" int __wrap__ZN9beachlife7runtime14resource_files16close_descriptorEi(
+    int descriptor) noexcept
+{
+    Trace host(Phase::outside);
+    ++totals.io_forwardings;
+    return __real__ZN9beachlife7runtime14resource_files16close_descriptorEi(descriptor);
+}
+
 void* operator new(std::size_t bytes)
 {
     return allocate(bytes);
@@ -1003,7 +1271,10 @@ int main(int argc, char** argv)
     std::printf("{\"suite\":\"resource-file-producer\",\"sessions\":%zu,\"calls\":%zu,"
                 "\"records\":%zu,\"frames\":%zu,\"palettes\":%zu,\"allocations\":%zu,"
                 "\"releases\":%zu,\"graph_cleanups\":%zu,\"closed_descriptors\":%zu,"
-                "\"metadata_bytes\":%zu,\"data_bytes\":%zu,\"checks\":%zu}\n",
+                "\"metadata_bytes\":%zu,\"data_bytes\":%zu,\"checks\":%zu,"
+                "\"owner_constructions\":%zu,\"owner_destructions\":%zu,"
+                "\"bootstrap_cleanups\":%zu,\"owner_palette_releases\":%zu,"
+                "\"io_forwardings\":%zu}\n",
         totals.sessions,
         totals.calls,
         totals.records,
@@ -1015,6 +1286,11 @@ int main(int argc, char** argv)
         totals.closed_descriptors,
         totals.metadata_bytes,
         totals.data_bytes,
-        totals.checks);
+        totals.checks,
+        totals.owner_constructions,
+        totals.owner_destructions,
+        totals.bootstrap_cleanups,
+        totals.owner_palette_releases,
+        totals.io_forwardings);
     return 0;
 }

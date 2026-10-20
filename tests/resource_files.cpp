@@ -134,9 +134,14 @@ void metadata_close(const Generated& files)
     resource::Session session(files.mount());
     resource::Stream* stream = resource::open_stream("data\\sprites\\blsprite.HDR", "rb");
     check(stream != nullptr, "mounted metadata open");
+    std::uint64_t position = 99;
+    check(
+        resource::stream_position(stream, position) && position == 0, "live cursor starts at zero");
     std::array<unsigned char, 20> bytes;
     bytes.fill(0x7d);
     check(resource::read_stream(bytes.data() + 3, 2, 2, stream) == 2, "two complete words");
+    check(resource::stream_position(stream, position) && position == 4,
+        "cursor query follows actual reads without moving them");
     check(resource::read_stream(bytes.data() + 7, 3, 3, stream) == 2,
         "partial final element retains bytes");
     constexpr std::array<unsigned char, 20> expected{0x7d,
@@ -160,7 +165,14 @@ void metadata_close(const Generated& files)
         0x7d,
         0x7d};
     check(bytes == expected, "metadata values and outside guards");
+    check(resource::stream_position(stream, position) && position == 11,
+        "cursor retains partial-element bytes");
     check(resource::close_stream(stream) == 0, "first metadata close");
+    position = 99;
+    check(!resource::stream_position(stream, position) && position == 99,
+        "closed cursor query preserves output");
+    check(!resource::stream_position(nullptr, position) && position == 99,
+        "null cursor query preserves output");
 
     resource::Stream* colours = resource::open_stream("DATA/SPRITES/PALETTEMODIFIERS.BIN", "rb");
     check(colours && colours != stream, "new open retains a distinct live token");
@@ -265,6 +277,9 @@ void session_lifetime(const Generated& files)
         unsigned char byte = 0x75;
         {
             resource::Session inner(files.mount());
+            std::uint64_t position = 99;
+            check(!resource::stream_position(retained, position) && position == 99,
+                "foreign cursor query preserves output");
             check(resource::read_stream(&byte, 1, 1, retained) == 0 && byte == 0x75,
                 "nested session rejects an outer token without reading it");
             check(
@@ -293,6 +308,9 @@ int main(int argc, char** argv)
         require(argc == 2, "provide one fresh generated-file directory");
         check(resource::open_stream("Data/Sprites/BLSprite.hdr", "rb") == nullptr,
             "no process-directory fallback");
+        std::uint64_t position = 99;
+        check(!resource::stream_position(nullptr, position) && position == 99,
+            "unbound cursor query preserves output");
         Generated files(argv[1]);
         metadata_close(files);
         raw_cursor(files);

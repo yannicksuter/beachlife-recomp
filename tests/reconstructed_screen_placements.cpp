@@ -1076,7 +1076,14 @@ struct ManagerFrame
     {
         before.fill(0x36);
         after.fill(0xc9);
+#if defined(BEACHLIFE_DECOMP_FONT_PUBLICATION)
+        for (auto& data : value.fonts_04)
+        {
+            data = nullptr;
+        }
+#else
         std::memset(value.unknown_04, pattern, sizeof(value.unknown_04));
+#endif
 #if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
         for (auto& font : value.fonts_2c)
         {
@@ -1346,7 +1353,14 @@ struct ManagerScenario
             check_bytes(managers[i].before, 0x36);
             check_bytes(managers[i].after, 0xc9);
             const unsigned char pattern = i == 0 ? 0x53 : 0xa7;
+#if defined(BEACHLIFE_DECOMP_FONT_PUBLICATION)
+            for (const auto data : managers[i].value.fonts_04)
+            {
+                require(data == nullptr, "manager unused font-data pointer changed");
+            }
+#else
             check_bytes(managers[i].value.unknown_04, pattern);
+#endif
 #if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
             for (const auto font : managers[i].value.fonts_2c)
             {

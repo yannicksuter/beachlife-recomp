@@ -26,6 +26,12 @@ template <std::size_t N> bool same_bytes(const unsigned char (&a)[N], const unsi
 
 inline bool equal(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b)
 {
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    if (!same_bytes(a.unknown_a8, b.unknown_a8) || a.buffer_130 != b.buffer_130)
+    {
+        return false;
+    }
+#endif
     if (!(a.software_mode == b.software_mode && same_bytes(a.unknown_01, b.unknown_01) &&
             a.width == b.width && a.height == b.height &&
             a.clip_rectangle.x == b.clip_rectangle.x && a.clip_rectangle.y == b.clip_rectangle.y &&
@@ -58,6 +64,10 @@ inline bool equal(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b
 // renderer padding nor host deque internals contribute to fixture counters.
 inline std::size_t compared_bytes(const ScreenRequestRenderer& r)
 {
+    std::size_t tail_bytes = 0;
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    tail_bytes = sizeof(r.unknown_a8) + sizeof(r.buffer_130);
+#endif
     return sizeof(r.software_mode) + sizeof(r.unknown_01) + sizeof(r.width) + sizeof(r.height) +
            sizeof(r.clip_rectangle.x) + sizeof(r.clip_rectangle.y) +
            sizeof(r.clip_rectangle.width) + sizeof(r.clip_rectangle.height) + sizeof(r.pixels_1c) +
@@ -68,7 +78,7 @@ inline std::size_t compared_bytes(const ScreenRequestRenderer& r)
            sizeof(r.unknown_5e) + sizeof(r.word_60) + sizeof(r.unknown_64) + sizeof(r.surfaces) +
            sizeof(r.unknown_6c) + sizeof(r.current_surface) + sizeof(r.pixels_locked) +
            sizeof(r.unknown_79) + sizeof(r.dirty_rectangle_count) +
-           r.dirty_rectangles.values.size() * sizeof(ScreenRectangle);
+           r.dirty_rectangles.values.size() * sizeof(ScreenRectangle) + tail_bytes;
 }
 
 template <std::size_t N> void pattern(unsigned char (&bytes)[N], unsigned int seed)
@@ -116,5 +126,9 @@ inline void initialize(ScreenRequestRenderer& r, unsigned int seed)
     pattern(r.unknown_79, seed + 8U);
     r.dirty_rectangles.values = {{-7, -3, -2, 1}, {13, 17, 19, 23}};
     r.dirty_rectangle_count = 2;
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    pattern(r.unknown_a8, seed + 9U);
+    r.buffer_130 = nullptr;
+#endif
 }
 } // namespace renderer_queue_test

@@ -1297,3 +1297,37 @@ are typed borrowed subsystem models; full parser/manager construction and the
 script dispatcher are not supplied by this test. Linux optimized and explicit
 sanitizer checks are the initial scope; Windows/macOS and front-end execution
 remain separate.
+
+The experimental resource-owner target constructs the genuine sprite-resource
+manager, reads generated manifest-backed metadata and palettes through the mounted
+file API, selects lazy raw Frame data, and destroys the real graph. Existing FILE*
+metadata overloads remain available. The same full owner declaration is used by
+all selected consumers. Pool locking uses real host atomic exchange/yield/sleep;
+the bounded fixture seeds one genuine free pool slot and does not qualify refill,
+contention or original thread timing. Descriptor-zero and retained-closed-token
+behavior remain explicit. The producer allocation-observation fixture is restricted
+to 64-bit Linux with a GNU-compatible linker; its I/O wrappers only forward to the
+real mounted implementation. These headless capabilities do not connect the game
+controller, menu or GPU presentation.
+
+The experimental direct glyph writer also selects the strictly reconstructed
+row-tail source. Its existing headless glyph target checks the selected native
+body against literal pixels, mask aliases and preserved source buffers. Native
+compiler output and game-runtime linkage remain separate from VC6 matching.
+
+The optional `reconstructed_gui_parse_font_tests` target connects the complete
+FONT handler to genuine font-data and font-renderer construction through generated
+coordinate, TIFF and kerning files in the mounted file session. Three groups check
+the no-opening return, sequential typed publication, and retention of completed
+font data when the later renderer allocation throws. A single Linux test-link
+wrapper forwards successful scalar allocations to the real C++ runtime. Published
+objects are destroyed through their real lifetimes. The manager and parser are
+typed borrowed subsystem models, not complete game owners. Initial coverage is
+64-bit Linux optimized and explicit sanitizer builds; full GUI dispatch, owner
+lifetime, Windows/macOS and production front-end execution remain separate gates.
+
+The optional experimental FrameItem subsystem composes the complete Frame class,
+its owning child ring, resource-backed frame styles and real resource raster routes.
+`reconstructed_frame_item` uses generated mounted resources and genuine item/resource
+lifetimes for literal pixel and clipping checks. It is a headless subsystem; the game
+controller, window presentation and full menu are separate integration work.

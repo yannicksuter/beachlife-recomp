@@ -1,3 +1,5 @@
+#include "data/folder_source.h"
+#include "runtime/resource_files.h"
 #include "startup_resource_rasters.h"
 #include "startup_screen_dialog_frame_file.h"
 #include "startup_screen_dialog_resource.h"
@@ -11,17 +13,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
+#include <filesystem>
 #include <limits>
+#include <memory>
 #include <new>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
-#if defined(_WIN32)
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
 
 using Record = ScreenDialogResourceRecord;
 using Frame = ScreenDialogResourceFrame;
@@ -40,6 +39,9 @@ static_assert(offsetof(Frame, flag_74) == (sizeof(void*) == 8 ? 168 : 116));
 
 namespace
 {
+namespace fs = std::filesystem;
+namespace files = beachlife::runtime::resource_files;
+namespace data = beachlife::data;
 constexpr std::size_t guard = alignof(std::max_align_t);
 using RecordBytes = std::array<unsigned char, sizeof(Record)>;
 using FrameBytes = std::array<unsigned char, sizeof(Frame)>;
@@ -137,33 +139,19 @@ int observed_descriptor = -1;
 
 long raw_seek(int descriptor, long displacement, int origin)
 {
-#if defined(_WIN32)
-    return ::_lseek(descriptor, displacement, origin);
-#else
-    const off_t position = ::lseek(descriptor, static_cast<off_t>(displacement), origin);
-    necessary(position >= -1 && position <= INT_MAX, "raw position outside signed32 domain");
-    return static_cast<long>(position);
-#endif
+    necessary(displacement >= INT_MIN && displacement <= INT_MAX,
+        "raw displacement outside signed32 domain");
+    return files::seek_descriptor(descriptor, static_cast<unsigned int>(displacement), origin);
 }
 
 int raw_close(int descriptor)
 {
-#if defined(_WIN32)
-    return ::_close(descriptor);
-#else
-    return ::close(descriptor);
-#endif
+    return files::close_descriptor(descriptor);
 }
 
 int raw_read(int descriptor, unsigned char* buffer, unsigned int bytes)
 {
-#if defined(_WIN32)
-    return ::_read(descriptor, buffer, bytes);
-#else
-    const ssize_t count = ::read(descriptor, buffer, bytes);
-    necessary(count >= -1 && count <= INT_MAX, "raw read outside signed32 domain");
-    return static_cast<int>(count);
-#endif
+    return files::read_descriptor(descriptor, buffer, bytes);
 }
 
 void allocation_guards(const Allocation& a)
@@ -678,15 +666,17 @@ struct Input
 
 struct RawInput
 {
-    int descriptor;
+    std::unique_ptr<files::Session> session;
+    int descriptor = -1;
     explicit RawInput(const char* path)
     {
-#if defined(_WIN32)
-        descriptor = ::_open(path, _O_RDONLY | _O_BINARY);
-#else
-        descriptor = ::open(path, O_RDONLY);
-#endif
-        necessary(descriptor >= 0, "raw bank open failed");
+        const fs::path input = fs::absolute(fs::path(path));
+        const std::string logical = input.filename().generic_string();
+        auto source = std::make_shared<data::FolderSource>(
+            input.parent_path(), std::vector<data::SourceEntry>{{logical, fs::file_size(input)}});
+        session = std::make_unique<files::Session>(source);
+        descriptor = files::open_descriptor(logical.c_str(), 0x8000);
+        necessary(descriptor >= 0, "mounted raw bank open failed");
         necessary(screen_dialog_frame_file == -1 && screen_dialog_frame_cursor == 0,
             "file globals already borrowed");
         necessary(raw_seek(descriptor, 0, SEEK_CUR) == 0, "raw initial position differs");

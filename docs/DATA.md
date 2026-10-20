@@ -288,3 +288,7 @@ stream reads report complete elements. Destroy game owners before their session.
 The existing `retail_files` binding and its exactly-once close contract stay
 independent. Connecting the reconstructed resource owner requires its own
 prepared-source portability patch.
+
+A live resource stream can report its logical cursor with `stream_position`.
+The query performs no I/O or allocation and leaves both the cursor and a failed
+query's output argument unchanged. Closed or foreign-session tokens fail.

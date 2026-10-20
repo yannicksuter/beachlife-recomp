@@ -1,4 +1,6 @@
+#include "data/folder_source.h"
 #include "renderer_queue_test_state.h"
+#include "runtime/resource_files.h"
 #include "startup_screen_palette_modifiers.h"
 
 #include <array>
@@ -11,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <new>
 #include <string>
 #include <type_traits>
@@ -131,6 +134,8 @@ void verify_file(const std::filesystem::path& path, const Bytes& expected)
 
 struct Files
 {
+    std::filesystem::path root;
+    std::filesystem::path missing_file;
     std::filesystem::path uniform_file;
     std::filesystem::path alternating_file;
     std::filesystem::path trailing_file;
@@ -142,22 +147,24 @@ struct Files
     Bytes alternating_bytes;
     Bytes trailing_bytes;
 
-    explicit Files(const std::filesystem::path& root)
-        : uniform_file(root / "r142-uniform.bin")
+    explicit Files(const std::filesystem::path& directory)
+        : root(directory)
+        , missing_file(root / "r142-absent.bin")
+        , uniform_file(root / "r142-uniform.bin")
         , alternating_file(root / "r142-alternating.bin")
         , trailing_file(root / "r142-trailing.bin")
-        , uniform(uniform_file.string())
-        , alternating(alternating_file.string())
-        , trailing(trailing_file.string())
-        , missing((root / "r142-absent.bin").string())
+        , uniform("r142-uniform.bin")
+        , alternating("r142-alternating.bin")
+        , trailing("r142-trailing.bin")
+        , missing("r142-absent.bin")
         , uniform_bytes(generated_file(false))
         , alternating_bytes(generated_file(true))
         , trailing_bytes(uniform_bytes)
     {
         std::filesystem::create_directories(root);
         // Only the task's generated absent-path sentinel is removed.
-        std::filesystem::remove(std::filesystem::path(missing));
-        require(!std::filesystem::exists(std::filesystem::path(missing)), "missing path exists");
+        std::filesystem::remove(missing_file);
+        require(!std::filesystem::exists(missing_file), "missing path exists");
         trailing_bytes.insert(trailing_bytes.end(), {91, 82, 73, 64, 55, 46, 37, 28, 19});
         write_file(uniform_file, uniform_bytes);
         write_file(alternating_file, alternating_bytes);
@@ -167,13 +174,20 @@ struct Files
             "literal file extent differs");
     }
 
+    std::shared_ptr<const beachlife::data::FileSource> mount() const
+    {
+        return std::make_shared<beachlife::data::FolderSource>(root,
+            std::vector<beachlife::data::SourceEntry>{{uniform, uniform_bytes.size()},
+                {alternating, alternating_bytes.size()},
+                {trailing, trailing_bytes.size()}});
+    }
+
     void verify() const
     {
         verify_file(uniform_file, uniform_bytes);
         verify_file(alternating_file, alternating_bytes);
         verify_file(trailing_file, trailing_bytes);
-        require(
-            !std::filesystem::exists(std::filesystem::path(missing)), "missing path was created");
+        require(!std::filesystem::exists(missing_file), "missing path was created");
     }
 };
 
@@ -439,6 +453,7 @@ int main(int argc, char** argv)
     {
         require(argc == 2, "expected generated file directory");
         Files files{std::filesystem::path(argv[1])};
+        beachlife::runtime::resource_files::Session session(files.mount());
         const char* saved_path = screen_dialog_palette_file_path;
         ScreenRequestRenderer* saved_renderer = screen_request_renderer;
         {

@@ -1,0 +1,269 @@
+Reconstruct the complete direct font glyph writer and its real colour dependency.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 5200c78a30105d24eae0bcd4ca80f7115a0d4d8e..69a6c43aee38c809fd3a0ff5fb8801e30c4f7e9d 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -896,3 +896,78 @@ extern "C" __declspec(dllexport) void FixtureFontSetRectangle(
+     fixture_font_rectangle_after[3] = font->rectangle.height;
+     fixture_font_rectangle_completed = 1;
+ }
++
++#include "startup_screen_text.h"
++#include "startup_screen_renderer.h"
++
++typedef char GlyphDirectIntWidth[(sizeof(int) == 4) ? 1 : -1];
++typedef char GlyphDirectWordWidth[(sizeof(unsigned int) == 4) ? 1 : -1];
++typedef char GlyphDirectPixelWidth[(sizeof(unsigned short) == 2) ? 1 : -1];
++typedef char GlyphDirectPointerWidth[(sizeof(void*) == 4) ? 1 : -1];
++typedef char GlyphDirectFontWord10[(offsetof(ScreenFontRenderer, word_10) == 0x10) ? 1 : -1];
++typedef char GlyphDirectFontState14[(offsetof(ScreenFontRenderer, state_14) == 0x14) ? 1 : -1];
++typedef char GlyphDirectFontData[(offsetof(ScreenFontRenderer, data_1c) == 0x1c) ? 1 : -1];
++typedef char GlyphDirectFontLookup[(offsetof(ScreenFontRenderer, lookup_20) == 0x20) ? 1 : -1];
++typedef char GlyphDirectFontSize[(sizeof(ScreenFontRenderer) == 0x24) ? 1 : -1];
++typedef char GlyphDirectRendererOpaque0c[(offsetof(ScreenRequestRenderer, unknown_0c) == 0x0c) ? 1 : -1];
++typedef char GlyphDirectRendererFormat44[(offsetof(ScreenRequestRenderer, format_44) == 0x44) ? 1 : -1];
++typedef char GlyphDirectRendererOpaque48[(offsetof(ScreenRequestRenderer, unknown_48) == 0x48) ? 1 : -1];
++typedef char GlyphDirectRendererOpaque5e[(offsetof(ScreenRequestRenderer, unknown_5e) == 0x5e) ? 1 : -1];
++typedef char GlyphDirectRendererWord60[(offsetof(ScreenRequestRenderer, word_60) == 0x60) ? 1 : -1];
++typedef char GlyphDirectRendererSurfaces[(offsetof(ScreenRequestRenderer, surfaces) == 0x68) ? 1 : -1];
++typedef char GlyphDirectRendererSize[(sizeof(ScreenRequestRenderer) == 0x7c) ? 1 : -1];
++
++ScreenFontRenderer* volatile fixture_glyph_direct_receiver;
++ScreenRequestRenderer* volatile fixture_glyph_direct_renderer;
++ScreenRequestRenderer* volatile fixture_glyph_direct_previous_renderer;
++const unsigned char* volatile fixture_glyph_direct_source;
++unsigned short* volatile fixture_glyph_direct_destination;
++volatile unsigned int fixture_glyph_direct_word10;
++volatile unsigned char fixture_glyph_direct_state14;
++volatile unsigned int fixture_glyph_direct_format44;
++volatile unsigned short fixture_glyph_direct_before[8];
++volatile unsigned short fixture_glyph_direct_after[8];
++ScreenRequestRenderer* volatile fixture_glyph_direct_restored_renderer;
++volatile unsigned int fixture_glyph_direct_completed;
++
++// Comparison-only borrowed preconditions: genuine live font and renderer;
++// readable source[12] and writable ushort destination[24], with initialized
++// observed values. The leading row keeps the method's final pointer steps
++// inside those arrays. Character-view aliasing is allowed when both extents
++// remain live. No FontData owner, font, renderer or pixel lifetime is invented.
++// Neither this export nor the comparison image is ever executed.
++extern "C" __declspec(dllexport) void FixtureFontGlyphDirect(
++    ScreenFontRenderer* font, ScreenRequestRenderer* renderer,
++    const unsigned char* source, unsigned short* destination)
++{
++    ScreenRequestRenderer* previous = screen_request_renderer;
++    fixture_glyph_direct_receiver = font;
++    fixture_glyph_direct_renderer = renderer;
++    fixture_glyph_direct_previous_renderer = previous;
++    fixture_glyph_direct_source = source;
++    fixture_glyph_direct_destination = destination;
++    fixture_glyph_direct_word10 = font->word_10;
++    fixture_glyph_direct_state14 = font->state_14;
++    fixture_glyph_direct_format44 = renderer->format_44;
++    fixture_glyph_direct_before[0] = destination[8];
++    fixture_glyph_direct_before[1] = destination[9];
++    fixture_glyph_direct_before[2] = destination[10];
++    fixture_glyph_direct_before[3] = destination[11];
++    fixture_glyph_direct_before[4] = destination[16];
++    fixture_glyph_direct_before[5] = destination[17];
++    fixture_glyph_direct_before[6] = destination[18];
++    fixture_glyph_direct_before[7] = destination[19];
++    screen_request_renderer = renderer;
++    font->DrawGlyphDirect(source, 4, destination, 4, 0, 1, 0, 1, 2, 2, 0);
++    screen_request_renderer = previous;
++    fixture_glyph_direct_restored_renderer = screen_request_renderer;
++    fixture_glyph_direct_after[0] = destination[8];
++    fixture_glyph_direct_after[1] = destination[9];
++    fixture_glyph_direct_after[2] = destination[10];
++    fixture_glyph_direct_after[3] = destination[11];
++    fixture_glyph_direct_after[4] = destination[16];
++    fixture_glyph_direct_after[5] = destination[17];
++    fixture_glyph_direct_after[6] = destination[18];
++    fixture_glyph_direct_after[7] = destination[19];
++    fixture_glyph_direct_completed = 1;
++}
+diff --git a/metadata.csv b/metadata.csv
+index 72eb41a67350dc4087d1fcb04e4ca65086e00a78..936a4e8e01bb2858011ac1c510b920111bc7f39e 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -72,3 +72,5 @@ address,type,size,symbol
+ 0x004f4eb0,float,8,
+ 0x004f4ea8,float,8,
+ 0x0049f9e0,function,30,?SetRectangle@ScreenFontRenderer@@QAEXHHHH@Z
++0x0049fdd0,function,323,?DrawGlyphDirect@ScreenFontRenderer@@QAEXPBEHPAGHHHHHHHPBG@Z
++0x00411a60,function,97,?ConvertColour@ScreenRequestRenderer@@QAEIHHH@Z
+diff --git a/src/startup_font_glyph_direct.cpp b/src/startup_font_glyph_direct.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6d6253d5f77d8fbcce111b92d5310b0b11f1b061
+--- /dev/null
++++ b/src/startup_font_glyph_direct.cpp
+@@ -0,0 +1,87 @@
++#include "startup_screen_text.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0049fdd0
++void ScreenFontRenderer::DrawGlyphDirect(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short*)
++{
++    const unsigned char* input = source + (source_y + height - 1) * source_stride + source_x;
++    unsigned short* output = destination + ((destination_y + height - 1) * destination_stride + destination_x) * 2;
++    unsigned int value = word_10;
++    unsigned int colour = screen_request_renderer->ConvertColour(
++        (value >> 16) & 255, (value >> 8) & 255, value & 255);
++
++    if (state_14 != 0)
++    {
++        if (screen_request_renderer->format_44 == 1)
++        {
++            while (height != 0)
++            {
++                int remaining = width;
++                while (remaining != 0)
++                {
++                    if ((*input & 1) != 0)
++                    {
++                        *output = 0xffff;
++                    }
++                    if ((*input & 2) != 0)
++                    {
++                        *output = 0;
++                    }
++                    output += 2;
++                    ++input;
++                    --remaining;
++                }
++                output -= (destination_stride + width) * 2;
++                input -= source_stride + width;
++                --height;
++            }
++        }
++        else
++        {
++            while (height != 0)
++            {
++                int remaining = width;
++                while (remaining != 0)
++                {
++                    if ((*input & 1) != 0)
++                    {
++                        *output = 0xffff;
++                    }
++                    if ((*input & 2) != 0)
++                    {
++                        *output = 0;
++                    }
++                    output += 2;
++                    ++input;
++                    --remaining;
++                }
++                output -= (destination_stride + width) * 2;
++                input -= source_stride + width;
++                --height;
++            }
++        }
++    }
++    else
++    {
++        while (height != 0)
++        {
++            int remaining = width;
++            while (remaining != 0)
++            {
++                if ((*input & 1) != 0)
++                {
++                    *output = static_cast<unsigned short>(colour);
++                }
++                output += 2;
++                ++input;
++                --remaining;
++            }
++            output -= (destination_stride + width) * 2;
++            input -= source_stride + width;
++            --height;
++        }
++    }
++}
+diff --git a/src/startup_renderer_colour.cpp b/src/startup_renderer_colour.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c0f0a492c3c2bb0cd022cca95870cb4e05631baf
+--- /dev/null
++++ b/src/startup_renderer_colour.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x00411a60
++unsigned int ScreenRequestRenderer::ConvertColour(int red, int green, int blue)
++{
++    if (format_44 == 0)
++    {
++        unsigned int packed = static_cast<unsigned int>(red) & 0xfff8u;
++        packed <<= 5;
++        packed |= static_cast<unsigned char>(green) & 0xfcu;
++        packed <<= 3;
++        return packed | ((blue >> 3) & 0x1f);
++    }
++
++    unsigned int packed = static_cast<unsigned char>(red) & 0xf8u;
++    packed <<= 5;
++    packed |= static_cast<unsigned char>(green) & 0xf8u;
++    packed <<= 2;
++    return packed | ((blue >> 3) & 0x1f);
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 417b13db6a5e8425ea2a9889998196407a9d8f7a..ca27874db2f5e1c6b93552ce7f3737da81f3ef65 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -36,7 +36,9 @@ struct ScreenRequestRenderer
+     unsigned char unknown_01[3];
+     unsigned int width;
+     unsigned int height;
+-    unsigned char unknown_0c[0x52];
++    unsigned char unknown_0c[0x38];
++    unsigned int format_44;
++    unsigned char unknown_48[0x16];
+     unsigned char unknown_5e[2];
+     unsigned int word_60;
+     unsigned char unknown_64[4];
+@@ -46,6 +48,7 @@ struct ScreenRequestRenderer
+     unsigned char pixels_locked;
+ 
+     void SetWord60(unsigned int value);
++    unsigned int ConvertColour(int red, int green, int blue);
+ 
+     int CreateSurface(int width, int height, int mode);
+     void PrepareSurface(int surface);
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index 00239265bdc6c99584d31cf436ff972e373faadf..90111bc7c14ce6401d0e531019c573d0d854852c 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -21,6 +21,11 @@ struct ScreenFontRenderer
+     ScreenFontRenderer(ScreenFontData* data, ScreenTextLookup* lookup);
+ 
+     void SetRectangle(int x, int y, int width, int height);
++
++    void DrawGlyphDirect(const unsigned char* source, int source_stride,
++        unsigned short* destination, int destination_stride,
++        int source_x, int source_y, int destination_x, int destination_y,
++        int width, int height, const unsigned short* palette);
+ };
+ 
+ #endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index e2b613da4dd7e5c52edb9d211391bfef9850576d..0e4958c201240ae2f2a69538e0dd6d838d28e483 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -507,6 +507,11 @@
+       "address": "0x0049f9e0",
+       "size": 30,
+       "name": "ScreenFontRenderer::SetRectangle"
++    },
++    {
++      "address": "0x0049fdd0",
++      "size": 323,
++      "name": "ScreenFontRenderer::DrawGlyphDirect"
+     }
+   ],
+   "library_functions": [

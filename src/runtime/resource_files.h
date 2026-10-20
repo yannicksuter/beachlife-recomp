@@ -3,6 +3,7 @@
 #include "data/source.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 namespace beachlife::runtime::resource_files
@@ -39,6 +40,11 @@ class Session
 Stream* open_stream(const char* path, const char* mode) noexcept;
 std::size_t read_stream(void* buffer, std::size_t size, std::size_t count, Stream* stream) noexcept;
 int close_stream(Stream* stream) noexcept;
+
+// Read-only logical cursor of a live token in the current Session. No I/O,
+// allocation or cursor movement. Failure leaves position unchanged, including
+// for null, closed, foreign or unbound tokens.
+bool stream_position(Stream* stream, std::uint64_t& position) noexcept;
 
 // Descriptor values belong to the current Session and are not reused during
 // it. Flags are read-only (0), optionally with the original Windows binary bit

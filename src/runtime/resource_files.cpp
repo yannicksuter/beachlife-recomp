@@ -190,6 +190,17 @@ int close_stream(Stream* stream) noexcept
     return close_owned(owned(stream));
 }
 
+bool stream_position(Stream* token, std::uint64_t& position) noexcept
+{
+    Stream* stream = owned(token);
+    if (!stream || !stream->file)
+    {
+        return false;
+    }
+    position = stream->cursor;
+    return true;
+}
+
 int open_descriptor(const char* path, int flags) noexcept
 {
     if (!current || (flags != 0 && flags != 0x8000) ||

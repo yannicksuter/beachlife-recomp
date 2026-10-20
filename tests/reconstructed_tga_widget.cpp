@@ -660,7 +660,7 @@ void run_case(const Case& item, const std::string& maximum_prefix)
     manager.value.auxiliary_130 = &auxiliary.value;
     manager.value.value_138 = 0.5f;
     manager.value.renderer = &r;
-    renderer_queue_test::pattern(manager.value.unknown_04, 0x27);
+    std::fill(std::begin(manager.value.fonts_04), std::end(manager.value.fonts_04), nullptr);
     renderer_queue_test::pattern(manager.value.unknown_54, 0x38);
     renderer_queue_test::pattern(manager.value.unknown_90, 0x49);
     renderer_queue_test::pattern(manager.value.unknown_c0, 0x5a);
@@ -839,7 +839,9 @@ void run_case(const Case& item, const std::string& maximum_prefix)
                 std::equal(std::begin(m.fonts_2c),
                     std::end(m.fonts_2c),
                     std::begin(manager_before.fonts_2c)) &&
-                renderer_queue_test::same_bytes(m.unknown_04, manager_before.unknown_04) &&
+                std::equal(std::begin(m.fonts_04),
+                    std::end(m.fonts_04),
+                    std::begin(manager_before.fonts_04)) &&
                 renderer_queue_test::same_bytes(m.unknown_54, manager_before.unknown_54) &&
                 renderer_queue_test::same_bytes(m.unknown_90, manager_before.unknown_90) &&
                 renderer_queue_test::same_bytes(m.unknown_c0, manager_before.unknown_c0),

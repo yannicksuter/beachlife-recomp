@@ -66,7 +66,17 @@ void check_layout(const ScreenRequestRenderer& r)
         "retained suffix moved");
     require(offset(r, &r.dirty_rectangle_count) == 136 + sizeof(RendererRectangleQueue),
         "native queue or count extent differs");
-    const std::size_t end = 136 + sizeof(RendererRectangleQueue) + sizeof(r.dirty_rectangle_count);
+    const std::size_t prefix_end =
+        136 + sizeof(RendererRectangleQueue) + sizeof(r.dirty_rectangle_count);
+    std::size_t end = prefix_end;
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    require(offset(r, r.unknown_a8) == prefix_end && sizeof(r.unknown_a8) == 0x88,
+        "marker tail opaque interval differs");
+    const std::size_t pointer_offset =
+        (prefix_end + 0x88 + alignof(void*) - 1) / alignof(void*) * alignof(void*);
+    require(offset(r, &r.buffer_130) == pointer_offset, "marker pointer alignment differs");
+    end = pointer_offset + sizeof(r.buffer_130);
+#endif
     const std::size_t alignment = alignof(ScreenRequestRenderer);
     require(alignment == alignof(void*) &&
                 sizeof(ScreenRequestRenderer) == (end + alignment - 1) / alignment * alignment,

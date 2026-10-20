@@ -308,7 +308,14 @@ void initialize_manager(Guarded<ScreenManager>& object, std::size_t seed)
     // These are live borrowed observed prefixes. No original manager constructor,
     // destructor or method is supplied or invoked by the reader fixture.
     guard(object, seed);
+#if defined(BEACHLIFE_DECOMP_FONT_PUBLICATION)
+    for (auto& data : object.value.fonts_04)
+    {
+        data = nullptr;
+    }
+#else
     fill(object.value.unknown_04, seed + 1);
+#endif
 #if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
     for (auto& font : object.value.fonts_2c)
     {

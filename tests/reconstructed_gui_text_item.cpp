@@ -582,7 +582,7 @@ bool same_manager(const ScreenManager& a, const ScreenManager& b)
            a.auxiliary_130 == b.auxiliary_130 && a.item_134 == b.item_134 &&
            a.value_138 == b.value_138 &&
            std::equal(std::begin(a.fonts_2c), std::end(a.fonts_2c), std::begin(b.fonts_2c)) &&
-           renderer_queue_test::same_bytes(a.unknown_04, b.unknown_04) &&
+           std::equal(std::begin(a.fonts_04), std::end(a.fonts_04), std::begin(b.fonts_04)) &&
            renderer_queue_test::same_bytes(a.unknown_54, b.unknown_54) &&
            renderer_queue_test::same_bytes(a.unknown_90, b.unknown_90) &&
            renderer_queue_test::same_bytes(a.unknown_c0, b.unknown_c0);

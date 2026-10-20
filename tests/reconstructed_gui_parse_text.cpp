@@ -172,6 +172,7 @@ void preserved(const GuiParserState& p, const GuiParserState& before)
             p.alternate_context_14 == before.alternate_context_14 &&
             p.context_head == before.context_head &&
             p.previous_context == before.previous_context && p.word_38 == before.word_38 &&
+            p.word_3c == before.word_3c &&
             std::equal(
                 std::begin(p.unknown_24), std::end(p.unknown_24), std::begin(before.unknown_24)),
         "unrelated parser member changed");

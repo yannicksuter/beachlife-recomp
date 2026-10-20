@@ -397,3 +397,10 @@ method. Its minimal comparison declaration is removed by the early native
 compatibility series before experimental font declarations are applied. Native
 font drawing retains its complete header and existing combined settings source;
 the new matching translation unit is not selected by native targets.
+
+The 323-byte direct font glyph writer has a strict matching reconstruction;
+raw bytes differ only at relocated addresses. Its real colour-conversion
+dependency is included without additional matching credit. The early native
+compatibility series restores the prior declarations and removes both matching
+translation units before experimental patches supply their existing owners,
+preserving the native glyph implementation and source selections.

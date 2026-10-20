@@ -226,7 +226,7 @@ struct Environment
         renderer_queue_test::initialize(renderer.value, 0x31);
         auto& m = manager.value;
         m.renderer = &renderer.value;
-        renderer_queue_test::pattern(m.unknown_04, 0x41);
+        std::fill(std::begin(m.fonts_04), std::end(m.fonts_04), nullptr);
         renderer_queue_test::pattern(m.unknown_54, 0x52);
         renderer_queue_test::pattern(m.unknown_90, 0x63);
         renderer_queue_test::pattern(m.unknown_c0, 0x74);
@@ -365,7 +365,7 @@ void verify_manager(const ScreenManager& a, const ScreenManager& b)
                 a.previous_mode == b.previous_mode && a.auxiliary_130 == b.auxiliary_130 &&
                 a.item_134 == b.item_134 && same_float(a.value_138, b.value_138) &&
                 std::equal(std::begin(a.fonts_2c), std::end(a.fonts_2c), std::begin(b.fonts_2c)) &&
-                renderer_queue_test::same_bytes(a.unknown_04, b.unknown_04) &&
+                std::equal(std::begin(a.fonts_04), std::end(a.fonts_04), std::begin(b.fonts_04)) &&
                 renderer_queue_test::same_bytes(a.unknown_54, b.unknown_54) &&
                 renderer_queue_test::same_bytes(a.unknown_90, b.unknown_90) &&
                 renderer_queue_test::same_bytes(a.unknown_c0, b.unknown_c0),

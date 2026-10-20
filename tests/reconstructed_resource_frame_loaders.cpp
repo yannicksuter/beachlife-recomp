@@ -1,3 +1,5 @@
+#include "data/folder_source.h"
+#include "runtime/resource_files.h"
 #include "startup_screen_dialog_frame_file.h"
 #include "startup_screen_dialog_resource.h"
 
@@ -9,16 +11,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
+#include <memory>
 #include <new>
 #include <type_traits>
-
-#if defined(_WIN32)
-#include <fcntl.h>
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
+#include <vector>
 
 using Frame = ScreenDialogResourceFrame;
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
@@ -30,6 +29,10 @@ static_assert(sizeof(Frame) == (sizeof(void*) == 8 ? 176 : 120));
 
 namespace
 {
+namespace fs = std::filesystem;
+namespace files = beachlife::runtime::resource_files;
+namespace data = beachlife::data;
+fs::path generated_root;
 constexpr std::size_t guard = alignof(std::max_align_t);
 constexpr std::size_t max_file = 128034;
 using Bytes = std::array<unsigned char, sizeof(Frame)>;
@@ -76,11 +79,7 @@ void expect(bool condition, const char* reason)
 
 long long position(int descriptor)
 {
-#if defined(_WIN32)
-    return ::_lseek(descriptor, 0, SEEK_CUR);
-#else
-    return ::lseek(descriptor, 0, SEEK_CUR);
-#endif
+    return files::seek_descriptor(descriptor, 0, SEEK_CUR);
 }
 
 // These are literal publication masks, not a second implementation of a loader.
@@ -487,10 +486,12 @@ constexpr std::array<ExceptionCase, 7> exceptions = {{{"W-new-I", 0, 1, {10U, 10
 struct File
 {
     std::array<unsigned char, max_file> bytes{};
-    FILE* stream = nullptr;
+    fs::path path;
+    std::unique_ptr<files::Session> session;
     int descriptor = -1;
 
     explicit File(const Case& c)
+        : path(generated_root / "raw.bin")
     {
         std::size_t at = c.metadata_start;
         const std::size_t indices = static_cast<std::size_t>(c.count) * c.planes;
@@ -520,24 +521,23 @@ struct File
                             : c.data == Data::ascending ? static_cast<unsigned char>(64 + i)
                                                         : c.literal[i];
         }
-        stream = std::tmpfile();
-        necessary(stream != nullptr, "real temporary file creation");
-#if defined(_WIN32)
-        descriptor = ::_fileno(stream);
-        necessary(
-            descriptor >= 0 && ::_setmode(descriptor, _O_BINARY) != -1, "binary descriptor mode");
-#else
-        descriptor = ::fileno(stream);
-        necessary(descriptor >= 0, "real file descriptor");
-#endif
-        necessary(std::fwrite(bytes.data(), 1, c.file_bytes, stream) == c.file_bytes,
-            "generated file write");
-        necessary(std::fflush(stream) == 0, "generated file flush");
-#if defined(_WIN32)
-        const long actual = ::_lseek(descriptor, static_cast<long>(c.initial_position), SEEK_SET);
-#else
-        const off_t actual = ::lseek(descriptor, static_cast<off_t>(c.initial_position), SEEK_SET);
-#endif
+        fs::create_directories(generated_root);
+        necessary(!fs::exists(path), "generated raw path already exists");
+        std::ofstream output(path, std::ios::binary);
+        output.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(c.file_bytes));
+        output.close();
+        necessary(bool(output), "generated file write");
+        // The raw game handle is a mounted resource ID, never an OS descriptor.
+        auto source = std::make_shared<data::FolderSource>(
+            generated_root, std::vector<data::SourceEntry>{{"raw.bin", c.file_bytes}});
+        session = std::make_unique<files::Session>(source);
+        descriptor = files::open_descriptor("raw.bin", 0x8000);
+        necessary(descriptor >= 0, "mounted raw descriptor");
+        necessary(c.initial_position >= 0 && c.initial_position <= INT_MAX,
+            "initial position outside signed32 domain");
+        const int actual = files::seek_descriptor(
+            descriptor, static_cast<unsigned int>(c.initial_position), SEEK_SET);
         necessary(actual == c.initial_position, "initial real file position");
     }
     ~File()
@@ -546,11 +546,13 @@ struct File
     }
     void close()
     {
-        if (stream)
+        if (descriptor >= 0)
         {
-            FILE* closing = stream;
-            stream = nullptr;
-            necessary(std::fclose(closing) == 0, "real file close");
+            const int closing = descriptor;
+            descriptor = -1;
+            necessary(files::close_descriptor(closing) == 0, "real file close");
+            session.reset();
+            necessary(fs::remove(path), "generated raw file removal");
         }
     }
 };
@@ -1008,8 +1010,10 @@ void operator delete(void* pointer, std::size_t) noexcept
     release(pointer);
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    necessary(argc == 2, "expected generated file directory");
+    generated_root = fs::path(argv[1]);
     necessary(screen_dialog_frame_file == -1 && screen_dialog_frame_cursor == 0,
         "real file-state global initialization");
     for (const Case& c : cases)
