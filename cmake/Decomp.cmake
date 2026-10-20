@@ -1881,3 +1881,35 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_pool_refill PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Actual active-node erasure reuses the existing typed list and pool owners.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_active_node_erase STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_list_erase.cpp")
+    target_include_directories(beachlife_reconstructed_active_node_erase PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_active_node_erase PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_active_node_erase PUBLIC
+        beachlife_reconstructed_active_list_cleanup)
+    add_dependencies(beachlife_reconstructed_active_node_erase verify_reconstructed_source)
+
+    add_executable(reconstructed_active_node_erase_tests
+        tests/reconstructed_active_node_erase.cpp)
+    target_link_libraries(reconstructed_active_node_erase_tests PRIVATE
+        beachlife_reconstructed_active_node_erase)
+    set_target_properties(beachlife_reconstructed_active_node_erase
+        reconstructed_active_node_erase_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_active_node_erase PRIVATE /GL-)
+        target_compile_options(reconstructed_active_node_erase_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_active_node_erase PRIVATE -fno-lto)
+        target_compile_options(reconstructed_active_node_erase_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_active_node_erase_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_active_node_erase COMMAND reconstructed_active_node_erase_tests)
+    set_tests_properties(reconstructed_active_node_erase PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

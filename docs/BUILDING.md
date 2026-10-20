@@ -1108,3 +1108,12 @@ chains, reduced and single-slot returns, and one successful fresh allocation
 with real pointer-array storage in its returned slot. The fixture clears pool
 references before releasing each backing owner. Its finite domain excludes
 allocation failure, scavenging and concurrent access; no retail data is needed.
+
+The experimental `reconstructed_active_node_erase` target exercises the real
+active-list node erasure against typed borrowed entries, sentinels and pool
+storage. Three finite groups cover middle, first/last and sole-node removal,
+including an entry released before its distinct node. Existing list insertion,
+node construction, clearing and pool return remain the actual implementations.
+The fixture detaches all pool roots before its backing owners end lifetime.
+It retains the existing uncontended OS-test boundary; it does not implement a
+retail list owner, active-screen manager or gameplay loop.
