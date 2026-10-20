@@ -990,3 +990,12 @@ removes a fresh directory supplied through `BEACHLIFE_RESOURCE_FILE_TEST_ROOT`.
 Windows uses the original path spelling; POSIX uses its path separators and CRT.
 This does not qualify mounted game-file access, short metadata reads, arbitrary
 palette formats or the original Intro.
+
+The experimental `reconstructed_resource_palette_modifiers_tests` target
+exercises the real palette-file reader, constructor and destructor with complete
+generated RGB files. Literal RGB565/RGB555 expectations cover twelve banks,
+file boundaries and repeated loads. Real object lifetimes check registration
+replacement, unconditional cleanup and preservation of opaque storage. The
+fixture uses the existing renderer global and typed native renderer/deque.
+Truncated files and dynamic exception injection are outside this bounded
+qualification; it does not implement the full resource manager or Intro flow.

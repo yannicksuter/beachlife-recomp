@@ -1523,3 +1523,44 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_resource_file_producer PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Palette modifiers retain the actual file reader and registration lifetime.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_resource_palette_modifiers STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_palette_modifiers_load.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_palette_modifiers_path.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_palette_modifiers_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_palette_modifiers_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_palette_modifiers_registration.cpp")
+    target_include_directories(beachlife_reconstructed_resource_palette_modifiers PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_palette_modifiers PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_palette_modifiers PUBLIC
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_resource_palette_modifiers verify_reconstructed_source)
+
+    add_executable(reconstructed_resource_palette_modifiers_tests
+        tests/reconstructed_resource_palette_modifiers.cpp)
+    target_link_libraries(reconstructed_resource_palette_modifiers_tests PRIVATE
+        beachlife_reconstructed_resource_palette_modifiers)
+    set_target_properties(beachlife_reconstructed_resource_palette_modifiers
+        reconstructed_resource_palette_modifiers_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_palette_modifiers PRIVATE /GL-)
+        target_compile_options(reconstructed_resource_palette_modifiers_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_palette_modifiers PRIVATE -fno-lto)
+        target_compile_options(reconstructed_resource_palette_modifiers_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_palette_modifiers_tests PRIVATE -fno-lto)
+    endif()
+    set(BEACHLIFE_RECONSTRUCTED_RESOURCE_PALETTE_ROOT
+        "${CMAKE_CURRENT_BINARY_DIR}/resource-palette-fixture"
+        CACHE STRING "Generated palette-modifier fixture directory")
+    add_test(NAME reconstructed_resource_palette_modifiers
+        COMMAND reconstructed_resource_palette_modifiers_tests
+            "${BEACHLIFE_RECONSTRUCTED_RESOURCE_PALETTE_ROOT}")
+    set_tests_properties(reconstructed_resource_palette_modifiers PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
