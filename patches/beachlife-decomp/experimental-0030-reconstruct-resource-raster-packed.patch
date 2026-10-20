@@ -1,0 +1,163 @@
+diff --git a/src/startup_resource_rasters.h b/src/startup_resource_rasters.h
+--- a/src/startup_resource_rasters.h
++++ b/src/startup_resource_rasters.h
+@@ -7,4 +7,10 @@
+     const unsigned short* palette, unsigned int stride, int x, int y,
+     int width, int height, int left, int top, int right, int bottom);
+ 
++// Actual 0x00401b60 cdecl: twelve argument words and RET0. Packed pixels
++// occupy one genuine unsigned-short element; stride is measured in elements.
++void ResourceRaster1Packed(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom);
++
+ #endif
+diff --git a/src/startup_resource_raster1_packed.cpp b/src/startup_resource_raster1_packed.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_raster1_packed.cpp
+@@ -0,0 +1,144 @@
++#include "startup_resource_rasters.h"
++
++// FUNCTION: BEACHLIFE 0x00401b60
++void ResourceRaster1Packed(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom)
++{
++    unsigned short* row = destination + y * static_cast<int>(stride);
++
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        if (height <= 0)
++            return;
++        row += x;
++        do
++        {
++            unsigned short* output = row;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = static_cast<signed char>(*source++);
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet = 0;
++                    do
++                    {
++                        *output++ = palette[*source++];
++                    } while (--count != 0);
++                }
++                column -= packet;
++                output -= packet;
++            }
++            row += static_cast<int>(stride);
++        } while (--height != 0);
++        return;
++    }
++
++    if (left > 0)
++    {
++        for (int rows = top; rows > 0; --rows)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                int packet = static_cast<signed char>(*source++);
++                if (packet >= 0)
++                {
++                    column += packet;
++                    source += packet;
++                }
++                else
++                    column -= packet;
++            }
++        }
++
++        int rows = bottom - top;
++        if (rows <= 0)
++            return;
++        row += x;
++        do
++        {
++            unsigned short* output = row;
++            int remaining_left = left;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = static_cast<signed char>(*source++);
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet = 0;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            --remaining_left;
++                        else
++                            *output++ = palette[*source];
++                        ++source;
++                    } while (--count != 0);
++                }
++                packet = static_cast<signed char>(-packet);
++                while (remaining_left != 0 && packet != 0)
++                {
++                    --remaining_left;
++                    ++column;
++                    --packet;
++                }
++                column += packet;
++                output += packet;
++            }
++            row += static_cast<int>(stride);
++        } while (--rows != 0);
++        return;
++    }
++
++    for (int rows = top; rows > 0; --rows)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            int packet = static_cast<signed char>(*source++);
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
++            else
++                column -= packet;
++        }
++    }
++
++    int rows = bottom - top;
++    if (rows <= 0)
++        return;
++    row += x;
++    do
++    {
++        unsigned short* output = row;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = static_cast<signed char>(*source++);
++            if (packet > 0)
++            {
++                int count = packet;
++                packet = 0;
++                do
++                {
++                    if (column < right)
++                        *output++ = palette[*source];
++                    ++source;
++                    ++column;
++                } while (--count != 0);
++            }
++            if (column < right)
++                output -= packet;
++            column -= packet;
++        }
++        row += static_cast<int>(stride);
++    } while (--rows != 0);
++}

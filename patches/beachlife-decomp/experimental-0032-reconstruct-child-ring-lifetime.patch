@@ -1,0 +1,278 @@
+diff --git a/src/pool_allocate.cpp b/src/pool_allocate.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/pool_allocate.cpp
+@@ -0,0 +1,41 @@
++#include "pool_allocate.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire_inline.h"
++#include "pool_lock_guard.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00412240
++void* AllocatePoolBytes(unsigned int bytes)
++{
++    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
++    AcquirePoolLockBody(&pool_lock_word);
++    PoolLockGuard guard;
++    PoolChunkLink* result = *bucket;
++    if (result != 0)
++    {
++        *bucket = result->next;
++        return result;
++    }
++
++    unsigned int block_size = (bytes + 7) & ~7u;
++    int count = 20;
++    unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
++    if (count != 1)
++    {
++        PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
++        pool_chunk_buckets[(block_size - 1) / 8] = next;
++        for (int index = 1;; ++index)
++        {
++            PoolChunkLink* current = next;
++            if (count - 1 == index)
++            {
++                current->next = 0;
++                break;
++            }
++            next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
++            current->next = next;
++        }
++    }
++    return chunk;
++}
+diff --git a/src/pool_allocate.h b/src/pool_allocate.h
+new file mode 100644
+--- /dev/null
++++ b/src/pool_allocate.h
+@@ -0,0 +1,8 @@
++#ifndef POOL_ALLOCATE_H
++#define POOL_ALLOCATE_H
++
++// Actual pooled byte-allocation entry. There is no large-allocation fallback
++// here; callers must supply a size belonging to the observed 16 size buckets.
++void* AllocatePoolBytes(unsigned int bytes);
++
++#endif
+diff --git a/src/startup_screen_child_end.cpp b/src/startup_screen_child_end.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_child_end.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_children.h"
++
++// LIBRARY: BEACHLIFE 0x00437a40
++// Descriptive typed specialization of the already-qualified shared End body.
++ScreenChildIterator ScreenChildRing::End() const
++{
++    ScreenChildIterator result;
++    result.node = head;
++    return result;
++}
+diff --git a/src/startup_screen_child_insert.cpp b/src/startup_screen_child_insert.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_child_insert.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_children.h"
++
++// FUNCTION: BEACHLIFE 0x004a55c0
++ScreenChildIterator ScreenChildRing::Insert(ScreenChildIterator position, ScreenItem* const& item)
++{
++    ScreenChildNode* node = CreateNode(item);
++    ScreenChildNode* previous = position.node->previous;
++    node->next = position.node;
++    node->previous = previous;
++    previous->next = node;
++    position.node->previous = node;
++    ScreenChildIterator result;
++    result.node = node;
++    return result;
++}
+diff --git a/src/startup_screen_child_node.cpp b/src/startup_screen_child_node.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_child_node.cpp
+@@ -0,0 +1,59 @@
++#include "startup_screen_children.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004a55f0
++ScreenChildNode* ScreenChildRing::CreateNode(ScreenItem* const& item)
++{
++    const unsigned int block_size = screen_child_node_slot_bytes;
++    const unsigned int bucket_index = (block_size - 1u) / 8u;
++    PoolChunkLink* block;
++    {
++        AcquirePoolLock(&pool_lock_word);
++        PoolLockGuard guard;
++        block = pool_chunk_buckets[bucket_index];
++        if (block)
++        {
++            pool_chunk_buckets[bucket_index] = block->next;
++        }
++        else
++        {
++            int count = 20;
++            // Restore the actual storage-provider array type before arithmetic.
++            unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
++            block = reinterpret_cast<PoolChunkLink*>(chunk);
++            if (count != 1)
++            {
++                PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
++                pool_chunk_buckets[bucket_index] = next;
++                for (int index = 1;; ++index)
++                {
++                    PoolChunkLink* current = next;
++                    if (count - 1 == index)
++                    {
++                        current->next = 0;
++                        break;
++                    }
++                    next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
++                    current->next = next;
++                }
++            }
++        }
++    }
++    // Begin the complete node lifetime before constructing its pointer payload.
++    ScreenChildNode* result = ::new (static_cast<void*>(block)) ScreenChildNode;
++    try
++    {
++        new (&result->item) ScreenItem*(item);
++    }
++    catch (...)
++    {
++        ReturnPool(result, block_size);
++        throw;
++    }
++    return result;
++}
+diff --git a/src/startup_screen_child_ring_clear.cpp b/src/startup_screen_child_ring_clear.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_child_ring_clear.cpp
+@@ -0,0 +1,19 @@
++#include "startup_screen_children.h"
++#include "pool_return.h"
++
++// Same borrowed-node clear operation inlined at 0x004a5810 and 0x004c7456.
++// The qualified pool-return source expresses its actual lock/free-list effect;
++// no original out-of-line Clear entry or byte-matching result is claimed.
++void ScreenChildRing::Clear()
++{
++    ScreenChildNode* node = head->next;
++    while (node != head)
++    {
++        ScreenChildNode* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(ScreenChildNode));
++    }
++    head->next = head;
++    head->previous = head;
++}
+diff --git a/src/startup_screen_child_ring_constructor.cpp b/src/startup_screen_child_ring_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_child_ring_constructor.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_children.h"
++#include <new>
++
++// Observed member construction in Dialog 0x004a5710 and Frame 0x004c7429.
++// No separate original entry address or original template name is claimed.
++ScreenChildRing::ScreenChildRing()
++    : head(0)
++{
++    void* storage = AllocatePoolBytes(sizeof(ScreenChildNode));
++    ScreenChildNode* sentinel = ::new (storage) ScreenChildNode;
++    sentinel->next = sentinel;
++    sentinel->previous = sentinel;
++    head = sentinel;
++}
+diff --git a/src/startup_screen_child_ring_destructor.cpp b/src/startup_screen_child_ring_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_child_ring_destructor.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_children.h"
++#include "pool_return.h"
++
++// FUNCTION: BEACHLIFE 0x004a5520
++ScreenChildRing::~ScreenChildRing()
++{
++    Clear();
++    if (head != 0)
++        ReturnPool(head, sizeof(ScreenChildNode));
++}
+diff --git a/src/startup_screen_children.h b/src/startup_screen_children.h
+--- a/src/startup_screen_children.h
++++ b/src/startup_screen_children.h
+@@ -1,9 +1,14 @@
+ #ifndef STARTUP_SCREEN_CHILDREN_H
+ #define STARTUP_SCREEN_CHILDREN_H
+ 
++// Experimental native owner declaration. Every consuming TU uses this same
++// class definition; generated observers use the feature tag only for setup.
++#define BEACHLIFE_DECOMP_CHILD_RING_LIFETIME 1
++
+ struct ScreenItem;
+ 
+-// Observed circular child ring, distinct from the active-screen value nodes.
++// Same observed circular child domain as the qualified traversal sources.
++// The sentinel payload is uninitialized and is never a child value.
+ struct ScreenChildNode
+ {
+     ScreenChildNode* next;
+@@ -11,9 +16,42 @@
+     ScreenItem* item;
+ };
+ 
++// Keep the real eight-byte pool quantum while fitting the complete native node.
++inline constexpr unsigned int screen_child_node_slot_bytes = (sizeof(ScreenChildNode) + 7u) & ~7u;
++static_assert(alignof(ScreenChildNode) <= 8);
++static_assert(screen_child_node_slot_bytes >= sizeof(ScreenChildNode));
++static_assert(screen_child_node_slot_bytes <= 128);
++static_assert((sizeof(ScreenChildNode) - 1u) / 8u == (screen_child_node_slot_bytes - 1u) / 8u);
++
++// Same observed one-pointer iterator value in this child-only node domain.
++// The copy shape retains the established hidden-result/by-value ABI contract.
++struct ScreenChildIterator
++{
++    ScreenChildNode* node;
++
++    ScreenChildIterator() { }
++    ScreenChildIterator(const ScreenChildIterator& other)
++        : node(other.node)
++    {
++    }
++};
++
++// Allocation is the real 418-byte 0x00412240 pool entry, not a supplied body.
++void* AllocatePoolBytes(unsigned int bytes);
++
+ struct ScreenChildRing
+ {
+     ScreenChildNode* head;
++
++    ScreenChildRing();
++    ~ScreenChildRing();
++
++    ScreenChildIterator End() const;
++    ScreenChildIterator Insert(ScreenChildIterator position, ScreenItem* const& item);
++    ScreenChildNode* CreateNode(ScreenItem* const& item);
++
++    // This operation is inlined in both real constructor bodies.
++    void Clear();
+ };
+ 
+ #endif

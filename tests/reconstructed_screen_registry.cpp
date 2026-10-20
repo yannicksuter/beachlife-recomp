@@ -5,6 +5,10 @@
 #include "startup_screen_dialog.h"
 #include "startup_screen_name_search.h"
 
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+#include "child_ring_seed.h"
+#endif
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -49,6 +53,11 @@ enum class Domain
     text
 };
 thread_local Domain domain = Domain::ordinary;
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+bool child_lifetime_phase = false;
+unsigned long long child_exchanges = 0;
+unsigned long long child_guard_bytes = 0;
+#endif
 struct Allocation
 {
     unsigned char* backing = nullptr;
@@ -127,6 +136,9 @@ void* allocate(std::size_t bytes)
 {
     if (domain == Domain::ordinary)
     {
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+        require(!child_lifetime_phase, "generated child sentinel unexpectedly refilled the pool");
+#endif
         for (;;)
         {
             if (void* memory = std::malloc(bytes ? bytes : 1))
@@ -192,14 +204,42 @@ void release(void* memory) noexcept
     ++ordinary_releases;
 }
 
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+class ChildSentinelScope
+{
+    child_ring_fixture::Seed<9> seed{require};
+    unsigned long long first_exchange = child_exchanges;
+
+  public:
+    ChildSentinelScope()
+    {
+        require(!child_lifetime_phase, "nested generated child-owner scope");
+        child_lifetime_phase = true;
+    }
+    ~ChildSentinelScope()
+    {
+        // Array elements have already run their real child-ring destructors.
+        seed.check_initial_order();
+        require(child_exchanges == first_exchange + 18, "child-owner exchange count differs");
+        child_guard_bytes += seed.checked_bytes();
+        child_lifetime_phase = false;
+    }
+};
+#endif
+
 struct GeneratedDialog final : ScreenDialog
 {
     ScreenChildNode sentinel;
     explicit GeneratedDialog(const char* label)
         : ScreenDialog(ScreenRectangle{7, -3, 91, 27})
     {
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+        // Real base and child-ring lifetimes; remaining borrowed Dialog tail
+        // data is not the original complete derived lifetime.
+#else
         // Explicit generated construction facility reaches only the real base
         // lifetime. Borrowed Dialog tail data is not original derived lifetime.
+#endif
         kind_28 = 4;
         word_2c = 0x67676767U;
         std::memset(unknown_31, 0x53, sizeof(unknown_31));
@@ -207,13 +247,29 @@ struct GeneratedDialog final : ScreenDialog
         name = label;
         std::memset(unknown_4c, 0x29, sizeof(unknown_4c));
         sentinel = {&sentinel, &sentinel, nullptr};
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+        require(children.head != nullptr && children.head->next == children.head &&
+                    children.head->previous == children.head,
+            "actual child sentinel was not constructed empty");
+#else
         children.head = &sentinel;
+#endif
         AllocationScope scope(Domain::text);
         void* memory = ::operator new(16);
         owned_text = ::new (memory) char[16];
         std::memset(owned_text, 'q', 15);
         owned_text[15] = '\0';
     }
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    ~GeneratedDialog() override
+    {
+        // No borrowed stack child nodes may reach the real owning Clear.
+        require(children.head != nullptr && children.head->next == children.head &&
+                    children.head->previous == children.head,
+            "generated Dialog teardown has attached borrowed child nodes");
+        child_lifetime_phase = true;
+    }
+#endif
 #if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
     void Unresolved04(float) override
 #else
@@ -350,6 +406,10 @@ struct Snapshot
 
 struct Scenario
 {
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    // Declared first, so its seeded storage outlives every real member teardown.
+    ChildSentinelScope child_sentinels;
+#endif
     std::array<DialogFrame, max_dialogs> dialogs{DialogFrame("Alpha"),
         DialogFrame("Beta"),
         DialogFrame("Alpha"),
@@ -364,6 +424,9 @@ struct Scenario
     std::array<CircularListValueNode*, max_nodes> nodes{};
     Scenario()
     {
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+        child_lifetime_phase = false;
+#endif
         for (unsigned n = 0; n < entries.size(); ++n)
         {
             entries[n].before.fill(0x61);
@@ -645,6 +708,16 @@ struct Scenario
 extern "C" LONG InterlockedExchange(LONG* target, LONG value)
 {
     volatile LONG* const word = target;
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    if (child_lifetime_phase)
+    {
+        require(domain == Domain::ordinary && target == &pool_lock_word && value == 1 && *word == 0,
+            "unexpected generated child-owner exchange");
+        *word = value;
+        ++child_exchanges;
+        return 0;
+    }
+#endif
     require(domain == Domain::pool && target == &pool_lock_word && value == 1 && *word == 0,
         "unexpected uncontended lock event");
     *word = 1;
@@ -686,6 +759,13 @@ int main()
         }
         ledger_size = 0;
     }
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    require(!child_lifetime_phase && child_exchanges == 36,
+        "generated child-owner scope or total differs");
+    std::printf("child-rings=18 child-exchanges=%llu child-guard-bytes=%llu\n",
+        child_exchanges,
+        child_guard_bytes);
+#endif
     require(allocations == 20 && releases == allocations && insertions == 22 && returns == 22 &&
                 preparations == 2 && exchanges == 44 && queries == 286,
         "literal operation totals differ");

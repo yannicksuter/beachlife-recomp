@@ -4,6 +4,10 @@
 #include "startup_screen_name_search.h"
 #include "startup_screen_placement.h"
 
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+#include "child_ring_seed.h"
+#endif
+
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -27,6 +31,11 @@ std::uint64_t construction_cases;
 std::uint64_t retained_cases;
 std::uint64_t virtual_calls;
 std::uint64_t current_case;
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+bool child_lifetime_phase = false;
+unsigned long long child_exchanges = 0;
+unsigned long long child_guard_bytes = 0;
+#endif
 
 [[noreturn]] void fail(const char* reason)
 {
@@ -42,6 +51,29 @@ void require(bool value, const char* reason)
         fail(reason);
     }
 }
+
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+class ChildSentinelScope
+{
+    child_ring_fixture::Seed<5> seed{require};
+    unsigned long long first_exchange = child_exchanges;
+
+  public:
+    ChildSentinelScope()
+    {
+        require(!child_lifetime_phase, "nested generated child-owner scope");
+        child_lifetime_phase = true;
+    }
+    ~ChildSentinelScope()
+    {
+        // Array elements have already run their real child-ring destructors.
+        seed.check_initial_order();
+        require(child_exchanges == first_exchange + 10, "child-owner exchange count differs");
+        child_guard_bytes += seed.checked_bytes();
+        child_lifetime_phase = false;
+    }
+};
+#endif
 
 struct GeneratedScreenItem : ScreenItem
 {
@@ -106,8 +138,13 @@ struct GeneratedNamedDialog final : ScreenDialog
     explicit GeneratedNamedDialog(ScreenRectangle initial)
         : ScreenDialog(initial)
     {
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+        // Real base and child-ring lifetimes; other derived tail data remains
+        // generated borrowed state, not the original complete Dialog owner.
+#else
         // Explicit test-object facility reaches the real base constructor.
         // Derived tail fields are generated borrowed data, not retail lifetime.
+#endif
         kind_28 = 4;
         word_2c = 0;
         std::memset(unknown_31, 0, sizeof(unknown_31));
@@ -115,8 +152,24 @@ struct GeneratedNamedDialog final : ScreenDialog
         name = "generated";
         std::memset(unknown_4c, 0, sizeof(unknown_4c));
         sentinel = {&sentinel, &sentinel, nullptr};
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+        require(children.head != nullptr && children.head->next == children.head &&
+                    children.head->previous == children.head,
+            "actual child sentinel was not constructed empty");
+#else
         children.head = &sentinel;
+#endif
     }
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    ~GeneratedNamedDialog() override
+    {
+        // No borrowed stack child nodes may reach the real owning Clear.
+        require(children.head != nullptr && children.head->next == children.head &&
+                    children.head->previous == children.head,
+            "generated Dialog teardown has attached borrowed child nodes");
+        child_lifetime_phase = true;
+    }
+#endif
 #if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
     void Unresolved04(float) override
 #else
@@ -446,11 +499,17 @@ void retained_lists()
     constexpr const char* queries[] = {
         "Alpha", "alphabet", "alpha", "", "Long-shared-prefix-X", "missing"};
     constexpr int expected_index[] = {0, 1, -1, 3, 4, -1};
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    ChildSentinelScope child_sentinels;
+#endif
     GeneratedNamedDialog items[5] = {GeneratedNamedDialog(ScreenRectangle{1, 2, 3, 4}),
         GeneratedNamedDialog(ScreenRectangle{-1, -2, -3, -4}),
         GeneratedNamedDialog(ScreenRectangle{0, 0, 0, 0}),
         GeneratedNamedDialog(ScreenRectangle{9, 7, 5, 3}),
         GeneratedNamedDialog(ScreenRectangle{-21, 13, 17, -9})};
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    child_lifetime_phase = false;
+#endif
     ActiveScreenEntry entries[5]{};
     CircularListValueNode nodes[5]{};
     CircularListNode sentinel{};
@@ -552,6 +611,9 @@ void retained_lists()
 // support or free-symbol substitution is linked into this executable.
 void* operator new(std::size_t size)
 {
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    require(!child_lifetime_phase, "generated child sentinel unexpectedly refilled the pool");
+#endif
     for (;;)
     {
         if (void* memory = std::malloc(size == 0 ? 1 : size))
@@ -591,6 +653,22 @@ void operator delete(void* memory) noexcept
     }
     std::free(memory);
 }
+
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+extern "C" LONG InterlockedExchange(LONG* target, LONG value)
+{
+    volatile LONG* const word = target;
+    require(child_lifetime_phase && target == &pool_lock_word && value == 1 && *word == 0,
+        "unexpected generated child-owner exchange");
+    *word = value;
+    ++child_exchanges;
+    return 0;
+}
+extern "C" void Sleep(DWORD)
+{
+    require(false, "unexpected generated child-owner wait");
+}
+#endif
 
 namespace
 {
@@ -678,6 +756,13 @@ int main()
     retained_lists();
     require(active == nullptr, "release observation escaped scope");
     check_host_provider();
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+    require(!child_lifetime_phase && child_exchanges == 10,
+        "generated child-owner scope or total differs");
+    std::printf("child-rings=5 child-exchanges=%llu child-guard-bytes=%llu\n",
+        child_exchanges,
+        child_guard_bytes);
+#endif
     std::printf("{\"cases\":%llu,\"checks\":%llu,\"byte_checks\":%llu,\"destruction_cases\":%llu,"
                 "\"retained_cases\":%llu,\"release_calls\":%llu,\"virtual_calls\":%llu,"
                 "\"construction_cases\":%llu,\"provider_cases\":%llu,"

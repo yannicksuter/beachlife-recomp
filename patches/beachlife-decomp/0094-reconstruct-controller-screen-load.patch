@@ -1,0 +1,130 @@
+Reconstruct the controller-screen loading wrapper.
+
+Expose only its observed manager pointer and retain the separate loader as an
+ignored comparison-only dependency. No game or manager lifetime is supplied.
+
+diff --git a/src/startup_game_load_controller_screen.cpp b/src/startup_game_load_controller_screen.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0b36b4c9419fc4780d940607195555353253dda6
+--- /dev/null
++++ b/src/startup_game_load_controller_screen.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004e3c90
++bool ScreenRequestGamePrefix::LoadControllerScreen(const char* path)
++{
++    screens->LoadScreen(path);
++    return true;
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 9cf13c82ead87d09895bad6eb32e92c19217841f..a18ddbc5994dacfdf60aef56e3dfdc4157484aa6 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -8,13 +8,18 @@
+ struct ScreenRectangle;
+ struct ScreenRequestContext;
+ struct ScreenRequestRenderer;
++struct ScreenManager;
+ 
+-// Only the observed placement pointer at original x86+0x54 is described.
++// Observed screen-manager and placement pointers at original x86+0x48/+0x54.
+ // This does not recover the complete game class or its lifetime.
+ struct ScreenRequestGamePrefix
+ {
+-    unsigned char unknown_00[0x54];
++    unsigned char unknown_00[0x48];
++    ScreenManager* screens;
++    unsigned char unknown_4c[8];
+     ScreenPlacementStore* placement;
++
++    bool LoadControllerScreen(const char* path);
+ };
+ 
+ // Observed manager prefix only. Complete construction, destruction and field
+@@ -26,6 +31,7 @@
+     ScreenChildLink* registry;
+     unsigned char unknown_90[0x2c];
+     CircularList active;
++    void LoadScreen(const char* path);
+     unsigned char unknown_c0[0x68];
+     int mode;
+     int previous_mode;
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index bb57d53407a2f0066722f47a4dec893a7fa4e524..a6f79bdd06b32c0c937a652bcf3f935ae251c818 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -768,3 +768,27 @@
+     ExpandTgaRle(fixture_tga, &fixture_tga_image);
+     fixture_tga_image.palette = 0;
+ }
++
++typedef char FixturePointerWidth[(sizeof(void*) == 4) ? 1 : -1];
++typedef char FixtureBoolWidth[(sizeof(bool) == 1) ? 1 : -1];
++typedef char FixtureGameScreensOffset[(offsetof(ScreenRequestGamePrefix, screens) == 0x48) ? 1 : -1];
++
++ScreenRequestGamePrefix* volatile fixture_controller_game;
++ScreenManager* volatile fixture_controller_manager;
++const char* volatile fixture_controller_path;
++volatile bool fixture_controller_result;
++volatile unsigned int fixture_controller_completed;
++
++// Comparison-only borrowed inputs: game is the observed prefix of an actual
++// live game owner, game->screens is an actual live manager, and path remains
++// valid for its real loader. This fixture does not construct those owners.
++// The anchor-linked comparison image and this exported helper are never executed.
++extern "C" __declspec(dllexport) void FixtureLoadControllerScreen(
++    ScreenRequestGamePrefix* game, const char* path)
++{
++    fixture_controller_game = game;
++    fixture_controller_manager = game->screens;
++    fixture_controller_path = path;
++    fixture_controller_result = game->LoadControllerScreen(path);
++    fixture_controller_completed = 1;
++}
+diff --git a/metadata.csv b/metadata.csv
+index 38e80d570e4dbd5764d6d84a5e5c1caaac1baf5f..19c9be061428ea3ea999e6c41a61a74ffacbcea8 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -63,3 +63,5 @@
+ 0x0040e310,function,27,?SurfacePosition@ScreenRequestRenderer@@QAE?AUScreenPoint@@XZ
+ 0x00409860,function,11,??1ScreenDialogPaletteModifiers@@QAE@XZ
+ 0x005a8840,global,4,?screen_dialog_palette_modifiers@@3PAUScreenDialogPaletteModifiers@@A
++0x004e3c90,function,18,?LoadControllerScreen@ScreenRequestGamePrefix@@QAE_NPBD@Z
++0x004aedf0,function,1067,?LoadScreen@ScreenManager@@QAEXPBD@Z
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 05b748ec66b9a9c933fafdad041f29f575c5512c..fd4bb340c2dfd8f00027955a7c852461b5f95854 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -490,6 +490,12 @@
+       "size": 27,
+       "name": "ScreenRequestRenderer::SurfacePosition",
+       "name_status": "descriptive; actual hidden output buffer receives both position words and returns in EAX"
++    },
++    {
++      "address": "0x004e3c90",
++      "size": 18,
++      "name": "ScreenRequestGamePrefix::LoadControllerScreen",
++      "name_status": "descriptive controller-screen loader wrapper; complete game/manager lifetimes and loader body remain separate"
+     }
+   ],
+   "library_functions": [
+@@ -705,6 +711,18 @@
+       "parameters": [
+         "const char*"
+       ]
++    },
++    {
++      "address": "0x004aedf0",
++      "size": 1067,
++      "name": "ScreenManager::LoadScreen",
++      "symbol": "?LoadScreen@ScreenManager@@QAEXPBD@Z",
++      "header": "startup_screen_manager.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "const char*"
++      ]
+     }
+   ]
+ }

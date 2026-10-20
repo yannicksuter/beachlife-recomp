@@ -117,7 +117,8 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # matching.py resolves its inputs; macOS /var and Windows 8.3 temp names differ.
+        self.root = Path(self.temp.name).resolve()
         self.source = self.root / 'source'
         self.source.mkdir()
         (self.source / 'helper.cpp').write_text('int fixture() { return 1; }\n')
