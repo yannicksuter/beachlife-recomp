@@ -1017,3 +1017,27 @@ Build this target with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
 `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
 `-R '^reconstructed_resource_raster_direct$'`.
 This bounded raster test does not run resource loading or the game.
+
+With the experimental option enabled, `reconstructed_resource_metadata_smoke`
+reads a complete local metadata file and an independently prepared expectation
+sidecar through the actual Record/Frame parser and lifetime methods. The CLI
+accepts the metadata path followed by the sidecar path. It checks both palette
+formats, every decoded field and palette word, stream positions and ownership
+cleanup. The sidecar must describe the complete supported input; this is a
+bounded full-read check.
+
+```sh
+cmake --preset release -B build/metadata-smoke \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
+  -DBEACHLIFE_RESOURCE_METADATA_SMOKE_INPUT:FILEPATH=/path/to/metadata \
+  -DBEACHLIFE_RESOURCE_METADATA_SMOKE_ORACLE:FILEPATH=/path/to/expectations
+cmake --build build/metadata-smoke --target reconstructed_resource_metadata_smoke
+ctest --test-dir build/metadata-smoke -R '^reconstructed_resource_metadata_smoke$' --output-on-failure
+```
+
+Both cache paths default to empty. CTest registers this test only when both are
+explicitly supplied; local inputs and sidecars are not bundled or provided by
+CI. Cross-Wine runs need paths the Windows process can open. The CLI can also be
+called directly with those two paths. This target does not call the resource
+file producer or load raw sprite data, render assets, or start the Intro.

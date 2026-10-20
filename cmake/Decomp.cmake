@@ -1630,3 +1630,34 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_resource_raster_direct PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Metadata smoke inputs are explicitly supplied local files.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_resource_metadata_smoke
+        tests/reconstructed_resource_metadata_smoke.cpp)
+    target_link_libraries(reconstructed_resource_metadata_smoke PRIVATE
+        beachlife_reconstructed_resource_record_metadata)
+    target_compile_features(reconstructed_resource_metadata_smoke PRIVATE cxx_std_20)
+    add_dependencies(reconstructed_resource_metadata_smoke verify_reconstructed_source)
+    set_target_properties(reconstructed_resource_metadata_smoke PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_resource_metadata_smoke PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_metadata_smoke PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_metadata_smoke PRIVATE -fno-lto)
+    endif()
+    set(BEACHLIFE_RESOURCE_METADATA_SMOKE_INPUT "" CACHE FILEPATH
+        "Complete resource metadata input for the optional local smoke test")
+    set(BEACHLIFE_RESOURCE_METADATA_SMOKE_ORACLE "" CACHE FILEPATH
+        "Independent expectation sidecar for the optional local smoke test")
+    if(BEACHLIFE_RESOURCE_METADATA_SMOKE_INPUT AND BEACHLIFE_RESOURCE_METADATA_SMOKE_ORACLE)
+        add_test(NAME reconstructed_resource_metadata_smoke
+            COMMAND reconstructed_resource_metadata_smoke
+                "${BEACHLIFE_RESOURCE_METADATA_SMOKE_INPUT}"
+                "${BEACHLIFE_RESOURCE_METADATA_SMOKE_ORACLE}")
+        set_tests_properties(reconstructed_resource_metadata_smoke PROPERTIES
+            LABELS "reconstructed;experimental;headless;local-input" TIMEOUT 120)
+    endif()
+endif()
