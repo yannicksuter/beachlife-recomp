@@ -1661,3 +1661,48 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             LABELS "reconstructed;experimental;headless;local-input" TIMEOUT 120)
     endif()
 endif()
+
+# Sprite preview inputs and outputs remain caller-supplied local files.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_resource_sprite_preview
+        tests/reconstructed_resource_sprite_preview.cpp)
+    target_link_libraries(reconstructed_resource_sprite_preview PRIVATE
+        beachlife_reconstructed_resource_record_metadata
+        beachlife_reconstructed_resource_frame_loaders
+        beachlife_reconstructed_resource_raster_direct)
+    target_compile_features(reconstructed_resource_sprite_preview PRIVATE cxx_std_20)
+    add_dependencies(reconstructed_resource_sprite_preview verify_reconstructed_source)
+    set_target_properties(reconstructed_resource_sprite_preview PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_resource_sprite_preview PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_sprite_preview PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_sprite_preview PRIVATE -fno-lto)
+    endif()
+    set(BEACHLIFE_RESOURCE_SPRITE_PREVIEW_METADATA "" CACHE FILEPATH
+        "Resource metadata input for the optional local sprite preview")
+    set(BEACHLIFE_RESOURCE_SPRITE_PREVIEW_RAW_BANK "" CACHE FILEPATH
+        "Raw frame bank for the optional local sprite preview")
+    set(BEACHLIFE_RESOURCE_SPRITE_PREVIEW_ORACLE "" CACHE FILEPATH
+        "Independent expectation sidecar for the optional local sprite preview")
+    set(BEACHLIFE_RESOURCE_SPRITE_PREVIEW_OUTPUT_PREFIX "" CACHE STRING
+        "Optional local prefix for two new verified PPM images")
+    if(BEACHLIFE_RESOURCE_SPRITE_PREVIEW_METADATA AND
+       BEACHLIFE_RESOURCE_SPRITE_PREVIEW_RAW_BANK AND BEACHLIFE_RESOURCE_SPRITE_PREVIEW_ORACLE)
+        set(_resource_sprite_preview_arguments
+            "${BEACHLIFE_RESOURCE_SPRITE_PREVIEW_METADATA}"
+            "${BEACHLIFE_RESOURCE_SPRITE_PREVIEW_RAW_BANK}"
+            "${BEACHLIFE_RESOURCE_SPRITE_PREVIEW_ORACLE}")
+        if(BEACHLIFE_RESOURCE_SPRITE_PREVIEW_OUTPUT_PREFIX)
+            list(APPEND _resource_sprite_preview_arguments
+                "${BEACHLIFE_RESOURCE_SPRITE_PREVIEW_OUTPUT_PREFIX}")
+        endif()
+        add_test(NAME reconstructed_resource_sprite_preview
+            COMMAND reconstructed_resource_sprite_preview ${_resource_sprite_preview_arguments})
+        set_tests_properties(reconstructed_resource_sprite_preview PROPERTIES
+            LABELS "reconstructed;experimental;headless;local-input" TIMEOUT 120)
+        unset(_resource_sprite_preview_arguments)
+    endif()
+endif()

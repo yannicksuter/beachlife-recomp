@@ -1041,3 +1041,22 @@ explicitly supplied; local inputs and sidecars are not bundled or provided by
 CI. Cross-Wine runs need paths the Windows process can open. The CLI can also be
 called directly with those two paths. This target does not call the resource
 file producer or load raw sprite data, render assets, or start the Intro.
+
+The experimental `reconstructed_resource_sprite_preview` target connects the
+reconstructed metadata parser, raw-frame loader and direct raster with genuine
+resource lifetimes. Its generic CLI accepts `METADATA RAWBANK SIDECAR` and an
+optional `OUTPUT_PREFIX`. The sidecar specifies the bounded input region and
+independent palette and pixel expectations. With an output prefix, the same
+successful invocation also writes two verified, newly created PPM images; an
+existing output file is rejected. Keep game inputs, sidecars and generated
+images local and untracked. This is an asset preview, not the game menu.
+
+The preview's CTest is registered only when all three explicit `FILEPATH` cache
+entries `BEACHLIFE_RESOURCE_SPRITE_PREVIEW_METADATA`,
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_RAW_BANK` and
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_ORACLE` are supplied. They default to empty.
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_OUTPUT_PREFIX` also defaults to empty, so
+image files are written only when explicitly requested. The target requires
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`; it adds no bundled assets or default CI
+input and does not change the reconstructed source profiles.
