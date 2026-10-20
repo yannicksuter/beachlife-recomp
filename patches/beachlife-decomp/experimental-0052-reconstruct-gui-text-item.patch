@@ -1,0 +1,172 @@
+diff --git a/src/startup_screen_text_item_constructor.cpp b/src/startup_screen_text_item_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebe02718e84dd41dbfe4ea3df3483390be70e9d7
+--- /dev/null
++++ b/src/startup_screen_text_item_constructor.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_text_item.h"
++#include "startup_screen_text.h"
++
++// FUNCTION: BEACHLIFE 0x004c8250
++ScreenTextItem::ScreenTextItem(ScreenRectangle initial, const char* key,
++    int font, int value_50, int value_54)
++    : ScreenItem(initial)
++    , owned_text_48(0)
++    , state_58(1)
++{
++    borrowed_text = 0;
++    if (key != 0)
++    {
++        borrowed_text = screen_text_lookup->LookupText(key);
++    }
++    word_50 = value_50;
++    font_index = font;
++    word_54 = value_54;
++    kind_28 = 12;
++}
+diff --git a/src/startup_screen_text_item_destructor.cpp b/src/startup_screen_text_item_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..331fa408ce5ebb4f968a3a1ed0ba052b6fcf600c
+--- /dev/null
++++ b/src/startup_screen_text_item_destructor.cpp
+@@ -0,0 +1,11 @@
++#include "startup_screen_text_item.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c83d0
++ScreenTextItem::~ScreenTextItem()
++{
++    if (owned_text_48 != 0)
++    {
++        ::operator delete(owned_text_48);
++    }
++}
+diff --git a/src/startup_screen_text_item_draw.cpp b/src/startup_screen_text_item_draw.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..354d7cc48f02ea44c635a4c711b95e645b2d2ca2
+--- /dev/null
++++ b/src/startup_screen_text_item_draw.cpp
+@@ -0,0 +1,69 @@
++#include "startup_screen_text_item.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++
++// FUNCTION: BEACHLIFE 0x004c8400
++void ScreenTextItem::Unresolved0c()
++{
++    ScreenFontRenderer* font = screen_manager->fonts_2c[font_index];
++    if (preparation_flag && state_58)
++    {
++        ApplyFontSettings();
++        const unsigned short* text = borrowed_text;
++        if (text == 0)
++        {
++            text = owned_text_48;
++        }
++        if (text != 0)
++        {
++            font->DrawText(0, 0, text);
++        }
++        preparation_flag = 0;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c8450
++void ScreenTextItem::Unresolved1c()
++{
++    if (state_58 == 0)
++    {
++        ScreenFontRenderer* font = screen_manager->fonts_2c[font_index];
++        ApplyFontSettings();
++        const unsigned short* text = borrowed_text;
++        if (text != 0)
++        {
++            font->DrawText(0, 0, text);
++            return;
++        }
++        text = owned_text_48;
++        if (text != 0)
++        {
++            font->DrawText(0, 0, text);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c84a0
++void ScreenTextItem::ApplyFontSettings()
++{
++    ScreenFontRenderer* font = screen_manager->fonts_2c[font_index];
++    int flags = word_54;
++    if (flags & 1)
++    {
++        font->SetWord18(1);
++    }
++    else if (flags & 2)
++    {
++        font->SetWord18(0);
++    }
++    else if (flags & 4)
++    {
++        font->SetWord18(2);
++    }
++    font->SetState14((word_54 & 0x40) ? 1 : 0);
++    font->SetWord10(word_50);
++    int top = rectangle.top;
++    int bottom = rectangle.bottom;
++    int left = rectangle.left;
++    font->SetRectangle(left, top, rectangle.right - left, bottom - top);
++}
+diff --git a/src/startup_screen_text_item_activation.cpp b/src/startup_screen_text_item_activation.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..92f255dc982860dc2a90a1513a194aae12315d2f
+--- /dev/null
++++ b/src/startup_screen_text_item_activation.cpp
+@@ -0,0 +1,11 @@
++#include "startup_screen_text_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c8510
++void ScreenTextItem::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    if (enabled)
++    {
++        MarkPrepared();
++    }
++}
+diff --git a/src/startup_screen_text_item.h b/src/startup_screen_text_item.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..b850c9ab7c1116c095c4853fa74e9878b8dbcfa0
+--- /dev/null
++++ b/src/startup_screen_text_item.h
+@@ -0,0 +1,31 @@
++#ifndef STARTUP_SCREEN_TEXT_ITEM_H
++#define STARTUP_SCREEN_TEXT_ITEM_H
++
++#include "startup_screen_item.h"
++
++// Genuine kind-12 text widget: original allocation 0x5c, table 0x004f4bb4.
++// Descriptive field names. Real lifetime and differing virtual bodies remain
++// dependencies; this declaration does not provide a native owning object.
++struct ScreenTextItem : ScreenItem
++{
++    const unsigned short* borrowed_text; // Original +0x44; real lookup result.
++    unsigned short* owned_text_48;       // Original +0x48; alternate constructor owns it.
++    int font_index;                      // Original +0x4c.
++    int word_50;                         // Original +0x50; passed intact to font settings.
++    int word_54;                         // Original +0x54; low flag bits used by font settings.
++    unsigned char state_58;
++    unsigned char unknown_59[3];
++
++    ScreenTextItem(ScreenRectangle initial, const char* key,
++        int font, int value_50, int value_54); // 0x004c8250, RET32.
++    virtual ~ScreenTextItem();                 // Ordinary 0x004c83d0; deleting wrapper 0x004c8300.
++
++    virtual void Unresolved0c();                      // 0x004c8400.
++    virtual void Unresolved1c();                      // 0x004c8450.
++    virtual void Unresolved24(unsigned char enabled); // Actual shared target 0x004c8510.
++
++    // Actual 0x004c84a0, RET0; configures the selected real font renderer.
++    void ApplyFontSettings();
++};
++
++#endif

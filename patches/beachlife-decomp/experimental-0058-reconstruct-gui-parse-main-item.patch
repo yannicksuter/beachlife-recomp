@@ -1,0 +1,89 @@
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -4,7 +4,8 @@
+ #include "startup_list.h"
+ 
+ // Declaration feature test for fixtures shared with the unchanged default profile.
+-#define BEACHLIFE_DECOMP_FONT_PUBLICATION 1
++#define BEACHLIFE_DECOMP_FONT_PUBLICATION      1
++#define BEACHLIFE_DECOMP_MAIN_ITEM_PUBLICATION 1
+ 
+ struct ScreenItem;
+ struct ScreenFontData;
+@@ -33,5 +34,6 @@
+     ScreenFontRenderer* fonts_2c[10];
+     unsigned char unknown_54[0x38];
+     ScreenChildLink* registry;
+-    unsigned char unknown_90[0x2c];
++    ScreenItem* item_90;
++    unsigned char unknown_94[0x28];
+     CircularList active;
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -38,6 +38,7 @@
+     void ParseTGA();
+     void ParseText();
+     void ParseFont();
++    void ParseMainItem();
+ };
+ 
+ #endif
+diff --git a/src/startup_gui_parse_main_item.cpp b/src/startup_gui_parse_main_item.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_gui_parse_main_item.cpp
+@@ -0,0 +1,52 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ab990
++void GuiParserState::ParseMainItem()
++{
++    if (screen_request_renderer->width < 800u)
++    {
++        const char* data = buffer;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++        if (data[cursor] == '{')
++        {
++            ++cursor;
++            unsigned int nesting = 1;
++            do
++            {
++                char value = data[cursor];
++                if (value == '{')
++                    ++nesting;
++                if (value == '}')
++                    --nesting;
++                ++cursor;
++            } while (nesting != 0);
++        }
++        return;
++    }
++
++    ScreenRectangle rectangle = { 0, 0, 0, 0 };
++    ScreenFrameItem* item = new ScreenFrameItem(rectangle, 0);
++    manager->item_90 = item;
++    const char* data = buffer;
++    while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (data[cursor] == '{')
++    {
++        PushContext(item);
++        ++cursor;
++    }
++    else
++    {
++        StartupFatal("GUIManager::process_main - Script Error \r\nNo open brace found at file offset - %u", cursor);
++    }
++}

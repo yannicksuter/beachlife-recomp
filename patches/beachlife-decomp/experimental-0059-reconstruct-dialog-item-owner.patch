@@ -1,0 +1,924 @@
+diff --git a/src/startup_directdraw_surface.h b/src/startup_directdraw_surface.h
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -13,6 +13,12 @@
+ // HRESULT is a signed 32-bit result; unused method signatures remain opaque.
+ struct DirectDrawSurface7Prefix;
+ struct SurfaceApiRectangle;
++
++struct SurfaceColorKey
++{
++    unsigned int low;
++    unsigned int high;
++};
+ 
+ struct SurfaceDescription
+ {
+@@ -34,6 +40,9 @@
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(DirectDrawSurface7Prefix*,
+     SurfaceApiRectangle*, SurfaceDescription*, unsigned int, void*);
+ 
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceColorKeyMethod)(
++    DirectDrawSurface7Prefix*, unsigned int, SurfaceColorKey*);
++
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceUnlockMethod)(DirectDrawSurface7Prefix*,
+     SurfaceApiRectangle*);
+ 
+@@ -46,7 +55,9 @@
+     SurfaceLockMethod Lock;
+     void* unused_68;
+     SurfaceStatusMethod Restore;
+-    void* unused_70[4];
++    void* unused_70;
++    SurfaceColorKeyMethod SetColorKey;
++    void* unused_78[2];
+     SurfaceUnlockMethod Unlock;
+ };
+ 
+diff --git a/src/startup_screen_dialog.h b/src/startup_screen_dialog.h
+--- a/src/startup_screen_dialog.h
++++ b/src/startup_screen_dialog.h
+@@ -1,26 +1,58 @@
+ #ifndef STARTUP_SCREEN_DIALOG_H
+ #define STARTUP_SCREEN_DIALOG_H
++
++// Shared fixtures must use the genuine constructor and restore borrowed state.
++#define BEACHLIFE_DECOMP_DIALOG_OWNER 1
+ 
+ #include "startup_screen_item.h"
+ #include "startup_screen_children.h"
+ 
+-// Observed derived prefix only. Original complete construction, destruction,
+-// hierarchy and virtual table remain unqualified.
++struct ScreenDialogResource;
++
++// Complete observed 21-slot Dialog declaration; native pointer layout differs.
++// Construction and destruction use the real owned name, Frame and child ring.
++// VTABLE: BEACHLIFE 0x004f446c
+ struct ScreenDialog : ScreenItem
+ {
+-#if defined(BEACHLIFE_DECOMP_TEST_OBJECTS) && BEACHLIFE_DECOMP_TEST_OBJECTS
+-    // Generated test construction only. Calls actual ScreenItem construction;
+-    // does not reconstruct the original Dialog constructor or derived cleanup.
+-    using ScreenItem::ScreenItem;
+-#endif
+-
+     ScreenItem* child_44;
+     const char* name;
+-    unsigned char unknown_4c[0x2c];
++    ScreenDialogResource* resource_4c;
++    int previous_x_50;
++    int previous_y_54;
++    unsigned char state_58;
++    unsigned char state_59;
++    unsigned char unknown_5a[2];
++    unsigned int clear_5c;
++    unsigned char flag_60;
++    unsigned char state_61;
++    unsigned char unknown_62[2];
++    unsigned int word_64;
++    float remaining_68;
++    float duration_6c;
++    int word_70;
++    unsigned int word_74;
+     ScreenChildRing children;
++    unsigned int group_7c;
+ 
+-    virtual void MarkPrepared();
+-    virtual void ApplyPosition(int dx, int dy);
++    ScreenDialog(const char* dialog_name, ScreenRectangle initial,
++        const char* resource_name, unsigned int group, unsigned char flag);
++    ~ScreenDialog() override;
++    void Unresolved04(float elapsed) override;
++    void Unresolved08() override;
++    void Unresolved0c() override;
++    void Unresolved10(ScreenItem* item) override;
++    void ApplyPosition(int dx, int dy) override;
++    void MarkPrepared() override;
++    void Unresolved1c() override;
++    void Unresolved24(unsigned char enabled) override;
++    void MoveRectangle(int dx, int dy) override;
++    bool TestRectangle(int x, int y) override;
++    bool HandleInput38(int x, int y, int value) override;
++    bool HandleTimedCoordinates(int x, int y, int value) override;
++    void Unresolved4c(unsigned int value) override;
++
++    // Actual 0x004a5d70: mode, duration bits and signed offset; RET12.
++    void BeginTransition(unsigned int mode, float duration, int offset);
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_dialog_activation.cpp b/src/startup_screen_dialog_activation.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_activation.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_dialog.h"
++
++// FUNCTION: BEACHLIFE 0x004a5aa0
++void ScreenDialog::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    if (enabled)
++        word_74 = 0;
++
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->Unresolved24(enabled);
++        node = node->next;
++    }
++}
+diff --git a/src/startup_screen_dialog_attach.cpp b/src/startup_screen_dialog_attach.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_attach.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_dialog.h"
++
++// FUNCTION: BEACHLIFE 0x004a5ef0
++void ScreenDialog::Unresolved10(ScreenItem* item)
++{
++    children.Insert(children.End(), item);
++}
+diff --git a/src/startup_screen_dialog_begin_transition.cpp b/src/startup_screen_dialog_begin_transition.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_begin_transition.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004a5d70
++void ScreenDialog::BeginTransition(unsigned int mode, float duration, int offset)
++{
++    int width = static_cast<int>(screen_request_renderer->width);
++    remaining_68 = duration;
++    duration_6c = duration;
++    word_64 = mode;
++    state_61 = 1;
++    word_70 = offset;
++    if (mode == 1)
++        MoveRectangle(width - saved_rectangle.left, 0);
++}
+diff --git a/src/startup_screen_dialog_constructor.cpp b/src/startup_screen_dialog_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_constructor.cpp
+@@ -0,0 +1,41 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_frame_item.h"
++#include <new>
++#include <string.h>
++
++#if !defined(_WIN32)
++#include <strings.h>
++#define _stricmp strcasecmp
++#endif
++
++// FUNCTION: BEACHLIFE 0x004a56b0
++ScreenDialog::ScreenDialog(const char* dialog_name, ScreenRectangle initial,
++    const char* resource_name, unsigned int group, unsigned char flag)
++    : ScreenItem(initial)
++    , resource_4c(0)
++    , flag_60(flag)
++    , state_61(0)
++    , word_64(0)
++    , word_74(0)
++    , children()
++    , group_7c(group)
++{
++    name = static_cast<char*>(::operator new(strlen(dialog_name) + 1));
++    strcpy(const_cast<char*>(name), dialog_name);
++
++    state_59 = 0;
++    clear_5c = 0;
++    if (_stricmp(resource_name, screen_dialog_clear_name) == 0)
++        clear_5c = 1;
++    else if (_stricmp(resource_name, screen_dialog_none_name) != 0)
++        resource_4c = screen_dialog_resources->Find(resource_name);
++
++    ScreenRectangle child_bounds = {
++        initial.left, initial.top, initial.right, initial.top + 30
++    };
++    child_44 = new ScreenFrameItem(child_bounds, 0);
++    state_58 = 0;
++    kind_28 = 4;
++    children.Clear();
++}
+diff --git a/src/startup_screen_dialog_coordinates.cpp b/src/startup_screen_dialog_coordinates.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_coordinates.cpp
+@@ -0,0 +1,97 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004a5fb0
++bool ScreenDialog::HandleTimedCoordinates(int x, int y, int value)
++{
++    bool handled = false;
++    TestRectangle(x, y);
++
++    switch (value)
++    {
++    case 1:
++        if (!state_61)
++        {
++            ScreenChildNode* node = children.head->next;
++            while (node != children.head && !handled)
++            {
++                handled = node->item->HandleTimedCoordinates(x, y, 1);
++                node = node->next;
++            }
++            if (!handled && child_44->TestRectangle(x, y) && !state_59 && flag_60)
++            {
++                state_58 = 1;
++                handled = true;
++            }
++        }
++        break;
++
++    case 2:
++        if (state_58)
++        {
++            if (x == -300 || y == -300)
++            {
++                x = previous_x_50;
++                y = previous_y_54;
++            }
++            if (previous_x_50 && previous_y_54)
++            {
++                int left = rectangle.left;
++                int dx = x - previous_x_50;
++                int dy = y - previous_y_54;
++                ScreenRequestRenderer* renderer = screen_request_renderer;
++                int height = static_cast<int>(renderer->height);
++                int width = static_cast<int>(renderer->width);
++                if (left + dx > width - 20)
++                    dx = 0;
++                if (rectangle.right + dx < 20)
++                    dx = 0;
++                if (rectangle.top + dy > height - 20)
++                    dy = 0;
++                if (rectangle.bottom + dy < 20)
++                    dy = 0;
++                if (dx || dy)
++                {
++                    MoveRectangle(dx, dy);
++                    screen_manager->PrepareNamedScreen(name, 0);
++                }
++            }
++            previous_x_50 = x;
++            previous_y_54 = y;
++            handled = true;
++        }
++        else if (!state_61)
++        {
++            ScreenChildNode* node = children.head->next;
++            while (node != children.head && !handled)
++            {
++                handled = node->item->HandleTimedCoordinates(x, y, 2);
++                node = node->next;
++            }
++        }
++        break;
++
++    default:
++        if (!state_61)
++        {
++            ScreenChildNode* node = children.head->next;
++            while (node != children.head && !handled)
++            {
++                handled = node->item->HandleTimedCoordinates(x, y, value);
++                node = node->next;
++            }
++        }
++        state_58 = 0;
++        break;
++    }
++
++    if (!state_58)
++    {
++        previous_x_50 = 0;
++        previous_y_54 = 0;
++    }
++    if (!handled && ReadState40() && value == 1)
++        return true;
++    return handled;
++}
+diff --git a/src/startup_screen_dialog_destructor.cpp b/src/startup_screen_dialog_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_destructor.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_dialog_resource.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004a5990
++ScreenDialog::~ScreenDialog()
++{
++    if (resource_4c)
++        screen_dialog_resources->Release(resource_4c);
++    if (name)
++        ::operator delete(const_cast<char*>(name));
++    delete child_44;
++    children.Clear();
++}
+diff --git a/src/startup_screen_dialog_draw.cpp b/src/startup_screen_dialog_draw.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_draw.cpp
+@@ -0,0 +1,37 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004a5db0
++void ScreenDialog::Unresolved0c()
++{
++    if (preparation_flag)
++    {
++        if (resource_4c)
++            resource_4c->Draw(rectangle.left, rectangle.top, 0xfff, 999999.0f);
++        else if (!clear_5c)
++        {
++            ScreenRectangle bounds = rectangle;
++            --bounds.right;
++            --bounds.bottom;
++            screen_request_renderer->FillRectangle(bounds, 0xffff);
++        }
++        preparation_flag = 0;
++    }
++
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        if (node->item->kind_28 != 2)
++            node->item->Unresolved0c();
++        node = node->next;
++    }
++
++    node = children.head->next;
++    while (node != children.head)
++    {
++        if (node->item->kind_28 == 2)
++            node->item->Unresolved0c();
++        node = node->next;
++    }
++}
+diff --git a/src/startup_screen_dialog_elapsed.cpp b/src/startup_screen_dialog_elapsed.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_elapsed.cpp
+@@ -0,0 +1,64 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++
++#include <math.h>
++
++// FUNCTION: BEACHLIFE 0x004a5b20
++void ScreenDialog::Unresolved04(float elapsed)
++{
++    if (state_61)
++    {
++        remaining_68 -= elapsed;
++        if (!(remaining_68 >= 0.0f))
++            remaining_68 = 0.0f;
++
++        switch (word_64)
++        {
++        case 1:
++            MoveRectangle(static_cast<int>((saved_rectangle.left - rectangle.left)
++                                           * (duration_6c - remaining_68) / duration_6c),
++                0);
++            break;
++        case 2:
++        {
++            int width = static_cast<int>(screen_request_renderer->width);
++            MoveRectangle(static_cast<int>((width - rectangle.left + 100)
++                                           * (duration_6c - remaining_68) / duration_6c),
++                0);
++            if (rectangle.left > width)
++                remaining_68 = 0.0f;
++            break;
++        }
++        case 3:
++            MoveRectangle(static_cast<int>((word_70 - rectangle.left + saved_rectangle.left)
++                                           * (duration_6c - remaining_68) / duration_6c),
++                0);
++            break;
++        case 4:
++            MoveRectangle(static_cast<int>((saved_rectangle.left - rectangle.left)
++                                           * (duration_6c - remaining_68) / duration_6c),
++                0);
++            break;
++        default:
++            break;
++        }
++
++        MarkPrepared();
++        if (!(fabs(remaining_68) > 1.1920928955078125e-7))
++        {
++            unsigned int mode = word_64;
++            remaining_68 = 0.0f;
++            state_61 = 0;
++            if (mode == 2)
++                screen_manager->CloseScreen(name);
++            word_64 = 0;
++            MarkPrepared();
++        }
++    }
++
++    for (ScreenChildNode* node = children.head->next;
++        node != children.head;
++        node = node->next)
++        node->item->Unresolved04(elapsed);
++}
+diff --git a/src/startup_screen_dialog_hit.cpp b/src/startup_screen_dialog_hit.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_hit.cpp
+@@ -0,0 +1,29 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x004a5f20
++bool ScreenDialog::TestRectangle(int x, int y)
++{
++    bool hit = false;
++    ScreenDialogResource* resource = resource_4c;
++    if (resource)
++    {
++        int local_x = x - rectangle.left;
++        if (local_x > 0
++            && local_x < resource->record->frames[resource->word_10]->width_0e)
++        {
++            int local_y = y - rectangle.top;
++            if (local_y > 0
++                && local_y < resource->record->frames[resource->word_10]->height_10)
++            {
++                hit = resource->TestPixel(local_x, local_y);
++            }
++        }
++    }
++    else
++    {
++        hit = ScreenItem::TestRectangle(x, y);
++    }
++    state_40 = hit;
++    return hit;
++}
+diff --git a/src/startup_screen_dialog_input38.cpp b/src/startup_screen_dialog_input38.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_input38.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_dialog.h"
++
++// FUNCTION: BEACHLIFE 0x004a5ae0
++bool ScreenDialog::HandleInput38(int x, int y, int value)
++{
++    bool handled = false;
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head && !handled)
++    {
++        handled = node->item->HandleInput38(x, y, value);
++        node = node->next;
++    }
++    return handled;
++}
+diff --git a/src/startup_screen_dialog_move.cpp b/src/startup_screen_dialog_move.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_move.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004a5cd0
++void ScreenDialog::MoveRectangle(int dx, int dy)
++{
++    ScreenItem::MoveRectangle(dx, dy);
++    child_44->MoveRectangle(dx, dy);
++    for (ScreenChildNode* node = children.head->next; node != children.head; node = node->next)
++    {
++        node->item->MoveRectangle(dx, dy);
++    }
++    ScreenManager* manager = screen_manager;
++    manager->SavePlacement(GetRectangle(), static_cast<int>(group_7c));
++}
+diff --git a/src/startup_screen_dialog_names.cpp b/src/startup_screen_dialog_names.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_names.cpp
+@@ -0,0 +1,6 @@
++#include "startup_screen_dialog_resource.h"
++
++// GLOBAL: BEACHLIFE 0x0057ebd4
++const char screen_dialog_clear_name[] = "CLEAR";
++// GLOBAL: BEACHLIFE 0x00572d20
++const char screen_dialog_none_name[] = "NONE";
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -103,6 +103,7 @@
+     ~ScreenDialogResource();
+ 
+     void UpdateFrame(float time);
++    bool TestPixel(int x, int y);
+     void Draw(int x, int y, unsigned int flags, float time);
+     void DrawClipped(int x, int y, int left, int top, int right, int bottom, unsigned int flags);
+ };
+diff --git a/src/startup_screen_dialog_resource_hit.cpp b/src/startup_screen_dialog_resource_hit.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_hit.cpp
+@@ -0,0 +1,117 @@
++#include "startup_screen_dialog_resource.h"
++#include "window_activation.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00413d90
++bool ScreenDialogResource::TestPixel(int x, int y)
++{
++    bool pick = false;
++    if (record->format_18 == 5)
++    {
++        int count = record->frame_count;
++        if (count > 0)
++        {
++            ScreenDialogResourceFrame** frames = record->frames;
++            int selected = -1;
++            for (int i = 0; i < count; ++i)
++            {
++                if (strcmp("pick", frames[i]->name) == 0)
++                {
++                    selected = i;
++                    break;
++                }
++            }
++            if (selected != -1)
++            {
++                word_10 = selected;
++                pick = true;
++            }
++        }
++    }
++
++    ScreenDialogResourceFrame* frame = record->frames[word_10];
++    const unsigned char* data = frame->SelectData(word_14, word_18);
++    int width = record->frames[word_10]->width_0e;
++    if (record->format_18 == 5)
++    {
++        frame->time_04 = window_deactivation_state->time_158;
++    }
++
++    if (!pick)
++    {
++        for (int row = 0; row < y; ++row)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                int packet = static_cast<signed char>(*data++);
++                if (packet >= 0)
++                {
++                    column += packet;
++                    data += packet;
++                }
++                else
++                {
++                    column -= packet;
++                }
++            }
++        }
++
++        int column = 0;
++        while (column < x)
++        {
++            int packet = static_cast<signed char>(*data++);
++            if (packet >= 0)
++            {
++                column += packet;
++                data += packet;
++                if (x <= column)
++                {
++                    return true;
++                }
++            }
++            else
++            {
++                column -= packet;
++            }
++        }
++        return false;
++    }
++
++    for (int row = 0; row < y; ++row)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            int packet = static_cast<signed char>(*data++);
++            if (packet >= 0)
++            {
++                column += packet;
++            }
++            else
++            {
++                column -= packet;
++            }
++        }
++    }
++
++    int column = 0;
++    while (column < x)
++    {
++        int packet = static_cast<signed char>(*data++);
++        if (packet >= 0)
++        {
++            column += packet;
++            if (x <= column)
++            {
++                return true;
++            }
++        }
++        else
++        {
++            column -= packet;
++        }
++    }
++    return false;
++}
+diff --git a/src/startup_screen_dialog_slot08.cpp b/src/startup_screen_dialog_slot08.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_slot08.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_dialog.h"
++
++// FUNCTION: BEACHLIFE 0x004a5cb0
++void ScreenDialog::Unresolved08()
++{
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->Unresolved08();
++        node = node->next;
++    }
++}
+diff --git a/src/startup_screen_dialog_slot1c.cpp b/src/startup_screen_dialog_slot1c.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_slot1c.cpp
+@@ -0,0 +1,21 @@
++#include "startup_screen_dialog.h"
++
++// FUNCTION: BEACHLIFE 0x004a5e70
++void ScreenDialog::Unresolved1c()
++{
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        if (node->item->kind_28 != 2)
++            node->item->Unresolved1c();
++        node = node->next;
++    }
++
++    node = children.head->next;
++    while (node != children.head)
++    {
++        if (node->item->kind_28 == 2)
++            node->item->Unresolved1c();
++        node = node->next;
++    }
++}
+diff --git a/src/startup_screen_dialog_word4c.cpp b/src/startup_screen_dialog_word4c.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_word4c.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_dialog.h"
++
++// FUNCTION: BEACHLIFE 0x004a5d40
++void ScreenDialog::Unresolved4c(unsigned int value)
++{
++    for (ScreenChildNode* node = children.head->next;
++        node != children.head;
++        node = node->next)
++        node->item->Unresolved4c(value);
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -47,6 +47,8 @@
+     void SetFontData(unsigned int index, ScreenFontData* data);
+     void SetFontRenderer(unsigned int index, ScreenFontRenderer* renderer);
+     void ClearRegistration();
++    bool CloseScreen(const char* name);
++    void PrepareNamedScreen(const char* name, unsigned char prepare);
+     void ClearItemReference(ScreenItem* item);
+     float ReadItemThreshold();
+     void ShowItemText(ScreenItem* item, int x, int y, const char* text);
+diff --git a/src/startup_screen_manager_close.cpp b/src/startup_screen_manager_close.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_manager_close.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_name_search.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_request_context.h"
++
++// FUNCTION: BEACHLIFE 0x004b17e0
++bool ScreenManager::CloseScreen(const char* name)
++{
++    CircularListIterator last = active.End();
++    CircularListIterator first = active.Begin();
++    CircularListIterator found;
++    FindScreenByName(&found, first, last, name);
++    if (found.node == active.head)
++        return false;
++
++    CircularListValueNode* node = static_cast<CircularListValueNode*>(found.node);
++    node->entry->state = 2;
++    ScreenDialog* item = node->entry->item;
++    unsigned int group = item->group_7c;
++    ScreenRectangle rectangle;
++    rectangle = item->GetRectangle();
++    if (mode != 6 && previous_mode != 6)
++    {
++        screen_request_game->placement->WritePlacement(
++            rectangle.left, rectangle.top, static_cast<int>(group));
++    }
++
++    ScreenRequestContext* context = node->entry->context;
++    if (context)
++        context->Replaced();
++    return true;
++}
+diff --git a/src/startup_screen_manager_prepare_named.cpp b/src/startup_screen_manager_prepare_named.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_manager_prepare_named.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_name_search.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004b12b0
++void ScreenManager::PrepareNamedScreen(const char* name, unsigned char prepare)
++{
++    CircularListIterator last = active.End();
++    CircularListIterator first = active.Begin();
++    CircularListIterator found;
++    FindScreenByName(&found, first, last, name);
++    if (found.node != active.head)
++    {
++        CircularListValueNode* node = static_cast<CircularListValueNode*>(found.node);
++        if (node->entry->state == 1)
++        {
++            if (prepare)
++                renderer->PrepareSurface(node->entry->surface);
++            node->entry->item->MarkPrepared();
++        }
++    }
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -2,6 +2,7 @@
+ #define STARTUP_SCREEN_RENDERER_H
+ 
+ #define BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER 1
++#define BEACHLIFE_DECOMP_SURFACE_PREPARE        1
+ 
+ #include "startup_directdraw_surface.h"
+ #include "startup_render_rectangle.h"
+@@ -64,7 +65,8 @@
+     unsigned char unknown_6c[8];
+     int current_surface;
+     unsigned char pixels_locked;
+-    unsigned char unknown_79[3];
++    unsigned char unknown_79[1];
++    unsigned short fill_color;
+     RendererRectangleQueue dirty_rectangles;
+     int dirty_rectangle_count;
+     // Observed x86+a8..12f remains opaque; only the byte-marker pointer is used.
+diff --git a/src/startup_screen_request_context.h b/src/startup_screen_request_context.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_request_context.h
+@@ -0,0 +1,31 @@
++#ifndef STARTUP_SCREEN_REQUEST_CONTEXT_H
++#define STARTUP_SCREEN_REQUEST_CONTEXT_H
++
++// Descriptive virtual boundary only. Its concrete class/vtable is unresolved.
++struct ScreenRequestContext
++{
++    virtual void Unknown00() = 0;
++    virtual void Unknown04() = 0;
++    virtual void Unknown08() = 0;
++    virtual void Unknown0c() = 0;
++    virtual void Unknown10() = 0;
++    virtual void Unknown14() = 0;
++    virtual void Unknown18() = 0;
++    virtual void Unknown1c() = 0;
++    virtual void Unknown20() = 0;
++    virtual void Unknown24() = 0;
++    virtual void Unknown28() = 0;
++    virtual void Unknown2c() = 0;
++    virtual void Unknown30() = 0;
++    virtual void Unknown34() = 0;
++    virtual void Unknown38() = 0;
++    virtual void Unknown3c() = 0;
++    virtual void Unknown40() = 0;
++    virtual void Unknown44() = 0;
++    virtual void Unknown48() = 0;
++    virtual void Unknown4c() = 0;
++    virtual void Unknown50() = 0;
++    virtual void Replaced() = 0;
++};
++
++#endif
+diff --git a/src/startup_surface_prepare.cpp b/src/startup_surface_prepare.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_surface_prepare.cpp
+@@ -0,0 +1,56 @@
++#include "startup_screen_renderer.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0040e0d0
++void ScreenRequestRenderer::PrepareSurface(int surface)
++{
++    ScreenSurfacePosition* selected = surfaces[surface];
++    if (selected->prepared == 0)
++    {
++        unsigned int x;
++        unsigned int y;
++        if (software_mode == 0)
++        {
++            unsigned short color = fill_color;
++            SurfaceColorKey key;
++            key.low = color;
++            key.high = color;
++            selected->surface->vtable->SetColorKey(selected->surface, 8, &key);
++
++            SurfaceDescription description;
++            memset(&description, 0, sizeof(description));
++            description.size = sizeof(description);
++            if (surfaces[surface]->surface->vtable->Lock(
++                    surfaces[surface]->surface, 0, &description, 0, 0)
++                >= 0)
++            {
++                unsigned short* row = static_cast<unsigned short*>(description.pixels);
++                for (y = 0; y < description.height; ++y)
++                {
++                    unsigned short* pixel = row;
++                    for (x = 0; x < description.width; ++x)
++                    {
++                        *pixel++ = color;
++                    }
++                    row += description.pitch / 2;
++                }
++                surfaces[surface]->surface->vtable->Unlock(surfaces[surface]->surface, 0);
++            }
++        }
++        else
++        {
++            unsigned int width = selected->pitch / 2;
++            unsigned short* row = selected->pixels;
++            for (y = 0; y < selected->height; ++y)
++            {
++                unsigned short* pixel = row;
++                for (x = 0; x < width; ++x)
++                {
++                    *pixel++ = fill_color;
++                }
++                row += width;
++            }
++        }
++        surfaces[surface]->prepared = 1;
++    }
++}
+diff --git a/src/window_activation.h b/src/window_activation.h
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -15,7 +15,9 @@
+ 
+ struct WindowDeactivationState
+ {
+-    unsigned char unknown_00[0x439];
++    unsigned char unknown_00[0x158];
++    float time_158;
++    unsigned char unknown_15c[0x2dd];
+     unsigned char deactivation_requested;
+ };
+ 

@@ -1,3 +1,5 @@
+#include "data/folder_source.h"
+#include "runtime/resource_files.h"
 #include "startup_screen_dialog_frame_file.h"
 #include "startup_screen_dialog_resource.h"
 
@@ -8,15 +10,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <memory>
 #include <new>
 #include <vector>
-
-#if defined(_WIN32)
-#include <fcntl.h>
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
 
 using Frame = ScreenDialogResourceFrame;
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
@@ -25,6 +23,10 @@ static_assert(std::endian::native == std::endian::little);
 
 namespace
 {
+namespace fs = std::filesystem;
+namespace files = beachlife::runtime::resource_files;
+namespace data = beachlife::data;
+fs::path generated_root;
 struct Totals
 {
     unsigned sessions = 0, calls = 0, constructors = 0, destructors = 0, files = 0;
@@ -148,20 +150,18 @@ struct FrameOwner
 
 long long file_position()
 {
-#if defined(_WIN32)
-    return ::_lseek(screen_dialog_frame_file, 0, SEEK_CUR);
-#else
-    return ::lseek(screen_dialog_frame_file, 0, SEEK_CUR);
-#endif
+    return files::seek_descriptor(screen_dialog_frame_file, 0, SEEK_CUR);
 }
 
 struct GeneratedFile
 {
-    FILE* stream = nullptr;
+    fs::path path;
+    std::unique_ptr<files::Session> session;
     std::vector<unsigned char> expected;
 
     GeneratedFile(const std::array<unsigned int, 4>& offsets, std::size_t data_size, bool large)
-        : expected(32 + data_size, 0xcc)
+        : path(generated_root / "raw.bin")
+        , expected(32 + data_size, 0xcc)
     {
         // Eight prefix bytes, four LE16 indices, four LE32 offsets, then data.
         constexpr std::array<unsigned char, 8> indices{0, 0, 1, 0, 2, 0, 3, 0};
@@ -178,19 +178,19 @@ struct GeneratedFile
             expected[32 + i] = large ? static_cast<unsigned char>((13 * i + 7) % 251)
                                      : static_cast<unsigned char>(0x60 + i);
         }
-        stream = std::tmpfile();
-        require(stream != nullptr, "tmpfile");
-#if defined(_WIN32)
-        screen_dialog_frame_file = ::_fileno(stream);
-        require(::_setmode(screen_dialog_frame_file, _O_BINARY) != -1, "binary descriptor");
-#else
-        screen_dialog_frame_file = ::fileno(stream);
-#endif
-        require(screen_dialog_frame_file >= 0, "file descriptor");
-        require(std::fwrite(expected.data(), 1, expected.size(), stream) == expected.size(),
-            "generated file write");
-        require(std::fflush(stream) == 0 && std::fseek(stream, 0, SEEK_SET) == 0,
-            "generated file positioning");
+        fs::create_directories(generated_root);
+        require(!fs::exists(path), "generated raw path already exists");
+        std::ofstream output(path, std::ios::binary);
+        output.write(reinterpret_cast<const char*>(expected.data()),
+            static_cast<std::streamsize>(expected.size()));
+        output.close();
+        require(bool(output), "generated file write");
+        auto source = std::make_shared<data::FolderSource>(
+            generated_root, std::vector<data::SourceEntry>{{"raw.bin", expected.size()}});
+        session = std::make_unique<files::Session>(source);
+        screen_dialog_frame_file = files::open_descriptor("raw.bin", 0x8000);
+        require(screen_dialog_frame_file >= 0, "mounted file descriptor");
+        require(file_position() == 0, "generated file positioning");
         screen_dialog_frame_cursor = 0;
         ++totals.files;
     }
@@ -201,16 +201,20 @@ struct GeneratedFile
     ~GeneratedFile()
     {
         // No selector or loader call follows this independent stream read.
-        expect(std::fseek(stream, 0, SEEK_SET) == 0, "file verification seek");
+        std::ifstream input(path, std::ios::binary);
+        expect(bool(input), "file verification open");
         for (unsigned char value : expected)
         {
             ++totals.byte_checks;
-            expect(std::fgetc(stream) == value, "generated file content changed");
+            expect(input.get() == value, "generated file content changed");
         }
-        expect(std::fgetc(stream) == EOF, "generated file length changed");
-        expect(std::fclose(stream) == 0, "generated file close");
+        expect(input.get() == EOF, "generated file length changed");
+        input.close();
+        expect(files::close_descriptor(screen_dialog_frame_file) == 0, "generated file close");
         screen_dialog_frame_file = -1;
         screen_dialog_frame_cursor = 0;
+        session.reset();
+        require(fs::remove(path), "generated raw file removal");
     }
 };
 
@@ -418,8 +422,10 @@ void lazy_planes()
 }
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    require(argc == 2, "expected generated file directory");
+    generated_root = fs::path(argv[1]);
     expect(screen_dialog_frame_file == -1 && screen_dialog_frame_cursor == 0,
         "actual global initializers");
     resident_whole();

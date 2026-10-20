@@ -2,6 +2,8 @@
 
 #include "startup_screen_renderer.h"
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cstddef>
 #include <iterator>
 #include <type_traits>
@@ -24,6 +26,25 @@ template <std::size_t N> bool same_bytes(const unsigned char (&a)[N], const unsi
 
 inline bool equal(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b)
 {
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    if (a.draw != b.draw || !same_bytes(a.unknown_3c, b.unknown_3c) ||
+        a.surfaces_end != b.surfaces_end || a.surfaces_capacity != b.surfaces_capacity)
+    {
+        return false;
+    }
+#endif
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    if (a.fill_color != b.fill_color)
+    {
+        return false;
+    }
+#endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    if (!same_bytes(a.unknown_a8, b.unknown_a8) || a.buffer_130 != b.buffer_130)
+    {
+        return false;
+    }
+#endif
     if (!(a.software_mode == b.software_mode && same_bytes(a.unknown_01, b.unknown_01) &&
             a.width == b.width && a.height == b.height &&
             a.clip_rectangle.x == b.clip_rectangle.x && a.clip_rectangle.y == b.clip_rectangle.y &&
@@ -37,7 +58,11 @@ inline bool equal(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b
             same_bytes(a.unknown_50, b.unknown_50) && a.clip_mode_54 == b.clip_mode_54 &&
             same_bytes(a.unknown_58, b.unknown_58) && a.unscaled_clip_5c == b.unscaled_clip_5c &&
             a.clip_flag_5d == b.clip_flag_5d && same_bytes(a.unknown_5e, b.unknown_5e) &&
-            a.surfaces == b.surfaces && same_bytes(a.unknown_6c, b.unknown_6c) &&
+            a.word_60 == b.word_60 && same_bytes(a.unknown_64, b.unknown_64) &&
+            a.surfaces == b.surfaces &&
+#if !defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+            same_bytes(a.unknown_6c, b.unknown_6c) &&
+#endif
             a.current_surface == b.current_surface && a.pixels_locked == b.pixels_locked &&
             same_bytes(a.unknown_79, b.unknown_79) &&
             a.dirty_rectangle_count == b.dirty_rectangle_count &&
@@ -55,6 +80,19 @@ inline bool equal(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b
 // renderer padding nor host deque internals contribute to fixture counters.
 inline std::size_t compared_bytes(const ScreenRequestRenderer& r)
 {
+    std::size_t tail_bytes = 0;
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    tail_bytes += sizeof(r.draw) + sizeof(r.unknown_3c) + sizeof(r.surfaces_end) +
+                  sizeof(r.surfaces_capacity);
+#else
+    tail_bytes += sizeof(r.unknown_6c);
+#endif
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    tail_bytes += sizeof(r.fill_color);
+#endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    tail_bytes += sizeof(r.unknown_a8) + sizeof(r.buffer_130);
+#endif
     return sizeof(r.software_mode) + sizeof(r.unknown_01) + sizeof(r.width) + sizeof(r.height) +
            sizeof(r.clip_rectangle.x) + sizeof(r.clip_rectangle.y) +
            sizeof(r.clip_rectangle.width) + sizeof(r.clip_rectangle.height) + sizeof(r.pixels_1c) +
@@ -62,10 +100,10 @@ inline std::size_t compared_bytes(const ScreenRequestRenderer& r)
            sizeof(r.rectangle_suppressed_4d) + sizeof(r.rectangle_enabled_4e) +
            sizeof(r.rectangle_ready_4f) + sizeof(r.unknown_50) + sizeof(r.clip_mode_54) +
            sizeof(r.unknown_58) + sizeof(r.unscaled_clip_5c) + sizeof(r.clip_flag_5d) +
-           sizeof(r.unknown_5e) + sizeof(r.surfaces) + sizeof(r.unknown_6c) +
+           sizeof(r.unknown_5e) + sizeof(r.word_60) + sizeof(r.unknown_64) + sizeof(r.surfaces) +
            sizeof(r.current_surface) + sizeof(r.pixels_locked) + sizeof(r.unknown_79) +
            sizeof(r.dirty_rectangle_count) +
-           r.dirty_rectangles.values.size() * sizeof(ScreenRectangle);
+           r.dirty_rectangles.values.size() * sizeof(ScreenRectangle) + tail_bytes;
 }
 
 template <std::size_t N> void pattern(unsigned char (&bytes)[N], unsigned int seed)
@@ -87,6 +125,10 @@ inline void initialize(ScreenRequestRenderer& r, unsigned int seed)
     r.clip_rectangle = {-13, 17, 37, 41};
     r.pixels_1c = nullptr;
     pattern(r.unknown_20, seed + 2U);
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    r.draw = nullptr;
+    pattern(r.unknown_3c, seed + 2U + 28U * 37U);
+#endif
     r.format_44 = 0x12345678U;
     pattern(r.unknown_48, seed + 3U);
     r.rectangle_suppressed_4d = 0x45;
@@ -98,12 +140,52 @@ inline void initialize(ScreenRequestRenderer& r, unsigned int seed)
     r.unscaled_clip_5c = 0x9a;
     r.clip_flag_5d = 0xab;
     pattern(r.unknown_5e, seed + 6U);
+    // Preserve the old ten-byte canary using an actual unsigned scalar.
+    std::array<unsigned char, 4> word_bytes{};
+    for (std::size_t n = 0; n < word_bytes.size(); ++n)
+    {
+        word_bytes[n] = static_cast<unsigned char>(seed + 6U + (n + 2U) * 37U);
+    }
+    r.word_60 = std::bit_cast<unsigned int>(word_bytes);
+    pattern(r.unknown_64, seed + 6U + 6U * 37U);
     r.surfaces = nullptr;
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    r.surfaces_end = nullptr;
+    r.surfaces_capacity = nullptr;
+#else
     pattern(r.unknown_6c, seed + 7U);
+#endif
     r.current_surface = -37;
     r.pixels_locked = 0xde;
     pattern(r.unknown_79, seed + 8U);
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    r.fill_color = std::bit_cast<unsigned short>(std::array<unsigned char, 2>{
+        static_cast<unsigned char>(seed + 8U + 37U), static_cast<unsigned char>(seed + 8U + 74U)});
+#endif
     r.dirty_rectangles.values = {{-7, -3, -2, 1}, {13, 17, 19, 23}};
     r.dirty_rectangle_count = 2;
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    pattern(r.unknown_a8, seed + 9U);
+    r.buffer_130 = nullptr;
+#endif
+}
+// Exactly the observed four-byte entry interval; no ABI padding is compared.
+inline bool same_entry_extension(const ScreenSurfacePosition& a, const ScreenSurfacePosition& b)
+{
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    return a.video_memory == b.video_memory && same_bytes(a.unknown_0d, b.unknown_0d);
+#else
+    return same_bytes(a.unknown_0c, b.unknown_0c);
+#endif
+}
+
+inline void initialize_entry_extension(ScreenSurfacePosition& entry, unsigned int seed)
+{
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    entry.video_memory = static_cast<unsigned char>(seed);
+    pattern(entry.unknown_0d, seed + 37U);
+#else
+    pattern(entry.unknown_0c, seed);
+#endif
 }
 } // namespace renderer_queue_test

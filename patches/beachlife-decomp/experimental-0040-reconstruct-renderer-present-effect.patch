@@ -1,0 +1,73 @@
+diff --git a/src/startup_renderer_present_effect.cpp b/src/startup_renderer_present_effect.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_present_effect.cpp
+@@ -0,0 +1,48 @@
++#include "startup_renderer_present_effect.h"
++#include "render_mask_setup.h"
++
++// FUNCTION: BEACHLIFE 0x004017e0
++void ApplyPresentEffect(unsigned short* pixels, unsigned int width,
++    unsigned int height, unsigned int mode)
++{
++    if (height == 0 || height >= 0x80000000U)
++        return;
++
++    unsigned int output = height;
++    unsigned int rows = height;
++    do
++    {
++        if (width != 0 && width < 0x80000000U)
++        {
++            unsigned int effect = mode & 0xff;
++            unsigned int remaining = width;
++            do
++            {
++                unsigned short pixel = *pixels;
++                switch (effect)
++                {
++                case 0:
++                    output = pixel;
++                    break;
++                case 1:
++                {
++                    unsigned int quarter = (pixel >> 2) & (render_quarter_mask >> 2);
++                    unsigned int half = (pixel >> 1) & (render_half_mask >> 1);
++                    output = half + (render_quarter_bias + quarter);
++                    break;
++                }
++                case 2:
++                    output = ((pixel >> 1) & (render_half_mask >> 1)) + render_half_bias;
++                    break;
++                case 3:
++                    output = ((pixel >> 2) & (render_quarter_mask >> 2)) + render_sum_bias;
++                    break;
++                case 4:
++                    output = 0xffff;
++                    break;
++                }
++                *pixels++ = static_cast<unsigned short>(output);
++            } while (--remaining != 0);
++        }
++    } while (--rows != 0);
++}
+diff --git a/src/startup_renderer_present_effect.h b/src/startup_renderer_present_effect.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_present_effect.h
+@@ -0,0 +1,15 @@
++#ifndef STARTUP_RENDERER_PRESENT_EFFECT_H
++#define STARTUP_RENDERER_PRESENT_EFFECT_H
++
++// Actual 0x004017e0, four cdecl argument words; only the low mode byte is used.
++void ApplyPresentEffect(unsigned short* pixels, unsigned int width,
++    unsigned int height, unsigned int mode);
++
++extern unsigned char render_effect_active;
++extern unsigned char render_effect_decreasing;
++extern unsigned int render_effect_mode;
++extern unsigned int render_effect_countdown;
++extern unsigned int render_effect_step;
++extern unsigned char render_effect_hold;
++
++#endif

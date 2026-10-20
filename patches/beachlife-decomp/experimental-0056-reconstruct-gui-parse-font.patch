@@ -1,0 +1,104 @@
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -6,7 +6,7 @@
+ struct ScreenItem;
+ struct ScreenChildLink;
+ 
+-// Observed x86 parser prefix through +0x3b only, not the complete allocation.
++// Observed x86 parser prefix through +0x3f only, not the complete allocation.
+ // Host pointer layout differs. Complete original layout and lifetime are unresolved.
+ struct GuiParserState
+ {
+@@ -26,6 +26,7 @@
+     ScreenChildLink* registry_tail;
+     // Observed 32-bit publication only; its original type and meaning are unknown.
+     unsigned int word_38;
++    unsigned int word_3c;
+ 
+     void ReadInteger(int& value, bool consume_delimiter);
+     void SkipWhitespace();
+@@ -36,6 +37,7 @@
+     void RegisterItem(ScreenItem* item, unsigned char named);
+     void ParseTGA();
+     void ParseText();
++    void ParseFont();
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -3,7 +3,11 @@
+ 
+ #include "startup_list.h"
+ 
++// Declaration feature test for fixtures shared with the unchanged default profile.
++#define BEACHLIFE_DECOMP_FONT_PUBLICATION 1
++
+ struct ScreenItem;
++struct ScreenFontData;
+ struct ScreenFontRenderer;
+ struct ScreenManagerAuxiliaryState;
+ struct ScreenChildLink;
+@@ -25,7 +29,7 @@
+ struct ScreenManager
+ {
+     ScreenRequestRenderer* renderer;
+-    unsigned char unknown_04[0x28];
++    ScreenFontData* fonts_04[10];
+     ScreenFontRenderer* fonts_2c[10];
+     unsigned char unknown_54[0x38];
+     ScreenChildLink* registry;
+@@ -38,6 +42,8 @@
+     ScreenItem* item_134;
+     float value_138;
+ 
++    void SetFontData(unsigned int index, ScreenFontData* data);
++    void SetFontRenderer(unsigned int index, ScreenFontRenderer* renderer);
+     void ClearRegistration();
+     void ClearItemReference(ScreenItem* item);
+     float ReadItemThreshold();
+diff --git a/src/startup_gui_parse_font.cpp b/src/startup_gui_parse_font.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_gui_parse_font.cpp
+@@ -0,0 +1,20 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_font_data.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++
++// FUNCTION: BEACHLIFE 0x004ab8b0
++void GuiParserState::ParseFont()
++{
++    if (buffer[cursor] != '(')
++        return;
++
++    ++cursor;
++    char name[64];
++    ReadText(name);
++    ScreenFontData* data = new ScreenFontData(name);
++    manager->SetFontData(word_3c, data);
++    ScreenFontRenderer* renderer = new ScreenFontRenderer(data, screen_text_lookup);
++    manager->SetFontRenderer(word_3c, renderer);
++    ++word_3c;
++}
+diff --git a/src/startup_screen_font_publication.cpp b/src/startup_screen_font_publication.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_font_publication.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004aedb0
++void ScreenManager::SetFontData(unsigned int index, ScreenFontData* data)
++{
++    fonts_04[index] = data;
++}
++
++// FUNCTION: BEACHLIFE 0x004aedc0
++void ScreenManager::SetFontRenderer(unsigned int index, ScreenFontRenderer* renderer)
++{
++    fonts_2c[index] = renderer;
++}

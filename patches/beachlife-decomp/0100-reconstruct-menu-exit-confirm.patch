@@ -1,0 +1,92 @@
+Reconstruct the complete menu exit callback through the real USER32 import.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 69a6c43aee38c809fd3a0ff5fb8801e30c4f7e9d..b08f149ea33566730c4ef9deafde970afce576b9 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -971,3 +971,23 @@ extern "C" __declspec(dllexport) void FixtureFontGlyphDirect(
+     fixture_glyph_direct_after[7] = destination[19];
+     fixture_glyph_direct_completed = 1;
+ }
++
++#include "startup_gui_exit_action.h"
++
++typedef void (*MenuExitConfirmAction)(unsigned int);
++typedef char MenuExitConfirmWordWidth[(sizeof(unsigned int) == 4) ? 1 : -1];
++typedef char MenuExitConfirmPointerWidth[(sizeof(MenuExitConfirmAction) == 4) ? 1 : -1];
++
++volatile unsigned int fixture_menu_exit_input;
++MenuExitConfirmAction volatile fixture_menu_exit_callback;
++volatile unsigned int fixture_menu_exit_completed;
++
++// Compile/link retention only. This helper and its comparison image are never
++// executed: the real callback would post WM_QUIT through the actual USER32 IAT.
++extern "C" __declspec(dllexport) void FixtureMenuExitConfirm(unsigned int value)
++{
++    fixture_menu_exit_input = value;
++    fixture_menu_exit_callback = &MenuExitConfirm;
++    MenuExitConfirm(value);
++    fixture_menu_exit_completed = 1;
++}
+diff --git a/metadata.csv b/metadata.csv
+index 936a4e8e01bb2858011ac1c510b920111bc7f39e..51e27e8778651d10a0e534667b3bd894c93b952d 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -74,3 +74,4 @@ address,type,size,symbol
+ 0x0049f9e0,function,30,?SetRectangle@ScreenFontRenderer@@QAEXHHHH@Z
+ 0x0049fdd0,function,323,?DrawGlyphDirect@ScreenFontRenderer@@QAEXPBEHPAGHHHHHHHPBG@Z
+ 0x00411a60,function,97,?ConvertColour@ScreenRequestRenderer@@QAEIHHH@Z
++0x004a1c10,function,9,?MenuExitConfirm@@YAXI@Z
+diff --git a/src/startup_gui_exit_action.cpp b/src/startup_gui_exit_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e26d1b16ecab144d7374b60749a01704aa148bd
+--- /dev/null
++++ b/src/startup_gui_exit_action.cpp
+@@ -0,0 +1,8 @@
++#include "startup_gui_exit_action.h"
++#include <windows.h>
++
++// FUNCTION: BEACHLIFE 0x004a1c10
++void MenuExitConfirm(unsigned int)
++{
++    PostQuitMessage(0);
++}
+diff --git a/src/startup_gui_exit_action.h b/src/startup_gui_exit_action.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..96a1c8f68d2ee5dfd1b24bc11ac9eff03c7a8dc3
+--- /dev/null
++++ b/src/startup_gui_exit_action.h
+@@ -0,0 +1,7 @@
++#ifndef STARTUP_GUI_EXIT_ACTION_H
++#define STARTUP_GUI_EXIT_ACTION_H
++
++// The observed cdecl action caller passes one word; this callback ignores it.
++void MenuExitConfirm(unsigned int value);
++
++#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 0e4958c201240ae2f2a69538e0dd6d838d28e483..536b31a287cb20ad3dfbea83bd643306abde35f0 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -512,6 +512,11 @@
+       "address": "0x0049fdd0",
+       "size": 323,
+       "name": "ScreenFontRenderer::DrawGlyphDirect"
++    },
++    {
++      "address": "0x004a1c10",
++      "size": 9,
++      "name": "MenuExitConfirm"
+     }
+   ],
+   "library_functions": [
+@@ -597,7 +602,8 @@
+       "export_names": "undecorated",
+       "symbols": {
+         "LoadImageA": 24,
+-        "SetCursor": 4
++        "SetCursor": 4,
++        "PostQuitMessage": 4
+       }
+     },
+     "KERNEL32.dll": {

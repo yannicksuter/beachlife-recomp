@@ -1,0 +1,200 @@
+diff --git a/src/startup_font_glyph_direct.cpp b/src/startup_font_glyph_direct.cpp
+new file mode 100644
+index 0000000..6035a66
+--- /dev/null
++++ b/src/startup_font_glyph_direct.cpp
+@@ -0,0 +1,87 @@
++#include "startup_screen_text.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0049fdd0
++void ScreenFontRenderer::DrawGlyphDirect(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short*)
++{
++    const unsigned char* input = source + (source_y + height - 1) * source_stride + source_x;
++    unsigned short* output = destination + ((destination_y + height - 1) * destination_stride + destination_x) * 2;
++    unsigned int value = word_10;
++    unsigned int colour = screen_request_renderer->ConvertColour(
++        (value >> 16) & 255, (value >> 8) & 255, value & 255);
++
++    if (state_14 != 0)
++    {
++        if (screen_request_renderer->format_44 == 1)
++        {
++            while (height != 0)
++            {
++                int remaining = width;
++                while (remaining != 0)
++                {
++                    if ((*input & 1) != 0)
++                    {
++                        *output = 0xffff;
++                    }
++                    if ((*input & 2) != 0)
++                    {
++                        *output = 0;
++                    }
++                    output += 2;
++                    ++input;
++                    --remaining;
++                }
++                input -= source_stride + width;
++                --height;
++                output -= (destination_stride + width) * 2;
++            }
++        }
++        else
++        {
++            while (height != 0)
++            {
++                int remaining = width;
++                while (remaining != 0)
++                {
++                    if ((*input & 1) != 0)
++                    {
++                        *output = 0xffff;
++                    }
++                    if ((*input & 2) != 0)
++                    {
++                        *output = 0;
++                    }
++                    output += 2;
++                    ++input;
++                    --remaining;
++                }
++                input -= source_stride + width;
++                --height;
++                output -= (destination_stride + width) * 2;
++            }
++        }
++    }
++    else
++    {
++        while (height != 0)
++        {
++            int remaining = width;
++            while (remaining != 0)
++            {
++                if ((*input & 1) != 0)
++                {
++                    *output = static_cast<unsigned short>(colour);
++                }
++                output += 2;
++                ++input;
++                --remaining;
++            }
++            output -= (destination_stride + width) * 2;
++            input -= source_stride + width;
++            --height;
++        }
++    }
++}
+diff --git a/src/startup_font_glyph_surface.cpp b/src/startup_font_glyph_surface.cpp
+new file mode 100644
+index 0000000..f2a81b5
+--- /dev/null
++++ b/src/startup_font_glyph_surface.cpp
+@@ -0,0 +1,57 @@
++#include "startup_screen_text.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0049ff20
++void ScreenFontRenderer::DrawGlyphSurface(const unsigned char* source,
++    int source_stride, unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette)
++{
++    source += (source_y + height - 1) * source_stride + source_x;
++    destination += (destination_y + height - 1) * destination_stride + destination_x;
++
++    unsigned int value = word_10;
++    unsigned short colour = static_cast<unsigned short>(
++        screen_request_renderer->ConvertColour((value >> 16) & 0xff,
++            (value >> 8) & 0xff,
++            value & 0xff));
++
++    if (state_14)
++    {
++        while (height != 0)
++        {
++            int remaining = width;
++            while (remaining != 0)
++            {
++                if (*source & 1)
++                    *destination = 0xffff;
++                if (*source & 2)
++                    *destination = 0;
++                ++destination;
++                ++source;
++                --remaining;
++            }
++            source -= source_stride + width;
++            destination -= destination_stride + width;
++            --height;
++        }
++    }
++    else
++    {
++        while (height != 0)
++        {
++            int remaining = width;
++            while (remaining != 0)
++            {
++                if (*source & 1)
++                    *destination = colour;
++                ++destination;
++                ++source;
++                --remaining;
++            }
++            destination -= destination_stride + width;
++            source -= source_stride + width;
++            --height;
++        }
++    }
++}
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index 6f1b539..1b04a1e 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -74,6 +74,27 @@
+ 
+     ScreenFontRenderer(ScreenFontData* data, ScreenTextLookup* lookup);
+ 
++    // Actual 0x0049f9e0/RET16 and 0x0049fa00/10/20/RET4.
++    void SetRectangle(int x, int y, int width, int height);
++    void SetWord10(unsigned int value);
++    void SetState14(unsigned char value);
++    void SetWord18(unsigned int value);
++    // Actual 0x0049f780, RET12; borrowed terminated 16-bit text.
++    void DrawText(int x, int y, const unsigned short* text);
++
++    // Actual 0x004a0010, RET12; complete drawing body is a separate dependency.
++    void DrawTextLine(int x, int y, const unsigned short* text);
++
++    // Actual 0x0049fdd0 and 0x0049ff20, each RET44. Bodies remain separate.
++    void DrawGlyphDirect(const unsigned char* source, int source_stride,
++        unsigned short* destination, int destination_stride,
++        int source_x, int source_y, int destination_x, int destination_y,
++        int width, int height, const unsigned short* palette);
++    void DrawGlyphSurface(const unsigned char* source, int source_stride,
++        unsigned short* destination, int destination_stride,
++        int source_x, int source_y, int destination_x, int destination_y,
++        int width, int height, const unsigned short* palette);
++
+     unsigned int MeasureText(const unsigned short* text);
+     unsigned int CountWrappedLines(const unsigned short* text,
+         unsigned int width, unsigned int spacing);
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 1197fb4..fb0b978 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -84,6 +84,7 @@
+     int CreateSurface(int width, int height, int mode);
+     void PrepareSurface(int surface);
+     unsigned short* AccessPixels();
++    void UnlockPixels();
+     void CleanupSurface(int surface);
+     void PositionSurface(int surface, ScreenPoint position);
+ 

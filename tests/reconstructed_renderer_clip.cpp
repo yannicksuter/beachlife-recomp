@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <climits>
 #include <cstddef>
 #include <cstdio>
@@ -450,6 +451,25 @@ bool same_bytes(const unsigned char (&first)[N], const unsigned char (&second)[N
 // No renderer constructor, surface provider, or GPU behavior is supplied here.
 bool same_prefix(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b)
 {
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    if (a.draw != b.draw || !same_bytes(a.unknown_3c, b.unknown_3c) ||
+        a.surfaces_end != b.surfaces_end || a.surfaces_capacity != b.surfaces_capacity)
+    {
+        return false;
+    }
+#endif
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    if (a.fill_color != b.fill_color)
+    {
+        return false;
+    }
+#endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    if (!same_bytes(a.unknown_a8, b.unknown_a8) || a.buffer_130 != b.buffer_130)
+    {
+        return false;
+    }
+#endif
     return a.software_mode == b.software_mode && same_bytes(a.unknown_01, b.unknown_01) &&
            a.width == b.width && a.height == b.height && a.clip_rectangle.x == b.clip_rectangle.x &&
            a.clip_rectangle.y == b.clip_rectangle.y &&
@@ -462,9 +482,13 @@ bool same_prefix(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b)
            a.rectangle_ready_4f == b.rectangle_ready_4f && same_bytes(a.unknown_50, b.unknown_50) &&
            a.clip_mode_54 == b.clip_mode_54 && same_bytes(a.unknown_58, b.unknown_58) &&
            a.unscaled_clip_5c == b.unscaled_clip_5c && a.clip_flag_5d == b.clip_flag_5d &&
-           same_bytes(a.unknown_5e, b.unknown_5e) && a.surfaces == b.surfaces &&
-           same_bytes(a.unknown_6c, b.unknown_6c) && a.current_surface == b.current_surface &&
-           a.pixels_locked == b.pixels_locked && same_bytes(a.unknown_79, b.unknown_79);
+           same_bytes(a.unknown_5e, b.unknown_5e) && a.word_60 == b.word_60 &&
+           same_bytes(a.unknown_64, b.unknown_64) && a.surfaces == b.surfaces &&
+#if !defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+           same_bytes(a.unknown_6c, b.unknown_6c) &&
+#endif
+           a.current_surface == b.current_surface && a.pixels_locked == b.pixels_locked &&
+           same_bytes(a.unknown_79, b.unknown_79);
 }
 
 template <std::size_t N> void pattern(unsigned char (&bytes)[N], unsigned int seed)
@@ -487,6 +511,10 @@ void initialize(Frame& frame, unsigned short* pixels, ScreenSurfacePosition** su
     r.clip_rectangle = {-13, 17, 37, 41};
     r.pixels_1c = pixels;
     pattern(r.unknown_20, 0x23);
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    r.draw = nullptr;
+    pattern(r.unknown_3c, 0x23U + 28U * 17U);
+#endif
     r.format_44 = 0x12345678U;
     pattern(r.unknown_48, 0x34);
     r.rectangle_suppressed_4d = 0x45;
@@ -498,14 +526,28 @@ void initialize(Frame& frame, unsigned short* pixels, ScreenSurfacePosition** su
     r.unscaled_clip_5c = 0x9a;
     r.clip_flag_5d = 0xab;
     pattern(r.unknown_5e, 0xbc);
+    r.word_60 = std::bit_cast<unsigned int>(std::array<unsigned char, 4>{0xde, 0xef, 0x00, 0x11});
+    pattern(r.unknown_64, 0x22);
     r.surfaces = surfaces;
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    r.surfaces_end = nullptr;
+    r.surfaces_capacity = nullptr;
+#else
     pattern(r.unknown_6c, 0xcd);
+#endif
     r.current_surface = -37;
     r.pixels_locked = 0xde;
     pattern(r.unknown_79, 0xef);
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    r.fill_color = std::bit_cast<unsigned short>(std::array<unsigned char, 2>{0x00, 0x11});
+#endif
     // Aggregate initialization already constructed the real native deque.
     // Only this generated setup seeds queue values and synchronizes its count.
     r.dirty_rectangle_count = 0;
+#if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
+    pattern(r.unknown_a8, 0x91);
+    r.buffer_130 = nullptr;
+#endif
 }
 
 void verify_queue(const ScreenRequestRenderer& renderer, std::initializer_list<Rectangle> expected)

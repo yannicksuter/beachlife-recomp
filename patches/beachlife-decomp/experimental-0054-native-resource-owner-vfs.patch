@@ -1,0 +1,653 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -505,23 +505,6 @@
+     }
+ }
+ 
+-// Comparison-only live aggregate and writable terminated name; never run this image.
+-typedef char resource_lookup_pointer_width[sizeof(void*) == 4 ? 1 : -1];
+-typedef char resource_lookup_prefix_extent[sizeof(ScreenDialogResourceLookup) == 20 ? 1 : -1];
+-typedef char resource_lookup_count_offset[offsetof(ScreenDialogResourceLookup, record_count) == 12 ? 1 : -1];
+-typedef char resource_lookup_records_offset[offsetof(ScreenDialogResourceLookup, records) == 16 ? 1 : -1];
+-
+-ScreenDialogResourceLookup fixture_resource_lookup;
+-char fixture_resource_lookup_name[] = "xdummy";
+-ScreenDialogResource* volatile fixture_resource_lookup_result;
+-
+-extern "C" void fixture_resource_lookup_call()
+-{
+-    fixture_resource_lookup.record_count = 0;
+-    fixture_resource_lookup.records = 0;
+-    fixture_resource_lookup_result = fixture_resource_lookup.Lookup(fixture_resource_lookup_name);
+-}
+-
+ // Comparison-only typed current-surface pitch observation; never run this image.
+ typedef char PitchUnsignedWidth[(sizeof(unsigned int) == 4) ? 1 : -1];
+ typedef char PitchSurfaceSize[(sizeof(ScreenSurfacePosition) == 0x28) ? 1 : -1];
+@@ -639,7 +622,6 @@
+     FixtureClearRegistration(&fixture_registration_receiver, &fixture_registration_other, 1);
+     fixture_surface_position_call();
+     fixture_surface_pitch_call();
+-    fixture_resource_lookup_call();
+     fixture_resource_destruction();
+     fixture_resource_construction();
+     fixture_gui_register();
+diff --git a/src/startup_resource_stream_read.cpp b/src/startup_resource_stream_read.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_stream_read.cpp
+@@ -0,0 +1,27 @@
++#include "startup_resource_stream_read.h"
++
++namespace resource_files = beachlife::runtime::resource_files;
++
++// FUNCTION: BEACHLIFE 0x004eb420
++unsigned char ReadResourceByte(resource_files::Stream* stream)
++{
++    unsigned char value;
++    resource_files::read_stream(&value, sizeof(value), 1, stream);
++    return value;
++}
++
++// FUNCTION: BEACHLIFE 0x004eb440
++unsigned short ReadResourceWord(resource_files::Stream* stream)
++{
++    unsigned short value;
++    resource_files::read_stream(&value, sizeof(value), 1, stream);
++    return value;
++}
++
++// FUNCTION: BEACHLIFE 0x004eb460
++unsigned int ReadResourceDword(resource_files::Stream* stream)
++{
++    unsigned int value;
++    resource_files::read_stream(&value, sizeof(value), 1, stream);
++    return value;
++}
+diff --git a/src/startup_resource_stream_read.h b/src/startup_resource_stream_read.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_stream_read.h
+@@ -0,0 +1,12 @@
++#ifndef STARTUP_RESOURCE_STREAM_READ_H
++#define STARTUP_RESOURCE_STREAM_READ_H
++
++#include "runtime/resource_files.h"
++
++// Native overloads of the three real scalar fread readers. Existing FILE*
++// and TIFF retail_files::File* overloads remain independent and unchanged.
++unsigned char ReadResourceByte(beachlife::runtime::resource_files::Stream* stream);
++unsigned short ReadResourceWord(beachlife::runtime::resource_files::Stream* stream);
++unsigned int ReadResourceDword(beachlife::runtime::resource_files::Stream* stream);
++
++#endif
+diff --git a/src/startup_screen_dialog_frame_io.h b/src/startup_screen_dialog_frame_io.h
+--- a/src/startup_screen_dialog_frame_io.h
++++ b/src/startup_screen_dialog_frame_io.h
+@@ -1,18 +1,13 @@
+ #ifndef STARTUP_SCREEN_DIALOG_FRAME_IO_H
+ #define STARTUP_SCREEN_DIALOG_FRAME_IO_H
+ 
++#include "runtime/resource_files.h"
+ #include <limits.h>
+-#if defined(_WIN32)
+-#include <io.h>
+-#else
+-#include <unistd.h>
+-#endif
+ 
+ static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && sizeof(unsigned int) == 4,
+     "Resource file words require 32-bit int");
+ 
+-// Decode the original signed EAX/long word without an implementation-defined
+-// unsigned-to-signed narrowing on an LP64 host.
++// Retained explicit signed-word decoder; no native long-width assumption.
+ inline int ScreenDialogFrameSigned32(unsigned int value)
+ {
+     return value <= 0x7fffffffU ? static_cast<int>(value)
+@@ -21,23 +16,12 @@
+ 
+ inline int ScreenDialogFrameSeek32(int descriptor, unsigned int displacement, int origin)
+ {
+-    const int signed_displacement = ScreenDialogFrameSigned32(displacement);
+-#if defined(_WIN32)
+-    const long result = ::_lseek(descriptor, static_cast<long>(signed_displacement), origin);
+-#else
+-    const off_t result = ::lseek(descriptor, static_cast<off_t>(signed_displacement), origin);
+-#endif
+-    return ScreenDialogFrameSigned32(static_cast<unsigned int>(result));
++    return beachlife::runtime::resource_files::seek_descriptor(descriptor, displacement, origin);
+ }
+ 
+ inline int ScreenDialogFrameRead32(int descriptor, void* buffer, unsigned int bytes)
+ {
+-#if defined(_WIN32)
+-    const int result = ::_read(descriptor, buffer, bytes);
+-#else
+-    const ssize_t result = ::read(descriptor, buffer, bytes);
+-#endif
+-    return ScreenDialogFrameSigned32(static_cast<unsigned int>(result));
++    return beachlife::runtime::resource_files::read_descriptor(descriptor, buffer, bytes);
+ }
+ 
+ #endif
+diff --git a/src/startup_screen_dialog_frame_vfs_metadata.cpp b/src/startup_screen_dialog_frame_vfs_metadata.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_vfs_metadata.cpp
+@@ -0,0 +1,28 @@
++#include "startup_resource_stream_read.h"
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00416e60
++void ScreenDialogResourceFrame::ReadMetadata(beachlife::runtime::resource_files::Stream* stream)
++{
++    unsigned char length = ReadResourceByte(stream);
++    name = static_cast<char*>(::operator new(length));
++    for (int i = 0; i < length; ++i)
++    {
++        unsigned char value = ReadResourceByte(stream);
++        const_cast<char*>(name)[i] = static_cast<char>(value);
++    }
++
++    count_0a = ReadResourceWord(stream);
++    plane_count_0c = ReadResourceByte(stream);
++    width_0e = ReadResourceWord(stream);
++    height_10 = ReadResourceWord(stream);
++    unsigned short word = ReadResourceWord(stream);
++    unknown_12[0] = static_cast<unsigned char>(word);
++    unknown_12[1] = static_cast<unsigned char>(word >> 8);
++    word_14 = static_cast<short>(ReadResourceWord(stream));
++    file_offset_1c = ReadResourceDword(stream);
++    data_size_18 = static_cast<int>(ReadResourceDword(stream));
++    offset_count_40 = ReadResourceWord(stream);
++}
+diff --git a/src/startup_screen_dialog_record_vfs_metadata.cpp b/src/startup_screen_dialog_record_vfs_metadata.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_record_vfs_metadata.cpp
+@@ -0,0 +1,105 @@
++#include "startup_resource_stream_read.h"
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++#include <string.h>
++#if !defined(_WIN32)
++#include <strings.h>
++// Native CRT spelling only; no replacement comparator.
++#define _stricmp strcasecmp
++#endif
++
++// FUNCTION: BEACHLIFE 0x00417260
++void ScreenDialogResourceRecord::ReadMetadata(beachlife::runtime::resource_files::Stream* stream, unsigned int surface_format)
++{
++    unsigned char length = ReadResourceByte(stream);
++    name = static_cast<char*>(::operator new(length));
++    for (int i = 0; i < length; ++i)
++    {
++        unsigned char value = ReadResourceByte(stream);
++        const_cast<char*>(name)[i] = static_cast<char>(value);
++    }
++
++    format_18 = ReadResourceDword(stream);
++    if (format_18 == 5)
++    {
++        unknown_20[0] = ReadResourceByte(stream);
++        unknown_20[1] = ReadResourceByte(stream);
++        unknown_20[2] = ReadResourceByte(stream);
++        unknown_20[3] = ReadResourceByte(stream);
++    }
++
++    palette_count = static_cast<int>(ReadResourceDword(stream));
++    palettes = static_cast<unsigned short**>(::operator new(palette_count * sizeof(unsigned short*)));
++    if (!_stricmp(name, "fat_bloke"))
++        word_1c = 1;
++    else if (!_stricmp(name, "fit_bloke"))
++        word_1c = 2;
++    else if (!_stricmp(name, "gail"))
++        word_1c = 3;
++    else if (!_stricmp(name, "shaz"))
++        word_1c = 4;
++    else
++        word_1c = 0;
++
++    for (int palette = 0; palette < palette_count; ++palette)
++    {
++        switch (format_18)
++        {
++        case 1:
++        case 2:
++        case 5:
++        case 11:
++        {
++            palettes[palette] = static_cast<unsigned short*>(::operator new(512));
++            unsigned short* output = palettes[palette];
++            for (int colour = 0; colour < 256; ++colour)
++            {
++                unsigned char red = ReadResourceByte(stream);
++                unsigned char green = ReadResourceByte(stream);
++                unsigned char blue = ReadResourceByte(stream);
++                if (surface_format == 0)
++                    *output++ = static_cast<unsigned short>(
++                        (((red & 0xf8) << 5) | (green & 0xfc)) << 3 | (blue >> 3));
++                else
++                    *output++ = static_cast<unsigned short>(
++                        (((red & 0xf8) << 5) | (green & 0xf8)) << 2 | (blue >> 3));
++            }
++            break;
++        }
++        case 3:
++        case 6:
++        {
++            palettes[palette] = static_cast<unsigned short*>(::operator new(128));
++            unsigned short* output = palettes[palette];
++            for (int colour = 0; colour < 64; ++colour)
++            {
++                unsigned char red = ReadResourceByte(stream);
++                unsigned char green = ReadResourceByte(stream);
++                unsigned char blue = ReadResourceByte(stream);
++                if (surface_format == 0)
++                    *output++ = static_cast<unsigned short>(
++                        (((red & 0xf8) << 5) | (green & 0xfc)) << 3 | (blue >> 3));
++                else
++                    *output++ = static_cast<unsigned short>(
++                        (((red & 0xf8) << 5) | (green & 0xf8)) << 2 | (blue >> 3));
++            }
++            for (int discarded = 0; discarded < 192; ++discarded)
++            {
++                ReadResourceByte(stream);
++                ReadResourceByte(stream);
++                ReadResourceByte(stream);
++            }
++            break;
++        }
++        }
++    }
++
++    frame_count = static_cast<int>(ReadResourceDword(stream));
++    frames = static_cast<ScreenDialogResourceFrame**>(::operator new(frame_count * sizeof(ScreenDialogResourceFrame*)));
++    for (int frame = 0; frame < frame_count; ++frame)
++    {
++        frames[frame] = new ScreenDialogResourceFrame;
++        frames[frame]->ReadMetadata(stream);
++    }
++}
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -2,6 +2,7 @@
+ #define STARTUP_SCREEN_DIALOG_RESOURCE_H
+ 
+ #include <stdio.h>
++#include "runtime/resource_files.h"
+ 
+ // Observed nonpolymorphic resource frame, separate from the screen FrameItem.
+ // The real file owner and complete encoded-data format remain separate.
+@@ -38,6 +39,8 @@
+ 
+     // Actual 0x00416e60 RET4; the FILE remains owned by the caller.
+     void ReadMetadata(FILE* stream);
++    // Native mounted-I/O overload; the existing stdio ABI remains distinct.
++    void ReadMetadata(beachlife::runtime::resource_files::Stream* stream);
+ 
+     // Actual 0x00416db0 RET8; loading and encoded data remain separate.
+     const unsigned char* SelectData(int frame, int plane);
+@@ -67,6 +70,7 @@
+ 
+     // Actual 0x00417260 RET8: borrowed FILE* and renderer format word.
+     void ReadMetadata(FILE* stream, unsigned int surface_format);
++    void ReadMetadata(beachlife::runtime::resource_files::Stream* stream, unsigned int surface_format);
+ };
+ 
+ // Descriptive 56-byte x86 wrapper. Unnamed words retain their observed width;
+@@ -99,23 +103,63 @@
+     ~ScreenDialogResource();
+ };
+ 
+-// Only this lookup prefix is established; no complete manager lifetime claim.
+-struct ScreenDialogResourceLookup
++struct ScreenDialogPaletteModifiers;
++struct ScreenDialogResourceLookup;
++
++// Descriptive empty registration base: publication precedes ring construction.
++// The actual 0x00417de0 cleanup unconditionally clears the same global slot.
++struct ScreenDialogResourceRegistration
+ {
+-    FILE* metadata_file;
++    explicit ScreenDialogResourceRegistration(ScreenDialogResourceLookup* owner);
++    ~ScreenDialogResourceRegistration();
++};
++
++// Only links are used by the observed ring operations. No payload type is inferred.
++struct ScreenDialogResourceNode
++{
++    ScreenDialogResourceNode* next;
++    ScreenDialogResourceNode* previous;
++    unsigned char unknown_value_08[4];
++};
++
++struct ScreenDialogResourceRing
++{
++    ScreenDialogResourceNode* head;
++
++    ScreenDialogResourceRing();
++    ~ScreenDialogResourceRing(); // Actual 0x00417d40, not the ScreenItem ring.
++    void Clear();                // Inlined in the manager constructor/destructor.
++};
++
++// Complete original owner is 0x1b0 bytes on x86. This native projection uses
++// an owning mounted-stream token and native pointers; its ABI is distinct.
++struct ScreenDialogResourceLookup : ScreenDialogResourceRegistration
++{
++    beachlife::runtime::resource_files::Stream* metadata_file;
+     int data_file;
+-    unsigned char unknown_08[4];
++    ScreenDialogPaletteModifiers* palette_modifiers;
+     int record_count;
+     ScreenDialogResourceRecord** records;
++    ScreenDialogResourceRing loaded_resources;
++    unsigned char unknown_18[4];
++    unsigned int word_1c;
++    char recent_names[5][80];
++
++    ScreenDialogResourceLookup();  // Actual 0x004175b0.
++    ~ScreenDialogResourceLookup(); // Actual 0x00417710; complete accepted source.
+ 
+     // Actual 0x00417820: three RET0 paths return -1, -1 and 0.
+     int Load();
+ 
+     ScreenDialogResource* Lookup(const char* name);
+     ScreenDialogResource* Find(const char* name);
++    void Release(ScreenDialogResource* resource);
+ };
+ 
+ extern ScreenDialogResourceLookup* screen_dialog_resources;
++// Native selected-use initial empty string. Original 0x005a8930 is writable
++// and initially NUL, but its array extent and all possible writers are unknown.
++extern char screen_dialog_resource_initial_name[];
+ extern const char screen_dialog_clear_name[];
+ extern const char screen_dialog_none_name[];
+ extern const char screen_dialog_fallback_name[];
+diff --git a/src/startup_screen_dialog_resource_initial_name.cpp b/src/startup_screen_dialog_resource_initial_name.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_initial_name.cpp
+@@ -0,0 +1,6 @@
++#include "startup_screen_dialog_resource.h"
++
++// Native storage for the audited selected use: five initial empty-name copies.
++// Original writable 0x005a8930 starts with NUL; its array extent is unknown.
++// This one-byte owner does not cover any unproved later write to that address.
++char screen_dialog_resource_initial_name[1] = { 0 };
+diff --git a/src/startup_screen_dialog_resource_load.cpp b/src/startup_screen_dialog_resource_load.cpp
+--- a/src/startup_screen_dialog_resource_load.cpp
++++ b/src/startup_screen_dialog_resource_load.cpp
+@@ -2,30 +2,24 @@
+ #include "startup_screen_dialog_resource.h"
+ #include "startup_screen_renderer.h"
+ 
+-#include <fcntl.h>
+-#if defined(_WIN32)
+-#include <io.h>
+-#else
+-#include <unistd.h>
+-// The real POSIX CRT read has the same bounded result domain here: -1 or 0..20.
+-#define _read read
+-#endif
+ #include <new>
+ #include <string.h>
++
++namespace resource_files = beachlife::runtime::resource_files;
+ 
+ // FUNCTION: BEACHLIFE 0x00417820
+ int ScreenDialogResourceLookup::Load()
+ {
+-    metadata_file = fopen("data/sprites/BLSprite.hdr", "rb");
++    metadata_file = resource_files::open_stream("data/sprites/BLSprite.hdr", "rb");
+     if (!metadata_file)
+         return -1;
+ 
+     char file_header[20];
+     unsigned int file_word;
+     record_count = 0;
+-    fread(file_header, 1, 20, metadata_file);
+-    fread(&file_word, 4, 1, metadata_file);
+-    fread(&record_count, 4, 1, metadata_file);
++    resource_files::read_stream(file_header, 1, 20, metadata_file);
++    resource_files::read_stream(&file_word, 4, 1, metadata_file);
++    resource_files::read_stream(&record_count, 4, 1, metadata_file);
+     records = static_cast<ScreenDialogResourceRecord**>(
+         ::operator new(record_count * sizeof(ScreenDialogResourceRecord*)));
+     for (int index = 0; index < record_count; ++index)
+@@ -33,19 +27,14 @@
+         records[index] = new ScreenDialogResourceRecord;
+         records[index]->ReadMetadata(metadata_file, screen_request_renderer->format_44);
+     }
+-    fclose(metadata_file);
++    resource_files::close_stream(metadata_file);
+ 
+-#if defined(_WIN32)
+-    data_file = _open("data\\sprites\\BLSprite.Dat", _O_BINARY);
+-#else
+-    // POSIX has no text/binary translation and uses slash path separators.
+-    data_file = open("data/sprites/BLSprite.Dat", O_RDONLY);
+-#endif
++    data_file = resource_files::open_descriptor("data\\sprites\\BLSprite.Dat", 0x8000);
+     if (data_file < 0)
+         return -1;
+ 
+-    unsigned int initial_read_bytes = _read(data_file, file_header, 20);
+-    initial_read_bytes += _read(data_file, &file_word, 4);
++    unsigned int initial_read_bytes = resource_files::read_descriptor(data_file, file_header, 20);
++    initial_read_bytes += resource_files::read_descriptor(data_file, &file_word, 4);
+ 
+     int initial_record_count = record_count;
+     if (initial_record_count > 0)
+diff --git a/src/startup_screen_dialog_resource_manager_constructor.cpp b/src/startup_screen_dialog_resource_manager_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_manager_constructor.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_palette_modifiers.h"
++
++#include <new>
++#include <string.h>
++#include <SDL3/SDL_messagebox.h>
++
++// FUNCTION: BEACHLIFE 0x004175b0
++ScreenDialogResourceLookup::ScreenDialogResourceLookup()
++    : ScreenDialogResourceRegistration(this)
++    , loaded_resources()
++{
++    for (int index = 0; index < 5; ++index)
++        strcpy(recent_names[index], screen_dialog_resource_initial_name);
++
++    record_count = 0;
++    word_1c = 0;
++    metadata_file = 0;
++    data_file = -1;
++    if (Load() != 0)
++        SDL_ShowSimpleMessageBox(0, "Sorry", "Couldn't Initialise SpriteEngine", 0);
++
++    palette_modifiers = new ScreenDialogPaletteModifiers;
++    loaded_resources.Clear();
++}
+diff --git a/src/startup_screen_dialog_resource_manager_destructor.cpp b/src/startup_screen_dialog_resource_manager_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_manager_destructor.cpp
+@@ -0,0 +1,27 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_palette_modifiers.h"
++
++#include <new>
++namespace resource_files = beachlife::runtime::resource_files;
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x00417710
++ScreenDialogResourceLookup::~ScreenDialogResourceLookup()
++{
++    if (metadata_file)
++        resource_files::close_stream(metadata_file);
++    if (data_file)
++        resource_files::close_descriptor(data_file);
++
++    for (int index = 0; index < record_count; ++index)
++    {
++        ScreenDialogResourceRecord* record = records[index];
++        if (record->reference_count != 0)
++            StartupFatal("Sprite Engine Closing down, but someone still has a handle to %s", record->name);
++        else
++            delete record;
++    }
++    ::operator delete(records);
++    delete palette_modifiers;
++}
+diff --git a/src/startup_screen_dialog_resource_registration.cpp b/src/startup_screen_dialog_resource_registration.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_registration.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_dialog_resource.h"
++
++// GLOBAL: BEACHLIFE 0x005a8920
++ScreenDialogResourceLookup* screen_dialog_resources = 0;
++
++// Observed inlined registration before the member construction at 0x004175d2.
++ScreenDialogResourceRegistration::ScreenDialogResourceRegistration(ScreenDialogResourceLookup* owner)
++{
++    screen_dialog_resources = owner;
++}
++
++// FUNCTION: BEACHLIFE 0x00417de0
++ScreenDialogResourceRegistration::~ScreenDialogResourceRegistration()
++{
++    screen_dialog_resources = 0;
++}
+diff --git a/src/startup_screen_dialog_resource_release.cpp b/src/startup_screen_dialog_resource_release.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_release.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x00417d10
++void ScreenDialogResourceLookup::Release(ScreenDialogResource* resource)
++{
++    --resource->record->reference_count;
++    delete resource;
++}
+diff --git a/src/startup_screen_dialog_resource_ring_clear.cpp b/src/startup_screen_dialog_resource_ring_clear.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_ring_clear.cpp
+@@ -0,0 +1,18 @@
++#include "startup_screen_dialog_resource.h"
++#include "pool_return.h"
++
++// Inlined at 0x004176b4 and in the actual member destructor at 0x00417d5f.
++// Nodes are owned; their unobserved payload word is never read or destroyed.
++void ScreenDialogResourceRing::Clear()
++{
++    ScreenDialogResourceNode* node = head->next;
++    while (node != head)
++    {
++        ScreenDialogResourceNode* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(ScreenDialogResourceNode));
++    }
++    head->next = head;
++    head->previous = head;
++}
+diff --git a/src/startup_screen_dialog_resource_ring_constructor.cpp b/src/startup_screen_dialog_resource_ring_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_ring_constructor.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_dialog_resource.h"
++#include "pool_allocate.h"
++#include <new>
++
++// Observed member construction at 0x004175de; no separate entry is claimed.
++ScreenDialogResourceRing::ScreenDialogResourceRing()
++    : head(0)
++{
++    void* storage = AllocatePoolBytes(sizeof(ScreenDialogResourceNode));
++    ScreenDialogResourceNode* sentinel = ::new (storage) ScreenDialogResourceNode;
++    sentinel->next = sentinel;
++    sentinel->previous = sentinel;
++    head = sentinel;
++}
+diff --git a/src/startup_screen_dialog_resource_ring_destructor.cpp b/src/startup_screen_dialog_resource_ring_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_ring_destructor.cpp
+@@ -0,0 +1,11 @@
++#include "startup_screen_dialog_resource.h"
++#include "pool_return.h"
++
++// FUNCTION: BEACHLIFE 0x00417d40
++ScreenDialogResourceRing::~ScreenDialogResourceRing()
++{
++    Clear();
++    ScreenDialogResourceNode* released = head;
++    if (released != 0)
++        ReturnPool(released, sizeof(ScreenDialogResourceNode));
++}
+diff --git a/src/startup_screen_palette_modifiers_load.cpp b/src/startup_screen_palette_modifiers_load.cpp
+--- a/src/startup_screen_palette_modifiers_load.cpp
++++ b/src/startup_screen_palette_modifiers_load.cpp
+@@ -1,12 +1,14 @@
+ #include "startup_screen_palette_modifiers.h"
+ #include "startup_screen_renderer.h"
+ 
+-#include <stdio.h>
++#include "runtime/resource_files.h"
++
++namespace resource_files = beachlife::runtime::resource_files;
+ 
+ // FUNCTION: BEACHLIFE 0x00409870
+ void ScreenDialogPaletteModifiers::Load()
+ {
+-    FILE* stream = fopen(screen_dialog_palette_file_path, "rb");
++    resource_files::Stream* stream = resource_files::open_stream(screen_dialog_palette_file_path, "rb");
+     if (!stream)
+         return;
+ 
+@@ -19,9 +21,9 @@
+             unsigned char blue;
+             for (int colour = 0; colour < 64; ++colour)
+             {
+-                fread(&red, 1, 1, stream);
+-                fread(&green, 1, 1, stream);
+-                fread(&blue, 1, 1, stream);
++                resource_files::read_stream(&red, 1, 1, stream);
++                resource_files::read_stream(&green, 1, 1, stream);
++                resource_files::read_stream(&blue, 1, 1, stream);
+                 colours[bank][colour] = static_cast<unsigned short>(
+                     (((red & 0xf8) << 5) | (green & 0xfc)) << 3 | (blue >> 3));
+             }
+@@ -36,13 +38,13 @@
+             unsigned char blue;
+             for (int colour = 0; colour < 64; ++colour)
+             {
+-                fread(&red, 1, 1, stream);
+-                fread(&green, 1, 1, stream);
+-                fread(&blue, 1, 1, stream);
++                resource_files::read_stream(&red, 1, 1, stream);
++                resource_files::read_stream(&green, 1, 1, stream);
++                resource_files::read_stream(&blue, 1, 1, stream);
+                 colours[bank][colour] = static_cast<unsigned short>(
+                     (((red & 0xf8) << 5) | (green & 0xf8)) << 2 | (blue >> 3));
+             }
+         }
+     }
+-    fclose(stream);
++    resource_files::close_stream(stream);
+ }

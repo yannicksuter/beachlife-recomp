@@ -136,7 +136,7 @@ void* allocate(std::size_t bytes)
 {
     if (domain == Domain::ordinary)
     {
-#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME) && !defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
         require(!child_lifetime_phase, "generated child sentinel unexpectedly refilled the pool");
 #endif
         for (;;)
@@ -207,7 +207,11 @@ void release(void* memory) noexcept
 #if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
 class ChildSentinelScope
 {
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+    child_ring_fixture::Seed<18> seed{require};
+#else
     child_ring_fixture::Seed<9> seed{require};
+#endif
     unsigned long long first_exchange = child_exchanges;
 
   public:
@@ -220,7 +224,12 @@ class ChildSentinelScope
     {
         // Array elements have already run their real child-ring destructors.
         seed.check_initial_order();
-        require(child_exchanges == first_exchange + 18, "child-owner exchange count differs");
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+        require(child_exchanges == first_exchange + 36,
+#else
+        require(child_exchanges == first_exchange + 18,
+#endif
+            "child-owner exchange count differs");
         child_guard_bytes += seed.checked_bytes();
         child_lifetime_phase = false;
     }
@@ -230,10 +239,20 @@ class ChildSentinelScope
 struct GeneratedDialog final : ScreenDialog
 {
     ScreenChildNode sentinel;
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+    const char* allocated_name;
+#endif
     explicit GeneratedDialog(const char* label)
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+        : ScreenDialog(label, ScreenRectangle{7, -3, 91, 27}, "CLEAR", 0, 0)
+        , allocated_name(name)
+#else
         : ScreenDialog(ScreenRectangle{7, -3, 91, 27})
+#endif
     {
-#if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+        // The actual Dialog owns its allocated name, title Frame and both rings.
+#elif defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
         // Real base and child-ring lifetimes; remaining borrowed Dialog tail
         // data is not the original complete derived lifetime.
 #else
@@ -243,9 +262,21 @@ struct GeneratedDialog final : ScreenDialog
         kind_28 = 4;
         word_2c = 0x67676767U;
         std::memset(unknown_31, 0x53, sizeof(unknown_31));
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+        // Keep the genuine owned Frame and allocated name. Only untouched
+        // fields are initialized; live vptrs and ABI padding are not written.
+        previous_x_50 = 0;
+        previous_y_54 = 0;
+        std::memset(unknown_5a, 0, sizeof(unknown_5a));
+        std::memset(unknown_62, 0, sizeof(unknown_62));
+        remaining_68 = 0.0f;
+        duration_6c = 0.0f;
+        word_70 = 0;
+#else
         child_44 = nullptr;
         name = label;
         std::memset(unknown_4c, 0x29, sizeof(unknown_4c));
+#endif
         sentinel = {&sentinel, &sentinel, nullptr};
 #if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
         require(children.head != nullptr && children.head->next == children.head &&
@@ -263,6 +294,11 @@ struct GeneratedDialog final : ScreenDialog
 #if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
     ~GeneratedDialog() override
     {
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+        // Existing name-search cases borrow literals temporarily. Restore the
+        // actual allocated owner before the real Dialog destructor releases it.
+        name = allocated_name;
+#endif
         // No borrowed stack child nodes may reach the real owning Clear.
         require(children.head != nullptr && children.head->next == children.head &&
                     children.head->previous == children.head,
@@ -760,9 +796,17 @@ int main()
         ledger_size = 0;
     }
 #if defined(BEACHLIFE_DECOMP_CHILD_RING_LIFETIME)
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+    require(!child_lifetime_phase && child_exchanges == 72,
+#else
     require(!child_lifetime_phase && child_exchanges == 36,
+#endif
         "generated child-owner scope or total differs");
+#if defined(BEACHLIFE_DECOMP_DIALOG_OWNER)
+    std::printf("child-rings=36 child-exchanges=%llu child-guard-bytes=%llu\n",
+#else
     std::printf("child-rings=18 child-exchanges=%llu child-guard-bytes=%llu\n",
+#endif
         child_exchanges,
         child_guard_bytes);
 #endif

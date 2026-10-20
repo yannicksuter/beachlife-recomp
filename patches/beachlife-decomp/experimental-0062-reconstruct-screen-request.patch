@@ -1,0 +1,129 @@
+diff --git a/src/startup_screen_request.cpp b/src/startup_screen_request.cpp
+new file mode 100644
+index 0000000..46c93976dc53b93ae4534257e7b14c533a353aa7
+--- /dev/null
++++ b/src/startup_screen_request.cpp
+@@ -0,0 +1,103 @@
++#include "startup_screen_request.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004b1320
++bool ScreenManager::RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag)
++{
++    bool result = false;
++    ScreenChildLink* node = registry;
++    if (node)
++    {
++        for (;;)
++        {
++            if (strcmp(static_cast<ScreenDialog*>(node->item)->name, name) == 0)
++            {
++                break;
++            }
++            node = node->next;
++            if (!node)
++            {
++                return false;
++            }
++        }
++
++        ScreenDialog* screen = static_cast<ScreenDialog*>(node->item);
++        bool create = true;
++        if (context)
++        {
++            for (CircularListNode* current = active.head->next; current != active.head; current = current->next)
++            {
++                ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(current)->entry;
++                if (entry->item == screen && entry->context == context)
++                {
++                    create = false;
++                }
++            }
++        }
++
++        if (create)
++        {
++            int group = screen->group_7c;
++            for (CircularListNode* current = active.head->next; current != active.head; current = current->next)
++            {
++                ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(current)->entry;
++                if (entry->item->group_7c == group)
++                {
++                    entry->state = 2;
++                    if (entry->context)
++                    {
++                        entry->context->Replaced();
++                    }
++                    break;
++                }
++            }
++
++            ActiveScreenEntry* entry = new ActiveScreenEntry;
++            entry->item = screen;
++            entry->state = 0;
++            ScreenRectangle rectangle;
++            rectangle = screen->GetRectangle();
++            int width = rectangle.right - rectangle.left;
++            int height = rectangle.bottom - rectangle.top;
++            if (!flag && screen->flag_60)
++            {
++                bool place = false;
++                int x;
++                int y;
++                if (mode != 6 && previous_mode != 6)
++                {
++                    place = screen_request_game->placement->FindPlacement(screen->group_7c, &x, &y);
++                    if (place)
++                    {
++                        if (x + width >= screen_request_renderer->width)
++                        {
++                            place = false;
++                        }
++                        if (y + height >= screen_request_renderer->height)
++                        {
++                            place = false;
++                        }
++                    }
++                }
++                if (place)
++                {
++                    rectangle = screen->GetRectangle();
++                    screen->MoveRectangle(x - rectangle.left, y - rectangle.top);
++                }
++            }
++            rectangle = screen->GetRectangle();
++            int surface = renderer->CreateSurface(width, height, 0);
++            renderer->PrepareSurface(surface);
++            entry->surface = surface;
++            ScreenPoint position = { rectangle.left, rectangle.top };
++            renderer->PositionSurface(surface, position);
++            active.Insert(active.Begin(), entry);
++            entry->context = context;
++            screen->MarkPrepared();
++            screen->ApplyPosition(0, 0);
++            screen->state_59 = flag;
++        }
++        result = true;
++    }
++    return result;
++}
+diff --git a/src/startup_screen_request.h b/src/startup_screen_request.h
+new file mode 100644
+index 0000000..df250fb328c350fc7168825d1fecb052b2de8c4b
+--- /dev/null
++++ b/src/startup_screen_request.h
+@@ -0,0 +1,14 @@
++#ifndef STARTUP_SCREEN_REQUEST_H
++#define STARTUP_SCREEN_REQUEST_H
++
++#include "startup_screen_manager.h"
++#include "startup_screen_child_link.h"
++#include "startup_screen_dialog.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_request_context.h"
++
++// Composition only. All classes and globals have their one existing declaration.
++// The RequestScreen body adds no manager, Dialog, renderer or context lifetime.
++
++#endif

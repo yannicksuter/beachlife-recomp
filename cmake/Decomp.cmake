@@ -139,6 +139,136 @@ if(BUILD_TESTING)
     set_tests_properties(startup_configuration PROPERTIES LABELS "reconstructed;headless")
 endif()
 
+add_library(beachlife_reconstructed_surface_pixels STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_pixel_access.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/surface_error_sink.cpp")
+target_include_directories(beachlife_reconstructed_surface_pixels PUBLIC
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_surface_pixels PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_surface_pixels PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_surface_pixels verify_reconstructed_source)
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    target_compile_definitions(beachlife_reconstructed_surface_pixels PUBLIC
+        BEACHLIFE_DECOMP_RENDERER_QUEUE=1)
+endif()
+
+# Reconstructed runtime libraries remain available without subsystem tests.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_render_masks STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/render_mask_setup.cpp")
+    target_include_directories(beachlife_reconstructed_render_masks PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_render_masks PUBLIC cxx_std_20)
+    set_target_properties(beachlife_reconstructed_render_masks PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_render_masks verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_render_masks PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_render_masks PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_renderer_present_effect STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_present_effect.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_present_effect PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_present_effect PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_present_effect PUBLIC
+        beachlife_reconstructed_render_masks)
+    set_target_properties(beachlife_reconstructed_renderer_present_effect PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_renderer_present_effect verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_present_effect PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_present_effect PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_renderer_default STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_render_default.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_default PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_default PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_default PUBLIC
+        beachlife_reconstructed_surface_pixels beachlife_reconstructed_render_masks)
+    set_target_properties(beachlife_reconstructed_renderer_default PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_renderer_default verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_default PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_default PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_resource_raster_402880 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_402880.cpp")
+    target_include_directories(beachlife_reconstructed_resource_raster_402880 PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_raster_402880 PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_raster_402880 PUBLIC
+        beachlife_reconstructed_render_masks)
+    set_target_properties(beachlife_reconstructed_resource_raster_402880 PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_resource_raster_402880 verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_raster_402880 PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_raster_402880 PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_resource_raster_405b20 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_405b20.cpp")
+    target_include_directories(beachlife_reconstructed_resource_raster_405b20 PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_raster_405b20 PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_raster_405b20 PUBLIC
+        beachlife_reconstructed_render_masks)
+    set_target_properties(beachlife_reconstructed_resource_raster_405b20 PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_resource_raster_405b20 verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_raster_405b20 PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_raster_405b20 PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_resource_raster_direct STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster1_direct.cpp")
+    add_library(beachlife_reconstructed_resource_raster2 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster2.cpp")
+    target_link_libraries(beachlife_reconstructed_resource_raster2 PUBLIC
+        beachlife_reconstructed_resource_raster_direct)
+    foreach(target beachlife_reconstructed_resource_raster_direct
+            beachlife_reconstructed_resource_raster2)
+        target_include_directories(${target} PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+        target_compile_features(${target} PUBLIC cxx_std_20)
+        set_target_properties(${target} PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        add_dependencies(${target} verify_reconstructed_source)
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /GL-)
+        else()
+            target_compile_options(${target} PRIVATE -fno-lto)
+        endif()
+    endforeach()
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_resource_files STATIC src/runtime/resource_files.cpp)
+    target_include_directories(beachlife_resource_files PUBLIC "${CMAKE_SOURCE_DIR}/src")
+    target_compile_features(beachlife_resource_files PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_resource_files PUBLIC beachlife_data Threads::Threads)
+    set_target_properties(beachlife_resource_files PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_resource_files PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_resource_files PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -340,15 +470,6 @@ endif()
 add_test(NAME reconstructed_pool_lock COMMAND reconstructed_pool_lock_tests)
 set_tests_properties(reconstructed_pool_lock PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
-
-add_library(beachlife_reconstructed_surface_pixels STATIC
-    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_pixel_access.cpp"
-    "${BEACHLIFE_DECOMP_SOURCE}/surface_error_sink.cpp")
-target_include_directories(beachlife_reconstructed_surface_pixels PUBLIC
-    "${BEACHLIFE_DECOMP_SOURCE}")
-target_compile_features(beachlife_reconstructed_surface_pixels PUBLIC cxx_std_20)
-set_target_properties(beachlife_reconstructed_surface_pixels PROPERTIES CXX_EXTENSIONS OFF)
-add_dependencies(beachlife_reconstructed_surface_pixels verify_reconstructed_source)
 
 add_executable(reconstructed_surface_pixels_tests tests/reconstructed_surface_pixels.cpp)
 target_link_libraries(reconstructed_surface_pixels_tests PRIVATE
@@ -913,7 +1034,6 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     # renderer declaration is identical in every translation unit of an image.
     foreach(BEACHLIFE_RENDERER_QUEUE_CONSUMER IN ITEMS
         beachlife_reconstructed_surfaces
-        beachlife_reconstructed_surface_pixels
         beachlife_reconstructed_gui_rectangle)
         target_compile_definitions(${BEACHLIFE_RENDERER_QUEUE_CONSUMER} PUBLIC
             BEACHLIFE_DECOMP_RENDERER_QUEUE=1)
@@ -1084,7 +1204,7 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
 endif()
 
 
-# Experimental font measurement uses the real constructor and borrowed typed data.
+# Experimental font measurement borrows genuinely constructed font data.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_library(beachlife_reconstructed_font_measurement STATIC
         "${BEACHLIFE_DECOMP_SOURCE}/startup_font_renderer_constructor.cpp"
@@ -1115,7 +1235,9 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             -fno-lto -Wall -Wextra -Wpedantic -Werror)
         target_link_options(reconstructed_font_measurement_tests PRIVATE -fno-lto)
     endif()
-    add_test(NAME reconstructed_font_measurement COMMAND reconstructed_font_measurement_tests)
+    add_test(NAME reconstructed_font_measurement
+        COMMAND reconstructed_font_measurement_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/font-measurement-font-owner")
     set_tests_properties(reconstructed_font_measurement PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
@@ -1229,7 +1351,9 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             -fno-lto -Wall -Wextra -Wpedantic -Werror)
         target_link_options(reconstructed_auxiliary_text_tests PRIVATE -fno-lto)
     endif()
-    add_test(NAME reconstructed_auxiliary_text COMMAND reconstructed_auxiliary_text_tests)
+    add_test(NAME reconstructed_auxiliary_text
+        COMMAND reconstructed_auxiliary_text_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/auxiliary-text-font-owner")
     set_tests_properties(reconstructed_auxiliary_text PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
@@ -1289,7 +1413,8 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         target_link_options(reconstructed_screen_item_complete_tests PRIVATE -fno-lto)
     endif()
     add_test(NAME reconstructed_screen_item_complete
-        COMMAND reconstructed_screen_item_complete_tests)
+        COMMAND reconstructed_screen_item_complete_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/screen-item-complete-font-owner")
     set_tests_properties(reconstructed_screen_item_complete PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
@@ -1399,7 +1524,8 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             -fno-lto -Wall -Wextra -Wpedantic -Werror)
         target_link_options(reconstructed_resource_find_tests PRIVATE -fno-lto)
     endif()
-    add_test(NAME reconstructed_resource_find COMMAND reconstructed_resource_find_tests)
+    add_test(NAME reconstructed_resource_find COMMAND reconstructed_resource_find_tests
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/resource-find-owner")
     set_tests_properties(reconstructed_resource_find PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
@@ -1494,34 +1620,47 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         beachlife_reconstructed_gui_rectangle)
     add_dependencies(beachlife_reconstructed_resource_file_producer verify_reconstructed_source)
 
-    add_executable(reconstructed_resource_file_producer_tests
-        tests/reconstructed_resource_file_producer.cpp)
-    target_link_libraries(reconstructed_resource_file_producer_tests PRIVATE
-        beachlife_reconstructed_resource_file_producer)
-    add_dependencies(reconstructed_resource_file_producer_tests verify_reconstructed_source)
+    # The real libraries remain portable. Only this scalar-observing fixture
+    # uses the reviewed Linux Itanium ABI and GNU-compatible linker wrapping.
     set_target_properties(beachlife_reconstructed_resource_frame_file
-        beachlife_reconstructed_resource_file_producer
-        reconstructed_resource_file_producer_tests PROPERTIES
+        beachlife_reconstructed_resource_file_producer PROPERTIES
         CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
     if(MSVC)
         target_compile_options(beachlife_reconstructed_resource_frame_file PRIVATE /GL-)
         target_compile_options(beachlife_reconstructed_resource_file_producer PRIVATE /GL-)
-        target_compile_options(reconstructed_resource_file_producer_tests PRIVATE /GL- /W4 /WX)
     else()
         target_compile_options(beachlife_reconstructed_resource_frame_file PRIVATE -fno-lto)
         target_compile_options(beachlife_reconstructed_resource_file_producer PRIVATE -fno-lto)
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        add_executable(reconstructed_resource_file_producer_tests
+            tests/reconstructed_resource_file_producer.cpp)
+        target_link_libraries(reconstructed_resource_file_producer_tests PRIVATE
+            beachlife_reconstructed_resource_file_producer
+            beachlife_reconstructed_resource_owner)
+        add_dependencies(reconstructed_resource_file_producer_tests verify_reconstructed_source)
+        set_target_properties(reconstructed_resource_file_producer_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
         target_compile_options(reconstructed_resource_file_producer_tests PRIVATE
             -fno-lto -Wall -Wextra -Wpedantic -Werror)
-        target_link_options(reconstructed_resource_file_producer_tests PRIVATE -fno-lto)
+        target_link_options(reconstructed_resource_file_producer_tests PRIVATE -fno-lto
+            "LINKER:--wrap=_ZN9beachlife7runtime14resource_files11open_streamEPKcS3_"
+            "LINKER:--wrap=_ZN9beachlife7runtime14resource_files11read_streamEPvmmPNS1_6StreamE"
+            "LINKER:--wrap=_ZN9beachlife7runtime14resource_files12close_streamEPNS1_6StreamE"
+            "LINKER:--wrap=_ZN9beachlife7runtime14resource_files15open_descriptorEPKci"
+            "LINKER:--wrap=_ZN9beachlife7runtime14resource_files15read_descriptorEiPvj"
+            "LINKER:--wrap=_ZN9beachlife7runtime14resource_files15seek_descriptorEiji"
+            "LINKER:--wrap=_ZN9beachlife7runtime14resource_files16close_descriptorEi")
+        set(BEACHLIFE_RESOURCE_FILE_TEST_ROOT
+            "${CMAKE_CURRENT_BINARY_DIR}/resource-file-producer-data"
+            CACHE STRING "Fresh generated-file directory for the resource producer test")
+        add_test(NAME reconstructed_resource_file_producer
+            COMMAND reconstructed_resource_file_producer_tests
+                "${BEACHLIFE_RESOURCE_FILE_TEST_ROOT}")
+        set_tests_properties(reconstructed_resource_file_producer PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
-    set(BEACHLIFE_RESOURCE_FILE_TEST_ROOT
-        "${CMAKE_CURRENT_BINARY_DIR}/resource-file-producer-data"
-        CACHE STRING "Fresh generated-file directory for the resource producer test")
-    add_test(NAME reconstructed_resource_file_producer
-        COMMAND reconstructed_resource_file_producer_tests
-            "${BEACHLIFE_RESOURCE_FILE_TEST_ROOT}")
-    set_tests_properties(reconstructed_resource_file_producer PROPERTIES
-        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
 
 # Palette modifiers retain the actual file reader and registration lifetime.
@@ -1595,32 +1734,23 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         target_link_options(reconstructed_resource_frame_loaders_tests PRIVATE -fno-lto)
     endif()
     add_test(NAME reconstructed_resource_frame_loaders
-        COMMAND reconstructed_resource_frame_loaders_tests)
+        COMMAND reconstructed_resource_frame_loaders_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/resource-frame-loaders")
     set_tests_properties(reconstructed_resource_frame_loaders PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
 
 # Direct encoded sprite raster with independent bounded packet and pixel fixtures.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
-    add_library(beachlife_reconstructed_resource_raster_direct STATIC
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster1_direct.cpp")
-    target_include_directories(beachlife_reconstructed_resource_raster_direct PUBLIC
-        "${BEACHLIFE_DECOMP_SOURCE}")
-    target_compile_features(beachlife_reconstructed_resource_raster_direct PUBLIC cxx_std_20)
-    add_dependencies(beachlife_reconstructed_resource_raster_direct verify_reconstructed_source)
-
     add_executable(reconstructed_resource_raster_direct_tests
         tests/reconstructed_resource_raster_direct.cpp)
     target_link_libraries(reconstructed_resource_raster_direct_tests PRIVATE
         beachlife_reconstructed_resource_raster_direct)
-    set_target_properties(beachlife_reconstructed_resource_raster_direct
-        reconstructed_resource_raster_direct_tests PROPERTIES
+    set_target_properties(reconstructed_resource_raster_direct_tests PROPERTIES
         CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
     if(MSVC)
-        target_compile_options(beachlife_reconstructed_resource_raster_direct PRIVATE /GL-)
         target_compile_options(reconstructed_resource_raster_direct_tests PRIVATE /GL- /W4 /WX)
     else()
-        target_compile_options(beachlife_reconstructed_resource_raster_direct PRIVATE -fno-lto)
         target_compile_options(reconstructed_resource_raster_direct_tests PRIVATE
             -fno-lto -Wall -Wextra -Wpedantic -Werror)
         target_link_options(reconstructed_resource_raster_direct_tests PRIVATE -fno-lto)
@@ -1847,7 +1977,8 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         target_link_options(reconstructed_resource_frame_select_tests PRIVATE -fno-lto)
     endif()
     add_test(NAME reconstructed_resource_frame_select
-        COMMAND reconstructed_resource_frame_select_tests)
+        COMMAND reconstructed_resource_frame_select_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/resource-frame-select")
     set_tests_properties(reconstructed_resource_frame_select PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
@@ -1912,4 +2043,1008 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_test(NAME reconstructed_active_node_erase COMMAND reconstructed_active_node_erase_tests)
     set_tests_properties(reconstructed_active_node_erase PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# The matched one-word setter uses the genuine experimental renderer aggregate.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_word60 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_set_word60.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_word60 PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_word60 PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_renderer_word60 verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_word60_tests tests/reconstructed_renderer_word60.cpp)
+    target_link_libraries(reconstructed_renderer_word60_tests PRIVATE
+        beachlife_reconstructed_renderer_word60)
+    set_target_properties(beachlife_reconstructed_renderer_word60
+        reconstructed_renderer_word60_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_word60 PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_word60_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_word60 PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_word60_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_word60_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_word60 COMMAND reconstructed_renderer_word60_tests)
+    set_tests_properties(reconstructed_renderer_word60 PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_resource_raster2_tests
+        tests/reconstructed_resource_raster2.cpp)
+    target_link_libraries(reconstructed_resource_raster2_tests PRIVATE
+        beachlife_reconstructed_resource_raster2)
+    set_target_properties(reconstructed_resource_raster2_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_resource_raster2_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_raster2_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_raster2_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_raster2 COMMAND reconstructed_resource_raster2_tests)
+    set_tests_properties(reconstructed_resource_raster2 PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# The Intro TGA command composes real readers, widget and registration lifetimes.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_tga_command STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_tga.cpp")
+    target_include_directories(beachlife_reconstructed_gui_tga_command PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_tga_command PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_tga_command PUBLIC
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_tga_widget)
+    add_dependencies(beachlife_reconstructed_gui_tga_command verify_reconstructed_source)
+    add_executable(reconstructed_gui_tga_command_tests
+        tests/reconstructed_gui_tga_command.cpp)
+    target_link_libraries(reconstructed_gui_tga_command_tests PRIVATE
+        beachlife_reconstructed_gui_tga_command)
+    set_target_properties(beachlife_reconstructed_gui_tga_command
+        reconstructed_gui_tga_command_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_tga_command PRIVATE /GL-)
+        target_compile_options(reconstructed_gui_tga_command_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_tga_command PRIVATE -fno-lto)
+        target_compile_options(reconstructed_gui_tga_command_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_tga_command_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_tga_command COMMAND reconstructed_gui_tga_command_tests)
+    add_test(NAME reconstructed_gui_tga_command_fatal
+        COMMAND reconstructed_gui_tga_command_tests --fatal)
+    set_tests_properties(reconstructed_gui_tga_command reconstructed_gui_tga_command_fatal
+        PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_render_mask_setup_tests
+        tests/reconstructed_render_mask_setup.cpp)
+    target_link_libraries(reconstructed_render_mask_setup_tests PRIVATE
+        beachlife_reconstructed_render_masks)
+    set_target_properties(reconstructed_render_mask_setup_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_render_mask_setup_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_render_mask_setup_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_render_mask_setup_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_render_mask_setup COMMAND reconstructed_render_mask_setup_tests)
+    set_tests_properties(reconstructed_render_mask_setup PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_renderer_present_effect_tests
+        tests/reconstructed_renderer_present_effect.cpp)
+    target_link_libraries(reconstructed_renderer_present_effect_tests PRIVATE
+        beachlife_reconstructed_renderer_present_effect)
+    set_target_properties(reconstructed_renderer_present_effect_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_renderer_present_effect_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_renderer_present_effect_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_present_effect_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_present_effect
+        COMMAND reconstructed_renderer_present_effect_tests)
+    set_tests_properties(reconstructed_renderer_present_effect PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_renderer_default_tests
+        tests/reconstructed_renderer_default.cpp)
+    target_link_libraries(reconstructed_renderer_default_tests PRIVATE
+        beachlife_reconstructed_renderer_default)
+    set_target_properties(reconstructed_renderer_default_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_renderer_default_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_renderer_default_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_default_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_default COMMAND reconstructed_renderer_default_tests)
+    set_tests_properties(reconstructed_renderer_default PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# The position setter shares the real base-item lifetime and virtual-method graph.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_item_rectangle_position STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_rectangle_position.cpp")
+    target_include_directories(beachlife_reconstructed_screen_item_rectangle_position PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_item_rectangle_position PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_screen_item_rectangle_position PUBLIC
+        beachlife_reconstructed_screen_item)
+    add_dependencies(beachlife_reconstructed_screen_item_rectangle_position verify_reconstructed_source)
+
+    add_executable(reconstructed_screen_item_rectangle_position_tests
+        tests/reconstructed_screen_item_rectangle_position.cpp)
+    target_link_libraries(reconstructed_screen_item_rectangle_position_tests PRIVATE
+        beachlife_reconstructed_screen_item_rectangle_position)
+    set_target_properties(beachlife_reconstructed_screen_item_rectangle_position
+        reconstructed_screen_item_rectangle_position_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_item_rectangle_position PRIVATE /GL-)
+        target_compile_options(reconstructed_screen_item_rectangle_position_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_item_rectangle_position PRIVATE -fno-lto)
+        target_compile_options(reconstructed_screen_item_rectangle_position_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_item_rectangle_position_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_screen_item_rectangle_position
+        COMMAND reconstructed_screen_item_rectangle_position_tests)
+    set_tests_properties(reconstructed_screen_item_rectangle_position PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_resource_raster_402880_tests
+        tests/reconstructed_resource_raster_402880.cpp)
+    target_link_libraries(reconstructed_resource_raster_402880_tests PRIVATE
+        beachlife_reconstructed_resource_raster_402880)
+    set_target_properties(reconstructed_resource_raster_402880_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_resource_raster_402880_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_raster_402880_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_raster_402880_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_raster_402880
+        COMMAND reconstructed_resource_raster_402880_tests)
+    set_tests_properties(reconstructed_resource_raster_402880 PROPERTIES
+        LABELS "reconstructed;headless;experimental" TIMEOUT 30)
+endif()
+
+# The complete defined-item class reuses the real base and owning child ring.
+# This optional subsystem target retains the qualified test-only pool boundary.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_defined_item STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_defined_item_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_defined_item_globals.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_defined_item_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_defined_item_virtuals.cpp")
+    target_include_directories(beachlife_reconstructed_gui_defined_item PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_defined_item PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_defined_item PUBLIC
+        beachlife_reconstructed_screen_item
+        beachlife_reconstructed_screen_child_ring)
+    add_dependencies(beachlife_reconstructed_gui_defined_item verify_reconstructed_source)
+
+    add_executable(reconstructed_gui_defined_item_tests
+        tests/reconstructed_gui_defined_item.cpp)
+    target_link_libraries(reconstructed_gui_defined_item_tests PRIVATE
+        beachlife_reconstructed_gui_defined_item)
+    set_target_properties(beachlife_reconstructed_gui_defined_item
+        reconstructed_gui_defined_item_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_defined_item PRIVATE /GL-)
+        target_compile_options(reconstructed_gui_defined_item_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_defined_item PRIVATE -fno-lto)
+        target_compile_options(reconstructed_gui_defined_item_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_defined_item_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_defined_item COMMAND reconstructed_gui_defined_item_tests)
+    set_tests_properties(reconstructed_gui_defined_item PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+
+if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_resource_raster_405b20_tests
+        tests/reconstructed_resource_raster_405b20.cpp)
+    target_link_libraries(reconstructed_resource_raster_405b20_tests PRIVATE
+        beachlife_reconstructed_resource_raster_405b20)
+    set_target_properties(reconstructed_resource_raster_405b20_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_resource_raster_405b20_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_raster_405b20_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_raster_405b20_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_raster_405b20
+        COMMAND reconstructed_resource_raster_405b20_tests)
+    set_tests_properties(reconstructed_resource_raster_405b20 PROPERTIES
+        LABELS "reconstructed;headless;experimental" TIMEOUT 30)
+endif()
+
+
+# Complete image conversions use the genuine existing image allocation/cleanup.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_tiff_conversions STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_image_conversions.cpp")
+    target_include_directories(beachlife_reconstructed_tiff_conversions PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_tiff_conversions PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_tiff_conversions PUBLIC
+        beachlife_reconstructed_tga)
+    add_dependencies(beachlife_reconstructed_tiff_conversions verify_reconstructed_source)
+    add_executable(reconstructed_tiff_image_conversions_tests
+        tests/reconstructed_tiff_image_conversions.cpp)
+    target_link_libraries(reconstructed_tiff_image_conversions_tests PRIVATE
+        beachlife_reconstructed_tiff_conversions)
+    set_target_properties(beachlife_reconstructed_tiff_conversions
+        reconstructed_tiff_image_conversions_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_tiff_conversions PRIVATE /GL-)
+        target_compile_options(reconstructed_tiff_image_conversions_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_tiff_conversions PRIVATE -fno-lto)
+        target_compile_options(reconstructed_tiff_image_conversions_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tiff_image_conversions_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_tiff_image_conversions
+        COMMAND reconstructed_tiff_image_conversions_tests)
+    set_tests_properties(reconstructed_tiff_image_conversions PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Complete experimental TIFF loading uses real image owners and the mounted file session.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_tiff_loader STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_image_loader.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_directory_reader.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_decode_strips.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_decode_tiles.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_decode_packbits.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_read_palette.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_palette_byte.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_vfs_read_word.cpp")
+    target_include_directories(beachlife_reconstructed_tiff_loader PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_tiff_loader PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_tiff_loader PUBLIC
+        beachlife_reconstructed_tiff_conversions
+        beachlife_retail_files)
+    add_dependencies(beachlife_reconstructed_tiff_loader verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_tiff_loader PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+
+    add_executable(reconstructed_tiff_image_loader_tests
+        tests/reconstructed_tiff_image_loader.cpp)
+    target_link_libraries(reconstructed_tiff_image_loader_tests PRIVATE
+        beachlife_reconstructed_tiff_loader)
+    set_target_properties(reconstructed_tiff_image_loader_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_tiff_loader PRIVATE /GL-)
+        target_compile_options(reconstructed_tiff_image_loader_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_tiff_loader PRIVATE -fno-lto)
+        target_compile_options(reconstructed_tiff_image_loader_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tiff_image_loader_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_tiff_image_loader
+        COMMAND reconstructed_tiff_image_loader_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/tiff-loader")
+    set_tests_properties(reconstructed_tiff_image_loader PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Genuine font data owns its TIFF image and reads both metric files through the VFS.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_font_data STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_font_data_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_font_data_destructor.cpp")
+    target_include_directories(beachlife_reconstructed_font_data PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_font_data PUBLIC cxx_std_20)
+    # Existing GUI rectangle archive supplies the real fatal routine and renderer global.
+    target_link_libraries(beachlife_reconstructed_font_data PUBLIC
+        beachlife_reconstructed_files
+        beachlife_reconstructed_tiff_loader
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_font_data verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_font_data PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+
+    # The three existing metric consumers now use the one genuine owning declaration.
+    target_link_libraries(beachlife_reconstructed_font_measurement PUBLIC
+        beachlife_reconstructed_font_data)
+    add_executable(reconstructed_font_data_owner_tests
+        tests/reconstructed_font_data_owner.cpp)
+    target_link_libraries(reconstructed_font_data_owner_tests PRIVATE
+        beachlife_reconstructed_font_data beachlife_reconstructed_font_measurement)
+    set_target_properties(reconstructed_font_data_owner_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_font_data PRIVATE /GL-)
+        target_compile_options(reconstructed_font_data_owner_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_font_data PRIVATE -fno-lto)
+        target_compile_options(reconstructed_font_data_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_font_data_owner_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_font_data_owner
+        COMMAND reconstructed_font_data_owner_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/font-data-owner")
+    set_tests_properties(reconstructed_font_data_owner PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Real font glyph writers reuse the existing constructor, colour and global owners.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_font_glyphs STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_glyph_direct.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_glyph_surface.cpp")
+    target_include_directories(beachlife_reconstructed_font_glyphs PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_font_glyphs PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_font_glyphs PUBLIC
+        beachlife_reconstructed_font_measurement
+        beachlife_reconstructed_frame_fill_styles)
+    add_dependencies(beachlife_reconstructed_font_glyphs verify_reconstructed_source)
+
+    add_executable(reconstructed_font_glyphs_tests tests/reconstructed_font_glyphs.cpp)
+    target_link_libraries(reconstructed_font_glyphs_tests PRIVATE
+        beachlife_reconstructed_font_glyphs)
+    set_target_properties(beachlife_reconstructed_font_glyphs
+        reconstructed_font_glyphs_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_font_glyphs PRIVATE /GL-)
+        target_compile_options(reconstructed_font_glyphs_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_font_glyphs PRIVATE -fno-lto)
+        target_compile_options(reconstructed_font_glyphs_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_font_glyphs_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_font_glyphs COMMAND reconstructed_font_glyphs_tests)
+    set_tests_properties(reconstructed_font_glyphs PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Complete text layout and glyph drawing use the real file-loaded font owner.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_font_drawing STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_draw_text.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_draw_line.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_font_draw_settings.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_surface_unlock.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_surface_pitch.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_surface_position.cpp")
+    target_include_directories(beachlife_reconstructed_font_drawing PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_font_drawing PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_font_drawing PUBLIC
+        beachlife_reconstructed_font_glyphs
+        beachlife_reconstructed_font_data
+        beachlife_reconstructed_surface_pixels)
+    add_dependencies(beachlife_reconstructed_font_drawing verify_reconstructed_source)
+
+    add_executable(reconstructed_font_drawing_tests tests/reconstructed_font_drawing.cpp)
+    target_link_libraries(reconstructed_font_drawing_tests PRIVATE
+        beachlife_reconstructed_font_drawing)
+    set_target_properties(beachlife_reconstructed_font_drawing
+        reconstructed_font_drawing_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_font_drawing PRIVATE /GL-)
+        target_compile_options(reconstructed_font_drawing_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_font_drawing PRIVATE -fno-lto)
+        target_compile_options(reconstructed_font_drawing_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_font_drawing_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_font_drawing COMMAND reconstructed_font_drawing_tests
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/font-drawing")
+    set_tests_properties(reconstructed_font_drawing PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(resource_files_tests tests/resource_files.cpp)
+    target_link_libraries(resource_files_tests PRIVATE
+        beachlife_resource_files beachlife_retail_files)
+    target_compile_features(resource_files_tests PRIVATE cxx_std_20)
+    set_target_properties(resource_files_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(resource_files_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(resource_files_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(resource_files_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME resource_files
+        COMMAND resource_files_tests "${CMAKE_CURRENT_BINARY_DIR}/generated/resource-files")
+    set_tests_properties(resource_files PROPERTIES
+        LABELS "platform;experimental;headless" TIMEOUT 30)
+endif()
+
+# The genuine Text table uses the complete base and file-loaded font drawing.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_text_item STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_item_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_item_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_item_draw.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_item_activation.cpp")
+    target_include_directories(beachlife_reconstructed_gui_text_item PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_text_item PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_text_item PUBLIC
+        beachlife_reconstructed_screen_item_complete
+        beachlife_reconstructed_font_drawing)
+    add_dependencies(beachlife_reconstructed_gui_text_item verify_reconstructed_source)
+
+    add_executable(reconstructed_gui_text_item_tests tests/reconstructed_gui_text_item.cpp)
+    target_link_libraries(reconstructed_gui_text_item_tests PRIVATE
+        beachlife_reconstructed_gui_text_item)
+    set_target_properties(beachlife_reconstructed_gui_text_item
+        reconstructed_gui_text_item_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_text_item PRIVATE /GL-)
+        target_compile_options(reconstructed_gui_text_item_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_text_item PRIVATE -fno-lto)
+        target_compile_options(reconstructed_gui_text_item_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_text_item_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_text_item COMMAND reconstructed_gui_text_item_tests
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/gui-text-item")
+    set_tests_properties(reconstructed_gui_text_item PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Script TEXT construction selects the real readers, registration and Text owner.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_text STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_text.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_text PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_text PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_text PUBLIC
+        beachlife_reconstructed_gui_text_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_gui_parse_text verify_reconstructed_source)
+
+    add_executable(reconstructed_gui_parse_text_tests tests/reconstructed_gui_parse_text.cpp)
+    target_link_libraries(reconstructed_gui_parse_text_tests PRIVATE
+        beachlife_reconstructed_gui_parse_text)
+    set_target_properties(beachlife_reconstructed_gui_parse_text
+        reconstructed_gui_parse_text_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_text PRIVATE /GL-)
+        target_compile_options(reconstructed_gui_parse_text_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_text PRIVATE -fno-lto)
+        target_compile_options(reconstructed_gui_parse_text_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_text_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_parse_text COMMAND reconstructed_gui_parse_text_tests)
+    add_test(NAME reconstructed_gui_parse_text_fatal_open
+        COMMAND reconstructed_gui_parse_text_tests --fatal-open)
+    set_tests_properties(reconstructed_gui_parse_text reconstructed_gui_parse_text_fatal_open
+        PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Complete resource owner and mounted metadata/palette/raw bank composition.
+# All these subsystems already live below the optional-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_resource_pool_host STATIC src/runtime/resource_pool_host.cpp)
+    target_compile_features(beachlife_resource_pool_host PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_resource_pool_host PUBLIC Threads::Threads)
+
+    add_library(beachlife_reconstructed_resource_stream_read STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_stream_read.cpp")
+    target_include_directories(beachlife_reconstructed_resource_stream_read PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_stream_read PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_stream_read PUBLIC
+        beachlife_resource_files)
+    add_dependencies(beachlife_reconstructed_resource_stream_read verify_reconstructed_source)
+
+    # Preserve the original FILE* bodies and their stdio consumers. These new
+    # overloads are native ports of the same methods, not additional originals.
+    target_sources(beachlife_reconstructed_resource_frame_metadata PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_frame_vfs_metadata.cpp")
+    target_link_libraries(beachlife_reconstructed_resource_frame_metadata PUBLIC
+        beachlife_reconstructed_resource_stream_read)
+    target_sources(beachlife_reconstructed_resource_record_metadata PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_record_vfs_metadata.cpp")
+    target_link_libraries(beachlife_reconstructed_resource_record_metadata PUBLIC
+        beachlife_reconstructed_resource_stream_read)
+    target_link_libraries(beachlife_reconstructed_resource_file_producer PUBLIC
+        beachlife_resource_files)
+    target_link_libraries(beachlife_reconstructed_resource_frame_loaders PUBLIC
+        beachlife_resource_files)
+    target_link_libraries(beachlife_reconstructed_resource_palette_modifiers PUBLIC
+        beachlife_resource_files)
+
+    # Move the three already-qualified wrapper sources from their fixture into
+    # the real shared archive. No second body/global or comparison anchor.
+    target_sources(beachlife_reconstructed_resource_find PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_lookup.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_destructor.cpp")
+    target_link_libraries(beachlife_reconstructed_resource_find PUBLIC
+        beachlife_resource_files)
+    set_property(TARGET reconstructed_resource_find_tests PROPERTY SOURCES
+        "${CMAKE_SOURCE_DIR}/tests/reconstructed_resource_find.cpp")
+
+    add_library(beachlife_reconstructed_resource_owner STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_manager_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_manager_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_registration.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_ring_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_ring_clear.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_ring_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_initial_name.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_release.cpp")
+    target_include_directories(beachlife_reconstructed_resource_owner PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_owner PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_owner PUBLIC
+        beachlife_reconstructed_resource_file_producer
+        beachlife_reconstructed_resource_frame_select
+        beachlife_reconstructed_resource_palette_modifiers
+        beachlife_reconstructed_resource_find
+        beachlife_reconstructed_screen_child_ring
+        beachlife_resource_pool_host SDL3::SDL3)
+    add_dependencies(beachlife_reconstructed_resource_owner verify_reconstructed_source)
+
+    # These links are necessary only with the genuine-construction migrations.
+    # Each migrated fixture constructs and destroys the genuine owner.
+    target_link_libraries(reconstructed_resource_find_tests PRIVATE
+        beachlife_reconstructed_resource_owner)
+    if(TARGET reconstructed_resource_file_producer_tests)
+        target_link_libraries(reconstructed_resource_file_producer_tests PRIVATE
+            beachlife_reconstructed_resource_owner)
+    endif()
+
+    add_executable(reconstructed_resource_owner_tests tests/reconstructed_resource_owner.cpp)
+    target_link_libraries(reconstructed_resource_owner_tests PRIVATE
+        beachlife_reconstructed_resource_owner)
+    foreach(target IN ITEMS beachlife_resource_pool_host
+        beachlife_reconstructed_resource_stream_read beachlife_reconstructed_resource_owner
+        reconstructed_resource_owner_tests)
+        set_target_properties(${target} PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /GL-)
+        else()
+            target_compile_options(${target} PRIVATE -fno-lto)
+        endif()
+    endforeach()
+    if(MSVC)
+        target_compile_options(reconstructed_resource_owner_tests PRIVATE /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_owner_tests PRIVATE
+            -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_owner_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_owner
+        COMMAND reconstructed_resource_owner_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/resource-owner")
+    set_tests_properties(reconstructed_resource_owner PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Genuine FONT parsing publishes real file-loaded font owners into typed slots.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_font STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_font.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_font_publication.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_font PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_font PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_font PUBLIC
+        beachlife_reconstructed_gui_integer
+        beachlife_reconstructed_font_measurement
+        beachlife_reconstructed_screen_localization)
+    add_dependencies(beachlife_reconstructed_gui_parse_font verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_font PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_font PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_font PRIVATE -fno-lto)
+    endif()
+
+    # A single test-only GNU forwarding wrapper observes/fails the actual later
+    # scalar allocation. Successful allocations still use the real C++ runtime.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT MSVC)
+        add_executable(reconstructed_gui_parse_font_tests tests/reconstructed_gui_parse_font.cpp)
+        target_link_libraries(reconstructed_gui_parse_font_tests PRIVATE
+            beachlife_reconstructed_gui_parse_font)
+        set_target_properties(reconstructed_gui_parse_font_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_font_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_font_tests PRIVATE
+            -fno-lto -Wl,--wrap=_Znwm)
+        add_test(NAME reconstructed_gui_parse_font
+            COMMAND reconstructed_gui_parse_font_tests
+                "${CMAKE_CURRENT_BINARY_DIR}/generated/gui-parse-font")
+        set_tests_properties(reconstructed_gui_parse_font PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+
+# Complete FrameItem owns a real child ring and draws through real resources.
+# Its base/resource dependencies already belong to the optional subsystem graph.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_frame_item STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster12.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster12_mode2.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster3.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster5_mode2.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster6.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_401df0.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_402350.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_403f60.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_404750.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_405180.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_4087b0.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_flagged.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_dispatch.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_draw.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_timing.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_activation.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_attach.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_callback.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_coordinates.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_draw.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_elapsed.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_event.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_hit.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_prepare.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style1.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style4.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style5.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style_initialize.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style_name_owners.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_style_native_storage.cpp")
+    target_include_directories(beachlife_reconstructed_frame_item PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_frame_item PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_frame_item PUBLIC
+        beachlife_reconstructed_screen_item_complete
+        beachlife_reconstructed_screen_child_ring
+        beachlife_reconstructed_resource_owner
+        beachlife_reconstructed_renderer_line
+        beachlife_reconstructed_renderer_clip
+        beachlife_reconstructed_font_drawing
+        beachlife_reconstructed_resource_raster_direct
+        beachlife_reconstructed_resource_raster_packed
+        beachlife_reconstructed_resource_raster2
+        beachlife_reconstructed_resource_raster_402880
+        beachlife_reconstructed_resource_raster_405b20
+        beachlife_reconstructed_render_masks)
+    add_dependencies(beachlife_reconstructed_frame_item verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_frame_item PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_frame_item PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_frame_item PRIVATE -fno-lto)
+    endif()
+
+    # The finite generated ownership fixture uses the qualified 64-bit pool
+    # backing. It supplies no game method, allocator, vtable or COM provider.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_frame_item_tests tests/reconstructed_frame_item.cpp)
+        target_link_libraries(reconstructed_frame_item_tests PRIVATE
+            beachlife_reconstructed_frame_item)
+        set_target_properties(reconstructed_frame_item_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_frame_item_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_frame_item_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_frame_item COMMAND reconstructed_frame_item_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/frame-item-owner")
+        set_tests_properties(reconstructed_frame_item PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# Complete MAIN handling creates the genuine Frame and uses actual context links.
+# Frame/resource/font dependencies retain their existing optional subsystem scope.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_main STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_main_item.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_main PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_main PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_main PUBLIC
+        beachlife_reconstructed_frame_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_gui_parse_main verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_main PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_main PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_main PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_parse_main_tests tests/reconstructed_gui_parse_main_item.cpp)
+        target_link_libraries(reconstructed_gui_parse_main_tests PRIVATE
+            beachlife_reconstructed_gui_parse_main)
+        set_target_properties(reconstructed_gui_parse_main_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_main_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_main_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_parse_main COMMAND reconstructed_gui_parse_main_tests)
+        add_test(NAME reconstructed_gui_parse_main_fatal_open
+            COMMAND reconstructed_gui_parse_main_tests --fatal-open)
+        set_tests_properties(reconstructed_gui_parse_main reconstructed_gui_parse_main_fatal_open
+            PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# The complete Dialog table owns real names, Frames and child rings.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_dialog_item STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_position.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_prepare.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_name_search.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_activation.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_attach.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_begin_transition.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_coordinates.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_draw.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_elapsed.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_hit.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_input38.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_move.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_names.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_hit.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_slot08.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_slot1c.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_word4c.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_close.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_prepare_named.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_prepare.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_activation_globals.cpp")
+    target_include_directories(beachlife_reconstructed_dialog_item PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_dialog_item PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_dialog_item PUBLIC
+        beachlife_reconstructed_frame_item
+        beachlife_reconstructed_screen_placements)
+    add_dependencies(beachlife_reconstructed_dialog_item verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_dialog_item PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_dialog_item PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_dialog_item PRIVATE -fno-lto)
+    endif()
+
+    # The shared experimental Dialog declaration has one genuine constructor.
+    # These existing fixture archives retain their real methods; their generated
+    # subtypes now reach the actual owned name/Frame/rings instead of inheritance.
+    target_link_libraries(beachlife_reconstructed_screen_item PUBLIC
+        beachlife_reconstructed_dialog_item)
+    target_link_libraries(beachlife_reconstructed_screen_registry PUBLIC
+        beachlife_reconstructed_dialog_item)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_dialog_item_tests tests/reconstructed_dialog_item.cpp)
+        target_link_libraries(reconstructed_dialog_item_tests PRIVATE
+            beachlife_reconstructed_dialog_item)
+        set_target_properties(reconstructed_dialog_item_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_dialog_item_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_dialog_item_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_dialog_item COMMAND reconstructed_dialog_item_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/dialog-item-owner")
+        set_tests_properties(reconstructed_dialog_item PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# Complete software-surface allocation/table growth using existing real pool/cleanup.
+# This subsystem target remains below the existing reconstructed-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_surface_create STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_create.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_initialize.cpp")
+    target_include_directories(beachlife_reconstructed_surface_create PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_surface_create PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_surface_create PUBLIC
+        beachlife_reconstructed_pool_refill
+        beachlife_reconstructed_surfaces
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_surface_create verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_surface_create PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_surface_create PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_surface_create PRIVATE -fno-lto)
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_surface_create_tests tests/reconstructed_surface_create.cpp)
+        target_link_libraries(reconstructed_surface_create_tests PRIVATE
+            beachlife_reconstructed_surface_create)
+        set_target_properties(reconstructed_surface_create_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_surface_create_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_surface_create_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_surface_create COMMAND reconstructed_surface_create_tests)
+        set_tests_properties(reconstructed_surface_create PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# The complete Dialog handler uses the real owned Dialog/Frame and parser links.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_dialog STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_dialog.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_dialog PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_dialog PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_dialog PUBLIC
+        beachlife_reconstructed_dialog_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_gui_parse_dialog verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_dialog PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_dialog PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_dialog PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_parse_dialog_tests tests/reconstructed_gui_parse_dialog.cpp)
+        target_link_libraries(reconstructed_gui_parse_dialog_tests PRIVATE
+            beachlife_reconstructed_gui_parse_dialog)
+        set_target_properties(reconstructed_gui_parse_dialog_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_dialog_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_dialog_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_parse_dialog COMMAND reconstructed_gui_parse_dialog_tests)
+        add_test(NAME reconstructed_gui_parse_dialog_fatal_bracket
+            COMMAND reconstructed_gui_parse_dialog_tests --fatal-bracket)
+        add_test(NAME reconstructed_gui_parse_dialog_fatal_brace
+            COMMAND reconstructed_gui_parse_dialog_tests --fatal-brace)
+        set_tests_properties(reconstructed_gui_parse_dialog
+            reconstructed_gui_parse_dialog_fatal_bracket reconstructed_gui_parse_dialog_fatal_brace
+            PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+        # Keep the real process-exit gate. Qualification also checks the two
+        # exact cleanup markers; a matching line must not override a failed exit.
+    endif()
+endif()
+# Complete RequestScreen keeps real Dialog, list and software-surface children.
+# This optional subsystem target remains below the existing test-only return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_request STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_request.cpp")
+    target_include_directories(beachlife_reconstructed_screen_request PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_request PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_screen_request PUBLIC
+        beachlife_reconstructed_dialog_item
+        beachlife_reconstructed_surface_create
+        beachlife_reconstructed_active_list_cleanup
+        beachlife_reconstructed_gui_context)
+    add_dependencies(beachlife_reconstructed_screen_request verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_screen_request PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_request PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_request PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_screen_request_tests tests/reconstructed_screen_request.cpp)
+        target_link_libraries(reconstructed_screen_request_tests PRIVATE
+            beachlife_reconstructed_screen_request)
+        set_target_properties(reconstructed_screen_request_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_screen_request_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_request_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_screen_request COMMAND reconstructed_screen_request_tests)
+        set_tests_properties(reconstructed_screen_request PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# Closing active screens keeps real Dialog, list, placement and surface owners.
+# This focused optional subsystem follows the existing test-only return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_close_active_screens STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_close_active.cpp")
+    target_include_directories(beachlife_reconstructed_close_active_screens PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_close_active_screens PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_close_active_screens PUBLIC
+        beachlife_reconstructed_screen_request
+        beachlife_reconstructed_active_node_erase)
+    add_dependencies(beachlife_reconstructed_close_active_screens verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_close_active_screens PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_close_active_screens PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_close_active_screens PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_close_active_screens_tests
+            tests/reconstructed_close_active_screens.cpp)
+        target_link_libraries(reconstructed_close_active_screens_tests PRIVATE
+            beachlife_reconstructed_close_active_screens)
+        set_target_properties(reconstructed_close_active_screens_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_close_active_screens_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_close_active_screens_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_close_active_screens
+            COMMAND reconstructed_close_active_screens_tests)
+        set_tests_properties(reconstructed_close_active_screens PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
 endif()

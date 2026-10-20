@@ -391,3 +391,22 @@ validation. Stable rebuilds the merged commit and drafts its CMake version.
 Final publication reuses the candidate assets. See [BUILDING](BUILDING.md) and
 [RELEASES](RELEASES.md). Packages contain declared outputs and notices, never a
 recursive copy of the checkout or original game data.
+
+The font rectangle setter is reconstructed as a separate 30-byte matching
+method. Its minimal comparison declaration is removed by the early native
+compatibility series before experimental font declarations are applied. Native
+font drawing retains its complete header and existing combined settings source;
+the new matching translation unit is not selected by native targets.
+
+The 323-byte direct font glyph writer has a strict matching reconstruction;
+raw bytes differ only at relocated addresses. Its real colour-conversion
+dependency is included without additional matching credit. The early native
+compatibility series restores the prior declarations and removes both matching
+translation units before experimental patches supply their existing owners,
+preserving the native glyph implementation and source selections.
+
+The nine-byte menu exit callback has a strict matching reconstruction using
+the real USER32 PostQuitMessage import; raw bytes differ at its IAT address.
+The early native compatibility series removes this matching-only callback
+and its comparison fixture and import declaration before native composition,
+preserving native sources and selections. The comparison image is not run.
