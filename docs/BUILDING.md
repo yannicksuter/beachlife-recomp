@@ -1101,3 +1101,10 @@ frame selection with the real frame lifetime and raw loaders. Generated files
 cover resident whole and plane buffers, upper clamps, lazy whole/plane loading,
 and cached pointer reuse. The finite domain uses positive counts, valid offsets,
 complete reads and successful allocations. It does not require retail data.
+
+The experimental `reconstructed_pool_refill` target exercises standalone pool
+refill with the real chunk allocator. Generated owned spans cover rounded full
+chains, reduced and single-slot returns, and one successful fresh allocation
+with real pointer-array storage in its returned slot. The fixture clears pool
+references before releasing each backing owner. Its finite domain excludes
+allocation failure, scavenging and concurrent access; no retail data is needed.

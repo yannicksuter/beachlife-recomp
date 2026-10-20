@@ -1851,3 +1851,33 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_resource_frame_select PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Standalone refill reuses the existing chunk implementation and sole globals.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_pool_refill STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/pool_refill.cpp")
+    target_include_directories(beachlife_reconstructed_pool_refill PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_pool_refill PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_pool_refill PUBLIC
+        beachlife_reconstructed_screen_list)
+    add_dependencies(beachlife_reconstructed_pool_refill verify_reconstructed_source)
+
+    add_executable(reconstructed_pool_refill_tests tests/reconstructed_pool_refill.cpp)
+    target_link_libraries(reconstructed_pool_refill_tests PRIVATE
+        beachlife_reconstructed_pool_refill)
+    set_target_properties(beachlife_reconstructed_pool_refill reconstructed_pool_refill_tests
+        PROPERTIES CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_pool_refill PRIVATE /GL-)
+        target_compile_options(reconstructed_pool_refill_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_pool_refill PRIVATE -fno-lto)
+        target_compile_options(reconstructed_pool_refill_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_pool_refill_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_pool_refill COMMAND reconstructed_pool_refill_tests)
+    set_tests_properties(reconstructed_pool_refill PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
