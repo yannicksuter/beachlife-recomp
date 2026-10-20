@@ -70,6 +70,7 @@ target_link_libraries(beachlife_retail_files PUBLIC beachlife_data Threads::Thre
 add_library(beachlife_launcher_core STATIC
     src/launcher/settings.cpp
     src/launcher/content_service.cpp
+    src/launcher/release_notes.cpp
     src/launcher/update_check.cpp src/launcher/update_install.cpp src/launcher/update_service.cpp
     src/platform/http_client.cpp)
 target_include_directories(beachlife_launcher_core PUBLIC "${CMAKE_SOURCE_DIR}/src")

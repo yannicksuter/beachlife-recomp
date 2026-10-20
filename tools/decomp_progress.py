@@ -1,5 +1,6 @@
 """Build a standalone, offline progress page from an audited split inventory."""
 import argparse
+import csv
 import hashlib
 import html
 import json
@@ -43,6 +44,25 @@ def percent(value):
 
 def escaped(value):
     return html.escape(str(value), quote=True)
+
+
+def has_metadata_binding(item, comparison, root):
+    """Validate an audited source association to a fingerprinted reccmp CSV row."""
+    binding = item.get('source_metadata')
+    if binding is None:
+        return False
+    if (not isinstance(binding, dict) or set(binding) != {'path', 'symbol'} or
+            not all(isinstance(value, str) and value for value in binding.values()) or
+            binding['path'] not in comparison['input_sha256']):
+        raise ValueError('Invalid or unfingerprinted source metadata binding.')
+    with (root / binding['path']).open(newline='', encoding='utf-8') as stream:
+        reader = csv.DictReader(stream)
+        if not {'address', 'type', 'size', 'symbol'}.issubset(reader.fieldnames or []):
+            raise ValueError('Source metadata CSV is missing required columns.')
+        rows = [row for row in reader if address(row['address']) == item['address_int']]
+    return (len(rows) == 1 and rows[0]['symbol'] == binding['symbol'] and
+            rows[0]['type'] == ('library' if item['kind'] == 'library' else 'function') and
+            int(rows[0]['size']) == item['size'])
 
 
 def build_report(inventory, comparison, target, root):
@@ -155,8 +175,9 @@ def build_report(inventory, comparison, target, root):
             marker = 'LIBRARY' if kind == 'library' else 'FUNCTION'
             annotations = re.findall(r'//\s*' + marker + r':\s+BEACHLIFE' +
                                      r'\s+(0x[0-9a-fA-F]+)', (root / source).read_text(encoding='utf-8'))
-            if start not in [int(a, 16) for a in annotations]:
-                raise ValueError('Method is assigned to a source without its address annotation.')
+            if (start not in [int(a, 16) for a in annotations] and
+                    not has_metadata_binding(item, comparison, root)):
+                raise ValueError('Method source has no matching address annotation or metadata binding.')
             if type(row['exact_bytes']) is not bool or row['exact_bytes'] and score != 1:
                 raise ValueError('Raw-exact evidence requires a strict match.')
             item.update(registered=True, score=score, raw_exact=row['exact_bytes'],

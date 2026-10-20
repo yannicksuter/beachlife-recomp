@@ -1,0 +1,54 @@
+diff --git a/src/pool_refill.cpp b/src/pool_refill.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b38492a8c07f960f5276de07b8b6e696aba908dd
+--- /dev/null
++++ b/src/pool_refill.cpp
+@@ -0,0 +1,34 @@
++#include "pool_refill.h"
++
++#include <new>
++
++static_assert(sizeof(unsigned int) == 4);
++static_assert(alignof(PoolChunkLink) <= 8 && sizeof(PoolChunkLink) <= 8);
++
++// FUNCTION: BEACHLIFE 0x004127e0
++void* RefillPool(unsigned int bytes)
++{
++    unsigned int block_size = (bytes + 7) & ~7u;
++    int count = 20;
++    unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
++    if (count == 1)
++    {
++        return chunk;
++    }
++
++    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (block_size - 1) / 8;
++    PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
++    *bucket = next;
++    for (int index = 1;; ++index)
++    {
++        PoolChunkLink* current = next;
++        if (count - 1 == index)
++        {
++            current->next = 0;
++            break;
++        }
++        next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
++        current->next = next;
++    }
++    return chunk;
++}
+diff --git a/src/pool_refill.h b/src/pool_refill.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a50c979a9bc32ab90d9d22085e968f56bc0dd671
+--- /dev/null
++++ b/src/pool_refill.h
+@@ -0,0 +1,8 @@
++#ifndef POOL_REFILL_H
++#define POOL_REFILL_H
++
++#include "pool_chunk_acquire.h"
++
++void* RefillPool(unsigned int bytes);
++
++#endif

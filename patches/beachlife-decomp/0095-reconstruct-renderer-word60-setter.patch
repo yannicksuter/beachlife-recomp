@@ -1,0 +1,93 @@
+diff --git a/src/startup_renderer_set_word60.cpp b/src/startup_renderer_set_word60.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_set_word60.cpp
+@@ -0,0 +1,6 @@
++#include "startup_screen_renderer.h"
++
++void ScreenRequestRenderer::SetWord60(unsigned int value)
++{
++    word_60 = value;
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -36,11 +36,16 @@
+     unsigned char unknown_01[3];
+     unsigned int width;
+     unsigned int height;
+-    unsigned char unknown_0c[0x5c];
++    unsigned char unknown_0c[0x52];
++    unsigned char unknown_5e[2];
++    unsigned int word_60;
++    unsigned char unknown_64[4];
+     ScreenSurfacePosition** surfaces;
+     unsigned char unknown_6c[8];
+     int current_surface;
+     unsigned char pixels_locked;
++
++    void SetWord60(unsigned int value);
+ 
+     int CreateSurface(int width, int height, int mode);
+     void PrepareSurface(int surface);
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -792,3 +792,33 @@
+     fixture_controller_result = game->LoadControllerScreen(path);
+     fixture_controller_completed = 1;
+ }
++
++typedef char Word60FixtureWordWidth[(sizeof(unsigned int) == 4) ? 1 : -1];
++typedef char Word60FixturePointerWidth[(sizeof(void*) == 4) ? 1 : -1];
++typedef char Word60FixtureOpaque5eOffset[(offsetof(ScreenRequestRenderer, unknown_5e) == 0x5e) ? 1 : -1];
++typedef char Word60FixtureWord60Offset[(offsetof(ScreenRequestRenderer, word_60) == 0x60) ? 1 : -1];
++typedef char Word60FixtureOpaque64Offset[(offsetof(ScreenRequestRenderer, unknown_64) == 0x64) ? 1 : -1];
++typedef char Word60FixtureSurfacesOffset[(offsetof(ScreenRequestRenderer, surfaces) == 0x68) ? 1 : -1];
++typedef char Word60FixtureCurrentSurfaceOffset[(offsetof(ScreenRequestRenderer, current_surface) == 0x74) ? 1 : -1];
++typedef char Word60FixtureLockOffset[(offsetof(ScreenRequestRenderer, pixels_locked) == 0x78) ? 1 : -1];
++typedef char Word60FixtureRendererSize[(sizeof(ScreenRequestRenderer) == 0x7c) ? 1 : -1];
++
++ScreenRequestRenderer* volatile fixture_word60_renderer;
++volatile unsigned int fixture_word60_input;
++volatile unsigned int fixture_word60_before;
++volatile unsigned int fixture_word60_after;
++volatile unsigned int fixture_word60_completed;
++
++// Comparison-only borrowed input: renderer is an actual live renderer with
++// a valid writable prefix and an initialized word_60. No owner is constructed,
++// no vptr is written, and no original or comparison image is ever executed.
++extern "C" __declspec(dllexport) void FixtureSetWord60(
++    ScreenRequestRenderer* renderer, unsigned int value)
++{
++    fixture_word60_renderer = renderer;
++    fixture_word60_input = value;
++    fixture_word60_before = renderer->word_60;
++    renderer->SetWord60(value);
++    fixture_word60_after = renderer->word_60;
++    fixture_word60_completed = 1;
++}
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -65,3 +65,4 @@
+ 0x005a8840,global,4,?screen_dialog_palette_modifiers@@3PAUScreenDialogPaletteModifiers@@A
+ 0x004e3c90,function,18,?LoadControllerScreen@ScreenRequestGamePrefix@@QAE_NPBD@Z
+ 0x004aedf0,function,1067,?LoadScreen@ScreenManager@@QAEXPBD@Z
++0x0040dee0,function,10,?SetWord60@ScreenRequestRenderer@@QAEXI@Z
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -496,6 +496,12 @@
+       "size": 18,
+       "name": "ScreenRequestGamePrefix::LoadControllerScreen",
+       "name_status": "descriptive controller-screen loader wrapper; complete game/manager lifetimes and loader body remain separate"
++    },
++    {
++      "address": "0x0040dee0",
++      "size": 10,
++      "name": "ScreenRequestRenderer::SetWord60",
++      "name_status": "Descriptive full-word setter; actual renderer+60 store and mode initialization caller proven"
+     }
+   ],
+   "library_functions": [

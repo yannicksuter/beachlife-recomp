@@ -98,6 +98,35 @@ class ProgressTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'registered target inventory'):
             self.report()
 
+    def test_fingerprinted_csv_can_bind_an_unannotated_source(self):
+        self.source.write_text('// LIBRARY: BEACHLIFE 0x1020\nvoid Generated() {}\n')
+        self.comparison['input_sha256']['fixture.cpp'] = self.digest()
+        metadata = self.root / 'metadata.csv'
+        metadata.write_text('address,type,size,symbol\n0x1000,function,16,?Generated@@YAXXZ\n')
+        self.comparison['input_sha256']['metadata.csv'] = hashlib.sha256(metadata.read_bytes()).hexdigest()
+        self.inventory['functions'][0]['source_metadata'] = {
+            'path': 'metadata.csv', 'symbol': '?Generated@@YAXXZ'}
+        self.assertEqual(self.report()['metrics']['matched_bytes'], 16)
+        del self.comparison['input_sha256']['metadata.csv']
+        with self.assertRaisesRegex(ValueError, 'unfingerprinted source metadata'):
+            self.report()
+
+    def test_csv_binding_rejects_wrong_extent_symbol_kind_or_duplicate_address(self):
+        self.source.write_text('// LIBRARY: BEACHLIFE 0x1020\nvoid Generated() {}\n')
+        self.comparison['input_sha256']['fixture.cpp'] = self.digest()
+        self.inventory['functions'][0]['source_metadata'] = {
+            'path': 'metadata.csv', 'symbol': '?Generated@@YAXXZ'}
+        metadata = self.root / 'metadata.csv'
+        for rows in ['0x1000,function,15,?Generated@@YAXXZ\n',
+                     '0x1000,function,16,?Different@@YAXXZ\n',
+                     '0x1000,library,16,?Generated@@YAXXZ\n',
+                     '0x1000,function,16,?Generated@@YAXXZ\n' * 2]:
+            with self.subTest(rows=rows):
+                metadata.write_text('address,type,size,symbol\n' + rows)
+                self.comparison['input_sha256']['metadata.csv'] = hashlib.sha256(metadata.read_bytes()).hexdigest()
+                with self.assertRaisesRegex(ValueError, 'metadata binding'):
+                    self.report()
+
     def test_reject_overlaps_alias_duplicates_and_unknown_extents(self):
         for extra, pattern in [
                 (self.method('0x1008', 32), 'Overlapping function'),

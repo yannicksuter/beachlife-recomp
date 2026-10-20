@@ -76,6 +76,13 @@ manually. The current comparison result supplies completed scores and raw-byte
 status for every method registered in the matching target. Address annotations,
 source fingerprints, target identity and method sizes must agree.
 
+An unannotated source can instead use an audited `source_metadata` association:
+`{"path": "build/prepared/metadata.csv", "symbol": "?Method@Class@@QAEXXZ"}`.
+Both the C++ source and CSV must be fingerprinted by the comparison. The CSV
+must contain exactly one row at that address, with the same symbol, size and
+function/library kind. This records source attribution; it never supplies a
+matching score or execution evidence.
+
 Functions with unresolved provenance can use the optional
 `unclassified_functions` target and result group. Its records have the same
 `name`, `address` and `size` fields as game entries, use `FUNCTION` annotations,

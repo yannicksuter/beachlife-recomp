@@ -18,9 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype')
 DECOMP = 'beachlife-decomp'
 DECOMP_PROFILES = {
-    'native': ('reconstruction-series', 'series'),
+    'native': ('reconstruction-series', 'native-pre-series', 'series'),
     'matching': ('reconstruction-series',),
-    'native-experimental': ('reconstruction-series', 'experimental-series', 'series'),
+    'native-experimental': ('reconstruction-series', 'native-pre-series',
+                            'experimental-series', 'series'),
 }
 
 
@@ -50,7 +51,8 @@ def no_symlinks(path, root):
 
 
 def patch_paths(source, name, series_filename='series'):
-    if series_filename not in ('series', 'reconstruction-series', 'experimental-series'):
+    if series_filename not in ('series', 'reconstruction-series',
+                               'native-pre-series', 'experimental-series'):
         raise ValueError('Invalid patch series filename')
     folder = Path(source) / 'patches' / name
     series = folder / series_filename

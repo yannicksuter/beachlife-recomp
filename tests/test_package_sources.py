@@ -51,6 +51,7 @@ class PackageSourceTests(unittest.TestCase):
             self.write(self.patch_root / name, patch.encode())
         self.write(self.patch_root / 'reconstruction-series', b'common.patch\n')
         self.write(self.patch_root / 'series', b'native.patch\n')
+        self.write(self.patch_root / 'native-pre-series', b'# no early adaptations\n')
         self.pin_path = self.patch_root / 'source.json'
         self.write(self.pin_path, json.dumps({'revision': self.revision}).encode())
         self.commit(self.repo)
@@ -116,7 +117,7 @@ class PackageSourceTests(unittest.TestCase):
         self.assertEqual(decomp['tree'], self.git(self.repo, 'rev-parse', self.revision + ':decomp'))
         self.assertEqual(decomp['subtree'], 'decomp')
         self.assertEqual(decomp['profile'], 'native')
-        for field, filenames in [('series', ['reconstruction-series', 'series']),
+        for field, filenames in [('series', ['reconstruction-series', 'native-pre-series', 'series']),
                                  ('patches', ['common.patch', 'native.patch'])]:
             self.assertEqual(decomp[field], [
                 {'path': 'patches/beachlife-decomp/' + name,
@@ -144,7 +145,7 @@ class PackageSourceTests(unittest.TestCase):
         self.assertEqual(manifest['build']['decomp_profile'], 'native-experimental')
         self.assertEqual(manifest['dependencies'], identities)
         self.assertEqual([Path(row['path']).name for row in identities[-1]['series']],
-                         ['reconstruction-series', 'experimental-series', 'series'])
+                         ['reconstruction-series', 'native-pre-series', 'experimental-series', 'series'])
         self.assertEqual((self.export / 'src/experimental.cpp').read_bytes(),
                          b'generated experimental source\n')
         self.assertFalse(any(name.startswith(('decomp/', 'patches/', 'orig/')) for name in payload))

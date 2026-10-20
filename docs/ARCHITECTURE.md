@@ -22,8 +22,9 @@ data, runtime and platform code. `decomp/` is the frozen reconstruction baseline
 new retail methods and changes belong in `patches/beachlife-decomp/`. No sibling
 checkout is required. The source preparation tool exports the full local commit
 in `patches/beachlife-decomp/source.json` and records its tree and file hashes.
-Both builds apply `reconstruction-series`; native builds then apply the faithful
-portability `series`. Matching retains the original compiler and ABI. Normal
+Both builds apply `reconstruction-series`; native builds then apply
+`native-pre-series` compatibility patches before the faithful portability
+`series`. Matching retains the original compiler and ABI. Normal
 Play's configuration and VFS file libraries, plus optional native subsystem
 tests, consume that export. The remaining game code uses the same boundary.
 Intentional behavior changes stay in a
@@ -32,7 +33,7 @@ remain immutable pins; never edit their checkouts in place.
 
 The optional `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME` build uses the
 `native-experimental` export. It inserts `experimental-series` between the
-reconstruction and portability series for complete, behavior-tested methods
+native compatibility and portability series for complete, behavior-tested methods
 whose byte matching is still in progress. Matching and ordinary native exports
 retain their existing source selection. Build and package metadata identify the
 profile; experimental sources are restricted to development and test channels.

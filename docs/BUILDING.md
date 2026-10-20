@@ -152,7 +152,9 @@ The test option requires
 full baseline commit pin shared with matching; that object must exist locally,
 so shallow checkouts may need more history before configuration. Configuration
 never fetches it. New reconstructed increments are patches listed in
-`reconstruction-series`; native portability patches follow in `series`.
+`reconstruction-series`; native compatibility patches in `native-pre-series`
+restore declarations needed before optional experimental composition. Native
+portability patches follow in `series`.
 Keep the baseline intact. Uncommitted edits under `decomp/` are rejected;
 unrelated host edits do not affect the export.
 
@@ -186,8 +188,8 @@ ctest --test-dir build/experimental -L reconstructed --output-on-failure
 The `release` preset selects compiler optimization; the build channel remains
 `dev`. The option defaults to `OFF` and is rejected with the `release` channel.
 It selects the `native-experimental` prepared-source profile, applying
-`reconstruction-series`, then `experimental-series`, then the native portability
-`series`. Ordinary native and matching builds ignore `experimental-series`.
+`reconstruction-series`, then `native-pre-series`, then `experimental-series`,
+then the native portability `series`. Ordinary native and matching builds ignore `experimental-series`.
 The preparation CLI also accepts `--decomp-profile native-experimental`.
 
 Build metadata records `decomp_profile`; packaging verifies that exact profile
@@ -551,7 +553,8 @@ For an actual desktop screenshot (then exit), use:
 preselects a disc image without saving it automatically. Screenshot and smoke
 runs never check for updates; `--update-preview STATE` shows a made-up update
 state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
-`downloading`, `failed` or `installfailed`).
+`downloading`, `failed` or `installfailed`); a `-dialog` suffix (`test-dialog`)
+also opens the update dialog.
 
 `--play` opens the game window with saved settings (or `--config` and `--source`),
 then prepares or reuses game data behind its loading screen, as Play does. `--cache-directory folder`
@@ -1092,3 +1095,25 @@ concurrency or the complete Dialog/Frame owner.
 Build with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
 `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
 `-R '^reconstructed_screen_child_ring$'`.
+
+The experimental `reconstructed_resource_frame_select` target exercises resource
+frame selection with the real frame lifetime and raw loaders. Generated files
+cover resident whole and plane buffers, upper clamps, lazy whole/plane loading,
+and cached pointer reuse. The finite domain uses positive counts, valid offsets,
+complete reads and successful allocations. It does not require retail data.
+
+The experimental `reconstructed_pool_refill` target exercises standalone pool
+refill with the real chunk allocator. Generated owned spans cover rounded full
+chains, reduced and single-slot returns, and one successful fresh allocation
+with real pointer-array storage in its returned slot. The fixture clears pool
+references before releasing each backing owner. Its finite domain excludes
+allocation failure, scavenging and concurrent access; no retail data is needed.
+
+The experimental `reconstructed_active_node_erase` target exercises the real
+active-list node erasure against typed borrowed entries, sentinels and pool
+storage. Three finite groups cover middle, first/last and sole-node removal,
+including an entry released before its distinct node. Existing list insertion,
+node construction, clearing and pool return remain the actual implementations.
+The fixture detaches all pool roots before its backing owners end lifetime.
+It retains the existing uncontended OS-test boundary; it does not implement a
+retail list owner, active-screen manager or gameplay loop.
