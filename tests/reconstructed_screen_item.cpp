@@ -53,7 +53,11 @@ struct GeneratedScreenItem : ScreenItem
         word_2c = 0;
         std::memset(unknown_31, 0, sizeof(unknown_31));
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    void Unresolved04(float) override
+#else
     void Unresolved04() override
+#endif
     {
         fail("unresolved slot invoked");
     }
@@ -73,7 +77,11 @@ struct GeneratedScreenItem : ScreenItem
     {
         fail("unresolved slot invoked");
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    unsigned char Unresolved20() override
+#else
     void Unresolved20() override
+#endif
     {
         fail("unresolved slot invoked");
     }
@@ -109,7 +117,11 @@ struct GeneratedNamedDialog final : ScreenDialog
         sentinel = {&sentinel, &sentinel, nullptr};
         children.head = &sentinel;
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    void Unresolved04(float) override
+#else
     void Unresolved04() override
+#endif
     {
         fail("unresolved slot invoked");
     }
@@ -129,7 +141,11 @@ struct GeneratedNamedDialog final : ScreenDialog
     {
         fail("unresolved slot invoked");
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    unsigned char Unresolved20() override
+#else
     void Unresolved20() override
+#endif
     {
         fail("unresolved slot invoked");
     }

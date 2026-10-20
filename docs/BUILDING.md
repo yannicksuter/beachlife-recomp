@@ -916,3 +916,18 @@ The option remains off by default. This target does not supply localization/font
 loading, complete manager/auxiliary/font ownership, Frame lifetime or text drawing.
 Malformed glyph indices, nonterminating wrapping inputs and unsafe scratch-copy
 lengths remain outside its bounded domain. It does not start the original menu.
+
+The experimental profile supplies the 21 observed base `ScreenItem` slots from
+reconstructed source. `reconstructed_screen_item_complete_tests` exercises real
+base lifetimes, byte states, hit tests, owned-text copies and finite timed
+notifications through the actual manager, lookup and font methods. Its borrowed
+auxiliary state takes the real Position early return. It constructs no Frame;
+active Frame positioning and complete original subtype lifetimes remain separate.
+Repeated text assignment retains the original leak, with test-owned receipts
+reclaiming only the abandoned allocations afterward. Existing generated subtype
+fixtures keep their behavior checks under the common experimental declaration.
+
+```sh
+cmake --build build/native-experimental --target reconstructed_screen_item_complete_tests
+ctest --test-dir build/native-experimental -R '^reconstructed_screen_item_complete$' --output-on-failure
+```

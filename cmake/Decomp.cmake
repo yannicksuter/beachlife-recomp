@@ -1233,3 +1233,63 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_auxiliary_text PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# The full observed base table uses real methods and one coherent declaration.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_item_complete STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_defaults.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_state.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_hit.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_text.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_timed_event.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_threshold.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_timed_coordinates.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_text.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_auxiliary_position.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_rectangle.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_globals.cpp")
+    target_include_directories(beachlife_reconstructed_screen_item_complete PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_item_complete PUBLIC cxx_std_20)
+    # This flag adapts generated observers only. Every retail TU consumes the
+    # same complete class definition from the experimental prepared source.
+    target_compile_definitions(beachlife_reconstructed_screen_item_complete PUBLIC
+        BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM=1)
+    target_link_libraries(beachlife_reconstructed_screen_item_complete PUBLIC
+        beachlife_reconstructed_auxiliary_text
+        beachlife_reconstructed_screen_activation)
+    add_dependencies(beachlife_reconstructed_screen_item_complete verify_reconstructed_source)
+
+    # Genuine static dependencies form a cycle through font/rectangle/base.
+    # CMake determines the repeated archive order; no whole-archive or synthetic
+    # owner is introduced. Existing archives retain their actual source members.
+    foreach(BEACHLIFE_COMPLETE_ITEM_CONSUMER IN ITEMS
+        beachlife_reconstructed_screen_item
+        beachlife_reconstructed_screen_registry
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_gui_context)
+        target_link_libraries(${BEACHLIFE_COMPLETE_ITEM_CONSUMER} PUBLIC
+            beachlife_reconstructed_screen_item_complete)
+    endforeach()
+
+    add_executable(reconstructed_screen_item_complete_tests
+        tests/reconstructed_screen_item_complete.cpp)
+    target_link_libraries(reconstructed_screen_item_complete_tests PRIVATE
+        beachlife_reconstructed_screen_item_complete)
+    set_target_properties(beachlife_reconstructed_screen_item_complete
+        reconstructed_screen_item_complete_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_item_complete PRIVATE /GL-)
+        target_compile_options(reconstructed_screen_item_complete_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_item_complete PRIVATE -fno-lto)
+        target_compile_options(reconstructed_screen_item_complete_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_item_complete_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_screen_item_complete
+        COMMAND reconstructed_screen_item_complete_tests)
+    set_tests_properties(reconstructed_screen_item_complete PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

@@ -83,7 +83,11 @@ struct GeneratedItem final : ScreenItem
     {
         ++counts.destructions;
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    void Unresolved04(float) override
+#else
     void Unresolved04() override
+#endif
     {
         require(false, "unobserved item slot called");
     }
@@ -103,9 +107,16 @@ struct GeneratedItem final : ScreenItem
     {
         require(false, "unobserved item slot called");
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    unsigned char Unresolved20() override
+#else
     void Unresolved20() override
+#endif
     {
         require(false, "unobserved item slot called");
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+        std::abort();
+#endif
     }
     void Unresolved28() override
     {
