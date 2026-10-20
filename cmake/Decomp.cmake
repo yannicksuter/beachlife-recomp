@@ -1156,3 +1156,37 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_renderer_line PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Experimental localization uses borrowed typed storage and the platform CRT.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_localization STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_find.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_end.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_lookup.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_empty.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_globals.cpp")
+    target_include_directories(beachlife_reconstructed_screen_localization PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_localization PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_screen_localization verify_reconstructed_source)
+
+    add_executable(reconstructed_screen_localization_tests
+        tests/reconstructed_screen_localization.cpp)
+    target_link_libraries(reconstructed_screen_localization_tests PRIVATE
+        beachlife_reconstructed_screen_localization)
+    set_target_properties(beachlife_reconstructed_screen_localization
+        reconstructed_screen_localization_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_localization PRIVATE /GL-)
+        target_compile_options(reconstructed_screen_localization_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_localization PRIVATE -fno-lto)
+        target_compile_options(reconstructed_screen_localization_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_localization_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_screen_localization COMMAND reconstructed_screen_localization_tests)
+    set_tests_properties(reconstructed_screen_localization PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

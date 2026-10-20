@@ -892,3 +892,13 @@ buffers. Literal cases preserve direct-pixel upper bits, packed edge quirks,
 endpoint and clipping behavior, and live COM/renderer state changes. The fixture
 uses the actual colour converter, pixel access and renderer global. It does not
 construct a complete Frame or renderer or claim GPU presentation.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the optional
+`reconstructed_screen_localization_tests` target exercises the reconstructed
+localization lookup, iterator result, and empty cleanup methods. Generated
+borrowed arrays cover pointer identity, duplicate keys, skipped buckets, wraparound,
+null queries and null text results. Windows uses the CRT `_stricmp`; other
+supported hosts use `strcasecmp`, with comparison cases restricted to seven-bit
+strings in the C locale. High-byte cases exercise hashing with every bucket
+unavailable and do not claim wider locale parity. The target does not implement
+localization loading, full ownership or destruction, or text drawing.
