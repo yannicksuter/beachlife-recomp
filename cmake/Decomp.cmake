@@ -1293,3 +1293,42 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_screen_item_complete PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# A real TGA widget owns the image loaded through the existing VFS bridge.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_tga_widget STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_tga_screen_item_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_tga_screen_item_draw.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_tga_screen_item_activation.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_tga_screen_item_destructor.cpp")
+    target_include_directories(beachlife_reconstructed_tga_widget PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_tga_widget PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_tga_widget PUBLIC
+        beachlife_reconstructed_screen_item_complete
+        beachlife_reconstructed_tga_files
+        beachlife_reconstructed_renderer_tga_draw)
+    add_dependencies(beachlife_reconstructed_tga_widget verify_reconstructed_source)
+
+    add_executable(reconstructed_tga_widget_tests tests/reconstructed_tga_widget.cpp)
+    target_link_libraries(reconstructed_tga_widget_tests PRIVATE
+        beachlife_reconstructed_tga_widget)
+    set_target_properties(beachlife_reconstructed_tga_widget
+        reconstructed_tga_widget_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_tga_widget PRIVATE /GL-)
+        target_compile_options(reconstructed_tga_widget_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_tga_widget PRIVATE -fno-lto)
+        target_compile_options(reconstructed_tga_widget_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tga_widget_tests PRIVATE -fno-lto)
+    endif()
+    set(BEACHLIFE_RECONSTRUCTED_TGA_WIDGET_ROOT "${CMAKE_CURRENT_BINARY_DIR}/tga-widget-fixture"
+        CACHE STRING "Writable target-system directory for generated TGA widget files")
+    add_test(NAME reconstructed_tga_widget COMMAND reconstructed_tga_widget_tests
+        "${BEACHLIFE_RECONSTRUCTED_TGA_WIDGET_ROOT}")
+    set_tests_properties(reconstructed_tga_widget PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

@@ -931,3 +931,12 @@ fixtures keep their behavior checks under the common experimental declaration.
 cmake --build build/native-experimental --target reconstructed_screen_item_complete_tests
 ctest --test-dir build/native-experimental -R '^reconstructed_screen_item_complete$' --output-on-failure
 ```
+
+The experimental `reconstructed_tga_widget` test constructs a real TGA screen
+item, loads generated indexed images through the mounted folder VFS, converts
+their palettes and draws through the reconstructed renderer and rectangle
+queue. It also checks cached activation, disabling and actual derived/base
+destruction. Its bounded inputs exclude null-load dereferences, oversized paths
+and unsupported image palettes. The guarded array observer checks cleanup and
+one labelled host allocation failure; it does not reproduce the original CRT
+failure contract. This is headless subsystem coverage, not the Intro or menu.
