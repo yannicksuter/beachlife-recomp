@@ -1071,3 +1071,13 @@ Build it with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
 `-R '^reconstructed_resource_raster_packed$'`.
 This bounded raster test needs no game data and does not run resource loading
 or the game.
+
+The experimental `reconstructed_active_list_cleanup_tests` target exercises
+the actual active-list visitor and node reclamation with 26 generated lifetime
+and ordering cases. It uses the existing list and pool methods, typed guarded
+storage and generic callback observers. It covers callback-driven link changes,
+borrowed payloads, pool return order and slot reuse. It supplies no game
+deactivation callback or full manager lifetime.
+Build with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_active_list_cleanup$'`.
