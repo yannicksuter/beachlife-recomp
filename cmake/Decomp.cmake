@@ -1368,3 +1368,38 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_resource_frame_metadata PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Resource lookup uses real wrapper lifetimes and borrowed generated records.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_resource_find STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_find.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_literals.cpp")
+    target_include_directories(beachlife_reconstructed_resource_find PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_find PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_resource_find verify_reconstructed_source)
+
+    add_executable(reconstructed_resource_find_tests
+        tests/reconstructed_resource_find.cpp
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_lookup.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_destructor.cpp")
+    target_link_libraries(reconstructed_resource_find_tests PRIVATE
+        beachlife_reconstructed_resource_find)
+    add_dependencies(reconstructed_resource_find_tests verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_resource_find
+        reconstructed_resource_find_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_find PRIVATE /GL-)
+        target_compile_options(reconstructed_resource_find_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_find PRIVATE -fno-lto)
+        target_compile_options(reconstructed_resource_find_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_find_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_find COMMAND reconstructed_resource_find_tests)
+    set_tests_properties(reconstructed_resource_find PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

@@ -954,3 +954,11 @@ The bounded domain requires complete reads, little-endian representation and
 the observed scalar widths. Short reads, full resource-file ownership, encoded
 frame loading and resource rendering remain separate. This optional headless
 target does not start the original Intro or qualify the GUI FrameItem lifetime.
+
+The experimental `reconstructed_resource_find_tests` target exercises resource
+lookup through the actual Find, Lookup, wrapper constructor and destructor.
+Generated borrowed records cover first-match lookup, C-locale ASCII case folding,
+fallback, empty names, shared-record identity and unsigned reference-count wrap.
+Owned wrapper/name storage is released through the real destructor and C++
+allocation boundary. This does not implement the resource file producer, full
+record ownership, Frame loading or menu presentation.
