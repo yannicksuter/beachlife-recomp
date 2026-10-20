@@ -1008,3 +1008,12 @@ cursor arithmetic. The finite cases cover partial reads, a failed backward seek,
 metadata reuse, allocation exceptions and the original overwritten-owner leaks.
 These checks do not establish the sprite codec, mounted game-file integration
 or the complete resource-manager lifetime.
+
+The experimental `reconstructed_resource_raster_direct_tests` target exercises
+the direct encoded sprite raster with 27 generated packet and pixel cases.
+It uses one reconstructed source file and checks complete destination, palette,
+packet and guard storage, including the original positive-left no-store path.
+Build this target with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_resource_raster_direct$'`.
+This bounded raster test does not run resource loading or the game.
