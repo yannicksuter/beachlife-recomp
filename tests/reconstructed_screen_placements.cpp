@@ -1077,6 +1077,13 @@ struct ManagerFrame
         before.fill(0x36);
         after.fill(0xc9);
         std::memset(value.unknown_04, pattern, sizeof(value.unknown_04));
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+        for (auto& font : value.fonts_2c)
+        {
+            font = nullptr;
+        }
+        std::memset(value.unknown_54, pattern, sizeof(value.unknown_54));
+#endif
         std::memset(value.unknown_90, pattern, sizeof(value.unknown_90));
         std::memset(value.unknown_c0, pattern, sizeof(value.unknown_c0));
         sentinel = {&sentinel, &sentinel};
@@ -1340,6 +1347,13 @@ struct ManagerScenario
             check_bytes(managers[i].after, 0xc9);
             const unsigned char pattern = i == 0 ? 0x53 : 0xa7;
             check_bytes(managers[i].value.unknown_04, pattern);
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+            for (const auto font : managers[i].value.fonts_2c)
+            {
+                require(font == nullptr, "manager unused font pointer changed");
+            }
+            check_bytes(managers[i].value.unknown_54, pattern);
+#endif
             check_bytes(managers[i].value.unknown_90, pattern);
             check_bytes(managers[i].value.unknown_c0, pattern);
             require(managers[i].value.renderer == nullptr &&

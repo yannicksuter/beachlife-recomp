@@ -356,6 +356,13 @@ void initialize_manager(Guarded<ScreenManager>& object, std::size_t seed)
     // destructor or method is supplied or invoked by the reader fixture.
     guard(object, seed);
     fill(object.value.unknown_04, seed + 1);
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+    for (auto& font : object.value.fonts_2c)
+    {
+        font = nullptr;
+    }
+    fill(object.value.unknown_54, seed + 1);
+#endif
     fill(object.value.unknown_90, seed + 2);
     fill(object.value.unknown_c0, seed + 3);
     object.value.renderer = nullptr;

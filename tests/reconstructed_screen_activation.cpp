@@ -31,7 +31,15 @@ static_assert(offsetof(ScreenManager, item_134) ==
               offsetof(ScreenManager, auxiliary_130) + sizeof(ScreenManagerAuxiliaryState*));
 static_assert(
     offsetof(ScreenManager, value_138) == offsetof(ScreenManager, item_134) + sizeof(ScreenItem*));
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+static_assert(sizeof(void*) != 8 || sizeof(ScreenManager) == 384);
+static_assert(sizeof(void*) != 4 || offsetof(ScreenManager, fonts_2c) == 0x2c);
+static_assert(sizeof(void*) != 4 || offsetof(ScreenManager, unknown_54) == 0x54);
+static_assert(sizeof(void*) != 4 || sizeof(ScreenManagerAuxiliaryState) == 0x28);
+static_assert(sizeof(void*) != 8 || sizeof(ScreenManagerAuxiliaryState) == 48);
+#else
 static_assert(sizeof(void*) != 8 || sizeof(ScreenManager) == 344);
+#endif
 static_assert(sizeof(void*) != 4 || sizeof(ScreenManager) == 0x13c);
 static_assert(sizeof(void*) != 4 || offsetof(ScreenManager, auxiliary_130) == 0x130);
 static_assert(sizeof(void*) != 4 || offsetof(ScreenManager, item_134) == 0x134);
@@ -210,6 +218,10 @@ void watch(Snapshot<Guarded<ScreenManager>>& s)
     s.watch(o.after);
     s.watch(o.value.renderer);
     s.watch(o.value.unknown_04);
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+    s.watch(o.value.fonts_2c);
+    s.watch(o.value.unknown_54);
+#endif
     s.watch(o.value.registry);
     s.watch(o.value.unknown_90);
     s.watch(o.value.active.head);
@@ -227,7 +239,33 @@ void watch(Snapshot<Guarded<ScreenManagerAuxiliaryState>>& s)
     s.watch(s.object.after);
     s.watch(s.object.value.word_00);
     s.watch(s.object.value.state_04);
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+    s.watch(s.object.value.unknown_05);
+    s.watch(s.object.value.text_08);
+    s.watch(s.object.value.text_width_0c);
+    s.watch(s.object.value.text_height_10);
+    s.watch(s.object.value.width_14);
+    s.watch(s.object.value.height_18);
+    s.watch(s.object.value.x_1c);
+    s.watch(s.object.value.y_20);
+    s.watch(s.object.value.frame_24);
+#endif
 }
+
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+void initialize_auxiliary_tail(ScreenManagerAuxiliaryState& value)
+{
+    std::memset(value.unknown_05, 0x6d, sizeof(value.unknown_05));
+    value.text_08 = nullptr;
+    value.text_width_0c = 0x10203040U;
+    value.text_height_10 = 0x50607080U;
+    value.width_14 = 0x90a0b0c0U;
+    value.height_18 = 0xd0e0f001U;
+    value.x_1c = -321;
+    value.y_20 = 654;
+    value.frame_24 = nullptr;
+}
+#endif
 
 struct ManagerBinding
 {
@@ -404,6 +442,13 @@ struct Fixture
             m.before.fill(0x72);
             m.after.fill(0xb4);
             std::memset(m.value.unknown_04, 0x29 + i, sizeof(m.value.unknown_04));
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+            for (auto& font : m.value.fonts_2c)
+            {
+                font = nullptr;
+            }
+            std::memset(m.value.unknown_54, 0x29 + i, sizeof(m.value.unknown_54));
+#endif
             std::memset(m.value.unknown_90, 0xa3 + i, sizeof(m.value.unknown_90));
             std::memset(m.value.unknown_c0, 0x5e + i, sizeof(m.value.unknown_c0));
             m.value.mode = -75;
@@ -415,6 +460,9 @@ struct Fixture
             auxiliaries[i].after.fill(0xc6);
             auxiliaries[i].value.word_00 = 0x98765432U + i;
             auxiliaries[i].value.state_04 = 0x81;
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+            initialize_auxiliary_tail(auxiliaries[i].value);
+#endif
         }
     }
 
@@ -573,6 +621,9 @@ void all_auxiliary_bytes()
         object.after.fill(0xb9);
         object.value.word_00 = 0xa1b2c3d4U;
         object.value.state_04 = static_cast<unsigned char>(byte);
+#if defined(BEACHLIFE_DECOMP_AUXILIARY_TEXT)
+        initialize_auxiliary_tail(object.value);
+#endif
         Snapshot before(object);
         watch(before);
         const unsigned char zero = 0;

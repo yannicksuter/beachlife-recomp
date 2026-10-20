@@ -902,3 +902,17 @@ supported hosts use `strcasecmp`, with comparison cases restricted to seven-bit
 strings in the C locale. High-byte cases exercise hashing with every bucket
 unavailable and do not claim wider locale parity. The target does not implement
 localization loading, full ownership or destruction, or text drawing.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, build
+`reconstructed_auxiliary_text_tests` and run `ctest -R '^reconstructed_auxiliary_text$'`.
+The generated cases exercise the reconstructed auxiliary `SetText` method with
+the real localization lookup, font constructors and measurement methods. They
+check borrowed text identity, the unsigned 160-unit branch, wrapping and metric
+arithmetic using guarded typed data. The experimental manager declaration uses
+the observed ten-pointer font table; its existing fixture consumers retain
+their behavioral cases with typed initialization of the refined fields.
+
+The option remains off by default. This target does not supply localization/font
+loading, complete manager/auxiliary/font ownership, Frame lifetime or text drawing.
+Malformed glyph indices, nonterminating wrapping inputs and unsafe scratch-copy
+lengths remain outside its bounded domain. It does not start the original menu.
