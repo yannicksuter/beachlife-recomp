@@ -1,0 +1,160 @@
+diff --git a/src/startup_screen_dialog_resource_load.cpp b/src/startup_screen_dialog_resource_load.cpp
+new file mode 100644
+index 0000000..c648f98
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_load.cpp
+@@ -0,0 +1,126 @@
++#include "startup_screen_dialog_frame_file.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_renderer.h"
++
++#include <fcntl.h>
++#if defined(_WIN32)
++#include <io.h>
++#else
++#include <unistd.h>
++// The real POSIX CRT read has the same bounded result domain here: -1 or 0..20.
++#define _read read
++#endif
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00417820
++int ScreenDialogResourceLookup::Load()
++{
++    metadata_file = fopen("data/sprites/BLSprite.hdr", "rb");
++    if (!metadata_file)
++        return -1;
++
++    char file_header[20];
++    unsigned int file_word;
++    record_count = 0;
++    fread(file_header, 1, 20, metadata_file);
++    fread(&file_word, 4, 1, metadata_file);
++    fread(&record_count, 4, 1, metadata_file);
++    records = static_cast<ScreenDialogResourceRecord**>(
++        ::operator new(record_count * sizeof(ScreenDialogResourceRecord*)));
++    for (int index = 0; index < record_count; ++index)
++    {
++        records[index] = new ScreenDialogResourceRecord;
++        records[index]->ReadMetadata(metadata_file, screen_request_renderer->format_44);
++    }
++    fclose(metadata_file);
++
++#if defined(_WIN32)
++    data_file = _open("data\\sprites\\BLSprite.Dat", _O_BINARY);
++#else
++    // POSIX has no text/binary translation and uses slash path separators.
++    data_file = open("data/sprites/BLSprite.Dat", O_RDONLY);
++#endif
++    if (data_file < 0)
++        return -1;
++
++    unsigned int initial_read_bytes = _read(data_file, file_header, 20);
++    initial_read_bytes += _read(data_file, &file_word, 4);
++
++    int initial_record_count = record_count;
++    if (initial_record_count > 0)
++    {
++        int last_frame_count;
++        for (int index = 0; index < initial_record_count; ++index)
++            last_frame_count = records[index]->frame_count;
++        (void)last_frame_count;
++    }
++
++    int palette_matches = 0;
++    unsigned int palette_bytes = 0;
++    int* marked = static_cast<int*>(::operator new(initial_record_count * sizeof(int)));
++    memset(marked, 0, record_count * sizeof(int));
++    for (int record = 0; record < record_count; ++record)
++    {
++        for (int palette = 0; palette < records[record]->palette_count; ++palette)
++        {
++            if (!marked[record])
++            {
++                marked[record] = 1;
++                unsigned short* reference = records[record]->palettes[palette];
++                unsigned int format = records[record]->format_18;
++                for (int other = 0; other < record_count; ++other)
++                {
++                    for (int other_palette = 0; other_palette < records[other]->palette_count; ++other_palette)
++                    {
++                        if (format == records[other]->format_18)
++                        {
++                            unsigned short* candidate = records[other]->palettes[other_palette];
++                            if (format != 3)
++                            {
++                                if (!marked[other])
++                                {
++                                    int colour;
++                                    for (colour = 0; colour < 256; ++colour)
++                                    {
++                                        if ((!reference[colour]) == candidate[colour])
++                                            break;
++                                    }
++                                    if (colour == 256)
++                                    {
++                                        ++palette_matches;
++                                        marked[other] = 1;
++                                        palette_bytes += 512;
++                                    }
++                                }
++                            }
++                            else if (!marked[other])
++                            {
++                                int colour;
++                                for (colour = 0; colour < 64; ++colour)
++                                {
++                                    if ((!reference[colour]) == candidate[colour])
++                                        break;
++                                }
++                                if (colour == 64)
++                                {
++                                    ++palette_matches;
++                                    marked[other] = 1;
++                                    palette_bytes += 128;
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++    (void)palette_matches;
++    (void)palette_bytes;
++    ::operator delete(marked);
++
++    if (screen_dialog_frame_file == -1)
++        screen_dialog_frame_file = data_file;
++    screen_dialog_frame_cursor = initial_read_bytes;
++    return 0;
++}
+diff --git a/src/startup_screen_dialog_frame_file.cpp b/src/startup_screen_dialog_frame_file.cpp
+new file mode 100644
+index 0000000..f183128
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_file.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_dialog_frame_file.h"
++
++// GLOBAL: BEACHLIFE 0x004fccb8
++int screen_dialog_frame_file = -1;
++
++// GLOBAL: BEACHLIFE 0x005a891c
++unsigned int screen_dialog_frame_cursor = 0;
+diff --git a/src/startup_screen_dialog_frame_file.h b/src/startup_screen_dialog_frame_file.h
+new file mode 100644
+index 0000000..98997ed
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_file.h
+@@ -0,0 +1,9 @@
++#ifndef STARTUP_SCREEN_DIALOG_FRAME_FILE_H
++#define STARTUP_SCREEN_DIALOG_FRAME_FILE_H
++
++// Actual shared words at 0x004fccb8 and 0x005a891c. The real initialization
++// path owns their definitions; these loading methods do not initialize them.
++extern int screen_dialog_frame_file;
++extern unsigned int screen_dialog_frame_cursor;
++
++#endif

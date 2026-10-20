@@ -954,3 +954,109 @@ The bounded domain requires complete reads, little-endian representation and
 the observed scalar widths. Short reads, full resource-file ownership, encoded
 frame loading and resource rendering remain separate. This optional headless
 target does not start the original Intro or qualify the GUI FrameItem lifetime.
+
+The experimental `reconstructed_resource_find_tests` target exercises resource
+lookup through the actual Find, Lookup, wrapper constructor and destructor.
+Generated borrowed records cover first-match lookup, C-locale ASCII case folding,
+fallback, empty names, shared-record identity and unsigned reference-count wrap.
+Owned wrapper/name storage is released through the real destructor and C++
+allocation boundary. This does not implement the resource file producer, full
+record ownership, Frame loading or menu presentation.
+
+The experimental `reconstructed_resource_record_lifetime_tests` target exercises
+real resource Record construction and destruction with separate owned names,
+palettes, pointer tables and real resource Frames. Its finite cases preserve
+signed-count and reference-count quirks. The resource lookup test now uses
+constructed Records with separately owned names, and releases its borrowed
+wrappers before those Records. The common resource header is checked with the
+existing Frame metadata test. These checks cover initialized, successfully
+allocated inputs; they do not establish the complete file owner or game flow.
+
+The experimental `reconstructed_resource_record_metadata_tests` target exercises
+resource record metadata through the actual Record and Frame constructors,
+destructors, metadata readers and scalar allocation boundary. Generated complete
+binary files cover palette formats, frame metadata, C-locale ASCII name
+classification, repeated reads and ownership cleanup, including the original
+replacement leaks. The bounded test requires little-endian scalar widths and
+accessible full reads; it does not qualify truncated files, resource file-owner
+initialization, raw frame-bank loading or rendering.
+
+With the experimental option enabled, `reconstructed_resource_file_producer_tests`
+exercises the complete resource loader against generated metadata and raw data
+files, using the real Record/Frame parser and lifetime methods. It checks bounded
+reads, descriptor publication, palette marks, repeated loads and explicit cleanup
+of allocations the loader leaves owned or abandoned. The fixture creates and
+removes a fresh directory supplied through `BEACHLIFE_RESOURCE_FILE_TEST_ROOT`.
+Windows uses the original path spelling; POSIX uses its path separators and CRT.
+This does not qualify mounted game-file access, short metadata reads, arbitrary
+palette formats or the original Intro.
+
+The experimental `reconstructed_resource_palette_modifiers_tests` target
+exercises the real palette-file reader, constructor and destructor with complete
+generated RGB files. Literal RGB565/RGB555 expectations cover twelve banks,
+file boundaries and repeated loads. Real object lifetimes check registration
+replacement, unconditional cleanup and preservation of opaque storage. The
+fixture uses the existing renderer global and typed native renderer/deque.
+Truncated files and dynamic exception injection are outside this bounded
+qualification; it does not implement the full resource manager or Intro flow.
+
+The experimental `reconstructed_resource_frame_loaders_tests` target exercises
+the whole-frame and selected-plane raw loaders with generated temporary files,
+real resource Frame lifetimes and the shared file descriptor/cursor. A native
+CRT bridge preserves the original signed 32-bit relative seek and unsigned
+cursor arithmetic. The finite cases cover partial reads, a failed backward seek,
+metadata reuse, allocation exceptions and the original overwritten-owner leaks.
+These checks do not establish the sprite codec, mounted game-file integration
+or the complete resource-manager lifetime.
+
+The experimental `reconstructed_resource_raster_direct_tests` target exercises
+the direct encoded sprite raster with 27 generated packet and pixel cases.
+It uses one reconstructed source file and checks complete destination, palette,
+packet and guard storage, including the original positive-left no-store path.
+Build this target with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_resource_raster_direct$'`.
+This bounded raster test does not run resource loading or the game.
+
+With the experimental option enabled, `reconstructed_resource_metadata_smoke`
+reads a complete local metadata file and an independently prepared expectation
+sidecar through the actual Record/Frame parser and lifetime methods. The CLI
+accepts the metadata path followed by the sidecar path. It checks both palette
+formats, every decoded field and palette word, stream positions and ownership
+cleanup. The sidecar must describe the complete supported input; this is a
+bounded full-read check.
+
+```sh
+cmake --preset release -B build/metadata-smoke \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
+  -DBEACHLIFE_RESOURCE_METADATA_SMOKE_INPUT:FILEPATH=/path/to/metadata \
+  -DBEACHLIFE_RESOURCE_METADATA_SMOKE_ORACLE:FILEPATH=/path/to/expectations
+cmake --build build/metadata-smoke --target reconstructed_resource_metadata_smoke
+ctest --test-dir build/metadata-smoke -R '^reconstructed_resource_metadata_smoke$' --output-on-failure
+```
+
+Both cache paths default to empty. CTest registers this test only when both are
+explicitly supplied; local inputs and sidecars are not bundled or provided by
+CI. Cross-Wine runs need paths the Windows process can open. The CLI can also be
+called directly with those two paths. This target does not call the resource
+file producer or load raw sprite data, render assets, or start the Intro.
+
+The experimental `reconstructed_resource_sprite_preview` target connects the
+reconstructed metadata parser, raw-frame loader and direct raster with genuine
+resource lifetimes. Its generic CLI accepts `METADATA RAWBANK SIDECAR` and an
+optional `OUTPUT_PREFIX`. The sidecar specifies the bounded input region and
+independent palette and pixel expectations. With an output prefix, the same
+successful invocation also writes two verified, newly created PPM images; an
+existing output file is rejected. Keep game inputs, sidecars and generated
+images local and untracked. This is an asset preview, not the game menu.
+
+The preview's CTest is registered only when all three explicit `FILEPATH` cache
+entries `BEACHLIFE_RESOURCE_SPRITE_PREVIEW_METADATA`,
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_RAW_BANK` and
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_ORACLE` are supplied. They default to empty.
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_OUTPUT_PREFIX` also defaults to empty, so
+image files are written only when explicitly requested. The target requires
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`; it adds no bundled assets or default CI
+input and does not change the reconstructed source profiles.

@@ -1,0 +1,143 @@
+diff --git a/src/startup_screen_palette_modifiers.h b/src/startup_screen_palette_modifiers.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..17a53fa63809344ac5f637243d478c61f02c1187
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers.h
+@@ -0,0 +1,25 @@
++#ifndef STARTUP_SCREEN_PALETTE_MODIFIERS_H
++#define STARTUP_SCREEN_PALETTE_MODIFIERS_H
++
++// The actual owner is allocated as 0x680 bytes on x86. This initializer writes
++// twelve consecutive 64-word banks; the final 0x80 bytes remain unresolved.
++struct ScreenDialogPaletteModifiers
++{
++    unsigned short colours[12][64];
++    unsigned char unknown_600[0x80];
++
++    // Actual 0x00409810 and 0x00409860; source-level registration cleanup.
++    ScreenDialogPaletteModifiers();
++    ~ScreenDialogPaletteModifiers();
++
++    // Actual 0x00409870, RET0; callers do not consume the incidental EAX value.
++    void Load();
++};
++
++// Actual zero-initialized registration slot at 0x005a8840.
++extern ScreenDialogPaletteModifiers* screen_dialog_palette_modifiers;
++
++// Actual pointer slot at 0x004fc260. The loader captures it once before fopen.
++extern const char* screen_dialog_palette_file_path;
++
++#endif
+diff --git a/src/startup_screen_palette_modifiers_constructor.cpp b/src/startup_screen_palette_modifiers_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b58612eaf7d7edbfb48d61f2c2aea15f812d7c15
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers_constructor.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_palette_modifiers.h"
++
++// FUNCTION: BEACHLIFE 0x00409810
++ScreenDialogPaletteModifiers::ScreenDialogPaletteModifiers()
++{
++    screen_dialog_palette_modifiers = this;
++    try
++    {
++        Load();
++    }
++    catch (...)
++    {
++        screen_dialog_palette_modifiers = 0;
++        throw;
++    }
++}
+diff --git a/src/startup_screen_palette_modifiers_destructor.cpp b/src/startup_screen_palette_modifiers_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a756b035bef35a9de197df64c59d6f90a89797b6
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_palette_modifiers.h"
++
++// FUNCTION: BEACHLIFE 0x00409860
++ScreenDialogPaletteModifiers::~ScreenDialogPaletteModifiers()
++{
++    screen_dialog_palette_modifiers = 0;
++}
+diff --git a/src/startup_screen_palette_modifiers_load.cpp b/src/startup_screen_palette_modifiers_load.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc9a7a51229f99176e9f865853ffca99c78fd043
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers_load.cpp
+@@ -0,0 +1,48 @@
++#include "startup_screen_palette_modifiers.h"
++#include "startup_screen_renderer.h"
++
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x00409870
++void ScreenDialogPaletteModifiers::Load()
++{
++    FILE* stream = fopen(screen_dialog_palette_file_path, "rb");
++    if (!stream)
++        return;
++
++    if (screen_request_renderer->format_44 == 0)
++    {
++        for (int bank = 0; bank < 12; ++bank)
++        {
++            unsigned char red;
++            unsigned char green;
++            unsigned char blue;
++            for (int colour = 0; colour < 64; ++colour)
++            {
++                fread(&red, 1, 1, stream);
++                fread(&green, 1, 1, stream);
++                fread(&blue, 1, 1, stream);
++                colours[bank][colour] = static_cast<unsigned short>(
++                    (((red & 0xf8) << 5) | (green & 0xfc)) << 3 | (blue >> 3));
++            }
++        }
++    }
++    else
++    {
++        for (int bank = 0; bank < 12; ++bank)
++        {
++            unsigned char red;
++            unsigned char green;
++            unsigned char blue;
++            for (int colour = 0; colour < 64; ++colour)
++            {
++                fread(&red, 1, 1, stream);
++                fread(&green, 1, 1, stream);
++                fread(&blue, 1, 1, stream);
++                colours[bank][colour] = static_cast<unsigned short>(
++                    (((red & 0xf8) << 5) | (green & 0xf8)) << 2 | (blue >> 3));
++            }
++        }
++    }
++    fclose(stream);
++}
+diff --git a/src/startup_screen_palette_modifiers_path.cpp b/src/startup_screen_palette_modifiers_path.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..83e3d1f6f7e84ce6c9ad405bd6a9259247a2887b
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers_path.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_palette_modifiers.h"
++
++// GLOBAL: BEACHLIFE 0x004fc264
++char screen_dialog_palette_default_path[] = "Data\\Sprites\\PaletteModifiers.bin";
++
++// GLOBAL: BEACHLIFE 0x004fc260
++const char* screen_dialog_palette_file_path = screen_dialog_palette_default_path;
+diff --git a/src/startup_screen_palette_modifiers_registration.cpp b/src/startup_screen_palette_modifiers_registration.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9569cb756fa8332ca7ea29ba86866eb9f6d1d542
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers_registration.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_palette_modifiers.h"
++
++// GLOBAL: BEACHLIFE 0x005a8840
++ScreenDialogPaletteModifiers* screen_dialog_palette_modifiers = 0;

@@ -1,0 +1,111 @@
+diff --git a/src/startup_screen_dialog_record_metadata.cpp b/src/startup_screen_dialog_record_metadata.cpp
+new file mode 100644
+index 0000000..5993702
+--- /dev/null
++++ b/src/startup_screen_dialog_record_metadata.cpp
+@@ -0,0 +1,105 @@
++#include "startup_resource_binary_read.h"
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++#include <string.h>
++#if !defined(_WIN32)
++#include <strings.h>
++// Native CRT spelling only; no replacement comparator.
++#define _stricmp strcasecmp
++#endif
++
++// FUNCTION: BEACHLIFE 0x00417260
++void ScreenDialogResourceRecord::ReadMetadata(FILE* stream, unsigned int surface_format)
++{
++    unsigned char length = ReadResourceByte(stream);
++    name = static_cast<char*>(::operator new(length));
++    for (int i = 0; i < length; ++i)
++    {
++        unsigned char value = ReadResourceByte(stream);
++        const_cast<char*>(name)[i] = static_cast<char>(value);
++    }
++
++    format_18 = ReadResourceDword(stream);
++    if (format_18 == 5)
++    {
++        unknown_20[0] = ReadResourceByte(stream);
++        unknown_20[1] = ReadResourceByte(stream);
++        unknown_20[2] = ReadResourceByte(stream);
++        unknown_20[3] = ReadResourceByte(stream);
++    }
++
++    palette_count = static_cast<int>(ReadResourceDword(stream));
++    palettes = static_cast<unsigned short**>(::operator new(palette_count * sizeof(unsigned short*)));
++    if (!_stricmp(name, "fat_bloke"))
++        word_1c = 1;
++    else if (!_stricmp(name, "fit_bloke"))
++        word_1c = 2;
++    else if (!_stricmp(name, "gail"))
++        word_1c = 3;
++    else if (!_stricmp(name, "shaz"))
++        word_1c = 4;
++    else
++        word_1c = 0;
++
++    for (int palette = 0; palette < palette_count; ++palette)
++    {
++        switch (format_18)
++        {
++        case 1:
++        case 2:
++        case 5:
++        case 11:
++        {
++            palettes[palette] = static_cast<unsigned short*>(::operator new(512));
++            unsigned short* output = palettes[palette];
++            for (int colour = 0; colour < 256; ++colour)
++            {
++                unsigned char red = ReadResourceByte(stream);
++                unsigned char green = ReadResourceByte(stream);
++                unsigned char blue = ReadResourceByte(stream);
++                if (surface_format == 0)
++                    *output++ = static_cast<unsigned short>(
++                        (((red & 0xf8) << 5) | (green & 0xfc)) << 3 | (blue >> 3));
++                else
++                    *output++ = static_cast<unsigned short>(
++                        (((red & 0xf8) << 5) | (green & 0xf8)) << 2 | (blue >> 3));
++            }
++            break;
++        }
++        case 3:
++        case 6:
++        {
++            palettes[palette] = static_cast<unsigned short*>(::operator new(128));
++            unsigned short* output = palettes[palette];
++            for (int colour = 0; colour < 64; ++colour)
++            {
++                unsigned char red = ReadResourceByte(stream);
++                unsigned char green = ReadResourceByte(stream);
++                unsigned char blue = ReadResourceByte(stream);
++                if (surface_format == 0)
++                    *output++ = static_cast<unsigned short>(
++                        (((red & 0xf8) << 5) | (green & 0xfc)) << 3 | (blue >> 3));
++                else
++                    *output++ = static_cast<unsigned short>(
++                        (((red & 0xf8) << 5) | (green & 0xf8)) << 2 | (blue >> 3));
++            }
++            for (int discarded = 0; discarded < 192; ++discarded)
++            {
++                ReadResourceByte(stream);
++                ReadResourceByte(stream);
++                ReadResourceByte(stream);
++            }
++            break;
++        }
++        }
++    }
++
++    frame_count = static_cast<int>(ReadResourceDword(stream));
++    frames = static_cast<ScreenDialogResourceFrame**>(::operator new(frame_count * sizeof(ScreenDialogResourceFrame*)));
++    for (int frame = 0; frame < frame_count; ++frame)
++    {
++        frames[frame] = new ScreenDialogResourceFrame;
++        frames[frame]->ReadMetadata(stream);
++    }
++}
