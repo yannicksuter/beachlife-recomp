@@ -962,3 +962,12 @@ fallback, empty names, shared-record identity and unsigned reference-count wrap.
 Owned wrapper/name storage is released through the real destructor and C++
 allocation boundary. This does not implement the resource file producer, full
 record ownership, Frame loading or menu presentation.
+
+The experimental `reconstructed_resource_record_lifetime_tests` target exercises
+real resource Record construction and destruction with separate owned names,
+palettes, pointer tables and real resource Frames. Its finite cases preserve
+signed-count and reference-count quirks. The resource lookup test now uses
+constructed Records with separately owned names, and releases its borrowed
+wrappers before those Records. The common resource header is checked with the
+existing Frame metadata test. These checks cover initialized, successfully
+allocated inputs; they do not establish the complete file owner or game flow.

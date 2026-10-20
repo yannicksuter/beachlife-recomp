@@ -1403,3 +1403,39 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_resource_find PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Resource records own names, palettes and genuine resource Frame lifetimes.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_resource_record_lifetime STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_record_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_record_destructor.cpp")
+    target_include_directories(beachlife_reconstructed_resource_record_lifetime PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_record_lifetime PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_record_lifetime PUBLIC
+        beachlife_reconstructed_resource_frame_metadata)
+    add_dependencies(beachlife_reconstructed_resource_record_lifetime verify_reconstructed_source)
+
+    add_executable(reconstructed_resource_record_lifetime_tests
+        tests/reconstructed_resource_record_lifetime.cpp)
+    target_link_libraries(reconstructed_resource_record_lifetime_tests PRIVATE
+        beachlife_reconstructed_resource_record_lifetime)
+    target_link_libraries(reconstructed_resource_find_tests PRIVATE
+        beachlife_reconstructed_resource_record_lifetime)
+    set_target_properties(beachlife_reconstructed_resource_record_lifetime
+        reconstructed_resource_record_lifetime_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_record_lifetime PRIVATE /GL-)
+        target_compile_options(reconstructed_resource_record_lifetime_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_record_lifetime PRIVATE -fno-lto)
+        target_compile_options(reconstructed_resource_record_lifetime_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_record_lifetime_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_record_lifetime
+        COMMAND reconstructed_resource_record_lifetime_tests)
+    set_tests_properties(reconstructed_resource_record_lifetime PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

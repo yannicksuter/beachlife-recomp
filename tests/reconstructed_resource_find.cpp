@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <new>
 #include <type_traits>
 
 namespace
@@ -15,6 +16,11 @@ static_assert(sizeof(unsigned int) == 4);
 static_assert(std::is_standard_layout_v<ScreenDialogResourceRecord>);
 static_assert(std::is_standard_layout_v<ScreenDialogResourceLookup>);
 static_assert(!std::is_polymorphic_v<ScreenDialogResource>);
+static_assert(sizeof(void*) == 4 || sizeof(void*) == 8);
+static_assert(sizeof(ScreenDialogResourceRecord) == (sizeof(void*) == 8 ? 56 : 36));
+static_assert(sizeof(ScreenDialogResourceLookup) == (sizeof(void*) == 8 ? 32 : 20));
+static_assert(offsetof(ScreenDialogResourceLookup, record_count) == (sizeof(void*) == 8 ? 16 : 12));
+static_assert(offsetof(ScreenDialogResourceLookup, records) == (sizeof(void*) == 8 ? 24 : 16));
 
 constexpr std::array<std::uint32_t, 4> before_guard{
     0x12345678U, 0x9abcdef0U, 0x16543210U, 0xfedcba98U};
@@ -112,6 +118,8 @@ std::size_t checks = 0;
 std::size_t calls = 0;
 std::size_t direct_calls = 0;
 std::size_t lookup_calls = 0;
+std::size_t record_lifetimes = 0;
+std::size_t owned_names = 0;
 
 bool check(bool value)
 {
@@ -137,28 +145,47 @@ bool initialized_members(const ScreenDialogResource& resource)
            resource.word_2c == 0 && resource.flag_34 == 0;
 }
 
+bool record_members(const ScreenDialogResourceRecord& record)
+{
+    return record.frame_count == 0 && record.frames == nullptr && record.palette_count == 0 &&
+           record.palettes == nullptr && record.format_18 == 1 && record.word_1c == 0;
+}
+
 bool run_case(const Case& example)
 {
     std::array<Guarded<Name>, 3> names;
     std::array<Guarded<Name>, 2> requests;
     std::array<Guarded<ScreenDialogResourceRecord>, 3> records;
+    std::array<const char*, 3> record_names{};
     Guarded<std::array<ScreenDialogResourceRecord*, 3>> entries;
     Guarded<ScreenDialogResourceLookup> lookup;
     for (std::size_t i = 0; i < names.size(); ++i)
     {
         set_name(names[i].value, example.names[i]);
-        records[i].value.name = names[i].value.data();
+        // Guarded::value invokes the real Record constructor. Each record owns
+        // a distinct scalar name, even when the literal string contents agree.
+        char* owned = static_cast<char*>(::operator new(names[i].value.size()));
+        std::memcpy(owned, names[i].value.data(), names[i].value.size());
+        records[i].value.name = record_names[i] = owned;
         records[i].value.reference_count = example.counts[i];
+        for (std::size_t n = 0; n < sizeof(records[i].value.unknown_20); ++n)
+        {
+            records[i].value.unknown_20[n] = static_cast<unsigned char>(0x70 + i + n);
+        }
+        ++record_lifetimes;
+        ++owned_names;
         entries.value[i] = &records[example.record_indices[i]].value;
     }
     for (std::size_t i = 0; i < example.call_count; ++i)
     {
         set_name(requests[i].value, example.calls[i].request);
     }
-    std::array<unsigned char, 12> opaque;
+    lookup.value.metadata_file = nullptr;
+    lookup.value.data_file = -1;
+    std::array<unsigned char, 4> opaque;
     for (std::size_t i = 0; i < opaque.size(); ++i)
     {
-        lookup.value.unknown_00[i] = opaque[i] = static_cast<unsigned char>(0x30 + i);
+        lookup.value.unknown_08[i] = opaque[i] = static_cast<unsigned char>(0x30 + i);
     }
     lookup.value.record_count = example.count;
     lookup.value.records = entries.value.data();
@@ -197,14 +224,27 @@ bool run_case(const Case& example)
                 {
                     okay &= check(result->name != name.value.data());
                 }
+                for (const char* name : record_names)
+                {
+                    okay &= check(result->name != name);
+                }
             }
         }
         for (std::size_t n = 0; n < records.size(); ++n)
         {
             okay &= check(records[n].value.reference_count == expected.expected_counts[n]);
-            okay &= check(records[n].value.name == names[n].value.data());
+            okay &= check(records[n].value.name == record_names[n]);
             okay &= check(records[n].intact());
             okay &= check(names[n].intact() && names[n].value == saved_names[n].value);
+            okay &= check(std::memcmp(record_names[n],
+                              saved_names[n].value.data(),
+                              saved_names[n].value.size()) == 0);
+            okay &= check(record_members(records[n].value));
+            for (std::size_t b = 0; b < sizeof(records[n].value.unknown_20); ++b)
+            {
+                okay &= check(
+                    records[n].value.unknown_20[b] == static_cast<unsigned char>(0x70 + n + b));
+            }
         }
         for (std::size_t n = 0; n < requests.size(); ++n)
         {
@@ -212,11 +252,12 @@ bool run_case(const Case& example)
         }
         okay &= check(lookup.intact() && entries.intact());
         okay &= check(lookup.value.record_count == example.count);
+        okay &= check(lookup.value.metadata_file == nullptr && lookup.value.data_file == -1);
         okay &=
             check(lookup.value.records == entries.value.data() && entries.value == saved_entries);
         for (std::size_t n = 0; n < opaque.size(); ++n)
         {
-            okay &= check(lookup.value.unknown_00[n] == opaque[n]);
+            okay &= check(lookup.value.unknown_08[n] == opaque[n]);
         }
     }
     if (example.call_count == 2 && results[0] && results[1])
@@ -236,11 +277,24 @@ bool run_case(const Case& example)
     for (std::size_t i = 0; i < records.size(); ++i)
     {
         okay &= check(records[i].value.reference_count == final_counts[i]);
-        okay &= check(records[i].value.name == names[i].value.data());
+        okay &= check(records[i].value.name == record_names[i]);
         okay &= check(records[i].intact() && names[i].intact());
         okay &= check(names[i].value == saved_names[i].value);
+        okay &= check(
+            std::memcmp(
+                record_names[i], saved_names[i].value.data(), saved_names[i].value.size()) == 0);
+        okay &= check(record_members(records[i].value));
+        for (std::size_t b = 0; b < sizeof(records[i].value.unknown_20); ++b)
+        {
+            okay &=
+                check(records[i].value.unknown_20[b] == static_cast<unsigned char>(0x70 + i + b));
+        }
     }
     okay &= check(lookup.intact() && entries.intact());
+    okay &= check(lookup.value.metadata_file == nullptr && lookup.value.data_file == -1);
+    // Real Record destructors now release the independently owned record names.
+    // All borrowed wrapper observations ended above; no record/name read follows
+    // destruction, and the preserved nonzero reference counts do not block it.
     return okay;
 }
 } // namespace
@@ -260,11 +314,19 @@ int main()
             return 2;
         }
     }
-    std::printf("{\"sessions\":%zu,\"calls\":%zu,\"direct_find\":%zu,\"lookup\":%zu,"
-                "\"checks\":%zu}\n",
+    std::printf(
+        "{\"sessions\":%zu,\"calls\":%zu,\"direct_find\":%zu,\"lookup\":%zu,"
+        "\"record_lifetimes\":%zu,\"owned_names\":%zu,\"checks\":%zu,"
+        "\"record_size\":%zu,\"lookup_size\":%zu,\"count_offset\":%zu,\"records_offset\":%zu}\n",
         cases.size(),
         calls,
         direct_calls,
         lookup_calls,
-        checks);
+        record_lifetimes,
+        owned_names,
+        checks,
+        sizeof(ScreenDialogResourceRecord),
+        sizeof(ScreenDialogResourceLookup),
+        offsetof(ScreenDialogResourceLookup, record_count),
+        offsetof(ScreenDialogResourceLookup, records));
 }
