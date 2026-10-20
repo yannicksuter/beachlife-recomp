@@ -1238,3 +1238,62 @@ floating-point boundaries; general equivalence to the original x87 precision
 environment is not established. Invalid-header leaks, truncated input,
 out-of-bounds packet behavior and allocation-failure cleanup are not repaired or
 included. This target does not connect the production font loader or front end.
+
+The experimental font-data target constructs and destroys the reconstructed font
+owner through the mounted file session. Generated coordinate, TIFF and kerning
+files exercise image ownership and real font measurements. The three existing
+font-metric consumers use the same owning declaration and retain their literal
+behavior cases. This is subsystem qualification, not GUI or game presentation.
+
+The optional `reconstructed_font_glyphs_tests` target exercises both complete
+font glyph writers with the real font renderer constructor and colour converter.
+Three generated groups cover colour pixels, monochrome masks, reversed rows,
+the direct writer's four-byte slots with low-word stores, and live byte aliases.
+All buffers have valid prefixes for the original final row-pointer steps.
+The font renderer borrows null font-data and lookup pointers because these two
+methods never read those owners. The renderer uses its real native deque.
+Enable experimental game code and reconstructed subsystem tests to build this
+target. Linux optimized and sanitizer builds are the initial scope; Windows,
+macOS, complete text layout and front-end rendering remain separate gates.
+
+The optional `reconstructed_font_drawing_tests` target composes the complete
+text wrapper, line renderer, drawing settings and both glyph writers. It loads
+a genuine font owner from generated coordinate, kerning and TIFF files through
+the mounted file session. Three groups check literal clipped/aligned pixels,
+software-surface pitch and position with real access/unlock, and word/forced
+wrapping with the original height stop. Valid text prefixes and image prefixes
+keep the original pointer operations inside live storage. Linux optimized and
+sanitizer builds are the initial scope. Hardware COM surfaces, Windows/macOS,
+other floating-point modes and the production front-end connection remain
+separate gates; this target is available with experimental subsystem tests.
+
+
+The experimental `resource_files_tests` target checks the mounted-file adapter
+for reconstructed resource owners. Build it with experimental game code and
+reconstructed subsystem tests enabled, then run `ctest -R '^resource_files$'`.
+It checks retained closed-stream tokens, raw read errors, signed cursor updates
+and nested session lifetime using generated files through the real folder
+source. Linux optimized and sanitizer builds are the initial qualification;
+resource-owner integration and Windows/macOS execution remain separate gates.
+
+The optional `reconstructed_gui_text_item_tests` target constructs the genuine
+Text widget with its complete base table and real file-loaded font owner.
+Three groups check lookup-borrowed and scalar-owned text, preparation/activation
+and alternate drawing phases, settings priorities and literal framebuffer
+pixels. Owned fallback text uses the original short-height route; no readable
+prefix is invented before its allocation. The fixture uses the current typed
+manager and lookup declarations as borrowed subsystem read models, not as full
+game owners. Linux optimized and explicit sanitizer checks are the initial
+scope. This experimental subsystem test does not run the parser, full manager
+or front end; Windows/macOS and production integration remain separate.
+
+The optional `reconstructed_gui_parse_text_tests` target runs the complete
+TEXT script handler through the real rectangle/text/integer readers and item
+registration into genuine Text widgets. Focused cases check unnamed append
+order, lookup results, parent-relative coordinates, literal cursor positions
+and real link/widget cleanup. A separate invocation checks genuine fatal
+termination for a missing opening bracket. The parser and localization lookup
+are typed borrowed subsystem models; full parser/manager construction and the
+script dispatcher are not supplied by this test. Linux optimized and explicit
+sanitizer checks are the initial scope; Windows/macOS and front-end execution
+remain separate.

@@ -391,3 +391,9 @@ validation. Stable rebuilds the merged commit and drafts its CMake version.
 Final publication reuses the candidate assets. See [BUILDING](BUILDING.md) and
 [RELEASES](RELEASES.md). Packages contain declared outputs and notices, never a
 recursive copy of the checkout or original game data.
+
+The font rectangle setter is reconstructed as a separate 30-byte matching
+method. Its minimal comparison declaration is removed by the early native
+compatibility series before experimental font declarations are applied. Native
+font drawing retains its complete header and existing combined settings source;
+the new matching translation unit is not selected by native targets.

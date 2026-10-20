@@ -1,3 +1,4 @@
+#include "font_owner_test_data.h"
 #include "renderer_queue_test_state.h"
 #include "startup_screen_font_data.h"
 #include "startup_screen_text.h"
@@ -364,6 +365,32 @@ template <class T> struct Frame
     Guard after = guard(0xe3);
 };
 
+// A genuine owner; snapshots below copy values into a different non-owning type.
+template <> struct Frame<ScreenFontData>
+{
+    Guard before = guard(0x17);
+    ScreenFontData value{"Fixture"};
+    Guard after = guard(0xe3);
+
+    Frame() = default;
+    Frame(const Frame&) = delete;
+    Frame& operator=(const Frame&) = delete;
+};
+
+struct FontFrameSnapshot
+{
+    Guard before;
+    font_owner_test::Snapshot value;
+    Guard after;
+
+    explicit FontFrameSnapshot(const Frame<ScreenFontData>& frame)
+        : before(frame.before)
+        , value(frame.value)
+        , after(frame.after)
+    {
+    }
+};
+
 struct Environment
 {
     Frame<ScreenRequestRenderer> renderer;
@@ -372,6 +399,26 @@ struct Environment
     std::array<ScreenTextBucket, 2> buckets{};
     std::array<ScreenTextValue, 2> values{};
     std::array<unsigned short, 3> lookup_text{65, 66, 0};
+};
+
+struct EnvironmentSnapshot
+{
+    decltype(Environment::renderer) renderer;
+    std::array<FontFrameSnapshot, 2> data;
+    decltype(Environment::lookup) lookup;
+    decltype(Environment::buckets) buckets;
+    decltype(Environment::values) values;
+    decltype(Environment::lookup_text) lookup_text;
+
+    explicit EnvironmentSnapshot(const Environment& env)
+        : renderer(env.renderer)
+        , data{FontFrameSnapshot(env.data[0]), FontFrameSnapshot(env.data[1])}
+        , lookup(env.lookup)
+        , buckets(env.buckets)
+        , values(env.values)
+        , lookup_text(env.lookup_text)
+    {
+    }
 };
 
 void initialize(Environment& env)
@@ -396,10 +443,9 @@ void initialize(Environment& env)
     }
 }
 
-void initialize_data(ScreenFontData& data, unsigned int seed)
+void initialize_data(ScreenFontData& data, unsigned int)
 {
-    data = ScreenFontData{};
-    renderer_queue_test::pattern(data.unknown_00, seed);
+    font_owner_test::clear_metrics(data);
     data.unknown_10804[0] = 0x81a2b3c4U;
     data.unknown_10804[1] = 0x1938576aU;
     constexpr Glyph defaults[] = {{9, {0, 0, 7, 0}},
@@ -422,10 +468,10 @@ bool same_rectangle(const RenderRectangle& a, const RenderRectangle& b)
     return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
 }
 
-bool same_data(const ScreenFontData& a, const ScreenFontData& b)
+bool same_data(const ScreenFontData& a, const font_owner_test::Snapshot& b)
 {
-    if (!renderer_queue_test::same_bytes(a.unknown_00, b.unknown_00) ||
-        a.unknown_10804[0] != b.unknown_10804[0] || a.unknown_10804[1] != b.unknown_10804[1] ||
+    if (a.image != b.image || a.unknown_10804[0] != b.unknown_10804[0] ||
+        a.unknown_10804[1] != b.unknown_10804[1] ||
         !std::equal(std::begin(a.kerning), std::end(a.kerning), std::begin(b.kerning)))
     {
         return false;
@@ -449,7 +495,7 @@ bool same_lookup(const ScreenTextLookup& a, const ScreenTextLookup& b)
            renderer_queue_test::same_bytes(a.unknown_14, b.unknown_14);
 }
 
-void verify_environment(const Environment& env, const Environment& before)
+void verify_environment(const Environment& env, const EnvironmentSnapshot& before)
 {
     require(screen_request_renderer == &env.renderer.value, "renderer global changed");
     require(renderer_queue_test::equal(env.renderer.value, before.renderer.value),
@@ -584,7 +630,7 @@ void construction_case(Environment& env, const Construction& literal)
 {
     ++sessions;
     env.renderer.value.clip_rectangle = literal.rectangle;
-    auto snapshot = std::make_unique<Environment>(env);
+    auto snapshot = std::make_unique<EnvironmentSnapshot>(env);
     auto* data =
         literal.data < 0 ? nullptr : &env.data[static_cast<std::size_t>(literal.data)].value;
     auto* lookup =
@@ -625,7 +671,7 @@ void measurement_case(Environment& env, const Measurement& literal)
     auto* lookup = &env.lookup[0].value;
     const std::array<unsigned char, 3> opaque{0x5a, 0xa5, 0x3c};
     env.renderer.value.clip_rectangle = {-7, 11, 101, 203};
-    auto snapshot = std::make_unique<Environment>(env);
+    auto snapshot = std::make_unique<EnvironmentSnapshot>(env);
     FontSlot slot(opaque);
     slot.construct(data, lookup);
     verify_construction(slot, env.renderer.value.clip_rectangle, opaque, data, lookup);
@@ -675,10 +721,14 @@ struct RendererBinding
 };
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     try
     {
+        font_owner_test::host_require(argc == 2, "expected a fresh generated-font directory");
+        font_owner_test::GeneratedFonts generated(argv[1]);
+        generated.add("Fixture", font_owner_test::Input{});
+        font_owner_test::files::Session files(generated.mount());
         auto env = std::make_unique<Environment>();
         initialize(*env);
         initialize_data(env->data[0].value, 0x91);
@@ -709,5 +759,10 @@ int main()
     catch (const Failure&)
     {
         return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "font-owner setup: %s\n", error.what());
+        return 3;
     }
 }

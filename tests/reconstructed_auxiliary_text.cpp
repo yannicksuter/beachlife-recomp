@@ -1,3 +1,4 @@
+#include "font_owner_test_data.h"
 #include "renderer_queue_test_state.h"
 #include "startup_screen_font_data.h"
 #include "startup_screen_manager.h"
@@ -75,6 +76,32 @@ template <class T> struct Frame
     Guard before = guard(0x27);
     T value{};
     Guard after = guard(0xd3);
+};
+
+// A genuine owner; snapshots below copy values into a different non-owning type.
+template <> struct Frame<ScreenFontData>
+{
+    Guard before = guard(0x27);
+    ScreenFontData value{"Fixture"};
+    Guard after = guard(0xd3);
+
+    Frame() = default;
+    Frame(const Frame&) = delete;
+    Frame& operator=(const Frame&) = delete;
+};
+
+struct FontFrameSnapshot
+{
+    Guard before;
+    font_owner_test::Snapshot value;
+    Guard after;
+
+    explicit FontFrameSnapshot(const Frame<ScreenFontData>& frame)
+        : before(frame.before)
+        , value(frame.value)
+        , after(frame.after)
+    {
+    }
 };
 
 enum class Route
@@ -241,10 +268,41 @@ struct Environment
     Frame<CircularListNode> sentinel;
 };
 
+struct EnvironmentSnapshot
+{
+    decltype(Environment::renderer) renderer;
+    decltype(Environment::manager) manager;
+    decltype(Environment::auxiliary) auxiliary;
+    std::array<FontFrameSnapshot, 2> data;
+    decltype(Environment::lookup) lookup;
+    decltype(Environment::font_lookup) font_lookup;
+    decltype(Environment::buckets) buckets;
+    decltype(Environment::values) values;
+    decltype(Environment::query) query;
+    decltype(Environment::keys) keys;
+    decltype(Environment::decoy_text) decoy_text;
+    decltype(Environment::sentinel) sentinel;
+
+    explicit EnvironmentSnapshot(const Environment& env)
+        : renderer(env.renderer)
+        , manager(env.manager)
+        , auxiliary(env.auxiliary)
+        , data{FontFrameSnapshot(env.data[0]), FontFrameSnapshot(env.data[1])}
+        , lookup(env.lookup)
+        , font_lookup(env.font_lookup)
+        , buckets(env.buckets)
+        , values(env.values)
+        , query(env.query)
+        , keys(env.keys)
+        , decoy_text(env.decoy_text)
+        , sentinel(env.sentinel)
+    {
+    }
+};
+
 void initialize_data(ScreenFontData& data, bool selected)
 {
-    data = ScreenFontData{};
-    renderer_queue_test::pattern(data.unknown_00, selected ? 0x31 : 0x92);
+    font_owner_test::clear_metrics(data);
     data.unknown_10804[0] = 0x12345678U;
     data.unknown_10804[1] = 0x87654321U;
     constexpr Glyph defaults[] = {{9, 0, 7},
@@ -429,7 +487,7 @@ void verify_font(const FontFrame& frame, const FontState& before)
     require(frame.before == guard(0x36) && frame.after == guard(0xc8), "font guards changed");
 }
 
-template <class T> void verify_guards(const Frame<T>& a, const Frame<T>& b)
+template <class A, class B> void verify_guards(const A& a, const B& b)
 {
     require(a.before == b.before && a.after == b.after, "borrowed object guards changed");
 }
@@ -444,7 +502,7 @@ void verify_lookup(const ScreenTextLookup& a, const ScreenTextLookup& b)
         "lookup prefix changed");
 }
 
-void verify_environment(const Environment& a, const Environment& b)
+void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
 {
     require(renderer_queue_test::equal(a.renderer.value, b.renderer.value),
         "renderer fields or actual queue changed");
@@ -473,7 +531,7 @@ void verify_environment(const Environment& a, const Environment& b)
     {
         const auto& p = a.data[i].value;
         const auto& q = b.data[i].value;
-        require(renderer_queue_test::same_bytes(p.unknown_00, q.unknown_00) &&
+        require(p.image == q.image &&
                     std::equal(std::begin(p.unknown_10804),
                         std::end(p.unknown_10804),
                         std::begin(q.unknown_10804)) &&
@@ -543,7 +601,7 @@ void run_case(const Literal& literal)
         env->manager.value.fonts_2c[literal.font_index] = &selected.value;
         const auto selected_before = state(selected.value);
         const auto decoy_before = state(decoy.value);
-        auto before = std::make_unique<Environment>(*env);
+        auto before = std::make_unique<EnvironmentSnapshot>(*env);
         const char* query = literal.route == Route::Null ? nullptr : env->query.value.data();
         const bool fallback = literal.route == Route::Miss || literal.route == Route::Null ||
                               literal.route == Route::EndIsHit;
@@ -573,10 +631,14 @@ void run_case(const Literal& literal)
 }
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     try
     {
+        font_owner_test::host_require(argc == 2, "expected a fresh generated-font directory");
+        font_owner_test::GeneratedFonts generated(argv[1]);
+        generated.add("Fixture", font_owner_test::Input{});
+        font_owner_test::files::Session files(generated.mount());
         require(std::setlocale(LC_CTYPE, "C") != nullptr, "C locale unavailable");
         require(screen_manager == nullptr && screen_text_lookup == nullptr &&
                     screen_request_renderer == nullptr && screen_text_empty[0] == 0,
@@ -603,5 +665,10 @@ int main()
     catch (const Failure&)
     {
         return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "font-owner setup: %s\n", error.what());
+        return 3;
     }
 }

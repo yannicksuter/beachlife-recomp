@@ -276,3 +276,15 @@ files, streaming, source lifetime, case collisions and truncation.
 and empty assets, malformed inputs, offline reads, source identity, cancellation,
 resumption, repairs, lock lifetime/recovery and unsafe paths. CI runs these on
 Linux/macOS and tests the cross-built data executables on native Windows.
+
+
+The experimental `runtime/resource_files.h` adapter gives resource owners a
+separate thread-bound mounted-file session. A closed stream token stays alive
+until its session ends; a repeated close reports an error without releasing a
+later open. This is an explicit native lifetime policy, with no claim to model
+CRT stream-slot reuse. Read-only descriptor IDs normally start at 3 and remain
+local to the current session. Raw reads distinguish errors from EOF, while
+stream reads report complete elements. Destroy game owners before their session.
+The existing `retail_files` binding and its exactly-once close contract stay
+independent. Connecting the reconstructed resource owner requires its own
+prepared-source portability patch.

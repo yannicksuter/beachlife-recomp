@@ -1,3 +1,4 @@
+#include "font_owner_test_data.h"
 #include "renderer_queue_test_state.h"
 #include "startup_frame_clock.h"
 #include "startup_input_motion.h"
@@ -83,6 +84,32 @@ template <class T> struct Frame
     Guard before = guard(0x23);
     T value{};
     Guard after = guard(0xc7);
+};
+
+// A genuine owner; snapshots below copy values into a different non-owning type.
+template <> struct Frame<ScreenFontData>
+{
+    Guard before = guard(0x23);
+    ScreenFontData value{"Fixture"};
+    Guard after = guard(0xc7);
+
+    Frame() = default;
+    Frame(const Frame&) = delete;
+    Frame& operator=(const Frame&) = delete;
+};
+
+struct FontFrameSnapshot
+{
+    Guard before;
+    font_owner_test::Snapshot value;
+    Guard after;
+
+    explicit FontFrameSnapshot(const Frame<ScreenFontData>& frame)
+        : before(frame.before)
+        , value(frame.value)
+        , after(frame.after)
+    {
+    }
 };
 
 template <class T> void verify_guards(const Frame<T>& f)
@@ -220,7 +247,7 @@ struct Environment
         a.y_20 = 654;
         a.frame_24 = nullptr; // Never accessed: Position's real early return only.
         clock.value = {37, 41, 43, 47, 2.0f, 1.5f, 0.25f, 4.0f};
-        renderer_queue_test::pattern(data.value.unknown_00, 0x96);
+        font_owner_test::clear_metrics(data.value);
         data.value.glyphs[65][2] = 80;
         data.value.unknown_10804[0] = 0x12345678U;
         data.value.unknown_10804[1] = 0xabcdef01U;
@@ -235,6 +262,34 @@ struct Environment
         renderer_queue_test::pattern(lookup.value.unknown_04, 0xa7);
         renderer_queue_test::pattern(lookup.value.unknown_0c, 0xb8);
         renderer_queue_test::pattern(lookup.value.unknown_14, 0xc9);
+    }
+};
+
+struct EnvironmentSnapshot
+{
+    decltype(Environment::renderer) renderer;
+    decltype(Environment::manager) manager;
+    decltype(Environment::auxiliary) auxiliary;
+    decltype(Environment::clock) clock;
+    FontFrameSnapshot data;
+    decltype(Environment::lookup) lookup;
+    decltype(Environment::buckets) buckets;
+    decltype(Environment::entry) entry;
+    decltype(Environment::key) key;
+    decltype(Environment::units) units;
+
+    explicit EnvironmentSnapshot(const Environment& env)
+        : renderer(env.renderer)
+        , manager(env.manager)
+        , auxiliary(env.auxiliary)
+        , clock(env.clock)
+        , data(env.data)
+        , lookup(env.lookup)
+        , buckets(env.buckets)
+        , entry(env.entry)
+        , key(env.key)
+        , units(env.units)
+    {
     }
 };
 
@@ -317,7 +372,7 @@ void verify_manager(const ScreenManager& a, const ScreenManager& b)
         "manager fields differ");
 }
 
-void verify_environment(const Environment& a, const Environment& b)
+void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
 {
     verify_manager(a.manager.value, b.manager.value);
     const auto& x = a.auxiliary.value;
@@ -340,7 +395,7 @@ void verify_environment(const Environment& a, const Environment& b)
         "clock fields differ");
     const auto& f = a.data.value;
     const auto& g = b.data.value;
-    require(renderer_queue_test::same_bytes(f.unknown_00, g.unknown_00) &&
+    require(f.image == g.image &&
                 std::equal(std::begin(f.unknown_10804),
                     std::end(f.unknown_10804),
                     std::begin(g.unknown_10804)) &&
@@ -382,7 +437,7 @@ void verify_environment(const Environment& a, const Environment& b)
     verify_guards(a.units);
 }
 
-void expect_clear(Environment& expected)
+void expect_clear(EnvironmentSnapshot& expected)
 {
     expected.manager.value.item_134 = nullptr;
     expected.manager.value.value_138 = 2.5f;
@@ -390,7 +445,7 @@ void expect_clear(Environment& expected)
 }
 
 void expect_notification(
-    Environment& expected, const unsigned short* actual_units, ScreenItem* receiver)
+    EnvironmentSnapshot& expected, const unsigned short* actual_units, ScreenItem* receiver)
 {
     expected.manager.value.item_134 = receiver;
     auto& a = expected.auxiliary.value;
@@ -492,7 +547,7 @@ void geometry_and_activation()
     ItemBox box;
     auto& i = *box.value;
     env->manager.value.item_134 = &i;
-    auto expected_env = std::make_unique<Environment>(*env);
+    auto expected_env = std::make_unique<EnvironmentSnapshot>(*env);
     auto expected = state(i);
     i.preparation_flag = 0;
     i.MarkPrepared();
@@ -571,7 +626,7 @@ void thresholds()
         begin("finite_threshold");
         auto env = std::make_unique<Environment>();
         env->manager.value.value_138 = values[n];
-        auto before = std::make_unique<Environment>(*env);
+        auto before = std::make_unique<EnvironmentSnapshot>(*env);
         require(
             same_float(env->manager.value.ReadItemThreshold(), expected[n]), "threshold differs");
         verify_environment(*env, *before);
@@ -617,7 +672,7 @@ void events()
         i.elapsed_24 = c.elapsed;
         env->manager.value.item_134 = c.other_item ? &*other.value : &i;
         env->auxiliary.value.state_04 = 90;
-        auto expected_env = std::make_unique<Environment>(*env);
+        auto expected_env = std::make_unique<EnvironmentSnapshot>(*env);
         auto expected = state(i);
         const auto other_before = state(*other.value);
         expected.elapsed = c.expected_elapsed;
@@ -663,7 +718,7 @@ void event_callback()
     env->manager.value.item_134 = &*box.value;
     alternate.value.item_134 = &*box.value;
     const auto alternate_before = alternate.value;
-    auto before = std::make_unique<Environment>(*env);
+    auto before = std::make_unique<EnvironmentSnapshot>(*env);
     const auto expected = state(*box.value);
     require(!box.value->HandleTimedEvent(-9, 17, 2), "event callback return differs");
     ++counts.event_calls;
@@ -723,7 +778,7 @@ void coordinates()
         i.last_y = 5;
         env->manager.value.item_134 = &i;
         env->clock.value.delta_seconds = c.delta;
-        auto expected_env = std::make_unique<Environment>(*env);
+        auto expected_env = std::make_unique<EnvironmentSnapshot>(*env);
         auto expected = state(i);
         expected.elapsed = c.expected_elapsed;
         expected.state40 = c.expected_state;
@@ -774,7 +829,7 @@ void coordinate_callback()
     i.last_y = 5;
     i.state_40 = 109;
     env->manager.value.item_134 = &i;
-    auto expected_env = std::make_unique<Environment>(*env);
+    auto expected_env = std::make_unique<EnvironmentSnapshot>(*env);
     expected_env->clock.value.delta_seconds = 4.0f;
     auto expected = state(i);
     expected.elapsed = .5f;
@@ -796,7 +851,7 @@ void direct_notification()
     FontBox font(*env);
     const auto font_before = font.value;
     ItemBox box;
-    auto expected_env = std::make_unique<Environment>(*env);
+    auto expected_env = std::make_unique<EnvironmentSnapshot>(*env);
     const auto before = state(*box.value);
     expect_notification(*expected_env, env->units.value.data(), &*box.value);
     env->manager.value.ShowItemText(&*box.value, 100, -200, "A");
@@ -808,7 +863,7 @@ void direct_notification()
 }
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     if (!std::setlocale(LC_ALL, "C"))
     {
@@ -821,6 +876,10 @@ int main()
     InputState* const input = startup_input_state;
     try
     {
+        font_owner_test::host_require(argc == 2, "expected a fresh generated-font directory");
+        font_owner_test::GeneratedFonts generated(argv[1]);
+        generated.add("Fixture", font_owner_test::Input{});
+        font_owner_test::files::Session files(generated.mount());
         defaults_and_bytes();
         hits();
         geometry_and_activation();
@@ -858,5 +917,10 @@ int main()
     catch (const Failure&)
     {
         return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "font-owner setup: %s\n", error.what());
+        return 3;
     }
 }

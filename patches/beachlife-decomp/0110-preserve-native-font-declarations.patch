@@ -1,0 +1,112 @@
+Preserve native font declarations and comparison inputs before experimental composition.
+
+The separate matching setter remains unselected by native targets.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 5200c78..c07cf48 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -853,46 +853,3 @@
+     fixture_word60_after = renderer->word_60;
+     fixture_word60_completed = 1;
+ }
+-
+-#include "startup_screen_text.h"
+-
+-typedef char FontRectangleIntWidth[(sizeof(int) == 4) ? 1 : -1];
+-typedef char FontRectangleWordWidth[(sizeof(unsigned int) == 4) ? 1 : -1];
+-typedef char FontRectanglePointerWidth[(sizeof(void*) == 4) ? 1 : -1];
+-typedef char FontRectangleSize[(sizeof(RenderRectangle) == 16) ? 1 : -1];
+-typedef char FontRectangleXOffset[(offsetof(RenderRectangle, x) == 0) ? 1 : -1];
+-typedef char FontRectangleYOffset[(offsetof(RenderRectangle, y) == 4) ? 1 : -1];
+-typedef char FontRectangleWidthOffset[(offsetof(RenderRectangle, width) == 8) ? 1 : -1];
+-typedef char FontRectangleHeightOffset[(offsetof(RenderRectangle, height) == 12) ? 1 : -1];
+-typedef char FontRectanglePrefixOffset[(offsetof(ScreenFontRenderer, rectangle) == 0) ? 1 : -1];
+-typedef char FontRectangleWord10Offset[(offsetof(ScreenFontRenderer, word_10) == 0x10) ? 1 : -1];
+-typedef char FontRectangleState14Offset[(offsetof(ScreenFontRenderer, state_14) == 0x14) ? 1 : -1];
+-typedef char FontRectangleOpaque15Offset[(offsetof(ScreenFontRenderer, unknown_15) == 0x15) ? 1 : -1];
+-typedef char FontRectangleWord18Offset[(offsetof(ScreenFontRenderer, word_18) == 0x18) ? 1 : -1];
+-typedef char FontRectangleDataOffset[(offsetof(ScreenFontRenderer, data_1c) == 0x1c) ? 1 : -1];
+-typedef char FontRectangleLookupOffset[(offsetof(ScreenFontRenderer, lookup_20) == 0x20) ? 1 : -1];
+-typedef char FontRectangleRendererSize[(sizeof(ScreenFontRenderer) == 0x24) ? 1 : -1];
+-
+-ScreenFontRenderer* volatile fixture_font_rectangle_receiver;
+-volatile int fixture_font_rectangle_input[4];
+-volatile int fixture_font_rectangle_after[4];
+-volatile unsigned int fixture_font_rectangle_completed;
+-
+-// Borrowed precondition: font is a genuinely live FontRenderer with writable
+-// rectangle fields. No owner is constructed, synthesized or destroyed here.
+-// The exported helper and the anchor-linked comparison image are never run.
+-extern "C" __declspec(dllexport) void FixtureFontSetRectangle(
+-    ScreenFontRenderer* font, int x, int y, int width, int height)
+-{
+-    fixture_font_rectangle_receiver = font;
+-    fixture_font_rectangle_input[0] = x;
+-    fixture_font_rectangle_input[1] = y;
+-    fixture_font_rectangle_input[2] = width;
+-    fixture_font_rectangle_input[3] = height;
+-    font->SetRectangle(x, y, width, height);
+-    fixture_font_rectangle_after[0] = font->rectangle.x;
+-    fixture_font_rectangle_after[1] = font->rectangle.y;
+-    fixture_font_rectangle_after[2] = font->rectangle.width;
+-    fixture_font_rectangle_after[3] = font->rectangle.height;
+-    fixture_font_rectangle_completed = 1;
+-}
+diff --git a/metadata.csv b/metadata.csv
+index 72eb41a..cedf7ef 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -71,4 +71,3 @@
+ 0x004eb480,function,34,?TiffPaletteByte@@YAEG@Z
+ 0x004f4eb0,float,8,
+ 0x004f4ea8,float,8,
+-0x0049f9e0,function,30,?SetRectangle@ScreenFontRenderer@@QAEXHHHH@Z
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index e2b613d..f14fb8d 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -502,11 +502,6 @@
+       "size": 10,
+       "name": "ScreenRequestRenderer::SetWord60",
+       "name_status": "Descriptive full-word setter; actual renderer+60 store and mode initialization caller proven"
+-    },
+-    {
+-      "address": "0x0049f9e0",
+-      "size": 30,
+-      "name": "ScreenFontRenderer::SetRectangle"
+     }
+   ],
+   "library_functions": [
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+deleted file mode 100644
+index 0023926..0000000
+--- a/src/startup_screen_text.h
++++ /dev/null
+@@ -1,26 +0,0 @@
+-#ifndef STARTUP_SCREEN_TEXT_H
+-#define STARTUP_SCREEN_TEXT_H
+-
+-#include "startup_render_rectangle.h"
+-
+-struct ScreenFontData;
+-struct ScreenTextLookup;
+-
+-// Observed nonpolymorphic font renderer prefix.
+-// Its real constructor and complete owner lifetime are separate methods.
+-struct ScreenFontRenderer
+-{
+-    RenderRectangle rectangle;
+-    unsigned int word_10;
+-    unsigned char state_14;
+-    unsigned char unknown_15[3];
+-    unsigned int word_18;
+-    ScreenFontData* data_1c;
+-    ScreenTextLookup* lookup_20;
+-
+-    ScreenFontRenderer(ScreenFontData* data, ScreenTextLookup* lookup);
+-
+-    void SetRectangle(int x, int y, int width, int height);
+-};
+-
+-#endif
