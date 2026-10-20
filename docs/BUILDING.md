@@ -1093,3 +1093,9 @@ concurrency or the complete Dialog/Frame owner.
 Build with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
 `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
 `-R '^reconstructed_screen_child_ring$'`.
+
+The experimental `reconstructed_resource_frame_select` target exercises resource
+frame selection with the real frame lifetime and raw loaders. Generated files
+cover resident whole and plane buffers, upper clamps, lazy whole/plane loading,
+and cached pointer reuse. The finite domain uses positive counts, valid offsets,
+complete reads and successful allocations. It does not require retail data.

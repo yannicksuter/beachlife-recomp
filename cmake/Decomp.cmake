@@ -1818,3 +1818,36 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_screen_child_ring PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Frame data selection uses the actual resource lifetime and raw file loaders.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_resource_frame_select STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_frame_select.cpp")
+    target_include_directories(beachlife_reconstructed_resource_frame_select PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_frame_select PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_frame_select PUBLIC
+        beachlife_reconstructed_resource_frame_loaders)
+    add_dependencies(beachlife_reconstructed_resource_frame_select verify_reconstructed_source)
+
+    add_executable(reconstructed_resource_frame_select_tests
+        tests/reconstructed_resource_frame_select.cpp)
+    target_link_libraries(reconstructed_resource_frame_select_tests PRIVATE
+        beachlife_reconstructed_resource_frame_select)
+    set_target_properties(beachlife_reconstructed_resource_frame_select
+        reconstructed_resource_frame_select_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_frame_select PRIVATE /GL-)
+        target_compile_options(reconstructed_resource_frame_select_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_frame_select PRIVATE -fno-lto)
+        target_compile_options(reconstructed_resource_frame_select_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_frame_select_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_frame_select
+        COMMAND reconstructed_resource_frame_select_tests)
+    set_tests_properties(reconstructed_resource_frame_select PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
