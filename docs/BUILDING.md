@@ -1081,3 +1081,14 @@ deactivation callback or full manager lifetime.
 Build with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
 `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
 `-R '^reconstructed_active_list_cleanup$'`.
+
+The experimental `reconstructed_screen_child_ring_tests` target exercises real
+child-ring construction, insertion, clearing and destruction with five generated
+lifetime cases. It uses the reconstructed outer allocator and existing pool
+methods, guarded native slots and live borrowed base items. The cases cover
+insertion order, payload aliasing, slot reuse and position-directed insertion
+between two coherent rings. They do not cover pool refill, allocation failure,
+concurrency or the complete Dialog/Frame owner.
+Build with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_screen_child_ring$'`.
