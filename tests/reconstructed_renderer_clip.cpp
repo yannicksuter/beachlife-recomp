@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <climits>
 #include <cstddef>
 #include <cstdio>
@@ -462,7 +463,8 @@ bool same_prefix(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b)
            a.rectangle_ready_4f == b.rectangle_ready_4f && same_bytes(a.unknown_50, b.unknown_50) &&
            a.clip_mode_54 == b.clip_mode_54 && same_bytes(a.unknown_58, b.unknown_58) &&
            a.unscaled_clip_5c == b.unscaled_clip_5c && a.clip_flag_5d == b.clip_flag_5d &&
-           same_bytes(a.unknown_5e, b.unknown_5e) && a.surfaces == b.surfaces &&
+           same_bytes(a.unknown_5e, b.unknown_5e) && a.word_60 == b.word_60 &&
+           same_bytes(a.unknown_64, b.unknown_64) && a.surfaces == b.surfaces &&
            same_bytes(a.unknown_6c, b.unknown_6c) && a.current_surface == b.current_surface &&
            a.pixels_locked == b.pixels_locked && same_bytes(a.unknown_79, b.unknown_79);
 }
@@ -498,6 +500,8 @@ void initialize(Frame& frame, unsigned short* pixels, ScreenSurfacePosition** su
     r.unscaled_clip_5c = 0x9a;
     r.clip_flag_5d = 0xab;
     pattern(r.unknown_5e, 0xbc);
+    r.word_60 = std::bit_cast<unsigned int>(std::array<unsigned char, 4>{0xde, 0xef, 0x00, 0x11});
+    pattern(r.unknown_64, 0x22);
     r.surfaces = surfaces;
     pattern(r.unknown_6c, 0xcd);
     r.current_surface = -37;

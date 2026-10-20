@@ -77,6 +77,11 @@ existing `/O1` setting even when additional qualified options apply. Add target
 changes through a reconstruction patch and verify that all retained methods still
 match. These options do not change the native CMake build.
 
+The reconstructed screen-registration cleanup matches the complete original
+method after relocation normalization. It clears the published manager even
+when another manager is registered. Rebuilt global addresses differ, so raw
+bytes are unequal; full manager ownership and native execution remain separate.
+
 A `/GX` entry adds a generated COFF definition of the absolute `__except_list=0`
 ABI symbol required for VC6's `FS:[0]` exception registration. The object has no
 code, data or sections. Actual CRT imports and comparison metadata must still be
@@ -1117,3 +1122,87 @@ node construction, clearing and pool return remain the actual implementations.
 The fixture detaches all pool roots before its backing owners end lifetime.
 It retains the existing uncontended OS-test boundary; it does not implement a
 retail list owner, active-screen manager or gameplay loop.
+
+The experimental `reconstructed_renderer_word60_tests` target exercises the
+matched renderer word setter on a genuine typed aggregate with native deque
+storage. Generated cases cover zero, full-bit and repeated high-bit values,
+untouched fields and borrowed storage, and the actual host field alignment.
+The focused target uses one reconstructed source member and remains off with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME`. It does not implement the renderer's
+retail constructor or establish graphics, concurrency or gameplay behavior.
+
+The experimental `beachlife_reconstructed_resource_raster2` library composes the
+second encoded sprite raster with the real first-format clipping fallback.
+It preserves the original run-state, zero-header and four-byte pixel behavior.
+The focused `reconstructed_resource_raster2` test uses generated literal pixels.
+Both this library and `beachlife_reconstructed_resource_raster_direct` are
+available when `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=OFF`; their tests remain
+optional. They require `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and do not yet
+connect the reconstructed GUI to the game window.
+
+The experimental `reconstructed_gui_tga_command` target exercises the actual
+Intro TGA command with real rectangle/text readers, TGA widget construction,
+registration and owning-link destruction. Generated tokens cover a parent
+rectangle and allocation failure during registration; the completed widget
+retains the original lack of automatic rollback. The companion fatal check
+runs the original error path and its exit code. This remains an optional
+subsystem composition; full parser, GUI manager construction and the game
+window's Intro flow require their remaining real dependencies.
+
+The experimental `beachlife_reconstructed_render_masks` library contains the
+real pixel-format initializer and its fifteen shared mask/storage globals.
+It is available with subsystem tests disabled. The optional
+`reconstructed_render_mask_setup` test covers both format branches, full-width
+selectors and widths, borrowed storage and typed global aliases. The initializer
+only stores the supplied pixel pointer; it neither accesses nor owns that
+buffer. This library does not yet connect the renderer or GUI to the game window.
+
+The experimental `beachlife_reconstructed_renderer_present_effect` library
+applies the original five pixel-effect modes using the real shared mask
+initializer and globals. It remains available with subsystem tests disabled.
+The optional `reconstructed_renderer_present_effect` test checks literal
+16-bit pixels, low-byte mode selection, signed-dimension no-access paths and
+a typed global alias. The effect retains its unsupported-mode carried value.
+This library does not yet connect Present or the GUI to the game window.
+
+The experimental `beachlife_reconstructed_renderer_default` library copies
+the original source framebuffer to a surface through real pixel access and
+the shared render masks. It preserves the two-row conversion and fixed
+sixteen-pair packing paths. The optional `reconstructed_renderer_default`
+test uses literal guarded buffers and typed COM boundary observations.
+Both the default-render and surface-pixels libraries are available with
+subsystem tests disabled. Complete renderer ownership and game-window
+presentation remain separate integration work.
+
+With experimental game code and reconstructed subsystem tests enabled,
+`reconstructed_screen_item_rectangle_position` checks the original base-item
+position setter using real item construction and destruction. Literal cases
+cover negative coordinates, an inverted rectangle and arguments read from the
+same item; width, height, the saved rectangle and unrelated fields are preserved.
+The test and its small library reuse the existing base-item dependencies.
+
+The experimental `beachlife_reconstructed_resource_raster_402880` library draws
+depth-tagged sprite packets using the real shared render masks. It preserves
+the distinct full, left-cropped and right-cropped paths, including replacement
+of rejected full-packet endpoints. The optional
+`reconstructed_resource_raster_402880` test uses generated guarded pixels,
+literal blend/depth results and a valid palette-to-pixel alias. The library is
+available with subsystem tests disabled. Full resource ownership and the
+Frame/Dialog renderer connection remain separate integration work.
+
+The optional `reconstructed_gui_defined_item_tests` target exercises the complete
+defined-item class: its real constructor, destructor, child forwarding and timed
+dispatch. Generated live children and seeded pool storage check three bounded
+groups, including name copying, reentrant attachment and borrowed-child survival.
+The target uses the existing base/ring implementation, host scalar allocation
+and the qualified uncontended pool test boundary. It does not connect GUI script
+loading or establish gameplay, concurrent pool behavior or a platform backend.
+Linux optimized and sanitizer builds are the initial qualification scope;
+Windows and macOS remain deferred.
+
+The optional `reconstructed_resource_raster_405b20_tests` target exercises the
+complete half-resolution depth raster with the genuine shared mask owner.
+Three generated groups cover full/cropped sampling, four blend routes, signed
+packet gaps, row/depth timing and a valid live palette alias. Linux optimized
+and sanitizer builds are the initial scope; Windows/macOS and full resource
+ownership remain separate gates. Its library also builds with tests disabled.

@@ -139,6 +139,121 @@ if(BUILD_TESTING)
     set_tests_properties(startup_configuration PROPERTIES LABELS "reconstructed;headless")
 endif()
 
+add_library(beachlife_reconstructed_surface_pixels STATIC
+    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_pixel_access.cpp"
+    "${BEACHLIFE_DECOMP_SOURCE}/surface_error_sink.cpp")
+target_include_directories(beachlife_reconstructed_surface_pixels PUBLIC
+    "${BEACHLIFE_DECOMP_SOURCE}")
+target_compile_features(beachlife_reconstructed_surface_pixels PUBLIC cxx_std_20)
+set_target_properties(beachlife_reconstructed_surface_pixels PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(beachlife_reconstructed_surface_pixels verify_reconstructed_source)
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    target_compile_definitions(beachlife_reconstructed_surface_pixels PUBLIC
+        BEACHLIFE_DECOMP_RENDERER_QUEUE=1)
+endif()
+
+# Reconstructed runtime libraries remain available without subsystem tests.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_render_masks STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/render_mask_setup.cpp")
+    target_include_directories(beachlife_reconstructed_render_masks PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_render_masks PUBLIC cxx_std_20)
+    set_target_properties(beachlife_reconstructed_render_masks PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_render_masks verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_render_masks PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_render_masks PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_renderer_present_effect STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_present_effect.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_present_effect PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_present_effect PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_present_effect PUBLIC
+        beachlife_reconstructed_render_masks)
+    set_target_properties(beachlife_reconstructed_renderer_present_effect PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_renderer_present_effect verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_present_effect PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_present_effect PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_renderer_default STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_render_default.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_default PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_default PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_default PUBLIC
+        beachlife_reconstructed_surface_pixels beachlife_reconstructed_render_masks)
+    set_target_properties(beachlife_reconstructed_renderer_default PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_renderer_default verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_default PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_default PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_resource_raster_402880 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_402880.cpp")
+    target_include_directories(beachlife_reconstructed_resource_raster_402880 PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_raster_402880 PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_raster_402880 PUBLIC
+        beachlife_reconstructed_render_masks)
+    set_target_properties(beachlife_reconstructed_resource_raster_402880 PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_resource_raster_402880 verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_raster_402880 PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_raster_402880 PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_resource_raster_405b20 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster_405b20.cpp")
+    target_include_directories(beachlife_reconstructed_resource_raster_405b20 PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_raster_405b20 PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_resource_raster_405b20 PUBLIC
+        beachlife_reconstructed_render_masks)
+    set_target_properties(beachlife_reconstructed_resource_raster_405b20 PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_resource_raster_405b20 verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_raster_405b20 PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_raster_405b20 PRIVATE -fno-lto)
+    endif()
+
+    add_library(beachlife_reconstructed_resource_raster_direct STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster1_direct.cpp")
+    add_library(beachlife_reconstructed_resource_raster2 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster2.cpp")
+    target_link_libraries(beachlife_reconstructed_resource_raster2 PUBLIC
+        beachlife_reconstructed_resource_raster_direct)
+    foreach(target beachlife_reconstructed_resource_raster_direct
+            beachlife_reconstructed_resource_raster2)
+        target_include_directories(${target} PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+        target_compile_features(${target} PUBLIC cxx_std_20)
+        set_target_properties(${target} PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        add_dependencies(${target} verify_reconstructed_source)
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /GL-)
+        else()
+            target_compile_options(${target} PRIVATE -fno-lto)
+        endif()
+    endforeach()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -340,15 +455,6 @@ endif()
 add_test(NAME reconstructed_pool_lock COMMAND reconstructed_pool_lock_tests)
 set_tests_properties(reconstructed_pool_lock PROPERTIES
     LABELS "reconstructed;headless" TIMEOUT 30)
-
-add_library(beachlife_reconstructed_surface_pixels STATIC
-    "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_pixel_access.cpp"
-    "${BEACHLIFE_DECOMP_SOURCE}/surface_error_sink.cpp")
-target_include_directories(beachlife_reconstructed_surface_pixels PUBLIC
-    "${BEACHLIFE_DECOMP_SOURCE}")
-target_compile_features(beachlife_reconstructed_surface_pixels PUBLIC cxx_std_20)
-set_target_properties(beachlife_reconstructed_surface_pixels PROPERTIES CXX_EXTENSIONS OFF)
-add_dependencies(beachlife_reconstructed_surface_pixels verify_reconstructed_source)
 
 add_executable(reconstructed_surface_pixels_tests tests/reconstructed_surface_pixels.cpp)
 target_link_libraries(reconstructed_surface_pixels_tests PRIVATE
@@ -913,7 +1019,6 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     # renderer declaration is identical in every translation unit of an image.
     foreach(BEACHLIFE_RENDERER_QUEUE_CONSUMER IN ITEMS
         beachlife_reconstructed_surfaces
-        beachlife_reconstructed_surface_pixels
         beachlife_reconstructed_gui_rectangle)
         target_compile_definitions(${BEACHLIFE_RENDERER_QUEUE_CONSUMER} PUBLIC
             BEACHLIFE_DECOMP_RENDERER_QUEUE=1)
@@ -1602,25 +1707,15 @@ endif()
 
 # Direct encoded sprite raster with independent bounded packet and pixel fixtures.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
-    add_library(beachlife_reconstructed_resource_raster_direct STATIC
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster1_direct.cpp")
-    target_include_directories(beachlife_reconstructed_resource_raster_direct PUBLIC
-        "${BEACHLIFE_DECOMP_SOURCE}")
-    target_compile_features(beachlife_reconstructed_resource_raster_direct PUBLIC cxx_std_20)
-    add_dependencies(beachlife_reconstructed_resource_raster_direct verify_reconstructed_source)
-
     add_executable(reconstructed_resource_raster_direct_tests
         tests/reconstructed_resource_raster_direct.cpp)
     target_link_libraries(reconstructed_resource_raster_direct_tests PRIVATE
         beachlife_reconstructed_resource_raster_direct)
-    set_target_properties(beachlife_reconstructed_resource_raster_direct
-        reconstructed_resource_raster_direct_tests PROPERTIES
+    set_target_properties(reconstructed_resource_raster_direct_tests PROPERTIES
         CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
     if(MSVC)
-        target_compile_options(beachlife_reconstructed_resource_raster_direct PRIVATE /GL-)
         target_compile_options(reconstructed_resource_raster_direct_tests PRIVATE /GL- /W4 /WX)
     else()
-        target_compile_options(beachlife_reconstructed_resource_raster_direct PRIVATE -fno-lto)
         target_compile_options(reconstructed_resource_raster_direct_tests PRIVATE
             -fno-lto -Wall -Wextra -Wpedantic -Werror)
         target_link_options(reconstructed_resource_raster_direct_tests PRIVATE -fno-lto)
@@ -1912,4 +2007,256 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_test(NAME reconstructed_active_node_erase COMMAND reconstructed_active_node_erase_tests)
     set_tests_properties(reconstructed_active_node_erase PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# The matched one-word setter uses the genuine experimental renderer aggregate.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_word60 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_set_word60.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_word60 PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_word60 PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_renderer_word60 verify_reconstructed_source)
+
+    add_executable(reconstructed_renderer_word60_tests tests/reconstructed_renderer_word60.cpp)
+    target_link_libraries(reconstructed_renderer_word60_tests PRIVATE
+        beachlife_reconstructed_renderer_word60)
+    set_target_properties(beachlife_reconstructed_renderer_word60
+        reconstructed_renderer_word60_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_word60 PRIVATE /GL-)
+        target_compile_options(reconstructed_renderer_word60_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_word60 PRIVATE -fno-lto)
+        target_compile_options(reconstructed_renderer_word60_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_word60_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_word60 COMMAND reconstructed_renderer_word60_tests)
+    set_tests_properties(reconstructed_renderer_word60 PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_resource_raster2_tests
+        tests/reconstructed_resource_raster2.cpp)
+    target_link_libraries(reconstructed_resource_raster2_tests PRIVATE
+        beachlife_reconstructed_resource_raster2)
+    set_target_properties(reconstructed_resource_raster2_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_resource_raster2_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_raster2_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_raster2_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_raster2 COMMAND reconstructed_resource_raster2_tests)
+    set_tests_properties(reconstructed_resource_raster2 PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# The Intro TGA command composes real readers, widget and registration lifetimes.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_tga_command STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_tga.cpp")
+    target_include_directories(beachlife_reconstructed_gui_tga_command PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_tga_command PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_tga_command PUBLIC
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_tga_widget)
+    add_dependencies(beachlife_reconstructed_gui_tga_command verify_reconstructed_source)
+    add_executable(reconstructed_gui_tga_command_tests
+        tests/reconstructed_gui_tga_command.cpp)
+    target_link_libraries(reconstructed_gui_tga_command_tests PRIVATE
+        beachlife_reconstructed_gui_tga_command)
+    set_target_properties(beachlife_reconstructed_gui_tga_command
+        reconstructed_gui_tga_command_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_tga_command PRIVATE /GL-)
+        target_compile_options(reconstructed_gui_tga_command_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_tga_command PRIVATE -fno-lto)
+        target_compile_options(reconstructed_gui_tga_command_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_tga_command_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_tga_command COMMAND reconstructed_gui_tga_command_tests)
+    add_test(NAME reconstructed_gui_tga_command_fatal
+        COMMAND reconstructed_gui_tga_command_tests --fatal)
+    set_tests_properties(reconstructed_gui_tga_command reconstructed_gui_tga_command_fatal
+        PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_render_mask_setup_tests
+        tests/reconstructed_render_mask_setup.cpp)
+    target_link_libraries(reconstructed_render_mask_setup_tests PRIVATE
+        beachlife_reconstructed_render_masks)
+    set_target_properties(reconstructed_render_mask_setup_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_render_mask_setup_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_render_mask_setup_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_render_mask_setup_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_render_mask_setup COMMAND reconstructed_render_mask_setup_tests)
+    set_tests_properties(reconstructed_render_mask_setup PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_renderer_present_effect_tests
+        tests/reconstructed_renderer_present_effect.cpp)
+    target_link_libraries(reconstructed_renderer_present_effect_tests PRIVATE
+        beachlife_reconstructed_renderer_present_effect)
+    set_target_properties(reconstructed_renderer_present_effect_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_renderer_present_effect_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_renderer_present_effect_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_present_effect_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_present_effect
+        COMMAND reconstructed_renderer_present_effect_tests)
+    set_tests_properties(reconstructed_renderer_present_effect PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_renderer_default_tests
+        tests/reconstructed_renderer_default.cpp)
+    target_link_libraries(reconstructed_renderer_default_tests PRIVATE
+        beachlife_reconstructed_renderer_default)
+    set_target_properties(reconstructed_renderer_default_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_renderer_default_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_renderer_default_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_default_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_renderer_default COMMAND reconstructed_renderer_default_tests)
+    set_tests_properties(reconstructed_renderer_default PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# The position setter shares the real base-item lifetime and virtual-method graph.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_item_rectangle_position STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_rectangle_position.cpp")
+    target_include_directories(beachlife_reconstructed_screen_item_rectangle_position PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_item_rectangle_position PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_screen_item_rectangle_position PUBLIC
+        beachlife_reconstructed_screen_item)
+    add_dependencies(beachlife_reconstructed_screen_item_rectangle_position verify_reconstructed_source)
+
+    add_executable(reconstructed_screen_item_rectangle_position_tests
+        tests/reconstructed_screen_item_rectangle_position.cpp)
+    target_link_libraries(reconstructed_screen_item_rectangle_position_tests PRIVATE
+        beachlife_reconstructed_screen_item_rectangle_position)
+    set_target_properties(beachlife_reconstructed_screen_item_rectangle_position
+        reconstructed_screen_item_rectangle_position_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_item_rectangle_position PRIVATE /GL-)
+        target_compile_options(reconstructed_screen_item_rectangle_position_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_item_rectangle_position PRIVATE -fno-lto)
+        target_compile_options(reconstructed_screen_item_rectangle_position_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_item_rectangle_position_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_screen_item_rectangle_position
+        COMMAND reconstructed_screen_item_rectangle_position_tests)
+    set_tests_properties(reconstructed_screen_item_rectangle_position PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_resource_raster_402880_tests
+        tests/reconstructed_resource_raster_402880.cpp)
+    target_link_libraries(reconstructed_resource_raster_402880_tests PRIVATE
+        beachlife_reconstructed_resource_raster_402880)
+    set_target_properties(reconstructed_resource_raster_402880_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_resource_raster_402880_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_raster_402880_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_raster_402880_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_raster_402880
+        COMMAND reconstructed_resource_raster_402880_tests)
+    set_tests_properties(reconstructed_resource_raster_402880 PROPERTIES
+        LABELS "reconstructed;headless;experimental" TIMEOUT 30)
+endif()
+
+# The complete defined-item class reuses the real base and owning child ring.
+# This optional subsystem target retains the qualified test-only pool boundary.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_defined_item STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_defined_item_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_defined_item_globals.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_defined_item_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_defined_item_virtuals.cpp")
+    target_include_directories(beachlife_reconstructed_gui_defined_item PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_defined_item PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_defined_item PUBLIC
+        beachlife_reconstructed_screen_item
+        beachlife_reconstructed_screen_child_ring)
+    add_dependencies(beachlife_reconstructed_gui_defined_item verify_reconstructed_source)
+
+    add_executable(reconstructed_gui_defined_item_tests
+        tests/reconstructed_gui_defined_item.cpp)
+    target_link_libraries(reconstructed_gui_defined_item_tests PRIVATE
+        beachlife_reconstructed_gui_defined_item)
+    set_target_properties(beachlife_reconstructed_gui_defined_item
+        reconstructed_gui_defined_item_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_defined_item PRIVATE /GL-)
+        target_compile_options(reconstructed_gui_defined_item_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_defined_item PRIVATE -fno-lto)
+        target_compile_options(reconstructed_gui_defined_item_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_defined_item_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_defined_item COMMAND reconstructed_gui_defined_item_tests)
+    set_tests_properties(reconstructed_gui_defined_item PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+
+if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_resource_raster_405b20_tests
+        tests/reconstructed_resource_raster_405b20.cpp)
+    target_link_libraries(reconstructed_resource_raster_405b20_tests PRIVATE
+        beachlife_reconstructed_resource_raster_405b20)
+    set_target_properties(reconstructed_resource_raster_405b20_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_resource_raster_405b20_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_resource_raster_405b20_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_raster_405b20_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_raster_405b20
+        COMMAND reconstructed_resource_raster_405b20_tests)
+    set_tests_properties(reconstructed_resource_raster_405b20 PROPERTIES
+        LABELS "reconstructed;headless;experimental" TIMEOUT 30)
 endif()

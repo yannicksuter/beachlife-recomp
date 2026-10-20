@@ -1,0 +1,118 @@
+diff --git a/src/startup_renderer_render_default.cpp b/src/startup_renderer_render_default.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_render_default.cpp
+@@ -0,0 +1,100 @@
++#include "startup_screen_renderer.h"
++#include "render_mask_setup.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0040c740
++void ScreenRequestRenderer::RenderDefault()
++{
++    current_surface = 0;
++    unsigned char* destination = reinterpret_cast<unsigned char*>(AccessPixels());
++    if (clip_mode_54 == 0)
++    {
++        if (!destination)
++            return;
++
++        unsigned int pitch_words = surfaces[current_surface]->pitch >> 2;
++        unsigned int rows = (height - word_60) >> 1;
++        unsigned char* source = reinterpret_cast<unsigned char*>(pixels_1c);
++        unsigned int source_width = width;
++        if (rows)
++        {
++            unsigned int columns = source_width >> 1;
++            unsigned int source_stride = source_width << 2;
++            unsigned int pair_stride = pitch_words << 3;
++            unsigned int source_row = 0;
++            unsigned int first_row = 0;
++            unsigned int second_row = pitch_words << 2;
++            do
++            {
++                unsigned short previous;
++                memcpy(&previous, source + source_row, sizeof(previous));
++                unsigned int offset = 0;
++                unsigned int remaining = columns;
++                while (remaining)
++                {
++                    unsigned int mask = render_half_mask;
++                    unsigned short current;
++                    memcpy(&current, source + source_row + offset, sizeof(current));
++                    unsigned int packed = (static_cast<unsigned int>(previous) << 16)
++                                        + ((static_cast<unsigned int>(current) >> 1) & (mask >> 1))
++                                        + ((static_cast<unsigned int>(previous) >> 1) & (mask >> 1));
++                    memcpy(destination + first_row + offset, &packed, sizeof(packed));
++                    memcpy(destination + second_row + offset, &packed, sizeof(packed));
++                    offset += 4;
++                    memcpy(&previous, source + source_row + offset, sizeof(previous));
++                    --remaining;
++                }
++                first_row += pair_stride;
++                second_row += pair_stride;
++                source_row += source_stride;
++                --rows;
++            } while (rows);
++        }
++    }
++    else
++    {
++        if (!destination)
++            return;
++
++        unsigned int pitch = (surfaces[current_surface]->pitch >> 2) << 2;
++        unsigned char* source = reinterpret_cast<unsigned char*>(pixels_1c);
++        unsigned int source_offset = 0;
++        unsigned int destination_row = 0;
++        unsigned int row = 0;
++        if (height - word_60)
++        {
++            do
++            {
++                unsigned int remaining = width >> 1;
++                unsigned int destination_offset = destination_row;
++                if (remaining)
++                {
++                    do
++                    {
++                        for (unsigned int pair = 0; pair < 16; ++pair)
++                        {
++                            unsigned int second;
++                            unsigned int first;
++                            memcpy(&second, source + source_offset + pair * 8 + 4, sizeof(second));
++                            memcpy(&first, source + source_offset + pair * 8, sizeof(first));
++                            unsigned int packed = (second << 16) + (first & 0xffff);
++                            memcpy(destination + destination_offset + pair * 4, &packed, sizeof(packed));
++                        }
++                        source_offset += 128;
++                        destination_offset += 64;
++                        remaining -= 16;
++                    } while (remaining);
++                }
++                destination_row += pitch;
++                ++row;
++            } while (row < height - word_60);
++        }
++    }
++
++    if (!software_mode)
++    {
++        DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++        surface->vtable->Unlock(surface, 0);
++    }
++    pixels_locked = 0;
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -78,6 +78,9 @@
+     // Actual 0x0040dee0; descriptive setter of the observed word at x86+60.
+     void SetWord60(unsigned int value);
+ 
++    // Actual 0x0040c740; copies the current source buffer to the selected surface.
++    void RenderDefault();
++
+     int CreateSurface(int width, int height, int mode);
+     void PrepareSurface(int surface);
+     unsigned short* AccessPixels();
