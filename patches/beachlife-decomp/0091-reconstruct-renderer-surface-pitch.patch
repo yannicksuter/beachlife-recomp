@@ -1,0 +1,86 @@
+diff --git a/src/startup_renderer_surface_pitch.cpp b/src/startup_renderer_surface_pitch.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_surface_pitch.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e2d0
++unsigned int ScreenRequestRenderer::SurfacePitch()
++{
++    return surfaces[current_surface]->pitch;
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -29,6 +29,8 @@
+ 
+ struct ScreenRequestRenderer
+ {
++    unsigned int SurfacePitch();
++
+     unsigned char software_mode;
+     unsigned char unknown_01[3];
+     unsigned int width;
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -522,8 +522,34 @@
+     fixture_resource_lookup_result = fixture_resource_lookup.Lookup(fixture_resource_lookup_name);
+ }
+ 
++// Comparison-only typed current-surface pitch observation; never run this image.
++typedef char PitchUnsignedWidth[(sizeof(unsigned int) == 4) ? 1 : -1];
++typedef char PitchSurfaceSize[(sizeof(ScreenSurfacePosition) == 0x28) ? 1 : -1];
++typedef char PitchFieldOffset[(offsetof(ScreenSurfacePosition, pitch) == 0x18) ? 1 : -1];
++typedef char PitchRendererSize[(sizeof(ScreenRequestRenderer) == 0x7c) ? 1 : -1];
++typedef char PitchArrayOffset[(offsetof(ScreenRequestRenderer, surfaces) == 0x68) ? 1 : -1];
++typedef char PitchIndexOffset[(offsetof(ScreenRequestRenderer, current_surface) == 0x74) ? 1 : -1];
++
++// Generated live aggregates; no retail constructor or method is substituted.
++ScreenSurfacePosition fixture_pitch_surfaces[2] = { 0 };
++ScreenSurfacePosition* fixture_pitch_entries[2];
++ScreenRequestRenderer fixture_pitch_renderer = { 0 };
++volatile unsigned int fixture_pitch_result;
++
++extern "C" void fixture_surface_pitch_call()
++{
++    fixture_pitch_surfaces[0].pitch = 18u;
++    fixture_pitch_surfaces[1].pitch = 0xfedcba98u;
++    fixture_pitch_entries[0] = &fixture_pitch_surfaces[0];
++    fixture_pitch_entries[1] = &fixture_pitch_surfaces[1];
++    fixture_pitch_renderer.surfaces = fixture_pitch_entries;
++    fixture_pitch_renderer.current_surface = 1;
++    fixture_pitch_result = fixture_pitch_renderer.SurfacePitch();
++}
++
+ extern "C" void fixture_entry()
+ {
++    fixture_surface_pitch_call();
+     fixture_resource_lookup_call();
+     fixture_resource_destruction();
+     fixture_resource_construction();
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -59,3 +59,4 @@
+ 0x00412ae0,function,27,??1ScreenDialogResource@@QAE@XZ
+ 0x00417c20,function,13,?Lookup@ScreenDialogResourceLookup@@QAEPAUScreenDialogResource@@PBD@Z
+ 0x00417c30,function,221,?Find@ScreenDialogResourceLookup@@QAEPAUScreenDialogResource@@PBD@Z
++0x0040e2d0,function,13,?SurfacePitch@ScreenRequestRenderer@@QAEIXZ
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -478,6 +478,12 @@
+       "size": 345,
+       "name": "GuiParserState::RegisterItem",
+       "name_status": "descriptive application registration method and observed parser prefix; original class, declaration and complete hierarchy unknown"
++    },
++    {
++      "address": "0x0040e2d0",
++      "size": 13,
++      "name": "ScreenRequestRenderer::SurfacePitch",
++      "name_status": "descriptive; full EAX return from current surface pitch field"
+     }
+   ],
+   "library_functions": [
