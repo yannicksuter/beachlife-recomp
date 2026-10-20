@@ -82,6 +82,12 @@ method after relocation normalization. It clears the published manager even
 when another manager is registered. Rebuilt global addresses differ, so raw
 bytes are unequal; full manager ownership and native execution remain separate.
 
+The TIFF palette-byte converter matches the complete original 34-byte body
+after address normalization. Its two constant addresses and CRT tail address
+differ in raw bytes. Multiplication order and both floating-point constants
+are retained; code provenance and native floating-point equivalence remain
+separate qualifications.
+
 A `/GX` entry adds a generated COFF definition of the absolute `__except_list=0`
 ABI symbol required for VC6's `FS:[0]` exception registration. The object has no
 code, data or sections. Actual CRT imports and comparison metadata must still be
@@ -1206,3 +1212,29 @@ Three generated groups cover full/cropped sampling, four blend routes, signed
 packet gaps, row/depth timing and a valid live palette alias. Linux optimized
 and sanitizer builds are the initial scope; Windows/macOS and full resource
 ownership remain separate gates. Its library also builds with tests disabled.
+
+The optional `reconstructed_tiff_image_conversions_tests` target qualifies the
+two complete TIFF image conversions with real image allocation and cleanup.
+Three generated groups check retained input ownership, four-to-three sample
+copying, nibble order across odd rows, the original eight-entry palette copy
+and empty images. Linux optimized and sanitizer builds are the initial scope;
+Windows/macOS, complete TIFF loading and game integration remain separate.
+
+The optional experimental TIFF loader target
+`reconstructed_tiff_image_loader_tests` uses generated files and the reconstructed
+directory, strip, tile, PackBits, palette and image-conversion methods. It reuses
+the real binary word reader, adapted once to the mounted file session, and
+TgaImage allocation/destruction. A `retail_files::Session` binds its input to a
+prepared `FileSource`; Windows path separators and case aliases use the same
+VFS lookup as the other retail loaders. There is no host-path fallback. The
+generated-file check uses a manifest-backed folder mount and exercises directory
+position save/restore as well as decoding. Build it with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; then run
+`ctest --test-dir <build> -R '^reconstructed_tiff_image_loader$' --output-on-failure`.
+The subsystem scope is complete little-endian inputs, bounded dimensions and
+ordinary successful allocations. Palette checks use values away from sensitive
+floating-point boundaries; general equivalence to the original x87 precision
+environment is not established. Invalid-header leaks, truncated input,
+out-of-bounds packet behavior and allocation-failure cleanup are not repaired or
+included. This target does not connect the production font loader or front end.

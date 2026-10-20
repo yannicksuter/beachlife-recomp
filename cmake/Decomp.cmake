@@ -2260,3 +2260,79 @@ if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_resource_raster_405b20 PROPERTIES
         LABELS "reconstructed;headless;experimental" TIMEOUT 30)
 endif()
+
+
+# Complete image conversions use the genuine existing image allocation/cleanup.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_tiff_conversions STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_image_conversions.cpp")
+    target_include_directories(beachlife_reconstructed_tiff_conversions PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_tiff_conversions PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_tiff_conversions PUBLIC
+        beachlife_reconstructed_tga)
+    add_dependencies(beachlife_reconstructed_tiff_conversions verify_reconstructed_source)
+    add_executable(reconstructed_tiff_image_conversions_tests
+        tests/reconstructed_tiff_image_conversions.cpp)
+    target_link_libraries(reconstructed_tiff_image_conversions_tests PRIVATE
+        beachlife_reconstructed_tiff_conversions)
+    set_target_properties(beachlife_reconstructed_tiff_conversions
+        reconstructed_tiff_image_conversions_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_tiff_conversions PRIVATE /GL-)
+        target_compile_options(reconstructed_tiff_image_conversions_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_tiff_conversions PRIVATE -fno-lto)
+        target_compile_options(reconstructed_tiff_image_conversions_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tiff_image_conversions_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_tiff_image_conversions
+        COMMAND reconstructed_tiff_image_conversions_tests)
+    set_tests_properties(reconstructed_tiff_image_conversions PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Complete experimental TIFF loading uses real image owners and the mounted file session.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_tiff_loader STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_image_loader.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_directory_reader.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_decode_strips.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_decode_tiles.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_decode_packbits.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_read_palette.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_palette_byte.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/tiff_vfs_read_word.cpp")
+    target_include_directories(beachlife_reconstructed_tiff_loader PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_tiff_loader PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_tiff_loader PUBLIC
+        beachlife_reconstructed_tiff_conversions
+        beachlife_retail_files)
+    add_dependencies(beachlife_reconstructed_tiff_loader verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_tiff_loader PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+
+    add_executable(reconstructed_tiff_image_loader_tests
+        tests/reconstructed_tiff_image_loader.cpp)
+    target_link_libraries(reconstructed_tiff_image_loader_tests PRIVATE
+        beachlife_reconstructed_tiff_loader)
+    set_target_properties(reconstructed_tiff_image_loader_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_tiff_loader PRIVATE /GL-)
+        target_compile_options(reconstructed_tiff_image_loader_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_tiff_loader PRIVATE -fno-lto)
+        target_compile_options(reconstructed_tiff_image_loader_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tiff_image_loader_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_tiff_image_loader
+        COMMAND reconstructed_tiff_image_loader_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/tiff-loader")
+    set_tests_properties(reconstructed_tiff_image_loader PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

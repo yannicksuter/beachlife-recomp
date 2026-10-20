@@ -1,0 +1,296 @@
+Route experimental TIFF input through the existing mounted file session.
+
+The original stdio bodies and matching profile stay intact. The stream-adapted
+word reader is the same original method and is selected once for this loader.
+
+diff --git a/src/tiff_decode_packbits.cpp b/src/tiff_decode_packbits.cpp
+index aba82fb..ae4df1d 100644
+--- a/src/tiff_decode_packbits.cpp
++++ b/src/tiff_decode_packbits.cpp
+@@ -1,8 +1,11 @@
+ #include "tga_image.h"
+ #include "tiff_read_context.h"
++#include "runtime/retail_files.h"
+ 
+ #include <stdlib.h>
+ 
++namespace files = beachlife::runtime::retail_files;
++
+ // FUNCTION: BEACHLIFE 0x004eb610
+ void TiffDecodePackBits(TgaImage* image, TiffReadContext* context)
+ {
+@@ -24,8 +27,8 @@ void TiffDecodePackBits(TgaImage* image, TiffReadContext* context)
+     unsigned char* buffer = static_cast<unsigned char*>(malloc(compressed_size));
+     for (int strip = 0; strip < static_cast<int>(context->strip_count); ++strip)
+     {
+-        fseek(context->file, context->strip_offsets[strip], SEEK_SET);
+-        fread(buffer, context->strip_byte_counts[strip], 1, context->file);
++        files::seek(context->file, context->strip_offsets[strip], files::SeekOrigin::begin);
++        files::read(buffer, context->strip_byte_counts[strip], 1, context->file);
+         unsigned int strip_rows;
+         if (static_cast<unsigned int>(strip) == context->strip_count - 1u)
+             strip_rows = last_rows;
+diff --git a/src/tiff_decode_strips.cpp b/src/tiff_decode_strips.cpp
+index f5e4639..45c5b10 100644
+--- a/src/tiff_decode_strips.cpp
++++ b/src/tiff_decode_strips.cpp
+@@ -1,5 +1,8 @@
+ #include "tga_image.h"
+ #include "tiff_read_context.h"
++#include "runtime/retail_files.h"
++
++namespace files = beachlife::runtime::retail_files;
+ 
+ // FUNCTION: BEACHLIFE 0x004eb4b0
+ void TiffDecodeStrips(TgaImage* image, TiffReadContext* context)
+@@ -7,8 +10,8 @@ void TiffDecodeStrips(TgaImage* image, TiffReadContext* context)
+     unsigned char* destination = image->pixels;
+     for (int strip = 0; strip < static_cast<int>(context->strip_count); ++strip)
+     {
+-        fseek(context->file, context->strip_offsets[strip], SEEK_SET);
+-        fread(destination, context->strip_byte_counts[strip], 1, context->file);
++        files::seek(context->file, context->strip_offsets[strip], files::SeekOrigin::begin);
++        files::read(destination, context->strip_byte_counts[strip], 1, context->file);
+         destination += context->strip_byte_counts[strip];
+     }
+ }
+diff --git a/src/tiff_decode_tiles.cpp b/src/tiff_decode_tiles.cpp
+index 562be8d..57e3b8e 100644
+--- a/src/tiff_decode_tiles.cpp
++++ b/src/tiff_decode_tiles.cpp
+@@ -1,5 +1,8 @@
+ #include "tga_image.h"
+ #include "tiff_read_context.h"
++#include "runtime/retail_files.h"
++
++namespace files = beachlife::runtime::retail_files;
+ 
+ // FUNCTION: BEACHLIFE 0x004eb510
+ void TiffDecodeTiles(TgaImage* image, TiffReadContext* context)
+@@ -19,12 +22,12 @@ void TiffDecodeTiles(TgaImage* image, TiffReadContext* context)
+         unsigned int horizontal_offset = 0;
+         for (int tile_column = 0; tile_column < static_cast<int>(tile_columns); ++tile_column)
+         {
+-            fseek(context->file, context->tile_offsets[tile_index], SEEK_SET);
++            files::seek(context->file, context->tile_offsets[tile_index], files::SeekOrigin::begin);
+             unsigned int current_height = context->tile_height;
+             for (int row = 0; row < static_cast<int>(current_height); ++row)
+             {
+                 unsigned int offset = (current_height * tile_row + row) * row_bytes + horizontal_offset;
+-                fread(pixels + offset, tile_row_bytes, 1, context->file);
++                files::read(pixels + offset, tile_row_bytes, 1, context->file);
+                 current_height = context->tile_height;
+             }
+             ++tile_index;
+diff --git a/src/tiff_directory_reader.cpp b/src/tiff_directory_reader.cpp
+index 7c614e4..14431b3 100644
+--- a/src/tiff_directory_reader.cpp
++++ b/src/tiff_directory_reader.cpp
+@@ -1,9 +1,12 @@
+ #include "tiff_read_context.h"
+-#include "startup_resource_binary_read.h"
++#include "runtime/retail_files.h"
++#include "tiff_vfs_read_word.h"
+ 
+ #include <new>
+ #include <string.h>
+ 
++namespace files = beachlife::runtime::retail_files;
++
+ struct TiffDirectoryEntry
+ {
+     short tag;
+@@ -15,12 +18,12 @@ struct TiffDirectoryEntry
+ // FUNCTION: BEACHLIFE 0x004eb920
+ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+ {
+-    fseek(context->file, offset, SEEK_SET);
++    files::seek(context->file, offset, files::SeekOrigin::begin);
+     int remaining = ReadResourceWord(context->file);
+     while (remaining != 0)
+     {
+         TiffDirectoryEntry entry;
+-        fread(&entry, 12, 1, context->file);
++        files::read(&entry, 12, 1, context->file);
+         switch (entry.tag)
+         {
+         case 256:
+@@ -42,10 +45,11 @@ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+             }
+             else
+             {
+-                long position = ftell(context->file);
+-                fseek(context->file, entry.value, SEEK_SET);
+-                fread(context->description, 1, entry.count, context->file);
+-                fseek(context->file, position, SEEK_SET);
++                files::Position position = static_cast<files::Position>(-1);
++                files::position(context->file, &position);
++                files::seek(context->file, entry.value, files::SeekOrigin::begin);
++                files::read(context->description, 1, entry.count, context->file);
++                files::seek(context->file, files::low_position(position), files::SeekOrigin::begin);
+             }
+             break;
+         case 273:
+@@ -91,7 +95,7 @@ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+         }
+         --remaining;
+     }
+-    fread(&context->next_directory_offset, 4, 1, context->file);
++    files::read(&context->next_directory_offset, 4, 1, context->file);
+ 
+     if (context->strip_offsets_position != 0)
+     {
+@@ -101,10 +105,10 @@ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+         context->strip_offsets = static_cast<unsigned int*>(::operator new(offset_bytes));
+         if (context->strip_count > 1)
+         {
+-            fseek(context->file, context->strip_byte_counts_position, SEEK_SET);
+-            fread(context->strip_byte_counts, context->strip_count << 2, 1, context->file);
+-            fseek(context->file, context->strip_offsets_position, SEEK_SET);
+-            fread(context->strip_offsets, context->strip_count << 2, 1, context->file);
++            files::seek(context->file, context->strip_byte_counts_position, files::SeekOrigin::begin);
++            files::read(context->strip_byte_counts, context->strip_count << 2, 1, context->file);
++            files::seek(context->file, context->strip_offsets_position, files::SeekOrigin::begin);
++            files::read(context->strip_offsets, context->strip_count << 2, 1, context->file);
+         }
+         else
+         {
+@@ -121,10 +125,10 @@ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+         context->tile_offsets = static_cast<unsigned int*>(::operator new(bytes));
+         if (static_cast<int>(tile_count) > 1)
+         {
+-            fseek(context->file, context->tile_byte_counts_position, SEEK_SET);
+-            fread(context->tile_byte_counts, bytes, 1, context->file);
+-            fseek(context->file, context->tile_offsets_position, SEEK_SET);
+-            fread(context->tile_offsets, bytes, 1, context->file);
++            files::seek(context->file, context->tile_byte_counts_position, files::SeekOrigin::begin);
++            files::read(context->tile_byte_counts, bytes, 1, context->file);
++            files::seek(context->file, context->tile_offsets_position, files::SeekOrigin::begin);
++            files::read(context->tile_offsets, bytes, 1, context->file);
+         }
+         else
+         {
+diff --git a/src/tiff_image_loader.cpp b/src/tiff_image_loader.cpp
+index cb41391..4ee7c14 100644
+--- a/src/tiff_image_loader.cpp
++++ b/src/tiff_image_loader.cpp
+@@ -1,10 +1,13 @@
+ #include "tiff_image_loader.h"
+ #include "tiff_read_context.h"
++#include "runtime/retail_files.h"
+ #include "tga_image.h"
+ #include <new>
+ #include <stdlib.h>
+ #include <string.h>
+ 
++namespace files = beachlife::runtime::retail_files;
++
+ struct TiffFileHeader
+ {
+     unsigned short byte_order;
+@@ -20,7 +23,7 @@ TgaImage* LoadTiffFile(const char* filename)
+     if (!context)
+         return 0;
+ 
+-    context->file = fopen(filename, "rb");
++    context->file = files::open(filename, "rb");
+     if (!context->file)
+     {
+         free(context);
+@@ -28,7 +31,7 @@ TgaImage* LoadTiffFile(const char* filename)
+     }
+ 
+     TiffFileHeader header;
+-    fread(&header, 8, 1, context->file);
++    files::read(&header, 8, 1, context->file);
+     if (header.byte_order != 0x4949)
+         return 0;
+     if (header.magic != 42)
+@@ -55,7 +58,7 @@ TgaImage* LoadTiffFile(const char* filename)
+ 
+     if (context->palette_offset)
+         TiffReadPalette(context, image->palette);
+-    fclose(context->file);
++    files::close(context->file);
+ 
+     if (context->samples_per_pixel == 4)
+     {
+diff --git a/src/tiff_read_context.h b/src/tiff_read_context.h
+index 678a67f..41fa5a1 100644
+--- a/src/tiff_read_context.h
++++ b/src/tiff_read_context.h
+@@ -1,6 +1,9 @@
+ #pragma once
+ 
+-#include <stdio.h>
++namespace beachlife::runtime::retail_files
++{
++struct File;
++}
+ 
+ struct TgaImage;
+ 
+@@ -9,9 +12,9 @@ struct TgaImage;
+ // alone do not establish linked implementations or a complete TIFF codec.
+ struct TiffReadContext
+ {
+-    FILE* file;                     // +0x00
+-    char description[80];           // +0x04, tag 270, no appended terminator on read
+-    unsigned short bits_per_sample; // +0x54, IFD tag 258 low word
++    beachlife::runtime::retail_files::File* file; // +0x00
++    char description[80];                         // +0x04, tag 270, no appended terminator on read
++    unsigned short bits_per_sample;               // +0x54, IFD tag 258 low word
+     unsigned char unknown_56[2];
+     unsigned int compression; // +0x58, IFD tag 259
+     unsigned int height;      // +0x5c, IFD tag 257
+diff --git a/src/tiff_read_palette.cpp b/src/tiff_read_palette.cpp
+index b8045e2..8f88605 100644
+--- a/src/tiff_read_palette.cpp
++++ b/src/tiff_read_palette.cpp
+@@ -1,11 +1,14 @@
+ #include "tiff_read_context.h"
++#include "runtime/retail_files.h"
+ #include "tiff_palette_byte.h"
+-#include "startup_resource_binary_read.h"
++#include "tiff_vfs_read_word.h"
++
++namespace files = beachlife::runtime::retail_files;
+ 
+ // FUNCTION: BEACHLIFE 0x004ebcf0
+ void TiffReadPalette(TiffReadContext* context, unsigned char* palette)
+ {
+-    fseek(context->file, static_cast<int>(context->palette_offset), SEEK_SET);
++    files::seek(context->file, static_cast<int>(context->palette_offset), files::SeekOrigin::begin);
+ 
+     for (int index = 0; index < 256; ++index)
+         palette[index * 3] = TiffPaletteByte(ReadResourceWord(context->file));
+diff --git a/src/tiff_vfs_read_word.cpp b/src/tiff_vfs_read_word.cpp
+new file mode 100644
+index 0000000..156c042
+--- /dev/null
++++ b/src/tiff_vfs_read_word.cpp
+@@ -0,0 +1,12 @@
++#include "tiff_vfs_read_word.h"
++
++namespace files = beachlife::runtime::retail_files;
++
++// Native stream adaptation; this is the same original method, counted once.
++// FUNCTION: BEACHLIFE 0x004eb440
++unsigned short ReadResourceWord(files::File* stream)
++{
++    unsigned short value;
++    files::read(&value, sizeof(value), 1, stream);
++    return value;
++}
+diff --git a/src/tiff_vfs_read_word.h b/src/tiff_vfs_read_word.h
+new file mode 100644
+index 0000000..9d2d134
+--- /dev/null
++++ b/src/tiff_vfs_read_word.h
+@@ -0,0 +1,6 @@
++#pragma once
++
++#include "runtime/retail_files.h"
++
++// Native stream adaptation of the existing scalar reader at 0x004eb440.
++unsigned short ReadResourceWord(beachlife::runtime::retail_files::File* stream);
