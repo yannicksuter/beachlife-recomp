@@ -1060,3 +1060,14 @@ image files are written only when explicitly requested. The target requires
 `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
 `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`; it adds no bundled assets or default CI
 input and does not change the reconstructed source profiles.
+
+The experimental `reconstructed_resource_raster_packed_tests` target exercises
+the packed sprite raster with 31 generated packet and pixel cases. It uses
+one reconstructed source file and checks the complete typed destination,
+palette, stream and guards, including the packed positive-left stores and
+original signed-byte packet quirks.
+Build it with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_resource_raster_packed$'`.
+This bounded raster test needs no game data and does not run resource loading
+or the game.

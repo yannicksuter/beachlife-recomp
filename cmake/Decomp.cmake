@@ -1706,3 +1706,34 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         unset(_resource_sprite_preview_arguments)
     endif()
 endif()
+
+# Packed encoded sprite raster with independent bounded packet and pixel fixtures.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_resource_raster_packed STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_raster1_packed.cpp")
+    target_include_directories(beachlife_reconstructed_resource_raster_packed PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_raster_packed PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_resource_raster_packed verify_reconstructed_source)
+
+    add_executable(reconstructed_resource_raster_packed_tests
+        tests/reconstructed_resource_raster_packed.cpp)
+    target_link_libraries(reconstructed_resource_raster_packed_tests PRIVATE
+        beachlife_reconstructed_resource_raster_packed)
+    set_target_properties(beachlife_reconstructed_resource_raster_packed
+        reconstructed_resource_raster_packed_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_raster_packed PRIVATE /GL-)
+        target_compile_options(reconstructed_resource_raster_packed_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_raster_packed PRIVATE -fno-lto)
+        target_compile_options(reconstructed_resource_raster_packed_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_raster_packed_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_raster_packed
+        COMMAND reconstructed_resource_raster_packed_tests)
+    set_tests_properties(reconstructed_resource_raster_packed PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
