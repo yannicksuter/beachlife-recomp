@@ -1091,7 +1091,12 @@ struct ManagerFrame
         }
         std::memset(value.unknown_54, pattern, sizeof(value.unknown_54));
 #endif
+#if defined(BEACHLIFE_DECOMP_MAIN_ITEM_PUBLICATION)
+        value.item_90 = nullptr;
+        std::memset(value.unknown_94, pattern, sizeof(value.unknown_94));
+#else
         std::memset(value.unknown_90, pattern, sizeof(value.unknown_90));
+#endif
         std::memset(value.unknown_c0, pattern, sizeof(value.unknown_c0));
         sentinel = {&sentinel, &sentinel};
         value.active.head = &sentinel;
@@ -1368,7 +1373,13 @@ struct ManagerScenario
             }
             check_bytes(managers[i].value.unknown_54, pattern);
 #endif
+#if defined(BEACHLIFE_DECOMP_MAIN_ITEM_PUBLICATION)
+            require(
+                managers[i].value.item_90 == nullptr, "manager unused main-item pointer changed");
+            check_bytes(managers[i].value.unknown_94, pattern);
+#else
             check_bytes(managers[i].value.unknown_90, pattern);
+#endif
             check_bytes(managers[i].value.unknown_c0, pattern);
             require(managers[i].value.renderer == nullptr &&
                         managers[i].value.registry == nullptr &&

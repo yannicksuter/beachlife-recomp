@@ -583,8 +583,8 @@ bool same_manager(const ScreenManager& a, const ScreenManager& b)
            a.value_138 == b.value_138 &&
            std::equal(std::begin(a.fonts_2c), std::end(a.fonts_2c), std::begin(b.fonts_2c)) &&
            std::equal(std::begin(a.fonts_04), std::end(a.fonts_04), std::begin(b.fonts_04)) &&
-           renderer_queue_test::same_bytes(a.unknown_54, b.unknown_54) &&
-           renderer_queue_test::same_bytes(a.unknown_90, b.unknown_90) &&
+           renderer_queue_test::same_bytes(a.unknown_54, b.unknown_54) && a.item_90 == b.item_90 &&
+           renderer_queue_test::same_bytes(a.unknown_94, b.unknown_94) &&
            renderer_queue_test::same_bytes(a.unknown_c0, b.unknown_c0);
 }
 } // namespace

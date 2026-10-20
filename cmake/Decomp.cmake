@@ -2799,3 +2799,104 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
 endif()
+# Complete MAIN handling creates the genuine Frame and uses actual context links.
+# Frame/resource/font dependencies retain their existing optional subsystem scope.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_main STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_main_item.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_main PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_main PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_main PUBLIC
+        beachlife_reconstructed_frame_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_gui_parse_main verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_main PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_main PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_main PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_parse_main_tests tests/reconstructed_gui_parse_main_item.cpp)
+        target_link_libraries(reconstructed_gui_parse_main_tests PRIVATE
+            beachlife_reconstructed_gui_parse_main)
+        set_target_properties(reconstructed_gui_parse_main_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_main_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_main_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_parse_main COMMAND reconstructed_gui_parse_main_tests)
+        add_test(NAME reconstructed_gui_parse_main_fatal_open
+            COMMAND reconstructed_gui_parse_main_tests --fatal-open)
+        set_tests_properties(reconstructed_gui_parse_main reconstructed_gui_parse_main_fatal_open
+            PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# The complete Dialog table owns real names, Frames and child rings.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_dialog_item STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_position.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_prepare.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_name_search.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_activation.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_attach.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_begin_transition.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_coordinates.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_draw.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_elapsed.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_hit.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_input38.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_move.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_names.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_resource_hit.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_slot08.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_slot1c.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_word4c.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_close.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_prepare_named.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_prepare.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_activation_globals.cpp")
+    target_include_directories(beachlife_reconstructed_dialog_item PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_dialog_item PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_dialog_item PUBLIC
+        beachlife_reconstructed_frame_item
+        beachlife_reconstructed_screen_placements)
+    add_dependencies(beachlife_reconstructed_dialog_item verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_dialog_item PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_dialog_item PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_dialog_item PRIVATE -fno-lto)
+    endif()
+
+    # The shared experimental Dialog declaration has one genuine constructor.
+    # These existing fixture archives retain their real methods; their generated
+    # subtypes now reach the actual owned name/Frame/rings instead of inheritance.
+    target_link_libraries(beachlife_reconstructed_screen_item PUBLIC
+        beachlife_reconstructed_dialog_item)
+    target_link_libraries(beachlife_reconstructed_screen_registry PUBLIC
+        beachlife_reconstructed_dialog_item)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_dialog_item_tests tests/reconstructed_dialog_item.cpp)
+        target_link_libraries(reconstructed_dialog_item_tests PRIVATE
+            beachlife_reconstructed_dialog_item)
+        set_target_properties(reconstructed_dialog_item_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_dialog_item_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_dialog_item_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_dialog_item COMMAND reconstructed_dialog_item_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/dialog-item-owner")
+        set_tests_properties(reconstructed_dialog_item PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()

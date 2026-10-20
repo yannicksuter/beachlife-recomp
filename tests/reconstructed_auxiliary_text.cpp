@@ -382,7 +382,8 @@ void initialize(Environment& e, const Literal& literal, const unsigned short* in
     manager.renderer = &e.renderer.value;
     std::fill(std::begin(manager.fonts_04), std::end(manager.fonts_04), nullptr);
     renderer_queue_test::pattern(manager.unknown_54, 0x56);
-    renderer_queue_test::pattern(manager.unknown_90, 0x67);
+    manager.item_90 = nullptr;
+    renderer_queue_test::pattern(manager.unknown_94, 0x67);
     renderer_queue_test::pattern(manager.unknown_c0, 0x78);
     manager.registry = nullptr;
     e.sentinel.value = {&e.sentinel.value, &e.sentinel.value};
@@ -516,7 +517,8 @@ void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
                 std::equal(std::begin(m.fonts_2c), std::end(m.fonts_2c), std::begin(n.fonts_2c)) &&
                 std::equal(std::begin(m.fonts_04), std::end(m.fonts_04), std::begin(n.fonts_04)) &&
                 renderer_queue_test::same_bytes(m.unknown_54, n.unknown_54) &&
-                renderer_queue_test::same_bytes(m.unknown_90, n.unknown_90) &&
+                m.item_90 == n.item_90 &&
+                renderer_queue_test::same_bytes(m.unknown_94, n.unknown_94) &&
                 renderer_queue_test::same_bytes(m.unknown_c0, n.unknown_c0),
         "manager prefix changed");
     verify_guards(a.manager, b.manager);

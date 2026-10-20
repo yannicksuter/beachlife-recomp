@@ -451,6 +451,12 @@ bool same_bytes(const unsigned char (&first)[N], const unsigned char (&second)[N
 // No renderer constructor, surface provider, or GPU behavior is supplied here.
 bool same_prefix(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b)
 {
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    if (a.fill_color != b.fill_color)
+    {
+        return false;
+    }
+#endif
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
     if (!same_bytes(a.unknown_a8, b.unknown_a8) || a.buffer_130 != b.buffer_130)
     {
@@ -513,6 +519,9 @@ void initialize(Frame& frame, unsigned short* pixels, ScreenSurfacePosition** su
     r.current_surface = -37;
     r.pixels_locked = 0xde;
     pattern(r.unknown_79, 0xef);
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    r.fill_color = std::bit_cast<unsigned short>(std::array<unsigned char, 2>{0x00, 0x11});
+#endif
     // Aggregate initialization already constructed the real native deque.
     // Only this generated setup seeds queue values and synchronizes its count.
     r.dirty_rectangle_count = 0;

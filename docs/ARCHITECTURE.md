@@ -404,3 +404,9 @@ dependency is included without additional matching credit. The early native
 compatibility series restores the prior declarations and removes both matching
 translation units before experimental patches supply their existing owners,
 preserving the native glyph implementation and source selections.
+
+The nine-byte menu exit callback has a strict matching reconstruction using
+the real USER32 PostQuitMessage import; raw bytes differ at its IAT address.
+The early native compatibility series removes this matching-only callback
+and its comparison fixture and import declaration before native composition,
+preserving native sources and selections. The comparison image is not run.

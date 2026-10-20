@@ -26,6 +26,12 @@ template <std::size_t N> bool same_bytes(const unsigned char (&a)[N], const unsi
 
 inline bool equal(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b)
 {
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    if (a.fill_color != b.fill_color)
+    {
+        return false;
+    }
+#endif
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
     if (!same_bytes(a.unknown_a8, b.unknown_a8) || a.buffer_130 != b.buffer_130)
     {
@@ -65,8 +71,11 @@ inline bool equal(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b
 inline std::size_t compared_bytes(const ScreenRequestRenderer& r)
 {
     std::size_t tail_bytes = 0;
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    tail_bytes += sizeof(r.fill_color);
+#endif
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
-    tail_bytes = sizeof(r.unknown_a8) + sizeof(r.buffer_130);
+    tail_bytes += sizeof(r.unknown_a8) + sizeof(r.buffer_130);
 #endif
     return sizeof(r.software_mode) + sizeof(r.unknown_01) + sizeof(r.width) + sizeof(r.height) +
            sizeof(r.clip_rectangle.x) + sizeof(r.clip_rectangle.y) +
@@ -124,6 +133,10 @@ inline void initialize(ScreenRequestRenderer& r, unsigned int seed)
     r.current_surface = -37;
     r.pixels_locked = 0xde;
     pattern(r.unknown_79, seed + 8U);
+#if defined(BEACHLIFE_DECOMP_SURFACE_PREPARE)
+    r.fill_color = std::bit_cast<unsigned short>(std::array<unsigned char, 2>{
+        static_cast<unsigned char>(seed + 8U + 37U), static_cast<unsigned char>(seed + 8U + 74U)});
+#endif
     r.dirty_rectangles.values = {{-7, -3, -2, 1}, {13, 17, 19, 23}};
     r.dirty_rectangle_count = 2;
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)

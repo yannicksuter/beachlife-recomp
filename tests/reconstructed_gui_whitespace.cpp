@@ -266,7 +266,12 @@ void initialize_manager(Guarded<ScreenManager>& object, std::size_t seed)
     }
     fill(object.value.unknown_54, seed + 1);
 #endif
+#if defined(BEACHLIFE_DECOMP_MAIN_ITEM_PUBLICATION)
+    object.value.item_90 = nullptr;
+    fill(object.value.unknown_94, seed + 2);
+#else
     fill(object.value.unknown_90, seed + 2);
+#endif
     fill(object.value.unknown_c0, seed + 3);
     object.value.renderer = nullptr;
     object.value.registry = nullptr;

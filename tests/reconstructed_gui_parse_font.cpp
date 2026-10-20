@@ -198,7 +198,8 @@ void manager_preserved(const ScreenManager& m, const ScreenManager& before, unsi
                 m.auxiliary_130 == before.auxiliary_130 && m.item_134 == before.item_134 &&
                 m.value_138 == before.value_138 &&
                 renderer_queue_test::same_bytes(m.unknown_54, before.unknown_54) &&
-                renderer_queue_test::same_bytes(m.unknown_90, before.unknown_90) &&
+                m.item_90 == before.item_90 &&
+                renderer_queue_test::same_bytes(m.unknown_94, before.unknown_94) &&
                 renderer_queue_test::same_bytes(m.unknown_c0, before.unknown_c0),
         "unrelated manager field changed");
     for (unsigned i = 0; i < 10; ++i)

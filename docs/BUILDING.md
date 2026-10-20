@@ -1331,3 +1331,23 @@ its owning child ring, resource-backed frame styles and real resource raster rou
 `reconstructed_frame_item` uses generated mounted resources and genuine item/resource
 lifetimes for literal pixel and clipping checks. It is a headless subsystem; the game
 controller, window presentation and full menu are separate integration work.
+
+The optional `reconstructed_gui_parse_main_tests` target connects the complete
+MAIN handler to genuine Frame construction and context links. Its generated
+inputs cover the unsigned 800-pixel branch, balanced nested-brace skipping,
+main-item publication, context push/pop and real fatal termination after a
+completed item is published. The fixture owns every constructed Frame and
+checks the real pool-slot returns. Parser, manager and renderer storage is an
+explicitly borrowed typed read model, not a complete game owner or menu.
+
+Enable `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS` and the default-off
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME` option, then build
+`reconstructed_gui_parse_main_tests` and select CTest names matching
+`^reconstructed_gui_parse_main(_fatal_open)?$`. The generated fixture is
+restricted to Linux with 64-bit pointers; other platforms and production
+GUI flow are separate qualifications.
+The experimental headless Dialog fixture constructs the complete Dialog and
+its owned Frame and child rings, then exercises real resource drawing, hit tests,
+dragging and transition completion. It uses generated mounted files and typed
+borrowed manager, renderer and window read models. This qualifies a subsystem;
+it does not start the original Intro controller or provide a GUI context owner.

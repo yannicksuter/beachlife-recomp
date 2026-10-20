@@ -242,7 +242,12 @@ void watch(Snapshot<Guarded<ScreenManager>>& s)
     s.watch(o.value.unknown_54);
 #endif
     s.watch(o.value.registry);
+#if defined(BEACHLIFE_DECOMP_MAIN_ITEM_PUBLICATION)
+    s.watch(o.value.item_90);
+    s.watch(o.value.unknown_94);
+#else
     s.watch(o.value.unknown_90);
+#endif
     s.watch(o.value.active.head);
     s.watch(o.value.unknown_c0);
     s.watch(o.value.mode);
@@ -475,7 +480,12 @@ struct Fixture
             }
             std::memset(m.value.unknown_54, 0x29 + i, sizeof(m.value.unknown_54));
 #endif
+#if defined(BEACHLIFE_DECOMP_MAIN_ITEM_PUBLICATION)
+            m.value.item_90 = nullptr;
+            std::memset(m.value.unknown_94, 0xa3 + i, sizeof(m.value.unknown_94));
+#else
             std::memset(m.value.unknown_90, 0xa3 + i, sizeof(m.value.unknown_90));
+#endif
             std::memset(m.value.unknown_c0, 0x5e + i, sizeof(m.value.unknown_c0));
             m.value.mode = -75;
             m.value.previous_mode = 123;

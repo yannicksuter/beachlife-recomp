@@ -228,7 +228,8 @@ struct Environment
         m.renderer = &renderer.value;
         std::fill(std::begin(m.fonts_04), std::end(m.fonts_04), nullptr);
         renderer_queue_test::pattern(m.unknown_54, 0x52);
-        renderer_queue_test::pattern(m.unknown_90, 0x63);
+        m.item_90 = nullptr;
+        renderer_queue_test::pattern(m.unknown_94, 0x63);
         renderer_queue_test::pattern(m.unknown_c0, 0x74);
         m.mode = -11;
         m.previous_mode = 13;
@@ -367,7 +368,8 @@ void verify_manager(const ScreenManager& a, const ScreenManager& b)
                 std::equal(std::begin(a.fonts_2c), std::end(a.fonts_2c), std::begin(b.fonts_2c)) &&
                 std::equal(std::begin(a.fonts_04), std::end(a.fonts_04), std::begin(b.fonts_04)) &&
                 renderer_queue_test::same_bytes(a.unknown_54, b.unknown_54) &&
-                renderer_queue_test::same_bytes(a.unknown_90, b.unknown_90) &&
+                a.item_90 == b.item_90 &&
+                renderer_queue_test::same_bytes(a.unknown_94, b.unknown_94) &&
                 renderer_queue_test::same_bytes(a.unknown_c0, b.unknown_c0),
         "manager fields differ");
 }
