@@ -19,6 +19,17 @@ static_assert(!std::is_trivially_copyable_v<ScreenRequestRenderer>);
 static_assert(std::is_same_v<decltype(&ScreenRequestRenderer::SetWord60),
     void (ScreenRequestRenderer::*)(unsigned int)>);
 
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+constexpr std::size_t native_word_offset = 108;
+constexpr std::size_t native_table_offset = 120;
+constexpr std::size_t native_current_offset = 144;
+constexpr std::size_t native_queue_offset = 152;
+#else
+constexpr std::size_t native_word_offset = 104;
+constexpr std::size_t native_table_offset = 112;
+constexpr std::size_t native_current_offset = 128;
+constexpr std::size_t native_queue_offset = 136;
+#endif
 const char* current_case = "layout";
 unsigned calls = 0;
 unsigned checks = 0;
@@ -54,20 +65,22 @@ void check_layout(const ScreenRequestRenderer& r)
 {
     // Check actual member addresses without offsetof on a possibly non-standard
     // library-containing type. The x86 field name does not impose its x86 offset.
-    require(offset(r, r.unknown_5e) == 102 && sizeof(r.unknown_5e) == 2,
+    require(offset(r, r.unknown_5e) == native_word_offset - 2 && sizeof(r.unknown_5e) == 2,
         "leading opaque extent differs");
-    require(offset(r, &r.word_60) == 104 && sizeof(r.word_60) == 4 &&
+    require(offset(r, &r.word_60) == native_word_offset && sizeof(r.word_60) == 4 &&
                 reinterpret_cast<std::uintptr_t>(&r.word_60) % alignof(unsigned int) == 0,
         "native word location or alignment differs");
-    require(offset(r, r.unknown_64) == 108 && sizeof(r.unknown_64) == 4,
+    require(offset(r, r.unknown_64) == native_word_offset + 4 && sizeof(r.unknown_64) == 4,
         "trailing opaque extent differs");
-    require(offset(r, &r.surfaces) == 112 && offset(r, &r.current_surface) == 128 &&
-                offset(r, &r.dirty_rectangles) == 136,
+    require(offset(r, &r.surfaces) == native_table_offset &&
+                offset(r, &r.current_surface) == native_current_offset &&
+                offset(r, &r.dirty_rectangles) == native_queue_offset,
         "retained suffix moved");
-    require(offset(r, &r.dirty_rectangle_count) == 136 + sizeof(RendererRectangleQueue),
+    require(
+        offset(r, &r.dirty_rectangle_count) == native_queue_offset + sizeof(RendererRectangleQueue),
         "native queue or count extent differs");
     const std::size_t prefix_end =
-        136 + sizeof(RendererRectangleQueue) + sizeof(r.dirty_rectangle_count);
+        native_queue_offset + sizeof(RendererRectangleQueue) + sizeof(r.dirty_rectangle_count);
     std::size_t end = prefix_end;
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
     require(offset(r, r.unknown_a8) == prefix_end && sizeof(r.unknown_a8) == 0x88,
@@ -148,13 +161,14 @@ int main()
     {
         exercise();
         std::printf("renderer-word60 groups=3 calls=%u checks=%u logical-bytes=%zu "
-                    "renderer-size=%zu renderer-align=%zu queue-size=%zu word-offset=104 pass\n",
+                    "renderer-size=%zu renderer-align=%zu queue-size=%zu word-offset=%zu pass\n",
             calls,
             checks,
             logical_bytes,
             sizeof(ScreenRequestRenderer),
             alignof(ScreenRequestRenderer),
-            sizeof(RendererRectangleQueue));
+            sizeof(RendererRectangleQueue),
+            native_word_offset);
         return 0;
     }
     catch (const CheckFailure& failure)

@@ -371,7 +371,12 @@ bool run(const Scenario& scenario)
 #if !defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
     fill(renderer.unknown_0c, 0x23);
 #endif
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    renderer.surfaces_end = nullptr;
+    renderer.surfaces_capacity = nullptr;
+#else
     fill(renderer.unknown_6c, 0x93);
+#endif
     renderer.current_surface = static_cast<int>(scenario.slot) - static_cast<int>(scenario.base);
     renderer.pixels_locked = static_cast<unsigned char>(scenario.locked);
     for (unsigned int n = 0; n < 3; ++n)
@@ -386,7 +391,13 @@ bool run(const Scenario& scenario)
         entry.pixels =
             scenario.output == 0 ? nullptr : fixture.pixels[n].value.words + scenario.output;
         entry.surface = &fixture.devices[n].value;
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+        entry.video_memory = static_cast<unsigned char>(n + 0xa3);
+        // Retain the old stride-37 bytes after the newly typed first byte.
+        fill(entry.unknown_0d, n + 0xa3 + 37U);
+#else
         fill(entry.unknown_0c, n + 0xa3);
+#endif
         entry.width = 100U + n;
         entry.height = 200U + n;
         entry.pitch = 300U + n;

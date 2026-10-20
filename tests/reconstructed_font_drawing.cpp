@@ -273,9 +273,9 @@ bool same_surface(const ScreenSurfacePosition& a, const ScreenSurfacePosition& b
     return a.active == b.active && a.software == b.software &&
            std::equal(std::begin(a.unknown_02), std::end(a.unknown_02), std::begin(b.unknown_02)) &&
            a.pixels == b.pixels && a.surface == b.surface &&
-           std::equal(std::begin(a.unknown_0c), std::end(a.unknown_0c), std::begin(b.unknown_0c)) &&
-           a.width == b.width && a.height == b.height && a.pitch == b.pitch &&
-           a.position.x == b.position.x && a.position.y == b.position.y && a.prepared == b.prepared;
+           renderer_queue_test::same_entry_extension(a, b) && a.width == b.width &&
+           a.height == b.height && a.pitch == b.pitch && a.position.x == b.position.x &&
+           a.position.y == b.position.y && a.prepared == b.prepared;
 }
 
 struct Pixel

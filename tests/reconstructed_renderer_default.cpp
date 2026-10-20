@@ -142,7 +142,7 @@ bool equal_entry(const ScreenSurfacePosition& a, const ScreenSurfacePosition& b)
 {
     return a.active == b.active && a.software == b.software &&
            renderer_queue_test::same_bytes(a.unknown_02, b.unknown_02) && a.pixels == b.pixels &&
-           a.surface == b.surface && renderer_queue_test::same_bytes(a.unknown_0c, b.unknown_0c) &&
+           a.surface == b.surface && renderer_queue_test::same_entry_extension(a, b) &&
            a.width == b.width && a.height == b.height && a.pitch == b.pitch &&
            a.position.x == b.position.x && a.position.y == b.position.y && a.prepared == b.prepared;
 }
@@ -258,7 +258,7 @@ void run(Case kind)
         e.active = static_cast<unsigned char>(0x41 + i);
         e.software = static_cast<unsigned char>(0x51 + i);
         renderer_queue_test::pattern(e.unknown_02, static_cast<unsigned>(71 + i));
-        renderer_queue_test::pattern(e.unknown_0c, static_cast<unsigned>(91 + i));
+        renderer_queue_test::initialize_entry_extension(e, static_cast<unsigned>(91 + i));
         e.pixels = i == 0 ? f.destination.value.data() + 4 : f.other.value.data() + 4;
         e.surface = &f.devices[i].value;
         e.width = 80;

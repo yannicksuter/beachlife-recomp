@@ -2900,3 +2900,151 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
 endif()
+# Complete software-surface allocation/table growth using existing real pool/cleanup.
+# This subsystem target remains below the existing reconstructed-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_surface_create STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_create.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_surface_initialize.cpp")
+    target_include_directories(beachlife_reconstructed_surface_create PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_surface_create PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_surface_create PUBLIC
+        beachlife_reconstructed_pool_refill
+        beachlife_reconstructed_surfaces
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_surface_create verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_surface_create PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_surface_create PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_surface_create PRIVATE -fno-lto)
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_surface_create_tests tests/reconstructed_surface_create.cpp)
+        target_link_libraries(reconstructed_surface_create_tests PRIVATE
+            beachlife_reconstructed_surface_create)
+        set_target_properties(reconstructed_surface_create_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_surface_create_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_surface_create_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_surface_create COMMAND reconstructed_surface_create_tests)
+        set_tests_properties(reconstructed_surface_create PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# The complete Dialog handler uses the real owned Dialog/Frame and parser links.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_dialog STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_dialog.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_dialog PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_dialog PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_dialog PUBLIC
+        beachlife_reconstructed_dialog_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_gui_parse_dialog verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_dialog PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_dialog PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_dialog PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_parse_dialog_tests tests/reconstructed_gui_parse_dialog.cpp)
+        target_link_libraries(reconstructed_gui_parse_dialog_tests PRIVATE
+            beachlife_reconstructed_gui_parse_dialog)
+        set_target_properties(reconstructed_gui_parse_dialog_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_dialog_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_dialog_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_parse_dialog COMMAND reconstructed_gui_parse_dialog_tests)
+        add_test(NAME reconstructed_gui_parse_dialog_fatal_bracket
+            COMMAND reconstructed_gui_parse_dialog_tests --fatal-bracket)
+        add_test(NAME reconstructed_gui_parse_dialog_fatal_brace
+            COMMAND reconstructed_gui_parse_dialog_tests --fatal-brace)
+        set_tests_properties(reconstructed_gui_parse_dialog
+            reconstructed_gui_parse_dialog_fatal_bracket reconstructed_gui_parse_dialog_fatal_brace
+            PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+        # Keep the real process-exit gate. Qualification also checks the two
+        # exact cleanup markers; a matching line must not override a failed exit.
+    endif()
+endif()
+# Complete RequestScreen keeps real Dialog, list and software-surface children.
+# This optional subsystem target remains below the existing test-only return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_request STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_request.cpp")
+    target_include_directories(beachlife_reconstructed_screen_request PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_request PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_screen_request PUBLIC
+        beachlife_reconstructed_dialog_item
+        beachlife_reconstructed_surface_create
+        beachlife_reconstructed_active_list_cleanup
+        beachlife_reconstructed_gui_context)
+    add_dependencies(beachlife_reconstructed_screen_request verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_screen_request PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_request PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_request PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_screen_request_tests tests/reconstructed_screen_request.cpp)
+        target_link_libraries(reconstructed_screen_request_tests PRIVATE
+            beachlife_reconstructed_screen_request)
+        set_target_properties(reconstructed_screen_request_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_screen_request_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_request_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_screen_request COMMAND reconstructed_screen_request_tests)
+        set_tests_properties(reconstructed_screen_request PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# Closing active screens keeps real Dialog, list, placement and surface owners.
+# This focused optional subsystem follows the existing test-only return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_close_active_screens STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_close_active.cpp")
+    target_include_directories(beachlife_reconstructed_close_active_screens PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_close_active_screens PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_close_active_screens PUBLIC
+        beachlife_reconstructed_screen_request
+        beachlife_reconstructed_active_node_erase)
+    add_dependencies(beachlife_reconstructed_close_active_screens verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_close_active_screens PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_close_active_screens PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_close_active_screens PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_close_active_screens_tests
+            tests/reconstructed_close_active_screens.cpp)
+        target_link_libraries(reconstructed_close_active_screens_tests PRIVATE
+            beachlife_reconstructed_close_active_screens)
+        set_target_properties(reconstructed_close_active_screens_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_close_active_screens_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_close_active_screens_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_close_active_screens
+            COMMAND reconstructed_close_active_screens_tests)
+        set_tests_properties(reconstructed_close_active_screens PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()

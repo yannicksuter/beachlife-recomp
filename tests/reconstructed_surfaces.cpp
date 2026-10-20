@@ -201,7 +201,11 @@ void mutate(Frame& frame, const Context& context)
     if (context.mask & 128)
     {
         object.unknown_02[0] = 0x42;
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+        object.unknown_0d[2] = 0x61;
+#else
         object.unknown_0c[3] = 0x61;
+#endif
     }
 }
 
@@ -272,6 +276,9 @@ void run_cleanup(Method method,
     std::memset(&actual, static_cast<int>(pattern & 255), sizeof(actual));
     actual.object.active = static_cast<unsigned char>(active);
     actual.object.software = static_cast<unsigned char>(software);
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    actual.object.video_memory = static_cast<unsigned char>(pattern);
+#endif
     actual.object.pixels = owned;
     actual.object.surface = active && !software ? &primary : nullptr;
     actual.object.width = 0xffffffffu ^ (active * 0x01010101u);
@@ -540,6 +547,14 @@ void run_position(unsigned int layout, unsigned int base_index, unsigned int ind
     {
         entry.value.active = static_cast<unsigned char>(n * 37);
         entry.value.software = static_cast<unsigned char>(n * 63);
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+        // Preserve the exact old byte-pattern value at this newly named byte.
+        entry.value.video_memory = static_cast<unsigned char>(
+            (reinterpret_cast<std::uintptr_t>(&entry.value.video_memory) -
+                reinterpret_cast<std::uintptr_t>(&surfaces)) *
+                37 +
+            0x98);
+#endif
         entry.value.pixels = n % 2 ? borrowed_pixels : nullptr;
         entry.value.surface = n % 3 ? &interface : nullptr;
         entry.value.width = n * 5;

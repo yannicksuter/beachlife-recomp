@@ -1351,3 +1351,35 @@ its owned Frame and child rings, then exercises real resource drawing, hit tests
 dragging and transition completion. It uses generated mounted files and typed
 borrowed manager, renderer and window read models. This qualifies a subsystem;
 it does not start the original Intro controller or provide a GUI context owner.
+
+The experimental `reconstructed_surface_create` test selects the complete surface
+creation and initialization methods with the real pool refill and cleanup code.
+Its Linux optimized and sanitizer gate covers first-inactive reuse, pointer-table
+growth across the native 128-byte pool threshold, and bounded software-image
+allocation/release. The hardware DirectDraw branch remains in source but is not
+exercised; this is a subsystem test, not a complete renderer or game session.
+
+The experimental `reconstructed_gui_parse_dialog_tests` target exercises the
+complete Dialog script handler with genuine Dialog and owned Frame lifetimes,
+real readers, registration and context links. Generated inputs check numbering,
+absolute bounds, attachment priority and the existing integer-reader quirks.
+The two fatal cases invoke the real reporter in separate processes and observe
+publication before explicitly cleaning up the test-owned graph. This is a
+bounded parser subsystem test; the complete parser/manager owners and running
+front-end remain separate integration work.
+
+The experimental `reconstructed_screen_request_tests` target exercises complete
+screen requests through genuine Dialog/Frame lifetimes, active-list insertion,
+saved placement and software-surface creation/preparation. Its generated cases
+use the initial front-end's null-context domain. Nonnull context callbacks,
+hardware surfaces and complete manager/game ownership remain separate gates.
+The target is available with reconstructed tests and experimental game sources
+enabled; it does not connect the production controller or enable a menu.
+
+The experimental `reconstructed_close_active_screens_tests` target checks active
+screen closing with genuine Dialog/Frame ownership, software surfaces and the
+existing list, placement and pool implementations. Three generated groups cover
+empty lists, closing-state publication and same-group placement order, and both
+mode-6 placement exclusions. Cleanup uses real surface and node operations.
+The Linux 64-bit fixture uses null contexts and typed subsystem read models;
+full manager construction, nonnull callbacks and gameplay remain separate.

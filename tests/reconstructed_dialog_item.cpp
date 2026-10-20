@@ -56,10 +56,17 @@ static_assert(sizeof(WindowDeactivationState) == 0x43c);
 static_assert(sizeof(SurfaceColorKey) == 8);
 static_assert(offsetof(DirectDrawSurface7VtablePrefix, SetColorKey) == 29 * sizeof(void*));
 static_assert(sizeof(DirectDrawSurface7VtablePrefix) == 33 * sizeof(void*));
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+static_assert(sizeof(void*) == 8 && sizeof(ScreenRequestRenderer) == 384);
+static_assert(offsetof(ScreenRequestRenderer, fill_color) == 150);
+static_assert(offsetof(ScreenRequestRenderer, word_60) == 108);
+static_assert(offsetof(ScreenRequestRenderer, buffer_130) == 376);
+#else
 static_assert(sizeof(void*) == 8 && sizeof(ScreenRequestRenderer) == 368);
 static_assert(offsetof(ScreenRequestRenderer, fill_color) == 134);
 static_assert(offsetof(ScreenRequestRenderer, word_60) == 104);
 static_assert(offsetof(ScreenRequestRenderer, buffer_130) == 360);
+#endif
 
 struct Failure
 {

@@ -602,8 +602,13 @@ void prepare(const Literal& literal)
     std::memset(
         observed.renderer.value.unknown_0c, 0x34, sizeof(observed.renderer.value.unknown_0c));
 #endif
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    observed.renderer.value.surfaces_end = nullptr;
+    observed.renderer.value.surfaces_capacity = nullptr;
+#else
     std::memset(
         observed.renderer.value.unknown_6c, 0x56, sizeof(observed.renderer.value.unknown_6c));
+#endif
     observed.expected_renderer = literal.dimensions.present ? &observed.renderer.value : nullptr;
     screen_request_renderer = observed.expected_renderer;
 

@@ -1,0 +1,288 @@
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 96c0f9f..1180d0c 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -3,6 +3,7 @@
+ 
+ #define BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER 1
+ #define BEACHLIFE_DECOMP_SURFACE_PREPARE        1
++#define BEACHLIFE_DECOMP_SURFACE_TABLE          1
+ 
+ #include "startup_directdraw_surface.h"
+ #include "startup_render_rectangle.h"
+@@ -25,7 +26,8 @@
+     unsigned char unknown_02[2];
+     unsigned short* pixels;
+     DirectDrawSurface7Prefix* surface;
+-    unsigned char unknown_0c[4];
++    unsigned char video_memory;
++    unsigned char unknown_0d[3];
+     unsigned int width;
+     unsigned int height;
+     unsigned int pitch;
+@@ -46,7 +48,9 @@
+     unsigned int height;
+     RenderRectangle clip_rectangle;
+     unsigned short* pixels_1c;
+-    unsigned char unknown_20[0x24];
++    unsigned char unknown_20[0x18];
++    DirectDraw7Prefix* draw;
++    unsigned char unknown_3c[8];
+     // Observed word tested against 1; complete format domain is unresolved.
+     unsigned int format_44;
+     unsigned char unknown_48[5];
+@@ -62,7 +66,8 @@
+     unsigned int word_60;
+     unsigned char unknown_64[4];
+     ScreenSurfacePosition** surfaces;
+-    unsigned char unknown_6c[8];
++    ScreenSurfacePosition** surfaces_end;
++    ScreenSurfacePosition** surfaces_capacity;
+     int current_surface;
+     unsigned char pixels_locked;
+     unsigned char unknown_79[1];
+@@ -89,6 +94,7 @@
+     void RenderDefault();
+ 
+     int CreateSurface(int width, int height, int mode);
++    void InitializeSurface(int width, int height, ScreenSurfacePosition* entry, unsigned char mode);
+     void PrepareSurface(int surface);
+     unsigned short* AccessPixels();
+     void UnlockPixels();
+diff --git a/src/startup_directdraw_surface.h b/src/startup_directdraw_surface.h
+index aa81bbb..e89662f 100644
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -12,6 +12,8 @@
+ // The observed IDirectDrawSurface7 ABI prefix, not its complete declaration.
+ // HRESULT is a signed 32-bit result; unused method signatures remain opaque.
+ struct DirectDrawSurface7Prefix;
++struct DirectDraw7Prefix;
++struct SurfaceOuterUnknown;
+ struct SurfaceApiRectangle;
+ 
+ struct SurfaceColorKey
+@@ -35,6 +37,10 @@
+ };
+ 
+ typedef int SurfaceResult;
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceCreateMethod)(
++    DirectDraw7Prefix*, SurfaceDescription*, DirectDrawSurface7Prefix**, SurfaceOuterUnknown*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceDescriptionMethod)(
++    DirectDrawSurface7Prefix*, SurfaceDescription*);
+ typedef unsigned int(SURFACE_STDCALL* SurfaceReleaseMethod)(DirectDrawSurface7Prefix*);
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceStatusMethod)(DirectDrawSurface7Prefix*);
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(DirectDrawSurface7Prefix*,
+@@ -50,7 +56,9 @@
+ {
+     void* unused_00[2];
+     SurfaceReleaseMethod Release;
+-    void* unused_0c[21];
++    void* unused_0c[19];
++    SurfaceDescriptionMethod GetSurfaceDesc;
++    void* unused_5c;
+     SurfaceStatusMethod IsLost;
+     SurfaceLockMethod Lock;
+     void* unused_68;
+@@ -66,4 +74,15 @@
+     const DirectDrawSurface7VtablePrefix* vtable;
+ };
+ 
++struct DirectDraw7VtablePrefix
++{
++    void* unused_00[6];
++    SurfaceCreateMethod CreateSurface;
++};
++
++struct DirectDraw7Prefix
++{
++    const DirectDraw7VtablePrefix* vtable;
++};
++
+ #endif
+diff --git a/src/startup_surface_create.cpp b/src/startup_surface_create.cpp
+new file mode 100644
+index 0000000..a8de73c
+--- /dev/null
++++ b/src/startup_surface_create.cpp
+@@ -0,0 +1,123 @@
++#include "startup_screen_renderer.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_refill.h"
++#include "pool_return.h"
++
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0040def0
++int ScreenRequestRenderer::CreateSurface(int image_width, int image_height, int mode)
++{
++    ScreenSurfacePosition* selected = 0;
++    unsigned int index = 0;
++    ScreenSurfacePosition** scan = surfaces;
++    if (surfaces_end != surfaces)
++    {
++        do
++        {
++            if (scan[index]->active == 0)
++            {
++                selected = scan[index];
++                break;
++            }
++            ++index;
++        } while (index < static_cast<unsigned int>(surfaces_end - surfaces));
++    }
++
++    if (selected != 0)
++    {
++        selected->active = 1;
++    }
++    else
++    {
++        void* storage = ::operator new(sizeof(ScreenSurfacePosition));
++        if (storage != 0)
++        {
++            // Begin the complete trivial entry lifetime without clearing it.
++            selected = ::new (storage) ScreenSurfacePosition;
++            selected->active = 1;
++            selected->position.x = 0;
++            selected->position.y = 0;
++            selected->prepared = 0;
++        }
++
++        // Equal null endpoints represent the observed empty table. Avoid a
++        // null pointer subtraction while retaining its original zero size.
++        index = surfaces_end == surfaces ? 0 : static_cast<unsigned int>(surfaces_end - surfaces);
++        ScreenSurfacePosition** end = surfaces_end;
++        if (end != surfaces_capacity)
++        {
++            if (end != 0)
++                *end = selected;
++            ++surfaces_end;
++        }
++        else
++        {
++            unsigned int count = end == surfaces ? 0 : static_cast<unsigned int>(end - surfaces);
++            unsigned int capacity = count + (count < 1 ? 1 : count);
++            typedef ScreenSurfacePosition* SurfacePointer;
++            SurfacePointer* replacement = 0;
++            if (capacity != 0)
++            {
++                unsigned int bytes = capacity * sizeof(SurfacePointer);
++                void* table_storage;
++                if (bytes > 128)
++                {
++                    table_storage = ::operator new(bytes);
++                }
++                else
++                {
++                    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
++                    AcquirePoolLock(&pool_lock_word);
++                    PoolLockGuard guard;
++                    PoolChunkLink* block = *bucket;
++                    if (block != 0)
++                    {
++                        *bucket = block->next;
++                        table_storage = block;
++                    }
++                    else
++                    {
++                        table_storage = RefillPool(bytes);
++                    }
++                }
++                // Nonallocating default construction provides a live pointer
++                // array without clearing unused capacity or changing allocator.
++                replacement = ::new (table_storage) SurfacePointer[capacity];
++            }
++
++            SurfacePointer* appended;
++            if (end == surfaces)
++            {
++                appended = replacement;
++            }
++            else
++            {
++                unsigned int bytes = static_cast<unsigned int>((end - surfaces) * sizeof(SurfacePointer));
++                void* copied = memmove(replacement, surfaces, bytes);
++                appended = static_cast<SurfacePointer*>(copied) + bytes / sizeof(SurfacePointer);
++            }
++            *appended = selected;
++            ++appended;
++
++            if (surfaces != 0)
++            {
++                unsigned int old_bytes = static_cast<unsigned int>(
++                    (surfaces_capacity - surfaces) * sizeof(SurfacePointer));
++                if (old_bytes > 128)
++                    ::operator delete(surfaces);
++                else
++                    ReturnPool(surfaces, old_bytes);
++            }
++            surfaces = replacement;
++            surfaces_end = appended;
++            surfaces_capacity = replacement + capacity;
++        }
++    }
++
++    InitializeSurface(image_width, image_height, selected, static_cast<unsigned char>(mode));
++    return static_cast<int>(index);
++}
+diff --git a/src/startup_surface_initialize.cpp b/src/startup_surface_initialize.cpp
+new file mode 100644
+index 0000000..05ad58d
+--- /dev/null
++++ b/src/startup_surface_initialize.cpp
+@@ -0,0 +1,51 @@
++#include "startup_screen_renderer.h"
++
++#include <string.h>
++
++void StartupFatal(const char* format, ...);
++
++// Descriptive names; original class and declaration are unknown.
++// FUNCTION: BEACHLIFE 0x0040e500
++void ScreenRequestRenderer::InitializeSurface(
++    int image_width, int image_height, ScreenSurfacePosition* entry, unsigned char mode)
++{
++    if (!software_mode)
++    {
++        SurfaceDescription description;
++        memset(&description, 0, sizeof(description));
++        description.size = sizeof(description);
++        description.flags = 7;
++        description.caps = 0x4040;
++        if (mode)
++            description.caps = 0x840;
++        description.width = image_width;
++        description.height = image_height;
++        entry->video_memory = 1;
++        SurfaceResult result = draw->vtable->CreateSurface(draw, &description, &entry->surface, 0);
++        if (result == (SurfaceResult)0x8876017c)
++        {
++            entry->video_memory = 0;
++            description.caps = 0x840;
++            if (draw->vtable->CreateSurface(draw, &description, &entry->surface, 0))
++                StartupFatal("Error creating surface");
++        }
++        DirectDrawSurface7Prefix* surface = entry->surface;
++        entry->width = image_width;
++        entry->height = image_height;
++        memset(&description, 0, sizeof(description));
++        description.size = sizeof(description);
++        entry->software = 0;
++        surface->vtable->GetSurfaceDesc(surface, &description);
++        entry->pitch = description.pitch;
++        entry->prepared = 0;
++    }
++    else
++    {
++        entry->software = 1;
++        entry->pixels = new unsigned short[image_width * image_height];
++        entry->width = image_width;
++        entry->height = image_height;
++        entry->pitch = image_width * 2;
++        entry->prepared = 0;
++    }
++}
