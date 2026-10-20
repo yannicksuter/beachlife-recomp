@@ -1,0 +1,217 @@
+diff --git a/src/startup_resource_binary_read.h b/src/startup_resource_binary_read.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_binary_read.h
+@@ -0,0 +1,12 @@
++#ifndef STARTUP_RESOURCE_BINARY_READ_H
++#define STARTUP_RESOURCE_BINARY_READ_H
++
++#include <stdio.h>
++
++// Real cdecl readers at 0x004eb420, 0x004eb440 and 0x004eb460.
++// Each calls actual fread; their source/native ABI remains a separate gate.
++unsigned char ReadResourceByte(FILE* stream);
++unsigned short ReadResourceWord(FILE* stream);
++unsigned int ReadResourceDword(FILE* stream);
++
++#endif
+diff --git a/src/startup_resource_read_byte.cpp b/src/startup_resource_read_byte.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_read_byte.cpp
+@@ -0,0 +1,9 @@
++#include "startup_resource_binary_read.h"
++
++// FUNCTION: BEACHLIFE 0x004eb420
++unsigned char ReadResourceByte(FILE* stream)
++{
++    unsigned char value;
++    fread(&value, sizeof(value), 1, stream);
++    return value;
++}
+diff --git a/src/startup_resource_read_dword.cpp b/src/startup_resource_read_dword.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_read_dword.cpp
+@@ -0,0 +1,9 @@
++#include "startup_resource_binary_read.h"
++
++// FUNCTION: BEACHLIFE 0x004eb460
++unsigned int ReadResourceDword(FILE* stream)
++{
++    unsigned int value;
++    fread(&value, sizeof(value), 1, stream);
++    return value;
++}
+diff --git a/src/startup_resource_read_word.cpp b/src/startup_resource_read_word.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_read_word.cpp
+@@ -0,0 +1,9 @@
++#include "startup_resource_binary_read.h"
++
++// FUNCTION: BEACHLIFE 0x004eb440
++unsigned short ReadResourceWord(FILE* stream)
++{
++    unsigned short value;
++    fread(&value, sizeof(value), 1, stream);
++    return value;
++}
+diff --git a/src/startup_screen_dialog_frame_constructor.cpp b/src/startup_screen_dialog_frame_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_constructor.cpp
+@@ -0,0 +1,29 @@
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x00416ce0
++ScreenDialogResourceFrame::ScreenDialogResourceFrame()
++{
++    name = 0;
++    count_0a = 0;
++    plane_count_0c = 0;
++    width_0e = 0;
++    height_10 = 0;
++    unknown_12[0] = 0;
++    unknown_12[1] = 0;
++    word_14 = 0;
++    data_size_18 = 0;
++    file_offset_1c = 0;
++    data_4c = 0;
++    offsets_70 = 0;
++    indices_44 = 0;
++    offset_count_40 = 0;
++    loaded_08 = 0;
++    flag_74 = 0;
++    whole_data_48 = 0;
++    index_ready_16 = 0;
++    for (int i = 0; i < 8; ++i)
++    {
++        plane_data_50[i] = 0;
++        plane_offsets_20[i] = 0;
++    }
++}
+diff --git a/src/startup_screen_dialog_frame_destructor.cpp b/src/startup_screen_dialog_frame_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_destructor.cpp
+@@ -0,0 +1,31 @@
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00416d40
++ScreenDialogResourceFrame::~ScreenDialogResourceFrame()
++{
++    if (name)
++    {
++        ::operator delete(const_cast<char*>(name));
++    }
++    if (data_4c)
++    {
++        ::operator delete(data_4c);
++    }
++    if (offsets_70)
++    {
++        ::operator delete(offsets_70);
++    }
++    if (indices_44)
++    {
++        ::operator delete(indices_44);
++    }
++    for (int i = 0; i < 8; ++i)
++    {
++        if (plane_data_50[i])
++        {
++            ::operator delete(plane_data_50[i]);
++        }
++    }
++}
+diff --git a/src/startup_screen_dialog_frame_metadata.cpp b/src/startup_screen_dialog_frame_metadata.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_metadata.cpp
+@@ -0,0 +1,28 @@
++#include "startup_resource_binary_read.h"
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00416e60
++void ScreenDialogResourceFrame::ReadMetadata(FILE* stream)
++{
++    unsigned char length = ReadResourceByte(stream);
++    name = static_cast<char*>(::operator new(length));
++    for (int i = 0; i < length; ++i)
++    {
++        unsigned char value = ReadResourceByte(stream);
++        const_cast<char*>(name)[i] = static_cast<char>(value);
++    }
++
++    count_0a = ReadResourceWord(stream);
++    plane_count_0c = ReadResourceByte(stream);
++    width_0e = ReadResourceWord(stream);
++    height_10 = ReadResourceWord(stream);
++    unsigned short word = ReadResourceWord(stream);
++    unknown_12[0] = static_cast<unsigned char>(word);
++    unknown_12[1] = static_cast<unsigned char>(word >> 8);
++    word_14 = static_cast<short>(ReadResourceWord(stream));
++    file_offset_1c = ReadResourceDword(stream);
++    data_size_18 = static_cast<int>(ReadResourceDword(stream));
++    offset_count_40 = ReadResourceWord(stream);
++}
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -1,5 +1,51 @@
+ #ifndef STARTUP_SCREEN_DIALOG_RESOURCE_H
+ #define STARTUP_SCREEN_DIALOG_RESOURCE_H
++
++#include <stdio.h>
++
++// Observed nonpolymorphic resource frame, separate from the screen FrameItem.
++// The real file owner and complete encoded-data format remain separate.
++struct ScreenDialogResourceFrame
++{
++    const char* name;
++    float time_04;
++    unsigned char loaded_08;
++    unsigned char unknown_09;
++    unsigned short count_0a;
++    unsigned char plane_count_0c;
++    unsigned char unknown_0d;
++    unsigned short width_0e;
++    unsigned short height_10;
++    unsigned char unknown_12[2];
++    short word_14;
++    unsigned char index_ready_16;
++    unsigned char unknown_17;
++    int data_size_18;
++    unsigned int file_offset_1c;
++    unsigned int plane_offsets_20[8];
++    unsigned short offset_count_40;
++    unsigned char unknown_42[2];
++    unsigned short* indices_44;
++    unsigned char whole_data_48;
++    unsigned char unknown_49[3];
++    unsigned char* data_4c;
++    unsigned char* plane_data_50[8];
++    unsigned int* offsets_70;
++    unsigned char flag_74;
++
++    ScreenDialogResourceFrame();
++    ~ScreenDialogResourceFrame();
++
++    // Actual 0x00416e60 RET4; the FILE remains owned by the caller.
++    void ReadMetadata(FILE* stream);
++
++    // Actual 0x00416db0 RET8; loading and encoded data remain separate.
++    const unsigned char* SelectData(int frame, int plane);
++
++    // Actual 0x00416f10 RET0 and 0x00416fe0 RET4; complete D252 source.
++    void LoadAllData();
++    void LoadPlaneData(int plane);
++};
+ 
+ // Observed prefix only; allocation and the remaining record fields are separate.
+ struct ScreenDialogResourceRecord

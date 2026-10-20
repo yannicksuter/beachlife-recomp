@@ -940,3 +940,17 @@ destruction. Its bounded inputs exclude null-load dereferences, oversized paths
 and unsupported image palettes. The guarded array observer checks cleanup and
 one labelled host allocation failure; it does not reproduce the original CRT
 failure contract. This is headless subsystem coverage, not the Intro or menu.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, build
+`reconstructed_resource_frame_metadata_tests` and run
+`ctest -R '^reconstructed_resource_frame_metadata$'`. Generated binary streams
+exercise the reconstructed byte/word/dword readers and resource-frame metadata
+with the real constructor and destructor. Cases check nonterminated and embedded
+NUL names, repeated reads, exact allocation/deletion ownership, untouched fields
+and guarded storage. The fixture preserves the original overwritten-name leak
+and releases its saved orphan separately after the actual frame lifetime.
+
+The bounded domain requires complete reads, little-endian representation and
+the observed scalar widths. Short reads, full resource-file ownership, encoded
+frame loading and resource rendering remain separate. This optional headless
+target does not start the original Intro or qualify the GUI FrameItem lifetime.
