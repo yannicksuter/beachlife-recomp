@@ -381,7 +381,11 @@ struct GeneratedParent final : ScreenItem
         // The compiler then invokes the actual reconstructed base destructor.
     }
 
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    void Unresolved04(float) override
+#else
     void Unresolved04() override
+#endif
     {
         fail("unresolved parent slot invoked");
     }
@@ -401,7 +405,11 @@ struct GeneratedParent final : ScreenItem
     {
         fail("unresolved parent slot invoked");
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    unsigned char Unresolved20() override
+#else
     void Unresolved20() override
+#endif
     {
         fail("unresolved parent slot invoked");
     }

@@ -214,7 +214,11 @@ struct GeneratedDialog final : ScreenDialog
         std::memset(owned_text, 'q', 15);
         owned_text[15] = '\0';
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    void Unresolved04(float) override
+#else
     void Unresolved04() override
+#endif
     {
         require(false, "unresolved generated slot invoked");
     }
@@ -234,9 +238,16 @@ struct GeneratedDialog final : ScreenDialog
     {
         require(false, "unresolved generated slot invoked");
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    unsigned char Unresolved20() override
+#else
     void Unresolved20() override
+#endif
     {
         require(false, "unresolved generated slot invoked");
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+        std::abort();
+#endif
     }
 #if defined(BEACHLIFE_DECOMP_SCREEN_ACTIVATION)
     void Unresolved24(unsigned char) override

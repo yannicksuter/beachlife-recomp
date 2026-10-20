@@ -1156,3 +1156,215 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     set_tests_properties(reconstructed_renderer_line PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Experimental localization uses borrowed typed storage and the platform CRT.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_localization STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_find.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_end.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_lookup.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_empty.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_globals.cpp")
+    target_include_directories(beachlife_reconstructed_screen_localization PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_localization PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_screen_localization verify_reconstructed_source)
+
+    add_executable(reconstructed_screen_localization_tests
+        tests/reconstructed_screen_localization.cpp)
+    target_link_libraries(reconstructed_screen_localization_tests PRIVATE
+        beachlife_reconstructed_screen_localization)
+    set_target_properties(beachlife_reconstructed_screen_localization
+        reconstructed_screen_localization_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_localization PRIVATE /GL-)
+        target_compile_options(reconstructed_screen_localization_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_localization PRIVATE -fno-lto)
+        target_compile_options(reconstructed_screen_localization_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_localization_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_screen_localization COMMAND reconstructed_screen_localization_tests)
+    set_tests_properties(reconstructed_screen_localization PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Auxiliary text shares the real lookup, font and manager global owners.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    # Prepared declarations are identical in every TU. This definition only
+    # selects typed fixture initialization/snapshots for the refined prefixes.
+    foreach(BEACHLIFE_AUXILIARY_PREFIX_CONSUMER IN ITEMS
+        beachlife_reconstructed_screen_activation
+        beachlife_reconstructed_gui_integer
+        beachlife_reconstructed_screen_placements)
+        target_compile_definitions(${BEACHLIFE_AUXILIARY_PREFIX_CONSUMER} PUBLIC
+            BEACHLIFE_DECOMP_AUXILIARY_TEXT=1)
+    endforeach()
+
+    add_library(beachlife_reconstructed_auxiliary_text STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_auxiliary_text.cpp")
+    target_include_directories(beachlife_reconstructed_auxiliary_text PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_auxiliary_text PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_auxiliary_text PUBLIC
+        beachlife_reconstructed_font_measurement
+        beachlife_reconstructed_screen_localization
+        beachlife_reconstructed_screen_activation)
+    add_dependencies(beachlife_reconstructed_auxiliary_text verify_reconstructed_source)
+
+    add_executable(reconstructed_auxiliary_text_tests tests/reconstructed_auxiliary_text.cpp)
+    target_link_libraries(reconstructed_auxiliary_text_tests PRIVATE
+        beachlife_reconstructed_auxiliary_text)
+    set_target_properties(beachlife_reconstructed_auxiliary_text
+        reconstructed_auxiliary_text_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_auxiliary_text PRIVATE /GL-)
+        target_compile_options(reconstructed_auxiliary_text_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_auxiliary_text PRIVATE -fno-lto)
+        target_compile_options(reconstructed_auxiliary_text_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_auxiliary_text_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_auxiliary_text COMMAND reconstructed_auxiliary_text_tests)
+    set_tests_properties(reconstructed_auxiliary_text PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# The full observed base table uses real methods and one coherent declaration.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_item_complete STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_defaults.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_state.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_hit.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_text.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_timed_event.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_threshold.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_timed_coordinates.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_text.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_auxiliary_position.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_rectangle.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_globals.cpp")
+    target_include_directories(beachlife_reconstructed_screen_item_complete PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_item_complete PUBLIC cxx_std_20)
+    # This flag adapts generated observers only. Every retail TU consumes the
+    # same complete class definition from the experimental prepared source.
+    target_compile_definitions(beachlife_reconstructed_screen_item_complete PUBLIC
+        BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM=1)
+    target_link_libraries(beachlife_reconstructed_screen_item_complete PUBLIC
+        beachlife_reconstructed_auxiliary_text
+        beachlife_reconstructed_screen_activation)
+    add_dependencies(beachlife_reconstructed_screen_item_complete verify_reconstructed_source)
+
+    # Genuine static dependencies form a cycle through font/rectangle/base.
+    # CMake determines the repeated archive order; no whole-archive or synthetic
+    # owner is introduced. Existing archives retain their actual source members.
+    foreach(BEACHLIFE_COMPLETE_ITEM_CONSUMER IN ITEMS
+        beachlife_reconstructed_screen_item
+        beachlife_reconstructed_screen_registry
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_gui_context)
+        target_link_libraries(${BEACHLIFE_COMPLETE_ITEM_CONSUMER} PUBLIC
+            beachlife_reconstructed_screen_item_complete)
+    endforeach()
+
+    add_executable(reconstructed_screen_item_complete_tests
+        tests/reconstructed_screen_item_complete.cpp)
+    target_link_libraries(reconstructed_screen_item_complete_tests PRIVATE
+        beachlife_reconstructed_screen_item_complete)
+    set_target_properties(beachlife_reconstructed_screen_item_complete
+        reconstructed_screen_item_complete_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_item_complete PRIVATE /GL-)
+        target_compile_options(reconstructed_screen_item_complete_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_item_complete PRIVATE -fno-lto)
+        target_compile_options(reconstructed_screen_item_complete_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_item_complete_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_screen_item_complete
+        COMMAND reconstructed_screen_item_complete_tests)
+    set_tests_properties(reconstructed_screen_item_complete PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# A real TGA widget owns the image loaded through the existing VFS bridge.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_tga_widget STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_tga_screen_item_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_tga_screen_item_draw.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_tga_screen_item_activation.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_tga_screen_item_destructor.cpp")
+    target_include_directories(beachlife_reconstructed_tga_widget PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_tga_widget PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_tga_widget PUBLIC
+        beachlife_reconstructed_screen_item_complete
+        beachlife_reconstructed_tga_files
+        beachlife_reconstructed_renderer_tga_draw)
+    add_dependencies(beachlife_reconstructed_tga_widget verify_reconstructed_source)
+
+    add_executable(reconstructed_tga_widget_tests tests/reconstructed_tga_widget.cpp)
+    target_link_libraries(reconstructed_tga_widget_tests PRIVATE
+        beachlife_reconstructed_tga_widget)
+    set_target_properties(beachlife_reconstructed_tga_widget
+        reconstructed_tga_widget_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_tga_widget PRIVATE /GL-)
+        target_compile_options(reconstructed_tga_widget_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_tga_widget PRIVATE -fno-lto)
+        target_compile_options(reconstructed_tga_widget_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_tga_widget_tests PRIVATE -fno-lto)
+    endif()
+    set(BEACHLIFE_RECONSTRUCTED_TGA_WIDGET_ROOT "${CMAKE_CURRENT_BINARY_DIR}/tga-widget-fixture"
+        CACHE STRING "Writable target-system directory for generated TGA widget files")
+    add_test(NAME reconstructed_tga_widget COMMAND reconstructed_tga_widget_tests
+        "${BEACHLIFE_RECONSTRUCTED_TGA_WIDGET_ROOT}")
+    set_tests_properties(reconstructed_tga_widget PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Resource metadata uses real frame lifetimes and CRT binary streams.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_resource_frame_metadata STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_frame_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_frame_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_dialog_frame_metadata.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_read_byte.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_read_word.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_read_dword.cpp")
+    target_include_directories(beachlife_reconstructed_resource_frame_metadata PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_resource_frame_metadata PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_resource_frame_metadata verify_reconstructed_source)
+
+    add_executable(reconstructed_resource_frame_metadata_tests
+        tests/reconstructed_resource_frame_metadata.cpp)
+    target_link_libraries(reconstructed_resource_frame_metadata_tests PRIVATE
+        beachlife_reconstructed_resource_frame_metadata)
+    set_target_properties(beachlife_reconstructed_resource_frame_metadata
+        reconstructed_resource_frame_metadata_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_resource_frame_metadata PRIVATE /GL-)
+        target_compile_options(reconstructed_resource_frame_metadata_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(beachlife_reconstructed_resource_frame_metadata PRIVATE -fno-lto)
+        target_compile_options(reconstructed_resource_frame_metadata_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_resource_frame_metadata_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_resource_frame_metadata
+        COMMAND reconstructed_resource_frame_metadata_tests)
+    set_tests_properties(reconstructed_resource_frame_metadata PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()

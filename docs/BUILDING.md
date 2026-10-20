@@ -83,6 +83,12 @@ code, data or sections. Actual CRT imports and comparison metadata must still be
 provided by the target; the tool does not synthesize exception handlers. Matching
 results record the selected source options and generated object's identity.
 
+Matching targets can also declare `comparison_anchors` for unresolved member
+call identities. The tool generates fingerprinted definitions in ignored build
+output, outside the prepared source export, and excludes them from credited
+methods. These definitions establish comparison addresses only. An image using
+them must never be executed; native builds require the actual dependency source.
+
 ## Reconstructed configuration libraries
 
 Build the prepared configuration and VFS file libraries without test executables:
@@ -886,3 +892,65 @@ buffers. Literal cases preserve direct-pixel upper bits, packed edge quirks,
 endpoint and clipping behavior, and live COM/renderer state changes. The fixture
 uses the actual colour converter, pixel access and renderer global. It does not
 construct a complete Frame or renderer or claim GPU presentation.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the optional
+`reconstructed_screen_localization_tests` target exercises the reconstructed
+localization lookup, iterator result, and empty cleanup methods. Generated
+borrowed arrays cover pointer identity, duplicate keys, skipped buckets, wraparound,
+null queries and null text results. Windows uses the CRT `_stricmp`; other
+supported hosts use `strcasecmp`, with comparison cases restricted to seven-bit
+strings in the C locale. High-byte cases exercise hashing with every bucket
+unavailable and do not claim wider locale parity. The target does not implement
+localization loading, full ownership or destruction, or text drawing.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, build
+`reconstructed_auxiliary_text_tests` and run `ctest -R '^reconstructed_auxiliary_text$'`.
+The generated cases exercise the reconstructed auxiliary `SetText` method with
+the real localization lookup, font constructors and measurement methods. They
+check borrowed text identity, the unsigned 160-unit branch, wrapping and metric
+arithmetic using guarded typed data. The experimental manager declaration uses
+the observed ten-pointer font table; its existing fixture consumers retain
+their behavioral cases with typed initialization of the refined fields.
+
+The option remains off by default. This target does not supply localization/font
+loading, complete manager/auxiliary/font ownership, Frame lifetime or text drawing.
+Malformed glyph indices, nonterminating wrapping inputs and unsafe scratch-copy
+lengths remain outside its bounded domain. It does not start the original menu.
+
+The experimental profile supplies the 21 observed base `ScreenItem` slots from
+reconstructed source. `reconstructed_screen_item_complete_tests` exercises real
+base lifetimes, byte states, hit tests, owned-text copies and finite timed
+notifications through the actual manager, lookup and font methods. Its borrowed
+auxiliary state takes the real Position early return. It constructs no Frame;
+active Frame positioning and complete original subtype lifetimes remain separate.
+Repeated text assignment retains the original leak, with test-owned receipts
+reclaiming only the abandoned allocations afterward. Existing generated subtype
+fixtures keep their behavior checks under the common experimental declaration.
+
+```sh
+cmake --build build/native-experimental --target reconstructed_screen_item_complete_tests
+ctest --test-dir build/native-experimental -R '^reconstructed_screen_item_complete$' --output-on-failure
+```
+
+The experimental `reconstructed_tga_widget` test constructs a real TGA screen
+item, loads generated indexed images through the mounted folder VFS, converts
+their palettes and draws through the reconstructed renderer and rectangle
+queue. It also checks cached activation, disabling and actual derived/base
+destruction. Its bounded inputs exclude null-load dereferences, oversized paths
+and unsupported image palettes. The guarded array observer checks cleanup and
+one labelled host allocation failure; it does not reproduce the original CRT
+failure contract. This is headless subsystem coverage, not the Intro or menu.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, build
+`reconstructed_resource_frame_metadata_tests` and run
+`ctest -R '^reconstructed_resource_frame_metadata$'`. Generated binary streams
+exercise the reconstructed byte/word/dword readers and resource-frame metadata
+with the real constructor and destructor. Cases check nonterminated and embedded
+NUL names, repeated reads, exact allocation/deletion ownership, untouched fields
+and guarded storage. The fixture preserves the original overwritten-name leak
+and releases its saved orphan separately after the actual frame lifetime.
+
+The bounded domain requires complete reads, little-endian representation and
+the observed scalar widths. Short reads, full resource-file ownership, encoded
+frame loading and resource rendering remain separate. This optional headless
+target does not start the original Intro or qualify the GUI FrameItem lifetime.

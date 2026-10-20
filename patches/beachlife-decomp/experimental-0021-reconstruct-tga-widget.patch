@@ -1,0 +1,122 @@
+diff --git a/src/startup_tga_screen_item.h b/src/startup_tga_screen_item.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_tga_screen_item.h
+@@ -0,0 +1,32 @@
++#ifndef STARTUP_TGA_SCREEN_ITEM_H
++#define STARTUP_TGA_SCREEN_ITEM_H
++
++#include "startup_screen_item.h"
++
++struct TgaImage;
++
++// Observed TGA-widget tail over the complete observed 21-slot base.
++// Original class names and any unobserved fields remain unknown.
++// VTABLE: BEACHLIFE 0x004f4c08
++struct TgaScreenItem : ScreenItem
++{
++    TgaScreenItem(ScreenRectangle initial, const char* image_filename);
++
++    // Actual ordinary destructor at 0x004c85c0.
++    // It calls the real activation(false) body before the base destructor.
++    virtual ~TgaScreenItem();
++
++    // Observed draw callback at slot +0x0c; retain the existing base slot name.
++    virtual void Unresolved0c();
++
++    // Observed activation callback at slot +0x24; the base call is required.
++    virtual void Unresolved24(unsigned char enabled);
++
++    TgaImage* image;
++    char filename[32];
++};
++
++// Initialized path pointer observed at 0x005816f8; original name unknown.
++extern const char* tga_screen_path_prefix;
++
++#endif
+diff --git a/src/startup_tga_screen_item_activation.cpp b/src/startup_tga_screen_item_activation.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_tga_screen_item_activation.cpp
+@@ -0,0 +1,36 @@
++#include "startup_tga_screen_item.h"
++#include "startup_screen_renderer.h"
++#include "tga_image.h"
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x005816f8
++const char* tga_screen_path_prefix = "data\\screens\\";
++
++// FUNCTION: BEACHLIFE 0x004c8620
++void TgaScreenItem::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    if (enabled)
++    {
++        if (!image)
++        {
++            char path[128];
++            strcpy(path, tga_screen_path_prefix);
++            strcat(path, filename);
++            image = LoadTgaFile(path);
++            if (screen_request_renderer->format_44 == 1)
++            {
++                image->ConvertPalette(1);
++            }
++            else
++            {
++                image->ConvertPalette(0);
++            }
++        }
++    }
++    else if (image)
++    {
++        delete image;
++        image = 0;
++    }
++}
+diff --git a/src/startup_tga_screen_item_constructor.cpp b/src/startup_tga_screen_item_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_tga_screen_item_constructor.cpp
+@@ -0,0 +1,12 @@
++#include "startup_tga_screen_item.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004c8530
++TgaScreenItem::TgaScreenItem(ScreenRectangle initial, const char* image_filename)
++    : ScreenItem(initial)
++    , image(0)
++{
++    strcpy(filename, image_filename);
++    kind_28 = 16;
++}
+diff --git a/src/startup_tga_screen_item_destructor.cpp b/src/startup_tga_screen_item_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_tga_screen_item_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_tga_screen_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c85c0
++TgaScreenItem::~TgaScreenItem()
++{
++    Unresolved24(0);
++}
+diff --git a/src/startup_tga_screen_item_draw.cpp b/src/startup_tga_screen_item_draw.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_tga_screen_item_draw.cpp
+@@ -0,0 +1,10 @@
++#include "startup_tga_screen_item.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004c8710
++void TgaScreenItem::Unresolved0c()
++{
++    ScreenPoint destination = { 0, 0 };
++    ScreenRectangle bounds = { 0, 0, 800, 600 };
++    screen_request_renderer->DrawTga(destination, bounds, image, 0, 0, 0);
++}

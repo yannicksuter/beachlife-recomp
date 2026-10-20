@@ -421,7 +421,11 @@ struct GeneratedItem final : ScreenItem
         ++counts.item_destructions;
         // The compiler invokes the actual reconstructed base destructor next.
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    void Unresolved04(float) override
+#else
     void Unresolved04() override
+#endif
     {
         require(false, "unresolved item slot invoked");
     }
@@ -441,9 +445,16 @@ struct GeneratedItem final : ScreenItem
     {
         require(false, "unresolved item slot invoked");
     }
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+    unsigned char Unresolved20() override
+#else
     void Unresolved20() override
+#endif
     {
         require(false, "unresolved item slot invoked");
+#if defined(BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM)
+        std::abort();
+#endif
     }
     void Unresolved24(unsigned char) override
     {

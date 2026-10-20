@@ -1,0 +1,84 @@
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 4956e82ef8ebb8c0aa756e4f7789670854bf8b4d..053f7f9a3a91bc06da9870154a3807d845e55804 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -4,6 +4,7 @@
+ #include "startup_list.h"
+ 
+ struct ScreenItem;
++struct ScreenFontRenderer;
+ struct ScreenManagerAuxiliaryState;
+ struct ScreenChildLink;
+ struct ScreenPlacementStore;
+@@ -24,7 +25,9 @@
+ struct ScreenManager
+ {
+     ScreenRequestRenderer* renderer;
+-    unsigned char unknown_04[0x88];
++    unsigned char unknown_04[0x28];
++    ScreenFontRenderer* fonts_2c[10];
++    unsigned char unknown_54[0x38];
+     ScreenChildLink* registry;
+     unsigned char unknown_90[0x2c];
+     CircularList active;
+diff --git a/src/startup_screen_manager_auxiliary.h b/src/startup_screen_manager_auxiliary.h
+index a6cdb6541dfc11f3ab6a9b60e498aed3fa4fdb9f..f5b2f8593fdced865f55c8de37830b8f6d338f5f 100644
+--- a/src/startup_screen_manager_auxiliary.h
++++ b/src/startup_screen_manager_auxiliary.h
+@@ -1,13 +1,25 @@
+ #ifndef STARTUP_SCREEN_MANAGER_AUXILIARY_H
+ #define STARTUP_SCREEN_MANAGER_AUXILIARY_H
++
++struct ScreenFrameItem;
+ 
+ // Observed nonpolymorphic prefix only; complete type and lifetime are unknown.
+ struct ScreenManagerAuxiliaryState
+ {
+     unsigned int word_00;
+     unsigned char state_04;
++    unsigned char unknown_05[3];
++    const unsigned short* text_08;
++    unsigned int text_width_0c;
++    unsigned int text_height_10;
++    unsigned int width_14;
++    unsigned int height_18;
++    int x_1c;
++    int y_20;
++    ScreenFrameItem* frame_24;
+ 
+     void ClearState();
++    void SetText(const char* text);
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_manager_auxiliary_text.cpp b/src/startup_screen_manager_auxiliary_text.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbfc9cbdf2a84563a9cacc072f85d2293011a6da
+--- /dev/null
++++ b/src/startup_screen_manager_auxiliary_text.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_manager_auxiliary.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++
++// FUNCTION: BEACHLIFE 0x004c1170
++void ScreenManagerAuxiliaryState::SetText(const char* text)
++{
++    text_08 = screen_text_lookup->LookupText(text);
++    ScreenFontRenderer* font = screen_manager->fonts_2c[word_00];
++    unsigned int width = font->MeasureText(text_08);
++    if (width > 160)
++    {
++        text_width_0c = font->MeasureWrappedText(text_08, 160, 5) + 10;
++        text_height_10 = font->CountWrappedLines(text_08, text_width_0c, 5) * 12;
++        width_14 = text_width_0c;
++        height_18 = text_height_10 + 6;
++    }
++    else
++    {
++        text_width_0c = width;
++        text_height_10 = 15;
++        width_14 = width + 10;
++        height_18 = 21;
++    }
++}
