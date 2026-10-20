@@ -1,5 +1,6 @@
 """Build and compare small x86 matching targets with the verified VC6 toolchain."""
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -419,6 +420,93 @@ def verify_runtime_compiled_imports(binary, configured, original):
             'omitted': sorted(set(configured) - set(actual))}
 
 
+def comparison_anchor_specs(metadata, target):
+    """Validate unqualified address anchors separately from credited functions."""
+    specs = target.get('comparison_anchors', [])
+    if not isinstance(specs, list):
+        raise ValueError('comparison_anchors must be a list.')
+    if not specs:
+        return []
+    credited = [item for key in ('functions', 'library_functions', 'unclassified_functions')
+                for item in target.get(key, [])]
+    ranges = [(int(item['address'], 16), int(item['address'], 16) + item['size'])
+              for item in credited]
+    names = {item['name'] for item in credited}
+    symbols = set()
+    with (metadata / 'metadata.csv').open(newline='') as stream:
+        rows = list(csv.DictReader(stream))
+    keys = {'address', 'size', 'name', 'symbol', 'header', 'kind', 'return_type', 'parameters'}
+    for item in specs:
+        if (not isinstance(item, dict) or set(item) != keys or
+                item.get('kind') != 'null-pointer-member' or
+                not isinstance(item.get('address'), str) or
+                not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item['address']) or
+                type(item.get('size')) is not int or item['size'] <= 0 or
+                not isinstance(item.get('name'), str) or
+                not re.fullmatch(r'[A-Za-z_]\w*::[A-Za-z_]\w*', item['name']) or
+                not isinstance(item.get('symbol'), str) or
+                not re.fullmatch(r'\?[^,\s]+', item['symbol']) or
+                not isinstance(item.get('header'), str) or
+                not re.fullmatch(r'[A-Za-z_]\w*\.h', item['header']) or
+                not isinstance(item.get('return_type'), str) or
+                not re.fullmatch(r'[A-Za-z_]\w*\*', item['return_type']) or
+                item.get('parameters') != ['const char*']):
+            raise ValueError('Unsupported comparison-only anchor declaration.')
+        start, end = int(item['address'], 16), int(item['address'], 16) + item['size']
+        if (end > 0x100000000 or item['name'] in names or item['symbol'] in symbols or
+                any(start < right and left < end for left, right in ranges)):
+            raise ValueError('Comparison-only anchors must be distinct from credited functions and each other.')
+        rows_at_address = [row for row in rows if int(row['address'], 16) == start]
+        if (len(rows_at_address) != 1 or rows_at_address[0]['type'] != 'function' or
+                rows_at_address[0]['size'] != str(item['size']) or
+                rows_at_address[0]['symbol'] != item['symbol']):
+            raise ValueError('Comparison-only anchor must match one explicit CSV identity.')
+        ranges.append((start, end))
+        names.add(item['name'])
+        symbols.add(item['symbol'])
+    return specs
+
+
+def generate_comparison_anchors(metadata, source, folder, specs):
+    """Generate ignored matching-only definitions; never add them to an export."""
+    if not specs:
+        return [], []
+    destination = (folder / 'comparison-only').resolve()
+    if (not destination.is_relative_to(ROOT.resolve()) or
+            destination.is_relative_to(metadata.resolve()) or
+            destination.is_relative_to(source.resolve())):
+        raise ValueError('Comparison anchors require output outside reconstructed source.')
+    ignored = subprocess.run(['git', 'check-ignore', '--quiet', str(destination)], cwd=ROOT,
+                             capture_output=True, text=True, check=False)
+    if ignored.returncode != 0:
+        raise ValueError('Comparison anchors require ignored output inside this repository.')
+    paths = [destination / ('anchor_' + item['address'][2:].lower() + '.cpp') for item in specs]
+    if destination.exists() and any(path not in paths for path in destination.iterdir()):
+        raise ValueError('Unexpected files in comparison-only output; use a fresh build directory.')
+    for item in specs:
+        header = (source / item['header']).resolve()
+        if not header.is_relative_to(source.resolve()) or not header.is_file():
+            raise ValueError('Comparison anchor header is not an actual source input.')
+    destination.mkdir(parents=True, exist_ok=True)
+    records = []
+    for item, path in zip(specs, paths):
+        body = (f'#include "{item["header"]}"\n\n'
+                '// GENERATED COMPARISON-ONLY ANCHOR. Never execute this image.\n'
+                '// This is no implementation or qualification of the original dependency.\n'
+                f'// FUNCTION: BEACHLIFE {item["address"]}\n'
+                f'{item["return_type"]} {item["name"]}(const char* argument)\n'
+                '{\n    return 0;\n}\n')
+        if path.exists() and path.read_text() != body:
+            raise ValueError('Comparison-only source changed; use a fresh build directory.')
+        if not path.exists():
+            path.write_text(body)
+        records.append({'address': item['address'], 'original_bytes': item['size'],
+                        'name': item['name'], 'symbol': item['symbol'],
+                        'source': str(path.relative_to(ROOT)), 'sha256': digest(path),
+                        'qualified': False, 'image_execution_permitted': False})
+    return paths, records
+
+
 def game_target(metadata):
     """Validate every registered group before invoking matching build tools."""
     path = metadata / 'targets/beachlife-uk-1.1.json'
@@ -443,6 +531,7 @@ def game_target(metadata):
             if start in seen:
                 raise ValueError(f'Duplicate function address across matching groups: {item["address"]}')
             seen.add(start)
+    comparison_anchor_specs(metadata, target)
     return path, target
 
 
@@ -489,7 +578,10 @@ def game(tool, args):
     entry = metadata / 'fixtures/game.cpp'
     if not entry.is_file():
         raise ValueError('Prepared source has no comparison retention fixture.')
-    inputs = set([*sources, *source.rglob('*.h'),
+    folder = tool.output / 'game'
+    anchors, anchor_records = generate_comparison_anchors(
+        metadata, source, folder, comparison_anchor_specs(metadata, target))
+    inputs = set([*sources, *anchors, *source.rglob('*.h'),
                   *(path for path in metadata.rglob('*') if path.is_file()),
                   ROOT / 'tools/matching_imports.py', ROOT / 'tools/prepare_sources.py',
                   Path(__file__).resolve()])
@@ -505,7 +597,6 @@ def game(tool, args):
         return {str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path): digest(path)
                 for path in inputs}
     fingerprints = input_hashes()
-    folder = tool.output / 'game'
     folder.mkdir(parents=True, exist_ok=True)
     library = tool.runtime_library(folder)
     link_flags = ['/fixed:no', library]
@@ -542,7 +633,7 @@ def game(tool, args):
     source_flags = {support / 'operator_delete.cpp': ['/O1']}
     for path, flags in compile_options.items():
         source_flags.setdefault(path, []).extend(flags)
-    binary, pdb = tool.build(folder, [*sources, *support_sources, entry], 'BeachLife', link_flags,
+    binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, entry], 'BeachLife', link_flags,
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
                              '/I' + tool.native(source)],
                             source_flags=source_flags)
@@ -559,10 +650,12 @@ def game(tool, args):
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
-        'filename': 'BeachLife.exe', 'source-root': [str(source), str(support)],
+        'filename': 'BeachLife.exe', 'source-root': [str(source), str(support)] +
+        ([str(anchors[0].parent)] if anchors else []),
         'hash': {'sha256': target['sha256']},
         'data-sources': [str(metadata / 'metadata.csv')],
-        'report': {'ignore-functions': ['fixture_entry']}}}})
+        'report': {'ignore-functions': ['fixture_entry'] +
+                   [item['name'] for item in anchor_records]}}}})
     save(folder / 'reccmp-user.yml', {'targets': {'BEACHLIFE': {'path': str(original)}}})
     save(folder / 'reccmp-build.yml', {'project': '.', 'targets': {'BEACHLIFE': {
         'path': str(binary), 'pdb': str(pdb)}}})
@@ -614,6 +707,9 @@ def game(tool, args):
               'source_root': str(source.relative_to(ROOT) if source.is_relative_to(ROOT) else source),
               'source_revision': getattr(args, 'decomp_revision', None),
               'comparison_layout': 'Relocations enabled in rebuilt comparison image; original remains unchanged.'}
+    if anchor_records:
+        result['comparison_anchors'] = anchor_records
+        result['image_execution_permitted'] = False
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
     if any(item['normalized_match'] != 1 for item in functions):

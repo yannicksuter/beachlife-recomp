@@ -83,6 +83,12 @@ code, data or sections. Actual CRT imports and comparison metadata must still be
 provided by the target; the tool does not synthesize exception handlers. Matching
 results record the selected source options and generated object's identity.
 
+Matching targets can also declare `comparison_anchors` for unresolved member
+call identities. The tool generates fingerprinted definitions in ignored build
+output, outside the prepared source export, and excludes them from credited
+methods. These definitions establish comparison addresses only. An image using
+them must never be executed; native builds require the actual dependency source.
+
 ## Reconstructed configuration libraries
 
 Build the prepared configuration and VFS file libraries without test executables:
