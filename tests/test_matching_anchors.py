@@ -49,13 +49,49 @@ class ComparisonAnchorTests(unittest.TestCase):
             self.metadata, self.source, self.directory / 'output', specs)
         self.assertEqual(len(paths), 1)
         self.assertNotIn(paths[0], self.metadata.rglob('*'))
-        self.assertIn('GeneratedResult* GeneratedOwner::Find(const char* argument)', paths[0].read_text())
+        self.assertEqual(paths[0].read_text(),
+                         '#include "generated.h"\n\n'
+                         '// GENERATED COMPARISON-ONLY ANCHOR. Never execute this image.\n'
+                         '// This is no implementation or qualification of the original dependency.\n'
+                         '// FUNCTION: BEACHLIFE 0x00401100\n'
+                         'GeneratedResult* GeneratedOwner::Find(const char* argument)\n'
+                         '{\n    return 0;\n}\n')
         self.assertIn('Never execute this image', paths[0].read_text())
         self.assertFalse(records[0]['qualified'])
         self.assertFalse(records[0]['image_execution_permitted'])
         self.assertEqual(records[0]['sha256'], matching.digest(paths[0]))
         self.assertEqual(self.target['functions'],
                          [{'name': 'GeneratedOwner::Lookup', 'address': '0x00401000', 'size': 13}])
+
+    def test_void_member_generates_only_ignored_void_thiscall_source(self):
+        (self.source / 'generated.h').write_text(
+            'struct GeneratedResult;\n'
+            'struct GeneratedOwner { GeneratedResult* Find(const char*); void Load(const char*); };\n')
+        anchor = {'address': '0x00401200', 'size': 20, 'name': 'GeneratedOwner::Load',
+                  'symbol': '?Load@GeneratedOwner@@QAEXPBD@Z', 'header': 'generated.h',
+                  'kind': 'void-member', 'return_type': 'void', 'parameters': ['const char*']}
+        target = copy.deepcopy(self.target)
+        target['comparison_anchors'].append(anchor)
+        with (self.metadata / 'metadata.csv').open('a') as stream:
+            stream.write('0x00401200,function,20,?Load@GeneratedOwner@@QAEXPBD@Z\n')
+        specs = matching.comparison_anchor_specs(self.metadata, target)
+        paths, records = matching.generate_comparison_anchors(
+            self.metadata, self.source, self.directory / 'output', specs)
+        self.assertEqual(len(paths), 2)
+        self.assertEqual(paths[1].read_text(),
+                         '#include "generated.h"\n\n'
+                         '// GENERATED COMPARISON-ONLY ANCHOR. Never execute this image.\n'
+                         '// This is no implementation or qualification of the original dependency.\n'
+                         '// FUNCTION: BEACHLIFE 0x00401200\n'
+                         'void GeneratedOwner::Load(const char* argument)\n'
+                         '{\n    (void)argument;\n}\n')
+        self.assertFalse(records[1]['qualified'])
+        self.assertFalse(records[1]['image_execution_permitted'])
+        self.assertNotIn(paths[1], self.metadata.rglob('*'))
+        self.assertEqual(target['functions'], self.target['functions'])
+        anchor['return_type'] = 'GeneratedResult*'
+        with self.assertRaisesRegex(ValueError, 'declaration'):
+            matching.comparison_anchor_specs(self.metadata, target)
 
     def test_credited_address_name_and_duplicate_anchor_are_rejected(self):
         for changed in ({'address': '0x00401000'}, {'name': 'GeneratedOwner::Lookup'}):

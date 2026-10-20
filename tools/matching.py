@@ -438,7 +438,7 @@ def comparison_anchor_specs(metadata, target):
     keys = {'address', 'size', 'name', 'symbol', 'header', 'kind', 'return_type', 'parameters'}
     for item in specs:
         if (not isinstance(item, dict) or set(item) != keys or
-                item.get('kind') != 'null-pointer-member' or
+                item.get('kind') not in ('null-pointer-member', 'void-member') or
                 not isinstance(item.get('address'), str) or
                 not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item['address']) or
                 type(item.get('size')) is not int or item['size'] <= 0 or
@@ -449,7 +449,9 @@ def comparison_anchor_specs(metadata, target):
                 not isinstance(item.get('header'), str) or
                 not re.fullmatch(r'[A-Za-z_]\w*\.h', item['header']) or
                 not isinstance(item.get('return_type'), str) or
-                not re.fullmatch(r'[A-Za-z_]\w*\*', item['return_type']) or
+                not ((item['kind'] == 'null-pointer-member' and
+                      re.fullmatch(r'[A-Za-z_]\w*\*', item['return_type'])) or
+                     (item['kind'] == 'void-member' and item['return_type'] == 'void')) or
                 item.get('parameters') != ['const char*']):
             raise ValueError('Unsupported comparison-only anchor declaration.')
         start, end = int(item['address'], 16), int(item['address'], 16) + item['size']
@@ -490,12 +492,14 @@ def generate_comparison_anchors(metadata, source, folder, specs):
     destination.mkdir(parents=True, exist_ok=True)
     records = []
     for item, path in zip(specs, paths):
+        statement = ('    return 0;\n' if item['kind'] == 'null-pointer-member'
+                     else '    (void)argument;\n')
         body = (f'#include "{item["header"]}"\n\n'
                 '// GENERATED COMPARISON-ONLY ANCHOR. Never execute this image.\n'
                 '// This is no implementation or qualification of the original dependency.\n'
                 f'// FUNCTION: BEACHLIFE {item["address"]}\n'
                 f'{item["return_type"]} {item["name"]}(const char* argument)\n'
-                '{\n    return 0;\n}\n')
+                '{\n' + statement + '}\n')
         if path.exists() and path.read_text() != body:
             raise ValueError('Comparison-only source changed; use a fresh build directory.')
         if not path.exists():
