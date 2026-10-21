@@ -1538,3 +1538,16 @@ long-double significand; its near-threshold case preserves the wider sum across
 the float store. It does not establish all original x87 control-word behavior.
 Other floating-point ABIs, Windows/macOS and audio playback remain separate
 qualification gates; the existing experimental option stays off by default.
+
+The optional experimental `beachlife_reconstructed_listbox_storage` library
+provides the two genuine ListBox backing-range destructors independently of
+the widget. With reconstructed tests enabled, the Linux x86-64
+`reconstructed_listbox_storage` test covers null storage, the original
+128-byte pool boundary, real pool publication and reuse, and host scalar
+release above that boundary. Pointer arrays use their native element size;
+the threshold remains bytes. A transparent test-only linker observer forwards
+every scalar delete to the real host implementation. The fixture checks
+retained member representations through owned byte storage after destruction.
+It does not construct a ListBox, destroy rows or qualify refill, allocation
+failure, concurrency, Windows or macOS. Experimental selection stays off by
+default; matching and complete GUI ownership remain separate gates.
