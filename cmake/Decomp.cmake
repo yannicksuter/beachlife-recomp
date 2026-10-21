@@ -433,6 +433,36 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
 endif()
 
 
+# Insert before the reconstructed-test early return. Both libraries are usable
+# without the optional generated test and remain experimental-only.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_jpeg_export STATIC src/runtime/jpeg_export.cpp)
+    target_include_directories(beachlife_jpeg_export PUBLIC "${CMAKE_SOURCE_DIR}/src")
+    target_include_directories(beachlife_jpeg_export SYSTEM PRIVATE
+        "${BEACHLIFE_PREPARED}/stb")
+    target_compile_features(beachlife_jpeg_export PUBLIC cxx_std_20)
+    add_dependencies(beachlife_jpeg_export verify_prepared)
+
+    add_library(beachlife_reconstructed_jpeg_export STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_jpeg_export.cpp")
+    target_include_directories(beachlife_reconstructed_jpeg_export PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_jpeg_export PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_jpeg_export PUBLIC beachlife_jpeg_export)
+    add_dependencies(beachlife_reconstructed_jpeg_export verify_reconstructed_source)
+    set_target_properties(beachlife_jpeg_export beachlife_reconstructed_jpeg_export PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_jpeg_export PRIVATE /GL- /W4 /WX)
+        target_compile_options(beachlife_reconstructed_jpeg_export PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_jpeg_export PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_compile_options(beachlife_reconstructed_jpeg_export PRIVATE -fno-lto)
+    endif()
+endif()
+
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -4137,4 +4167,26 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             endif()
         endif()
     endforeach()
+endif()
+
+# The initial generated failure case uses Linux's real /dev/full device.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(reconstructed_jpeg_export_tests tests/reconstructed_jpeg_export.cpp)
+    target_include_directories(reconstructed_jpeg_export_tests SYSTEM PRIVATE
+        "${BEACHLIFE_PREPARED}/stb")
+    target_link_libraries(reconstructed_jpeg_export_tests PRIVATE
+        beachlife_reconstructed_jpeg_export beachlife_reconstructed_tga)
+    add_dependencies(reconstructed_jpeg_export_tests verify_prepared)
+    set_target_properties(reconstructed_jpeg_export_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_jpeg_export_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_jpeg_export_tests PRIVATE -fno-lto)
+    set(BEACHLIFE_RECONSTRUCTED_JPEG_FIXTURE_ROOT
+        "${CMAKE_CURRENT_BINARY_DIR}/jpeg-export-fixture" CACHE PATH
+        "Generated JPEG export output directory")
+    add_test(NAME reconstructed_jpeg_export COMMAND reconstructed_jpeg_export_tests
+        "${BEACHLIFE_RECONSTRUCTED_JPEG_FIXTURE_ROOT}" "/dev/full")
+    set_tests_properties(reconstructed_jpeg_export PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()

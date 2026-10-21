@@ -1742,3 +1742,24 @@ original extent, while all 122 previous results are retained. The real
 are not executed. Native source selections and their existing Float
 qualification remain unchanged. This does not qualify a complete parser
 owner or frontend flow.
+
+
+The experimental JPEG export target connects the complete game wrapper to a
+real host file encoder built from the pinned stb source. The codec patch leaves
+stb's default behavior unchanged and permits an explicit sampling choice; this
+service selects Y 2x2 / Cb,Cr 1x1 (4:2:0), including quality100. Input is tightly
+packed top-down RGB. File output completes and closes before the game's result
+global is published; source buffers remain borrowed and partial failed output
+is retained. The codec's internal memory, quantization/bitstream details, path
+sharing, failure timing and full IJL error behavior are not byte-matched.
+
+With experimental reconstructed tests enabled on Linux,
+`reconstructed_jpeg_export_tests` uses the genuine four-argument TgaImage owner,
+generated colors, a real JPEG decoder, literal sampling/quantization markers,
+odd and one-pixel extents, guarded input, and actual missing-path and `/dev/full`
+failures. `BEACHLIFE_RECONSTRUCTED_JPEG_FIXTURE_ROOT` selects its generated output
+directory. The host boundary rejects unrepresentable dimensions/indexing before
+I/O; this is not a claim about original malformed input behavior. Windows/macOS,
+codec allocation failure and close-only failure remain separate qualification
+gates. This target alone does not execute renderer capture, presentation, the
+Game owner or a menu. Default reconstructed source selection is unchanged.
