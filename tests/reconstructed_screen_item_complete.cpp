@@ -13,6 +13,7 @@
 #include <bit>
 #include <climits>
 #include <clocale>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -30,6 +31,9 @@ namespace
 {
 static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && sizeof(unsigned int) == 4);
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
+static_assert(std::is_standard_layout_v<FrameClock> && sizeof(FrameClock) == 40);
+static_assert(offsetof(FrameClock, delta_seconds) == 24 && offsetof(FrameClock, value_20) == 32 &&
+              offsetof(FrameClock, value_24) == 36);
 static_assert(!std::is_abstract_v<ScreenItem> && std::has_virtual_destructor_v<ScreenItem>);
 static_assert(std::is_same_v<decltype(&ScreenItem::Unresolved04), void (ScreenItem::*)(float)>);
 static_assert(std::is_same_v<decltype(&ScreenItem::Unresolved20), unsigned char (ScreenItem::*)()>);
@@ -84,6 +88,65 @@ template <class T> struct Frame
     Guard before = guard(0x23);
     T value{};
     Guard after = guard(0xc7);
+};
+
+// Restores only fixture borrowing after the real member destructor has run.
+struct ClockPublicationRestore
+{
+    FrameClock* saved = startup_frame_clock;
+    ~ClockPublicationRestore()
+    {
+        startup_frame_clock = saved;
+    }
+};
+
+template <> struct Frame<FrameClock>
+{
+    ClockPublicationRestore restore;
+    Guard before = guard(0x23);
+    FrameClock value{37};
+    Guard after = guard(0xc7);
+
+    Frame() = default;
+    Frame(const Frame&) = delete;
+    Frame& operator=(const Frame&) = delete;
+};
+
+struct ClockFrameSnapshot
+{
+    struct Values
+    {
+        int start_ticks;
+        unsigned int sampled_frames;
+        unsigned int frames;
+        unsigned int previous_frames;
+        float seconds;
+        float previous_seconds;
+        float delta_seconds;
+        float sample_seconds;
+        unsigned int value_20;
+        unsigned int value_24;
+    };
+    Guard before;
+    Values value;
+    Guard after;
+
+    // Environment has explicitly assigned sampled_frames before any snapshot.
+    explicit ClockFrameSnapshot(const Frame<FrameClock>& frame)
+        : before(frame.before)
+        , value{frame.value.start_ticks,
+              frame.value.sampled_frames,
+              frame.value.frames,
+              frame.value.previous_frames,
+              frame.value.seconds,
+              frame.value.previous_seconds,
+              frame.value.delta_seconds,
+              frame.value.sample_seconds,
+              frame.value.value_20,
+              frame.value.value_24}
+        , after(frame.after)
+    {
+    }
 };
 
 // A genuine owner; snapshots below copy values into a different non-owning type.
@@ -247,7 +310,17 @@ struct Environment
         a.x_1c = -321;
         a.y_20 = 654;
         a.frame_24 = nullptr; // Never accessed: Position's real early return only.
-        clock.value = {37, 41, 43, 47, 2.0f, 1.5f, 0.25f, 4.0f};
+        clock.value.start_ticks = 37;
+        clock.value.sampled_frames =
+            41; // Define the originally uninitialized member before snapshots.
+        clock.value.frames = 43;
+        clock.value.previous_frames = 47;
+        clock.value.seconds = 2.0f;
+        clock.value.previous_seconds = 1.5f;
+        clock.value.delta_seconds = 0.25f;
+        clock.value.sample_seconds = 4.0f;
+        clock.value.value_20 = 0x13579bdfU;
+        clock.value.value_24 = 0x2468ace0U;
         font_owner_test::clear_metrics(data.value);
         data.value.glyphs[65][2] = 80;
         data.value.unknown_10804[0] = 0x12345678U;
@@ -271,7 +344,7 @@ struct EnvironmentSnapshot
     decltype(Environment::renderer) renderer;
     decltype(Environment::manager) manager;
     decltype(Environment::auxiliary) auxiliary;
-    decltype(Environment::clock) clock;
+    ClockFrameSnapshot clock;
     FontFrameSnapshot data;
     decltype(Environment::lookup) lookup;
     decltype(Environment::buckets) buckets;
@@ -393,7 +466,8 @@ void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
                 same_float(c.seconds, d.seconds) &&
                 same_float(c.previous_seconds, d.previous_seconds) &&
                 same_float(c.delta_seconds, d.delta_seconds) &&
-                same_float(c.sample_seconds, d.sample_seconds),
+                same_float(c.sample_seconds, d.sample_seconds) && c.value_20 == d.value_20 &&
+                c.value_24 == d.value_24,
         "clock fields differ");
     const auto& f = a.data.value;
     const auto& g = b.data.value;

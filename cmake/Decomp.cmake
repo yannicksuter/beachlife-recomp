@@ -394,6 +394,26 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+# Genuine frame-clock owner and the existing sole input/clock global TU.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_frame_clock STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_frame_clock_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_frame_clock_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_frame_clock.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_globals.cpp")
+    target_include_directories(beachlife_reconstructed_frame_clock PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_frame_clock PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_frame_clock verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_frame_clock PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_frame_clock PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_frame_clock PRIVATE -fno-lto)
+    endif()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -1495,8 +1515,7 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_timed_coordinates.cpp"
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_text.cpp"
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_auxiliary_position.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_rectangle.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_globals.cpp")
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_rectangle.cpp")
     target_include_directories(beachlife_reconstructed_screen_item_complete PUBLIC
         "${BEACHLIFE_DECOMP_SOURCE}")
     target_compile_features(beachlife_reconstructed_screen_item_complete PUBLIC cxx_std_20)
@@ -1506,7 +1525,8 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM=1)
     target_link_libraries(beachlife_reconstructed_screen_item_complete PUBLIC
         beachlife_reconstructed_auxiliary_text
-        beachlife_reconstructed_screen_activation)
+        beachlife_reconstructed_screen_activation
+        beachlife_reconstructed_frame_clock)
     add_dependencies(beachlife_reconstructed_screen_item_complete verify_reconstructed_source)
 
     # Genuine static dependencies form a cycle through font/rectangle/base.
@@ -3823,4 +3843,22 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         set_tests_properties(reconstructed_screen_mode6_owner PROPERTIES
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
+endif()
+
+
+# The clock takes an explicit tick value; this does not emulate an OS clock.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+        AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    add_executable(reconstructed_frame_clock_owner_tests
+        tests/reconstructed_frame_clock_owner.cpp)
+    target_link_libraries(reconstructed_frame_clock_owner_tests PRIVATE
+        beachlife_reconstructed_frame_clock)
+    set_target_properties(reconstructed_frame_clock_owner_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_frame_clock_owner_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_frame_clock_owner_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_frame_clock_owner COMMAND reconstructed_frame_clock_owner_tests)
+    set_tests_properties(reconstructed_frame_clock_owner PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()

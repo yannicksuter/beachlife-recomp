@@ -1,0 +1,76 @@
+diff --git a/src/startup_frame_clock_constructor.cpp b/src/startup_frame_clock_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_frame_clock_constructor.cpp
+@@ -0,0 +1,16 @@
++#include "startup_frame_clock.h"
++
++// FUNCTION: BEACHLIFE 0x004eb380
++FrameClock::FrameClock(int ticks)
++{
++    startup_frame_clock = this;
++    start_ticks = ticks;
++    sample_seconds = 0.0f;
++    frames = 0;
++    previous_frames = 0;
++    seconds = 0.0f;
++    delta_seconds = 0.0f;
++    previous_seconds = 0.0f;
++    value_24 = 0;
++    value_20 = 0;
++}
+diff --git a/src/startup_frame_clock_destructor.cpp b/src/startup_frame_clock_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_frame_clock_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_frame_clock.h"
++
++// FUNCTION: BEACHLIFE 0x004eb3b0
++FrameClock::~FrameClock()
++{
++    startup_frame_clock = 0;
++}
+diff --git a/src/startup_frame_clock.h b/src/startup_frame_clock.h
+--- a/src/startup_frame_clock.h
++++ b/src/startup_frame_clock.h
+@@ -1,7 +1,7 @@
+ #ifndef STARTUP_FRAME_CLOCK_H
+ #define STARTUP_FRAME_CLOCK_H
+ 
+-// Descriptive observed prefix only; complete original class is unknown.
++// Actual 40-byte x86 owner at Game+0x34; original names remain descriptive.
+ struct FrameClock
+ {
+     int start_ticks;
+@@ -12,8 +12,18 @@
+     float previous_seconds;
+     float delta_seconds;
+     float sample_seconds;
++    unsigned int value_20; // Zeroed by the constructor; users not yet audited.
++    unsigned int value_24; // Zeroed by the constructor; users not yet audited.
++
++    // Actual 0x004eb380, RET4: Game passes GetTickCount().
++    explicit FrameClock(int ticks);
++    // Actual 0x004eb3b0, RET0: Game's destructor deletes the clock through it.
++    ~FrameClock();
+ 
+     void Update(int ticks);
+ };
+ 
++// Actual slot 0x005bb0a0; the destructor 0x004eb3b0 clears it unconditionally.
++extern FrameClock* startup_frame_clock;
++
+ #endif
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -743,7 +743,7 @@
+     fixture_dialog_preparation = dialog->preparation_flag;
+     dialog->ScreenDialog::ApplyPosition(19, -23);
+     fixture_dialog_position = dialog->rectangle.left;
+-    FrameClock fixture_frame_clock = { 0 };
++    FrameClock fixture_frame_clock(0);
+     fixture_frame_clock.Update(1000);
+     startup_input_state = &fixture_input;
+     startup_frame_clock = &fixture_frame_clock;

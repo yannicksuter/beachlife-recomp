@@ -1627,3 +1627,15 @@ fixture still requires reconstructed tests. It has no production, full menu, GPU
 or strict-match claim. Native qualification is focused on Linux optimized and
 ASan/UBSan/LSan builds; Windows and macOS remain separate gates. Shared physical
 empty/false method aliases receive no duplicate original-function credit.
+
+The experimental `beachlife_reconstructed_frame_clock` library contains the real
+FrameClock constructor, destructor and existing update method. It owns the
+unchanged input-global translation unit shared with the complete ScreenItem
+library. The Linux `reconstructed_frame_clock_owner` fixture uses genuine clock
+lifetimes and explicit tick arguments, verifies initialized fields and the
+original unconditional registration clear, and exercises finite updates away
+from the original x87 sampling threshold. It never reads the sample word before
+the update method defines it. The existing complete-item fixture constructs a
+real clock and uses a separate non-owning snapshot. These checks do not qualify
+clock wraparound, general x87 equivalence, a live OS clock, full Game startup or
+production timing.
