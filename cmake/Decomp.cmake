@@ -1443,7 +1443,7 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
 
-# Experimental localization uses borrowed typed storage and the platform CRT.
+# Experimental localization uses genuine language owners and scoped borrowed method views.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_library(beachlife_reconstructed_screen_localization STATIC
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_find.cpp"
@@ -2937,6 +2937,10 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         beachlife_reconstructed_resource_raster_402880
         beachlife_reconstructed_resource_raster_405b20
         beachlife_reconstructed_render_masks)
+    # Auxiliary positioning in the complete item archive uses real Frame RTTI.
+    # Link the actual static dependency without changing compile usage.
+    target_link_libraries(beachlife_reconstructed_screen_item_complete PUBLIC
+        $<LINK_ONLY:beachlife_reconstructed_frame_item>)
     add_dependencies(beachlife_reconstructed_frame_item verify_reconstructed_source)
     set_target_properties(beachlife_reconstructed_frame_item PROPERTIES
         CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
@@ -3940,4 +3944,36 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_test(NAME reconstructed_gui_float COMMAND reconstructed_gui_float_tests)
     set_tests_properties(reconstructed_gui_float PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Complete language lookup owner and genuine fixture lifetimes.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    target_sources(beachlife_reconstructed_screen_localization PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_lookup_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_lookup_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_table_reserve.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_table_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_storage.cpp")
+    target_link_libraries(beachlife_reconstructed_screen_localization PUBLIC
+        beachlife_reconstructed_files beachlife_reconstructed_sound_bank)
+
+    # Initial qualification is Linux x86-64 only. The existing prime-table
+    # member is selected from the real sound-bank archive, never recompiled here.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_executable(reconstructed_text_lookup_owner_tests
+            tests/reconstructed_text_lookup_owner.cpp)
+        target_link_libraries(reconstructed_text_lookup_owner_tests PRIVATE
+            beachlife_reconstructed_screen_localization)
+        target_compile_features(reconstructed_text_lookup_owner_tests PRIVATE cxx_std_20)
+        set_target_properties(reconstructed_text_lookup_owner_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_text_lookup_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_text_lookup_owner_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_text_lookup_owner
+            COMMAND reconstructed_text_lookup_owner_tests
+                "${CMAKE_CURRENT_BINARY_DIR}/generated-text-lookup-owner")
+        set_tests_properties(reconstructed_text_lookup_owner PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
 endif()

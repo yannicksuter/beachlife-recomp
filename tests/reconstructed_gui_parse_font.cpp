@@ -3,6 +3,7 @@
 #include "startup_gui_parser.h"
 #include "startup_screen_manager.h"
 #include "startup_screen_text.h"
+#include "text_lookup_owner_test_data.h"
 #include "tga_image.h"
 
 #include <array>
@@ -75,6 +76,38 @@ template <typename T> struct Guarded
                         }),
             "outside guard differs");
     }
+};
+
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Guarded<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    std::array<unsigned char, 16> before;
+    ScreenTextLookup value{"owner.txt"};
+    std::array<unsigned char, 16> after;
+
+    Guarded()
+    {
+        before.fill(0x3d);
+        after.fill(0xa7);
+    }
+    void verify() const
+    {
+        require(std::all_of(before.begin(),
+                    before.end(),
+                    [](auto byte)
+                    {
+                        return byte == 0x3d;
+                    }) &&
+                    std::all_of(after.begin(),
+                        after.end(),
+                        [](auto byte)
+                        {
+                            return byte == 0xa7;
+                        }),
+            "outside guard differs");
+    }
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
 };
 
 // Typed aggregate prefixes are borrowed subsystem models, not complete retail

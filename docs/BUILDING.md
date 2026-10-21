@@ -1698,3 +1698,20 @@ previous comparison results. The physical eight-byte Exit alias retains its
 existing strict and raw match. Native source selections remain unchanged;
 comparison-only anchors and borrowed dependencies do not establish a running
 MainMenu or a complete native Game owner.
+
+Experimental localization also composes the genuine language constructor,
+destructor and hash-table storage. It loads generated BLE data through the
+existing mounted-file boundary and retains the original quote scanning,
+duplicate-key probing, fixed value array and unconditional global cleanup.
+The initial non-Windows domain is finite ASCII keys with unchanged UTF-16 text;
+it does not claim portable Windows ACP conversion or repaired malformed-input
+behavior. The sole global and prime table remain in their existing archives.
+
+With experimental reconstructed tests enabled,
+`reconstructed_text_lookup_owner_tests` exercises complete language lifetimes
+and real lookups. Its initial qualification is Linux x86-64 optimized and
+ASan/UBSan/LSan; Windows and macOS remain separate gates. Existing localization,
+font, text and parser fixtures now construct genuine language owners, use scoped
+borrowed records, and restore their owned tables before cleanup. This does not
+construct a Game or a complete GUI manager, and normal source selection remains
+unchanged. The localization target retains its existing test-selection boundary.

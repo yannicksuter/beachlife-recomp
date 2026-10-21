@@ -3,6 +3,7 @@
 #include "startup_screen_manager.h"
 #include "startup_screen_text.h"
 #include "startup_screen_text_item.h"
+#include "text_lookup_owner_test_data.h"
 
 #include <algorithm>
 #include <array>
@@ -17,7 +18,7 @@ namespace
 {
 static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && sizeof(unsigned short) == 2);
 static_assert(std::is_aggregate_v<GuiParserState> && std::is_standard_layout_v<GuiParserState>);
-static_assert(std::is_aggregate_v<ScreenManager> && std::is_aggregate_v<ScreenTextLookup>);
+static_assert(std::is_aggregate_v<ScreenManager>);
 using Guard = std::array<unsigned char, 16>;
 unsigned int checks = 0;
 unsigned int calls = 0;
@@ -65,13 +66,44 @@ template <typename T> struct Guarded
     }
 };
 
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Guarded<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    Guard before;
+    ScreenTextLookup value{"owner.txt"};
+    Guard after;
+    Guarded()
+    {
+        before.fill(0x26);
+        after.fill(0x62);
+    }
+    void verify() const
+    {
+        require(std::all_of(before.begin(),
+                    before.end(),
+                    [](auto v)
+                    {
+                        return v == 0x26;
+                    }) &&
+                    std::all_of(after.begin(),
+                        after.end(),
+                        [](auto v)
+                        {
+                            return v == 0x62;
+                        }),
+            "outside guard differs");
+    }
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
+};
+
 bool rectangle(const ScreenRectangle& a, const ScreenRectangle& b)
 {
     return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
 }
 
-// Existing localization prefix: borrowed typed records and terminated text.
-// No complete manager or localization-owner constructor is supplied here.
+// A genuine localization owner with a scoped borrowed table and terminated
+// text. The manager remains a typed subsystem read model.
 struct Lookup
 {
     Guarded<ScreenTextLookup> lookup;
@@ -86,12 +118,13 @@ struct Lookup
         title.value = {0, 65, 0, 0};
         label.value = {0, 66, 0, 0};
         values.value = {{{"TITLE", title.value.data() + 1}, {"LABEL", label.value.data() + 1}}};
-        buckets.value = {{{"TITLE", &values.value[0], 0, {1, 2, 3}},
-            {"LABEL", &values.value[1], 0, {4, 5, 6}},
-            {nullptr, nullptr, 1, {7, 8, 9}}}};
+        buckets.value = {text_owner_test::bucket("TITLE", &values.value[0], 0),
+            text_owner_test::bucket("LABEL", &values.value[1], 0),
+            text_owner_test::bucket(nullptr, nullptr, 1)};
         lookup.value.end_index = 2;
         lookup.value.buckets = buckets.value.data();
         lookup.value.bucket_count = 2;
+        lookup.value.capacity_04 = 3;
         screen_text_lookup = &lookup.value;
     }
     ~Lookup()

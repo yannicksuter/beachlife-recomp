@@ -3,6 +3,7 @@
 #include "startup_screen_manager.h"
 #include "startup_screen_text.h"
 #include "startup_screen_text_item.h"
+#include "text_lookup_owner_test_data.h"
 #include "tga_image.h"
 
 #include <array>
@@ -26,7 +27,6 @@ using Text = std::array<unsigned short, 8>;
 
 static_assert(sizeof(int) == 4);
 static_assert(std::is_aggregate_v<ScreenManager>);
-static_assert(std::is_aggregate_v<ScreenTextLookup>);
 static_assert(std::is_aggregate_v<ScreenRequestRenderer>);
 static_assert(std::is_polymorphic_v<ScreenTextItem>);
 static_assert(std::is_same_v<decltype(&ScreenTextItem::Unresolved24),
@@ -80,6 +80,38 @@ template <typename T> struct Guarded
                         }),
             "outside guard changed");
     }
+};
+
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Guarded<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    Guard before{};
+    ScreenTextLookup value{"owner.txt"};
+    Guard after{};
+
+    Guarded()
+    {
+        before.fill(0xa6);
+        after.fill(0x6a);
+    }
+    void guards() const
+    {
+        require(std::all_of(before.begin(),
+                    before.end(),
+                    [](auto c)
+                    {
+                        return c == 0xa6;
+                    }) &&
+                    std::all_of(after.begin(),
+                        after.end(),
+                        [](auto c)
+                        {
+                            return c == 0x6a;
+                        }),
+            "outside guard changed");
+    }
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
 };
 
 // Reuse the owner's metric encoders, extending only the generated TIFF to a
@@ -206,10 +238,11 @@ struct Environment
         key.value = {'L', 'a', 'b', 'e', 'l', 0};
         borrowed.value = {0, 65, 0, 0, 0, 0, 0, 0};
         value.value = {key.value.data(), borrowed.value.data() + 1};
-        buckets.value[0] = {key.value.data(), &value.value, 0, {0x31, 0x53, 0x75}};
-        buckets.value[1] = {nullptr, nullptr, 1, {0x37, 0x59, 0x7b}};
+        buckets.value[0] = text_owner_test::bucket(key.value.data(), &value.value, 0);
+        buckets.value[1] = text_owner_test::bucket(nullptr, nullptr, 1);
         lookup.value.end_index = 1;
         lookup.value.bucket_count = 1;
+        lookup.value.capacity_04 = 2;
         lookup.value.buckets = buckets.value.data();
         screen_request_renderer = &r;
         screen_manager = &manager.value;
@@ -610,7 +643,7 @@ int main(int argc, char** argv)
         env.manager.value.fonts_2c[3] = &font.value;
         const auto manager_before = env.manager.value;
         const auto renderer_before = env.renderer.value;
-        const auto lookup_before = env.lookup.value;
+        const text_owner_test::Snapshot lookup_before(env.lookup.value);
         const auto buckets_before = env.buckets.value;
         prepared_group(env, font, *owner);
         alternate_group(env, font, *owner);
@@ -620,22 +653,13 @@ int main(int argc, char** argv)
         require(same_manager(env.manager.value, manager_before) &&
                     renderer_queue_test::equal(env.renderer.value, renderer_before),
             "borrowed manager/renderer changed");
-        require(env.lookup.value.end_index == lookup_before.end_index &&
-                    env.lookup.value.bucket_count == lookup_before.bucket_count &&
-                    env.lookup.value.buckets == lookup_before.buckets &&
-                    renderer_queue_test::same_bytes(
-                        env.lookup.value.unknown_04, lookup_before.unknown_04) &&
-                    renderer_queue_test::same_bytes(
-                        env.lookup.value.unknown_0c, lookup_before.unknown_0c) &&
-                    renderer_queue_test::same_bytes(
-                        env.lookup.value.unknown_14, lookup_before.unknown_14),
-            "borrowed lookup changed");
+        require(text_owner_test::equal(env.lookup.value, lookup_before),
+            "language owner or borrowed view changed");
         for (std::size_t i = 0; i < env.buckets.value.size(); ++i)
         {
             const auto& a = env.buckets.value[i];
             const auto& b = buckets_before[i];
-            require(a.key == b.key && a.value == b.value && a.unavailable == b.unavailable &&
-                        renderer_queue_test::same_bytes(a.unknown_09, b.unknown_09),
+            require(a.key == b.key && a.value == b.value && a.unavailable == b.unavailable,
                 "lookup bucket changed");
         }
         require(env.key.value == std::array<char, 6>{'L', 'a', 'b', 'e', 'l', 0} &&

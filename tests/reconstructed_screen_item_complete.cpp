@@ -7,6 +7,7 @@
 #include "startup_screen_manager.h"
 #include "startup_screen_manager_auxiliary.h"
 #include "startup_screen_text.h"
+#include "text_lookup_owner_test_data.h"
 
 #include <algorithm>
 #include <array>
@@ -88,6 +89,16 @@ template <class T> struct Frame
     Guard before = guard(0x23);
     T value{};
     Guard after = guard(0xc7);
+};
+
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Frame<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    Guard before = guard(0x23);
+    ScreenTextLookup value{"owner.txt"};
+    Guard after = guard(0xc7);
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
 };
 
 // Restores only fixture borrowing after the real member destructor has run.
@@ -328,14 +339,14 @@ struct Environment
         key.value = {'A', 0};
         units.value = {65, 0};
         entry.value = {key.value.data(), units.value.data()};
-        buckets.value[0] = {key.value.data(), &entry.value, 0, {0x37, 0x49, 0x5b}};
-        buckets.value[1] = {nullptr, nullptr, 1, {0x69, 0x7b, 0x8d}};
+        buckets.value[0] = text_owner_test::bucket(key.value.data(), &entry.value, 0);
+        buckets.value[1] = text_owner_test::bucket(nullptr, nullptr, 1);
         lookup.value.end_index = 1;
         lookup.value.buckets = buckets.value.data();
         lookup.value.bucket_count = 1;
-        renderer_queue_test::pattern(lookup.value.unknown_04, 0xa7);
+        lookup.value.capacity_04 = 2;
         renderer_queue_test::pattern(lookup.value.unknown_0c, 0xb8);
-        renderer_queue_test::pattern(lookup.value.unknown_14, 0xc9);
+        lookup.value.used_14 = 0xc9U;
     }
 };
 
@@ -346,7 +357,7 @@ struct EnvironmentSnapshot
     decltype(Environment::auxiliary) auxiliary;
     ClockFrameSnapshot clock;
     FontFrameSnapshot data;
-    decltype(Environment::lookup) lookup;
+    text_owner_test::FrameSnapshot<Guard> lookup;
     decltype(Environment::buckets) buckets;
     decltype(Environment::entry) entry;
     decltype(Environment::key) key;
@@ -484,18 +495,12 @@ void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
     }
     const auto& l = a.lookup.value;
     const auto& m = b.lookup.value;
-    require(l.end_index == m.end_index && l.buckets == m.buckets &&
-                l.bucket_count == m.bucket_count &&
-                renderer_queue_test::same_bytes(l.unknown_04, m.unknown_04) &&
-                renderer_queue_test::same_bytes(l.unknown_0c, m.unknown_0c) &&
-                renderer_queue_test::same_bytes(l.unknown_14, m.unknown_14),
-        "lookup changed");
+    require(text_owner_test::equal(l, m), "language owner or borrowed view changed");
     for (std::size_t i = 0; i < a.buckets.value.size(); ++i)
     {
         const auto& p = a.buckets.value[i];
         const auto& q = b.buckets.value[i];
-        require(p.key == q.key && p.value == q.value && p.unavailable == q.unavailable &&
-                    renderer_queue_test::same_bytes(p.unknown_09, q.unknown_09),
+        require(p.key == q.key && p.value == q.value && p.unavailable == q.unavailable,
             "bucket changed");
     }
     require(a.entry.value.key == b.entry.value.key && a.entry.value.text == b.entry.value.text &&
