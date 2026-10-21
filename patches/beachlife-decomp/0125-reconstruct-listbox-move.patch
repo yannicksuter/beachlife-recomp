@@ -1,0 +1,137 @@
+Reconstruct the complete ListBox rectangle move with a borrowed matching receiver.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 5eddc0c3917aba2042f40779c93fd05df4c8bca8..8d766597344696f0213451a593c300797c72e1aa 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1204,3 +1204,22 @@ extern "C" __declspec(dllexport) void FixtureListBoxUnresolved0c(ScreenListBoxPr
+     fixture_list_box_slot0c_child = box->owned_item_8c;
+     box->ScreenListBoxPrefix::Unresolved0c();
+ }
++
++#include "startup_screen_list_box_entry.h"
++
++typedef char ListBoxMoveRectangleOffset[(offsetof(ScreenListBoxPrefix, rectangle_44) == 0x44) ? 1 : -1];
++typedef char ListBoxMoveEntrySize[(sizeof(ScreenListBoxEntry) == 0x10) ? 1 : -1];
++typedef char ListBoxMoveEntryItemOffset[(offsetof(ScreenListBoxEntry, item) == 0) ? 1 : -1];
++
++volatile int fixture_list_box_move_left;
++volatile int fixture_list_box_move_bottom;
++
++// Compile/link retention only. A nonnull live genuine ListBox whose rows own
++// genuine children is a borrowed precondition; nothing is constructed and no
++// vptr is written. The comparison-only linked image must never be executed.
++extern "C" __declspec(dllexport) void FixtureListBoxMoveRectangle(ScreenListBoxPrefix* box, int dx, int dy)
++{
++    box->ScreenListBoxPrefix::MoveRectangle(dx, dy);
++    fixture_list_box_move_left = box->rectangle_44.left;
++    fixture_list_box_move_bottom = box->rectangle_44.bottom;
++}
+diff --git a/metadata.csv b/metadata.csv
+index 8cca1fd0f30b180620496c62dab39ae82b14d93d..ee83d332d9d2e6486313bc3a25b9746be6a40732 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -90,3 +90,4 @@ address,type,size,symbol
+ 0x004c6a80,function,19,?SetFlag10@ScreenRadioItem@@QAEXXZ
+ 0x004d0540,function,11,?ClearRegistration@WindowAudioState@@QAEXXZ
+ 0x004c5240,function,16,?Unresolved0c@ScreenListBoxPrefix@@UAEXXZ
++0x004c53d0,function,106,?MoveRectangle@ScreenListBoxPrefix@@UAEXHH@Z
+diff --git a/src/startup_screen_list_box.h b/src/startup_screen_list_box.h
+index e933d65e815593d26df91ccf17b95bf2308a9a2c..3e7747ed9dca5a59629030169de4710df6187d2a 100644
+--- a/src/startup_screen_list_box.h
++++ b/src/startup_screen_list_box.h
+@@ -25,10 +25,11 @@ struct ScreenListBoxSelectionRange
+     ~ScreenListBoxSelectionRange(); // Actual 0x004c39a0; not defined or used here.
+ };
+ 
+-// Matching-only borrowed-receiver projection: owned_item_8c, x86 size 0x98 and
+-// the slot0c override are the only class ABI used here. The current matching
+-// base stays unchanged. Unused derived overrides are intentionally omitted;
+-// this is not the complete 21-slot ListBox table or a constructed/native owner.
++// Matching-only borrowed-receiver projection: x86 size 0x98, rectangle_44,
++// entries, owned_item_8c and the slot0c/slot2c overrides are the only class
++// ABI used here. The current matching base stays unchanged. Unused derived
++// overrides are intentionally omitted; this is not the complete 21-slot
++// ListBox table or a constructed/native owner.
+ struct ScreenListBoxPrefix : ScreenItem
+ {
+     ScreenRectangle rectangle_44;
+@@ -56,6 +57,7 @@ struct ScreenListBoxPrefix : ScreenItem
+     ~ScreenListBoxPrefix();
+ 
+     void Unresolved0c();
++    void MoveRectangle(int dx, int dy);
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_list_box_entry.h b/src/startup_screen_list_box_entry.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c21f9f71b7c23cb40475a1183e6272180ea4af61
+--- /dev/null
++++ b/src/startup_screen_list_box_entry.h
+@@ -0,0 +1,22 @@
++#ifndef STARTUP_SCREEN_LIST_BOX_ENTRY_H
++#define STARTUP_SCREEN_LIST_BOX_ENTRY_H
++
++struct ScreenItem;
++
++// Observed 16-byte x86 row held by ScreenListBoxPrefix::entries. AddEntry
++// 0x004c4a40 allocates 0x10 bytes and constructs it inline: item 0, row -1,
++// flag_8 1. Proposed union with the destructor-only lifetime declaration.
++struct ScreenListBoxEntry
++{
++    ScreenItem* item; // Owned child; slot iterations dereference it unchecked.
++    int row;
++    unsigned char flag_8;
++    unsigned char unknown_9[7]; // Never written by the inline construction.
++
++    ~ScreenListBoxEntry(); // Actual 0x004c20e0, RET0; body remains separate.
++
++private:
++    ScreenListBoxEntry(); // AddEntry's inline construction is not supplied here.
++};
++
++#endif
+diff --git a/src/startup_screen_list_box_move.cpp b/src/startup_screen_list_box_move.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..05b868800fb921a5b1e94a387b36bb6f1c4d1504
+--- /dev/null
++++ b/src/startup_screen_list_box_move.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++
++// FUNCTION: BEACHLIFE 0x004c53d0
++void ScreenListBoxPrefix::MoveRectangle(int dx, int dy)
++{
++    ScreenItem::MoveRectangle(dx, dy);
++    rectangle_44.left += dx;
++    rectangle_44.right += dx;
++    rectangle_44.top += dy;
++    rectangle_44.bottom += dy;
++    if (owned_item_8c != 0)
++    {
++        owned_item_8c->MoveRectangle(dx, dy);
++    }
++    for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
++    {
++        (*entry)->item->MoveRectangle(dx, dy);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 4eb10962a37cac26f2826aac73ea0286e19a47df..27e1506129c71d61f98a15a0ce9ad7ea1011448d 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -567,6 +567,12 @@
+       "size": 16,
+       "name": "ScreenListBoxPrefix::Unresolved0c",
+       "name_status": "descriptive real kind22 slot0c; borrowed x86 prefix, owned_item_8c and slot0c only"
++    },
++    {
++      "address": "0x004c53d0",
++      "size": 106,
++      "name": "ScreenListBoxPrefix::MoveRectangle",
++      "name_status": "descriptive real kind22 slot2c; borrowed x86 prefix, rows and slot2c only"
+     }
+   ],
+   "library_functions": [
