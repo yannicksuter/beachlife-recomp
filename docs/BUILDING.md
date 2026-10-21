@@ -1389,3 +1389,74 @@ empty lists, closing-state publication and same-group placement order, and both
 mode-6 placement exclusions. Cleanup uses real surface and node operations.
 The Linux 64-bit fixture uses null contexts and typed subsystem read models;
 full manager construction, nonnull callbacks and gameplay remain separate.
+
+The experimental `reconstructed_gui_parse_define_tests` target exercises the
+complete Define handler with genuine defined-item, child-ring, registration
+and context lifetimes. Its Linux fixture covers nested definitions, duplicate
+names and the real fatal exit before registration. The definition index borrows
+items owned by the all-items chain. This subsystem does not execute the complete
+GUI dispatcher or establish front-end/gameplay readiness.
+
+The experimental `reconstructed_gui_image_item_tests` target composes the complete
+ImageItem with the real base, resource owner, mounted readers and drawing code.
+Its finite generated format-1 resource exercises two genuine image lifetimes,
+reference release, preparation-gated pixels, right clipping and inclusive input.
+The current fixture is Linux 64-bit only. Manager and renderer prefixes are
+explicit borrowed read models; this does not establish a complete GUI owner,
+hardware presentation or menu flow. Default source profiles are unchanged.
+
+The optional `reconstructed_gui_parse_image_tests` target connects complete
+IMAGE parsing to genuine Image construction, resource lookup and software
+drawing. Generated mounted files exercise unnamed registration, relative
+parent geometry, optional owned text and real link/resource teardown. A
+separate missing-opening-bracket entry reaches the actual fatal reporter.
+The parser, manager and localization prefixes remain typed subsystem read
+models; full script dispatch and a running menu are separate capabilities.
+
+The experimental `reconstructed_gui_tab_item_tests` target composes the complete
+TabItem with real base, child-ring, Frame and resource lifetimes. Three generated
+groups cover borrowed-child survival, activation/preparation and movement,
+cached two-plane pixels, and selected-coordinate propagation. The mounted files,
+palette and guarded canvas are generated; there are no game-method providers.
+The fixture is Linux 64-bit only and uses typed borrowed manager/renderer read
+models. Full GUI ownership, hardware presentation and menu flow remain separate.
+Default source profiles are unchanged.
+
+The experimental `reconstructed_gui_parse_tab_tests` target connects the complete
+TAB-context handler to genuine Tab/Frame/resource/ring lifetimes and real parser
+readers and registration. Generated inputs exercise absolute coordinates,
+registration before alternate-context publication, raw owned labels and literal
+resource pixels. A separate process checks the real missing-open fatal path.
+The fixture is Linux 64-bit only; parser, manager, renderer and localization
+prefixes are bounded read models. It does not establish full GUI ownership,
+script dispatch, hardware presentation or menu flow. Default profiles are unchanged.
+
+The experimental `reconstructed_gui_parse_main640_tests` target exercises the
+complete MAIN640 handler with genuine Frame and context lifetimes. Generated
+inputs check construction only at width 640, raw nested-brace skipping at other
+widths, publication before brace validation, and real fatal termination with
+fixture-owned cleanup. The focused fixture is Linux 64-bit only and uses typed
+borrowed parser, manager and renderer read models. It does not establish the
+complete parser/GUI owner, command dispatcher, presentation or menu flow.
+Default source profiles remain unchanged.
+
+The experimental `reconstructed_menu_owner190_entry_destroy_tests` target
+exercises the distinct owner190 entry callback with null payloads and genuine
+Text/base scalar ownership. A separate constructed observer checks virtual
+destruction before the record is released; the plain Text case retains its
+actual class table. The focused fixture is Linux 64-bit only. Full manager,
+owner190 producer/list lifetime and menu execution remain separate capabilities.
+Default source profiles are unchanged.
+
+The optional `reconstructed_item_clear_manager_tests` target exercises the real
+item-to-manager reference-clearing helper with two genuine base-item lifetimes.
+Its focused Linux 64-bit cases cover matched and unmatched items, a changed
+current manager, retained fields and a null auxiliary on the unmatched path.
+The manager and auxiliary are typed borrowed prefixes; this does not construct
+their complete owners or qualify the RadioItem class or a running menu.
+
+The same experimental image-parser target also supplies the genuine `Icon`
+handler and image-resource configuration. Run the `reconstructed_gui_parse_icon`
+test for generated-data parsing, registration, parent attachment, pixel drawing
+and real image/resource cleanup. The existing subsystem remains selected by
+reconstructed tests; this does not activate the full GUI parser or game menu.

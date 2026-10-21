@@ -434,7 +434,11 @@ void run_session(std::span<const unsigned char> input,
     reader.value.context_head = nullptr;
     reader.value.previous_context = nullptr;
     reader.value.last_registered_item = nullptr;
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+    reader.value.defined_items = nullptr;
+#else
     std::memset(reader.value.unknown_24, 0x5a, sizeof(reader.value.unknown_24));
+#endif
     reader.value.registry_head = nullptr;
     reader.value.items_head = nullptr;
     reader.value.items_tail = nullptr;

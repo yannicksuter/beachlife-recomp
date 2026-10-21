@@ -3048,3 +3048,321 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
 endif()
+# The complete Define handler uses the real defined-item, ring and parser links.
+# This optional subsystem remains below the existing reconstructed-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_define STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_define.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_define PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_define PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_define PUBLIC
+        beachlife_reconstructed_gui_defined_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_integer
+        beachlife_resource_pool_host)
+    add_dependencies(beachlife_reconstructed_gui_parse_define verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_define PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_define PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_define PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_parse_define_tests tests/reconstructed_gui_parse_define.cpp)
+        target_link_libraries(reconstructed_gui_parse_define_tests PRIVATE
+            beachlife_reconstructed_gui_parse_define)
+        set_target_properties(reconstructed_gui_parse_define_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_define_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_define_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_parse_define COMMAND reconstructed_gui_parse_define_tests)
+        add_test(NAME reconstructed_gui_parse_define_fatal_brace
+            COMMAND reconstructed_gui_parse_define_tests --fatal-brace)
+        set_tests_properties(reconstructed_gui_parse_define reconstructed_gui_parse_define_fatal_brace
+            PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+        # Preserve the actual Fatal exit code and independently require its
+        # cleanup marker; PASS_REGULAR_EXPRESSION must not override a failed exit.
+    endif()
+endif()
+
+# Genuine ImageItem owns a real resource wrapper and retains the complete base.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_image_item STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_image_item_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_image_item_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_image_item_virtuals.cpp")
+    target_include_directories(beachlife_reconstructed_gui_image_item PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_image_item PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_image_item PUBLIC
+        beachlife_reconstructed_frame_item)
+    add_dependencies(beachlife_reconstructed_gui_image_item verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_image_item PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_image_item PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_image_item PRIVATE -fno-lto)
+    endif()
+
+    # Generated mounted resources and the existing guarded native pool backing.
+    # No full manager, renderer, game method or platform provider is supplied.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_image_item_tests tests/reconstructed_gui_image_item.cpp)
+        target_link_libraries(reconstructed_gui_image_item_tests PRIVATE
+            beachlife_reconstructed_gui_image_item)
+        set_target_properties(reconstructed_gui_image_item_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_image_item_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_image_item_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_image_item
+            COMMAND reconstructed_gui_image_item_tests
+                "${CMAKE_CURRENT_BINARY_DIR}/generated/gui-image-item")
+        set_tests_properties(reconstructed_gui_image_item PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# IMAGE parsing selects the genuine Image owner and real parser/resource graph.
+# This optional subsystem follows the existing reconstructed-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_image STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_image.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_icon.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_image_item_icon.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_image PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_image PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_image PUBLIC
+        beachlife_reconstructed_gui_image_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_screen_localization)
+    add_dependencies(beachlife_reconstructed_gui_parse_image verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_image PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_image PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_image PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_parse_image_tests tests/reconstructed_gui_parse_image.cpp)
+        target_link_libraries(reconstructed_gui_parse_image_tests PRIVATE
+            beachlife_reconstructed_gui_parse_image
+            beachlife_reconstructed_frame_item)
+        set_target_properties(reconstructed_gui_parse_image_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_image_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_image_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_parse_image COMMAND reconstructed_gui_parse_image_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/gui-parse-image")
+        add_test(NAME reconstructed_gui_parse_image_fatal_open
+            COMMAND reconstructed_gui_parse_image_tests --fatal-open)
+        add_test(NAME reconstructed_gui_parse_icon COMMAND reconstructed_gui_parse_image_tests
+            --icon "${CMAKE_CURRENT_BINARY_DIR}/generated/gui-parse-icon")
+        add_test(NAME reconstructed_gui_parse_icon_fatal_open
+            COMMAND reconstructed_gui_parse_image_tests --icon-fatal-open)
+        set_tests_properties(reconstructed_gui_parse_image reconstructed_gui_parse_image_fatal_open
+            reconstructed_gui_parse_icon reconstructed_gui_parse_icon_fatal_open
+            PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+        # Root qualification also checks the real Fatal before marker
+        # and absence of the returned marker, preserving the actual exit code.
+    endif()
+endif()
+
+# Genuine TabItem owns a real resource wrapper and retains the complete base.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_tab_item STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_tab_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_tab_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_tab_virtuals.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_tab_coordinates.cpp")
+    target_include_directories(beachlife_reconstructed_gui_tab_item PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_tab_item PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_tab_item PUBLIC
+        beachlife_reconstructed_frame_item)
+    add_dependencies(beachlife_reconstructed_gui_tab_item verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_tab_item PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_tab_item PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_tab_item PRIVATE -fno-lto)
+    endif()
+
+    # Generated mounted resources and the existing guarded native pool backing.
+    # No full manager, renderer, game method or platform provider is supplied.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_tab_item_tests tests/reconstructed_gui_tab_item.cpp)
+        target_link_libraries(reconstructed_gui_tab_item_tests PRIVATE
+            beachlife_reconstructed_gui_tab_item)
+        set_target_properties(reconstructed_gui_tab_item_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_tab_item_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_tab_item_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_tab_item
+            COMMAND reconstructed_gui_tab_item_tests
+                "${CMAKE_CURRENT_BINARY_DIR}/generated/gui-tab-item")
+        set_tests_properties(reconstructed_gui_tab_item PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+# TAB parsing selects the genuine Tab owner and real parser/resource graph.
+# This optional subsystem follows the existing reconstructed-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_tab STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_tab.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_tab PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_tab PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_tab PUBLIC
+        beachlife_reconstructed_gui_tab_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_screen_localization)
+    add_dependencies(beachlife_reconstructed_gui_parse_tab verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_tab PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_tab PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_tab PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_parse_tab_tests tests/reconstructed_gui_parse_tab.cpp)
+        target_link_libraries(reconstructed_gui_parse_tab_tests PRIVATE
+            beachlife_reconstructed_gui_parse_tab
+            beachlife_reconstructed_frame_item)
+        set_target_properties(reconstructed_gui_parse_tab_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_tab_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_tab_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_parse_tab COMMAND reconstructed_gui_parse_tab_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/gui-parse-tab")
+        add_test(NAME reconstructed_gui_parse_tab_fatal_open
+            COMMAND reconstructed_gui_parse_tab_tests --fatal-open)
+        set_tests_properties(reconstructed_gui_parse_tab reconstructed_gui_parse_tab_fatal_open
+            PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+        # Root qualification also checks the real Fatal before marker
+        # and absence of the returned marker, preserving the actual exit code.
+    endif()
+endif()
+# MAIN640 selects width exactly 640 and creates a genuine Frame/context owner.
+# Frame/resource/font dependencies retain their existing optional subsystem scope.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_parse_main640 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_parse_main640.cpp")
+    target_include_directories(beachlife_reconstructed_gui_parse_main640 PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_parse_main640 PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_gui_parse_main640 PUBLIC
+        beachlife_reconstructed_frame_item
+        beachlife_reconstructed_gui_context
+        beachlife_reconstructed_gui_rectangle)
+    add_dependencies(beachlife_reconstructed_gui_parse_main640 verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_gui_parse_main640 PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_parse_main640 PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_parse_main640 PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_gui_parse_main640_tests tests/reconstructed_gui_parse_main640.cpp)
+        target_link_libraries(reconstructed_gui_parse_main640_tests PRIVATE
+            beachlife_reconstructed_gui_parse_main640)
+        set_target_properties(reconstructed_gui_parse_main640_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_gui_parse_main640_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_parse_main640_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_gui_parse_main640 COMMAND reconstructed_gui_parse_main640_tests)
+        add_test(NAME reconstructed_gui_parse_main640_fatal_open
+            COMMAND reconstructed_gui_parse_main640_tests --fatal-open)
+        set_tests_properties(reconstructed_gui_parse_main640 reconstructed_gui_parse_main640_fatal_open
+            PROPERTIES LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+        # Qualification checks actual exit0, before/cleanup markers and no
+        # returned marker. StartupFatal formats its message but does not print it.
+    endif()
+endif()
+
+# Distinct owner190 records release genuine Text/base owners through slot zero.
+# This optional subsystem follows the existing reconstructed-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_menu_owner190_entry_destroy STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_owner190_entry_destroy.cpp")
+    target_include_directories(beachlife_reconstructed_menu_owner190_entry_destroy PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_menu_owner190_entry_destroy PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_menu_owner190_entry_destroy PUBLIC
+        beachlife_reconstructed_gui_text_item)
+    add_dependencies(beachlife_reconstructed_menu_owner190_entry_destroy verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_menu_owner190_entry_destroy PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_menu_owner190_entry_destroy PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_menu_owner190_entry_destroy PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_menu_owner190_entry_destroy_tests
+            tests/reconstructed_menu_owner190_entry_destroy.cpp)
+        target_link_libraries(reconstructed_menu_owner190_entry_destroy_tests PRIVATE
+            beachlife_reconstructed_menu_owner190_entry_destroy)
+        set_target_properties(reconstructed_menu_owner190_entry_destroy_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_menu_owner190_entry_destroy_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_menu_owner190_entry_destroy_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_menu_owner190_entry_destroy
+            COMMAND reconstructed_menu_owner190_entry_destroy_tests)
+        set_tests_properties(reconstructed_menu_owner190_entry_destroy PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+
+# This real nonvirtual helper completes a RadioItem update dependency.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_item_clear_manager STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_clear_manager.cpp")
+    target_include_directories(beachlife_reconstructed_item_clear_manager PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_item_clear_manager PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_item_clear_manager PUBLIC
+        beachlife_reconstructed_screen_item_complete)
+    add_dependencies(beachlife_reconstructed_item_clear_manager verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_item_clear_manager PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_item_clear_manager PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_item_clear_manager PRIVATE -fno-lto)
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_item_clear_manager_tests
+            tests/reconstructed_item_clear_manager.cpp)
+        target_link_libraries(reconstructed_item_clear_manager_tests PRIVATE
+            beachlife_reconstructed_item_clear_manager)
+        set_target_properties(reconstructed_item_clear_manager_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_item_clear_manager_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_item_clear_manager_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_item_clear_manager COMMAND reconstructed_item_clear_manager_tests)
+        set_tests_properties(reconstructed_item_clear_manager PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()

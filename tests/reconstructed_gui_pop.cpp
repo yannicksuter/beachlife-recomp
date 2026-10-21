@@ -449,7 +449,11 @@ struct Scenario
         state.items_head = &unrelated.value;
         state.items_tail = &unrelated.value;
         state.registry_tail = &unrelated.value;
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+        state.defined_items = nullptr;
+#else
         std::memset(state.unknown_24, 0x79, sizeof(state.unknown_24));
+#endif
         state.word_38 = 0x86421357u;
         for (unsigned i = 0; i < initial.count; ++i)
         {

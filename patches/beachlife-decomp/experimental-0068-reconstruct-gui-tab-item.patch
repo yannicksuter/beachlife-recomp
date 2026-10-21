@@ -1,0 +1,304 @@
+diff --git a/src/startup_screen_tab_constructor.cpp b/src/startup_screen_tab_constructor.cpp
+new file mode 100644
+index 0000000..e35e68e
+--- /dev/null
++++ b/src/startup_screen_tab_constructor.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_tab_item.h"
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x004c05a0
++ScreenTabItem::ScreenTabItem(ScreenRectangle initial, const char* name)
++    : ScreenItem(initial)
++    , children()
++{
++    word_44 = 0;
++    resource = screen_dialog_resources->Find(name);
++    kind_28 = 9;
++    children.Clear();
++}
+diff --git a/src/startup_screen_tab_coordinates.cpp b/src/startup_screen_tab_coordinates.cpp
+new file mode 100644
+index 0000000..4b1530c
+--- /dev/null
++++ b/src/startup_screen_tab_coordinates.cpp
+@@ -0,0 +1,35 @@
++#include "startup_screen_tab_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c0920
++bool ScreenTabItem::HandleTabCoordinates(int x, int y, int value, unsigned char selected)
++{
++    bool handled = false;
++    ScreenItem::HandleTimedCoordinates(x, y, value);
++    if (value == 3)
++        state_40 = 0;
++    else
++        state_40 = TestRectangle(x, y);
++
++    if (selected != 0)
++    {
++        ScreenChildNode* node = children.head->next;
++        while (node != children.head && !handled)
++        {
++            bool child_handled = node->item->HandleTimedCoordinates(x, y, value);
++            node = node->next;
++            handled = child_handled;
++        }
++        if (!handled && ReadState40() != 0 && value == 1)
++        {
++            node = children.head->next;
++            while (node != children.head)
++            {
++                node->item->Unresolved28();
++                node = node->next;
++            }
++        }
++    }
++    else if (ReadState40() != 0 && value == 1)
++        handled = true;
++    return handled;
++}
+diff --git a/src/startup_screen_tab_destructor.cpp b/src/startup_screen_tab_destructor.cpp
+new file mode 100644
+index 0000000..b6ac3f3
+--- /dev/null
++++ b/src/startup_screen_tab_destructor.cpp
+@@ -0,0 +1,9 @@
++#include "startup_screen_tab_item.h"
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x004c07c0
++ScreenTabItem::~ScreenTabItem()
++{
++    if (resource != 0)
++        screen_dialog_resources->Release(resource);
++}
+diff --git a/src/startup_screen_tab_item.h b/src/startup_screen_tab_item.h
+new file mode 100644
+index 0000000..5a2c2c8
+--- /dev/null
++++ b/src/startup_screen_tab_item.h
+@@ -0,0 +1,38 @@
++#ifndef STARTUP_SCREEN_TAB_ITEM_H
++#define STARTUP_SCREEN_TAB_ITEM_H
++
++#include "startup_screen_item.h"
++#include "startup_screen_children.h"
++
++struct ScreenDialogResource;
++
++// Genuine kind-9 object: original allocation 0x54 and table 0x004f4854.
++// Descriptive names only. Actual owner and differing virtual bodies remain
++// dependencies; neither inherited replacements nor a native lifetime is supplied.
++struct ScreenTabItem : ScreenItem
++{
++    // Observed 32-bit states; original signedness/semantic names remain unknown.
++    unsigned int word_44;
++    unsigned int word_48;
++    ScreenDialogResource* resource; // Original +0x4c; acquired through the real manager.
++    ScreenChildRing children;       // Original +0x50; real nodes, borrowed ScreenItem payloads.
++
++    // Actual 0x004c0920, nonvirtual RET16; separate complete body required.
++    bool HandleTabCoordinates(int x, int y, int value, unsigned char selected);
++
++    ScreenTabItem(ScreenRectangle initial, const char* name); // 0x004c05a0, RET20.
++    virtual ~ScreenTabItem();                                 // Ordinary 0x004c07c0; deleting wrapper 0x004c07a0.
++
++    virtual void Unresolved04(float elapsed);            // 0x004c0a40.
++    virtual void Unresolved08();                         // 0x004c0a80.
++    virtual void Unresolved0c();                         // 0x004c0b20.
++    virtual void Unresolved10(ScreenItem* item);         // 0x004c0c40.
++    virtual void ApplyPosition(int dx, int dy);          // 0x004c08a0.
++    virtual void MarkPrepared();                         // 0x004c0af0.
++    virtual void Unresolved1c();                         // 0x004c0bf0.
++    virtual void Unresolved24(unsigned char enabled);    // 0x004c09f0.
++    virtual void MoveRectangle(int dx, int dy);          // 0x004c0ab0.
++    virtual bool HandleInput38(int x, int y, int value); // 0x004c08e0.
++};
++
++#endif
+diff --git a/src/startup_screen_tab_virtuals.cpp b/src/startup_screen_tab_virtuals.cpp
+new file mode 100644
+index 0000000..2fc8c26
+--- /dev/null
++++ b/src/startup_screen_tab_virtuals.cpp
+@@ -0,0 +1,179 @@
++#include "startup_screen_tab_item.h"
++#include "startup_screen_dialog_resource.h"
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004c08a0
++void ScreenTabItem::ApplyPosition(int dx, int dy)
++{
++    ScreenItem::ApplyPosition(dx, dy);
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->ApplyPosition(dx, dy);
++        node = node->next;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c08e0
++bool ScreenTabItem::HandleInput38(int x, int y, int value)
++{
++    bool handled = false;
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head && !handled)
++    {
++        handled = node->item->HandleInput38(x, y, value);
++        node = node->next;
++    }
++    return handled;
++}
++
++// FUNCTION: BEACHLIFE 0x004c09f0
++void ScreenTabItem::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    word_44 = enabled ? 1 : 0;
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->Unresolved24(enabled);
++        node = node->next;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c0a40
++void ScreenTabItem::Unresolved04(float elapsed)
++{
++    ScreenItem::Unresolved04(elapsed);
++    if (state_30 != 0 && word_44 == 1)
++    {
++        ScreenChildNode* node = children.head->next;
++        while (node != children.head)
++        {
++            node->item->Unresolved04(elapsed);
++            node = node->next;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c0a80
++void ScreenTabItem::Unresolved08()
++{
++    if (state_30 != 0 && word_44 == 1)
++    {
++        ScreenChildNode* node = children.head->next;
++        while (node != children.head)
++        {
++            node->item->Unresolved08();
++            node = node->next;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c0ab0
++void ScreenTabItem::MoveRectangle(int dx, int dy)
++{
++    ScreenItem::MoveRectangle(dx, dy);
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->MoveRectangle(dx, dy);
++        node = node->next;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c0af0
++void ScreenTabItem::MarkPrepared()
++{
++    bool active = word_44 == 1;
++    word_48 = 3;
++    if (active)
++    {
++        ScreenChildNode* node = children.head->next;
++        while (node != children.head)
++        {
++            node->item->MarkPrepared();
++            node = node->next;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c0b20
++void ScreenTabItem::Unresolved0c()
++{
++    char diagnostic[80];
++    unsigned int previous = word_48;
++    unsigned int state = word_44;
++    if (state != previous)
++    {
++        ScreenDialogResource* selected = resource;
++        unsigned int frame_index = selected->word_10;
++        ScreenDialogResourceRecord* selected_record = selected->record;
++        int plane = static_cast<int>(state);
++        if (plane >= selected_record->frames[frame_index]->plane_count_0c)
++        {
++            plane = selected_record->frames[frame_index]->plane_count_0c - 1;
++            sprintf(diagnostic, "%s %d", selected->name, plane);
++        }
++        selected->word_18 = plane;
++        resource->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
++        word_48 = word_44;
++    }
++    ScreenItem::Unresolved0c();
++    if (word_44 == 1)
++    {
++        ScreenChildNode* node = children.head->next;
++        while (node != children.head)
++        {
++            ScreenItem* child = node->item;
++            if (child->kind_28 != 2)
++            {
++                child->Unresolved0c();
++            }
++            node = node->next;
++        }
++        node = children.head->next;
++        while (node != children.head)
++        {
++            ScreenItem* child = node->item;
++            if (child->kind_28 == 2)
++            {
++                child->Unresolved0c();
++            }
++            node = node->next;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c0bf0
++void ScreenTabItem::Unresolved1c()
++{
++    if (word_44 == 1)
++    {
++        ScreenChildNode* node = children.head->next;
++        while (node != children.head)
++        {
++            ScreenItem* child = node->item;
++            if (child->kind_28 != 2)
++            {
++                child->Unresolved1c();
++            }
++            node = node->next;
++        }
++        node = children.head->next;
++        while (node != children.head)
++        {
++            ScreenItem* child = node->item;
++            if (child->kind_28 == 2)
++            {
++                child->Unresolved1c();
++            }
++            node = node->next;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c0c40
++void ScreenTabItem::Unresolved10(ScreenItem* item)
++{
++    children.Insert(children.End(), item);
++}

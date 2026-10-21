@@ -133,7 +133,11 @@ struct Environment
         parser.value.previous_context = &prior;
         parser.value.last_registered_item = &prior;
         parser.value.word_3c = 0x2468ace0U;
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+        parser.value.defined_items = nullptr;
+#else
         renderer_queue_test::pattern(parser.value.unknown_24, 0x75);
+#endif
         screen_manager = &manager.value;
         screen_request_renderer = &renderer.value;
         alternate = std::make_unique<ScreenFrameItem>(ScreenRectangle{100, 200, 200, 400}, 0);
@@ -212,7 +216,11 @@ void preserved(const Environment& environment,
     require(p.manager == old.manager && p.buffer == old.buffer &&
                 p.alternate_context_10 == old.alternate_context_10 &&
                 p.alternate_context_14 == old.alternate_context_14 && p.word_3c == old.word_3c &&
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+                p.defined_items == old.defined_items,
+#else
                 renderer_queue_test::same_bytes(p.unknown_24, old.unknown_24),
+#endif
         "unrelated parser field changed");
     const auto& m = environment.manager.value;
     require(m.renderer == manager.renderer && m.registry == manager.registry &&

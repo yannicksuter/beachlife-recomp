@@ -132,7 +132,11 @@ struct Session
     Session()
     {
         parser.value.manager = &manager.value;
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+        parser.value.defined_items = nullptr;
+#else
         std::fill(std::begin(parser.value.unknown_24), std::end(parser.value.unknown_24), 0x75);
+#endif
     }
     ~Session()
     {
@@ -165,16 +169,20 @@ struct Session
 
 void preserved(const GuiParserState& p, const GuiParserState& before)
 {
-    require(
-        p.manager == before.manager && p.buffer == before.buffer &&
-            p.current_context == before.current_context &&
-            p.alternate_context_10 == before.alternate_context_10 &&
-            p.alternate_context_14 == before.alternate_context_14 &&
-            p.context_head == before.context_head &&
-            p.previous_context == before.previous_context && p.word_38 == before.word_38 &&
-            p.word_3c == before.word_3c &&
-            std::equal(
-                std::begin(p.unknown_24), std::end(p.unknown_24), std::begin(before.unknown_24)),
+    require(p.manager == before.manager && p.buffer == before.buffer &&
+                p.current_context == before.current_context &&
+                p.alternate_context_10 == before.alternate_context_10 &&
+                p.alternate_context_14 == before.alternate_context_14 &&
+                p.context_head == before.context_head &&
+                p.previous_context == before.previous_context && p.word_38 == before.word_38 &&
+                p.word_3c == before.word_3c &&
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+                p.defined_items == before.defined_items,
+#else
+                std::equal(std::begin(p.unknown_24),
+                    std::end(p.unknown_24),
+                    std::begin(before.unknown_24)),
+#endif
         "unrelated parser member changed");
 }
 
