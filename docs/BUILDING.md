@@ -100,6 +100,12 @@ output, outside the prepared source export, and excludes them from credited
 methods. These definitions establish comparison addresses only. An image using
 them must never be executed; native builds require the actual dependency source.
 
+Supported anchor kinds are `null-pointer-member` for pointer returns,
+`void-member` for `void` returns and `false-member` for `bool` returns. Each
+entry must identify one audited original method and its exact CSV symbol and
+extent. Constructors, destructors and other return types are unsupported;
+an anchor does not qualify a dependency as reconstructed or native-tested.
+
 ## Reconstructed configuration libraries
 
 Build the prepared configuration and VFS file libraries without test executables:
