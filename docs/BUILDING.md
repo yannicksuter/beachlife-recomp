@@ -1606,3 +1606,9 @@ game sources, then run
 The focused fixture supports 64-bit Linux and representable integer arithmetic.
 It does not construct the retail renderer, blit pixels or establish menu/GPU
 execution. Windows/macOS and tests-disabled availability remain separate gates.
+
+The matching profile includes the complete 91-byte screen rectangle clipping
+method. It matches strictly; raw bytes differ at the relocated renderer-global
+address. A changed bottom adjustment is rejected against the fixed original
+extent, retaining all previous comparison results. Native source selections
+preserve their independently qualified clipping implementation.
