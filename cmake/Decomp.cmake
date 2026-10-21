@@ -3862,3 +3862,46 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
     set_tests_properties(reconstructed_frame_clock_owner PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# InputMotion uses the existing real cursor, TGA/VFS and singleton owners.
+# Its dependencies remain within the optional reconstructed-test selection.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_input_motion_owner STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_motion_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_motion_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_motion_globals.cpp")
+    target_include_directories(beachlife_reconstructed_input_motion_owner PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_input_motion_owner PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_input_motion_owner PUBLIC
+        beachlife_reconstructed_tga_files
+        beachlife_reconstructed_cursor
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_frame_clock)
+    add_dependencies(beachlife_reconstructed_input_motion_owner verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_input_motion_owner PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_input_motion_owner PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_input_motion_owner PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+        add_executable(reconstructed_input_motion_owner_tests
+            tests/reconstructed_input_motion_owner.cpp)
+        target_link_libraries(reconstructed_input_motion_owner_tests PRIVATE
+            beachlife_reconstructed_input_motion_owner)
+        set_target_properties(reconstructed_input_motion_owner_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_input_motion_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_input_motion_owner_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_input_motion_owner
+            COMMAND reconstructed_input_motion_owner_tests
+                "${CMAKE_CURRENT_BINARY_DIR}/input-motion-owner-fixture")
+        set_tests_properties(reconstructed_input_motion_owner PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 60)
+    endif()
+endif()

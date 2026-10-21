@@ -1639,3 +1639,15 @@ the update method defines it. The existing complete-item fixture constructs a
 real clock and uses a separate non-owning snapshot. These checks do not qualify
 clock wraparound, general x87 equivalence, a live OS clock, full Game startup or
 production timing.
+
+The optional experimental InputMotion owner target composes its real constructor,
+ordinary destructor and registration with the existing cursor adapter and
+TGA/VFS/image/palette implementation. `reconstructed_input_motion_owner` uses a
+generated indexed TGA and borrowed typed input/renderer state to check initial
+coordinates, palette conversion, publication and genuine image cleanup,
+including the original unconditional registration clear. Its fixture is limited
+to 64-bit x86 Linux; optimized and explicit ASan/UBSan/LSan qualification remain
+separate from Windows/macOS coverage. This target requires the reconstructed-test
+selection and does not select InputMotion Update or Render, start the Game owner,
+or provide a gameplay cursor. Experimental source selection remains off by
+default.
