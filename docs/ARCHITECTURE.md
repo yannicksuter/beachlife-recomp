@@ -470,3 +470,5 @@ owner registration, including when another owner is current. All declaration
 consumers rebuild together. The native compatibility series removes this
 matching projection before source composition; full audio lifetime and playback
 remain separate. Comparison images are never executed.
+
+`ScreenListBoxPrefix::Unresolved0c` (0x004c5240, 16 bytes) forwards slot 0x0c to the ListBox's owned child when present and otherwise returns; it never calls the base slot. The matching profile compiles the unchanged reconstructed source against a matching-only borrowed ListBox receiver on the existing 68-byte, 12-slot item base: only the x86 size 0x98, `owned_item_8c` and the slot0c override are class ABI used there, and the native-pre inverse removes that projection so the native and experimental ListBox header from the experimental storage patch stays authoritative.
