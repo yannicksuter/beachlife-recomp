@@ -1651,3 +1651,26 @@ separate from Windows/macOS coverage. This target requires the reconstructed-tes
 selection and does not select InputMotion Update or Render, start the Game owner,
 or provide a gameplay cursor. Experimental source selection remains off by
 default.
+
+The `beachlife_renderer_display` host library borrows the existing game window
+through `platform::Video`. It queries real SDL display/window state and converts
+top-down, little-endian RGB555 frames, with an explicit row stride, into the
+video boundary's RGBA pixels. Drawing contexts may outlive the display wrapper;
+the borrowed `Video` and window must remain alive. Invalid storage, wrong-thread
+use, expired windows and SDL errors are reported without a fabricated fallback.
+This library is linked by the runtime, but the reconstructed renderer owner and
+its DirectDraw/GDI calls are not connected to it yet. Normal Play is unchanged.
+
+The focused `renderer_display` test uses an actual hidden SDL dummy window and a
+recorder for `platform::Video`. It checks padded/unaligned literal pixels,
+storage limits, context lifetime and rejection before presentation. The pinned
+dummy backend has no window-border query: border-dependent operations must
+report that failure. It does not qualify desktop border/DPI behavior, a GPU,
+retail Game/renderer lifetime or a visible Intro/menu. Linux optimized and
+explicit address/undefined/leak sanitizer builds are the initial scope.
+
+```sh
+cmake --preset release -B build/renderer-display -DBUILD_TESTING=ON
+cmake --build build/renderer-display --target renderer_display_tests
+ctest --test-dir build/renderer-display -R '^renderer_display$' --output-on-failure
+```

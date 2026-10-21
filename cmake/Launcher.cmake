@@ -100,6 +100,19 @@ elseif(APPLE)
     target_link_libraries(beachlife_system_usage PRIVATE "-framework IOKit" "-framework CoreFoundation")
 endif()
 
+# The renderer's software-display transport borrows the game's existing Video
+# window. It has no reconstructed-source, ImGui or GPU implementation dependency.
+add_library(beachlife_renderer_display STATIC src/runtime/renderer_software_display.cpp)
+target_include_directories(beachlife_renderer_display PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_compile_features(beachlife_renderer_display PUBLIC cxx_std_20)
+set_target_properties(beachlife_renderer_display PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(beachlife_renderer_display PUBLIC SDL3::SDL3 Threads::Threads)
+if(MSVC)
+    target_compile_options(beachlife_renderer_display PRIVATE /W4 /WX)
+else()
+    target_compile_options(beachlife_renderer_display PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 # Both the application and generated runtime fixture use these exact host libraries.
 add_library(beachlife_launcher STATIC src/launcher/launcher.cpp src/launcher/ui.cpp)
 target_include_directories(beachlife_launcher PUBLIC "${CMAKE_SOURCE_DIR}/src"
@@ -113,7 +126,7 @@ add_library(beachlife_runtime STATIC src/runtime/runtime.cpp src/runtime/startup
     src/platform/video_sdl_gpu.cpp)
 target_include_directories(beachlife_runtime PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(beachlife_runtime PUBLIC beachlife_ui beachlife_launcher_core
-    beachlife_system_usage beachlife_startup_configuration)
+    beachlife_system_usage beachlife_startup_configuration beachlife_renderer_display)
 foreach(target beachlife_launcher beachlife_runtime)
     target_compile_features(${target} PUBLIC cxx_std_20)
     set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
@@ -132,6 +145,18 @@ if(APPLE)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(renderer_display_tests tests/renderer_display.cpp)
+    target_link_libraries(renderer_display_tests PRIVATE beachlife_renderer_display)
+    set_target_properties(renderer_display_tests PROPERTIES CXX_EXTENSIONS OFF)
+    if(MSVC)
+        target_compile_options(renderer_display_tests PRIVATE /W4 /WX)
+    else()
+        target_compile_options(renderer_display_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME renderer_display COMMAND renderer_display_tests)
+    set_tests_properties(renderer_display PROPERTIES
+        TIMEOUT 30 ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+
     add_executable(launcher_content_tests tests/launcher_content.cpp)
     target_link_libraries(launcher_content_tests PRIVATE beachlife_launcher_core)
     add_test(NAME launcher_content
