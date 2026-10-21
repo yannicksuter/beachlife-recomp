@@ -1621,9 +1621,9 @@ covers borrowed manager identity, all seven virtual calls, stack and placement
 lifetimes, and real scalar deletion through the base pointer. The manager used
 by this fixture is an aggregate read model, not a qualified retail manager owner.
 
-The target remains below the optional reconstructed-test return and requires
-`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME`, which defaults to OFF. It has no production,
-full menu, GPU or strict-match claim. Native qualification is focused on Linux
-optimized and ASan/UBSan/LSan builds; Windows, macOS and tests-disabled availability
-remain separate gates. Shared physical empty/false method aliases receive no
-duplicate original-function credit.
+The library requires `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME`, which defaults to OFF,
+and is available with `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=OFF`. Its Linux ownership
+fixture still requires reconstructed tests. It has no production, full menu, GPU
+or strict-match claim. Native qualification is focused on Linux optimized and
+ASan/UBSan/LSan builds; Windows and macOS remain separate gates. Shared physical
+empty/false method aliases receive no duplicate original-function credit.

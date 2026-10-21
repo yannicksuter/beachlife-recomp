@@ -373,6 +373,27 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+# Genuine idle Mode6 owner and its real base/derived lifetimes.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_mode6 STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode6.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode6_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode6_idle.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode_controller.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode_controller_destructor.cpp")
+    target_include_directories(beachlife_reconstructed_screen_mode6 PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_mode6 PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_screen_mode6 verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_screen_mode6 PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_mode6 PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_mode6 PRIVATE -fno-lto)
+    endif()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -3787,27 +3808,8 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
 endif()
-# Genuine idle Mode6 owner and its real base/derived lifetimes.
-# This subsystem remains below the optional reconstructed-test return.
+# Optional Linux ownership fixture for the genuine idle Mode6 owner.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
-    add_library(beachlife_reconstructed_screen_mode6 STATIC
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode6.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode6_destructor.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode6_idle.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode_controller.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_mode_controller_destructor.cpp")
-    target_include_directories(beachlife_reconstructed_screen_mode6 PUBLIC
-        "${BEACHLIFE_DECOMP_SOURCE}")
-    target_compile_features(beachlife_reconstructed_screen_mode6 PUBLIC cxx_std_20)
-    add_dependencies(beachlife_reconstructed_screen_mode6 verify_reconstructed_source)
-    set_target_properties(beachlife_reconstructed_screen_mode6 PROPERTIES
-        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
-    if(MSVC)
-        target_compile_options(beachlife_reconstructed_screen_mode6 PRIVATE /GL-)
-    else()
-        target_compile_options(beachlife_reconstructed_screen_mode6 PRIVATE -fno-lto)
-    endif()
-
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         add_executable(reconstructed_screen_mode6_owner_tests tests/reconstructed_screen_mode6_owner.cpp)
         target_link_libraries(reconstructed_screen_mode6_owner_tests PRIVATE
