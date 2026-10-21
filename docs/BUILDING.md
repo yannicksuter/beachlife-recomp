@@ -1612,3 +1612,18 @@ method. It matches strictly; raw bytes differ at the relocated renderer-global
 address. A changed bottom adjustment is rejected against the fixed original
 extent, retaining all previous comparison results. Native source selections
 preserve their independently qualified clipping implementation.
+
+The experimental `beachlife_reconstructed_screen_mode6` library contains the
+complete idle Mode6 owner, its real base and derived lifetimes, and all seven
+non-destructor virtual methods. MainMenu selects this idle mode; connecting the
+mode-switching parent remains separate. `reconstructed_screen_mode6_owner`
+covers borrowed manager identity, all seven virtual calls, stack and placement
+lifetimes, and real scalar deletion through the base pointer. The manager used
+by this fixture is an aggregate read model, not a qualified retail manager owner.
+
+The target remains below the optional reconstructed-test return and requires
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME`, which defaults to OFF. It has no production,
+full menu, GPU or strict-match claim. Native qualification is focused on Linux
+optimized and ASan/UBSan/LSan builds; Windows, macOS and tests-disabled availability
+remain separate gates. Shared physical empty/false method aliases receive no
+duplicate original-function credit.
