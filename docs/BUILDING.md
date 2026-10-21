@@ -1562,3 +1562,68 @@ The focused qualification is Linux optimized and sanitized; Windows/macOS,
 complete ListBox ownership and menu execution remain separate gates. This is
 library support, not a new game method or a strict compiler match. Default
 native selection and the off-by-default experimental option are unchanged.
+
+The optional `reconstructed_screen_select_tests` target exercises the complete
+`ScreenManager::ScreenSelect` method through the real request, Dialog, Frame,
+active-list and software-surface methods. It uses generated `InGameOptions`
+registration and explicit null contexts, with genuine widget ownership and
+borrowed manager/renderer read models. Build it with reconstructed tests and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, then run
+`ctest --test-dir <build> -R '^reconstructed_screen_select$' --output-on-failure`.
+The focused fixture supports 64-bit Linux. It does not construct the full game
+or manager and does not establish a running menu or production renderer.
+
+The matching fixture retains `ScreenListBoxPrefix::MarkPrepared` through a borrowed
+x86 receiver. Its complete 39-byte body matches strictly; raw bytes differ only
+in the relocated call to the real base method. Removing that call is rejected.
+The native profiles retain their existing ListBox source selection; this match
+does not qualify a complete ListBox lifetime or a native GUI execution path.
+
+The optional `reconstructed_screen_activate_tests` target exercises the complete
+`ScreenManager::ActivateScreens` method. Three generated cases preserve the
+ScenarioWon/ScenarioLost guards and otherwise request a genuine PauseBox with
+null context and flag1 on the incoming manager. Actual Dialog/Frame ownership,
+active-list operations and software surfaces are used with borrowed manager and
+renderer read models. Enable reconstructed tests and experimental game sources,
+then run `ctest --test-dir <build> -R '^reconstructed_screen_activate$' --output-on-failure`.
+The focused fixture supports 64-bit Linux; it does not construct the full Game
+or manager, execute a full menu or qualify GPU presentation.
+
+The matching profile includes the complete ten-byte renderer surface-selection
+method. It matches strictly and byte for byte; changing the stored index with
+XOR1 is rejected against the fixed original extent. Existing comparison results
+are retained. The native profiles preserve their current source selection; this
+match does not qualify a complete renderer lifetime or native rendering path.
+
+The optional `reconstructed_screen_clip_tests` target covers the complete
+`ClipScreenRectangles` method using the existing renderer-global definition
+and a typed renderer read model with real host queue lifetime. Its generated
+literals cover each edge, combined clipping, signed dimensions, empty and
+inverted rectangles, and valid same-object aliases. It preserves unrelated
+renderer members and outside guards. Enable reconstructed tests and experimental
+game sources, then run
+`ctest --test-dir <build> -R '^reconstructed_screen_clip$' --output-on-failure`.
+The focused fixture supports 64-bit Linux and representable integer arithmetic.
+It does not construct the retail renderer, blit pixels or establish menu/GPU
+execution. Windows/macOS and tests-disabled availability remain separate gates.
+
+The matching profile includes the complete 91-byte screen rectangle clipping
+method. It matches strictly; raw bytes differ at the relocated renderer-global
+address. A changed bottom adjustment is rejected against the fixed original
+extent, retaining all previous comparison results. Native source selections
+preserve their independently qualified clipping implementation.
+
+The experimental `beachlife_reconstructed_screen_mode6` library contains the
+complete idle Mode6 owner, its real base and derived lifetimes, and all seven
+non-destructor virtual methods. MainMenu selects this idle mode; connecting the
+mode-switching parent remains separate. `reconstructed_screen_mode6_owner`
+covers borrowed manager identity, all seven virtual calls, stack and placement
+lifetimes, and real scalar deletion through the base pointer. The manager used
+by this fixture is an aggregate read model, not a qualified retail manager owner.
+
+The library requires `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME`, which defaults to OFF,
+and is available with `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=OFF`. Its Linux ownership
+fixture still requires reconstructed tests. It has no production, full menu, GPU
+or strict-match claim. Native qualification is focused on Linux optimized and
+ASan/UBSan/LSan builds; Windows and macOS remain separate gates. Shared physical
+empty/false method aliases receive no duplicate original-function credit.

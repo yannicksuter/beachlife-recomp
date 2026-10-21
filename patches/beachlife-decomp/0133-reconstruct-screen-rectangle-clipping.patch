@@ -1,0 +1,141 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1340,3 +1340,62 @@
+     fixture_select_surface_lock_after = renderer->pixels_locked;
+     fixture_select_surface_completed = 1;
+ }
++
++#include "startup_screen_clip.h"
++#include "startup_screen_renderer.h"
++
++#include <stddef.h>
++
++typedef char ClipIntWidth[(sizeof(int) == 4) ? 1 : -1];
++typedef char ClipPointerWidth[(sizeof(void*) == 4) ? 1 : -1];
++typedef char ClipRectangleSize[(sizeof(ScreenRectangle) == 16) ? 1 : -1];
++typedef char ClipRectangleLeft[(offsetof(ScreenRectangle, left) == 0) ? 1 : -1];
++typedef char ClipRectangleTop[(offsetof(ScreenRectangle, top) == 4) ? 1 : -1];
++typedef char ClipRectangleRight[(offsetof(ScreenRectangle, right) == 8) ? 1 : -1];
++typedef char ClipRectangleBottom[(offsetof(ScreenRectangle, bottom) == 12) ? 1 : -1];
++typedef char ClipRendererSize[(sizeof(ScreenRequestRenderer) == 124) ? 1 : -1];
++typedef char ClipRendererWidth[(offsetof(ScreenRequestRenderer, width) == 4) ? 1 : -1];
++typedef char ClipRendererHeight[(offsetof(ScreenRequestRenderer, height) == 8) ? 1 : -1];
++
++ScreenRequestRenderer* volatile fixture_clip_renderer;
++volatile unsigned int fixture_clip_width;
++volatile unsigned int fixture_clip_height;
++ScreenRectangle* volatile fixture_clip_destination;
++ScreenRectangle* volatile fixture_clip_source;
++volatile int fixture_clip_destination_before[4];
++volatile int fixture_clip_source_before[4];
++volatile int fixture_clip_destination_after[4];
++volatile int fixture_clip_source_after[4];
++volatile unsigned int fixture_clip_completed;
++
++// Compile/link retention only. Borrow two live rectangles (which may alias) and
++// the genuine global renderer with initialized dimensions. No owner or table is
++// constructed, and this comparison-only image is never executed.
++extern "C" __declspec(dllexport) void FixtureClipScreenRectangles(
++    ScreenRectangle* destination, ScreenRectangle* source)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    fixture_clip_renderer = renderer;
++    fixture_clip_width = renderer->width;
++    fixture_clip_height = renderer->height;
++    fixture_clip_destination = destination;
++    fixture_clip_source = source;
++    fixture_clip_destination_before[0] = destination->left;
++    fixture_clip_destination_before[1] = destination->top;
++    fixture_clip_destination_before[2] = destination->right;
++    fixture_clip_destination_before[3] = destination->bottom;
++    fixture_clip_source_before[0] = source->left;
++    fixture_clip_source_before[1] = source->top;
++    fixture_clip_source_before[2] = source->right;
++    fixture_clip_source_before[3] = source->bottom;
++    ClipScreenRectangles(destination, source);
++    fixture_clip_destination_after[0] = destination->left;
++    fixture_clip_destination_after[1] = destination->top;
++    fixture_clip_destination_after[2] = destination->right;
++    fixture_clip_destination_after[3] = destination->bottom;
++    fixture_clip_source_after[0] = source->left;
++    fixture_clip_source_after[1] = source->top;
++    fixture_clip_source_after[2] = source->right;
++    fixture_clip_source_after[3] = source->bottom;
++    fixture_clip_completed = 1;
++}
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -94,3 +94,4 @@
+ 0x004c41e0,function,149,?ClearEntries@ScreenListBoxPrefix@@QAEXXZ
+ 0x004c53a0,function,39,?MarkPrepared@ScreenListBoxPrefix@@UAEXXZ
+ 0x0040e230,function,10,?SelectSurface@ScreenRequestRenderer@@QAEXH@Z
++0x004b2eb0,function,91,?ClipScreenRectangles@@YAXPAUScreenRectangle@@0@Z
+diff --git a/src/startup_screen_clip.cpp b/src/startup_screen_clip.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_clip.cpp
+@@ -0,0 +1,31 @@
++#include "startup_screen_clip.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004b2eb0
++void ClipScreenRectangles(ScreenRectangle* destination, ScreenRectangle* source)
++{
++    // The renderer stores its size unsigned, but the clip compares signed.
++    int width = screen_request_renderer->width;
++    int height = screen_request_renderer->height;
++
++    if (destination->left < 0)
++    {
++        source->left -= destination->left;
++        destination->left = 0;
++    }
++    if (destination->right > width)
++    {
++        source->right += width - destination->right;
++        destination->right = width;
++    }
++    if (destination->top < 0)
++    {
++        source->top -= destination->top;
++        destination->top = 0;
++    }
++    if (destination->bottom > height)
++    {
++        source->bottom += height - destination->bottom;
++        destination->bottom = height;
++    }
++}
+diff --git a/src/startup_screen_clip.h b/src/startup_screen_clip.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_clip.h
+@@ -0,0 +1,10 @@
++#ifndef STARTUP_SCREEN_CLIP_H
++#define STARTUP_SCREEN_CLIP_H
++
++#include "startup_screen_item.h"
++
++// Actual 0x004b2eb0, cdecl RET0: clips a destination rectangle to the current
++// renderer and shifts the source rectangle by the same amounts. Body separate.
++void ClipScreenRectangles(ScreenRectangle* destination, ScreenRectangle* source);
++
++#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -591,6 +591,12 @@
+       "size": 10,
+       "name": "ScreenRequestRenderer::SelectSurface",
+       "name_status": "Descriptive full-word current-surface setter; actual renderer+74 store, real render caller and void thiscall contract proven"
++    },
++    {
++      "address": "0x004b2eb0",
++      "size": 91,
++      "name": "ClipScreenRectangles",
++      "name_status": "Descriptive complete cdecl clipping helper; ordered destination/source adjustments and actual renderer-global capture proven"
+     }
+   ],
+   "library_functions": [
