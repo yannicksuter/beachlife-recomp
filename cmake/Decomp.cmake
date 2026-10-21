@@ -326,6 +326,37 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+# Genuine sound-bank FILE, record and cached-sample ownership.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_sound_bank STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/sound_capacity.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_bank_begin.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_bank_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_bank_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_bank_load_index.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_bucket_value.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_end.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_find_key.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_find_sample.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_index_release.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_release_sample.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_reset_buckets.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_storage_helpers.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/window_sound_update_cache.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/sound_name_hash.cpp")
+    target_include_directories(beachlife_reconstructed_sound_bank PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_sound_bank PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_sound_bank verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_sound_bank PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_sound_bank PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_sound_bank PRIVATE -fno-lto)
+    endif()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -3565,5 +3596,23 @@ if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
     target_link_options(reconstructed_renderer_sea_enabled_tests PRIVATE -fno-lto)
     add_test(NAME reconstructed_renderer_sea_enabled COMMAND reconstructed_renderer_sea_enabled_tests)
     set_tests_properties(reconstructed_renderer_sea_enabled PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
+        AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+    add_executable(reconstructed_sound_bank_owner_tests
+        tests/reconstructed_sound_bank_owner.cpp)
+    target_link_libraries(reconstructed_sound_bank_owner_tests PRIVATE
+        beachlife_reconstructed_sound_bank)
+    set_target_properties(reconstructed_sound_bank_owner_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_sound_bank_owner_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_sound_bank_owner_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_sound_bank_owner COMMAND reconstructed_sound_bank_owner_tests
+        "${CMAKE_CURRENT_BINARY_DIR}/generated-sound-bank-owner")
+    set_tests_properties(reconstructed_sound_bank_owner PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()

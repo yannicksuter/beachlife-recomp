@@ -1511,8 +1511,30 @@ Full renderer/platform construction, sea rendering, Windows/macOS execution
 and gameplay remain separate capabilities. Experimental selection is off by
 default and does not imply a strict byte match.
 
+The experimental `beachlife_reconstructed_sound_bank` library provides the complete
+sound-bank FILE, bucket, record and cached-sample lifetime sources, including the
+real index loader and sample lookup. It is available with reconstructed tests
+disabled. `reconstructed_sound_bank_owner_tests` uses generated local index/data
+files for empty, two-record and duplicate-key banks, checking cold/hot reads,
+reference and cache totals, FILE closure and genuine destruction. The focused
+qualification targets 64-bit little-endian Linux with the C ASCII locale;
+Windows/macOS and audio playback are separate gates. Original unchecked
+size/name reads, open-error behavior and unpublished full-table leaks remain
+unchanged; these unsafe inputs are outside the fixture's defined domain.
+The source profile stays experimental and off by default.
+
 The same experimental image-parser target also supplies the genuine `Icon`
 handler and image-resource configuration. Run the `reconstructed_gui_parse_icon`
 test for generated-data parsing, registration, parent attachment, pixel drawing
 and real image/resource cleanup. The existing subsystem remains selected by
 reconstructed tests; this does not activate the full GUI parser or game menu.
+
+The sound-bank fixture also exercises genuine named-sample release and cache
+aging: reference transitions, the original unsigned underflow, exact-five
+retention, eviction after a retained sum exceeds five, and real FILE reloading.
+The timer is a typed float and is still left untouched by the original loader
+and lookup. This focused extension requires Linux x86-64 with a 64-bit
+long-double significand; its near-threshold case preserves the wider sum across
+the float store. It does not establish all original x87 control-word behavior.
+Other floating-point ABIs, Windows/macOS and audio playback remain separate
+qualification gates; the existing experimental option stays off by default.
