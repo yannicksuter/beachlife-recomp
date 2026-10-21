@@ -1627,3 +1627,91 @@ fixture still requires reconstructed tests. It has no production, full menu, GPU
 or strict-match claim. Native qualification is focused on Linux optimized and
 ASan/UBSan/LSan builds; Windows and macOS remain separate gates. Shared physical
 empty/false method aliases receive no duplicate original-function credit.
+
+The experimental `beachlife_reconstructed_frame_clock` library contains the real
+FrameClock constructor, destructor and existing update method. It owns the
+unchanged input-global translation unit shared with the complete ScreenItem
+library. The Linux `reconstructed_frame_clock_owner` fixture uses genuine clock
+lifetimes and explicit tick arguments, verifies initialized fields and the
+original unconditional registration clear, and exercises finite updates away
+from the original x87 sampling threshold. It never reads the sample word before
+the update method defines it. The existing complete-item fixture constructs a
+real clock and uses a separate non-owning snapshot. These checks do not qualify
+clock wraparound, general x87 equivalence, a live OS clock, full Game startup or
+production timing.
+
+The optional experimental InputMotion owner target composes its real constructor,
+ordinary destructor and registration with the existing cursor adapter and
+TGA/VFS/image/palette implementation. `reconstructed_input_motion_owner` uses a
+generated indexed TGA and borrowed typed input/renderer state to check initial
+coordinates, palette conversion, publication and genuine image cleanup,
+including the original unconditional registration clear. Its fixture is limited
+to 64-bit x86 Linux; optimized and explicit ASan/UBSan/LSan qualification remain
+separate from Windows/macOS coverage. This target requires the reconstructed-test
+selection and does not select InputMotion Update or Render, start the Game owner,
+or provide a gameplay cursor. Experimental source selection remains off by
+default.
+
+The `beachlife_renderer_display` host library borrows the existing game window
+through `platform::Video`. It queries real SDL display/window state and converts
+top-down, little-endian RGB555 frames, with an explicit row stride, into the
+video boundary's RGBA pixels. Drawing contexts may outlive the display wrapper;
+the borrowed `Video` and window must remain alive. Invalid storage, wrong-thread
+use, expired windows and SDL errors are reported without a fabricated fallback.
+This library is linked by the runtime, but the reconstructed renderer owner and
+its DirectDraw/GDI calls are not connected to it yet. Normal Play is unchanged.
+
+The focused `renderer_display` test uses an actual hidden SDL dummy window and a
+recorder for `platform::Video`. It checks padded/unaligned literal pixels,
+storage limits, context lifetime and rejection before presentation. The pinned
+dummy backend has no window-border query: border-dependent operations must
+report that failure. It does not qualify desktop border/DPI behavior, a GPU,
+retail Game/renderer lifetime or a visible Intro/menu. Linux optimized and
+explicit address/undefined/leak sanitizer builds are the initial scope.
+
+```sh
+cmake --preset release -B build/renderer-display -DBUILD_TESTING=ON
+cmake --build build/renderer-display --target renderer_display_tests
+ctest --test-dir build/renderer-display -R '^renderer_display$' --output-on-failure
+```
+
+Experimental builds also provide `beachlife_reconstructed_gui_float`, the complete
+script floating-point reader used by slider and bar commands. It keeps the
+original unchecked 128-byte token buffer, whitespace and delimiter handling,
+and `atof` followed by float narrowing. The native boundary uses the host CRT;
+nondecimal syntax, overflow and non-C locales are not qualified against VC6.
+The existing parser prefix is borrowed here; this does not construct the full
+parser, widget owners or a menu. Ordinary native builds do not select this body.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`, build
+`reconstructed_gui_float_tests` and run `ctest -R '^reconstructed_gui_float$'`.
+The focused fixture covers literal values and cursor positions, consecutive
+reads, the maximum bounded token, and unchanged input/unrelated typed members.
+The library is available with subsystem tests disabled.
+
+The matching profile includes the complete 32-byte MainMenu controller
+constructor with its real base lifetime and ten-slot table. It matches strictly;
+raw bytes differ at relocated addresses. Changing its initial-entry flag from
+1 to 0 is rejected at 90% against the fixed original extent, retaining all 121
+previous comparison results. The physical eight-byte Exit alias retains its
+existing strict and raw match. Native source selections remain unchanged;
+comparison-only anchors and borrowed dependencies do not establish a running
+MainMenu or a complete native Game owner.
+
+Experimental localization also composes the genuine language constructor,
+destructor and hash-table storage. It loads generated BLE data through the
+existing mounted-file boundary and retains the original quote scanning,
+duplicate-key probing, fixed value array and unconditional global cleanup.
+The initial non-Windows domain is finite ASCII keys with unchanged UTF-16 text;
+it does not claim portable Windows ACP conversion or repaired malformed-input
+behavior. The sole global and prime table remain in their existing archives.
+
+With experimental reconstructed tests enabled,
+`reconstructed_text_lookup_owner_tests` exercises complete language lifetimes
+and real lookups. Its initial qualification is Linux x86-64 optimized and
+ASan/UBSan/LSan; Windows and macOS remain separate gates. Existing localization,
+font, text and parser fixtures now construct genuine language owners, use scoped
+borrowed records, and restore their owned tables before cleanup. This does not
+construct a Game or a complete GUI manager, and normal source selection remains
+unchanged. The localization target retains its existing test-selection boundary.

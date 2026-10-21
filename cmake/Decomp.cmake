@@ -394,6 +394,45 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+# Genuine frame-clock owner and the existing sole input/clock global TU.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_frame_clock STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_frame_clock_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_frame_clock_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_frame_clock.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_globals.cpp")
+    target_include_directories(beachlife_reconstructed_frame_clock PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_frame_clock PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_frame_clock verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_frame_clock PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_frame_clock PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_frame_clock PRIVATE -fno-lto)
+    endif()
+endif()
+
+# The floating-point reader has only its real host CRT dependency. Keep this
+# library available independently of optional reconstructed subsystem fixtures.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_float STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_float.cpp")
+    target_include_directories(beachlife_reconstructed_gui_float PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_float PUBLIC cxx_std_20)
+    set_target_properties(beachlife_reconstructed_gui_float PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_gui_float verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_float PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_float PRIVATE -fno-lto)
+    endif()
+endif()
+
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -1404,7 +1443,7 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
 
-# Experimental localization uses borrowed typed storage and the platform CRT.
+# Experimental localization uses genuine language owners and scoped borrowed method views.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_library(beachlife_reconstructed_screen_localization STATIC
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_find.cpp"
@@ -1495,8 +1534,7 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_item_timed_coordinates.cpp"
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_text.cpp"
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_auxiliary_position.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_rectangle.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_globals.cpp")
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_frame_rectangle.cpp")
     target_include_directories(beachlife_reconstructed_screen_item_complete PUBLIC
         "${BEACHLIFE_DECOMP_SOURCE}")
     target_compile_features(beachlife_reconstructed_screen_item_complete PUBLIC cxx_std_20)
@@ -1506,7 +1544,8 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         BEACHLIFE_DECOMP_COMPLETE_SCREEN_ITEM=1)
     target_link_libraries(beachlife_reconstructed_screen_item_complete PUBLIC
         beachlife_reconstructed_auxiliary_text
-        beachlife_reconstructed_screen_activation)
+        beachlife_reconstructed_screen_activation
+        beachlife_reconstructed_frame_clock)
     add_dependencies(beachlife_reconstructed_screen_item_complete verify_reconstructed_source)
 
     # Genuine static dependencies form a cycle through font/rectangle/base.
@@ -2898,6 +2937,10 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         beachlife_reconstructed_resource_raster_402880
         beachlife_reconstructed_resource_raster_405b20
         beachlife_reconstructed_render_masks)
+    # Auxiliary positioning in the complete item archive uses real Frame RTTI.
+    # Link the actual static dependency without changing compile usage.
+    target_link_libraries(beachlife_reconstructed_screen_item_complete PUBLIC
+        $<LINK_ONLY:beachlife_reconstructed_frame_item>)
     add_dependencies(beachlife_reconstructed_frame_item verify_reconstructed_source)
     set_target_properties(beachlife_reconstructed_frame_item PROPERTIES
         CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
@@ -3821,6 +3864,116 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         target_link_options(reconstructed_screen_mode6_owner_tests PRIVATE -fno-lto)
         add_test(NAME reconstructed_screen_mode6_owner COMMAND reconstructed_screen_mode6_owner_tests)
         set_tests_properties(reconstructed_screen_mode6_owner PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+
+
+# The clock takes an explicit tick value; this does not emulate an OS clock.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+        AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    add_executable(reconstructed_frame_clock_owner_tests
+        tests/reconstructed_frame_clock_owner.cpp)
+    target_link_libraries(reconstructed_frame_clock_owner_tests PRIVATE
+        beachlife_reconstructed_frame_clock)
+    set_target_properties(reconstructed_frame_clock_owner_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_frame_clock_owner_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_frame_clock_owner_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_frame_clock_owner COMMAND reconstructed_frame_clock_owner_tests)
+    set_tests_properties(reconstructed_frame_clock_owner PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# InputMotion uses the existing real cursor, TGA/VFS and singleton owners.
+# Its dependencies remain within the optional reconstructed-test selection.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_input_motion_owner STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_motion_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_motion_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_input_motion_globals.cpp")
+    target_include_directories(beachlife_reconstructed_input_motion_owner PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_input_motion_owner PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_input_motion_owner PUBLIC
+        beachlife_reconstructed_tga_files
+        beachlife_reconstructed_cursor
+        beachlife_reconstructed_gui_rectangle
+        beachlife_reconstructed_frame_clock)
+    add_dependencies(beachlife_reconstructed_input_motion_owner verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_input_motion_owner PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_input_motion_owner PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_input_motion_owner PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+        add_executable(reconstructed_input_motion_owner_tests
+            tests/reconstructed_input_motion_owner.cpp)
+        target_link_libraries(reconstructed_input_motion_owner_tests PRIVATE
+            beachlife_reconstructed_input_motion_owner)
+        set_target_properties(reconstructed_input_motion_owner_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_input_motion_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_input_motion_owner_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_input_motion_owner
+            COMMAND reconstructed_input_motion_owner_tests
+                "${CMAKE_CURRENT_BINARY_DIR}/input-motion-owner-fixture")
+        set_tests_properties(reconstructed_input_motion_owner PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 60)
+    endif()
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_gui_float_tests tests/reconstructed_gui_float.cpp)
+    target_link_libraries(reconstructed_gui_float_tests PRIVATE beachlife_reconstructed_gui_float)
+    set_target_properties(reconstructed_gui_float_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_gui_float_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_gui_float_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_float_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_float COMMAND reconstructed_gui_float_tests)
+    set_tests_properties(reconstructed_gui_float PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Complete language lookup owner and genuine fixture lifetimes.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    target_sources(beachlife_reconstructed_screen_localization PRIVATE
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_lookup_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_lookup_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_table_reserve.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_table_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_storage.cpp")
+    target_link_libraries(beachlife_reconstructed_screen_localization PUBLIC
+        beachlife_reconstructed_files beachlife_reconstructed_sound_bank)
+
+    # Initial qualification is Linux x86-64 only. The existing prime-table
+    # member is selected from the real sound-bank archive, never recompiled here.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_executable(reconstructed_text_lookup_owner_tests
+            tests/reconstructed_text_lookup_owner.cpp)
+        target_link_libraries(reconstructed_text_lookup_owner_tests PRIVATE
+            beachlife_reconstructed_screen_localization)
+        target_compile_features(reconstructed_text_lookup_owner_tests PRIVATE cxx_std_20)
+        set_target_properties(reconstructed_text_lookup_owner_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_text_lookup_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_text_lookup_owner_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_text_lookup_owner
+            COMMAND reconstructed_text_lookup_owner_tests
+                "${CMAKE_CURRENT_BINARY_DIR}/generated-text-lookup-owner")
+        set_tests_properties(reconstructed_text_lookup_owner PROPERTIES
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
 endif()

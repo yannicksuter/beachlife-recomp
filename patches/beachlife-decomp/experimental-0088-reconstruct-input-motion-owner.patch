@@ -1,0 +1,125 @@
+diff --git a/src/startup_input_motion_constructor.cpp b/src/startup_input_motion_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_input_motion_constructor.cpp
+@@ -0,0 +1,24 @@
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_renderer.h"
++#include "tga_image.h"
++
++// FUNCTION: BEACHLIFE 0x00409450
++InputMotionState::InputMotionState(const char* cursor_path, void* window)
++{
++    window_00 = window;
++    value_134 = 400;
++    value_138 = 300;
++    word_10 = 0;
++    startup_input_state->SetCursorIdentifier(1, 0);
++    unknown_14 = 0;
++    value_18 = 0.0f;
++    byte_20 = 0;
++    byte_21 = 0;
++    scale_1c = 10.0f;
++    cursor_04 = LoadTgaFile(cursor_path);
++    if (screen_request_renderer->format_44 == 1)
++        cursor_04->ConvertPalette(1);
++    else
++        cursor_04->ConvertPalette(0);
++}
+diff --git a/src/startup_input_motion_destructor.cpp b/src/startup_input_motion_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_input_motion_destructor.cpp
+@@ -0,0 +1,8 @@
++#include "startup_input_motion.h"
++#include "tga_image.h"
++
++// FUNCTION: BEACHLIFE 0x00409500
++InputMotionState::~InputMotionState()
++{
++    delete cursor_04;
++}
+diff --git a/src/startup_input_motion_globals.cpp b/src/startup_input_motion_globals.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_input_motion_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_input_motion.h"
++
++// GLOBAL: BEACHLIFE 0x005a883c
++InputMotionState* startup_input_motion_state;
+diff --git a/src/startup_input_motion.h b/src/startup_input_motion.h
+--- a/src/startup_input_motion.h
++++ b/src/startup_input_motion.h
+@@ -3,22 +3,54 @@
+ 
+ struct InputState;
+ struct FrameClock;
++struct TgaImage;
++struct InputMotionState;
+ 
+-// Descriptive observed prefix only; original names and complete class are unknown.
+-struct InputMotionState
++// Actual pointer slot0x005a883c; producer/lifetime remain separate obligations.
++extern InputMotionState* startup_input_motion_state;
++
++// Empty first base that publishes the singleton slot while the owner is
++// constructed; its out-of-line destructor 0x00409800 clears the slot again.
++struct InputMotionRegistration
+ {
+-    unsigned char unknown_00[8];
++    InputMotionRegistration();
++    // Inline: InputMotionState's destructor 0x00409500 expands it, and the
++    // out-of-line copy 0x00409800 serves the constructor/destructor unwinds.
++    ~InputMotionRegistration() { startup_input_motion_state = 0; }
++};
++
++// Actual 36-byte x86 owner at Game+0x2c. Original names remain descriptive.
++struct InputMotionState : InputMotionRegistration
++{
++    void* window_00;
++    TgaImage* cursor_04;
+     int value_134;
+     int value_138;
+-    unsigned char unknown_10[4];
++    int word_10;
+     unsigned int unknown_14;
+     float value_18;
+     float scale_1c;
++    unsigned char byte_20;
++    unsigned char byte_21;
++    unsigned char unknown_22[2];
++
++    // Actual 0x00409450, RET8: Game passes "data/cursor.tga" and its window.
++    InputMotionState(const char* cursor_path, void* window);
++    // Actual 0x00409500: deletes the cursor image; the inline registration
++    // destructor then clears the slot (its out-of-line copy serves unwinds).
++    ~InputMotionState();
+ 
+     unsigned char Update();
++    // Actual 0x004095f0, no stack arguments, AL1 on normal return.
++    unsigned char Render();
+ };
+ 
+ extern InputState* startup_input_state;
+ extern FrameClock* startup_frame_clock;
+ 
++inline InputMotionRegistration::InputMotionRegistration()
++{
++    startup_input_motion_state = static_cast<InputMotionState*>(this);
++}
++
+ #endif
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -747,7 +747,7 @@
+     fixture_frame_clock.Update(1000);
+     startup_input_state = &fixture_input;
+     startup_frame_clock = &fixture_frame_clock;
+-    InputMotionState fixture_input_motion = { 0 };
++    InputMotionState fixture_input_motion("fixture-cursor.tga", 0);
+     fixture_config_offset = fixture_input_motion.Update();
+     CircularListNode fixture_list_head = { 0 };
+     fixture_list_head.next = &fixture_list_head;

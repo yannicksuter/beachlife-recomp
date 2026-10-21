@@ -7,12 +7,14 @@
 #include "startup_screen_manager.h"
 #include "startup_screen_manager_auxiliary.h"
 #include "startup_screen_text.h"
+#include "text_lookup_owner_test_data.h"
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <climits>
 #include <clocale>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -30,6 +32,9 @@ namespace
 {
 static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && sizeof(unsigned int) == 4);
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
+static_assert(std::is_standard_layout_v<FrameClock> && sizeof(FrameClock) == 40);
+static_assert(offsetof(FrameClock, delta_seconds) == 24 && offsetof(FrameClock, value_20) == 32 &&
+              offsetof(FrameClock, value_24) == 36);
 static_assert(!std::is_abstract_v<ScreenItem> && std::has_virtual_destructor_v<ScreenItem>);
 static_assert(std::is_same_v<decltype(&ScreenItem::Unresolved04), void (ScreenItem::*)(float)>);
 static_assert(std::is_same_v<decltype(&ScreenItem::Unresolved20), unsigned char (ScreenItem::*)()>);
@@ -84,6 +89,75 @@ template <class T> struct Frame
     Guard before = guard(0x23);
     T value{};
     Guard after = guard(0xc7);
+};
+
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Frame<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    Guard before = guard(0x23);
+    ScreenTextLookup value{"owner.txt"};
+    Guard after = guard(0xc7);
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
+};
+
+// Restores only fixture borrowing after the real member destructor has run.
+struct ClockPublicationRestore
+{
+    FrameClock* saved = startup_frame_clock;
+    ~ClockPublicationRestore()
+    {
+        startup_frame_clock = saved;
+    }
+};
+
+template <> struct Frame<FrameClock>
+{
+    ClockPublicationRestore restore;
+    Guard before = guard(0x23);
+    FrameClock value{37};
+    Guard after = guard(0xc7);
+
+    Frame() = default;
+    Frame(const Frame&) = delete;
+    Frame& operator=(const Frame&) = delete;
+};
+
+struct ClockFrameSnapshot
+{
+    struct Values
+    {
+        int start_ticks;
+        unsigned int sampled_frames;
+        unsigned int frames;
+        unsigned int previous_frames;
+        float seconds;
+        float previous_seconds;
+        float delta_seconds;
+        float sample_seconds;
+        unsigned int value_20;
+        unsigned int value_24;
+    };
+    Guard before;
+    Values value;
+    Guard after;
+
+    // Environment has explicitly assigned sampled_frames before any snapshot.
+    explicit ClockFrameSnapshot(const Frame<FrameClock>& frame)
+        : before(frame.before)
+        , value{frame.value.start_ticks,
+              frame.value.sampled_frames,
+              frame.value.frames,
+              frame.value.previous_frames,
+              frame.value.seconds,
+              frame.value.previous_seconds,
+              frame.value.delta_seconds,
+              frame.value.sample_seconds,
+              frame.value.value_20,
+              frame.value.value_24}
+        , after(frame.after)
+    {
+    }
 };
 
 // A genuine owner; snapshots below copy values into a different non-owning type.
@@ -247,7 +321,17 @@ struct Environment
         a.x_1c = -321;
         a.y_20 = 654;
         a.frame_24 = nullptr; // Never accessed: Position's real early return only.
-        clock.value = {37, 41, 43, 47, 2.0f, 1.5f, 0.25f, 4.0f};
+        clock.value.start_ticks = 37;
+        clock.value.sampled_frames =
+            41; // Define the originally uninitialized member before snapshots.
+        clock.value.frames = 43;
+        clock.value.previous_frames = 47;
+        clock.value.seconds = 2.0f;
+        clock.value.previous_seconds = 1.5f;
+        clock.value.delta_seconds = 0.25f;
+        clock.value.sample_seconds = 4.0f;
+        clock.value.value_20 = 0x13579bdfU;
+        clock.value.value_24 = 0x2468ace0U;
         font_owner_test::clear_metrics(data.value);
         data.value.glyphs[65][2] = 80;
         data.value.unknown_10804[0] = 0x12345678U;
@@ -255,14 +339,14 @@ struct Environment
         key.value = {'A', 0};
         units.value = {65, 0};
         entry.value = {key.value.data(), units.value.data()};
-        buckets.value[0] = {key.value.data(), &entry.value, 0, {0x37, 0x49, 0x5b}};
-        buckets.value[1] = {nullptr, nullptr, 1, {0x69, 0x7b, 0x8d}};
+        buckets.value[0] = text_owner_test::bucket(key.value.data(), &entry.value, 0);
+        buckets.value[1] = text_owner_test::bucket(nullptr, nullptr, 1);
         lookup.value.end_index = 1;
         lookup.value.buckets = buckets.value.data();
         lookup.value.bucket_count = 1;
-        renderer_queue_test::pattern(lookup.value.unknown_04, 0xa7);
+        lookup.value.capacity_04 = 2;
         renderer_queue_test::pattern(lookup.value.unknown_0c, 0xb8);
-        renderer_queue_test::pattern(lookup.value.unknown_14, 0xc9);
+        lookup.value.used_14 = 0xc9U;
     }
 };
 
@@ -271,9 +355,9 @@ struct EnvironmentSnapshot
     decltype(Environment::renderer) renderer;
     decltype(Environment::manager) manager;
     decltype(Environment::auxiliary) auxiliary;
-    decltype(Environment::clock) clock;
+    ClockFrameSnapshot clock;
     FontFrameSnapshot data;
-    decltype(Environment::lookup) lookup;
+    text_owner_test::FrameSnapshot<Guard> lookup;
     decltype(Environment::buckets) buckets;
     decltype(Environment::entry) entry;
     decltype(Environment::key) key;
@@ -393,7 +477,8 @@ void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
                 same_float(c.seconds, d.seconds) &&
                 same_float(c.previous_seconds, d.previous_seconds) &&
                 same_float(c.delta_seconds, d.delta_seconds) &&
-                same_float(c.sample_seconds, d.sample_seconds),
+                same_float(c.sample_seconds, d.sample_seconds) && c.value_20 == d.value_20 &&
+                c.value_24 == d.value_24,
         "clock fields differ");
     const auto& f = a.data.value;
     const auto& g = b.data.value;
@@ -410,18 +495,12 @@ void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
     }
     const auto& l = a.lookup.value;
     const auto& m = b.lookup.value;
-    require(l.end_index == m.end_index && l.buckets == m.buckets &&
-                l.bucket_count == m.bucket_count &&
-                renderer_queue_test::same_bytes(l.unknown_04, m.unknown_04) &&
-                renderer_queue_test::same_bytes(l.unknown_0c, m.unknown_0c) &&
-                renderer_queue_test::same_bytes(l.unknown_14, m.unknown_14),
-        "lookup changed");
+    require(text_owner_test::equal(l, m), "language owner or borrowed view changed");
     for (std::size_t i = 0; i < a.buckets.value.size(); ++i)
     {
         const auto& p = a.buckets.value[i];
         const auto& q = b.buckets.value[i];
-        require(p.key == q.key && p.value == q.value && p.unavailable == q.unavailable &&
-                    renderer_queue_test::same_bytes(p.unknown_09, q.unknown_09),
+        require(p.key == q.key && p.value == q.value && p.unavailable == q.unavailable,
             "bucket changed");
     }
     require(a.entry.value.key == b.entry.value.key && a.entry.value.text == b.entry.value.text &&

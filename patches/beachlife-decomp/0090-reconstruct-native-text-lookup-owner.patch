@@ -1,0 +1,416 @@
+diff --git a/src/startup_ble_file.h b/src/startup_ble_file.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_ble_file.h
+@@ -0,0 +1,11 @@
++#ifndef STARTUP_BLE_FILE_H
++#define STARTUP_BLE_FILE_H
++
++#include <cstdint>
++
++// Existing native file helpers use a signed 32-bit result on LP64 hosts too.
++std::int32_t GetFileSize(const char* name);
++char* LoadBleFile(const char* name);
++unsigned int SelectHashTableCapacity(unsigned int requested);
++
++#endif
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -1,13 +1,14 @@
+ #ifndef STARTUP_SCREEN_TEXT_H
+ #define STARTUP_SCREEN_TEXT_H
+ 
++#include "startup_ble_file.h"
+ #include "startup_render_rectangle.h"
+ 
+ struct ScreenFontData;
+ struct ScreenTextLookup;
+ 
+-// These pointers are borrowed by the lookup methods. Storage allocation and
+-// the complete original owner's construction/destruction remain separate.
++// Lookup methods borrow these pointers. The genuine lookup owner scalar-frees
++// the key and text allocations during destruction; callers acquire no ownership.
+ struct ScreenTextValue
+ {
+     const char* key;
+@@ -18,8 +19,70 @@
+ {
+     const char* key;
+     ScreenTextValue* value;
+-    unsigned char unavailable;
+-    unsigned char unknown_09[3];
++    unsigned char unavailable; // Bytes 9..11 are padding: reallocation copies only these three fields.
++
++    // new[] runs the vector constructor iterator with this constructor's folded
++    // out-of-line copy 0x004d24e0, which zeroes only the key.
++    ScreenTextBucket()
++        : key(0)
++    {
++    }
++    // Empty user destructor: delete[] of the bucket array runs the vector
++    // destructor iterator with its folded out-of-line copy 0x00437d10.
++    ~ScreenTextBucket() { }
++};
++
++// Real out-of-line shared constructor 0x004d38b0 and empty destructor
++// 0x004d3890. Neither initializes object storage.
++struct ScreenTextStorageBase
++{
++    ScreenTextStorageBase();
++    ~ScreenTextStorageBase();
++};
++
++// The three-field bucket-array subobject starts at original offset zero.
++// Its constructor is inlined in 0x0049efb0. The actual cleanup copy at
++// 0x0049f560 is distinct from complete table cleanup at 0x0049f4f0.
++struct ScreenTextBucketArray
++{
++    int end_index;
++    int capacity_04;
++    ScreenTextBucket* buckets;
++
++    ScreenTextBucketArray()
++        : end_index(0)
++        , capacity_04(0)
++        , buckets(0)
++    {
++    }
++    ~ScreenTextBucketArray() { delete[] buckets; }
++};
++
++// Storage-base construction precedes the bucket array. A failure during this
++// table's constructor destroys the array, then the storage base. Completed
++// table cleanup at 0x0049f4f0 performs the same two real lifetime operations.
++struct ScreenTextTable : ScreenTextStorageBase, ScreenTextBucketArray
++{
++    unsigned char unknown_0c[4];
++    int bucket_count;
++    unsigned int used_14;
++
++    explicit ScreenTextTable(unsigned int requested)
++    {
++        used_14 = 0;
++        bucket_count = static_cast<int>(SelectHashTableCapacity(requested));
++        ReserveBuckets(bucket_count);
++        ScreenTextBucket* bucket = buckets;
++        for (int count = end_index; count > 0; --count)
++        {
++            bucket->unavailable = 1;
++            ++bucket;
++        }
++        used_14 = 0;
++    }
++    ~ScreenTextTable();
++    // Actual 0x0049f590, RET4; the R696 growth body is retained unchanged.
++    void ReserveBuckets(int count);
+ };
+ 
+ struct ScreenTextKey
+@@ -44,16 +107,30 @@
+     ~ScreenTextIterator() { }
+ };
+ 
+-// Observed lookup receiver prefix only. Original class/template names and
+-// complete construction/destruction are not inferred from these fields.
+-struct ScreenTextLookup
++extern ScreenTextLookup* screen_text_lookup;
++
++// First base: publication precedes construction of the table and its storage.
++// The actual inline publication and unconditional 0x0049f4e0 cleanup are reused.
++struct ScreenTextLookupRegistration
+ {
+-    int end_index;
+-    unsigned char unknown_04[4];
+-    ScreenTextBucket* buckets;
+-    unsigned char unknown_0c[4];
+-    int bucket_count;
+-    unsigned char unknown_14[4];
++    explicit ScreenTextLookupRegistration(ScreenTextLookup* owner) { screen_text_lookup = owner; }
++    ~ScreenTextLookupRegistration() { screen_text_lookup = 0; }
++};
++
++// Original 36036-byte x86 owner. Its table occupies +00..17; values begin +20.
++// Native pointer widths determine host offsets; all translation units use this
++// full owning declaration together. Original x86 offsets are not host offsets.
++struct ScreenTextLookup : ScreenTextLookupRegistration, ScreenTextTable
++{
++    char* file_18; // Decoded .ble contents while loading.
++    int index_1c;  // Next free entry in values.
++    ScreenTextValue values[4500];
++    char* path_8cc0; // Owned copy of the .ble path.
++
++    // Actual 0x0049efb0, RET4: loads "<name minus 4-char extension>.ble".
++    explicit ScreenTextLookup(const char* name);
++    // Actual 0x0049f290..0049f362, RET0; complete ordinary source in R716.
++    ~ScreenTextLookup();
+ 
+     const unsigned short* LookupText(const char* key);
+     ScreenTextIterator FindText(const ScreenTextKey& key);
+diff --git a/src/startup_screen_text_lookup_constructor.cpp b/src/startup_screen_text_lookup_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_text_lookup_constructor.cpp
+@@ -0,0 +1,163 @@
++#include "startup_screen_text.h"
++
++#include <bit>
++#include <climits>
++#include <cstddef>
++#include <string.h>
++#include <limits>
++#include <new>
++#include <stdexcept>
++#if defined(_WIN32)
++#include <memory>
++#include <windows.h>
++#endif
++
++namespace
++{
++static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(int) == 4);
++static_assert(std::endian::native == std::endian::little);
++static_assert(std::numeric_limits<char>::is_signed);
++
++// The existing BLE loader owns a char array. Read its little-endian code units
++// through bytes rather than imposing a wchar_t/unsigned-short array lifetime.
++unsigned short ReadUnit(const char* bytes)
++{
++    return static_cast<unsigned short>(static_cast<unsigned char>(bytes[0])
++                                       | (static_cast<unsigned int>(static_cast<unsigned char>(bytes[1])) << 8));
++}
++
++std::size_t TextLength(const char* bytes)
++{
++    std::size_t result = 0;
++    while (ReadUnit(bytes + result * 2) != 0)
++        ++result;
++    return result;
++}
++
++void ConvertKey(const char* start, int bytes, char* key)
++{
++#if defined(_WIN32)
++    static_assert(sizeof(wchar_t) == 2);
++    // Keep the real ACP conversion and its ignored return. This host-only
++    // temporary has a genuine wchar_t lifetime; Windows qualification is later.
++    std::unique_ptr<wchar_t[]> wide(new wchar_t[bytes]);
++    for (int index = 0; index < bytes; ++index)
++        wide[index] = static_cast<wchar_t>(ReadUnit(start + index * 2));
++    WideCharToMultiByte(CP_ACP, 0, wide.get(), -1, key, bytes, 0, 0);
++#else
++    // The non-Windows source domain is ASCII keys, not arbitrary CP_ACP.
++    // Reject unsupported conversion rather than silently replacing code units.
++    for (int index = 0; index < bytes; ++index)
++    {
++        unsigned short unit = ReadUnit(start + index * 2);
++        if (unit > 0x7f)
++            throw std::domain_error("language key requires Windows ACP conversion");
++        key[index] = static_cast<char>(unit);
++    }
++#endif
++}
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x0049efb0
++ScreenTextLookup::ScreenTextLookup(const char* name)
++    : ScreenTextLookupRegistration(this)
++    , ScreenTextTable(4500)
++{
++    file_18 = 0;
++    index_1c = 0;
++    memset(values, 0, sizeof(values));
++    ScreenTextBucket* bucket = buckets;
++    for (int count = end_index; count > 0; --count)
++    {
++        bucket->unavailable = 1;
++        ++bucket;
++    }
++    used_14 = 0;
++
++    // The original trivial allocations are scalar-freed. Use real scalar host
++    // storage for those arrays of implicit-lifetime character/code-unit values.
++    size_t length = strlen(name);
++    char* path = static_cast<char*>(::operator new(length + 1));
++    strcpy(path, name);
++    path[length - 4] = '.';
++    path[length - 3] = 'b';
++    path[length - 2] = 'l';
++    path[length - 1] = 'e';
++    path_8cc0 = static_cast<char*>(::operator new(strlen(path) + 1));
++    strcpy(path_8cc0, path);
++    int characters = GetFileSize(path) / 2 - 1;
++    file_18 = LoadBleFile(path);
++    ::operator delete(path);
++
++    // Preserve the original quote/cursor/index/probe algorithm. No malformed
++    // input, missing-file, full-table or allocation-failure repair is added.
++    char* cursor = file_18 + 2;
++    for (int position = 0; position < characters; ++position, cursor += 2)
++    {
++        if (ReadUnit(cursor) != '"')
++            continue;
++        ScreenTextValue* value = &values[index_1c];
++        if (value->key == 0)
++        {
++            cursor += 2;
++            char* start = cursor;
++            ++position;
++            while (ReadUnit(cursor) != '"')
++            {
++                cursor += 2;
++                ++position;
++            }
++            cursor[0] = 0;
++            cursor[1] = 0;
++            int bytes = static_cast<int>(TextLength(start)) + 1;
++            char* key = static_cast<char*>(::operator new(bytes));
++            values[index_1c].key = key;
++            ConvertKey(start, bytes, key);
++        }
++        else
++        {
++            cursor += 2;
++            char* start = cursor;
++            ++position;
++            while (ReadUnit(cursor) != '"')
++            {
++                cursor += 2;
++                ++position;
++            }
++            cursor[0] = 0;
++            cursor[1] = 0;
++            std::size_t units = TextLength(start) + 1;
++            unsigned short* text = static_cast<unsigned short*>(::operator new(units * sizeof(unsigned short)));
++            values[index_1c].text = text;
++            for (std::size_t index = 0; index < units; ++index)
++                text[index] = ReadUnit(start + index * 2);
++
++            ScreenTextValue* entry = &values[index_1c];
++            const char* key = entry->key;
++            unsigned int hash = 0;
++            for (const char* character = key; *character; ++character)
++                hash = hash * 5 + *character;
++            unsigned int first = hash % bucket_count;
++            unsigned int slot = first;
++            bool found = buckets[slot].unavailable != 0;
++            while (!found)
++            {
++                if (static_cast<int>(++slot) >= bucket_count)
++                    slot = 0;
++                if (slot == first)
++                    break;
++                found = buckets[slot].unavailable != 0;
++            }
++            if (found)
++            {
++                buckets[slot].key = key;
++                buckets[slot].value = entry;
++                buckets[slot].unavailable = 0;
++                ++used_14;
++            }
++            ++index_1c;
++        }
++    }
++    if (file_18)
++        delete[] file_18;
++}
+diff --git a/src/startup_screen_text_lookup_destructor.cpp b/src/startup_screen_text_lookup_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_text_lookup_destructor.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_text.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x0049f290
++ScreenTextLookup::~ScreenTextLookup()
++{
++    ScreenTextBucket* bucket = buckets;
++    for (int count = end_index; count > 0; --count)
++    {
++        bucket->unavailable = 1;
++        ++bucket;
++    }
++    used_14 = 0;
++
++    unsigned int index = 0;
++    ScreenTextValue* value = values;
++    while (index < static_cast<unsigned int>(index_1c))
++    {
++        ::operator delete(const_cast<char*>(value->key));
++        ::operator delete(const_cast<unsigned short*>(value->text));
++        ++index;
++        ++value;
++    }
++
++    char* path = path_8cc0;
++    if (path)
++        ::operator delete(path);
++
++    // The real table base then destroys its bucket array/storage base, followed
++    // by the registration base's unconditional clear. file_18 is not freed here.
++}
+diff --git a/src/startup_screen_text_storage.cpp b/src/startup_screen_text_storage.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_text_storage.cpp
+@@ -0,0 +1,11 @@
++#include "startup_screen_text.h"
++
++// Actual shared constructor 0x004d38b0: MOV EAX,ECX; RET0.
++ScreenTextStorageBase::ScreenTextStorageBase()
++{
++}
++
++// Actual shared empty destructor 0x004d3890; no new physical-method credit.
++ScreenTextStorageBase::~ScreenTextStorageBase()
++{
++}
+diff --git a/src/startup_screen_text_table_destructor.cpp b/src/startup_screen_text_table_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_text_table_destructor.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_text.h"
++
++// FUNCTION: BEACHLIFE 0x0049f4f0
++ScreenTextTable::~ScreenTextTable()
++{
++    // Automatic bucket-array cleanup performs the real delete[], followed by
++    // the real storage-base destructor on both normal and exceptional paths.
++}
+diff --git a/src/startup_screen_text_table_reserve.cpp b/src/startup_screen_text_table_reserve.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_text_table_reserve.cpp
+@@ -0,0 +1,28 @@
++#include "startup_screen_text.h"
++
++// FUNCTION: BEACHLIFE 0x0049f590
++void ScreenTextTable::ReserveBuckets(int count)
++{
++    if (count > capacity_04)
++    {
++        ScreenTextBucket* fresh = 0;
++        if (capacity_04 == 0)
++            capacity_04 = 1;
++        do
++            capacity_04 *= 2;
++        while (capacity_04 <= count);
++
++        if (capacity_04 > 0)
++        {
++            fresh = new ScreenTextBucket[capacity_04];
++            if (buckets)
++            {
++                for (int index = 0; index < end_index; ++index)
++                    fresh[index] = buckets[index];
++            }
++        }
++        delete[] buckets;
++        buckets = fresh;
++    }
++    end_index = count;
++}

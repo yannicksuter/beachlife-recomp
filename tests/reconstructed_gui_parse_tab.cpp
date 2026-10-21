@@ -12,6 +12,7 @@
 #include "startup_screen_palette_modifiers.h"
 #include "startup_screen_tab_item.h"
 #include "startup_screen_text.h"
+#include "text_lookup_owner_test_data.h"
 
 #include <algorithm>
 #include <array>
@@ -41,7 +42,7 @@ using Seed = child_ring_fixture::Seed<8>;
 static_assert(CHAR_BIT == 8 && sizeof(void*) == 8 && sizeof(unsigned int) == 4);
 static_assert(sizeof(unsigned short) == 2 && std::endian::native == std::endian::little);
 static_assert(std::is_aggregate_v<GuiParserState> && std::is_standard_layout_v<GuiParserState>);
-static_assert(std::is_aggregate_v<ScreenManager> && std::is_aggregate_v<ScreenTextLookup>);
+static_assert(std::is_aggregate_v<ScreenManager>);
 static_assert(sizeof(GuiParserState) == 120 && offsetof(GuiParserState, defined_items) == 72);
 static_assert(offsetof(GuiParserState, alternate_context_10) == 32);
 static_assert(
@@ -86,6 +87,28 @@ template <class T> struct Guarded
             check(before[i] == 0x26 && after[i] == 0x62, "outside typed guard changed");
         }
     }
+};
+
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Guarded<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenTextLookup value{"owner.txt"};
+    std::array<unsigned char, 16> after{};
+    Guarded()
+    {
+        before.fill(0x26);
+        after.fill(0x62);
+    }
+    void verify() const
+    {
+        for (unsigned i = 0; i < before.size(); ++i)
+        {
+            check(before[i] == 0x26 && after[i] == 0x62, "outside typed guard changed");
+        }
+    }
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
 };
 void word(std::vector<unsigned char>& out, unsigned value)
 {
@@ -289,8 +312,8 @@ struct Environment
     }
 };
 
-// Existing qualified localization prefix: real lookup methods over borrowed
-// typed records. This is not a localization owner implementation.
+// The real localization owner temporarily borrows these typed records. Its
+// constructor-owned table is restored before genuine destruction.
 struct Localization
 {
     Guarded<ScreenTextLookup> lookup;
@@ -302,9 +325,11 @@ struct Localization
     {
         text.value = {0, 76, 0};
         value.value = {"LABEL", text.value.data() + 1};
-        buckets.value = {{{"LABEL", &value.value, 0, {1, 2, 3}}, {nullptr, nullptr, 1, {4, 5, 6}}}};
+        buckets.value = {text_owner_test::bucket("LABEL", &value.value, 0),
+            text_owner_test::bucket(nullptr, nullptr, 1)};
         lookup.value.end_index = 1;
         lookup.value.bucket_count = 1;
+        lookup.value.capacity_04 = 2;
         lookup.value.buckets = buckets.value.data();
         screen_text_lookup = &lookup.value;
     }

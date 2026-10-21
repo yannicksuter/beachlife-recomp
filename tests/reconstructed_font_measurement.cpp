@@ -2,6 +2,7 @@
 #include "renderer_queue_test_state.h"
 #include "startup_screen_font_data.h"
 #include "startup_screen_text.h"
+#include "text_lookup_owner_test_data.h"
 #include <algorithm>
 #include <array>
 #include <climits>
@@ -365,6 +366,16 @@ template <class T> struct Frame
     Guard after = guard(0xe3);
 };
 
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Frame<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    Guard before = guard(0x17);
+    ScreenTextLookup value{"owner.txt"};
+    Guard after = guard(0xe3);
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
+};
+
 // A genuine owner; snapshots below copy values into a different non-owning type.
 template <> struct Frame<ScreenFontData>
 {
@@ -405,7 +416,7 @@ struct EnvironmentSnapshot
 {
     decltype(Environment::renderer) renderer;
     std::array<FontFrameSnapshot, 2> data;
-    decltype(Environment::lookup) lookup;
+    std::array<text_owner_test::FrameSnapshot<Guard>, 2> lookup;
     decltype(Environment::buckets) buckets;
     decltype(Environment::values) values;
     decltype(Environment::lookup_text) lookup_text;
@@ -413,7 +424,8 @@ struct EnvironmentSnapshot
     explicit EnvironmentSnapshot(const Environment& env)
         : renderer(env.renderer)
         , data{FontFrameSnapshot(env.data[0]), FontFrameSnapshot(env.data[1])}
-        , lookup(env.lookup)
+        , lookup{text_owner_test::FrameSnapshot<Guard>(env.lookup[0]),
+              text_owner_test::FrameSnapshot<Guard>(env.lookup[1])}
         , buckets(env.buckets)
         , values(env.values)
         , lookup_text(env.lookup_text)
@@ -432,14 +444,13 @@ void initialize(Environment& env)
         bucket.key = env.values[i].key;
         bucket.value = &env.values[i];
         bucket.unavailable = static_cast<unsigned char>(i);
-        renderer_queue_test::pattern(bucket.unknown_09, 0x45U + static_cast<unsigned int>(i));
         auto& lookup = env.lookup[i].value;
         lookup.end_index = 1;
         lookup.buckets = env.buckets.data();
         lookup.bucket_count = 2;
-        renderer_queue_test::pattern(lookup.unknown_04, 0x51U + static_cast<unsigned int>(i));
+        lookup.capacity_04 = 2;
         renderer_queue_test::pattern(lookup.unknown_0c, 0x61U + static_cast<unsigned int>(i));
-        renderer_queue_test::pattern(lookup.unknown_14, 0x71U + static_cast<unsigned int>(i));
+        lookup.used_14 = 0x71U + static_cast<unsigned int>(i);
     }
 }
 
@@ -486,13 +497,9 @@ bool same_data(const ScreenFontData& a, const font_owner_test::Snapshot& b)
     return true;
 }
 
-bool same_lookup(const ScreenTextLookup& a, const ScreenTextLookup& b)
+bool same_lookup(const ScreenTextLookup& a, const text_owner_test::Snapshot& b)
 {
-    return a.end_index == b.end_index && a.buckets == b.buckets &&
-           a.bucket_count == b.bucket_count &&
-           renderer_queue_test::same_bytes(a.unknown_04, b.unknown_04) &&
-           renderer_queue_test::same_bytes(a.unknown_0c, b.unknown_0c) &&
-           renderer_queue_test::same_bytes(a.unknown_14, b.unknown_14);
+    return text_owner_test::equal(a, b);
 }
 
 void verify_environment(const Environment& env, const EnvironmentSnapshot& before)
@@ -513,8 +520,7 @@ void verify_environment(const Environment& env, const EnvironmentSnapshot& befor
         require(env.lookup[i].after == before.lookup[i].after, "lookup trailing guard changed");
         const auto& a = env.buckets[i];
         const auto& b = before.buckets[i];
-        require(a.key == b.key && a.value == b.value && a.unavailable == b.unavailable &&
-                    renderer_queue_test::same_bytes(a.unknown_09, b.unknown_09),
+        require(a.key == b.key && a.value == b.value && a.unavailable == b.unavailable,
             "borrowed bucket changed");
         require(env.values[i].key == before.values[i].key &&
                     env.values[i].text == before.values[i].text,

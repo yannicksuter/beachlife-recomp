@@ -4,6 +4,7 @@
 #include "startup_screen_manager.h"
 #include "startup_screen_manager_auxiliary.h"
 #include "startup_screen_text.h"
+#include "text_lookup_owner_test_data.h"
 
 #include <algorithm>
 #include <array>
@@ -76,6 +77,16 @@ template <class T> struct Frame
     Guard before = guard(0x27);
     T value{};
     Guard after = guard(0xd3);
+};
+
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Frame<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    Guard before = guard(0x27);
+    ScreenTextLookup value{"owner.txt"};
+    Guard after = guard(0xd3);
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
 };
 
 // A genuine owner; snapshots below copy values into a different non-owning type.
@@ -274,8 +285,8 @@ struct EnvironmentSnapshot
     decltype(Environment::manager) manager;
     decltype(Environment::auxiliary) auxiliary;
     std::array<FontFrameSnapshot, 2> data;
-    decltype(Environment::lookup) lookup;
-    decltype(Environment::font_lookup) font_lookup;
+    text_owner_test::FrameSnapshot<Guard> lookup;
+    text_owner_test::FrameSnapshot<Guard> font_lookup;
     decltype(Environment::buckets) buckets;
     decltype(Environment::values) values;
     decltype(Environment::query) query;
@@ -355,16 +366,16 @@ void initialize(Environment& e, const Literal& literal, const unsigned short* in
     e.values.value[1] = {e.keys[1].value.data(), e.decoy_text.value.data()};
     for (auto& bucket : e.buckets.value)
     {
-        bucket = {e.keys[0].value.data(), &e.values.value[0], 1, {0x39, 0x47, 0x5b}};
+        bucket = text_owner_test::bucket(e.keys[0].value.data(), &e.values.value[0], 1);
     }
     e.buckets.value[0].unavailable = 0;
     auto& lookup = e.lookup.value;
     lookup.end_index = literal.route == Route::EndIsHit ? 0 : 1;
     lookup.bucket_count = 1;
     lookup.buckets = e.buckets.value.data();
-    renderer_queue_test::pattern(lookup.unknown_04, 0x12);
+    lookup.capacity_04 = 3;
     renderer_queue_test::pattern(lookup.unknown_0c, 0x23);
-    renderer_queue_test::pattern(lookup.unknown_14, 0x34);
+    lookup.used_14 = 0x34U;
     if (literal.route == Route::Duplicate)
     {
         lookup.end_index = 3;
@@ -373,9 +384,9 @@ void initialize(Environment& e, const Literal& literal, const unsigned short* in
         e.buckets.value[0].value = &e.values.value[1];
         e.buckets.value[2].unavailable = 0;
     }
-    // Font constructors receive this distinct borrowed lookup prefix. SetText
-    // must resolve text through the actual global owner, not either font field.
-    e.font_lookup.value = lookup;
+    // Font constructors receive a distinct genuine owner with the same borrowed
+    // view. SetText still resolves through the global rather than the font field.
+    text_owner_test::copy_view(e.font_lookup.value, lookup);
     e.font_lookup.value.end_index = 0;
 
     auto& manager = e.manager.value;
@@ -493,14 +504,9 @@ template <class A, class B> void verify_guards(const A& a, const B& b)
     require(a.before == b.before && a.after == b.after, "borrowed object guards changed");
 }
 
-void verify_lookup(const ScreenTextLookup& a, const ScreenTextLookup& b)
+void verify_lookup(const ScreenTextLookup& a, const text_owner_test::Snapshot& b)
 {
-    require(a.end_index == b.end_index && a.buckets == b.buckets &&
-                a.bucket_count == b.bucket_count &&
-                renderer_queue_test::same_bytes(a.unknown_04, b.unknown_04) &&
-                renderer_queue_test::same_bytes(a.unknown_0c, b.unknown_0c) &&
-                renderer_queue_test::same_bytes(a.unknown_14, b.unknown_14),
-        "lookup prefix changed");
+    require(text_owner_test::equal(a, b), "lookup owner or borrowed view changed");
 }
 
 void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
@@ -556,8 +562,7 @@ void verify_environment(const Environment& a, const EnvironmentSnapshot& b)
     {
         const auto& p = a.buckets.value[i];
         const auto& q = b.buckets.value[i];
-        require(p.key == q.key && p.value == q.value && p.unavailable == q.unavailable &&
-                    renderer_queue_test::same_bytes(p.unknown_09, q.unknown_09),
+        require(p.key == q.key && p.value == q.value && p.unavailable == q.unavailable,
             "lookup bucket changed");
     }
     for (std::size_t i = 0; i < a.values.value.size(); ++i)

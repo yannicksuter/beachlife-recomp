@@ -1,4 +1,5 @@
 #include "startup_screen_text.h"
+#include "text_lookup_owner_test_data.h"
 #include <algorithm>
 #include <array>
 #include <climits>
@@ -15,7 +16,6 @@ namespace
 {
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
 static_assert(sizeof(int) == 4 && INT_MAX == 2147483647);
-static_assert(std::is_standard_layout_v<ScreenTextLookup>);
 // Raw cleanup snapshots cover exactly initialized pointer members, with no ABI gaps.
 static_assert(std::is_standard_layout_v<ScreenTextKey>);
 static_assert(sizeof(ScreenTextKey) == sizeof(const char*));
@@ -82,25 +82,30 @@ template <class T> struct Frame
     Guard after = guard(0xe3);
 };
 
-template <class T> void verify_guards(const Frame<T>& actual, const Frame<T>& before)
+// A genuine owner with a scoped borrowed table view for these method cases.
+template <> struct Frame<ScreenTextLookup>
+{
+    text_owner_test::Bootstrap bootstrap;
+    Guard before = guard(0x17);
+    ScreenTextLookup value{"owner.txt"};
+    Guard after = guard(0xe3);
+    text_owner_test::RestoreOwnedTable restore{value, bootstrap};
+};
+
+template <class A, class B> void verify_guards(const A& actual, const B& before)
 {
     require(actual.before == before.before, "leading guard changed");
     require(actual.after == before.after, "trailing guard changed");
 }
 
-bool same_lookup(const ScreenTextLookup& a, const ScreenTextLookup& b)
+bool same_lookup(const ScreenTextLookup& a, const text_owner_test::Snapshot& b)
 {
-    return a.end_index == b.end_index && a.buckets == b.buckets &&
-           a.bucket_count == b.bucket_count &&
-           std::equal(std::begin(a.unknown_04), std::end(a.unknown_04), std::begin(b.unknown_04)) &&
-           std::equal(std::begin(a.unknown_0c), std::end(a.unknown_0c), std::begin(b.unknown_0c)) &&
-           std::equal(std::begin(a.unknown_14), std::end(a.unknown_14), std::begin(b.unknown_14));
+    return text_owner_test::equal(a, b);
 }
 
 bool same_bucket(const ScreenTextBucket& a, const ScreenTextBucket& b)
 {
-    return a.key == b.key && a.value == b.value && a.unavailable == b.unavailable &&
-           std::equal(std::begin(a.unknown_09), std::end(a.unknown_09), std::begin(b.unknown_09));
+    return a.key == b.key && a.value == b.value && a.unavailable == b.unavailable;
 }
 
 struct Environment
@@ -114,14 +119,36 @@ struct Environment
     Frame<std::array<char, key_capacity>> query;
 };
 
+struct EnvironmentSnapshot
+{
+    text_owner_test::FrameSnapshot<Guard> lookup;
+    text_owner_test::FrameSnapshot<Guard> decoy;
+    decltype(Environment::buckets) buckets;
+    decltype(Environment::values) values;
+    decltype(Environment::keys) keys;
+    decltype(Environment::texts) texts;
+    decltype(Environment::query) query;
+
+    explicit EnvironmentSnapshot(const Environment& env)
+        : lookup(env.lookup)
+        , decoy(env.decoy)
+        , buckets(env.buckets)
+        , values(env.values)
+        , keys(env.keys)
+        , texts(env.texts)
+        , query(env.query)
+    {
+    }
+};
+
 void pattern_lookup(ScreenTextLookup& lookup)
 {
-    std::fill(std::begin(lookup.unknown_04), std::end(lookup.unknown_04), 0x5b);
+    lookup.capacity_04 = static_cast<int>(capacity);
     std::fill(std::begin(lookup.unknown_0c), std::end(lookup.unknown_0c), 0x81);
-    std::fill(std::begin(lookup.unknown_14), std::end(lookup.unknown_14), 0xee);
+    lookup.used_14 = 0xeeU;
 }
 
-void verify_environment(const Environment& actual, const Environment& before)
+void verify_environment(const Environment& actual, const EnvironmentSnapshot& before)
 {
     verify_guards(actual.lookup, before.lookup);
     verify_guards(actual.decoy, before.decoy);
@@ -288,10 +315,7 @@ void initialize(Environment& env, const LookupCase& test)
             0,
             0x6a6a};
         auto& bucket = env.buckets.value[i];
-        bucket.unavailable = 1;
-        bucket.unknown_09[0] = 0x5b;
-        bucket.unknown_09[1] = 0x81;
-        bucket.unknown_09[2] = 0xee;
+        bucket = text_owner_test::bucket(nullptr, nullptr, 1);
     }
     for (const auto& slot : test.slots)
     {
@@ -322,7 +346,7 @@ void run_lookup(std::size_t index)
     ++sessions;
     Environment env;
     initialize(env, test);
-    const Environment before = env;
+    const EnvironmentSnapshot before(env);
     GlobalSelection selection(&env.decoy.value);
     const char* query = test.null_query ? nullptr : env.query.value.data();
     if (!test.null_query)
@@ -371,8 +395,12 @@ void run_end(std::size_t index, int expected_index)
     lookup.value.end_index = expected_index;
     lookup.value.bucket_count = 5;
     lookup.value.buckets = buckets.value.data();
+    for (auto& bucket : buckets.value)
+    {
+        bucket = text_owner_test::bucket(nullptr, nullptr, 0);
+    }
     const auto old_buckets = buckets;
-    const auto old_lookup = lookup;
+    const text_owner_test::FrameSnapshot<Guard> old_lookup(lookup);
     {
         const ScreenTextIterator end = lookup.value.EndText();
         ++end_calls;
@@ -417,7 +445,7 @@ void run_cleanup(bool unwind)
     ++sessions;
     Environment env;
     initialize(env, cases[10]); // One live aliased query/key/value domain.
-    const Environment before = env;
+    const EnvironmentSnapshot before(env);
     GlobalSelection selection(&env.decoy.value);
     RawSlot<ScreenTextKey> key_slot;
     RawSlot<ScreenTextIterator> iterator_slot;
