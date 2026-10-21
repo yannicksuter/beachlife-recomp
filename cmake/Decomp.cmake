@@ -414,6 +414,25 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+# The floating-point reader has only its real host CRT dependency. Keep this
+# library available independently of optional reconstructed subsystem fixtures.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_gui_float STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_float.cpp")
+    target_include_directories(beachlife_reconstructed_gui_float PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_gui_float PUBLIC cxx_std_20)
+    set_target_properties(beachlife_reconstructed_gui_float PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    add_dependencies(beachlife_reconstructed_gui_float verify_reconstructed_source)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_gui_float PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_gui_float PRIVATE -fno-lto)
+    endif()
+endif()
+
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -3904,4 +3923,21 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         set_tests_properties(reconstructed_input_motion_owner PROPERTIES
             LABELS "reconstructed;experimental;headless" TIMEOUT 60)
     endif()
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_executable(reconstructed_gui_float_tests tests/reconstructed_gui_float.cpp)
+    target_link_libraries(reconstructed_gui_float_tests PRIVATE beachlife_reconstructed_gui_float)
+    set_target_properties(reconstructed_gui_float_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(reconstructed_gui_float_tests PRIVATE /GL- /W4 /WX)
+    else()
+        target_compile_options(reconstructed_gui_float_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_gui_float_tests PRIVATE -fno-lto)
+    endif()
+    add_test(NAME reconstructed_gui_float COMMAND reconstructed_gui_float_tests)
+    set_tests_properties(reconstructed_gui_float PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()

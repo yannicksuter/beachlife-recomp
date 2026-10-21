@@ -1674,3 +1674,18 @@ cmake --preset release -B build/renderer-display -DBUILD_TESTING=ON
 cmake --build build/renderer-display --target renderer_display_tests
 ctest --test-dir build/renderer-display -R '^renderer_display$' --output-on-failure
 ```
+
+Experimental builds also provide `beachlife_reconstructed_gui_float`, the complete
+script floating-point reader used by slider and bar commands. It keeps the
+original unchecked 128-byte token buffer, whitespace and delimiter handling,
+and `atof` followed by float narrowing. The native boundary uses the host CRT;
+nondecimal syntax, overflow and non-C locales are not qualified against VC6.
+The existing parser prefix is borrowed here; this does not construct the full
+parser, widget owners or a menu. Ordinary native builds do not select this body.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`, build
+`reconstructed_gui_float_tests` and run `ctest -R '^reconstructed_gui_float$'`.
+The focused fixture covers literal values and cursor positions, consecutive
+reads, the maximum bounded token, and unchanged input/unrelated typed members.
+The library is available with subsystem tests disabled.
