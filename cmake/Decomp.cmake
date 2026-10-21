@@ -3687,3 +3687,36 @@ if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
     set_tests_properties(reconstructed_listbox_selection_find PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+# ScreenSelect uses the complete qualified request, Dialog and active-list path.
+# Keep this subsystem below the existing optional reconstructed-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_select STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_select.cpp")
+    target_include_directories(beachlife_reconstructed_screen_select PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_select PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_screen_select PUBLIC
+        beachlife_reconstructed_screen_request)
+    add_dependencies(beachlife_reconstructed_screen_select verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_screen_select PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_select PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_select PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_screen_select_tests tests/reconstructed_screen_select.cpp)
+        target_link_libraries(reconstructed_screen_select_tests PRIVATE
+            beachlife_reconstructed_screen_select)
+        set_target_properties(reconstructed_screen_select_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_screen_select_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_select_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_screen_select COMMAND reconstructed_screen_select_tests)
+        set_tests_properties(reconstructed_screen_select PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()

@@ -1562,3 +1562,13 @@ The focused qualification is Linux optimized and sanitized; Windows/macOS,
 complete ListBox ownership and menu execution remain separate gates. This is
 library support, not a new game method or a strict compiler match. Default
 native selection and the off-by-default experimental option are unchanged.
+
+The optional `reconstructed_screen_select_tests` target exercises the complete
+`ScreenManager::ScreenSelect` method through the real request, Dialog, Frame,
+active-list and software-surface methods. It uses generated `InGameOptions`
+registration and explicit null contexts, with genuine widget ownership and
+borrowed manager/renderer read models. Build it with reconstructed tests and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, then run
+`ctest --test-dir <build> -R '^reconstructed_screen_select$' --output-on-failure`.
+The focused fixture supports 64-bit Linux. It does not construct the full game
+or manager and does not establish a running menu or production renderer.
