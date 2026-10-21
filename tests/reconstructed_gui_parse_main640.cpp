@@ -26,7 +26,11 @@ static_assert(std::is_aggregate_v<GuiParserState> && std::is_standard_layout_v<G
 static_assert(sizeof(ScreenManager) == 424 && offsetof(ScreenManager, item_90) == 232);
 static_assert(offsetof(ScreenManager, unknown_94) == 240 && offsetof(ScreenManager, active) == 280);
 static_assert(offsetof(ScreenManager, mode) == 392 && offsetof(ScreenManager, value_138) == 416);
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+static_assert(sizeof(ScreenRequestRenderer) == 392);
+#else
 static_assert(sizeof(ScreenRequestRenderer) == 384);
+#endif
 static_assert(sizeof(GuiParserState) == 120 && offsetof(GuiParserState, word_3c) == 116);
 using Seed = child_ring_fixture::Seed<4>;
 unsigned checks = 0, calls = 0, frames = 0, released_frames = 0, pops = 0;

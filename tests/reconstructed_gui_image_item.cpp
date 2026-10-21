@@ -40,7 +40,11 @@ static_assert(std::endian::native == std::endian::little);
 static_assert(std::is_base_of_v<ScreenItem, ScreenImageItem>);
 static_assert(std::has_virtual_destructor_v<ScreenImageItem>);
 static_assert(sizeof(ScreenImageItem) == 120);
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+static_assert(sizeof(ScreenRequestRenderer) == 392 && sizeof(ScreenManager) == 424);
+#else
 static_assert(sizeof(ScreenRequestRenderer) == 384 && sizeof(ScreenManager) == 424);
+#endif
 static_assert(sizeof(ScreenDialogResourceNode) == sizeof(ScreenChildNode));
 static_assert(alignof(ScreenDialogResourceNode) <= alignof(ScreenChildNode));
 

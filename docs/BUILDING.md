@@ -1489,6 +1489,28 @@ experimental reconstructed tests. Linux 64-bit qualification covers this
 bounded subsystem; full game/action-table ownership, other platforms and a
 running menu remain separate. Default source profiles are unchanged.
 
+The experimental `beachlife_reconstructed_sea_state_owner` archive contains the
+real sea-state constructor, destructor and byte setter. It is available with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` even when reconstructed tests are disabled.
+The optional Linux 64-bit `reconstructed_sea_state_owner_tests` target checks
+genuine placement lifetimes, all observed opaque bytes and outside guards,
+byte values `0`, `0x80` and `0xff`, and real scalar ownership. The fixture defines
+no allocation or game-method replacements. The parent renderer setter and its
+tail-pointer migration remain separate; this capability does not construct the
+complete renderer or establish menu/GPU gameplay. The experimental option stays
+off by default; other platform qualification remains separate.
+
+The optional experimental renderer sea setter forwards the complete argument
+byte to the genuine sea-state owner. Its standalone library links the real
+child lifetime/setter library and remains available with reconstructed tests
+disabled. The focused Linux 64-bit test uses a typed renderer read model, its
+real native rectangle queue, and genuine child construction/destruction; it
+checks receiver changes, bytes 0/128/255, owned storage and retained state.
+The appended native pointer follows the host ABI, not the original x86 offset.
+Full renderer/platform construction, sea rendering, Windows/macOS execution
+and gameplay remain separate capabilities. Experimental selection is off by
+default and does not imply a strict byte match.
+
 The same experimental image-parser target also supplies the genuine `Icon`
 handler and image-resource configuration. Run the `reconstructed_gui_parse_icon`
 test for generated-data parsing, registration, parent attachment, pixel drawing

@@ -90,6 +90,10 @@ void check_layout(const ScreenRequestRenderer& r)
     require(offset(r, &r.buffer_130) == pointer_offset, "marker pointer alignment differs");
     end = pointer_offset + sizeof(r.buffer_130);
 #endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+    require(offset(r, &r.sea_state_134) == end, "sea-state pointer offset differs");
+    end += sizeof(r.sea_state_134);
+#endif
     const std::size_t alignment = alignof(ScreenRequestRenderer);
     require(alignment == alignof(void*) &&
                 sizeof(ScreenRequestRenderer) == (end + alignment - 1) / alignment * alignment,

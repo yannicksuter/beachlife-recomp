@@ -48,7 +48,11 @@ static_assert(offsetof(ScreenDialogResource, record) == (sizeof(void*) == 8 ? 56
 static_assert(sizeof(ScreenDialogResource) == (sizeof(void*) == 8 ? 72 : 56));
 static_assert(sizeof(ScreenDialogResourceNode) == sizeof(ScreenChildNode));
 static_assert(alignof(ScreenDialogResourceNode) <= alignof(ScreenChildNode));
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+static_assert(sizeof(ScreenItem) == 80 && sizeof(ScreenRequestRenderer) == 392);
+#else
 static_assert(sizeof(ScreenItem) == 80 && sizeof(ScreenRequestRenderer) == 384);
+#endif
 static_assert(std::is_same_v<decltype(ScreenTabItem::word_44), unsigned int>);
 static_assert(std::is_same_v<decltype(ScreenTabItem::word_48), unsigned int>);
 static_assert(std::is_same_v<decltype(ScreenTabItem::resource), ScreenDialogResource*>);

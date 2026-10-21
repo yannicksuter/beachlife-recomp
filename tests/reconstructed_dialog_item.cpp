@@ -57,7 +57,11 @@ static_assert(sizeof(SurfaceColorKey) == 8);
 static_assert(offsetof(DirectDrawSurface7VtablePrefix, SetColorKey) == 29 * sizeof(void*));
 static_assert(sizeof(DirectDrawSurface7VtablePrefix) == 33 * sizeof(void*));
 #if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+static_assert(sizeof(void*) == 8 && sizeof(ScreenRequestRenderer) == 392);
+#else
 static_assert(sizeof(void*) == 8 && sizeof(ScreenRequestRenderer) == 384);
+#endif
 static_assert(offsetof(ScreenRequestRenderer, fill_color) == 150);
 static_assert(offsetof(ScreenRequestRenderer, word_60) == 108);
 static_assert(offsetof(ScreenRequestRenderer, buffer_130) == 376);

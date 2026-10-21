@@ -288,6 +288,44 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+# Standalone reconstructed sea-state lifetime and byte setter.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_sea_state_owner STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_sea_state_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_sea_state_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_sea_state_enabled.cpp")
+    target_include_directories(beachlife_reconstructed_sea_state_owner PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_sea_state_owner PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_sea_state_owner verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_sea_state_owner PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_sea_state_owner PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_sea_state_owner PRIVATE -fno-lto)
+    endif()
+endif()
+
+# Reconstructed renderer forwarding to the genuine sea-state owner.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_sea_enabled STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_sea_enabled.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_sea_enabled PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_sea_enabled PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_sea_enabled PUBLIC
+        beachlife_reconstructed_sea_state_owner)
+    add_dependencies(beachlife_reconstructed_renderer_sea_enabled verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_renderer_sea_enabled PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_sea_enabled PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_sea_enabled PRIVATE -fno-lto)
+    endif()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -3496,4 +3534,36 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         target_link_libraries(reconstructed_menu_show_scenario_tests PRIVATE
             beachlife_reconstructed_menu_play_sandbox)
     endif()
+endif()
+
+if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
+        AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    add_executable(reconstructed_sea_state_owner_tests
+        tests/reconstructed_sea_state_owner.cpp)
+    target_link_libraries(reconstructed_sea_state_owner_tests PRIVATE
+        beachlife_reconstructed_sea_state_owner)
+    set_target_properties(reconstructed_sea_state_owner_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_sea_state_owner_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_sea_state_owner_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_sea_state_owner COMMAND reconstructed_sea_state_owner_tests)
+    set_tests_properties(reconstructed_sea_state_owner PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
+        AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    add_executable(reconstructed_renderer_sea_enabled_tests
+        tests/reconstructed_renderer_sea_enabled.cpp)
+    target_link_libraries(reconstructed_renderer_sea_enabled_tests PRIVATE
+        beachlife_reconstructed_renderer_sea_enabled)
+    set_target_properties(reconstructed_renderer_sea_enabled_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_renderer_sea_enabled_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_renderer_sea_enabled_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_renderer_sea_enabled COMMAND reconstructed_renderer_sea_enabled_tests)
+    set_tests_properties(reconstructed_renderer_sea_enabled PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
