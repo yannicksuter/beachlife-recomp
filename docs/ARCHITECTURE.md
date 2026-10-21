@@ -410,3 +410,63 @@ the real USER32 PostQuitMessage import; raw bytes differ at its IAT address.
 The early native compatibility series removes this matching-only callback
 and its comparison fixture and import declaration before native composition,
 preserving native sources and selections. The comparison image is not run.
+
+The 42-byte Extras menu callback has a strict matching reconstruction; raw
+bytes differ only at relocated addresses. It reloads the screen-manager
+global before closing the active screens, requesting ExtrasScreen and
+tail-calling the +0x190 owner release. Those three bodies remain unresolved:
+generated comparison-only anchors supply their addresses and the image is
+not run. The early native compatibility series removes the callback, its two
+declarations and its retention fixture before native composition.
+
+The 45-byte Scenario menu callback has a strict matching reconstruction; raw
+bytes differ only at relocated addresses. It passes zero to the game's +0xa4
+byte setter, then reloads the screen-manager global to close the active
+screens and request ScenarioScreen. The close and request bodies use generated
+comparison-only anchors; the setter is reconstructed below. The comparison
+image is not run. The early native compatibility series removes the callback,
+its setter declaration and its retention fixture before native composition.
+
+The 45-byte Sandbox menu callback has a strict matching reconstruction in the
+same form: it passes one to the +0xa4 setter, closes the active screens and
+requests the same ScenarioScreen literal, which the comparison image shares
+between both callbacks. Its manager children remain comparison-only anchors,
+and the early native compatibility series removes the callback and its fixture.
+
+The 18-byte startup-mode setter has a strict matching reconstruction; raw
+bytes differ at the relocated call. It stores the exact input byte at +0xa4
+before calling the real scenario-progress loader. That 243-byte child remains
+a comparison-only anchor in the matching profile. The early native series
+restores the previous game prefix and source selection before native
+composition. Neither the retention fixture nor its comparison image is run.
+
+The 22-byte `ScreenRadioItem::SetFlag02` reconstruction matches the original
+bytes exactly. It changes the flags only when bit 2 is clear, then dispatches
+the original virtual preparation slot. Its matching declaration describes a
+borrowed receiver with the established base layout; it does not construct or
+qualify the complete derived widget. The early native compatibility series
+removes this matching-only projection before native source composition. The
+retention fixture and comparison image are never executed.
+
+The 22-byte `ScreenRadioItem::SetFlag04` reconstruction matches the original
+bytes exactly. It replaces bit 2 with bit 4 when bit 4 is clear, then dispatches
+the original virtual preparation slot. Its matching declaration describes a
+borrowed receiver with the established base layout; it does not construct or
+qualify the complete derived widget. The early native compatibility series
+removes this matching-only projection before native source composition. The
+retention fixture and comparison image are never executed.
+
+The 19-byte `ScreenRadioItem::SetFlag10` reconstruction matches the original
+bytes exactly. When bit 4 is clear it sets that bit and dispatches the original
+virtual preparation slot. The matching fixture uses the established borrowed
+receiver projection; complete widget lifetime and native integration are
+separate. All four consumers of its declaration are rebuilt together. The early
+native compatibility series removes this matching-only projection before native
+source composition. Comparison images are never executed.
+
+The complete 11-byte `WindowAudioState::ClearRegistration` reconstruction
+matches after relocation normalization. It unconditionally clears the audio
+owner registration, including when another owner is current. All declaration
+consumers rebuild together. The native compatibility series removes this
+matching projection before source composition; full audio lifetime and playback
+remain separate. Comparison images are never executed.
