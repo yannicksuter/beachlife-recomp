@@ -27,9 +27,9 @@ static_assert(sizeof(ScreenManager) == 424 && offsetof(ScreenManager, item_90) =
 static_assert(offsetof(ScreenManager, unknown_94) == 240 && offsetof(ScreenManager, active) == 280);
 static_assert(offsetof(ScreenManager, mode) == 392 && offsetof(ScreenManager, value_138) == 416);
 #if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
-static_assert(sizeof(ScreenRequestRenderer) == 392);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
 #else
-static_assert(sizeof(ScreenRequestRenderer) == 384);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
 #endif
 static_assert(sizeof(GuiParserState) == 120 && offsetof(GuiParserState, word_3c) == 116);
 using Seed = child_ring_fixture::Seed<4>;
@@ -77,6 +77,37 @@ template <typename T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before;
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after;
+    Guarded()
+    {
+        before.fill(0x36);
+        after.fill(0xc9);
+    }
+    void verify() const
+    {
+        require(std::all_of(before.begin(),
+                    before.end(),
+                    [](auto b)
+                    {
+                        return b == 0x36;
+                    }) &&
+                    std::all_of(after.begin(),
+                        after.end(),
+                        [](auto b)
+                        {
+                            return b == 0xc9;
+                        }),
+            "outside guard changed");
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 struct Environment
 {
     Guarded<ScreenManager> manager;
@@ -91,7 +122,7 @@ struct Environment
 
     Environment()
     {
-        // Typed borrowed read models only; real Frame/base/ring objects below
+        // Manager/parser use borrowed views; genuine renderer/Frame/base/ring objects below
         // use their genuine constructors and complete vtables.
         renderer_queue_test::initialize(renderer.value, 29);
         renderer.value.width = 640;
@@ -243,7 +274,7 @@ void skipped(Environment& e,
     e.renderer.value.width = width;
     const auto old = p;
     const auto manager = e.manager.value;
-    const auto renderer = e.renderer.value;
+    const renderer_queue_test::Snapshot renderer = e.renderer.value;
     p.ParseMainItem640();
     ++calls;
     require(p.cursor == expected && p.current_context == old.current_context &&
@@ -272,7 +303,7 @@ void normal_groups()
         e.renderer.value.width = 640;
         const auto first_old = p;
         const auto manager = e.manager.value;
-        const auto renderer = e.renderer.value;
+        const renderer_queue_test::Snapshot renderer = e.renderer.value;
         p.ParseMainItem640();
         ++calls;
         auto* a = e.adopt(0, &e.prior);
@@ -295,7 +326,7 @@ void normal_groups()
         p.cursor = 0;
         e.renderer.value.width = 640;
         const auto second_old = p;
-        const auto second_renderer = e.renderer.value;
+        const renderer_queue_test::Snapshot second_renderer = e.renderer.value;
         p.ParseMainItem640();
         ++calls;
         auto* b = e.adopt(1, a);

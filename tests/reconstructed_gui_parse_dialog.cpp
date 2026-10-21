@@ -75,6 +75,37 @@ template <typename T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before;
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after;
+    Guarded()
+    {
+        before.fill(0x36);
+        after.fill(0xc9);
+    }
+    void verify() const
+    {
+        require(std::all_of(before.begin(),
+                    before.end(),
+                    [](auto b)
+                    {
+                        return b == 0x36;
+                    }) &&
+                    std::all_of(after.begin(),
+                        after.end(),
+                        [](auto b)
+                        {
+                            return b == 0xc9;
+                        }),
+            "outside guard changed");
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 template <std::size_t N> Guarded<std::array<char, N>> input(const char (&literal)[N])
 {
     Guarded<std::array<char, N>> result;
@@ -110,7 +141,8 @@ struct Environment
 
     Environment()
     {
-        // These manager/parser/renderer objects are typed borrowed read models.
+        // Manager/parser remain typed borrowed read models; the renderer is a
+        // genuine owner with a restored method view.
         // Every constructed ScreenItem, Frame, Dialog and ring has its real body.
         require(screen_dialog_resources == nullptr, "unexpected active resource owner");
         renderer_queue_test::initialize(renderer.value, 29);
@@ -210,7 +242,7 @@ struct Environment
 void preserved(const Environment& environment,
     const GuiParserState& old,
     const ScreenManager& manager,
-    const ScreenRequestRenderer& renderer)
+    const renderer_queue_test::Snapshot& renderer)
 {
     const auto& p = environment.parser.value;
     require(p.manager == old.manager && p.buffer == old.buffer &&
@@ -288,7 +320,7 @@ void normal_groups()
         Environment environment;
         auto& p = environment.parser.value;
         const auto manager = environment.manager.value;
-        const auto renderer = environment.renderer.value;
+        const renderer_queue_test::Snapshot renderer = environment.renderer.value;
         auto first = input(" \tLogo(1,2,11,12,NONE,7,256) \r\n{tail");
         auto second = input("Child(1,2,11,12,NONE,3,0){tail");
         auto third = input("Third(3,4,17,25,CLEAR,-2,-1){rest");

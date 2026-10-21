@@ -72,6 +72,37 @@ template <typename T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before;
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after;
+    Guarded()
+    {
+        before.fill(0x36);
+        after.fill(0xc9);
+    }
+    void verify() const
+    {
+        require(std::all_of(before.begin(),
+                    before.end(),
+                    [](auto b)
+                    {
+                        return b == 0x36;
+                    }) &&
+                    std::all_of(after.begin(),
+                        after.end(),
+                        [](auto b)
+                        {
+                            return b == 0xc9;
+                        }),
+            "outside guard changed");
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 struct Environment
 {
     Guarded<ScreenManager> manager;
@@ -86,7 +117,7 @@ struct Environment
 
     Environment()
     {
-        // Typed borrowed read models only; real Frame/base/ring objects below
+        // Manager/parser use borrowed views; genuine renderer/Frame/base/ring objects below
         // use their genuine constructors and complete vtables.
         renderer_queue_test::initialize(renderer.value, 29);
         renderer.value.width = 800;
@@ -238,7 +269,7 @@ void skipped(Environment& e,
     e.renderer.value.width = width;
     const auto old = p;
     const auto manager = e.manager.value;
-    const auto renderer = e.renderer.value;
+    const renderer_queue_test::Snapshot renderer = e.renderer.value;
     p.ParseMainItem();
     ++calls;
     require(p.cursor == expected && p.current_context == old.current_context &&
@@ -272,7 +303,7 @@ void normal_groups()
         e.renderer.value.width = 800;
         const auto first_old = p;
         const auto manager = e.manager.value;
-        const auto renderer = e.renderer.value;
+        const renderer_queue_test::Snapshot renderer = e.renderer.value;
         p.ParseMainItem();
         ++calls;
         auto* a = e.adopt(0, &e.prior);
@@ -295,7 +326,7 @@ void normal_groups()
         p.cursor = 0;
         e.renderer.value.width = std::numeric_limits<unsigned int>::max();
         const auto second_old = p;
-        const auto second_renderer = e.renderer.value;
+        const renderer_queue_test::Snapshot second_renderer = e.renderer.value;
         p.ParseMainItem();
         ++calls;
         auto* b = e.adopt(1, a);

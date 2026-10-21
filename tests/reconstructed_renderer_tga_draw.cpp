@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <initializer_list>
 #include <type_traits>
 #include <vector>
@@ -20,6 +21,10 @@ static_assert(offsetof(DirectDrawSurface7VtablePrefix, Unlock) == 32 * sizeof(vo
 
 namespace
 {
+struct RendererFixtureFailure
+{
+};
+
 constexpr std::array<unsigned char, 12> source_pixels = {1, 0, 2, 3, 4, 5, 0, 6, 7, 8, 9, 10};
 constexpr std::array<unsigned short, 11> colors = {
     0x1357, 0x9123, 0xa456, 0xb789, 0xcabc, 0xddef, 0xe012, 0xf345, 0x2468, 0x369c, 0x48ad};
@@ -176,6 +181,16 @@ template <class T> struct Guarded
     T value{};
     std::array<unsigned char, 16> after{};
 };
+
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
 using Bank = Guarded<std::array<unsigned short, 128>>;
 
 struct Frame
@@ -214,7 +229,7 @@ void require(bool condition, const char* message)
     if (!condition)
     {
         std::fprintf(stderr, "case %zu: %s\n", current_case, message);
-        std::exit(2);
+        throw RendererFixtureFailure{};
     }
 }
 
@@ -258,7 +273,8 @@ SurfaceResult SURFACE_STDCALL lock_surface(DirectDrawSurface7Prefix* receiver,
     if (c.scenario->access == Access::HardwareRoute ||
         c.scenario->access == Access::HardwareSoftware)
     {
-        r.surfaces = f.table_b.data();
+        // Same-sized borrowed slot replacement; retain the genuine vector backing.
+        std::copy(f.table_b.begin(), f.table_b.end(), r.surface_storage.begin());
         r.current_surface = 1;
         r.width = 11;
         c.image->width = 3; // The parent already captured the original source stride of four.
@@ -367,7 +383,7 @@ void run(const Scenario& s)
     f.table_b = {&f.entries[2].value, &f.entries[1].value, &f.entries[0].value};
     const auto original_table_a = f.table_a;
     const auto original_table_b = f.table_b;
-    r.surfaces = f.table_a.data();
+    r.surface_storage.assign(f.table_a.begin(), f.table_a.end());
     r.current_surface = 0;
 
     // Real allocating constructor and destructor own both typed arrays. The
@@ -396,7 +412,7 @@ void run(const Scenario& s)
 
     for (unsigned int repeat = 0; repeat < s.repeats; ++repeat)
     {
-        ScreenRequestRenderer expected_renderer = r;
+        renderer_queue_test::Snapshot expected_renderer = r;
         expected_renderer.dirty_rectangles.values.assign(
             s.expected_queue.begin(), s.expected_queue.end());
         expected_renderer.dirty_rectangle_count = static_cast<int>(s.expected_queue.size());
@@ -416,7 +432,7 @@ void run(const Scenario& s)
         }
         if (s.access == Access::HardwareRoute || s.access == Access::HardwareSoftware)
         {
-            expected_renderer.surfaces = f.table_b.data();
+            expected_renderer.surface_storage.assign(f.table_b.begin(), f.table_b.end());
             expected_renderer.current_surface = s.access == Access::HardwareRoute ? 2 : 1;
             expected_renderer.width = 11;
             expected_renderer.software_mode = s.access == Access::HardwareSoftware;
@@ -494,16 +510,29 @@ void run(const Scenario& s)
 
 int main()
 {
-    for (current_case = 0; current_case < scenarios.size(); ++current_case)
+    try
     {
-        run(scenarios[current_case]);
+        for (current_case = 0; current_case < scenarios.size(); ++current_case)
+        {
+            run(scenarios[current_case]);
+        }
+        std::printf(
+            "renderer TGA draw: %zu sessions, %zu calls, %zu image lifetimes, %zu locks, %zu "
+            "unlocks, %zu checks\n",
+            scenarios.size(),
+            calls,
+            image_lifetimes,
+            lock_calls,
+            unlock_calls,
+            checks);
     }
-    std::printf("renderer TGA draw: %zu sessions, %zu calls, %zu image lifetimes, %zu locks, %zu "
-                "unlocks, %zu checks\n",
-        scenarios.size(),
-        calls,
-        image_lifetimes,
-        lock_calls,
-        unlock_calls,
-        checks);
+    catch (const RendererFixtureFailure&)
+    {
+        return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
+    }
 }

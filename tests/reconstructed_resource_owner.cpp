@@ -229,7 +229,10 @@ struct PoolBacking
 
 struct Environment
 {
-    ScreenRequestRenderer renderer{}, saved{};
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
+    renderer_queue_test::Snapshot saved{};
     explicit Environment(unsigned format)
     {
         check(screen_dialog_resources == nullptr && screen_dialog_palette_modifiers == nullptr &&

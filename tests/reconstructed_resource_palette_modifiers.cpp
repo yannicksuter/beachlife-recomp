@@ -193,9 +193,11 @@ struct Files
 
 struct RendererFrame
 {
+    renderer_owner_test::Bootstrap renderer_bootstrap;
     std::array<unsigned char, 16> before;
-    ScreenRequestRenderer value{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
     std::array<unsigned char, 16> after;
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
 
     RendererFrame()
     {
@@ -231,7 +233,7 @@ struct Environment
         screen_request_renderer = present ? &renderer.value : nullptr;
     }
 
-    void unchanged(const ScreenRequestRenderer& snapshot,
+    void unchanged(const renderer_queue_test::Snapshot& snapshot,
         const char* path,
         ScreenRequestRenderer* selected) const
     {
@@ -282,7 +284,7 @@ struct Slot
     void construct(Environment& environment)
     {
         require(live == nullptr, "slot already live");
-        const ScreenRequestRenderer snapshot = environment.renderer.value;
+        const renderer_queue_test::Snapshot snapshot = environment.renderer.value;
         const char* path = screen_dialog_palette_file_path;
         ScreenRequestRenderer* selected = screen_request_renderer;
         ++constructors;
@@ -296,7 +298,7 @@ struct Slot
     void load(Environment& environment)
     {
         require(live != nullptr, "load without live owner");
-        const ScreenRequestRenderer snapshot = environment.renderer.value;
+        const renderer_queue_test::Snapshot snapshot = environment.renderer.value;
         const char* path = screen_dialog_palette_file_path;
         ScreenRequestRenderer* selected = screen_request_renderer;
         ++explicit_loads;
@@ -311,7 +313,7 @@ struct Slot
         require(live != nullptr, "destruction without live owner");
         std::array<unsigned char, sizeof(Palette)> snapshot;
         std::memcpy(snapshot.data(), static_cast<const void*>(storage), snapshot.size());
-        const ScreenRequestRenderer renderer_snapshot = environment.renderer.value;
+        const renderer_queue_test::Snapshot renderer_snapshot = environment.renderer.value;
         const char* path = screen_dialog_palette_file_path;
         ScreenRequestRenderer* selected = screen_request_renderer;
         ++destructors;

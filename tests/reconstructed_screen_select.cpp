@@ -58,6 +58,28 @@ template <class T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    Guarded()
+    {
+        before.fill(0x53);
+        after.fill(0xa9);
+    }
+    void check() const
+    {
+        for (unsigned n = 0; n < before.size(); ++n)
+        {
+            require(before[n] == 0x53 && after[n] == 0xa9, "typed backing guard changed");
+        }
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 struct PoolScope
 {
     std::array<unsigned char, 16> before{};
@@ -150,25 +172,14 @@ struct Environment
         manager.value.active.Clear();
 
         auto& r = renderer.value;
-        if (r.surfaces != nullptr)
+        // The actual indexed cleanup above released each WORD allocation.
+        // Entry payloads remain scalar-owned; vector backing is real host storage.
+        for (auto* entry : r.surface_storage)
         {
-            for (auto** p = r.surfaces; p != r.surfaces_end; ++p)
-            {
-                delete *p;
-                ++surface_releases;
-            }
-            const unsigned bytes = static_cast<unsigned>(
-                (r.surfaces_capacity - r.surfaces) * sizeof(ScreenSurfacePosition*));
-            if (bytes > 128)
-            {
-                ::operator delete(r.surfaces);
-            }
-            else
-            {
-                ReturnPool(r.surfaces, bytes);
-            }
-            r.surfaces = r.surfaces_end = r.surfaces_capacity = nullptr;
+            delete entry;
+            ++surface_releases;
         }
+        r.surface_storage.clear();
 
         manager.value.registry = nullptr;
         if (registration)
@@ -292,9 +303,8 @@ void select_generated_options()
         "request, real child preparation or slot4c preservation differs");
 
     const auto& renderer = environment.renderer.value;
-    require(renderer.surfaces != nullptr && renderer.surfaces_end == renderer.surfaces + 1,
-        "real surface table publication differs");
-    const auto* surface = renderer.surfaces[0];
+    require(renderer.surface_storage.size() == 1, "real surface table publication differs");
+    const auto* surface = renderer.surface_storage[0];
     require(surface->active == 1 && surface->software == 1 && surface->prepared == 1 &&
                 surface->width == 4 && surface->height == 3 && surface->pitch == 8 &&
                 surface->position.x == 2 && surface->position.y == 3,

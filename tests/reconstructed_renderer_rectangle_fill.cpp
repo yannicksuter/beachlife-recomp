@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <vector>
 
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
@@ -20,6 +21,10 @@ static_assert(offsetof(DirectDrawSurface7VtablePrefix, Unlock) == 32 * sizeof(vo
 
 namespace
 {
+struct RendererFixtureFailure
+{
+};
+
 enum class Route
 {
     Direct,
@@ -166,6 +171,16 @@ template <class T> struct Guarded
     T value{};
     std::array<unsigned char, 16> after{};
 };
+
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
 using Words = std::array<unsigned short, 128>;
 using Bank = Guarded<Words>;
 using Table = Guarded<std::array<ScreenSurfacePosition*, 3>>;
@@ -187,7 +202,7 @@ struct Context
 {
     Frame* frame;
     const Scenario* scenario;
-    const ScreenRequestRenderer* initial_renderer;
+    const renderer_queue_test::Snapshot* initial_renderer;
     Words initial_dense;
     Words expected_direct;
     Words expected_dense;
@@ -208,7 +223,7 @@ void require(bool value, const char* message)
     if (!value)
     {
         std::fprintf(stderr, "case %zu: %s\n", current_case, message);
-        std::exit(2);
+        throw RendererFixtureFailure{};
     }
 }
 
@@ -270,7 +285,8 @@ SurfaceResult SURFACE_STDCALL lock_surface(DirectDrawSurface7Prefix* receiver,
     description->pitch = 98; // The real fill must read the selected entry's pitch.
     if (c.scenario->mutation != Mutation::None)
     {
-        r.surfaces = f.table_b.value.data();
+        // Same-sized borrowed slot replacement; retain the genuine vector backing.
+        std::copy(f.table_b.value.begin(), f.table_b.value.end(), r.surface_storage.begin());
         r.current_surface = 1;
         r.width = 11;
         r.height = 9;
@@ -374,11 +390,11 @@ void run(const Scenario& s)
     }
     f.table_a.value = {&f.entries[0].value, &f.entries[2].value, &f.entries[1].value};
     f.table_b.value = {&f.entries[2].value, &f.entries[1].value, &f.entries[0].value};
-    r.surfaces = f.table_a.value.data();
+    r.surface_storage.assign(f.table_a.value.begin(), f.table_a.value.end());
     r.current_surface = 0;
 
-    const auto initial_renderer = r; // A real typed deque copy, never a byte snapshot.
-    auto expected_renderer = r;
+    const renderer_queue_test::Snapshot initial_renderer = r;
+    renderer_queue_test::Snapshot expected_renderer = r;
     auto expected_entries = f.entries;
     const auto expected_table_a = f.table_a.value;
     const auto expected_table_b = f.table_b.value;
@@ -401,7 +417,7 @@ void run(const Scenario& s)
     expected_renderer.pixels_locked = s.expected_locked;
     if (s.mutation != Mutation::None)
     {
-        expected_renderer.surfaces = f.table_b.value.data();
+        expected_renderer.surface_storage.assign(f.table_b.value.begin(), f.table_b.value.end());
         expected_renderer.current_surface = s.mutation == Mutation::Reselect ? 2 : 1;
         expected_renderer.width = 11;
         expected_renderer.height = 9;
@@ -458,15 +474,27 @@ void run(const Scenario& s)
 
 int main()
 {
-    for (current_case = 0; current_case < scenarios.size(); ++current_case)
+    try
     {
-        run(scenarios[current_case]);
+        for (current_case = 0; current_case < scenarios.size(); ++current_case)
+        {
+            run(scenarios[current_case]);
+        }
+        std::printf("renderer rectangle fill: %zu sessions, %zu calls, %zu locks, %zu unlocks, %zu "
+                    "checks\n",
+            scenarios.size(),
+            calls,
+            locks,
+            unlocks,
+            checks);
     }
-    std::printf(
-        "renderer rectangle fill: %zu sessions, %zu calls, %zu locks, %zu unlocks, %zu checks\n",
-        scenarios.size(),
-        calls,
-        locks,
-        unlocks,
-        checks);
+    catch (const RendererFixtureFailure&)
+    {
+        return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
+    }
 }

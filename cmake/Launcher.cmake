@@ -17,6 +17,12 @@ function(beachlife_add_sdl)
     set(SDL_TESTS OFF)
     set(SDL_EXAMPLES OFF)
     set(SDL_INSTALL OFF)
+    # The export has no Git metadata. SDL's fallback would describe this
+    # project's checkout and regenerate its revision header on every commit.
+    file(READ "${BEACHLIFE_PREPARED}/sdl.json" beachlife_sdl_manifest)
+    string(JSON beachlife_sdl_commit GET "${beachlife_sdl_manifest}" identity commit)
+    set(SDL_REVISION "SDL-${beachlife_sdl_commit}" CACHE STRING
+        "SDL revision from the verified dependency pin" FORCE)
     add_subdirectory("${BEACHLIFE_PREPARED}/sdl" "${CMAKE_BINARY_DIR}/extern/sdl" EXCLUDE_FROM_ALL)
 endfunction()
 beachlife_add_sdl()

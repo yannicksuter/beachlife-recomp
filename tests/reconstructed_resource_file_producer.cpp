@@ -850,7 +850,13 @@ int invoke(GuardedLookup& lookup,
 
 struct Renderers
 {
-    ScreenRequestRenderer first{}, second{}, expected_first{}, expected_second{};
+    renderer_owner_test::Bootstrap first_bootstrap;
+    ScreenRequestRenderer first{first_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState first_restore{first, first_bootstrap};
+    renderer_owner_test::Bootstrap second_bootstrap;
+    ScreenRequestRenderer second{second_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState second_restore{second, second_bootstrap};
+    renderer_queue_test::Snapshot expected_first{}, expected_second{};
     Renderers()
     {
         renderer_queue_test::initialize(first, 31);

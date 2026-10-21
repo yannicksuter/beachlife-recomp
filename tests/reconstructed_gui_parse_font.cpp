@@ -78,6 +78,38 @@ template <typename T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before;
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after;
+
+    Guarded()
+    {
+        before.fill(0x3d);
+        after.fill(0xa7);
+    }
+    void verify() const
+    {
+        require(std::all_of(before.begin(),
+                    before.end(),
+                    [](auto byte)
+                    {
+                        return byte == 0x3d;
+                    }) &&
+                    std::all_of(after.begin(),
+                        after.end(),
+                        [](auto byte)
+                        {
+                            return byte == 0xa7;
+                        }),
+            "outside guard differs");
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 // A genuine owner with a scoped borrowed table view for these method cases.
 template <> struct Guarded<ScreenTextLookup>
 {

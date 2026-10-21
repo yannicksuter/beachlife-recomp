@@ -434,6 +434,19 @@ template <typename T> struct Guarded
     std::array<unsigned char, guard_size> after{};
 };
 
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, guard_size> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, guard_size> after{};
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
+#endif
+
 struct Input
 {
     std::array<unsigned char, guard_size> before{};
@@ -450,7 +463,7 @@ struct ParentStorage
 
 // The parent is constructed explicitly in byte storage. In the experimental
 // queue profile the observation owner is initialized before exit callbacks are
-// registered, so its real deque members remain alive during their checks.
+// registered, so the real renderer owner remains alive during their checks.
 struct Observation
 {
     const Literal* literal{};
@@ -465,7 +478,7 @@ struct Observation
     std::array<char, input_capacity> input_before{};
     std::array<unsigned char, sizeof(GuiParserState)> parser_before{};
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
-    ScreenRequestRenderer renderer_before{};
+    renderer_queue_test::Snapshot renderer_before{};
 #else
     std::array<unsigned char, sizeof(ScreenRequestRenderer)> renderer_before{};
 #endif
@@ -607,8 +620,7 @@ void prepare(const Literal& literal)
         observed.renderer.value.unknown_0c, 0x34, sizeof(observed.renderer.value.unknown_0c));
 #endif
 #if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
-    observed.renderer.value.surfaces_end = nullptr;
-    observed.renderer.value.surfaces_capacity = nullptr;
+    observed.renderer.value.surface_storage.clear();
 #else
     std::memset(
         observed.renderer.value.unknown_6c, 0x56, sizeof(observed.renderer.value.unknown_6c));
@@ -828,7 +840,7 @@ int main(int argc, char** argv)
 {
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
     // Construction and static destruction registration finish before either
-    // later atexit callback is registered. Both see live deque members.
+    // later atexit callback is registered. Both see the live genuine owner.
     observed_pointer = &observation_owner();
 #endif
     if (argc == 1)

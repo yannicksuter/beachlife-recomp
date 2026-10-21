@@ -14,7 +14,8 @@ namespace
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
 static_assert(sizeof(int) == 4 && INT_MAX == 2147483647);
 static_assert(std::endian::native == std::endian::little);
-static_assert(std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
 static_assert(!std::is_polymorphic_v<ScreenRequestRenderer>);
 static_assert(std::is_trivially_copyable_v<ScreenFontRenderer>);
 static_assert(std::is_trivially_destructible_v<ScreenFontRenderer>);
@@ -72,9 +73,11 @@ using Output = Buffer<unsigned short, 96>;
 
 struct Environment
 {
+    renderer_owner_test::Bootstrap renderer_bootstrap;
     Guard before{};
-    ScreenRequestRenderer renderer{};
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
     Guard after{};
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
     ScreenRequestRenderer* previous;
 
     Environment()
@@ -131,7 +134,7 @@ void invoke(Environment& environment,
     unsigned char state)
 {
     environment.renderer.format_44 = format;
-    const ScreenRequestRenderer renderer_before = environment.renderer;
+    const renderer_queue_test::Snapshot renderer_before = environment.renderer;
     FontFrame frame;
     auto& font = frame.font;
     require(font.rectangle.x == 0 && font.rectangle.y == 0 && font.rectangle.width == 64 &&

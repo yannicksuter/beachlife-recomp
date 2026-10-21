@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <tuple>
 
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
@@ -19,6 +20,10 @@ static_assert(offsetof(DirectDrawSurface7VtablePrefix, Unlock) == 32 * sizeof(vo
 
 namespace
 {
+struct RendererFixtureFailure
+{
+};
+
 enum class Case
 {
     Mode0565,
@@ -56,7 +61,7 @@ void require(bool condition, const char* reason)
     if (!condition)
     {
         std::fprintf(stderr, "default-render failure: case=%s reason=%s\n", current_case, reason);
-        std::exit(2);
+        throw RendererFixtureFailure{};
     }
 }
 
@@ -71,6 +76,22 @@ template <class T> struct Guarded
         before.fill(0x3c);
         after.fill(0xc3);
     }
+};
+
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 8> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 8> after{};
+
+    Guarded()
+    {
+        before.fill(0x3c);
+        after.fill(0xc3);
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
 };
 
 using Words = std::array<unsigned short, 160>;
@@ -244,7 +265,6 @@ void run(Case kind)
     r.height = 6;
     r.word_60 = 1;
     r.pixels_1c = f.source.value.data() + 4;
-    r.surfaces = f.table.value.data();
     f.source.value.fill(0xb6b6);
     f.destination.value.fill(0xa55a);
     f.other.value.fill(0xc33c);
@@ -269,6 +289,7 @@ void run(Case kind)
         f.devices[i].value.vtable = &surface_table;
         f.table.value[i] = &e;
     }
+    r.surface_storage.assign(f.table.value.begin(), f.table.value.end());
     if (kind == Case::Mode0565 || kind == Case::Mode0555)
     {
         constexpr std::array<std::size_t, 6> positions{0, 2, 4, 10, 12, 14};
@@ -399,7 +420,7 @@ void run(Case kind)
         }
     }
 
-    auto expected_renderer = r;
+    renderer_queue_test::Snapshot expected_renderer = r;
     expected_renderer.current_surface = 0;
     expected_renderer.pixels_locked = 0;
     std::array<ScreenSurfacePosition, 3> expected_entries{
@@ -460,17 +481,29 @@ void run(Case kind)
 
 int main()
 {
-    for (unsigned i = 0; i < names.size(); ++i)
+    try
     {
-        run(static_cast<Case>(i));
+        for (unsigned i = 0; i < names.size(); ++i)
+        {
+            run(static_cast<Case>(i));
+        }
+        std::printf("{\"groups\":3,\"calls\":%u,\"checks\":%u,\"word_checks\":%u,"
+                    "\"lock_calls\":%u,\"unlock_calls\":%u,\"pointer_bytes\":%zu}\n",
+            calls,
+            checks,
+            word_checks,
+            lock_calls,
+            unlock_calls,
+            sizeof(void*));
+        return 0;
     }
-    std::printf("{\"groups\":3,\"calls\":%u,\"checks\":%u,\"word_checks\":%u,"
-                "\"lock_calls\":%u,\"unlock_calls\":%u,\"pointer_bytes\":%zu}\n",
-        calls,
-        checks,
-        word_checks,
-        lock_calls,
-        unlock_calls,
-        sizeof(void*));
-    return 0;
+    catch (const RendererFixtureFailure&)
+    {
+        return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
+    }
 }

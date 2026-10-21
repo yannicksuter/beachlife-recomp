@@ -1715,3 +1715,30 @@ font, text and parser fixtures now construct genuine language owners, use scoped
 borrowed records, and restore their owned tables before cleanup. This does not
 construct a Game or a complete GUI manager, and normal source selection remains
 unchanged. The localization target retains its existing test-selection boundary.
+
+
+Experimental source selection also provides the genuine renderer owner for its
+windowed software path. It composes the real constructor, ordinary destructor,
+mode callback, surface allocation and six TIFF loads with the SDL display
+transport. The uniform declaration uses host vector backing and the existing
+deque boundary; pointed-to surfaces retain their original ownership and cleanup
+order. Allocation, growth and exception timing are not VC6 matching claims.
+
+`reconstructed_renderer_owner_tests` and the affected method fixtures require
+Linux x86-64 and actual X11 window geometry for this initial qualification.
+Fixtures construct real owners and restore scoped borrowed inputs before
+destruction. Historical probes before the start of the surface allocation are
+outside this native domain; real default-buffer branches remain covered.
+Hardware display initialization and unsupported geometry fail explicitly.
+Presentation, capture and the complete Game/controller flow remain separate
+dependencies. This owner does not change normal Play or enable gameplay by
+itself, and experimental selection remains off by default.
+
+The matching profile includes the complete 165-byte GUI floating-point reader.
+It matches strictly, with relocated bytes differing. A control that stops
+consuming the closing delimiter is rejected at 82.44% against the fixed
+original extent, while all 122 previous results are retained. The real
+`atof` import and borrowed parser fixture are included; comparison images
+are not executed. Native source selections and their existing Float
+qualification remain unchanged. This does not qualify a complete parser
+owner or frontend flow.

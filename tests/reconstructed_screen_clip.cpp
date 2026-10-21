@@ -14,7 +14,8 @@
 static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && sizeof(unsigned int) == 4);
 static_assert(INT_MIN == (-2147483647 - 1) && INT_MAX == 2147483647);
 static_assert(static_cast<int>(0xffffffffU) == -1);
-static_assert(std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
 static_assert(!std::is_polymorphic_v<ScreenRequestRenderer>);
 
 namespace
@@ -52,6 +53,38 @@ template <class T> struct Guarded
     std::array<unsigned char, 16> before{};
     T value{};
     std::array<unsigned char, 16> after{};
+
+    Guarded()
+    {
+        before.fill(0x36);
+        after.fill(0xc9);
+    }
+
+    bool guards_intact() const
+    {
+        return std::all_of(before.begin(),
+                   before.end(),
+                   [](auto b)
+                   {
+                       return b == 0x36;
+                   }) &&
+               std::all_of(after.begin(),
+                   after.end(),
+                   [](auto b)
+                   {
+                       return b == 0xc9;
+                   });
+    }
+};
+
+// Genuine owner; only the finite clipping method view is borrowed.
+template <> struct Guarded<Renderer>
+{
+    renderer_owner_test::Bootstrap bootstrap;
+    std::array<unsigned char, 16> before{};
+    Renderer value{bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    renderer_owner_test::RestoreOwnedState restore{value, bootstrap};
 
     Guarded()
     {
@@ -222,13 +255,13 @@ constexpr std::array<Literal, 13> literals{{
 
 void run(const Literal& literal)
 {
-    // Defined typed read model only: its actual host deque is constructed and
-    // destroyed normally. This does not stand in for a retail Renderer ctor.
+    // Construct the real renderer first, then install only a scoped typed view.
+    // Restoration precedes its actual image/surface/context/sea destruction.
     Guarded<Renderer> renderer;
     renderer_queue_test::initialize(renderer.value, 37U);
     renderer.value.width = literal.width;
     renderer.value.height = literal.height;
-    const Renderer before = renderer.value;
+    const renderer_queue_test::Snapshot before = renderer.value;
     RendererBinding binding(renderer.value);
 
     Guarded<Rectangle> destination;

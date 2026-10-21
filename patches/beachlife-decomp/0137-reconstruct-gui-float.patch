@@ -1,0 +1,140 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1453,3 +1453,35 @@
+     owner->IntroController::Exit();
+     fixture_intro_exit_after = owner->active;
+ }
++
++typedef char FloatParserSize[sizeof(GuiParserState) == 0x3c ? 1 : -1];
++typedef char FloatParserCursor[offsetof(GuiParserState, cursor) == 4 ? 1 : -1];
++typedef char FloatParserBuffer[offsetof(GuiParserState, buffer) == 8 ? 1 : -1];
++typedef char FloatParserLastWord[offsetof(GuiParserState, word_38) == 0x38 ? 1 : -1];
++
++GuiParserState* volatile fixture_float_receiver;
++float* volatile fixture_float_destination;
++const char* volatile fixture_float_buffer_before;
++const char* volatile fixture_float_buffer_after;
++volatile unsigned int fixture_float_cursor_before;
++volatile unsigned int fixture_float_cursor_after;
++volatile float fixture_float_value_before;
++volatile float fixture_float_value_after;
++volatile unsigned int fixture_float_completed;
++
++// Borrow a live observed parser prefix and separate initialized float storage.
++// The caller supplies a readable, delimited token of at most 127 bytes. This
++// retains the real reader and its CRT call; the linked image is never executed.
++extern "C" __declspec(dllexport) void FixtureGuiReadFloat(GuiParserState* parser, float* value)
++{
++    fixture_float_receiver = parser;
++    fixture_float_destination = value;
++    fixture_float_buffer_before = parser->buffer;
++    fixture_float_cursor_before = parser->cursor;
++    fixture_float_value_before = *value;
++    parser->ReadFloat(*value);
++    fixture_float_cursor_after = parser->cursor;
++    fixture_float_buffer_after = parser->buffer;
++    fixture_float_value_after = *value;
++    fixture_float_completed = 1;
++}
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -29,7 +29,7 @@
+ 0x005a8914,global,4,?pool_chunk_begin@@3PADA
+ 0x005a8918,global,4,?pool_chunk_end@@3PADA
+ 0x004123f0,function,289,?ReturnPool@@YAXPAXI@Z
+-0x004d3890,function,1,?IgnoreSurfaceError@@YAXH@Z
++0x004d3890,function,1,?ControllerSlot24@MainMenuController@@UAEXXZ
+ 0x0040e240,function,131,?AccessPixels@ScreenRequestRenderer@@QAEPAGXZ
+ 0x004b2ff0,function,189,?CreateNode@CircularList@@QAEPAUCircularListValueNode@@ABQAUActiveScreenEntry@@@Z
+ 0x004b2fb0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUActiveScreenEntry@@@Z
+@@ -100,3 +100,4 @@
+ 0x004e41e0,function,100,?SetScreenSize@ScreenRequestGamePrefix@@QAEXHH@Z
+ 0x004ae9e0,function,279,?SetMode@ScreenManager@@QAEXH@Z
+ 0x004f4e04,float,4,
++0x004ab120,function,165,?ReadFloat@GuiParserState@@QAEXAAM@Z
+diff --git a/msvcrt.def b/msvcrt.def
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -15,3 +15,4 @@
+     memmove
+     sprintf
+     _stricmp
++    atof
+diff --git a/src/startup_gui_float.cpp b/src/startup_gui_float.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_gui_float.cpp
+@@ -0,0 +1,33 @@
++#include "startup_gui_parser.h"
++
++#include <stdlib.h>
++
++// FUNCTION: BEACHLIFE 0x004ab120
++void GuiParserState::ReadFloat(float& value)
++{
++    // The token is copied unchecked into a 128-byte buffer (original).
++    char text[128];
++    char* out = text;
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    while (buffer[cursor] != ' ' && buffer[cursor] != ',' && buffer[cursor] != ')')
++    {
++        *out = buffer[cursor];
++        ++cursor;
++        ++out;
++    }
++    *out = 0;
++    value = static_cast<float>(atof(text));
++
++    if (buffer[cursor] == ',' || buffer[cursor] == ')')
++    {
++        ++cursor;
++    }
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++}
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -28,6 +28,7 @@
+     unsigned int word_38;
+ 
+     void ReadInteger(int& value, bool consume_delimiter);
++    void ReadFloat(float& value);
+     void SkipWhitespace();
+     void ReadText(char* text);
+     void ReadRectangle(ScreenRectangle& rectangle, const ScreenItem* parent);
+diff --git a/src/surface_error_sink.cpp b/src/surface_error_sink.cpp
+--- a/src/surface_error_sink.cpp
++++ b/src/surface_error_sink.cpp
+@@ -1,6 +1,6 @@
+ #include "surface_error_sink.h"
+ 
+-// FUNCTION: BEACHLIFE 0x004d3890
++// FUNCTION: BEACHLIFE 0x004d3890 FOLDED
+ void IgnoreSurfaceError(int)
+ {
+ }
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -602,6 +602,12 @@
+       "name": "MainMenuController::MainMenuController",
+       "address": "0x004e8df0",
+       "size": 32
++    },
++    {
++      "address": "0x004ab120",
++      "size": 165,
++      "name": "GuiParserState::ReadFloat",
++      "name_status": "Descriptive script-reader name; actual game parser callers, thiscall RET4 and MSVCRT atof import established; original symbol spelling unknown"
+     }
+   ],
+   "library_functions": [

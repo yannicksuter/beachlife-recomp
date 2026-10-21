@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <initializer_list>
 #include <limits>
 #include <new>
@@ -16,6 +17,10 @@
 
 namespace
 {
+struct RendererFixtureFailure
+{
+};
+
 static_assert(sizeof(int) == 4 && std::numeric_limits<int>::digits == 31);
 static_assert(sizeof(unsigned int) == 4);
 static_assert(std::is_standard_layout_v<ScreenSurfacePosition>);
@@ -25,8 +30,10 @@ static_assert(std::is_standard_layout_v<ScreenRequestRenderer>);
 static_assert(std::is_trivially_copyable_v<ScreenRequestRenderer>);
 #endif
 static_assert(sizeof(ScreenPoint) == 2 * sizeof(int));
-static_assert(std::is_same_v<decltype(&ScreenRequestRenderer::PositionSurface),
-    void (ScreenRequestRenderer::*)(int, ScreenPoint)>);
+static_assert(
+    std::is_same_v<decltype(static_cast<void (ScreenRequestRenderer::*)(int, ScreenPoint)>(
+                       &ScreenRequestRenderer::PositionSurface)),
+        void (ScreenRequestRenderer::*)(int, ScreenPoint)>);
 static_assert(
     std::is_same_v<decltype(&ScreenSurfacePosition::Cleanup), void (ScreenSurfacePosition::*)()>);
 static_assert(std::is_same_v<decltype(&ScreenRequestRenderer::CleanupSurface),
@@ -40,6 +47,9 @@ enum class Method : unsigned
     indexed
 };
 std::uint64_t cases, checks, representation_checks, byte_checks;
+std::uint64_t deferred_cleanup_prefix_cases, deferred_position_prefix_cases;
+// Keep the observer stores visible around the replaceable array allocation.
+volatile bool track_payload_allocations = false;
 std::uint64_t array_events, api_events, null_events;
 std::uint64_t cleanup_cases[2]{}, cleanup_calls[2]{};
 std::uint64_t position_cases, position_calls;
@@ -48,7 +58,7 @@ std::uint64_t case_number;
 [[noreturn]] void fail(const char* message)
 {
     std::fprintf(stderr, "case %llu: %s\n", static_cast<unsigned long long>(case_number), message);
-    std::exit(2);
+    throw RendererFixtureFailure{};
 }
 
 void check(bool condition, const char* message)
@@ -75,6 +85,30 @@ struct Frame
     unsigned char after[32];
 };
 
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+struct RendererFrame
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    unsigned char before[32];
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    unsigned char after[32];
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
+};
+struct RendererSnapshot
+{
+    std::array<unsigned char, 32> before{};
+    renderer_queue_test::Snapshot renderer;
+    std::array<unsigned char, 32> after{};
+};
+RendererSnapshot renderer_snapshot(const RendererFrame& r)
+{
+    RendererSnapshot result{};
+    std::copy(std::begin(r.before), std::end(r.before), result.before.begin());
+    result.renderer = r.renderer;
+    std::copy(std::begin(r.after), std::end(r.after), result.after.begin());
+    return result;
+}
+#else
 struct RendererFrame
 {
     unsigned char before[32];
@@ -82,8 +116,11 @@ struct RendererFrame
     unsigned char after[32];
 };
 
+using RendererSnapshot = RendererFrame;
+#endif
+
 void check_renderer_frame(
-    const RendererFrame* actual, const RendererFrame* expected, const char* message)
+    const RendererFrame* actual, const RendererSnapshot* expected, const char* message)
 {
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
     ++representation_checks;
@@ -155,7 +192,7 @@ struct Context
     DirectDrawSurface7Prefix* replacement_surface;
     unsigned short* replacement_pixels;
     RendererFrame* renderer;
-    RendererFrame initial_renderer;
+    RendererSnapshot initial_renderer;
     TableFrame* table;
     TableFrame initial_table;
     ScreenSurfacePosition** alternate;
@@ -227,11 +264,24 @@ void provider_event(unsigned route)
     mutate(*current->actual, *current);
     if (current->mask & 256)
     {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+        std::copy(current->alternate + current->base,
+            current->alternate + 8,
+            current->renderer->renderer.surface_storage.begin());
+#else
         current->renderer->renderer.surfaces = current->alternate + current->base;
+#endif
     }
     if (current->mask & 512)
     {
         current->table->entries[current->slot] = current->decoy;
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+        if (!(current->mask & 256) && current->slot >= current->base)
+        {
+            current->renderer->renderer.surface_storage[current->slot - current->base] =
+                current->decoy;
+        }
+#endif
     }
 }
 
@@ -260,6 +310,17 @@ void run_cleanup(Method method,
     unsigned base,
     bool alias)
 {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    const auto repeated = alias ? (slot + 3) % 8 : slot;
+    if (method == Method::indexed && (slot < base || repeated < base))
+    {
+        ++deferred_cleanup_prefix_cases;
+        return; // Only historical before-data indexing is outside this owner domain.
+    }
+    static RendererFrame renderer; // One genuine owner across all cleanup value cases.
+#else
+    RendererFrame renderer;
+#endif
     case_number = cases++;
     ++cleanup_cases[static_cast<unsigned>(method)];
     DirectDrawSurface7VtablePrefix vtable{};
@@ -270,7 +331,21 @@ void run_cleanup(Method method,
     const auto original_replacement = replacement;
     unsigned short replacement_pixels[4]{17, 33, 65, 129};
     const unsigned short saved_replacement_pixels[4]{17, 33, 65, 129};
-    auto* owned = null_pixels ? nullptr : new unsigned short[payload_words];
+    auto* owned = null_pixels ? nullptr : [](unsigned words)
+    {
+        struct Track
+        {
+            Track()
+            {
+                track_payload_allocations = true;
+            }
+            ~Track()
+            {
+                track_payload_allocations = false;
+            }
+        } tracking;
+        return new unsigned short[words];
+    }(payload_words);
 
     Frame actual;
     std::memset(&actual, static_cast<int>(pattern & 255), sizeof(actual));
@@ -296,7 +371,6 @@ void run_cleanup(Method method,
     Frame saved_decoy;
     std::memcpy(&saved_decoy, &decoy, sizeof(decoy));
     TableFrame table, alternate;
-    RendererFrame renderer;
     std::memset(&table, 0x67, sizeof(table));
     std::memset(&alternate, 0xd5, sizeof(alternate));
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
@@ -316,16 +390,20 @@ void run_cleanup(Method method,
     {
         table.entries[(slot + 3) % 8] = &actual.object;
     }
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    renderer.renderer.surface_storage.assign(table.entries + base, table.entries + 8);
+#else
     renderer.renderer.surfaces = table.entries + base;
+#endif
     const int index = static_cast<int>(slot) - static_cast<int>(base);
     TableFrame original_table, expected_table, saved_alternate;
-    RendererFrame original_renderer, expected_renderer;
+    RendererSnapshot original_renderer, expected_renderer;
     std::memcpy(&original_table, &table, sizeof(table));
     std::memcpy(&expected_table, &table, sizeof(table));
     std::memcpy(&saved_alternate, &alternate, sizeof(alternate));
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
-    original_renderer = renderer;
-    expected_renderer = renderer;
+    original_renderer = renderer_snapshot(renderer);
+    expected_renderer = renderer_snapshot(renderer);
 #else
     std::memcpy(&original_renderer, &renderer, sizeof(renderer));
     std::memcpy(&expected_renderer, &renderer, sizeof(renderer));
@@ -343,7 +421,7 @@ void run_cleanup(Method method,
     context.replacement_pixels = replacement_pixels;
     context.renderer = &renderer;
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
-    context.initial_renderer = renderer;
+    context.initial_renderer = renderer_snapshot(renderer);
 #else
     std::memcpy(&context.initial_renderer, &renderer, sizeof(renderer));
 #endif
@@ -361,11 +439,22 @@ void run_cleanup(Method method,
         mutate(expected, context);
         if (mask & 256)
         {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+            expected_renderer.renderer.surface_storage.assign(
+                alternate.entries + base, alternate.entries + 8);
+#else
             expected_renderer.renderer.surfaces = alternate.entries + base;
+#endif
         }
         if (mask & 512)
         {
             expected_table.entries[slot] = &decoy.object;
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+            if (!(mask & 256) && slot >= base)
+            {
+                expected_renderer.renderer.surface_storage[slot - base] = &decoy.object;
+            }
+#endif
         }
     }
     // An independent write-set oracle uses the entry-state route, then applies
@@ -419,7 +508,9 @@ void run_cleanup(Method method,
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
     // Only the generated table binding was mutated by this provider. All other
     // typed fields, queue values/count and guards were already checked above.
-    renderer.renderer.surfaces = original_renderer.renderer.surfaces;
+    std::copy(original_renderer.renderer.surface_storage.begin(),
+        original_renderer.renderer.surface_storage.end(),
+        renderer.renderer.surface_storage.begin());
 #else
     std::memcpy(&renderer, &original_renderer, sizeof(renderer));
 #endif
@@ -459,9 +550,10 @@ void run_cleanup(Method method,
             delete[] owned;
         }
     }
-    for (const auto& allocation : allocations)
+    for (auto& allocation : allocations)
     {
         check(!allocation.raw, "generated owner leaked an allocation");
+        allocation = Allocation{};
     }
 }
 template <typename T> struct Guarded
@@ -471,18 +563,32 @@ template <typename T> struct Guarded
     std::array<unsigned char, 32> after;
 };
 
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 32> before;
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 32> after;
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
+#endif
+
 using Renderer = Guarded<ScreenRequestRenderer>;
 using Surface = Guarded<ScreenSurfacePosition>;
 using Table = Guarded<std::array<ScreenSurfacePosition*, 8>>;
 using Surfaces = std::array<Surface, 8>;
 
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
-Renderer snapshot(const Renderer& value)
+using GuardedRendererSnapshot = renderer_queue_test::FrameSnapshot<std::array<unsigned char, 32>>;
+GuardedRendererSnapshot snapshot(const Renderer& value)
 {
-    return value;
+    return GuardedRendererSnapshot(value);
 }
 
-void unchanged(const Renderer& value, const Renderer& expected, const char* name)
+void unchanged(const Renderer& value, const GuardedRendererSnapshot& expected, const char* name)
 {
     ++representation_checks;
     byte_checks += value.before.size() + value.after.size() +
@@ -527,9 +633,19 @@ template <typename T> void patterned(T& value, unsigned int salt)
 // representation oracle replaces only the two selected coordinate subobjects.
 void run_position(unsigned int layout, unsigned int base_index, unsigned int index, int x, int y)
 {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    const auto repeated = layout == 3 && index < 5 ? index + 3 : index;
+    if (index < base_index || repeated < base_index)
+    {
+        ++deferred_position_prefix_cases;
+        return;
+    }
+    static Renderer renderer; // Actual owner, not a reconstructed-method substitute.
+#else
+    Renderer renderer;
+#endif
     case_number = cases++;
     ++position_cases;
-    Renderer renderer;
     Table table;
     Surfaces surfaces;
     patterned(renderer, 0x35);
@@ -571,7 +687,11 @@ void run_position(unsigned int layout, unsigned int base_index, unsigned int ind
         const unsigned int selected = layout == 3 ? i % 3 : (i * (2 * layout + 1) + layout) % 8;
         table.value[i] = &surfaces[selected].value;
     }
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    renderer.value.surface_storage.assign(table.value.begin() + base_index, table.value.end());
+#else
     renderer.value.surfaces = table.value.data() + base_index;
+#endif
     auto expected_surfaces = snapshot(surfaces);
     const auto expected_table = snapshot(table);
     const auto expected_renderer = snapshot(renderer);
@@ -633,6 +753,12 @@ void run_position(unsigned int layout, unsigned int base_index, unsigned int ind
 // guarded arena; production source and comparison builds retain normal CRT use.
 void* operator new[](std::size_t bytes)
 {
+    // Genuine renderer/TIFF/library allocations are outside the finite payload
+    // observer. Forward them to the real host allocation boundary unchanged.
+    if (!track_payload_allocations)
+    {
+        return ::operator new(bytes ? bytes : 1);
+    }
     auto* raw = static_cast<unsigned char*>(std::malloc(bytes + 64));
     if (!raw)
     {
@@ -661,7 +787,17 @@ void operator delete[](void* memory) noexcept
         return;
     }
     auto* allocation = find_allocation(memory);
-    check(allocation != nullptr, "unknown or double-freed array pointer");
+    if (allocation == nullptr)
+    {
+        // Retain the observer's double-release check for its own payloads;
+        // unrelated genuine owner/library allocations use the real allocator.
+        for (const auto& retired : allocations)
+        {
+            check(retired.pointer != memory, "duplicate generated payload release");
+        }
+        ::operator delete(memory);
+        return;
+    }
     inspect_allocation(*allocation);
     if (current)
     {
@@ -670,7 +806,7 @@ void operator delete[](void* memory) noexcept
         ++array_events;
     }
     std::free(allocation->raw);
-    *allocation = Allocation{};
+    allocation->raw = nullptr; // Keep its retired identity until this case ends.
 }
 
 void operator delete[](void* memory, std::size_t) noexcept
@@ -680,127 +816,149 @@ void operator delete[](void* memory, std::size_t) noexcept
 
 int main()
 {
-    for (auto method : {Method::member, Method::indexed})
+    try
     {
-        // Each possible flag byte is tested independently against both routes.
-        // The representative cross product below also covers their interaction.
-        for (unsigned byte = 0; byte < 256; ++byte)
+        for (auto method : {Method::member, Method::indexed})
         {
-            for (unsigned other : {0u, 1u})
+            // Each possible flag byte is tested independently against both routes.
+            // The representative cross product below also covers their interaction.
+            for (unsigned byte = 0; byte < 256; ++byte)
             {
-                run_cleanup(method, byte, other, 0, 0, false, byte % 33, byte, byte % 8, 3, true);
-                run_cleanup(method, other, byte, 0, 0, false, byte % 33, byte, byte % 8, 0, false);
-            }
-        }
-        for (unsigned active : {0u, 1u, 128u, 255u})
-        {
-            for (unsigned mode : {0u, 1u, 128u, 255u})
-            {
-                for (unsigned base : {0u, 3u})
+                for (unsigned other : {0u, 1u})
                 {
-                    for (unsigned slot = 0; slot < 8; ++slot)
+                    run_cleanup(
+                        method, byte, other, 0, 0, false, byte % 33, byte, byte % 8, 3, true);
+                    run_cleanup(
+                        method, other, byte, 0, 0, false, byte % 33, byte, byte % 8, 0, false);
+                }
+            }
+            for (unsigned active : {0u, 1u, 128u, 255u})
+            {
+                for (unsigned mode : {0u, 1u, 128u, 255u})
+                {
+                    for (unsigned base : {0u, 3u})
                     {
-                        for (bool alias : {false, true})
+                        for (unsigned slot = 0; slot < 8; ++slot)
                         {
-                            run_cleanup(method,
-                                active,
-                                mode,
-                                0,
-                                mode * 0x01010101u,
-                                false,
-                                (active + mode + slot) % 33,
-                                active ^ mode,
-                                slot,
-                                base,
-                                alias);
+                            for (bool alias : {false, true})
+                            {
+                                run_cleanup(method,
+                                    active,
+                                    mode,
+                                    0,
+                                    mode * 0x01010101u,
+                                    false,
+                                    (active + mode + slot) % 33,
+                                    active ^ mode,
+                                    slot,
+                                    base,
+                                    alias);
+                            }
                         }
                     }
                 }
             }
-        }
-        // Null primitive arrays have a valid state contract. Modern compilers
-        // may omit the deallocator call; exact VC6 call timing is not claimed.
-        for (unsigned active : {1u, 128u, 255u})
-        {
-            for (unsigned mode : {1u, 128u, 255u})
+            // Null primitive arrays have a valid state contract. Modern compilers
+            // may omit the deallocator call; exact VC6 call timing is not claimed.
+            for (unsigned active : {1u, 128u, 255u})
+            {
+                for (unsigned mode : {1u, 128u, 255u})
+                {
+                    for (unsigned base : {0u, 3u})
+                    {
+                        for (unsigned slot = 0; slot < 8; ++slot)
+                        {
+                            run_cleanup(
+                                method, active, mode, 0, 0, true, 0, 0x72, slot, base, true);
+                        }
+                    }
+                }
+            }
+            for (unsigned mode : {0u, 1u})
             {
                 for (unsigned base : {0u, 3u})
                 {
-                    for (unsigned slot = 0; slot < 8; ++slot)
+                    for (unsigned mask = 0; mask < 1024; ++mask)
                     {
-                        run_cleanup(method, active, mode, 0, 0, true, 0, 0x72, slot, base, true);
+                        constexpr unsigned results[] = {0u, 1u, 0x80000000u, 0xffffffffu};
+                        run_cleanup(method,
+                            0x91,
+                            mode,
+                            mask,
+                            results[mask % 4],
+                            false,
+                            17,
+                            0xb5,
+                            mask % 8,
+                            base,
+                            (mask & 1) != 0);
                     }
                 }
             }
         }
-        for (unsigned mode : {0u, 1u})
+        constexpr std::array<int, 9> values{0,
+            1,
+            -1,
+            800,
+            -600,
+            std::numeric_limits<int>::min(),
+            std::numeric_limits<int>::max(),
+            std::bit_cast<int>(0x55555555u),
+            std::bit_cast<int>(0xaaaaaaaau)};
+        for (unsigned layout = 0; layout < 4; ++layout)
         {
-            for (unsigned base : {0u, 3u})
+            for (unsigned slot = 0; slot < 8; ++slot)
             {
-                for (unsigned mask = 0; mask < 1024; ++mask)
+                for (unsigned base : {0u, 3u})
                 {
-                    constexpr unsigned results[] = {0u, 1u, 0x80000000u, 0xffffffffu};
-                    run_cleanup(method,
-                        0x91,
-                        mode,
-                        mask,
-                        results[mask % 4],
-                        false,
-                        17,
-                        0xb5,
-                        mask % 8,
-                        base,
-                        (mask & 1) != 0);
+                    for (int x : values)
+                    {
+                        for (int y : values)
+                        {
+                            run_position(layout, base, slot, x, y);
+                        }
+                    }
+                    for (unsigned bit = 0; bit < 32; ++bit)
+                    {
+                        const auto word = std::uint32_t{1} << bit;
+                        run_position(layout,
+                            base,
+                            slot,
+                            std::bit_cast<int>(word),
+                            std::bit_cast<int>(~word));
+                    }
                 }
             }
         }
+        std::printf("deferred_cleanup_prefix_cases=%llu deferred_position_prefix_cases=%llu\n",
+            static_cast<unsigned long long>(deferred_cleanup_prefix_cases),
+            static_cast<unsigned long long>(deferred_position_prefix_cases));
+        std::printf(
+            "surface subsystem checks passed: {\"member_cases\":%llu,\"indexed_cases\":%llu,"
+            "\"position_cases\":%llu,\"member_calls\":%llu,\"indexed_calls\":%llu,"
+            "\"position_calls\":%llu,\"assertions\":%llu,\"representation_checks\":%llu,"
+            "\"inspected_bytes\":%llu,\"array_events\":%llu,\"release_events\":%llu,"
+            "\"null_delete_events\":%llu}\n",
+            static_cast<unsigned long long>(cleanup_cases[0]),
+            static_cast<unsigned long long>(cleanup_cases[1]),
+            static_cast<unsigned long long>(position_cases),
+            static_cast<unsigned long long>(cleanup_calls[0]),
+            static_cast<unsigned long long>(cleanup_calls[1]),
+            static_cast<unsigned long long>(position_calls),
+            static_cast<unsigned long long>(checks),
+            static_cast<unsigned long long>(representation_checks),
+            static_cast<unsigned long long>(byte_checks),
+            static_cast<unsigned long long>(array_events),
+            static_cast<unsigned long long>(api_events),
+            static_cast<unsigned long long>(null_events));
     }
-    constexpr std::array<int, 9> values{0,
-        1,
-        -1,
-        800,
-        -600,
-        std::numeric_limits<int>::min(),
-        std::numeric_limits<int>::max(),
-        std::bit_cast<int>(0x55555555u),
-        std::bit_cast<int>(0xaaaaaaaau)};
-    for (unsigned layout = 0; layout < 4; ++layout)
+    catch (const RendererFixtureFailure&)
     {
-        for (unsigned slot = 0; slot < 8; ++slot)
-        {
-            for (unsigned base : {0u, 3u})
-            {
-                for (int x : values)
-                {
-                    for (int y : values)
-                    {
-                        run_position(layout, base, slot, x, y);
-                    }
-                }
-                for (unsigned bit = 0; bit < 32; ++bit)
-                {
-                    const auto word = std::uint32_t{1} << bit;
-                    run_position(
-                        layout, base, slot, std::bit_cast<int>(word), std::bit_cast<int>(~word));
-                }
-            }
-        }
+        return 2;
     }
-    std::printf("surface subsystem checks passed: {\"member_cases\":%llu,\"indexed_cases\":%llu,"
-                "\"position_cases\":%llu,\"member_calls\":%llu,\"indexed_calls\":%llu,"
-                "\"position_calls\":%llu,\"assertions\":%llu,\"representation_checks\":%llu,"
-                "\"inspected_bytes\":%llu,\"array_events\":%llu,\"release_events\":%llu,"
-                "\"null_delete_events\":%llu}\n",
-        static_cast<unsigned long long>(cleanup_cases[0]),
-        static_cast<unsigned long long>(cleanup_cases[1]),
-        static_cast<unsigned long long>(position_cases),
-        static_cast<unsigned long long>(cleanup_calls[0]),
-        static_cast<unsigned long long>(cleanup_calls[1]),
-        static_cast<unsigned long long>(position_calls),
-        static_cast<unsigned long long>(checks),
-        static_cast<unsigned long long>(representation_checks),
-        static_cast<unsigned long long>(byte_checks),
-        static_cast<unsigned long long>(array_events),
-        static_cast<unsigned long long>(api_events),
-        static_cast<unsigned long long>(null_events));
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
+    }
 }

@@ -19,7 +19,8 @@ using Guard = std::array<unsigned char, 16>;
 using Words = std::array<unsigned short, 512>;
 using Text = std::array<unsigned short, 8>;
 
-static_assert(std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
 static_assert(std::is_aggregate_v<ScreenSurfacePosition>);
 static_assert(std::is_trivially_copyable_v<ScreenFontRenderer>);
 
@@ -63,6 +64,30 @@ template <typename T> struct Guarded
             require(before[i] == 0xa6 && after[i] == 0x6a, "outside guard changed");
         }
     }
+};
+
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    Guard before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    Guard after{};
+
+    Guarded()
+    {
+        before.fill(0xa6);
+        after.fill(0x6a);
+    }
+
+    void guards() const
+    {
+        for (std::size_t i = 0; i < before.size(); ++i)
+        {
+            require(before[i] == 0xa6 && after[i] == 0x6a, "outside guard changed");
+        }
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
 };
 
 // Reuse the owner's metric encoders, extending only the generated TIFF to a
@@ -197,6 +222,7 @@ struct Environment
     {
         renderer_queue_test::initialize(renderer.value, 0x35);
         table.value[0] = &surface.value;
+        renderer.value.surface_storage.assign(table.value.begin(), table.value.end());
         screen_request_renderer = &renderer.value;
     }
     ~Environment()
@@ -214,7 +240,6 @@ struct Environment
         r.format_44 = 0;
         r.unscaled_clip_5c = software_surface ? 1 : 0;
         r.pixels_1c = output.value.data();
-        r.surfaces = table.value.data();
         r.current_surface = 0;
         r.pixels_locked = 0x6d;
         surface.value = {};
@@ -298,7 +323,7 @@ void invoke(Environment& environment,
     text.value = input;
     require(text.value[0] == 0, "text prefix differs");
     const auto before_font = font.value;
-    auto expected_renderer = environment.renderer.value;
+    renderer_queue_test::Snapshot expected_renderer = environment.renderer.value;
     auto expected_surface = environment.surface.value;
     const bool surface = expected_renderer.unscaled_clip_5c != 0;
     if (surface)

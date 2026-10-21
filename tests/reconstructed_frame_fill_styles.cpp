@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <vector>
 
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
@@ -20,6 +21,10 @@ static_assert(offsetof(DirectDrawSurface7VtablePrefix, Unlock) == 32 * sizeof(vo
 
 namespace
 {
+struct RendererFixtureFailure
+{
+};
+
 struct ColourCase
 {
     const char* name;
@@ -199,6 +204,16 @@ template <class T> struct Guarded
     T value{};
     std::array<unsigned char, 16> after{};
 };
+
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
 using DirectPixels = std::array<unsigned short, 800>;
 using DensePixels = std::array<unsigned short, 400>;
 using SurfacePointers = std::array<ScreenSurfacePosition*, 1>;
@@ -217,8 +232,8 @@ struct Fixture
 };
 struct Snapshot
 {
-    ScreenRequestRenderer renderer;
-    ScreenRequestRenderer other_renderer;
+    renderer_queue_test::Snapshot renderer;
+    renderer_queue_test::Snapshot other_renderer;
     ScreenRectangle bounds;
     std::array<ScreenSurfacePosition, 2> entries;
     DirectPixels direct;
@@ -251,7 +266,7 @@ void require(bool value, const char* message)
     if (!value)
     {
         std::fprintf(stderr, "%s case %zu: %s\n", domain, current_case, message);
-        std::exit(2);
+        throw RendererFixtureFailure{};
     }
 }
 
@@ -287,7 +302,8 @@ void check_pixels(const std::array<unsigned short, N>& actual,
     }
 }
 
-void check_renderer(const ScreenRequestRenderer& actual, const ScreenRequestRenderer& expected)
+void check_renderer(
+    const ScreenRequestRenderer& actual, const renderer_queue_test::Snapshot& expected)
 {
     logical_bytes += renderer_queue_test::compared_bytes(actual);
     require(renderer_queue_test::equal(actual, expected), "renderer members/queue differ");
@@ -444,9 +460,10 @@ void initialize(Fixture& f)
         r->pixels_locked = 0x7b;
     }
     f.renderer.value.pixels_1c = f.direct.value.data();
-    f.renderer.value.surfaces = f.table.value.data();
+    f.renderer.value.surface_storage.assign(f.table.value.begin(), f.table.value.end());
     f.other_renderer.value.pixels_1c = f.other_pixels.value.data();
-    f.other_renderer.value.surfaces = f.other_table.value.data();
+    f.other_renderer.value.surface_storage.assign(
+        f.other_table.value.begin(), f.other_table.value.end());
     // A mistaken global reload must still reach a valid typed renderer/COM object.
     f.other_renderer.value.unscaled_clip_5c = 1;
 }
@@ -599,37 +616,49 @@ void run_live(int style, bool queue_alias)
 
 int main()
 {
-    require(screen_request_renderer == nullptr, "actual renderer global not initially null");
-    domain = "colour";
-    for (current_case = 0; current_case < colours.size(); ++current_case)
+    try
     {
-        run_colour(colours[current_case]);
-    }
-    domain = "style";
-    for (current_case = 0; current_case < styles.size(); ++current_case)
-    {
-        run_style(styles[current_case]);
-    }
-    domain = "COM";
-    current_case = 0;
-    for (bool alias : {false, true})
-    {
-        for (int style : {2, 3, 7})
+        require(screen_request_renderer == nullptr, "actual renderer global not initially null");
+        domain = "colour";
+        for (current_case = 0; current_case < colours.size(); ++current_case)
         {
-            run_live(style, alias);
-            ++current_case;
+            run_colour(colours[current_case]);
         }
+        domain = "style";
+        for (current_case = 0; current_case < styles.size(); ++current_case)
+        {
+            run_style(styles[current_case]);
+        }
+        domain = "COM";
+        current_case = 0;
+        for (bool alias : {false, true})
+        {
+            for (int style : {2, 3, 7})
+            {
+                run_live(style, alias);
+                ++current_case;
+            }
+        }
+        require(colour_calls == 26 && style_calls == 30 && locks == 26 && unlocks == 26,
+            "final call counts differ");
+        require(screen_request_renderer == nullptr && active == nullptr,
+            "fixture globals not restored");
+        std::printf("frame fill styles: 26 colour cases, 24 literal styles, 6 COM styles, "
+                    "%zu style calls, %zu locks, %zu unlocks, %zu checks, %zu logical bytes\n",
+            style_calls,
+            locks,
+            unlocks,
+            checks,
+            logical_bytes);
+        return 0;
     }
-    require(colour_calls == 26 && style_calls == 30 && locks == 26 && unlocks == 26,
-        "final call counts differ");
-    require(
-        screen_request_renderer == nullptr && active == nullptr, "fixture globals not restored");
-    std::printf("frame fill styles: 26 colour cases, 24 literal styles, 6 COM styles, "
-                "%zu style calls, %zu locks, %zu unlocks, %zu checks, %zu logical bytes\n",
-        style_calls,
-        locks,
-        unlocks,
-        checks,
-        logical_bytes);
-    return 0;
+    catch (const RendererFixtureFailure&)
+    {
+        return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
+    }
 }

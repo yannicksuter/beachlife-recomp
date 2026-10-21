@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <vector>
 
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
@@ -21,6 +22,10 @@ static_assert(offsetof(DirectDrawSurface7VtablePrefix, Unlock) == 32 * sizeof(vo
 
 namespace
 {
+struct RendererFixtureFailure
+{
+};
+
 enum class Kernel
 {
     DirectX,
@@ -1140,6 +1145,16 @@ template <class T> struct Guarded
     T value{};
     std::array<unsigned char, 16> after{};
 };
+
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
 using DirectPixels = std::array<unsigned short, 3200>;
 using DensePixels = std::array<unsigned short, 1600>;
 using SurfacePointers = std::array<ScreenSurfacePosition*, 3>;
@@ -1158,8 +1173,8 @@ struct Fixture
 };
 struct Snapshot
 {
-    ScreenRequestRenderer renderer;
-    ScreenRequestRenderer other_renderer;
+    renderer_queue_test::Snapshot renderer;
+    renderer_queue_test::Snapshot other_renderer;
     ScreenRectangle bounds;
     std::array<ScreenSurfacePosition, 3> entries;
     DirectPixels direct;
@@ -1195,7 +1210,7 @@ void require(bool condition, const char* message)
     if (!condition)
     {
         std::fprintf(stderr, "%s case %zu: %s\n", domain, current_case, message);
-        std::exit(2);
+        throw RendererFixtureFailure{};
     }
 }
 
@@ -1231,7 +1246,8 @@ void check_pixels(const std::array<unsigned short, N>& actual,
     }
 }
 
-void check_renderer(const ScreenRequestRenderer& actual, const ScreenRequestRenderer& expected)
+void check_renderer(
+    const ScreenRequestRenderer& actual, const renderer_queue_test::Snapshot& expected)
 {
     logical_bytes += renderer_queue_test::compared_bytes(actual);
     require(renderer_queue_test::equal(actual, expected), "renderer members/queue differ");
@@ -1425,9 +1441,10 @@ void initialize(Fixture& f)
         r->pixels_locked = 0xa5;
     }
     f.renderer.value.pixels_1c = f.direct.value.data();
-    f.renderer.value.surfaces = f.table.value.data();
+    f.renderer.value.surface_storage.assign(f.table.value.begin(), f.table.value.end());
     f.other_renderer.value.pixels_1c = f.other_pixels.value.data();
-    f.other_renderer.value.surfaces = f.other_table.value.data();
+    f.other_renderer.value.surface_storage.assign(
+        f.other_table.value.begin(), f.other_table.value.end());
     // Wrong receiver/global selection reaches valid typed objects and a failing
     // COM receiver assertion, never a fabricated game method or invalid vptr.
     f.other_renderer.value.unscaled_clip_5c = 1;
@@ -1673,50 +1690,62 @@ void run_live_style(const LiveStyleCase& c, bool queue_alias)
 
 int main()
 {
-    require(screen_request_renderer == nullptr, "actual renderer global not initially null");
-    domain = "kernel";
-    for (current_case = 0; current_case < raster_cases.size(); ++current_case)
+    try
     {
-        run_kernel(raster_cases[current_case]);
-    }
-    domain = "line";
-    for (current_case = 0; current_case < line_cases.size(); ++current_case)
-    {
-        run_line(line_cases[current_case]);
-    }
-    domain = "interface";
-    for (current_case = 0; current_case < interface_points.size(); ++current_case)
-    {
-        run_interface(current_case);
-    }
-    domain = "style";
-    for (current_case = 0; current_case < style_cases.size(); ++current_case)
-    {
-        run_style(style_cases[current_case]);
-    }
-    domain = "style interface";
-    current_case = 0;
-    for (bool alias : {false, true})
-    {
-        for (const auto& c : live_style_cases)
+        require(screen_request_renderer == nullptr, "actual renderer global not initially null");
+        domain = "kernel";
+        for (current_case = 0; current_case < raster_cases.size(); ++current_case)
         {
-            run_live_style(c, alias);
-            ++current_case;
+            run_kernel(raster_cases[current_case]);
         }
+        domain = "line";
+        for (current_case = 0; current_case < line_cases.size(); ++current_case)
+        {
+            run_line(line_cases[current_case]);
+        }
+        domain = "interface";
+        for (current_case = 0; current_case < interface_points.size(); ++current_case)
+        {
+            run_interface(current_case);
+        }
+        domain = "style";
+        for (current_case = 0; current_case < style_cases.size(); ++current_case)
+        {
+            run_style(style_cases[current_case]);
+        }
+        domain = "style interface";
+        current_case = 0;
+        for (bool alias : {false, true})
+        {
+            for (const auto& c : live_style_cases)
+            {
+                run_live_style(c, alias);
+                ++current_case;
+            }
+        }
+        require(raw_calls == 72 && line_calls == 28 && style_calls == 17 && locks == 16 &&
+                    unlocks == 13,
+            "final call counts differ");
+        require(screen_request_renderer == nullptr && active == nullptr,
+            "fixture globals not restored");
+        std::printf("renderer line: 117 sessions, %zu kernels, %zu lines, %zu styles, "
+                    "%zu locks, %zu unlocks, %zu checks, %zu logical bytes\n",
+            raw_calls,
+            line_calls,
+            style_calls,
+            locks,
+            unlocks,
+            checks,
+            logical_bytes);
+        return 0;
     }
-    require(
-        raw_calls == 72 && line_calls == 28 && style_calls == 17 && locks == 16 && unlocks == 13,
-        "final call counts differ");
-    require(
-        screen_request_renderer == nullptr && active == nullptr, "fixture globals not restored");
-    std::printf("renderer line: 117 sessions, %zu kernels, %zu lines, %zu styles, "
-                "%zu locks, %zu unlocks, %zu checks, %zu logical bytes\n",
-        raw_calls,
-        line_calls,
-        style_calls,
-        locks,
-        unlocks,
-        checks,
-        logical_bytes);
-    return 0;
+    catch (const RendererFixtureFailure&)
+    {
+        return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
+    }
 }

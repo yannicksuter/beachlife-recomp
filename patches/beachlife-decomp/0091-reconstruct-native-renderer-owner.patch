@@ -1,0 +1,866 @@
+diff --git a/src/startup_renderer_constructor_native.cpp b/src/startup_renderer_constructor_native.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_constructor_native.cpp
+@@ -0,0 +1,102 @@
++#include "startup_screen_renderer.h"
++#include "startup_renderer_sea_state.h"
++#include "render_mask_setup.h"
++#include "tiff_image_loader.h"
++
++#include <new>
++#include <stdio.h>
++#include <string.h>
++#include "runtime/renderer_software_display.h"
++
++#include <limits>
++#include <stdexcept>
++
++namespace
++{
++// Reject unsupported native entries before registration or member construction.
++// This does not initialize a game member or substitute a retail constructor.
++ScreenRequestRenderer* require_software_owner(ScreenRequestRenderer* owner,
++    unsigned char mode, unsigned int image_width, unsigned int image_height)
++{
++    if (mode == 0)
++        throw std::runtime_error("Native hardware renderer construction is unsupported");
++    const unsigned int max_int = static_cast<unsigned int>(std::numeric_limits<int>::max());
++    const unsigned int max_pixels = std::numeric_limits<unsigned int>::max() / 4u;
++    if (image_width == 0 || image_height == 0 || image_width > max_int / 2u
++        || image_height > max_pixels / image_width)
++        throw std::invalid_argument("Native renderer dimensions are outside the defined allocation domain");
++    return owner;
++}
++} // namespace
++
++// Native SDK/container adaptation of the complete 0x0040bab0 owner.
++ScreenRequestRenderer::ScreenRequestRenderer(beachlife::platform::Video& window, unsigned int requested_width,
++    unsigned int requested_height, unsigned char mode)
++    : ScreenRendererRegistration(require_software_owner(this, mode, requested_width, requested_height))
++    , software_mode(mode)
++    , width(requested_width)
++    , height(requested_height)
++    , surface_storage()
++    , dirty_rectangles()
++{
++    clip_rectangle.x = 0;
++    clip_rectangle.y = 0;
++    clip_rectangle.width = 0;
++    clip_rectangle.height = 0;
++    pixels_1c = 0;
++    draw = 0;
++    native_display = 0;
++    primary_surface = 0;
++    back_surface = 0;
++    unscaled_clip_5c = 0;
++    bitmap_info = 0;
++    capture_pending_ac = 0;
++    rectangle_enabled_4e = 0;
++    window_34 = &window;
++    rectangle_suppressed_4d = 1;
++    word_50 = 0;
++    clip_mode_54 = 1;
++    word_58 = 0x3f800000;
++    current_surface = -1;
++    pixels_locked = 0;
++
++    // The original inlined copy receives end twice: its self-comparison
++    // always selects begin, without entering the retained memmove arm.
++    surface_storage.clear();
++    initialized_168 = InitializeDisplay(window, software_mode, width, height, 16);
++
++    unsigned int initialized_height = height;
++    unsigned int initialized_width = width;
++    clip_rectangle.x = 0;
++    clip_rectangle.y = 0;
++    clip_rectangle.width = static_cast<int>(initialized_width);
++    clip_rectangle.height = static_cast<int>(initialized_height);
++    unsigned short* pixels = static_cast<unsigned short*>(
++        ::operator new(initialized_width * initialized_height * 4u));
++    unsigned int selected_format = format_44;
++    unsigned int selected_width = width;
++    pixels_1c = pixels;
++    SetupRenderMasks(pixels, selected_width, selected_format);
++
++    unsigned char* markers = static_cast<unsigned char*>(::operator new(height * width));
++    unsigned int marker_bytes = height * width;
++    buffer_130 = markers;
++    memset(markers, 0, marker_bytes);
++
++    device_context_64 = native_display->acquire_context().release();
++    flag_4c = 1;
++    rectangle_suppressed_4d = 0;
++    dirty_rectangle_count = 0;
++    word_58 = 0x3f800000;
++    clip_flag_5d = 0;
++    sea_state_134 = new RendererSeaStatePrefix;
++    word_60 = 0x38;
++
++    char filename[100];
++    for (int index = 0; index < 6; ++index)
++    {
++        sprintf(filename, ".\\Data\\Haze\\wibble_%02d.tif", index);
++        haze_images_138[index] = LoadTiffFile(filename);
++    }
++    rectangle_ready_4f = 0;
++}
+diff --git a/src/startup_renderer_destructor_native.cpp b/src/startup_renderer_destructor_native.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_destructor_native.cpp
+@@ -0,0 +1,86 @@
++#include "startup_screen_renderer.h"
++#include "startup_renderer_sea_state.h"
++#include "tga_image.h"
++
++#include "runtime/renderer_software_display.h"
++
++#include <new>
++
++// Native SDK/container adaptation of the complete 0x0040bd40 owner.
++ScreenRequestRenderer::~ScreenRequestRenderer()
++{
++    TgaImage** image_slot = haze_images_138;
++    int images_left = 6;
++    do
++    {
++        TgaImage* image = *image_slot;
++        if (image)
++        {
++            image->~TgaImage();
++            ::operator delete(image);
++        }
++        ++image_slot;
++    } while (--images_left);
++
++    ::operator delete(pixels_1c);
++
++    ScreenSurfacePosition** surface_slot = surface_storage.data();
++    ScreenSurfacePosition** surface_end = surface_storage.empty()
++                                            ? surface_slot
++                                            : surface_slot + surface_storage.size();
++    while (surface_slot != surface_end)
++    {
++        ScreenSurfacePosition* entry = *surface_slot;
++        if (entry)
++        {
++            entry->Cleanup();
++            entry->~ScreenSurfacePosition();
++            ::operator delete(entry);
++        }
++        ++surface_slot;
++    }
++    surface_storage.clear();
++
++    DirectDrawSurface7Prefix* primary = primary_surface;
++    if (primary)
++    {
++        primary->vtable->Release(primary);
++    }
++
++    // The supported native owner publishes a distinct SoftwareDisplay instead
++    // of a DirectDraw device. Attempt the real windowed operation at the same
++    // cleanup point; its result was ignored by the original destructor.
++    if (native_display)
++    {
++        try
++        {
++            native_display->use_windowed_mode();
++        }
++        catch (...)
++        {
++            // Ignore only the actual host-operation failure, then continue
++            // releasing all genuine owners. No success result is fabricated.
++        }
++        delete native_display;
++    }
++
++    if (buffer_130)
++    {
++        ::operator delete(buffer_130);
++    }
++    if (bitmap_info)
++    {
++        ::operator delete(bitmap_info);
++    }
++
++    RendererSeaStatePrefix* sea = sea_state_134;
++    if (sea)
++    {
++        sea->~RendererSeaStatePrefix();
++        ::operator delete(sea);
++    }
++
++    delete device_context_64;
++    // The real queue, surface backing range and registration base unwind in
++    // reverse declaration order. Their genuine destructors remain dependencies.
++}
+diff --git a/src/startup_renderer_display.h b/src/startup_renderer_display.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_display.h
+@@ -0,0 +1,13 @@
++#ifndef STARTUP_RENDERER_DISPLAY_H
++#define STARTUP_RENDERER_DISPLAY_H
++
++#include "startup_directdraw_surface.h"
++
++// Actual 0x00411ad0, stdcall/RET8. Four resolution flags in caller-owned storage.
++// This genuine callback body is a separate source dependency, never a provider.
++SurfaceResult SURFACE_STDCALL RecordDisplayMode(SurfaceDescription* description, void* context);
++
++// Actual 0x004ea170; genuine fatal routine calls the CRT exit(0).
++void StartupFatal(const char* format, ...);
++
++#endif
+diff --git a/src/startup_renderer_display_initialize_native.cpp b/src/startup_renderer_display_initialize_native.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_display_initialize_native.cpp
+@@ -0,0 +1,92 @@
++#include "startup_screen_renderer.h"
++#include "startup_renderer_display.h"
++#include "runtime/renderer_bitmap.h"
++#include "runtime/renderer_software_display.h"
++
++#include <limits>
++#include <stdexcept>
++#include <string.h>
++
++// Native SDK adaptation of the windowed/software entry at 0x0040d9c0.
++// The complete original hardware/software implementation remains separate.
++unsigned char ScreenRequestRenderer::InitializeDisplay(beachlife::platform::Video& window,
++    unsigned char mode, unsigned int requested_width, unsigned int requested_height,
++    unsigned int bits)
++{
++    // No forced software mode and no fabricated COM device. Reject the native
++    // capability boundary before allocation, member publication or SDL mutation.
++    if (mode == 0 || software_mode == 0)
++    {
++        throw std::runtime_error("Native hardware renderer display initialization is unsupported");
++    }
++    const unsigned int maximum = static_cast<unsigned int>(std::numeric_limits<int>::max());
++    if (requested_width == 0 || requested_height == 0 || requested_width > maximum / 2
++        || requested_height > maximum / requested_width || window_34 == 0)
++    {
++        throw std::invalid_argument("Native software renderer dimensions or stored window are invalid");
++    }
++    // The original software branch ignores the supplied bit-depth argument.
++    (void)bits;
++
++    unsigned char successful = 1;
++    native_display = new beachlife::runtime::renderer_display::SoftwareDisplay(window);
++    memset(display_mode_flags_48, 0, sizeof(display_mode_flags_48));
++    beachlife::runtime::renderer_display::SoftwareDisplay* device = native_display;
++    const auto modes = device->enumerate_modes();
++    for (const auto& actual : modes)
++    {
++        // The unchanged real callback reads only width/height and the four
++        // flags. Unused descriptor words do not claim extra SDL/COM facts.
++        SurfaceDescription description = { };
++        description.size = sizeof(description);
++        description.width = static_cast<unsigned int>(actual.width);
++        description.height = static_cast<unsigned int>(actual.height);
++        RecordDisplayMode(&description, display_mode_flags_48);
++    }
++
++    device = native_display;
++    device->use_windowed_mode();
++    device->resize_client(static_cast<int>(requested_width), static_cast<int>(requested_height));
++    device->clear_topmost();
++
++    const auto work_area = device->work_area();
++    auto rectangle = device->outer_rectangle();
++    if (rectangle.left < work_area.left)
++        rectangle.left = work_area.left;
++    if (rectangle.top < work_area.top)
++        rectangle.top = work_area.top;
++    device->move_outer(rectangle.left, rectangle.top);
++
++    // The original reloads the owner's stored window here, not the incoming
++    // argument. This borrowed view performs real queries and owns no window.
++    beachlife::runtime::renderer_display::SoftwareDisplay stored_window(*window_34);
++    const auto client = stored_window.client_rectangle_in_screen();
++    window_rectangle_24.left = client.left;
++    window_rectangle_24.top = client.top;
++    window_rectangle_24.right = client.right;
++    window_rectangle_24.bottom = client.bottom;
++
++    // Existing complete game bodies own the real entry/pixel allocation. Keep
++    // publication-before-initialization and the original first-entry selection.
++    CreateSurface(static_cast<int>(requested_width), static_cast<int>(requested_height), 0);
++    surface_storage[0]->position.x = 0;
++    surface_storage[0]->position.y = 0;
++
++    bitmap_info = new beachlife::runtime::renderer_display::BitmapInfo;
++    memset(bitmap_info, 0, sizeof(beachlife::runtime::renderer_display::BitmapInfoHeader));
++    bitmap_info->bmiHeader.biSize = sizeof(beachlife::runtime::renderer_display::BitmapInfoHeader);
++    bitmap_info->bmiHeader.biWidth = static_cast<int>(requested_width);
++    bitmap_info->bmiHeader.biHeight = -static_cast<int>(requested_height);
++    bitmap_info->bmiHeader.biPlanes = 1;
++    bitmap_info->bmiHeader.biBitCount = 16;
++    bitmap_info->bmiHeader.biCompression = 0;
++    bitmap_info->bmiHeader.biSizeImage = 0;
++    bitmap_info->bmiHeader.biXPelsPerMeter = 0;
++    bitmap_info->bmiHeader.biYPelsPerMeter = 0;
++    bitmap_info->bmiHeader.biClrUsed = 0;
++    bitmap_info->bmiHeader.biClrImportant = 0;
++
++    format_44 = 1;
++    fill_color = 0x3e0;
++    return successful;
++}
+diff --git a/src/startup_renderer_display_mode_callback.cpp b/src/startup_renderer_display_mode_callback.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_display_mode_callback.cpp
+@@ -0,0 +1,26 @@
++#include "startup_renderer_display.h"
++
++// FUNCTION: BEACHLIFE 0x00411ad0
++SurfaceResult SURFACE_STDCALL RecordDisplayMode(SurfaceDescription* description, void* context)
++{
++    switch (description->width)
++    {
++    case 640:
++        if (description->height == 480)
++            static_cast<unsigned char*>(context)[0] = 1;
++        break;
++    case 800:
++        if (description->height == 600)
++            static_cast<unsigned char*>(context)[1] = 1;
++        break;
++    case 1024:
++        if (description->height == 768)
++            static_cast<unsigned char*>(context)[2] = 1;
++        break;
++    case 1280:
++        if (description->height == 960)
++            static_cast<unsigned char*>(context)[3] = 1;
++        break;
++    }
++    return 1;
++}
+diff --git a/src/startup_renderer_line.cpp b/src/startup_renderer_line.cpp
+--- a/src/startup_renderer_line.cpp
++++ b/src/startup_renderer_line.cpp
+@@ -25,12 +25,12 @@
+         if (!pixels)
+             return;
+         ScreenRequestRenderer* position_renderer = screen_request_renderer;
+-        ScreenSurfacePosition* position_entry = position_renderer->surfaces[position_renderer->current_surface];
++        ScreenSurfacePosition* position_entry = position_renderer->surface_storage[position_renderer->current_surface];
+         int position_x = position_entry->position.x;
+         int position_y = position_entry->position.y;
+         x1 -= position_x;
+         y1 -= position_y;
+-        unsigned int pitch = surfaces[current_surface]->pitch;
++        unsigned int pitch = surface_storage[current_surface]->pitch;
+ 
+         if (delta_x > 0)
+         {
+@@ -50,7 +50,7 @@
+ 
+         if (!software_mode)
+         {
+-            DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++            DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
+             surface->vtable->Unlock(surface, 0);
+         }
+         pixels_locked = 0;
+diff --git a/src/startup_renderer_rectangle_fill.cpp b/src/startup_renderer_rectangle_fill.cpp
+--- a/src/startup_renderer_rectangle_fill.cpp
++++ b/src/startup_renderer_rectangle_fill.cpp
+@@ -30,7 +30,7 @@
+         unsigned short* pixels = AccessPixels();
+         if (!pixels)
+             return;
+-        ScreenSurfacePosition* entry = surfaces[current_surface];
++        ScreenSurfacePosition* entry = surface_storage[current_surface];
+         int position_x = entry->position.x;
+         int pitch_words = static_cast<int>(entry->pitch >> 1);
+         int position_y = entry->position.y;
+@@ -56,7 +56,7 @@
+         }
+         if (!software_mode)
+         {
+-            DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++            DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
+             surface->vtable->Unlock(surface, 0);
+         }
+         pixels_locked = 0;
+diff --git a/src/startup_renderer_registration_clear.cpp b/src/startup_renderer_registration_clear.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_registration_clear.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x00411ee0
++ScreenRendererRegistration::~ScreenRendererRegistration()
++{
++    screen_request_renderer = 0;
++}
+diff --git a/src/startup_renderer_render_default.cpp b/src/startup_renderer_render_default.cpp
+--- a/src/startup_renderer_render_default.cpp
++++ b/src/startup_renderer_render_default.cpp
+@@ -12,7 +12,7 @@
+         if (!destination)
+             return;
+ 
+-        unsigned int pitch_words = surfaces[current_surface]->pitch >> 2;
++        unsigned int pitch_words = surface_storage[current_surface]->pitch >> 2;
+         unsigned int rows = (height - word_60) >> 1;
+         unsigned char* source = reinterpret_cast<unsigned char*>(pixels_1c);
+         unsigned int source_width = width;
+@@ -56,7 +56,7 @@
+         if (!destination)
+             return;
+ 
+-        unsigned int pitch = (surfaces[current_surface]->pitch >> 2) << 2;
++        unsigned int pitch = (surface_storage[current_surface]->pitch >> 2) << 2;
+         unsigned char* source = reinterpret_cast<unsigned char*>(pixels_1c);
+         unsigned int source_offset = 0;
+         unsigned int destination_row = 0;
+@@ -93,7 +93,7 @@
+ 
+     if (!software_mode)
+     {
+-        DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++        DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
+         surface->vtable->Unlock(surface, 0);
+     }
+     pixels_locked = 0;
+diff --git a/src/startup_renderer_surface_pitch.cpp b/src/startup_renderer_surface_pitch.cpp
+--- a/src/startup_renderer_surface_pitch.cpp
++++ b/src/startup_renderer_surface_pitch.cpp
+@@ -3,5 +3,5 @@
+ // FUNCTION: BEACHLIFE 0x0040e2d0
+ unsigned int ScreenRequestRenderer::SurfacePitch()
+ {
+-    return surfaces[current_surface]->pitch;
++    return surface_storage[current_surface]->pitch;
+ }
+diff --git a/src/startup_renderer_surface_position.cpp b/src/startup_renderer_surface_position.cpp
+--- a/src/startup_renderer_surface_position.cpp
++++ b/src/startup_renderer_surface_position.cpp
+@@ -3,5 +3,5 @@
+ // FUNCTION: BEACHLIFE 0x0040e310
+ ScreenPoint ScreenRequestRenderer::SurfacePosition()
+ {
+-    return surfaces[current_surface]->position;
++    return surface_storage[current_surface]->position;
+ }
+diff --git a/src/startup_renderer_surface_unlock.cpp b/src/startup_renderer_surface_unlock.cpp
+--- a/src/startup_renderer_surface_unlock.cpp
++++ b/src/startup_renderer_surface_unlock.cpp
+@@ -5,7 +5,7 @@
+ {
+     if (!software_mode)
+     {
+-        DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++        DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
+         surface->vtable->Unlock(surface, 0);
+     }
+     pixels_locked = 0;
+diff --git a/src/startup_renderer_tga_draw.cpp b/src/startup_renderer_tga_draw.cpp
+--- a/src/startup_renderer_tga_draw.cpp
++++ b/src/startup_renderer_tga_draw.cpp
+@@ -60,10 +60,10 @@
+         {
+             return;
+         }
+-        IndexedPaletteBlitPacked(source, source_stride, locked_pixels, surfaces[current_surface]->pitch, source_left, source_top, 0, 0, source_right - source_left, source_bottom - source_top, palette);
++        IndexedPaletteBlitPacked(source, source_stride, locked_pixels, surface_storage[current_surface]->pitch, source_left, source_top, 0, 0, source_right - source_left, source_bottom - source_top, palette);
+         if (!software_mode)
+         {
+-            DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++            DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
+             surface->vtable->Unlock(surface, 0);
+         }
+         pixels_locked = 0;
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -10,9 +10,44 @@
+ #include "startup_render_rectangle.h"
+ #include "startup_renderer_rectangle_queue.h"
+ 
++#include <vector>
++
+ struct ScreenRectangle;
+ struct TgaImage;
+ struct RendererSeaStatePrefix;
++struct ScreenRequestRenderer;
++
++namespace beachlife::platform
++{
++class Video;
++}
++namespace beachlife::runtime::renderer_display
++{
++class SoftwareDisplay;
++class DrawingContext;
++struct BitmapInfo;
++} // namespace beachlife::runtime::renderer_display
++
++extern ScreenRequestRenderer* screen_request_renderer;
++
++// Genuine publication base; its destructor unconditionally clears the global.
++struct ScreenRendererRegistration
++{
++    explicit ScreenRendererRegistration(ScreenRequestRenderer* owner)
++    {
++        screen_request_renderer = owner;
++    }
++    ~ScreenRendererRegistration();
++};
++
++// Four original signed 32-bit RECT values, with no Win32/SDL object cast.
++struct RendererWindowRectangle
++{
++    int left;
++    int top;
++    int right;
++    int bottom;
++};
+ 
+ // Observed two-word value and prefixes; original names and declarations unknown.
+ struct ScreenPoint
+@@ -39,8 +74,24 @@
+     void Cleanup();
+ };
+ 
+-struct ScreenRequestRenderer
++// Prospective common native owner. Native SDK and backing-storage adaptations
++// are separate from the original x86 layout; no aggregate construction/copy.
++struct ScreenRequestRenderer : ScreenRendererRegistration
+ {
++    ScreenRequestRenderer(beachlife::platform::Video& window,
++        unsigned int requested_width, unsigned int requested_height, unsigned char mode);
++    ~ScreenRequestRenderer();
++    ScreenRequestRenderer(const ScreenRequestRenderer&) = delete;
++    ScreenRequestRenderer& operator=(const ScreenRequestRenderer&) = delete;
++
++    // Native SDK adapter of the supported windowed/software entry only.
++    // Original full hardware source remains separate; no 1312-byte match claim.
++    unsigned char InitializeDisplay(beachlife::platform::Video& window, unsigned char mode,
++        unsigned int requested_width, unsigned int requested_height, unsigned int bits);
++
++    // Actual 0x00483590; nonvirtual declaration, no slot effect.
++    void SetUnscaledClip(unsigned char value);
++
+     // Actual 0x0040bf70, RET4; forwards to the real +134 child.
+     void SetSeaEnabled(unsigned char enabled);
+ 
+@@ -53,36 +104,51 @@
+     unsigned int height;
+     RenderRectangle clip_rectangle;
+     unsigned short* pixels_1c;
+-    unsigned char unknown_20[0x18];
++    unsigned char unknown_20[4];
++    RendererWindowRectangle window_rectangle_24;
++    // Native window identity: the real Video/window must outlive the renderer.
++    beachlife::platform::Video* window_34;
+     DirectDraw7Prefix* draw;
+-    unsigned char unknown_3c[8];
++    DirectDrawSurface7Prefix* primary_surface;
++    DirectDrawSurface7Prefix* back_surface;
+     // Observed word tested against 1; complete format domain is unresolved.
+     unsigned int format_44;
+-    unsigned char unknown_48[5];
++    unsigned char display_mode_flags_48[4];
++    unsigned char flag_4c;
+     unsigned char rectangle_suppressed_4d;
+     unsigned char rectangle_enabled_4e;
+     unsigned char rectangle_ready_4f;
+-    unsigned char unknown_50[4];
++    unsigned int word_50;
+     int clip_mode_54;
+-    unsigned char unknown_58[4];
++    // Original constructor writes binary32-one bits; numeric use not inferred.
++    unsigned int word_58;
+     unsigned char unscaled_clip_5c;
+     unsigned char clip_flag_5d;
+     unsigned char unknown_5e[2];
+     unsigned int word_60;
+-    unsigned char unknown_64[4];
+-    ScreenSurfacePosition** surfaces;
+-    ScreenSurfacePosition** surfaces_end;
+-    ScreenSurfacePosition** surfaces_capacity;
++    // Native independent context; acquire at the original GetDC point.
++    beachlife::runtime::renderer_display::DrawingContext* device_context_64;
++    // Real native library boundary: owns backing only, never pointed-to entries.
++    std::vector<ScreenSurfacePosition*> surface_storage;
+     int current_surface;
+     unsigned char pixels_locked;
+     unsigned char unknown_79[1];
+     unsigned short fill_color;
+     RendererRectangleQueue dirty_rectangles;
+     int dirty_rectangle_count;
+-    // Observed x86+a8..12f remains opaque; only the byte-marker pointer is used.
+-    unsigned char unknown_a8[0x88];
++    beachlife::runtime::renderer_display::BitmapInfo* bitmap_info;
++    unsigned char capture_pending_ac;
++    unsigned char unknown_ad[0x83];
+     unsigned char* buffer_130;
+     RendererSeaStatePrefix* sea_state_134;
++    TgaImage* haze_images_138[6];
++    unsigned char unknown_150[0x18];
++    unsigned char initialized_168;
++    unsigned char unknown_169[3];
++
++    // Native-only extension, never stored in/cast to the retained COM draw
++    // field. Construct before use and destroy at the original device-release point.
++    beachlife::runtime::renderer_display::SoftwareDisplay* native_display;
+ 
+     // Actual 0x00411a60; full 32-bit result retains the observed format-zero mask.
+     unsigned int ConvertColour(int red, int green, int blue);
+@@ -98,6 +164,9 @@
+ 
+     // Actual 0x0040c740; copies the current source buffer to the selected surface.
+     void RenderDefault();
++    void Present();
++    // Full real 0x00410e70 remains a separate native dependency.
++    void CaptureFrame(const ScreenRectangle& bounds);
+ 
+     int CreateSurface(int width, int height, int mode);
+     void InitializeSurface(int width, int height, ScreenSurfacePosition* entry, unsigned char mode);
+@@ -106,6 +175,8 @@
+     void UnlockPixels();
+     void CleanupSurface(int surface);
+     void PositionSurface(int surface, ScreenPoint position);
++    // Distinct actual 0x0040e350, RET12.
++    void PositionSurface(int surface, int x, int y);
+ 
+     // Actual target 0x0040cb10. References name the six observed mutable words.
+     bool ClipRectangle(int& destination_x, int& destination_y,
+@@ -119,7 +190,6 @@
+         TgaImage* image, int mode, unsigned int flags, unsigned int extra);
+ };
+ 
+-// Observed renderer pointer published by its constructor; lifetime is unresolved.
+-extern ScreenRequestRenderer* screen_request_renderer;
++// The existing startup_gui_rectangle.cpp remains the sole storage definition.
+ 
+ #endif
+diff --git a/src/startup_surface_create.cpp b/src/startup_surface_create.cpp
+--- a/src/startup_surface_create.cpp
++++ b/src/startup_surface_create.cpp
+@@ -1,20 +1,15 @@
+ #include "startup_screen_renderer.h"
+-#include "pool_chunk_acquire.h"
+-#include "pool_lock_acquire.h"
+-#include "pool_lock_guard.h"
+-#include "pool_refill.h"
+-#include "pool_return.h"
+ 
+ #include <new>
+-#include <string.h>
+ 
+-// FUNCTION: BEACHLIFE 0x0040def0
++// Native standard-library backing adaptation of the complete 0x0040def0.
++// The container owns pointer slots only. Entries retain their real raw lifetime.
+ int ScreenRequestRenderer::CreateSurface(int image_width, int image_height, int mode)
+ {
+     ScreenSurfacePosition* selected = 0;
+     unsigned int index = 0;
+-    ScreenSurfacePosition** scan = surfaces;
+-    if (surfaces_end != surfaces)
++    ScreenSurfacePosition** scan = surface_storage.data();
++    if (!surface_storage.empty())
+     {
+         do
+         {
+@@ -24,7 +19,7 @@
+                 break;
+             }
+             ++index;
+-        } while (index < static_cast<unsigned int>(surfaces_end - surfaces));
++        } while (index < static_cast<unsigned int>(surface_storage.size()));
+     }
+ 
+     if (selected != 0)
+@@ -36,86 +31,17 @@
+         void* storage = ::operator new(sizeof(ScreenSurfacePosition));
+         if (storage != 0)
+         {
+-            // Begin the complete trivial entry lifetime without clearing it.
+             selected = ::new (storage) ScreenSurfacePosition;
+             selected->active = 1;
+             selected->position.x = 0;
+             selected->position.y = 0;
+             selected->prepared = 0;
+         }
+-
+-        // Equal null endpoints represent the observed empty table. Avoid a
+-        // null pointer subtraction while retaining its original zero size.
+-        index = surfaces_end == surfaces ? 0 : static_cast<unsigned int>(surfaces_end - surfaces);
+-        ScreenSurfacePosition** end = surfaces_end;
+-        if (end != surfaces_capacity)
+-        {
+-            if (end != 0)
+-                *end = selected;
+-            ++surfaces_end;
+-        }
+-        else
+-        {
+-            unsigned int count = end == surfaces ? 0 : static_cast<unsigned int>(end - surfaces);
+-            unsigned int capacity = count + (count < 1 ? 1 : count);
+-            typedef ScreenSurfacePosition* SurfacePointer;
+-            SurfacePointer* replacement = 0;
+-            if (capacity != 0)
+-            {
+-                unsigned int bytes = capacity * sizeof(SurfacePointer);
+-                void* table_storage;
+-                if (bytes > 128)
+-                {
+-                    table_storage = ::operator new(bytes);
+-                }
+-                else
+-                {
+-                    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
+-                    AcquirePoolLock(&pool_lock_word);
+-                    PoolLockGuard guard;
+-                    PoolChunkLink* block = *bucket;
+-                    if (block != 0)
+-                    {
+-                        *bucket = block->next;
+-                        table_storage = block;
+-                    }
+-                    else
+-                    {
+-                        table_storage = RefillPool(bytes);
+-                    }
+-                }
+-                // Nonallocating default construction provides a live pointer
+-                // array without clearing unused capacity or changing allocator.
+-                replacement = ::new (table_storage) SurfacePointer[capacity];
+-            }
+-
+-            SurfacePointer* appended;
+-            if (end == surfaces)
+-            {
+-                appended = replacement;
+-            }
+-            else
+-            {
+-                unsigned int bytes = static_cast<unsigned int>((end - surfaces) * sizeof(SurfacePointer));
+-                void* copied = memmove(replacement, surfaces, bytes);
+-                appended = static_cast<SurfacePointer*>(copied) + bytes / sizeof(SurfacePointer);
+-            }
+-            *appended = selected;
+-            ++appended;
+-
+-            if (surfaces != 0)
+-            {
+-                unsigned int old_bytes = static_cast<unsigned int>(
+-                    (surfaces_capacity - surfaces) * sizeof(SurfacePointer));
+-                if (old_bytes > 128)
+-                    ::operator delete(surfaces);
+-                else
+-                    ReturnPool(surfaces, old_bytes);
+-            }
+-            surfaces = replacement;
+-            surfaces_end = appended;
+-            surfaces_capacity = replacement + capacity;
+-        }
++        index = static_cast<unsigned int>(surface_storage.size());
++        // Publish before InitializeSurface. A backing-allocation or initializer
++        // exception retains the original raw-entry failure ownership; no new
++        // owning-pointer rollback or missing game cleanup is introduced.
++        surface_storage.push_back(selected);
+     }
+ 
+     InitializeSurface(image_width, image_height, selected, static_cast<unsigned char>(mode));
+diff --git a/src/startup_surface_indexed_cleanup.cpp b/src/startup_surface_indexed_cleanup.cpp
+--- a/src/startup_surface_indexed_cleanup.cpp
++++ b/src/startup_surface_indexed_cleanup.cpp
+@@ -3,7 +3,7 @@
+ // FUNCTION: BEACHLIFE 0x0040e460
+ void ScreenRequestRenderer::CleanupSurface(int surface)
+ {
+-    ScreenSurfacePosition* selected = surfaces[surface];
++    ScreenSurfacePosition* selected = surface_storage[surface];
+     if (selected->active)
+     {
+         if (selected->software)
+diff --git a/src/startup_surface_pixel_access.cpp b/src/startup_surface_pixel_access.cpp
+--- a/src/startup_surface_pixel_access.cpp
++++ b/src/startup_surface_pixel_access.cpp
+@@ -7,13 +7,13 @@
+ unsigned short* ScreenRequestRenderer::AccessPixels()
+ {
+     unsigned short* pixels = 0;
+-    surfaces[current_surface]->prepared = 0;
++    surface_storage[current_surface]->prepared = 0;
+     if (!software_mode)
+     {
+         SurfaceDescription description;
+         memset(&description, 0, sizeof(description));
+         description.size = sizeof(description);
+-        DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++        DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
+         SurfaceResult result = surface->vtable->Lock(surface, 0, &description, 0, 0);
+         if (result >= 0)
+         {
+@@ -25,7 +25,7 @@
+     }
+     else
+     {
+-        pixels = surfaces[current_surface]->pixels;
++        pixels = surface_storage[current_surface]->pixels;
+         pixels_locked = 1;
+     }
+     return pixels;
+diff --git a/src/startup_surface_position.cpp b/src/startup_surface_position.cpp
+--- a/src/startup_surface_position.cpp
++++ b/src/startup_surface_position.cpp
+@@ -3,5 +3,5 @@
+ // FUNCTION: BEACHLIFE 0x0040e330
+ void ScreenRequestRenderer::PositionSurface(int surface, ScreenPoint position)
+ {
+-    surfaces[surface]->position = position;
++    surface_storage[surface]->position = position;
+ }
+diff --git a/src/startup_surface_prepare.cpp b/src/startup_surface_prepare.cpp
+--- a/src/startup_surface_prepare.cpp
++++ b/src/startup_surface_prepare.cpp
+@@ -4,7 +4,7 @@
+ // FUNCTION: BEACHLIFE 0x0040e0d0
+ void ScreenRequestRenderer::PrepareSurface(int surface)
+ {
+-    ScreenSurfacePosition* selected = surfaces[surface];
++    ScreenSurfacePosition* selected = surface_storage[surface];
+     if (selected->prepared == 0)
+     {
+         unsigned int x;
+@@ -20,8 +20,8 @@
+             SurfaceDescription description;
+             memset(&description, 0, sizeof(description));
+             description.size = sizeof(description);
+-            if (surfaces[surface]->surface->vtable->Lock(
+-                    surfaces[surface]->surface, 0, &description, 0, 0)
++            if (surface_storage[surface]->surface->vtable->Lock(
++                    surface_storage[surface]->surface, 0, &description, 0, 0)
+                 >= 0)
+             {
+                 unsigned short* row = static_cast<unsigned short*>(description.pixels);
+@@ -34,7 +34,7 @@
+                     }
+                     row += description.pitch / 2;
+                 }
+-                surfaces[surface]->surface->vtable->Unlock(surfaces[surface]->surface, 0);
++                surface_storage[surface]->surface->vtable->Unlock(surface_storage[surface]->surface, 0);
+             }
+         }
+         else
+@@ -51,6 +51,6 @@
+                 row += width;
+             }
+         }
+-        surfaces[surface]->prepared = 1;
++        surface_storage[surface]->prepared = 1;
+     }
+ }
