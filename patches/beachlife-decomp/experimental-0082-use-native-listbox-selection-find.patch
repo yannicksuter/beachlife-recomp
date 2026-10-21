@@ -1,0 +1,108 @@
+Use the host standard library with the independently proved signed selection type.
+
+diff --git a/src/startup_screen_list_box_find.cpp b/src/startup_screen_list_box_find.cpp
+--- a/src/startup_screen_list_box_find.cpp
++++ b/src/startup_screen_list_box_find.cpp
+@@ -1,59 +1,21 @@
+ #include "startup_screen_list_box_find.h"
+ 
++#include <algorithm>
++#include <climits>
++
++static_assert(CHAR_BIT == 8 && sizeof(int) == 4,
++    "The selection range contains original 32-bit signed words");
++
+ // LIBRARY: BEACHLIFE 0x004c58c0
+-unsigned int* FindListBoxSelection(unsigned int* first, unsigned int* last,
+-    const unsigned int& value, const ScreenListBoxRandomAccessTag&)
++// Native library boundary: stable same-array words and a valid value reference.
++// The empty guard also preserves the original null/null machine result without
++// undefined C++ pointer subtraction. The unused tag's vendor identity is unknown.
++int* FindListBoxSelection(int* first, int* last,
++    const int& value, const ScreenListBoxRandomAccessTag&)
+ {
+-    int blocks = static_cast<int>(last - first) >> 2;
+-    if (blocks > 0)
+-    {
+-        const unsigned int wanted = value;
+-        do
+-        {
+-            if (*first == wanted)
+-                return first;
++    if (first == last)
++        return last;
+ 
+-            unsigned int candidate = first[1];
+-            ++first;
+-            if (candidate == wanted)
+-                return first;
+-
+-            candidate = first[1];
+-            ++first;
+-            if (candidate == wanted)
+-                return first;
+-
+-            candidate = first[1];
+-            ++first;
+-            if (candidate == wanted)
+-                return first;
+-
+-            ++first;
+-            --blocks;
+-        } while (blocks > 0);
+-    }
+-
+-    unsigned int candidate;
+-    switch (last - first)
+-    {
+-    case 3:
+-        candidate = *first;
+-        if (candidate == value)
+-            return first;
+-        ++first;
+-        // Fall through.
+-    case 2:
+-        candidate = *first;
+-        if (candidate == value)
+-            return first;
+-        ++first;
+-        // Fall through.
+-    case 1:
+-        candidate = *first;
+-        if (candidate == value)
+-            return first;
+-        // Fall through.
+-    default:
+-        return last;
+-    }
++    int* result = std::find(first, last, value);
++    return result;
+ }
+diff --git a/src/startup_screen_list_box_find.h b/src/startup_screen_list_box_find.h
+--- a/src/startup_screen_list_box_find.h
++++ b/src/startup_screen_list_box_find.h
+@@ -6,18 +6,18 @@
+ {
+ };
+ 
+-// Actual 0x004c58c0, cdecl RET0: library find over an unsigned-word range,
++// Actual 0x004c58c0, cdecl RET0: library find over the signed-word selection,
+ // four-way unrolled; the tag is not read. Library support, body not supplied.
+-unsigned int* FindListBoxSelection(unsigned int* first, unsigned int* last,
+-    const unsigned int& value, const ScreenListBoxRandomAccessTag& tag);
++int* FindListBoxSelection(int* first, int* last,
++    const int& value, const ScreenListBoxRandomAccessTag& tag);
+ 
+-inline ScreenListBoxRandomAccessTag ListBoxSelectionCategory(const unsigned int*)
++inline ScreenListBoxRandomAccessTag ListBoxSelectionCategory(const int*)
+ {
+     return ScreenListBoxRandomAccessTag();
+ }
+ 
+-inline unsigned int* FindListBoxSelection(
+-    unsigned int* first, unsigned int* last, const unsigned int& value)
++inline int* FindListBoxSelection(
++    int* first, int* last, const int& value)
+ {
+     return FindListBoxSelection(first, last, value, ListBoxSelectionCategory(first));
+ }

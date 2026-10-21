@@ -1,0 +1,186 @@
+Reconstruct the complete ListBox selective entry clear with a borrowed matching receiver.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 8d766597344696f0213451a593c300797c72e1aa..f4ddffacdd98fe9683b5aa189af1f4109193b33b 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1223,3 +1223,19 @@ extern "C" __declspec(dllexport) void FixtureListBoxMoveRectangle(ScreenListBoxP
+     fixture_list_box_move_left = box->rectangle_44.left;
+     fixture_list_box_move_bottom = box->rectangle_44.bottom;
+ }
++
++typedef char ListBoxClearWord64Offset[(offsetof(ScreenListBoxPrefix, word_64) == 0x64) ? 1 : -1];
++typedef char ListBoxClearWord68Offset[(offsetof(ScreenListBoxPrefix, word_68) == 0x68) ? 1 : -1];
++typedef char ListBoxClearWord88Offset[(offsetof(ScreenListBoxPrefix, word_88) == 0x88) ? 1 : -1];
++typedef char ListBoxClearEntryFlagOffset[(offsetof(ScreenListBoxEntry, flag_8) == 8) ? 1 : -1];
++
++volatile unsigned int fixture_list_box_clear_words;
++
++// Compile/link retention only. A nonnull live genuine ListBox whose rows own
++// genuine children is a borrowed precondition; nothing is constructed and no
++// vptr is written. The comparison-only linked image must never be executed.
++extern "C" __declspec(dllexport) void FixtureListBoxClearEntries(ScreenListBoxPrefix* box)
++{
++    box->ClearEntries();
++    fixture_list_box_clear_words = box->word_64 + box->word_68 + box->word_88;
++}
+diff --git a/metadata.csv b/metadata.csv
+index ee83d332d9d2e6486313bc3a25b9746be6a40732..5764feeb051a836e056e34ad1751c92722fe4922 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -91,3 +91,4 @@ address,type,size,symbol
+ 0x004d0540,function,11,?ClearRegistration@WindowAudioState@@QAEXXZ
+ 0x004c5240,function,16,?Unresolved0c@ScreenListBoxPrefix@@UAEXXZ
+ 0x004c53d0,function,106,?MoveRectangle@ScreenListBoxPrefix@@UAEXHH@Z
++0x004c41e0,function,149,?ClearEntries@ScreenListBoxPrefix@@QAEXXZ
+diff --git a/msvcrt.def b/msvcrt.def
+index f630a8cfd243ee129ab80de1b80608bae6983204..e50056b4c4fc6ebb937daac3f425ae6048ed0ee1 100644
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -12,3 +12,4 @@ EXPORTS
+     __CxxFrameHandler
+     _ftol
+     _purecall
++    memmove
+diff --git a/src/copy_trivial.h b/src/copy_trivial.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..af6a214453b2c872285d083f35d8b96aec49fc95
+--- /dev/null
++++ b/src/copy_trivial.h
+@@ -0,0 +1,17 @@
++#ifndef COPY_TRIVIAL_H
++#define COPY_TRIVIAL_H
++
++#include <string.h>
++
++// Library inline trivial range copy: memmove of the byte span, returning the
++// destination end; equal bounds return the destination unchanged. Expanded
++// inline in some callers; 57 direct calls reach the out-of-line instance.
++// Out-of-line instance 0x004450b0 is not annotated until a matching unit emits it.
++inline void* CopyTrivial(const void* first, const void* last, void* result)
++{
++    return last == first ? result
++                         : static_cast<char*>(memmove(result, first, static_cast<const char*>(last) - static_cast<const char*>(first)))
++                               + (static_cast<const char*>(last) - static_cast<const char*>(first));
++}
++
++#endif
+diff --git a/src/startup_screen_list_box.h b/src/startup_screen_list_box.h
+index 3e7747ed9dca5a59629030169de4710df6187d2a..c8a10b984688877b1d9885ad82111b604c014514 100644
+--- a/src/startup_screen_list_box.h
++++ b/src/startup_screen_list_box.h
+@@ -26,8 +26,8 @@ struct ScreenListBoxSelectionRange
+ };
+ 
+ // Matching-only borrowed-receiver projection: x86 size 0x98, rectangle_44,
+-// entries, owned_item_8c and the slot0c/slot2c overrides are the only class
+-// ABI used here. The current matching base stays unchanged. Unused derived
++// the word fields, entries, owned_item_8c, the slot0c/slot2c overrides and the
++// nonvirtual ClearEntries are the only class ABI used here. The current matching base stays unchanged. Unused derived
+ // overrides are intentionally omitted; this is not the complete 21-slot
+ // ListBox table or a constructed/native owner.
+ struct ScreenListBoxPrefix : ScreenItem
+@@ -58,6 +58,7 @@ struct ScreenListBoxPrefix : ScreenItem
+ 
+     void Unresolved0c();
+     void MoveRectangle(int dx, int dy);
++    void ClearEntries();
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_list_box_clear.cpp b/src/startup_screen_list_box_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7464541260b76b2b5c19efd3b45632e0b2790c2e
+--- /dev/null
++++ b/src/startup_screen_list_box_clear.cpp
+@@ -0,0 +1,36 @@
++#include "copy_trivial.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++
++// FUNCTION: BEACHLIFE 0x004c41e0
++void ScreenListBoxPrefix::ClearEntries()
++{
++    ScreenListBoxEntry** entry = entries.begin;
++    while (entry != entries.end)
++    {
++        ScreenListBoxEntry* row = *entry;
++        if (row->item->kind_28 != 0)
++        {
++            delete row;
++            if (entry + 1 != entries.end)
++            {
++                CopyTrivial(entry + 1, entries.end, entry);
++            }
++            --entries.end;
++        }
++        else
++        {
++            row->flag_8 = 0;
++            ++entry;
++        }
++    }
++    word_68 = 0;
++    word_64 = 0;
++    word_88 = 0;
++    if (owned_item_8c != 0)
++    {
++        delete owned_item_8c;
++        owned_item_8c = 0;
++    }
++    MarkPrepared();
++}
+diff --git a/src/startup_screen_list_box_entry.h b/src/startup_screen_list_box_entry.h
+index c21f9f71b7c23cb40475a1183e6272180ea4af61..4027fe143720ac2a472cf6ef6f958f7046cfcdb5 100644
+--- a/src/startup_screen_list_box_entry.h
++++ b/src/startup_screen_list_box_entry.h
+@@ -1,7 +1,7 @@
+ #ifndef STARTUP_SCREEN_LIST_BOX_ENTRY_H
+ #define STARTUP_SCREEN_LIST_BOX_ENTRY_H
+ 
+-struct ScreenItem;
++#include "startup_screen_item.h"
+ 
+ // Observed 16-byte x86 row held by ScreenListBoxPrefix::entries. AddEntry
+ // 0x004c4a40 allocates 0x10 bytes and constructs it inline: item 0, row -1,
+@@ -13,7 +13,12 @@ struct ScreenListBoxEntry
+     unsigned char flag_8;
+     unsigned char unknown_9[7]; // Never written by the inline construction.
+ 
+-    ~ScreenListBoxEntry(); // Actual 0x004c20e0, RET0; body remains separate.
++    // Inline as approved; its out-of-line instance 0x004c20e0 is not annotated
++    // until a matching unit emits it.
++    ~ScreenListBoxEntry()
++    {
++        delete item;
++    }
+ 
+ private:
+     ScreenListBoxEntry(); // AddEntry's inline construction is not supplied here.
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 27e1506129c71d61f98a15a0ce9ad7ea1011448d..eec085821d5fd4cec47a46fd5bc3fe9895dadfaa 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -573,6 +573,12 @@
+       "size": 106,
+       "name": "ScreenListBoxPrefix::MoveRectangle",
+       "name_status": "descriptive real kind22 slot2c; borrowed x86 prefix, rows and slot2c only"
++    },
++    {
++      "address": "0x004c41e0",
++      "size": 149,
++      "name": "ScreenListBoxPrefix::ClearEntries",
++      "name_status": "descriptive real kind22 selective row erase; borrowed x86 prefix, rows and slot18 only"
+     }
+   ],
+   "library_functions": [
+@@ -644,6 +650,9 @@
+     ],
+     "startup_gui_register.cpp": [
+       "/GX"
++    ],
++    "startup_screen_list_box_clear.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

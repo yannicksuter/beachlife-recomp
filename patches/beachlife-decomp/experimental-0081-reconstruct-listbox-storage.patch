@@ -1,0 +1,129 @@
+diff --git a/src/startup_screen_list_box.h b/src/startup_screen_list_box.h
+new file mode 100644
+index 0000000..2114f5e
+--- /dev/null
++++ b/src/startup_screen_list_box.h
+@@ -0,0 +1,71 @@
++#ifndef STARTUP_SCREEN_LIST_BOX_H
++#define STARTUP_SCREEN_LIST_BOX_H
++
++#include "startup_screen_item.h"
++
++struct ScreenListBoxEntry;
++
++// Observed three-pointer member at original +6c. Construction publishes null
++// pointers; its real destructor releases only backing storage, not entries.
++struct ScreenListBoxEntryRange
++{
++    ScreenListBoxEntry** begin;
++    ScreenListBoxEntry** end;
++    ScreenListBoxEntry** capacity;
++
++    ~ScreenListBoxEntryRange(); // Actual 0x004c5710; complete body remains separate.
++};
++
++// Distinct unsigned-word range at original +78, not an aliased entry vector.
++struct ScreenListBoxSelectionRange
++{
++    unsigned int* begin;
++    unsigned int* end;
++    unsigned int* capacity;
++
++    ~ScreenListBoxSelectionRange(); // Actual 0x004c39a0; complete body remains separate.
++};
++
++// Historical descriptive spelling retained. The real kind22 allocation is
++// 0x98 bytes on x86; fields and every differing observed slot are declared.
++// Missing ordinary destructor/virtual/member bodies are not providers.
++// VTABLE: BEACHLIFE 0x004f4a08
++struct ScreenListBoxPrefix : ScreenItem
++{
++    ScreenRectangle rectangle_44;
++    char* name_54;
++    unsigned char state_58;
++    unsigned char state_59;
++    unsigned char unknown_5a[2];
++    unsigned int word_5c;
++    unsigned int word_60;
++    unsigned int word_64;
++    unsigned int word_68;
++    ScreenListBoxEntryRange entries;
++    ScreenListBoxSelectionRange selection;
++    unsigned int word_84;
++    unsigned int word_88; // Constructor leaves this untouched; destructor writes zero.
++    ScreenItem* owned_item_8c;
++    unsigned char unknown_90[4];
++    unsigned char state_94;
++    unsigned char state_95;
++    unsigned char unknown_96[2];
++
++    ScreenListBoxPrefix(ScreenRectangle initial, ScreenRectangle inner,
++        const char* name, unsigned int first_word, unsigned int second_word);
++    ~ScreenListBoxPrefix() override;                               // Ordinary 0x004c4090, separate from wrapper4c4070.
++    void Unresolved04(float elapsed) override;                     // 0x004c4620
++    void Unresolved0c() override;                                  // 0x004c5240
++    void MarkPrepared() override;                                  // 0x004c53a0
++    void Unresolved1c() override;                                  // 0x004c5250
++    void Unresolved24(unsigned char enabled) override;             // 0x004c51b0
++    void MoveRectangle(int dx, int dy) override;                   // 0x004c53d0
++    bool HandleInput38(int x, int y, int value) override;          // 0x004c55b0
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004c5440
++
++    void ClearEntries(); // Actual 0x004c41e0.
++    void AddEntry(int row, int x, int width, int word_4, int word_5,
++        int word_6, int word_7, const unsigned short* text, unsigned char flag);
++};
++
++#endif
+diff --git a/src/startup_screen_list_box_entry_range_destructor.cpp b/src/startup_screen_list_box_entry_range_destructor.cpp
+new file mode 100644
+index 0000000..aeb2fc5
+--- /dev/null
++++ b/src/startup_screen_list_box_entry_range_destructor.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_list_box.h"
++#include "pool_return.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c5710
++ScreenListBoxEntryRange::~ScreenListBoxEntryRange()
++{
++    ScreenListBoxEntry** storage = begin;
++    if (storage != 0)
++    {
++        unsigned int bytes = static_cast<unsigned int>((capacity - storage) * sizeof(*storage));
++        if (bytes > 128)
++        {
++            ::operator delete(storage);
++        }
++        else
++        {
++            ReturnPool(storage, bytes);
++        }
++    }
++}
+diff --git a/src/startup_screen_list_box_selection_destructor.cpp b/src/startup_screen_list_box_selection_destructor.cpp
+new file mode 100644
+index 0000000..e8cbde0
+--- /dev/null
++++ b/src/startup_screen_list_box_selection_destructor.cpp
+@@ -0,0 +1,18 @@
++#include "startup_screen_list_box.h"
++#include "pool_return.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c39a0
++ScreenListBoxSelectionRange::~ScreenListBoxSelectionRange()
++{
++    unsigned int* storage = begin;
++    if (storage != 0)
++    {
++        unsigned int bytes = static_cast<unsigned int>((capacity - storage) * sizeof(unsigned int));
++        if (bytes > 128)
++            ::operator delete(storage);
++        else
++            ReturnPool(storage, bytes);
++    }
++}
