@@ -1594,3 +1594,15 @@ method. It matches strictly and byte for byte; changing the stored index with
 XOR1 is rejected against the fixed original extent. Existing comparison results
 are retained. The native profiles preserve their current source selection; this
 match does not qualify a complete renderer lifetime or native rendering path.
+
+The optional `reconstructed_screen_clip_tests` target covers the complete
+`ClipScreenRectangles` method using the existing renderer-global definition
+and a typed renderer read model with real host queue lifetime. Its generated
+literals cover each edge, combined clipping, signed dimensions, empty and
+inverted rectangles, and valid same-object aliases. It preserves unrelated
+renderer members and outside guards. Enable reconstructed tests and experimental
+game sources, then run
+`ctest --test-dir <build> -R '^reconstructed_screen_clip$' --output-on-failure`.
+The focused fixture supports 64-bit Linux and representable integer arithmetic.
+It does not construct the retail renderer, blit pixels or establish menu/GPU
+execution. Windows/macOS and tests-disabled availability remain separate gates.
