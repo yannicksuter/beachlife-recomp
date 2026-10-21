@@ -1551,3 +1551,14 @@ retained member representations through owned byte storage after destruction.
 It does not construct a ListBox, destroy rows or qualify refill, allocation
 failure, concurrency, Windows or macOS. Experimental selection stays off by
 default; matching and complete GUI ownership remain separate gates.
+
+The optional experimental `beachlife_reconstructed_listbox_selection_find`
+library searches a stable range of 32-bit signed words using the real host
+standard library. An equality guard preserves the original null-empty result
+before pointer arithmetic or value access. The reconstructed-test target
+`reconstructed_listbox_selection_find` checks empty ranges, first-match ordering,
+four-word and tail boundaries, valid value aliases and unchanged guarded input.
+The focused qualification is Linux optimized and sanitized; Windows/macOS,
+complete ListBox ownership and menu execution remain separate gates. This is
+library support, not a new game method or a strict compiler match. Default
+native selection and the off-by-default experimental option are unchanged.

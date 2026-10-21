@@ -357,6 +357,22 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_listbox_selection_find STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_list_box_find.cpp")
+    target_include_directories(beachlife_reconstructed_listbox_selection_find PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_listbox_selection_find PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_listbox_selection_find verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_listbox_selection_find PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_listbox_selection_find PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_listbox_selection_find PRIVATE -fno-lto)
+    endif()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -3653,4 +3669,21 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         set_tests_properties(reconstructed_listbox_storage PROPERTIES
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
+endif()
+
+if(BUILD_TESTING AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
+        AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(reconstructed_listbox_selection_find_tests
+        tests/reconstructed_listbox_selection_find.cpp)
+    target_link_libraries(reconstructed_listbox_selection_find_tests PRIVATE
+        beachlife_reconstructed_listbox_selection_find)
+    set_target_properties(reconstructed_listbox_selection_find_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_listbox_selection_find_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_listbox_selection_find_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_listbox_selection_find
+        COMMAND reconstructed_listbox_selection_find_tests)
+    set_tests_properties(reconstructed_listbox_selection_find PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
