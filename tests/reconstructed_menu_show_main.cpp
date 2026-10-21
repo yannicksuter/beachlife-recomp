@@ -64,6 +64,28 @@ template <class T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    Guarded()
+    {
+        before.fill(0x53);
+        after.fill(0xa9);
+    }
+    void check() const
+    {
+        for (unsigned n = 0; n < before.size(); ++n)
+        {
+            require(before[n] == 0x53 && after[n] == 0xa9, "typed backing guard changed");
+        }
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 struct PoolScope
 {
     std::array<unsigned char, 16> before{};
@@ -133,9 +155,7 @@ struct Environment
         renderer.value.software_mode = 1;
         renderer.value.width = 64;
         renderer.value.height = 48;
-        renderer.value.surfaces = nullptr;
-        renderer.value.surfaces_end = nullptr;
-        renderer.value.surfaces_capacity = nullptr;
+        renderer.value.surface_storage.clear();
         renderer.value.draw = nullptr;
         renderer.value.current_surface = -1;
         renderer.value.fill_color = 0x45ab;
@@ -191,27 +211,14 @@ struct Environment
         placements.value.saved.Clear();
 
         auto& r = renderer.value;
-        if (r.surfaces != nullptr)
+        // The actual indexed cleanup above released each WORD allocation.
+        // Entry payloads remain scalar-owned; vector backing is real host storage.
+        for (auto* entry : r.surface_storage)
         {
-            for (auto** p = r.surfaces; p != r.surfaces_end; ++p)
-            {
-                // The real indexed cleanup already released each WORD array.
-                // Entry storage came from scalar operator new, not an array.
-                delete *p;
-                ++surface_releases;
-            }
-            const unsigned bytes = static_cast<unsigned>(
-                (r.surfaces_capacity - r.surfaces) * sizeof(ScreenSurfacePosition*));
-            if (bytes > 128)
-            {
-                ::operator delete(r.surfaces);
-            }
-            else
-            {
-                ReturnPool(r.surfaces, bytes);
-            }
-            r.surfaces = r.surfaces_end = r.surfaces_capacity = nullptr;
+            delete entry;
+            ++surface_releases;
         }
+        r.surface_storage.clear();
         manager.value.registry = nullptr;
         for (auto& link : registry)
         {
@@ -351,7 +358,7 @@ void close_then_request_menu()
     ActiveScreenEntry* const old_entry = &environment.active(0);
     auto* const previous_frame = previous.child_44;
     auto* const menu_frame = menu.child_44;
-    auto* const old_surface = environment.renderer.value.surfaces[old_entry->surface];
+    auto* const old_surface = environment.renderer.value.surface_storage[old_entry->surface];
     auto* const old_pixels = old_surface->pixels;
     require(old_entry->item == &previous && old_entry->context == nullptr &&
                 environment.saved_head.value.next == &environment.saved_head.value,
@@ -388,10 +395,10 @@ void close_then_request_menu()
     require(placement->group == 7 && placement->x == 5 && placement->y == 6,
         "action saved-placement value differs");
     require(new_entry->surface == 1 && old_entry->surface == 0 &&
-                environment.renderer.value.surfaces[0] == old_surface && old_surface->active == 1 &&
-                old_surface->pixels == old_pixels,
+                environment.renderer.value.surface_storage[0] == old_surface &&
+                old_surface->active == 1 && old_surface->pixels == old_pixels,
         "action prematurely released the prior software surface");
-    const auto* new_surface = environment.renderer.value.surfaces[1];
+    const auto* new_surface = environment.renderer.value.surface_storage[1];
     require(new_surface->active == 1 && new_surface->software == 1 && new_surface->prepared == 1 &&
                 new_surface->width == 4 && new_surface->height == 3 && new_surface->pitch == 8 &&
                 new_surface->position.x == 5 && new_surface->position.y == 6,

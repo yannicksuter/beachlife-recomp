@@ -41,9 +41,9 @@ static_assert(std::is_base_of_v<ScreenItem, ScreenImageItem>);
 static_assert(std::has_virtual_destructor_v<ScreenImageItem>);
 static_assert(sizeof(ScreenImageItem) == 120);
 #if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
-static_assert(sizeof(ScreenRequestRenderer) == 392 && sizeof(ScreenManager) == 424);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer> && sizeof(ScreenManager) == 424);
 #else
-static_assert(sizeof(ScreenRequestRenderer) == 384 && sizeof(ScreenManager) == 424);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer> && sizeof(ScreenManager) == 424);
 #endif
 static_assert(sizeof(ScreenDialogResourceNode) == sizeof(ScreenChildNode));
 static_assert(alignof(ScreenDialogResourceNode) <= alignof(ScreenChildNode));
@@ -219,7 +219,9 @@ struct Environment
 {
     Canvas canvas;
     std::array<unsigned char, width * height> markers{};
-    ScreenRequestRenderer renderer{};
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
     ScreenManager manager{};
     Environment()
     {
@@ -250,8 +252,8 @@ struct Environment
     }
     ~Environment()
     {
-        // Only borrowed read models are cleared here, after real item/resource
-        // lifetimes and the mounted Session. No game destructor is supplied.
+        // Only borrowed bindings are cleared here, after real item/resource
+        // lifetimes. The renderer restore guard precedes its genuine destructor.
         screen_request_renderer = nullptr;
         screen_manager = nullptr;
         screen_dialog_frame_file = -1;

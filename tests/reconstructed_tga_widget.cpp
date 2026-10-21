@@ -33,6 +33,10 @@ static_assert(std::extent_v<decltype(TgaScreenItem::filename)> == 32);
 
 namespace
 {
+struct RendererFixtureFailure
+{
+};
+
 namespace data = beachlife::data;
 namespace files = beachlife::runtime::retail_files;
 using Bytes = std::vector<unsigned char>;
@@ -50,7 +54,7 @@ std::size_t host_exceptions;
 [[noreturn]] void fail(const char* message)
 {
     std::fprintf(stderr, "case %zu: %s\n", current_case, message);
-    std::exit(2);
+    throw RendererFixtureFailure{};
 }
 
 void require(bool condition, const char* message)
@@ -80,6 +84,29 @@ template <class T> struct Guarded
             require(before[i] == 0xa5 && after[i] == 0x5a, "external guard changed");
         }
     }
+};
+
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, guard_size> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, guard_size> after{};
+
+    Guarded()
+    {
+        before.fill(0xa5);
+        after.fill(0x5a);
+    }
+    void verify() const
+    {
+        for (std::size_t i = 0; i < guard_size; ++i)
+        {
+            require(before[i] == 0xa5 && after[i] == 0x5a, "external guard changed");
+        }
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
 };
 
 struct Request
@@ -574,6 +601,14 @@ struct WidgetStorage
             "widget image and filename extents are not contiguous");
     }
 
+    ~WidgetStorage()
+    {
+        if (live)
+        {
+            destroy();
+        }
+    }
+
     void destroy()
     {
         require(live != nullptr, "duplicate widget destruction");
@@ -644,7 +679,7 @@ void run_case(const Case& item, const std::string& maximum_prefix)
     Guarded<std::array<unsigned short, 1600>> pixels;
     pixels.value.fill(untouched);
     r.pixels_1c = pixels.value.data();
-    ScreenRequestRenderer expected_renderer = r;
+    renderer_queue_test::Snapshot expected_renderer = r;
     expected_renderer.dirty_rectangles.values.assign(item.queue.begin(), item.queue.end());
     expected_renderer.dirty_rectangle_count = static_cast<int>(item.queue.size());
     auto expected_pixels = pixels.value;
@@ -891,54 +926,66 @@ void operator delete[](void* pointer, std::size_t) noexcept
 
 int main(int argc, char** argv)
 {
-    if (argc != 2)
-    {
-        return 2;
-    }
     try
     {
-        require(std::strcmp(tga_screen_path_prefix, "data\\screens\\") == 0,
-            "actual initial screen prefix differs");
-        const std::filesystem::path root(argv[1]);
-        const std::string maximum_prefix = std::string(95, 'p') + '/';
-        const std::string maximum_path = maximum_prefix + cases[6].filename;
-        std::vector<data::SourceEntry> entries;
-        for (const auto* file : {&small, &rle, &wide})
+        if (argc != 2)
         {
-            write_file(root / file->path, file->file);
-            entries.push_back({file->path, file->file.size()});
+            return 2;
         }
-        write_file(root / maximum_path, small.file);
-        entries.push_back({maximum_path, small.file.size()});
-        auto source = std::make_shared<data::FolderSource>(root, entries);
+        try
         {
-            files::Session session(source);
-            for (current_case = 0; current_case < cases.size(); ++current_case)
+            require(std::strcmp(tga_screen_path_prefix, "data\\screens\\") == 0,
+                "actual initial screen prefix differs");
+            const std::filesystem::path root(argv[1]);
+            const std::string maximum_prefix = std::string(95, 'p') + '/';
+            const std::string maximum_path = maximum_prefix + cases[6].filename;
+            std::vector<data::SourceEntry> entries;
+            for (const auto* file : {&small, &rle, &wide})
             {
-                run_case(cases[current_case], maximum_prefix);
+                write_file(root / file->path, file->file);
+                entries.push_back({file->path, file->file.size()});
             }
+            write_file(root / maximum_path, small.file);
+            entries.push_back({maximum_path, small.file.size()});
+            auto source = std::make_shared<data::FolderSource>(root, entries);
+            {
+                files::Session session(source);
+                for (current_case = 0; current_case < cases.size(); ++current_case)
+                {
+                    run_case(cases[current_case], maximum_prefix);
+                }
+            }
+            require(active == nullptr && screen_manager == nullptr &&
+                        screen_request_renderer == nullptr,
+                "borrowed globals or observer remain bound");
+            require(lifetimes == 12 && enables == 13 && disables == 3 && draws == 10 &&
+                        host_exceptions == 1,
+                "literal operation counts differ");
+            std::printf(
+                "Reconstructed TGA widget checks passed: %zu cases, %zu lifetimes, %zu enables, "
+                "%zu disables, %zu draws, %zu host exceptions, %zu checks\n",
+                cases.size(),
+                lifetimes,
+                enables,
+                disables,
+                draws,
+                host_exceptions,
+                checks);
+            return 0;
         }
-        require(
-            active == nullptr && screen_manager == nullptr && screen_request_renderer == nullptr,
-            "borrowed globals or observer remain bound");
-        require(lifetimes == 12 && enables == 13 && disables == 3 && draws == 10 &&
-                    host_exceptions == 1,
-            "literal operation counts differ");
-        std::printf(
-            "Reconstructed TGA widget checks passed: %zu cases, %zu lifetimes, %zu enables, "
-            "%zu disables, %zu draws, %zu host exceptions, %zu checks\n",
-            cases.size(),
-            lifetimes,
-            enables,
-            disables,
-            draws,
-            host_exceptions,
-            checks);
-        return 0;
+        catch (const std::exception& error)
+        {
+            std::fprintf(stderr, "generated widget fixture: %s\n", error.what());
+            return 2;
+        }
+    }
+    catch (const RendererFixtureFailure&)
+    {
+        return 2;
     }
     catch (const std::exception& error)
     {
-        std::fprintf(stderr, "generated widget fixture: %s\n", error.what());
-        return 2;
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
     }
 }

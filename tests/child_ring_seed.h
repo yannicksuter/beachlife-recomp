@@ -9,7 +9,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <initializer_list>
 #include <new>
 #include <type_traits>
@@ -49,11 +48,22 @@ template <unsigned Count> class Seed
         {
             check(root == nullptr, "child seed found an existing pool root");
         }
+        // Establish the guarded backing before placement construction. Volatile
+        // byte stores keep this setup observable and avoid GCC's spurious bulk
+        // array-bounds diagnostic when the containing fixture is inlined.
+        const auto fill = [](auto& destination, unsigned char value)
+        {
+            volatile unsigned char* bytes = destination;
+            for (std::size_t index = 0; index < sizeof(destination); ++index)
+            {
+                bytes[index] = value;
+            }
+        };
         for (auto& slot : slots)
         {
-            std::memset(slot.before, 0xa6, sizeof(slot.before));
-            std::memset(slot.bytes, 0x6b, sizeof(slot.bytes));
-            std::memset(slot.after, 0xa6, sizeof(slot.after));
+            fill(slot.before, 0xa6);
+            fill(slot.bytes, 0x6b);
+            fill(slot.after, 0xa6);
         }
         PoolChunkLink* next = nullptr;
         for (unsigned n = Count; n != 0; --n)

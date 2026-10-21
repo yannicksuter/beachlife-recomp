@@ -27,7 +27,8 @@ using Text = std::array<unsigned short, 8>;
 
 static_assert(sizeof(int) == 4);
 static_assert(std::is_aggregate_v<ScreenManager>);
-static_assert(std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
 static_assert(std::is_polymorphic_v<ScreenTextItem>);
 static_assert(std::is_same_v<decltype(&ScreenTextItem::Unresolved24),
     void (ScreenTextItem::*)(unsigned char)>);
@@ -80,6 +81,38 @@ template <typename T> struct Guarded
                         }),
             "outside guard changed");
     }
+};
+
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    Guard before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    Guard after{};
+
+    Guarded()
+    {
+        before.fill(0xa6);
+        after.fill(0x6a);
+    }
+    void guards() const
+    {
+        require(std::all_of(before.begin(),
+                    before.end(),
+                    [](auto c)
+                    {
+                        return c == 0xa6;
+                    }) &&
+                    std::all_of(after.begin(),
+                        after.end(),
+                        [](auto c)
+                        {
+                            return c == 0x6a;
+                        }),
+            "outside guard changed");
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
 };
 
 // A genuine owner with a scoped borrowed table view for these method cases.
@@ -202,8 +235,8 @@ class GeneratedFiles
     std::vector<beachlife::data::SourceEntry> entries_;
 };
 
-// These aggregates are borrowed read models, never full game-owner lifetimes.
-// Every reconstructed TU uses the same current prepared declarations.
+// Manager fields remain a borrowed read model. Renderer and language values
+// have genuine lifetimes with scoped method views and uniform declarations.
 struct Environment
 {
     Guarded<ScreenRequestRenderer> renderer;
@@ -229,7 +262,7 @@ struct Environment
         r.format_44 = 0;
         r.unscaled_clip_5c = 0;
         r.pixels_1c = output.value.data();
-        r.surfaces = nullptr;
+        r.surface_storage.clear();
         r.current_surface = 0;
         manager.value.renderer = &r;
         manager.value.item_134 = nullptr;
@@ -642,7 +675,7 @@ int main(int argc, char** argv)
         Font font(*owner, env.lookup.value);
         env.manager.value.fonts_2c[3] = &font.value;
         const auto manager_before = env.manager.value;
-        const auto renderer_before = env.renderer.value;
+        const renderer_queue_test::Snapshot renderer_before = env.renderer.value;
         const text_owner_test::Snapshot lookup_before(env.lookup.value);
         const auto buckets_before = env.buckets.value;
         prepared_group(env, font, *owner);

@@ -2748,6 +2748,9 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_library(beachlife_resource_pool_host STATIC src/runtime/resource_pool_host.cpp)
     target_compile_features(beachlife_resource_pool_host PUBLIC cxx_std_20)
     target_link_libraries(beachlife_resource_pool_host PUBLIC Threads::Threads)
+    # Pool lock calls in the actual list archive use the real host boundary.
+    target_link_libraries(beachlife_reconstructed_screen_list PUBLIC
+        $<LINK_ONLY:beachlife_resource_pool_host>)
 
     add_library(beachlife_reconstructed_resource_stream_read STATIC
         "${BEACHLIFE_DECOMP_SOURCE}/startup_resource_stream_read.cpp")
@@ -3976,4 +3979,162 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         set_tests_properties(reconstructed_text_lookup_owner PROPERTIES
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
+endif()
+
+# Append after the existing experimental reconstructed targets. This first
+# capability remains below the reconstructed-test return: no production claim.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_owner STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_constructor_native.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_destructor_native.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_display_initialize_native.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_display_mode_callback.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_registration_clear.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_owner PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}" "${CMAKE_SOURCE_DIR}/src")
+    target_compile_features(beachlife_reconstructed_renderer_owner PUBLIC cxx_std_20)
+    target_compile_definitions(beachlife_reconstructed_renderer_owner PUBLIC
+        BEACHLIFE_DECOMP_RENDERER_QUEUE=1)
+    target_link_libraries(beachlife_reconstructed_renderer_owner PUBLIC
+        beachlife_reconstructed_surface_create
+        beachlife_reconstructed_render_masks
+        beachlife_reconstructed_sea_state_owner
+        beachlife_reconstructed_tiff_loader
+        beachlife_renderer_display)
+    add_dependencies(beachlife_reconstructed_renderer_owner verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_renderer_owner PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_owner PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_owner PRIVATE -fno-lto)
+    endif()
+
+    # Exact R803 fixture and control; no Present/capture object in this target.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+            AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_executable(reconstructed_renderer_owner_tests tests/reconstructed_renderer_owner.cpp)
+        target_link_libraries(reconstructed_renderer_owner_tests PRIVATE
+            beachlife_reconstructed_renderer_owner)
+        set_target_properties(reconstructed_renderer_owner_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_renderer_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_owner_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_renderer_owner
+            COMMAND reconstructed_renderer_owner_tests
+                "${CMAKE_CURRENT_BINARY_DIR}/generated-renderer-owner")
+        set_tests_properties(reconstructed_renderer_owner PROPERTIES
+            LABELS "reconstructed;experimental;renderer-owner;x11" TIMEOUT 30)
+    endif()
+    # Insert inside the native-experimental owner block, after its real target exists.
+    foreach(BEACHLIFE_RENDERER_OWNER_FIXTURE IN ITEMS
+        reconstructed_auxiliary_text_tests
+        reconstructed_close_active_screens_tests
+        reconstructed_dialog_item_tests
+        reconstructed_font_data_owner_tests
+        reconstructed_font_drawing_tests
+        reconstructed_font_glyphs_tests
+        reconstructed_font_measurement_tests
+        reconstructed_frame_fill_styles_tests
+        reconstructed_frame_item_tests
+        reconstructed_gui_image_item_tests
+        reconstructed_gui_parse_dialog_tests
+        reconstructed_gui_parse_font_tests
+        reconstructed_gui_parse_image_tests
+        reconstructed_gui_parse_main640_tests
+        reconstructed_gui_parse_main_tests
+        reconstructed_gui_parse_tab_tests
+        reconstructed_gui_rectangle_tests
+        reconstructed_gui_tab_item_tests
+        reconstructed_gui_text_item_tests
+        reconstructed_input_motion_owner_tests
+        reconstructed_menu_show_main_tests
+        reconstructed_menu_show_scenario_tests
+        reconstructed_renderer_clip_tests
+        reconstructed_renderer_default_tests
+        reconstructed_renderer_line_tests
+        reconstructed_renderer_rectangle_fill_tests
+        reconstructed_renderer_rectangle_queue_tests
+        reconstructed_renderer_sea_enabled_tests
+        reconstructed_renderer_tga_draw_tests
+        reconstructed_renderer_word60_tests
+        reconstructed_resource_file_producer_tests
+        reconstructed_resource_find_tests
+        reconstructed_resource_owner_tests
+        reconstructed_resource_palette_modifiers_tests
+        reconstructed_screen_activate_tests
+        reconstructed_screen_clip_tests
+        reconstructed_screen_item_complete_tests
+        reconstructed_screen_request_tests
+        reconstructed_screen_select_tests
+        reconstructed_surface_create_tests
+        reconstructed_surface_pixels_tests
+        reconstructed_surfaces_tests
+        reconstructed_tga_widget_tests
+    )
+        if(TARGET ${BEACHLIFE_RENDERER_OWNER_FIXTURE})
+            target_link_libraries(${BEACHLIFE_RENDERER_OWNER_FIXTURE} PRIVATE
+                beachlife_reconstructed_renderer_owner)
+        endif()
+    endforeach()
+
+    # These sources now require actual x11 geometry; no dummy/platform fallback.
+    foreach(BEACHLIFE_RENDERER_OWNER_CASE IN ITEMS
+        reconstructed_auxiliary_text
+        reconstructed_close_active_screens
+        reconstructed_dialog_item
+        reconstructed_font_data_owner
+        reconstructed_font_drawing
+        reconstructed_font_glyphs
+        reconstructed_font_measurement
+        reconstructed_frame_fill_styles
+        reconstructed_frame_item
+        reconstructed_gui_image_item
+        reconstructed_gui_parse_dialog
+        reconstructed_gui_parse_font
+        reconstructed_gui_parse_image
+        reconstructed_gui_parse_main640
+        reconstructed_gui_parse_main
+        reconstructed_gui_parse_tab
+        reconstructed_gui_rectangle
+        reconstructed_gui_tab_item
+        reconstructed_gui_text_item
+        reconstructed_input_motion_owner
+        reconstructed_menu_show_main
+        reconstructed_menu_show_scenario
+        reconstructed_renderer_clip
+        reconstructed_renderer_default
+        reconstructed_renderer_line
+        reconstructed_renderer_rectangle_fill
+        reconstructed_renderer_rectangle_queue
+        reconstructed_renderer_sea_enabled
+        reconstructed_renderer_tga_draw
+        reconstructed_renderer_word60
+        reconstructed_resource_file_producer
+        reconstructed_resource_find
+        reconstructed_resource_owner
+        reconstructed_resource_palette_modifiers
+        reconstructed_screen_activate
+        reconstructed_screen_clip
+        reconstructed_screen_item_complete
+        reconstructed_screen_request
+        reconstructed_screen_select
+        reconstructed_surface_create
+        reconstructed_surface_pixels
+        reconstructed_surfaces
+        reconstructed_tga_widget
+        reconstructed_gui_rectangle_fatal_right
+        reconstructed_gui_rectangle_fatal_bottom
+        reconstructed_gui_rectangle_fatal_reversed
+    )
+        if(TEST ${BEACHLIFE_RENDERER_OWNER_CASE})
+            set_tests_properties(${BEACHLIFE_RENDERER_OWNER_CASE} PROPERTIES
+                LABELS "reconstructed;experimental;renderer-owner;x11")
+            if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8
+                    OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+                set_tests_properties(${BEACHLIFE_RENDERER_OWNER_CASE} PROPERTIES DISABLED TRUE)
+            endif()
+        endif()
+    endforeach()
 endif()

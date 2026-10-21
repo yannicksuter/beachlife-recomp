@@ -64,6 +64,28 @@ template <class T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    Guarded()
+    {
+        before.fill(0x53);
+        after.fill(0xa9);
+    }
+    void check() const
+    {
+        for (unsigned n = 0; n < before.size(); ++n)
+        {
+            require(before[n] == 0x53 && after[n] == 0xa9, "typed backing guard changed");
+        }
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 struct PoolScope
 {
     std::array<unsigned char, 16> before{};
@@ -133,9 +155,7 @@ struct Environment
         renderer.value.software_mode = 1;
         renderer.value.width = 64;
         renderer.value.height = 48;
-        renderer.value.surfaces = nullptr;
-        renderer.value.surfaces_end = nullptr;
-        renderer.value.surfaces_capacity = nullptr;
+        renderer.value.surface_storage.clear();
         renderer.value.draw = nullptr;
         renderer.value.current_surface = -1;
         renderer.value.fill_color = 0x45ab;
@@ -189,27 +209,14 @@ struct Environment
         placements.value.saved.Clear();
 
         auto& r = renderer.value;
-        if (r.surfaces != nullptr)
+        // The actual indexed cleanup above released each WORD allocation.
+        // Entry payloads remain scalar-owned; vector backing is real host storage.
+        for (auto* entry : r.surface_storage)
         {
-            for (auto** p = r.surfaces; p != r.surfaces_end; ++p)
-            {
-                // The real indexed cleanup already released each WORD array.
-                // Entry storage came from scalar operator new, not an array.
-                delete *p;
-                ++surface_releases;
-            }
-            const unsigned bytes = static_cast<unsigned>(
-                (r.surfaces_capacity - r.surfaces) * sizeof(ScreenSurfacePosition*));
-            if (bytes > 128)
-            {
-                ::operator delete(r.surfaces);
-            }
-            else
-            {
-                ReturnPool(r.surfaces, bytes);
-            }
-            r.surfaces = r.surfaces_end = r.surfaces_capacity = nullptr;
+            delete entry;
+            ++surface_releases;
         }
+        r.surface_storage.clear();
         manager.value.registry = nullptr;
         for (auto& link : registry)
         {
@@ -303,7 +310,7 @@ struct Environment
     void check_surface(const ActiveScreenEntry& entry, int index, ScreenRectangle rectangle)
     {
         require(entry.surface == index, "captured surface index differs");
-        const auto* surface = renderer.value.surfaces[index];
+        const auto* surface = renderer.value.surface_storage[index];
         const unsigned width = static_cast<unsigned>(rectangle.right - rectangle.left);
         const unsigned height = static_cast<unsigned>(rectangle.bottom - rectangle.top);
         require(surface->active == 1 && surface->software == 1 && surface->prepared == 1 &&
@@ -364,7 +371,7 @@ void lookup_and_first_name()
     require(!environment.request("Exact", 1), "empty registry did not fail");
     ScreenDialog& first = environment.add("Exact", {2, 3, 6, 6}, 1);
     ScreenDialog& later = environment.add("Exact", {8, 1, 10, 3}, 2);
-    const auto before = environment.renderer.value;
+    const renderer_queue_test::Snapshot before = environment.renderer.value;
     require(!environment.request("exact", 1) && !environment.request("missing", 1),
         "case-sensitive missing lookup did not fail");
     require(environment.active_head.value.next == &environment.active_head.value &&

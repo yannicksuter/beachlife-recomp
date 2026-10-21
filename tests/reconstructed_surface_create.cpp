@@ -17,7 +17,8 @@
 namespace
 {
 static_assert(sizeof(void*) == 8 && sizeof(unsigned int) == 4);
-static_assert(std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
 static_assert(std::is_aggregate_v<ScreenSurfacePosition>);
 static_assert(std::is_trivially_destructible_v<ScreenSurfacePosition>);
 static_assert(std::is_standard_layout_v<ScreenSurfacePosition>);
@@ -69,6 +70,28 @@ template <class T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    Guarded()
+    {
+        before.fill(0xa6);
+        after.fill(0x6a);
+    }
+    void check() const
+    {
+        for (std::size_t n = 0; n < before.size(); ++n)
+        {
+            require(before[n] == 0xa6 && after[n] == 0x6a, "outside guard changed");
+        }
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 struct PoolScope
 {
     std::array<unsigned char, 16> before{};
@@ -117,34 +140,24 @@ struct PoolScope
 
 void layout(const ScreenRequestRenderer& r)
 {
-    std::size_t renderer_bytes = 384;
-#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
-    renderer_bytes += sizeof(r.sea_state_134);
-#endif
     const auto offset = [&](const void* p)
     {
         return reinterpret_cast<std::uintptr_t>(p) - reinterpret_cast<std::uintptr_t>(&r);
     };
-#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
-    require(offset(&r.sea_state_134) == 384, "sea-state pointer native offset differs");
-#endif
-    require(offset(r.unknown_20) == 40 && sizeof(r.unknown_20) == 24 && offset(&r.draw) == 64 &&
-                offset(r.unknown_3c) == 72 && sizeof(r.unknown_3c) == 8,
-        "draw-pointer native layout differs");
-    require(offset(&r.surfaces) == 120 && offset(&r.surfaces_end) == 128 &&
-                offset(&r.surfaces_capacity) == 136 && offset(&r.current_surface) == 144,
-        "table endpoint native layout differs");
-    require(offset(&r.word_60) == 108 && offset(&r.fill_color) == 150 &&
-                offset(&r.dirty_rectangles) == 152 && sizeof(RendererRectangleQueue) == 80 &&
-                offset(&r.buffer_130) == 376 && sizeof(r) == renderer_bytes,
-        "retained native suffix or size differs");
+    require(
+        offset(&r.width) == 4 && offset(&r.height) == 8 &&
+            offset(&r.window_rectangle_24) == offset(r.unknown_20) + sizeof(r.unknown_20) &&
+            offset(&r.current_surface) == offset(&r.surface_storage) + sizeof(r.surface_storage) &&
+            offset(r.haze_images_138) == offset(&r.sea_state_134) + sizeof(r.sea_state_134) &&
+            offset(&r.native_display) > offset(&r.initialized_168),
+        "coherent native owner/storage layout differs");
 }
 
 void initialize_renderer(ScreenRequestRenderer& r)
 {
     renderer_queue_test::initialize(r, 0x31);
     r.software_mode = 1;
-    r.surfaces = r.surfaces_end = r.surfaces_capacity = nullptr;
+    r.surface_storage.clear();
     r.draw = nullptr; // The complete hardware branch exists but is not called.
     layout(r);
 }
@@ -206,9 +219,8 @@ void reused_first_inactive()
     Guarded<std::array<ScreenSurfacePosition*, 3>> table;
     table.value = {&e[0].value, &e[1].value, &e[2].value};
     auto& r = renderer.value;
-    r.surfaces = table.value.data();
-    r.surfaces_end = r.surfaces_capacity = table.value.data() + table.value.size();
-    const auto before = r;
+    r.surface_storage.assign(table.value.begin(), table.value.end());
+    const renderer_queue_test::Snapshot before = r;
     const auto inactive = e[1].value;
     const int index = r.CreateSurface(3, 2, 0x100);
     ++create_calls;
@@ -254,79 +266,38 @@ struct GrowingOwner
             delete entries[n]; // Actual scalar entry allocation; trivial lifetime.
             ++released_entries;
         }
-        if (r.surfaces != nullptr)
-        {
-            const auto bytes = static_cast<unsigned>(
-                (r.surfaces_capacity - r.surfaces) * sizeof(ScreenSurfacePosition*));
-            if (bytes > 128)
-            {
-                ::operator delete(r.surfaces);
-            }
-            else
-            {
-                ReturnPool(r.surfaces, bytes);
-            }
-        }
-        r.surfaces = r.surfaces_end = r.surfaces_capacity = nullptr;
+
+        r.surface_storage.clear();
     }
 };
 
 void growth_and_ownership()
 {
-    group = "growth-pool-and-scalar";
+    group = "growth-native-vector-and-scalar-entries";
     PoolScope pool;
     {
         GrowingOwner owner;
         auto& r = owner.renderer.value;
-        const auto before = r;
-        constexpr std::array<unsigned, 33> capacities{1,
-            2,
-            4,
-            4,
-            8,
-            8,
-            8,
-            8,
-            16,
-            16,
-            16,
-            16,
-            16,
-            16,
-            16,
-            16,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            32,
-            64};
-        for (unsigned n = 0; n < capacities.size(); ++n)
+        const renderer_queue_test::Snapshot before = r;
+        // The native standard library owns pointer-slot capacity. This fixture
+        // preserves actual entry order/ownership, not VC6 allocator growth sizes.
+        for (unsigned n = 0; n < owner.entries.size(); ++n)
         {
-            auto** old_table = r.surfaces;
+            auto* const old_table = r.surface_storage.data();
+            const auto old_capacity = r.surface_storage.capacity();
             const int index = r.CreateSurface(2, 1, 0);
             ++create_calls;
             // Record the actual newly published owner before any oracle can throw.
-            owner.entries[n] = r.surfaces[n];
+            owner.entries[n] = r.surface_storage[n];
             owner.count = n + 1;
             ++owned_entries;
-            require(index == static_cast<int>(n) && r.surfaces_end == r.surfaces + n + 1 &&
-                        r.surfaces_capacity == r.surfaces + capacities[n],
-                "literal append index or capacity differs");
-            if (n != 0 && capacities[n] == capacities[n - 1])
+            require(index == static_cast<int>(n) && r.surface_storage.size() == n + 1 &&
+                        r.surface_storage.capacity() >= r.surface_storage.size(),
+                "append index/size or valid capacity differs");
+            if (n < old_capacity)
             {
-                require(r.surfaces == old_table, "spare-capacity append replaced storage");
+                require(r.surface_storage.data() == old_table,
+                    "spare-capacity append replaced storage");
             }
             require(owner.entries[n]->active == 1 && owner.entries[n]->position.x == 0 &&
                         owner.entries[n]->position.y == 0,
@@ -336,23 +307,23 @@ void growth_and_ownership()
             // inspect or copy them. Only source-written members are observed.
             for (unsigned j = 0; j <= n; ++j)
             {
-                require(r.surfaces[j] == owner.entries[j] &&
+                require(r.surface_storage[j] == owner.entries[j] &&
                             owner.entries[j]->pixels[0] == 0x1200 &&
                             owner.entries[j]->pixels[1] == 0x1201,
                     "existing entry order or payload lost during table growth");
             }
             auto expected = before;
-            expected.surfaces = r.surfaces;
-            expected.surfaces_end = r.surfaces_end;
-            expected.surfaces_capacity = r.surfaces_capacity;
+            expected.surface_storage.assign(owner.entries.begin(), owner.entries.begin() + n + 1);
+            expected.surface_data = r.surface_storage.data();
+            expected.surface_capacity = r.surface_storage.capacity();
             require(renderer_queue_test::equal(r, expected), "growth changed unrelated renderer");
         }
-        // Native pointer width makes capacities1/2/4/8/16 pooled, then32/64 scalar.
-        // The complete growth path frees the previous256-byte scalar table at33.
-        require(pool_chunk_begin == pool.bytes + 4960, "literal real refill consumption differs");
-        for (unsigned bucket : {0U, 1U, 3U, 7U, 15U})
+        // The real host vector no longer consumes the game's small-block pool.
+        require(pool_chunk_begin == pool.bytes && exchanges == 0,
+            "native vector unexpectedly consumed the game pool");
+        for (auto* bucket : pool_chunk_buckets)
         {
-            require(pool_chunk_buckets[bucket] != nullptr, "pooled old table was not returned");
+            require(bucket == nullptr, "native vector published a game-pool entry");
         }
         owner.renderer.check();
         pool.check();
@@ -371,8 +342,7 @@ void direct_initializer_and_indexed_cleanup()
     Guarded<std::array<ScreenSurfacePosition*, 1>> table;
     table.value[0] = &entry;
     auto& r = renderer.value;
-    r.surfaces = table.value.data();
-    r.surfaces_end = r.surfaces_capacity = r.surfaces + 1;
+    r.surface_storage.assign(table.value.begin(), table.value.end());
     constexpr std::array<std::array<int, 2>, 2> sizes{{{0, 3}, {2, 2}}};
     for (const auto size : sizes)
     {
@@ -382,7 +352,7 @@ void direct_initializer_and_indexed_cleanup()
         renderer_queue_test::pattern(entry.unknown_02, 0x53);
         renderer_queue_test::pattern(entry.unknown_0d, 0x84);
         const auto before = entry;
-        const auto renderer_before = r;
+        const renderer_queue_test::Snapshot renderer_before = r;
         r.InitializeSurface(size[0], size[1], &entry, 0xff);
         ++initialize_calls;
         require(entry.active == 0 && entry.position.x == -7 && entry.position.y == 11 &&
@@ -431,7 +401,7 @@ int main()
         growth_and_ownership();
         direct_initializer_and_indexed_cleanup();
         require(create_calls == 34 && initialize_calls == 2 && cleanup_calls == 37 &&
-                    owned_entries == 33 && released_entries == 33 && exchanges == 10,
+                    owned_entries == 33 && released_entries == 33 && exchanges == 0,
             "literal operation/ownership totals differ");
         require(pool_chunk_begin == nullptr && pool_chunk_end == nullptr && pool_heap_bytes == 0 &&
                     pool_lock_word == 0 && !pool_scope_live,

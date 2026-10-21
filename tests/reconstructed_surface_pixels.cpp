@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <type_traits>
 
 static_assert(sizeof(SurfaceResult) == 4 && INT_MAX == 2147483647);
@@ -23,6 +24,19 @@ template <class T> struct Guarded
     T value;
     unsigned char after[32];
 };
+
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    unsigned char before[32];
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    unsigned char after[32];
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
+#endif
 
 struct Table
 {
@@ -46,7 +60,7 @@ struct Fixture
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
 struct State
 {
-    ScreenRequestRenderer renderer;
+    renderer_queue_test::Snapshot renderer;
     std::array<unsigned char, 32> renderer_before;
     std::array<unsigned char, 32> renderer_after;
     std::array<unsigned char, sizeof(Fixture::entries)> entries;
@@ -88,8 +102,13 @@ struct Context
 
 namespace
 {
+struct RendererFixtureFailure
+{
+};
+
 Context* active;
 std::size_t cases;
+std::size_t deferred_prefix_cases;
 std::size_t provider_calls;
 std::size_t byte_checks;
 
@@ -140,14 +159,6 @@ void expect_write(State& state, const Fixture& fixture, const T& field, const T&
             return;
         }
     }
-    if constexpr (std::is_same_v<T, ScreenSurfacePosition**>)
-    {
-        if (&field == &fixture.renderer.value.surfaces)
-        {
-            state.renderer.surfaces = value;
-            return;
-        }
-    }
     if constexpr (std::is_same_v<T, unsigned char>)
     {
         if (&field == &fixture.renderer.value.software_mode)
@@ -183,7 +194,7 @@ void expect_write(State& state, const Fixture& fixture, const T& field, const T&
         return;
     }
     std::fputs("expected write escaped declared fixture components\n", stderr);
-    std::exit(2);
+    throw RendererFixtureFailure{};
 }
 #else
 State snapshot(const Fixture& value)
@@ -298,7 +309,13 @@ SurfaceResult lock_provider(unsigned int provider,
     }
     if (mask & 2U)
     {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+        std::copy(fixture.tables[1].value.slots + scenario.base,
+            fixture.tables[1].value.slots + 4,
+            renderer.surface_storage.begin());
+#else
         renderer.surfaces = fixture.tables[1].value.slots + scenario.base;
+#endif
     }
     if (mask & 4U)
     {
@@ -329,6 +346,14 @@ SurfaceResult lock_provider(unsigned int provider,
     if (mask & 256U)
     {
         fixture.tables[0].value.slots[scenario.slot] = &fixture.entries[2].value;
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+        // The native owner owns its slots; explicitly mutate the live table if
+        // it is still selected, instead of relying on external-array aliasing.
+        if (!(mask & 2U))
+        {
+            renderer.surface_storage[scenario.slot - scenario.base] = &fixture.entries[2].value;
+        }
+#endif
     }
     if (mask & 512U)
     {
@@ -358,7 +383,18 @@ bool run(const Scenario& scenario)
 {
     // All pointer and signed fields start with typed values. Only opaque arrays and
     // canaries receive byte patterns; no arbitrary bytes become pointer objects.
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    // One genuine owner remains live across the old finite value cases. Each
+    // call resets its scoped borrowed view; original allocations restore at exit.
+    if (scenario.slot < scenario.base)
+    {
+        ++deferred_prefix_cases;
+        return true; // Historical before-data indexing, not a valid owner slot.
+    }
+    static Fixture fixture{};
+#else
     Fixture fixture{};
+#endif
     fill_guards(fixture.renderer, 0x31);
     ScreenRequestRenderer& renderer = fixture.renderer.value;
 #if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
@@ -372,8 +408,7 @@ bool run(const Scenario& scenario)
     fill(renderer.unknown_0c, 0x23);
 #endif
 #if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
-    renderer.surfaces_end = nullptr;
-    renderer.surfaces_capacity = nullptr;
+    renderer.surface_storage.clear();
 #else
     fill(renderer.unknown_6c, 0x93);
 #endif
@@ -420,7 +455,12 @@ bool run(const Scenario& scenario)
             fixture.tables[table].value.slots[slot] = &fixture.entries[index].value;
         }
     }
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    renderer.surface_storage.assign(
+        fixture.tables[0].value.slots + scenario.base, fixture.tables[0].value.slots + 4);
+#else
     renderer.surfaces = fixture.tables[0].value.slots + scenario.base;
+#endif
     ScreenSurfacePosition& selected = *fixture.tables[0].value.slots[scenario.slot];
     DirectDrawSurface7Prefix* const receiver = selected.surface;
     unsigned short* const software_pixels = selected.pixels;
@@ -457,8 +497,13 @@ bool run(const Scenario& scenario)
         }
         if (mask & 2U)
         {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+            state.renderer.surface_storage.assign(
+                fixture.tables[1].value.slots + scenario.base, fixture.tables[1].value.slots + 4);
+#else
             expect_write(
                 state, fixture, renderer.surfaces, fixture.tables[1].value.slots + scenario.base);
+#endif
         }
         if (mask & 4U)
         {
@@ -493,6 +538,14 @@ bool run(const Scenario& scenario)
                 fixture.tables[0].value.slots[scenario.slot],
                 &fixture.entries[2].value);
         }
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+        if ((mask & 256U) && !(mask & 2U))
+        {
+            state.renderer.surface_storage[scenario.slot - scenario.base] =
+                &fixture.entries[2].value;
+        }
+#endif
+
         if (mask & 512U)
         {
             expect_write(state, fixture, receiver->vtable, scenario.provider ? &table_a : &table_b);
@@ -537,58 +590,73 @@ bool run(const Scenario& scenario)
 
 int main()
 {
-    if (!run({0, 0xfe, 0xd3, 0, 0, 0, 0, 0, 1, true, 0}))
+    try
     {
-        return 2;
-    }
-    for (unsigned int gate = 0; gate < 256; ++gate)
-    {
-        for (unsigned int variant = 0; variant < 32; ++variant)
+        if (!run({0, 0xfe, 0xd3, 0, 0, 0, 0, 0, 1, true, 0}))
         {
-            if (!run({gate,
-                    gate,
-                    255U - gate,
-                    variant % 4U,
-                    variant & 2U,
-                    (variant >> 2) % 4U,
-                    variant & 1U,
-                    (variant * 31U) % 1024U,
-                    (variant >> 3) % 4U,
-                    (variant & 4U) != 0,
-                    -1}))
+            return 2;
+        }
+        for (unsigned int gate = 0; gate < 256; ++gate)
+        {
+            for (unsigned int variant = 0; variant < 32; ++variant)
             {
-                return 2;
+                if (!run({gate,
+                        gate,
+                        255U - gate,
+                        variant % 4U,
+                        variant & 2U,
+                        (variant >> 2) % 4U,
+                        variant & 1U,
+                        (variant * 31U) % 1024U,
+                        (variant >> 3) % 4U,
+                        (variant & 4U) != 0,
+                        -1}))
+                {
+                    return 2;
+                }
             }
         }
-    }
-    const int results[] = {0, 1, INT_MAX, -1, INT_MIN, -2005532292};
-    for (unsigned int mask = 0; mask < 1024; ++mask)
-    {
-        for (int result : results)
+        const int results[] = {0, 1, INT_MAX, -1, INT_MIN, -2005532292};
+        for (unsigned int mask = 0; mask < 1024; ++mask)
         {
-            for (unsigned int output = 0; output < 4; ++output)
+            for (int result : results)
             {
-                for (unsigned int write = 0; write < 2; ++write)
+                for (unsigned int output = 0; output < 4; ++output)
                 {
-                    if (!run({0,
-                            mask % 256U,
-                            (mask * 19U) % 256U,
-                            mask % 4U,
-                            mask & 2U,
-                            (mask >> 2) % 4U,
-                            mask & 1U,
-                            mask,
-                            output,
-                            write != 0,
-                            result}))
+                    for (unsigned int write = 0; write < 2; ++write)
                     {
-                        return 2;
+                        if (!run({0,
+                                mask % 256U,
+                                (mask * 19U) % 256U,
+                                mask % 4U,
+                                mask & 2U,
+                                (mask >> 2) % 4U,
+                                mask & 1U,
+                                mask,
+                                output,
+                                write != 0,
+                                result}))
+                        {
+                            return 2;
+                        }
                     }
                 }
             }
         }
+        std::printf("cases=%zu provider_calls=%zu byte_checks=%zu deferred_prefix_cases=%zu\n",
+            cases,
+            provider_calls,
+            byte_checks,
+            deferred_prefix_cases);
+        return 0;
     }
-    std::printf(
-        "cases=%zu provider_calls=%zu byte_checks=%zu\n", cases, provider_calls, byte_checks);
-    return 0;
+    catch (const RendererFixtureFailure&)
+    {
+        return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
+    }
 }

@@ -29,7 +29,8 @@ static_assert(
 static_assert(offsetof(State, byte_10080) == offsetof(State, word_1007c) + sizeof(unsigned int));
 static_assert(sea_offset == offsetof(State, byte_10080) + sizeof(unsigned char));
 static_assert(state_bytes == 0x10086 && sizeof(State) == 0x10088);
-static_assert(std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_aggregate_v<ScreenRequestRenderer>);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
 static_assert(!std::is_polymorphic_v<ScreenRequestRenderer>);
 static_assert(std::is_same_v<decltype(&ScreenRequestRenderer::SetSeaEnabled),
     void (ScreenRequestRenderer::*)(unsigned char)>);
@@ -39,6 +40,17 @@ template <class T> struct Guarded
     std::array<unsigned char, 32> before{};
     T value{};
     std::array<unsigned char, 32> after{};
+};
+
+// Only this specialization constructs the complete genuine renderer. The two
+// independently constructed sea children below remain explicit borrowed views.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap bootstrap;
+    std::array<unsigned char, 32> before{};
+    ScreenRequestRenderer value{bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 32> after{};
+    renderer_owner_test::RestoreOwnedState restore{value, bootstrap};
 };
 
 struct Failure
@@ -101,8 +113,8 @@ struct ScalarDelete
     }
 };
 
-// Both genuine child destructors and the host deque/storage destructors complete
-// before process leak checking. No retail renderer constructor is supplied.
+// Genuine renderer and child destructors complete before process leak checking.
+// The restoration guard retires only the method view before actual owner cleanup.
 [[gnu::noinline]] void exercise()
 {
     Guarded<State> first;
@@ -118,18 +130,20 @@ struct ScalarDelete
     std::memset(payload.get(), 0xc7, payload_bytes);
     first.value.owned_data_00 = payload.release(); // Actual child owns this block.
 
-    // This is a typed renderer read model with a real native deque. It does not
-    // construct or replace the game's full renderer/platform owner.
+    // A scoped method view over a genuinely constructed renderer. Its own sea,
+    // surfaces and other allocations stay hidden until actual destruction.
     renderer_queue_test::initialize(renderer.value, 0x29);
-    ScreenRequestRenderer expected_renderer = renderer.value;
+    renderer_queue_test::Snapshot expected_renderer = renderer.value;
     const auto offset = [&](const void* member)
     {
         return reinterpret_cast<std::uintptr_t>(member) -
                reinterpret_cast<std::uintptr_t>(&renderer.value);
     };
-    require(offset(&renderer.value.buffer_130) == 376 &&
-                offset(&renderer.value.sea_state_134) == 384 && sizeof(renderer.value) == 392,
-        "native renderer tail differs");
+    require(offset(&renderer.value.sea_state_134) ==
+                    offset(&renderer.value.buffer_130) + sizeof(renderer.value.buffer_130) &&
+                offset(&renderer.value.haze_images_138) ==
+                    offset(&renderer.value.sea_state_134) + sizeof(renderer.value.sea_state_134),
+        "genuine renderer ownership tail differs");
 
     std::array<unsigned char, state_bytes> expected_first;
     std::array<unsigned char, state_bytes> expected_second;

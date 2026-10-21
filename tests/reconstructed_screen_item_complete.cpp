@@ -91,6 +91,16 @@ template <class T> struct Frame
     Guard after = guard(0xc7);
 };
 
+// Genuine renderer owner and its explicit scoped method view.
+template <> struct Frame<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    Guard before = guard(0x23);
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    Guard after = guard(0xc7);
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 // A genuine owner with a scoped borrowed table view for these method cases.
 template <> struct Frame<ScreenTextLookup>
 {
@@ -352,7 +362,7 @@ struct Environment
 
 struct EnvironmentSnapshot
 {
-    decltype(Environment::renderer) renderer;
+    renderer_queue_test::FrameSnapshot<Guard> renderer;
     decltype(Environment::manager) manager;
     decltype(Environment::auxiliary) auxiliary;
     ClockFrameSnapshot clock;

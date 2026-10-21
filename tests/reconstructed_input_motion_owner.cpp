@@ -167,10 +167,12 @@ bool same_input_except_cursor(const InputState& a, const InputState& b)
 
 struct Environment
 {
-    // These aggregates are valid, borrowed subsystem read models. Their full
-    // original InputState/renderer constructors are neither supplied nor called.
+    // InputState remains its qualified borrowed read model. The renderer now
+    // has a genuine owner and a scoped method view restored before cleanup.
     InputState input{};
-    ScreenRequestRenderer renderer{};
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
     unsigned char instance = 0;
     unsigned char window = 0;
     InputState* old_input = startup_input_state;
@@ -278,7 +280,7 @@ void single_owner(unsigned int format, int identifier)
     ++counts.groups;
     Environment environment(format, identifier);
     const InputState input_before = environment.input;
-    const ScreenRequestRenderer renderer_before = environment.renderer;
+    const renderer_queue_test::Snapshot renderer_before = environment.renderer;
     const auto loads_before = counts.loads;
     const auto sets_before = counts.sets;
     Owner owner("cursor.tga", &environment.window);
@@ -301,7 +303,7 @@ void unconditional_clear()
 {
     ++counts.groups;
     Environment environment(2, 0); // Every non-1 format selects the original 565 branch.
-    const ScreenRequestRenderer renderer_before = environment.renderer;
+    const renderer_queue_test::Snapshot renderer_before = environment.renderer;
     Owner older("cursor.tga", &environment.window);
     Owner younger("cursor.tga", &environment.window);
     require(startup_input_motion_state == younger.value, "younger owner was not published");

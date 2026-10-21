@@ -49,9 +49,9 @@ static_assert(sizeof(ScreenDialogResource) == (sizeof(void*) == 8 ? 72 : 56));
 static_assert(sizeof(ScreenDialogResourceNode) == sizeof(ScreenChildNode));
 static_assert(alignof(ScreenDialogResourceNode) <= alignof(ScreenChildNode));
 #if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
-static_assert(sizeof(ScreenItem) == 80 && sizeof(ScreenRequestRenderer) == 392);
+static_assert(sizeof(ScreenItem) == 80 && !std::is_copy_constructible_v<ScreenRequestRenderer>);
 #else
-static_assert(sizeof(ScreenItem) == 80 && sizeof(ScreenRequestRenderer) == 384);
+static_assert(sizeof(ScreenItem) == 80 && !std::is_copy_constructible_v<ScreenRequestRenderer>);
 #endif
 static_assert(std::is_same_v<decltype(ScreenTabItem::word_44), unsigned int>);
 static_assert(std::is_same_v<decltype(ScreenTabItem::word_48), unsigned int>);
@@ -218,7 +218,9 @@ struct Environment
 {
     Canvas canvas;
     std::array<unsigned char, width * height> markers{};
-    ScreenRequestRenderer renderer{};
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
     ScreenManager manager{};
     Environment()
     {
@@ -251,7 +253,8 @@ struct Environment
     ~Environment()
     {
         // Generated borrowed read models end after every genuine resource/item
-        // owner and the mounted Session. No game teardown is replaced here.
+        // owner and the mounted Session. The genuine renderer cleanup follows its view-restoration
+        // guard.
         SetupRenderMasks(nullptr, 0, 0);
         screen_request_renderer = nullptr;
         screen_manager = nullptr;

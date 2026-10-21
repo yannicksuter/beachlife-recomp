@@ -160,7 +160,9 @@ void verify(const ScreenFontData& font, const generated::Input& source, bool has
 
 struct RendererBinding
 {
-    ScreenRequestRenderer renderer{};
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
     ScreenRequestRenderer* previous = screen_request_renderer;
     RendererBinding()
     {

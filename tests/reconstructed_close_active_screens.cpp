@@ -64,6 +64,28 @@ template <class T> struct Guarded
     }
 };
 
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 16> before{};
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 16> after{};
+    Guarded()
+    {
+        before.fill(0x53);
+        after.fill(0xa9);
+    }
+    void check() const
+    {
+        for (unsigned n = 0; n < before.size(); ++n)
+        {
+            require(before[n] == 0x53 && after[n] == 0xa9, "typed backing guard changed");
+        }
+    }
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
 struct PoolScope
 {
     std::array<unsigned char, 16> before{};
@@ -133,9 +155,7 @@ struct Environment
         renderer.value.software_mode = 1;
         renderer.value.width = 64;
         renderer.value.height = 48;
-        renderer.value.surfaces = nullptr;
-        renderer.value.surfaces_end = nullptr;
-        renderer.value.surfaces_capacity = nullptr;
+        renderer.value.surface_storage.clear();
         renderer.value.draw = nullptr;
         renderer.value.current_surface = -1;
         renderer.value.fill_color = 0x45ab;
@@ -191,27 +211,14 @@ struct Environment
         placements.value.saved.Clear();
 
         auto& r = renderer.value;
-        if (r.surfaces != nullptr)
+        // The actual indexed cleanup above released each WORD allocation.
+        // Entry payloads remain scalar-owned; vector backing is real host storage.
+        for (auto* entry : r.surface_storage)
         {
-            for (auto** p = r.surfaces; p != r.surfaces_end; ++p)
-            {
-                // The real indexed cleanup already released each WORD array.
-                // Entry storage came from scalar operator new, not an array.
-                delete *p;
-                ++surface_releases;
-            }
-            const unsigned bytes = static_cast<unsigned>(
-                (r.surfaces_capacity - r.surfaces) * sizeof(ScreenSurfacePosition*));
-            if (bytes > 128)
-            {
-                ::operator delete(r.surfaces);
-            }
-            else
-            {
-                ReturnPool(r.surfaces, bytes);
-            }
-            r.surfaces = r.surfaces_end = r.surfaces_capacity = nullptr;
+            delete entry;
+            ++surface_releases;
         }
+        r.surface_storage.clear();
         manager.value.registry = nullptr;
         for (auto& link : registry)
         {
@@ -358,7 +365,7 @@ void empty_active_ring()
     environment.check_ring(0);
     require(environment.saved_head.value.next == &environment.saved_head.value &&
                 environment.saved_head.value.previous == &environment.saved_head.value &&
-                environment.renderer.value.surfaces == nullptr,
+                environment.renderer.value.surface_storage.empty(),
         "empty close changed placement or surface ownership");
     environment.check();
 }
@@ -381,8 +388,8 @@ void ordered_placement_and_borrowed_owners()
     oldest->state = 17;
     auto* const first_frame = first.child_44;
     auto* const second_frame = second.child_44;
-    auto* const newest_surface = environment.renderer.value.surfaces[newest->surface];
-    auto* const oldest_surface = environment.renderer.value.surfaces[oldest->surface];
+    auto* const newest_surface = environment.renderer.value.surface_storage[newest->surface];
+    auto* const oldest_surface = environment.renderer.value.surface_storage[oldest->surface];
     auto* const newest_pixels = newest_surface->pixels;
     auto* const oldest_pixels = oldest_surface->pixels;
     CircularListNode* const first_node = environment.active_head.value.next;
@@ -401,8 +408,8 @@ void ordered_placement_and_borrowed_owners()
                 second.child_44 == second_frame && first.state_59 == 0x31 &&
                 second.state_59 == 0x42,
         "close erased/reordered an entry or changed borrowed Dialog ownership");
-    require(environment.renderer.value.surfaces[newest->surface] == newest_surface &&
-                environment.renderer.value.surfaces[oldest->surface] == oldest_surface &&
+    require(environment.renderer.value.surface_storage[newest->surface] == newest_surface &&
+                environment.renderer.value.surface_storage[oldest->surface] == oldest_surface &&
                 newest_surface->active == 1 && oldest_surface->active == 1 &&
                 newest_surface->pixels == newest_pixels &&
                 oldest_surface->pixels == oldest_pixels && newest_pixels[0] == 0x45ab &&
@@ -447,7 +454,7 @@ void either_mode_suppresses_placement()
     require(entry.state == 2 && entry.item == &dialog && entry.context == nullptr &&
                 environment.saved_head.value.next == &environment.saved_head.value &&
                 environment.saved_head.value.previous == &environment.saved_head.value &&
-                environment.renderer.value.surfaces[entry.surface]->active == 1,
+                environment.renderer.value.surface_storage[entry.surface]->active == 1,
         "previous mode6 did not suppress placement or retained ownership changed");
     environment.check_ring(1);
     environment.check();

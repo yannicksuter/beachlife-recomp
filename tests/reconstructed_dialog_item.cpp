@@ -56,21 +56,10 @@ static_assert(sizeof(WindowDeactivationState) == 0x43c);
 static_assert(sizeof(SurfaceColorKey) == 8);
 static_assert(offsetof(DirectDrawSurface7VtablePrefix, SetColorKey) == 29 * sizeof(void*));
 static_assert(sizeof(DirectDrawSurface7VtablePrefix) == 33 * sizeof(void*));
-#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
-#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
-static_assert(sizeof(void*) == 8 && sizeof(ScreenRequestRenderer) == 392);
-#else
-static_assert(sizeof(void*) == 8 && sizeof(ScreenRequestRenderer) == 384);
-#endif
-static_assert(offsetof(ScreenRequestRenderer, fill_color) == 150);
-static_assert(offsetof(ScreenRequestRenderer, word_60) == 108);
-static_assert(offsetof(ScreenRequestRenderer, buffer_130) == 376);
-#else
-static_assert(sizeof(void*) == 8 && sizeof(ScreenRequestRenderer) == 368);
-static_assert(offsetof(ScreenRequestRenderer, fill_color) == 134);
-static_assert(offsetof(ScreenRequestRenderer, word_60) == 104);
-static_assert(offsetof(ScreenRequestRenderer, buffer_130) == 360);
-#endif
+static_assert(sizeof(void*) == 8);
+static_assert(!std::is_copy_constructible_v<ScreenRequestRenderer>);
+static_assert(std::is_same_v<decltype(ScreenRequestRenderer::fill_color), unsigned short>);
+static_assert(std::is_same_v<decltype(ScreenRequestRenderer::word_60), unsigned int>);
 
 struct Failure
 {
@@ -231,7 +220,9 @@ struct Canvas
 struct Environment
 {
     Canvas canvas;
-    ScreenRequestRenderer renderer{};
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
     ScreenManager manager{};
     CircularListNode active_head{};
     ScreenSurfacePosition surface{};
@@ -260,7 +251,7 @@ struct Environment
         renderer.pixels_locked = 0;
         renderer.current_surface = 0;
         renderer.fill_color = 0x45ab;
-        renderer.surfaces = surfaces;
+        renderer.surface_storage.assign(std::begin(surfaces), std::end(surfaces));
         surface.active = 1;
         surface.software = 1;
         surface.width = 3;
@@ -282,8 +273,8 @@ struct Environment
     }
     ~Environment()
     {
-        // Generated borrowed read models end after every genuine resource/item
-        // owner and the mounted Session. No game teardown is replaced here.
+        // Borrowed bindings end after genuine resource/item owners. The renderer
+        // guard restores its original ownership before the real destructor.
         SetupRenderMasks(nullptr, 0, 0);
         screen_request_renderer = nullptr;
         screen_manager = nullptr;

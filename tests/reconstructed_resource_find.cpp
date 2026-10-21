@@ -246,7 +246,9 @@ struct PoolBacking
 
 struct Environment
 {
-    ScreenRequestRenderer renderer{};
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
     Environment()
     {
         require(screen_request_renderer == nullptr && screen_dialog_resources == nullptr &&
