@@ -1588,3 +1588,9 @@ renderer read models. Enable reconstructed tests and experimental game sources,
 then run `ctest --test-dir <build> -R '^reconstructed_screen_activate$' --output-on-failure`.
 The focused fixture supports 64-bit Linux; it does not construct the full Game
 or manager, execute a full menu or qualify GPU presentation.
+
+The matching profile includes the complete ten-byte renderer surface-selection
+method. It matches strictly and byte for byte; changing the stored index with
+XOR1 is rejected against the fixed original extent. Existing comparison results
+are retained. The native profiles preserve their current source selection; this
+match does not qualify a complete renderer lifetime or native rendering path.
