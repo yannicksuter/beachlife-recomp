@@ -1689,3 +1689,12 @@ With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
 The focused fixture covers literal values and cursor positions, consecutive
 reads, the maximum bounded token, and unchanged input/unrelated typed members.
 The library is available with subsystem tests disabled.
+
+The matching profile includes the complete 32-byte MainMenu controller
+constructor with its real base lifetime and ten-slot table. It matches strictly;
+raw bytes differ at relocated addresses. Changing its initial-entry flag from
+1 to 0 is rejected at 90% against the fixed original extent, retaining all 121
+previous comparison results. The physical eight-byte Exit alias retains its
+existing strict and raw match. Native source selections remain unchanged;
+comparison-only anchors and borrowed dependencies do not establish a running
+MainMenu or a complete native Game owner.
