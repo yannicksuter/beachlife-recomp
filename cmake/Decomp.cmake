@@ -3720,3 +3720,36 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
     endif()
 endif()
+# ActivateScreens uses the qualified request, Dialog and active-list path.
+# Keep this subsystem below the existing optional reconstructed-test return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_screen_activate STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_activate.cpp")
+    target_include_directories(beachlife_reconstructed_screen_activate PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_screen_activate PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_screen_activate PUBLIC
+        beachlife_reconstructed_screen_request)
+    add_dependencies(beachlife_reconstructed_screen_activate verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_screen_activate PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_screen_activate PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_screen_activate PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_screen_activate_tests tests/reconstructed_screen_activate.cpp)
+        target_link_libraries(reconstructed_screen_activate_tests PRIVATE
+            beachlife_reconstructed_screen_activate)
+        set_target_properties(reconstructed_screen_activate_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_screen_activate_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_screen_activate_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_screen_activate COMMAND reconstructed_screen_activate_tests)
+        set_tests_properties(reconstructed_screen_activate PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()

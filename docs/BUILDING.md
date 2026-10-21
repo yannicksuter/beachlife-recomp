@@ -1578,3 +1578,13 @@ x86 receiver. Its complete 39-byte body matches strictly; raw bytes differ only
 in the relocated call to the real base method. Removing that call is rejected.
 The native profiles retain their existing ListBox source selection; this match
 does not qualify a complete ListBox lifetime or a native GUI execution path.
+
+The optional `reconstructed_screen_activate_tests` target exercises the complete
+`ScreenManager::ActivateScreens` method. Three generated cases preserve the
+ScenarioWon/ScenarioLost guards and otherwise request a genuine PauseBox with
+null context and flag1 on the incoming manager. Actual Dialog/Frame ownership,
+active-list operations and software surfaces are used with borrowed manager and
+renderer read models. Enable reconstructed tests and experimental game sources,
+then run `ctest --test-dir <build> -R '^reconstructed_screen_activate$' --output-on-failure`.
+The focused fixture supports 64-bit Linux; it does not construct the full Game
+or manager, execute a full menu or qualify GPU presentation.
