@@ -269,6 +269,25 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+# Real mode selection and progress-file loading, available without subsystem tests.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_game_mode_progress STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_game_set_byte_a4.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_game_scenario_progress.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_game_progress_path.cpp")
+    target_include_directories(beachlife_reconstructed_game_mode_progress PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_game_mode_progress PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_game_mode_progress verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_game_mode_progress PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_game_mode_progress PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_game_mode_progress PRIVATE -fno-lto)
+    endif()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -3088,6 +3107,39 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         # cleanup marker; PASS_REGULAR_EXPRESSION must not override a failed exit.
     endif()
 endif()
+# The complete menu action composes the real close/request subsystem.
+# This focused optional target follows the existing test-only return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_menu_show_main STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_show_main_menu.cpp")
+    target_include_directories(beachlife_reconstructed_menu_show_main PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_menu_show_main PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_menu_show_main PUBLIC
+        beachlife_reconstructed_close_active_screens)
+    add_dependencies(beachlife_reconstructed_menu_show_main verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_menu_show_main PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_menu_show_main PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_menu_show_main PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_menu_show_main_tests tests/reconstructed_menu_show_main.cpp)
+        target_link_libraries(reconstructed_menu_show_main_tests PRIVATE
+            beachlife_reconstructed_menu_show_main)
+        set_target_properties(reconstructed_menu_show_main_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_menu_show_main_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_menu_show_main_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_menu_show_main COMMAND reconstructed_menu_show_main_tests)
+        set_tests_properties(reconstructed_menu_show_main PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
 
 # Genuine ImageItem owns a real resource wrapper and retains the complete base.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
@@ -3334,6 +3386,59 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
 endif()
 
+# Generated files exercise the real mode/progress body over a typed borrowed prefix.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+        AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    add_executable(reconstructed_game_mode_progress_tests
+        tests/reconstructed_game_mode_progress.cpp)
+    target_link_libraries(reconstructed_game_mode_progress_tests PRIVATE
+        beachlife_reconstructed_game_mode_progress)
+    set_target_properties(reconstructed_game_mode_progress_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_game_mode_progress_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_game_mode_progress_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_game_mode_progress COMMAND reconstructed_game_mode_progress_tests)
+    set_tests_properties(reconstructed_game_mode_progress PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# The complete Scenario action composes real mode/FILE loading and close/request.
+# This focused optional target follows the existing test-only return.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_menu_show_scenario STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_show_scenario.cpp")
+    target_include_directories(beachlife_reconstructed_menu_show_scenario PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_menu_show_scenario PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_menu_show_scenario PUBLIC
+        beachlife_reconstructed_game_mode_progress
+        beachlife_reconstructed_close_active_screens)
+    add_dependencies(beachlife_reconstructed_menu_show_scenario verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_menu_show_scenario PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_menu_show_scenario PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_menu_show_scenario PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_menu_show_scenario_tests
+            tests/reconstructed_menu_show_scenario.cpp)
+        target_link_libraries(reconstructed_menu_show_scenario_tests PRIVATE
+            beachlife_reconstructed_menu_show_scenario)
+        set_target_properties(reconstructed_menu_show_scenario_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_menu_show_scenario_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_menu_show_scenario_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_menu_show_scenario COMMAND reconstructed_menu_show_scenario_tests)
+        set_tests_properties(reconstructed_menu_show_scenario PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+
 # This real nonvirtual helper completes a RadioItem update dependency.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_library(beachlife_reconstructed_item_clear_manager STATIC
@@ -3364,5 +3469,31 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         add_test(NAME reconstructed_item_clear_manager COMMAND reconstructed_item_clear_manager_tests)
         set_tests_properties(reconstructed_item_clear_manager PROPERTIES
             LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+
+# The complete Sandbox callback shares the qualified Scenario owner fixture.
+# Append after its existing target; retain the optional reconstructed-test gate.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_menu_play_sandbox STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_gui_play_sandbox.cpp")
+    target_include_directories(beachlife_reconstructed_menu_play_sandbox PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_menu_play_sandbox PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_menu_play_sandbox PUBLIC
+        beachlife_reconstructed_game_mode_progress
+        beachlife_reconstructed_close_active_screens)
+    add_dependencies(beachlife_reconstructed_menu_play_sandbox verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_menu_play_sandbox PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_menu_play_sandbox PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_menu_play_sandbox PRIVATE -fno-lto)
+    endif()
+
+    if(TARGET reconstructed_menu_show_scenario_tests)
+        target_link_libraries(reconstructed_menu_show_scenario_tests PRIVATE
+            beachlife_reconstructed_menu_play_sandbox)
     endif()
 endif()

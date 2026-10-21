@@ -1397,6 +1397,13 @@ names and the real fatal exit before registration. The definition index borrows
 items owned by the all-items chain. This subsystem does not execute the complete
 GUI dispatcher or establish front-end/gameplay readiness.
 
+The optional `reconstructed_menu_show_main_tests` target connects the complete
+menu action to real active-screen closing and screen requests. One generated
+Linux 64-bit case checks placement restoration, closing/new-entry order, null
+contexts and genuine Dialog/Frame, list and software-surface cleanup. It uses
+the existing typed subsystem read models; action-table ownership, nonnull
+callbacks and a running menu remain separate.
+
 The experimental `reconstructed_gui_image_item_tests` target composes the complete
 ImageItem with the real base, resource owner, mounted readers and drawing code.
 Its finite generated format-1 resource exercises two genuine image lifetimes,
@@ -1448,12 +1455,39 @@ actual class table. The focused fixture is Linux 64-bit only. Full manager,
 owner190 producer/list lifetime and menu execution remain separate capabilities.
 Default source profiles are unchanged.
 
+The experimental `beachlife_reconstructed_game_mode_progress` library combines
+the real mode-byte setter, scenario-progress loader and sole progress-path
+global. It remains available with reconstructed tests disabled. On 64-bit Linux,
+`reconstructed_game_mode_progress_tests` uses generated missing, partial and
+complete binary files to check the original defaults, low-byte flags, capped
+index and exact mode bytes through the actual CRT. Its typed game prefix is a
+bounded read model; this does not construct the full game or start the menu.
+Other platforms and full game-owner integration remain separate qualification.
+
+The optional `reconstructed_menu_show_scenario_tests` target connects the complete
+Scenario action to real mode/progress-file loading, active-screen closing and
+screen requests. One generated Linux 64-bit case checks the loaded progress,
+placement restoration, null contexts and genuine Dialog/Frame, list and software
+surface cleanup. The game, manager and renderer prefixes are typed subsystem
+read models; full game/action-table ownership and a running menu remain separate.
+Default source profiles are unchanged.
+
 The optional `reconstructed_item_clear_manager_tests` target exercises the real
 item-to-manager reference-clearing helper with two genuine base-item lifetimes.
 Its focused Linux 64-bit cases cover matched and unmatched items, a changed
 current manager, retained fields and a null auxiliary on the unmatched path.
 The manager and auxiliary are typed borrowed prefixes; this does not construct
 their complete owners or qualify the RadioItem class or a running menu.
+
+The Sandbox extension adds the real `MenuPlaySandbox` callback to the same
+`reconstructed_menu_show_scenario_tests` fixture. The two generated cases
+check mode 0/progress index 8 and mode 1/index 0, respectively; both original
+actions request `ScenarioScreen`. They share the real file loader, closing,
+request, placement and Dialog/Frame cleanup paths. The separate
+`beachlife_reconstructed_menu_play_sandbox` archive is selected only with the
+experimental reconstructed tests. Linux 64-bit qualification covers this
+bounded subsystem; full game/action-table ownership, other platforms and a
+running menu remain separate. Default source profiles are unchanged.
 
 The same experimental image-parser target also supplies the genuine `Icon`
 handler and image-resource configuration. Run the `reconstructed_gui_parse_icon`
