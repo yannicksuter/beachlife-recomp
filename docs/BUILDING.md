@@ -1733,3 +1733,12 @@ Hardware display initialization and unsupported geometry fail explicitly.
 Presentation, capture and the complete Game/controller flow remain separate
 dependencies. This owner does not change normal Play or enable gameplay by
 itself, and experimental selection remains off by default.
+
+The matching profile includes the complete 165-byte GUI floating-point reader.
+It matches strictly, with relocated bytes differing. A control that stops
+consuming the closing delimiter is rejected at 82.44% against the fixed
+original extent, while all 122 previous results are retained. The real
+`atof` import and borrowed parser fixture are included; comparison images
+are not executed. Native source selections and their existing Float
+qualification remain unchanged. This does not qualify a complete parser
+owner or frontend flow.
