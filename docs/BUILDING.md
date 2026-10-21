@@ -100,6 +100,12 @@ output, outside the prepared source export, and excludes them from credited
 methods. These definitions establish comparison addresses only. An image using
 them must never be executed; native builds require the actual dependency source.
 
+Supported anchor kinds are `null-pointer-member` for pointer returns,
+`void-member` for `void` returns and `false-member` for `bool` returns. Each
+entry must identify one audited original method and its exact CSV symbol and
+extent. Constructors, destructors and other return types are unsupported;
+an anchor does not qualify a dependency as reconstructed or native-tested.
+
 ## Reconstructed configuration libraries
 
 Build the prepared configuration and VFS file libraries without test executables:
@@ -1383,3 +1389,152 @@ empty lists, closing-state publication and same-group placement order, and both
 mode-6 placement exclusions. Cleanup uses real surface and node operations.
 The Linux 64-bit fixture uses null contexts and typed subsystem read models;
 full manager construction, nonnull callbacks and gameplay remain separate.
+
+The experimental `reconstructed_gui_parse_define_tests` target exercises the
+complete Define handler with genuine defined-item, child-ring, registration
+and context lifetimes. Its Linux fixture covers nested definitions, duplicate
+names and the real fatal exit before registration. The definition index borrows
+items owned by the all-items chain. This subsystem does not execute the complete
+GUI dispatcher or establish front-end/gameplay readiness.
+
+The optional `reconstructed_menu_show_main_tests` target connects the complete
+menu action to real active-screen closing and screen requests. One generated
+Linux 64-bit case checks placement restoration, closing/new-entry order, null
+contexts and genuine Dialog/Frame, list and software-surface cleanup. It uses
+the existing typed subsystem read models; action-table ownership, nonnull
+callbacks and a running menu remain separate.
+
+The experimental `reconstructed_gui_image_item_tests` target composes the complete
+ImageItem with the real base, resource owner, mounted readers and drawing code.
+Its finite generated format-1 resource exercises two genuine image lifetimes,
+reference release, preparation-gated pixels, right clipping and inclusive input.
+The current fixture is Linux 64-bit only. Manager and renderer prefixes are
+explicit borrowed read models; this does not establish a complete GUI owner,
+hardware presentation or menu flow. Default source profiles are unchanged.
+
+The optional `reconstructed_gui_parse_image_tests` target connects complete
+IMAGE parsing to genuine Image construction, resource lookup and software
+drawing. Generated mounted files exercise unnamed registration, relative
+parent geometry, optional owned text and real link/resource teardown. A
+separate missing-opening-bracket entry reaches the actual fatal reporter.
+The parser, manager and localization prefixes remain typed subsystem read
+models; full script dispatch and a running menu are separate capabilities.
+
+The experimental `reconstructed_gui_tab_item_tests` target composes the complete
+TabItem with real base, child-ring, Frame and resource lifetimes. Three generated
+groups cover borrowed-child survival, activation/preparation and movement,
+cached two-plane pixels, and selected-coordinate propagation. The mounted files,
+palette and guarded canvas are generated; there are no game-method providers.
+The fixture is Linux 64-bit only and uses typed borrowed manager/renderer read
+models. Full GUI ownership, hardware presentation and menu flow remain separate.
+Default source profiles are unchanged.
+
+The experimental `reconstructed_gui_parse_tab_tests` target connects the complete
+TAB-context handler to genuine Tab/Frame/resource/ring lifetimes and real parser
+readers and registration. Generated inputs exercise absolute coordinates,
+registration before alternate-context publication, raw owned labels and literal
+resource pixels. A separate process checks the real missing-open fatal path.
+The fixture is Linux 64-bit only; parser, manager, renderer and localization
+prefixes are bounded read models. It does not establish full GUI ownership,
+script dispatch, hardware presentation or menu flow. Default profiles are unchanged.
+
+The experimental `reconstructed_gui_parse_main640_tests` target exercises the
+complete MAIN640 handler with genuine Frame and context lifetimes. Generated
+inputs check construction only at width 640, raw nested-brace skipping at other
+widths, publication before brace validation, and real fatal termination with
+fixture-owned cleanup. The focused fixture is Linux 64-bit only and uses typed
+borrowed parser, manager and renderer read models. It does not establish the
+complete parser/GUI owner, command dispatcher, presentation or menu flow.
+Default source profiles remain unchanged.
+
+The experimental `reconstructed_menu_owner190_entry_destroy_tests` target
+exercises the distinct owner190 entry callback with null payloads and genuine
+Text/base scalar ownership. A separate constructed observer checks virtual
+destruction before the record is released; the plain Text case retains its
+actual class table. The focused fixture is Linux 64-bit only. Full manager,
+owner190 producer/list lifetime and menu execution remain separate capabilities.
+Default source profiles are unchanged.
+
+The experimental `beachlife_reconstructed_game_mode_progress` library combines
+the real mode-byte setter, scenario-progress loader and sole progress-path
+global. It remains available with reconstructed tests disabled. On 64-bit Linux,
+`reconstructed_game_mode_progress_tests` uses generated missing, partial and
+complete binary files to check the original defaults, low-byte flags, capped
+index and exact mode bytes through the actual CRT. Its typed game prefix is a
+bounded read model; this does not construct the full game or start the menu.
+Other platforms and full game-owner integration remain separate qualification.
+
+The optional `reconstructed_menu_show_scenario_tests` target connects the complete
+Scenario action to real mode/progress-file loading, active-screen closing and
+screen requests. One generated Linux 64-bit case checks the loaded progress,
+placement restoration, null contexts and genuine Dialog/Frame, list and software
+surface cleanup. The game, manager and renderer prefixes are typed subsystem
+read models; full game/action-table ownership and a running menu remain separate.
+Default source profiles are unchanged.
+
+The optional `reconstructed_item_clear_manager_tests` target exercises the real
+item-to-manager reference-clearing helper with two genuine base-item lifetimes.
+Its focused Linux 64-bit cases cover matched and unmatched items, a changed
+current manager, retained fields and a null auxiliary on the unmatched path.
+The manager and auxiliary are typed borrowed prefixes; this does not construct
+their complete owners or qualify the RadioItem class or a running menu.
+
+The Sandbox extension adds the real `MenuPlaySandbox` callback to the same
+`reconstructed_menu_show_scenario_tests` fixture. The two generated cases
+check mode 0/progress index 8 and mode 1/index 0, respectively; both original
+actions request `ScenarioScreen`. They share the real file loader, closing,
+request, placement and Dialog/Frame cleanup paths. The separate
+`beachlife_reconstructed_menu_play_sandbox` archive is selected only with the
+experimental reconstructed tests. Linux 64-bit qualification covers this
+bounded subsystem; full game/action-table ownership, other platforms and a
+running menu remain separate. Default source profiles are unchanged.
+
+The experimental `beachlife_reconstructed_sea_state_owner` archive contains the
+real sea-state constructor, destructor and byte setter. It is available with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` even when reconstructed tests are disabled.
+The optional Linux 64-bit `reconstructed_sea_state_owner_tests` target checks
+genuine placement lifetimes, all observed opaque bytes and outside guards,
+byte values `0`, `0x80` and `0xff`, and real scalar ownership. The fixture defines
+no allocation or game-method replacements. The parent renderer setter and its
+tail-pointer migration remain separate; this capability does not construct the
+complete renderer or establish menu/GPU gameplay. The experimental option stays
+off by default; other platform qualification remains separate.
+
+The optional experimental renderer sea setter forwards the complete argument
+byte to the genuine sea-state owner. Its standalone library links the real
+child lifetime/setter library and remains available with reconstructed tests
+disabled. The focused Linux 64-bit test uses a typed renderer read model, its
+real native rectangle queue, and genuine child construction/destruction; it
+checks receiver changes, bytes 0/128/255, owned storage and retained state.
+The appended native pointer follows the host ABI, not the original x86 offset.
+Full renderer/platform construction, sea rendering, Windows/macOS execution
+and gameplay remain separate capabilities. Experimental selection is off by
+default and does not imply a strict byte match.
+
+The experimental `beachlife_reconstructed_sound_bank` library provides the complete
+sound-bank FILE, bucket, record and cached-sample lifetime sources, including the
+real index loader and sample lookup. It is available with reconstructed tests
+disabled. `reconstructed_sound_bank_owner_tests` uses generated local index/data
+files for empty, two-record and duplicate-key banks, checking cold/hot reads,
+reference and cache totals, FILE closure and genuine destruction. The focused
+qualification targets 64-bit little-endian Linux with the C ASCII locale;
+Windows/macOS and audio playback are separate gates. Original unchecked
+size/name reads, open-error behavior and unpublished full-table leaks remain
+unchanged; these unsafe inputs are outside the fixture's defined domain.
+The source profile stays experimental and off by default.
+
+The same experimental image-parser target also supplies the genuine `Icon`
+handler and image-resource configuration. Run the `reconstructed_gui_parse_icon`
+test for generated-data parsing, registration, parent attachment, pixel drawing
+and real image/resource cleanup. The existing subsystem remains selected by
+reconstructed tests; this does not activate the full GUI parser or game menu.
+
+The sound-bank fixture also exercises genuine named-sample release and cache
+aging: reference transitions, the original unsigned underflow, exact-five
+retention, eviction after a retained sum exceeds five, and real FILE reloading.
+The timer is a typed float and is still left untouched by the original loader
+and lookup. This focused extension requires Linux x86-64 with a 64-bit
+long-double significand; its near-threshold case preserves the wider sum across
+the float store. It does not establish all original x87 control-word behavior.
+Other floating-point ABIs, Windows/macOS and audio playback remain separate
+qualification gates; the existing experimental option stays off by default.

@@ -1,0 +1,116 @@
+Restore the unchanged native game prefix before native source composition.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 45f498554e3ed14508eca57d5971b278d7232cd2..4ca86dd195e68c6966890d47746a0a5cb3bb4c22 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -213,7 +213,7 @@
+ typedef char save_manager_previous_check[offsetof(ScreenManager, previous_mode) == 0x12c ? 1 : -1];
+ typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x130 ? 1 : -1];
+ typedef char save_game_placement_check[offsetof(ScreenRequestGamePrefix, placement) == 0x54 ? 1 : -1];
+-typedef char save_game_prefix_size_check[sizeof(ScreenRequestGamePrefix) == 0xa8 ? 1 : -1];
++typedef char save_game_prefix_size_check[sizeof(ScreenRequestGamePrefix) == 0x58 ? 1 : -1];
+ typedef char save_rectangle_size_check[sizeof(ScreenRectangle) == 16 ? 1 : -1];
+ 
+ // Called after the actual writer creates group5 in the existing fixture store.
+@@ -1045,20 +1045,3 @@
+     MenuPlaySandbox(value);
+     fixture_menu_sandbox_completed = 1;
+ }
+-
+-#include <stddef.h>
+-
+-typedef char FixtureGameModeOffset[(offsetof(ScreenRequestGamePrefix, byte_a4) == 0xa4) ? 1 : -1];
+-volatile unsigned char fixture_game_mode_input;
+-ScreenRequestGamePrefix* volatile fixture_game_mode_owner;
+-volatile unsigned int fixture_game_mode_completed;
+-
+-// Compile/link retention only; the real progress body is a comparison anchor.
+-// This helper and its linked comparison image must never be executed.
+-extern "C" __declspec(dllexport) void FixtureGameSetByteA4(ScreenRequestGamePrefix* game, unsigned char value)
+-{
+-    fixture_game_mode_input = value;
+-    fixture_game_mode_owner = game;
+-    game->SetByteA4(value);
+-    fixture_game_mode_completed = 1;
+-}
+diff --git a/metadata.csv b/metadata.csv
+index 364e12e470f61ce5952691c88382302fd425967a..547538d24c36109bdcf008a888eac2223a8b883d 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -84,4 +84,3 @@
+ 0x004e3db0,function,18,?SetByteA4@ScreenRequestGamePrefix@@QAEXE@Z
+ 0x0057e4b4,string,15,
+ 0x004a32e0,function,45,?MenuPlaySandbox@@YAXI@Z
+-0x004e4000,function,243,?LoadScenarioProgress@ScreenRequestGamePrefix@@QAEXXZ
+diff --git a/src/startup_game_set_byte_a4.cpp b/src/startup_game_set_byte_a4.cpp
+deleted file mode 100644
+index 1e13eb476a1100694a11d58060528536612bf8b6..0000000000000000000000000000000000000000
+--- a/src/startup_game_set_byte_a4.cpp
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#include "startup_screen_manager.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e3db0
+-void ScreenRequestGamePrefix::SetByteA4(unsigned char value)
+-{
+-    byte_a4 = value;
+-    LoadScenarioProgress();
+-}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index dd5da91b6234c0ce258fc2d10be8ff9318e97498..43b4aff049292fbfebdb27c62d625fc9a6b0dff4 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -18,14 +18,10 @@
+     ScreenManager* screens;
+     unsigned char unknown_4c[8];
+     ScreenPlacementStore* placement;
+-    unsigned char unknown_58[0x4c];
+-    unsigned char byte_a4;
+ 
+     bool LoadControllerScreen(const char* path);
+     // Actual 0x004e3db0, RET4: stores the byte at +a4, then calls 0x004e4000.
+     void SetByteA4(unsigned char value);
+-    // Actual 0x004e4000; complete progress/FILE body remains a dependency.
+-    void LoadScenarioProgress();
+ };
+ 
+ // Observed manager prefix only. Complete construction, destruction and field
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index c1ce8db6073d1b9180920cd4a713ccedd0baee2b..6503289bcca3c549a3f275fff8ac1a0e17342e2a 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -532,11 +532,6 @@
+       "address": "0x004a32e0",
+       "size": 45,
+       "name": "MenuPlaySandbox"
+-    },
+-    {
+-      "address": "0x004e3db0",
+-      "size": 18,
+-      "name": "ScreenRequestGamePrefix::SetByteA4"
+     }
+   ],
+   "library_functions": [
+@@ -813,14 +808,16 @@
+       "parameters": []
+     },
+     {
+-      "address": "0x004e4000",
+-      "size": 243,
+-      "name": "ScreenRequestGamePrefix::LoadScenarioProgress",
+-      "symbol": "?LoadScenarioProgress@ScreenRequestGamePrefix@@QAEXXZ",
++      "address": "0x004e3db0",
++      "size": 18,
++      "name": "ScreenRequestGamePrefix::SetByteA4",
++      "symbol": "?SetByteA4@ScreenRequestGamePrefix@@QAEXE@Z",
+       "header": "startup_screen_manager.h",
+       "kind": "void-member",
+       "return_type": "void",
+-      "parameters": []
++      "parameters": [
++        "unsigned char"
++      ]
+     }
+   ]
+ }

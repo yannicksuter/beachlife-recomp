@@ -580,7 +580,11 @@ void prepare(const Literal& literal)
     observed.parser.value.context_head = nullptr;
     observed.parser.value.previous_context = nullptr;
     observed.parser.value.last_registered_item = nullptr;
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+    observed.parser.value.defined_items = nullptr;
+#else
     std::memset(observed.parser.value.unknown_24, 0x5a, sizeof(observed.parser.value.unknown_24));
+#endif
     observed.parser.value.registry_head = nullptr;
     observed.parser.value.items_head = nullptr;
     observed.parser.value.items_tail = nullptr;

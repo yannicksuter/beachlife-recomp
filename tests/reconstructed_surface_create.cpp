@@ -117,10 +117,17 @@ struct PoolScope
 
 void layout(const ScreenRequestRenderer& r)
 {
+    std::size_t renderer_bytes = 384;
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+    renderer_bytes += sizeof(r.sea_state_134);
+#endif
     const auto offset = [&](const void* p)
     {
         return reinterpret_cast<std::uintptr_t>(p) - reinterpret_cast<std::uintptr_t>(&r);
     };
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+    require(offset(&r.sea_state_134) == 384, "sea-state pointer native offset differs");
+#endif
     require(offset(r.unknown_20) == 40 && sizeof(r.unknown_20) == 24 && offset(&r.draw) == 64 &&
                 offset(r.unknown_3c) == 72 && sizeof(r.unknown_3c) == 8,
         "draw-pointer native layout differs");
@@ -129,7 +136,7 @@ void layout(const ScreenRequestRenderer& r)
         "table endpoint native layout differs");
     require(offset(&r.word_60) == 108 && offset(&r.fill_color) == 150 &&
                 offset(&r.dirty_rectangles) == 152 && sizeof(RendererRectangleQueue) == 80 &&
-                offset(&r.buffer_130) == 376 && sizeof(r) == 384,
+                offset(&r.buffer_130) == 376 && sizeof(r) == renderer_bytes,
         "retained native suffix or size differs");
 }
 

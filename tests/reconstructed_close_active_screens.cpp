@@ -150,6 +150,18 @@ struct Environment
         manager.value.previous_mode = 6;
         placements.value.saved.head = &saved_head.value;
         game.value.placement = &placements.value;
+#if defined(BEACHLIFE_DECOMP_GAME_PROGRESS)
+        for (auto& value : game.value.unknown_58)
+        {
+            value = 0x6d;
+        }
+        for (auto& value : game.value.words_70)
+        {
+            value = 0x13579bdfu;
+        }
+        game.value.scenario_a0 = 0x2468ace0u;
+        game.value.byte_a4 = 0x5a;
+#endif
         screen_request_renderer = &bounds_renderer.value;
         screen_request_game = &game.value;
         screen_manager = &manager.value;
@@ -317,6 +329,18 @@ struct Environment
         bounds_renderer.check();
         manager.check();
         game.check();
+#if defined(BEACHLIFE_DECOMP_GAME_PROGRESS)
+        for (auto value : game.value.unknown_58)
+        {
+            require(value == 0x6d, "unused game opaque tail changed");
+        }
+        for (auto value : game.value.words_70)
+        {
+            require(value == 0x13579bdfu, "unused game progress word changed");
+        }
+        require(game.value.scenario_a0 == 0x2468ace0u && game.value.byte_a4 == 0x5a,
+            "unused game scenario or mode changed");
+#endif
         placements.check();
         active_head.check();
         saved_head.check();

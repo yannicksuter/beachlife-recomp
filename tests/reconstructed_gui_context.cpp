@@ -532,7 +532,11 @@ struct Scenario
         state.alternate_context_14 = item(B);
         state.previous_context = item(initial.previous);
         state.last_registered_item = item(C);
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+        state.defined_items = nullptr;
+#else
         std::memset(state.unknown_24, 0x79, sizeof(state.unknown_24));
+#endif
         state.word_38 = 0x86421357u;
         ScreenChildLink* tail = nullptr;
         for (unsigned i = 0; i < initial.history.count; ++i)

@@ -181,6 +181,12 @@ bool same_prefix(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b)
         return false;
     }
 #endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+    if (a.sea_state_134 != b.sea_state_134)
+    {
+        return false;
+    }
+#endif
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
     if (!same_bytes(a.unknown_a8, b.unknown_a8) || a.buffer_130 != b.buffer_130)
     {
@@ -264,6 +270,9 @@ void initialize(Frame& frame, unsigned short* pixels, ScreenSurfacePosition** su
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
     pattern(r.unknown_a8, 0x91);
     r.buffer_130 = nullptr;
+#endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+    r.sea_state_134 = nullptr;
 #endif
 }
 

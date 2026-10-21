@@ -115,7 +115,11 @@ struct Environment
         parser.value.items_tail = &unused;
         parser.value.word_38 = 0x13579bdfU;
         parser.value.word_3c = 0x2468ace0U;
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+        parser.value.defined_items = nullptr;
+#else
         renderer_queue_test::pattern(parser.value.unknown_24, 0x75);
+#endif
         screen_request_renderer = &renderer.value;
         screen_manager = &manager.value;
     }
@@ -183,7 +187,11 @@ void parser_preserved(const GuiParserState& p, const GuiParserState& old)
                 p.registry_head == old.registry_head && p.registry_tail == old.registry_tail &&
                 p.items_head == old.items_head && p.items_tail == old.items_tail &&
                 p.word_38 == old.word_38 && p.word_3c == old.word_3c &&
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+                p.defined_items == old.defined_items,
+#else
                 renderer_queue_test::same_bytes(p.unknown_24, old.unknown_24),
+#endif
         "unrelated parser field changed");
 }
 void manager_preserved(const ScreenManager& m, const ScreenManager& old)

@@ -438,7 +438,7 @@ def comparison_anchor_specs(metadata, target):
     keys = {'address', 'size', 'name', 'symbol', 'header', 'kind', 'return_type', 'parameters'}
     for item in specs:
         if (not isinstance(item, dict) or set(item) != keys or
-                item.get('kind') not in ('null-pointer-member', 'void-member') or
+                item.get('kind') not in ('null-pointer-member', 'void-member', 'false-member') or
                 not isinstance(item.get('address'), str) or
                 not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item['address']) or
                 type(item.get('size')) is not int or item['size'] <= 0 or
@@ -451,8 +451,12 @@ def comparison_anchor_specs(metadata, target):
                 not isinstance(item.get('return_type'), str) or
                 not ((item['kind'] == 'null-pointer-member' and
                       re.fullmatch(r'[A-Za-z_]\w*\*', item['return_type'])) or
-                     (item['kind'] == 'void-member' and item['return_type'] == 'void')) or
-                item.get('parameters') != ['const char*']):
+                     (item['kind'] == 'void-member' and item['return_type'] == 'void') or
+                     (item['kind'] == 'false-member' and item['return_type'] == 'bool')) or
+                not isinstance(item.get('parameters'), list) or len(item['parameters']) > 4 or
+                not all(isinstance(parameter, str) and
+                        re.fullmatch(r'(?:const )?(?:unsigned )?[A-Za-z_]\w*\*?', parameter)
+                        for parameter in item['parameters'])):
             raise ValueError('Unsupported comparison-only anchor declaration.')
         start, end = int(item['address'], 16), int(item['address'], 16) + item['size']
         if (end > 0x100000000 or item['name'] in names or item['symbol'] in symbols or
@@ -492,14 +496,23 @@ def generate_comparison_anchors(metadata, source, folder, specs):
     destination.mkdir(parents=True, exist_ok=True)
     records = []
     for item, path in zip(specs, paths):
-        statement = ('    return 0;\n' if item['kind'] == 'null-pointer-member'
-                     else '    (void)argument;\n')
+        names = (['argument'] if len(item['parameters']) == 1 else
+                 ['argument' + str(index) for index in range(1, len(item['parameters']) + 1)])
+        parameters = ', '.join(type_name + ' ' + name for type_name, name in zip(item['parameters'], names))
+        if item['kind'] == 'void-member':
+            statement = ''.join('    (void)' + name + ';\n' for name in names)
+        else:
+            statement = '    return 0;\n' if item['kind'] == 'null-pointer-member' else '    return false;\n'
+        # A file-local marker keeps identical-COMDAT folding from merging an
+        # anchor with another anchor or with a credited body of the same code.
         body = (f'#include "{item["header"]}"\n\n'
                 '// GENERATED COMPARISON-ONLY ANCHOR. Never execute this image.\n'
                 '// This is no implementation or qualification of the original dependency.\n'
+                'static volatile unsigned int comparison_anchor_marker;\n\n'
                 f'// FUNCTION: BEACHLIFE {item["address"]}\n'
-                f'{item["return_type"]} {item["name"]}(const char* argument)\n'
-                '{\n' + statement + '}\n')
+                f'{item["return_type"]} {item["name"]}({parameters})\n'
+                '{\n'
+                f'    comparison_anchor_marker = {item["address"]};\n' + statement + '}\n')
         if path.exists() and path.read_text() != body:
             raise ValueError('Comparison-only source changed; use a fresh build directory.')
         if not path.exists():

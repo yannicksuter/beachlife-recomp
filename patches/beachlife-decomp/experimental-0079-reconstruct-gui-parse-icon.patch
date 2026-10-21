@@ -1,0 +1,82 @@
+Reconstruct Icon parsing and its genuine image-resource configuration.
+
+diff --git a/src/startup_gui_parse_icon.cpp b/src/startup_gui_parse_icon.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..65793cafda9d63a3a03651bdd56fb94e0d5ace81
+--- /dev/null
++++ b/src/startup_gui_parse_icon.cpp
+@@ -0,0 +1,30 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_image_item.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ad0b0
++void GuiParserState::ParseIcon()
++{
++    const char* data = buffer;
++    if (data[cursor] != '(')
++    {
++        StartupFatal("GUIManager::ProcessIcon - Script Error \r\nNo open bracket found at file offset - %u", cursor);
++        return;
++    }
++    ++cursor;
++    while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    ScreenRectangle rectangle;
++    ReadRectangle(rectangle, current_context);
++    char resource_name[64];
++    ReadText(resource_name);
++    int value;
++    ReadInteger(value, true);
++    ScreenImageItem* item = new ScreenImageItem(rectangle, resource_name);
++    item->ConfigureIcon(value);
++    RegisterItem(item, 0);
++}
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+index 5937768caf76e9035f8e00a4e5a24f1c4bad9a03..f1b313525fc3a4d4a74834901a84c92e6860d593 100644
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -46,6 +46,7 @@
+     void ParseImage();
+     void ParseTabContext();
+     void ParseMainItem640();
++    void ParseIcon();
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_image_item.h b/src/startup_screen_image_item.h
+index 0ec5e5b049286323fc9ae4b854016933d37cbc60..3a15971614e0d2053fd19467e016d2af0d80b017 100644
+--- a/src/startup_screen_image_item.h
++++ b/src/startup_screen_image_item.h
+@@ -14,7 +14,10 @@
+     char resource_name[32];         // Original +0x48; unchecked constructor copy including NUL.
+ 
+     ScreenImageItem(ScreenRectangle initial, const char* name); // 0x004c3bb0, RET20.
+-    virtual ~ScreenImageItem();                                 // Ordinary 0x004c3cc0; deleting wrapper 0x004c3ca0.
++    // Actual 0x004c3e10, RET4; resource mode/index then virtual preparation.
++    void ConfigureIcon(int value);
++
++    virtual ~ScreenImageItem(); // Ordinary 0x004c3cc0; deleting wrapper 0x004c3ca0.
+ 
+     virtual void Unresolved04(float elapsed);                     // 0x004c3d20.
+     virtual void Unresolved0c();                                  // 0x004c3d30.
+diff --git a/src/startup_screen_image_item_icon.cpp b/src/startup_screen_image_item_icon.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..074cf058f95a100b29019d7bb3e1145834ee82d6
+--- /dev/null
++++ b/src/startup_screen_image_item_icon.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_image_item.h"
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x004c3e10
++void ScreenImageItem::ConfigureIcon(int value)
++{
++    resource->word_08 = 3;
++    resource->word_14 = value;
++    MarkPrepared();
++}

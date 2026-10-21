@@ -1,0 +1,92 @@
+Restore the native audio prefix before experimental source composition.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 4240be5b68552ac28ba8f3baf94371e81028e2e2..29a364d8c7e34d4b33499b5f24787e2bddfa21b6 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1152,33 +1152,3 @@
+     fixture_radio_flag10_after = item->flags_44;
+     fixture_radio_flag10_prepared = item->preparation_flag;
+ }
+-
+-#include "window_activation.h"
+-
+-typedef char AudioClearSize[(sizeof(WindowAudioState) == 0x10) ? 1 : -1];
+-typedef char AudioClearEnabledOffset[(offsetof(WindowAudioState, enabled) == 0) ? 1 : -1];
+-typedef char AudioClearDriverOffset[(offsetof(WindowAudioState, digital_driver) == 4) ? 1 : -1];
+-typedef char AudioClearOpaqueOffset[(offsetof(WindowAudioState, unknown_08) == 8) ? 1 : -1];
+-typedef char AudioClearStreamOffset[(offsetof(WindowAudioState, stream) == 12) ? 1 : -1];
+-
+-WindowAudioState* volatile fixture_audio_clear_receiver;
+-WindowAudioState* volatile fixture_audio_clear_before;
+-WindowAudioState* volatile fixture_audio_clear_registered;
+-WindowAudioState* volatile fixture_audio_clear_after;
+-WindowAudioState* volatile fixture_audio_clear_restored;
+-
+-// Compile/link retention only: receiver is a borrowed live audio owner; other is
+-// null or another borrowed live owner. This constructs no owner and claims no
+-// full audio lifetime. Never execute this comparison-only image or helper.
+-extern "C" __declspec(dllexport) void FixtureAudioClearRegistration(WindowAudioState* receiver, WindowAudioState* other)
+-{
+-    WindowAudioState* previous = window_audio_state;
+-    fixture_audio_clear_receiver = receiver;
+-    fixture_audio_clear_before = previous;
+-    window_audio_state = other;
+-    fixture_audio_clear_registered = window_audio_state;
+-    receiver->ClearRegistration();
+-    fixture_audio_clear_after = window_audio_state;
+-    window_audio_state = previous;
+-    fixture_audio_clear_restored = window_audio_state;
+-}
+diff --git a/metadata.csv b/metadata.csv
+index 2b8394cefb1f5ba9d75843c8e566464d3bff6cad..cf7cf36b717431deb464547512bad759e50ae97b 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -88,4 +88,3 @@
+ 0x004c6a40,function,22,?SetFlag02@ScreenRadioItem@@QAEXXZ
+ 0x004c6a60,function,22,?SetFlag04@ScreenRadioItem@@QAEXXZ
+ 0x004c6a80,function,19,?SetFlag10@ScreenRadioItem@@QAEXXZ
+-0x004d0540,function,11,?ClearRegistration@WindowAudioState@@QAEXXZ
+diff --git a/src/window_audio.h b/src/window_audio.h
+index 0c3b8c724cdd640c93f52d4f7313435911feb7b2..b9faaafcc7c631c9154a6f974eb188e35ee29779 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -13,7 +13,6 @@
+     void UnmuteDigitalDriver();
+     void PauseAudioStream();
+     void ResumeAudioStream();
+-    void ClearRegistration();
+ };
+ 
+ #endif
+diff --git a/src/window_audio_registration_clear.cpp b/src/window_audio_registration_clear.cpp
+deleted file mode 100644
+index 7d263afb3530eb17da8a588424b7ea460c233e46..0000000000000000000000000000000000000000
+--- a/src/window_audio_registration_clear.cpp
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#include "window_audio.h"
+-#include "window_activation.h"
+-
+-// FUNCTION: BEACHLIFE 0x004d0540
+-void WindowAudioState::ClearRegistration()
+-{
+-    window_audio_state = 0;
+-}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index fe14f450b9e95f790d5a4bd32b4a0965fa6b5f4a..52f4b69e2e1b708cf5832318982090ca1e17d2d6 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -555,12 +555,6 @@
+       "size": 19,
+       "name": "ScreenRadioItem::SetFlag10",
+       "name_status": "descriptive real kind21 helper; borrowed x86 prefix and slot18 only"
+-    },
+-    {
+-      "address": "0x004d0540",
+-      "size": 11,
+-      "name": "WindowAudioState::ClearRegistration",
+-      "name_status": "descriptive constructor registration cleanup; existing borrowed matching prefix"
+     }
+   ],
+   "library_functions": [

@@ -400,7 +400,11 @@ struct Fixture
         parser.value.context_head = &history;
         parser.value.previous_context = item(B);
         parser.value.last_registered_item = item(C);
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+        parser.value.defined_items = nullptr;
+#else
         std::memset(parser.value.unknown_24, 0xa7, sizeof(parser.value.unknown_24));
+#endif
     }
 
     ScreenItem* item(Item value) const

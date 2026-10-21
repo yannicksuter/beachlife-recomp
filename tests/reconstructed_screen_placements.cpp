@@ -1117,6 +1117,15 @@ struct GameFrame
         before.fill(0x27);
         after.fill(0xd8);
         std::memset(value.unknown_00, pattern, sizeof(value.unknown_00));
+#if defined(BEACHLIFE_DECOMP_GAME_PROGRESS)
+        std::memset(value.unknown_58, pattern, sizeof(value.unknown_58));
+        for (auto& word : value.words_70)
+        {
+            word = 0x13579bdfu;
+        }
+        value.scenario_a0 = 0x2468ace0u;
+        value.byte_a4 = 0x5a;
+#endif
     }
 };
 struct RectangleFrame
@@ -1390,6 +1399,15 @@ struct ManagerScenario
             check_bytes(games[i].before, 0x27);
             check_bytes(games[i].after, 0xd8);
             check_bytes(games[i].value.unknown_00, i == 0 ? 0x6b : 0xc3);
+#if defined(BEACHLIFE_DECOMP_GAME_PROGRESS)
+            check_bytes(games[i].value.unknown_58, i == 0 ? 0x6b : 0xc3);
+            for (auto word : games[i].value.words_70)
+            {
+                require(word == 0x13579bdfu, "unused game progress word changed");
+            }
+            require(games[i].value.scenario_a0 == 0x2468ace0u && games[i].value.byte_a4 == 0x5a,
+                "unused game scenario or mode changed");
+#endif
         }
         check_bytes(rectangle.before, 0x48);
         check_bytes(rectangle.after, 0xb7);

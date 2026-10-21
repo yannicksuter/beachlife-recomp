@@ -88,7 +88,11 @@ struct Model
     {
         parser.value.manager = &manager.value;
         parser.value.word_38 = 0x13579bdfU;
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+        parser.value.defined_items = nullptr;
+#else
         std::fill(std::begin(parser.value.unknown_24), std::end(parser.value.unknown_24), 0x65);
+#endif
     }
     ~Model()
     {
@@ -186,7 +190,11 @@ void parser_preserved(const GuiParserState& p, const GuiParserState& before)
                 p.registry_head == before.registry_head && p.items_head == before.items_head &&
                 p.items_tail == before.items_tail && p.registry_tail == before.registry_tail &&
                 p.word_38 == before.word_38 &&
+#if defined(BEACHLIFE_DECOMP_DEFINED_ITEMS)
+                p.defined_items == before.defined_items,
+#else
                 renderer_queue_test::same_bytes(p.unknown_24, before.unknown_24),
+#endif
         "unrelated parser field changed");
 }
 

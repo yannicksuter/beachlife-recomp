@@ -39,6 +39,12 @@ inline bool equal(const ScreenRequestRenderer& a, const ScreenRequestRenderer& b
         return false;
     }
 #endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+    if (a.sea_state_134 != b.sea_state_134)
+    {
+        return false;
+    }
+#endif
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
     if (!same_bytes(a.unknown_a8, b.unknown_a8) || a.buffer_130 != b.buffer_130)
     {
@@ -92,6 +98,9 @@ inline std::size_t compared_bytes(const ScreenRequestRenderer& r)
 #endif
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
     tail_bytes += sizeof(r.unknown_a8) + sizeof(r.buffer_130);
+#endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+    tail_bytes += sizeof(r.sea_state_134);
 #endif
     return sizeof(r.software_mode) + sizeof(r.unknown_01) + sizeof(r.width) + sizeof(r.height) +
            sizeof(r.clip_rectangle.x) + sizeof(r.clip_rectangle.y) +
@@ -167,6 +176,9 @@ inline void initialize(ScreenRequestRenderer& r, unsigned int seed)
 #if defined(BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER)
     pattern(r.unknown_a8, seed + 9U);
     r.buffer_130 = nullptr;
+#endif
+#if defined(BEACHLIFE_DECOMP_RENDERER_SEA_STATE)
+    r.sea_state_134 = nullptr;
 #endif
 }
 // Exactly the observed four-byte entry interval; no ABI padding is compared.
