@@ -1572,3 +1572,9 @@ borrowed manager/renderer read models. Build it with reconstructed tests and
 `ctest --test-dir <build> -R '^reconstructed_screen_select$' --output-on-failure`.
 The focused fixture supports 64-bit Linux. It does not construct the full game
 or manager and does not establish a running menu or production renderer.
+
+The matching fixture retains `ScreenListBoxPrefix::MarkPrepared` through a borrowed
+x86 receiver. Its complete 39-byte body matches strictly; raw bytes differ only
+in the relocated call to the real base method. Removing that call is rejected.
+The native profiles retain their existing ListBox source selection; this match
+does not qualify a complete ListBox lifetime or a native GUI execution path.
