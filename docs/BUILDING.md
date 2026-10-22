@@ -1925,3 +1925,17 @@ complete Game owner remain separate capabilities.
 The optional Linux scheduler-owner fixture checks empty and populated lists,
 payload release order, returned pool nodes and overlapping owner lifetimes. It
 retains the original unconditional global clear when an older owner is destroyed.
+
+
+Experimental credits-data libraries decode the supported locally supplied
+`BeachLife.exe` as data. They verify its complete size and SHA-256, validate
+the PE32 data mapping, and preserve all 205 scalar rows and the adjacent
+writable format. No original table, text or executable is bundled or executed.
+A single game-thread binding owns publication; uninitialized, duplicate and
+foreign-thread access is rejected. Both libraries are available with
+reconstructed tests disabled and the experimental option remains off by default.
+
+The optional Linux generated-input fixture exercises malformed mappings, row
+and format preservation, binding lifetime and actual reconstructed BLE text
+lookup. This data capability is separate from preparation-cache integration,
+the complete credits controller, and the normal Play-to-menu connection.
