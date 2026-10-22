@@ -1894,3 +1894,16 @@ COM loss/restore methods cannot operate on the native owner’s null COM fields;
 a real typed recovery boundary and the complete Game/GUI ownership connection
 remain separate. Windows/macOS, device recovery and allocation-failure timing
 are not qualified by the Linux owner fixture.
+
+
+The matching profile reconstructs the complete 793-byte building-list population
+method, including its availability checks, count text, count-dependent colours
+and pointer-vector growth. The linked comparison uses the real catalog,
+building-count and pool dependencies; comparison-only boundaries remain excluded
+and the image is never executed.
+
+The method passes full strict comparison, while raw bytes differ. A control that
+changes the no-building colour must fail against the same complete original
+extent and retain every earlier method result. Both native source profiles keep
+their existing selections, including the experimental mode-0 renderer; this
+matching result does not qualify the building-list owner or connect the menu.
