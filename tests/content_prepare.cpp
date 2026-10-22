@@ -63,7 +63,7 @@ int main(int argc, char** argv)
         };
         options.progress = [&](const auto& progress)
         {
-            if (progress.phase == "extracting" && progress.completed_files == 1)
+            if (progress.phase == "extracting" && progress.completed_files == 2)
             {
                 cancelled = true;
             }
@@ -86,7 +86,8 @@ int main(int argc, char** argv)
         const auto ini = root / "files/BeachLife.ini";
         const auto modified = std::filesystem::last_write_time(ini);
 
-        // An empty asset commits, then interrupt within the next nonempty asset.
+        // Executable and INI are retained; commit an empty asset, then interrupt
+        // within the next nonempty asset.
         cancelled = false;
         options.progress = [&](const auto& progress)
         {
@@ -107,7 +108,7 @@ int main(int argc, char** argv)
         expect(!std::filesystem::exists(root / "files/Data/loose.txt"));
         expect(std::filesystem::is_empty(root / ".stage"));
         const auto result = prepare_content(image, cache);
-        expect(result.files_reused == 2 && result.files_written == 3);
+        expect(result.files_reused == 3 && result.files_written == 3);
         expect(std::filesystem::last_write_time(ini) == modified);
 
         std::unique_ptr<SourceFile> surviving;
@@ -130,7 +131,7 @@ int main(int argc, char** argv)
         std::array<unsigned char, 8> bytes{};
         expect(surviving->read(bytes) == bytes.size());
         surviving.reset();
-        expect(prepare_content(image, cache).files_reused == 5);
+        expect(prepare_content(image, cache).files_reused == 6);
 
         // A source changed between extraction and final publication stays incomplete.
         const auto changing_cache = cache.parent_path() / "changing-source";
@@ -165,7 +166,7 @@ int main(int argc, char** argv)
             out.seekp(-1, std::ios::end);
             out.put(last);
         }
-        expect(prepare_content(image, changing_cache).files_reused == 5);
+        expect(prepare_content(image, changing_cache).files_reused == 6);
 
         // Write/publication failure leaves the original destination untouched.
         // The low-level staging API requires canonical ancestors, unlike the

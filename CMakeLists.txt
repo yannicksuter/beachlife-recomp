@@ -168,4 +168,17 @@ if(BUILD_TESTING)
     add_test(NAME prepared_content
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_vfs.py"
             "$<TARGET_FILE:beachlife-data>" "$<TARGET_FILE:content_prepare_tests>")
+
+    add_executable(retail_constants_cache_tests tests/retail_constants_cache.cpp)
+    target_link_libraries(retail_constants_cache_tests PRIVATE beachlife_launcher_core)
+    set_target_properties(retail_constants_cache_tests PROPERTIES CXX_EXTENSIONS OFF)
+    if(MSVC)
+        target_compile_options(retail_constants_cache_tests PRIVATE /W4 /WX)
+    else()
+        target_compile_options(retail_constants_cache_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME retail_constants_cache
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_retail_constants_cache.py"
+            "$<TARGET_FILE:retail_constants_cache_tests>")
+    set_tests_properties(retail_constants_cache PROPERTIES TIMEOUT 45)
 endif()

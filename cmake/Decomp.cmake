@@ -467,6 +467,36 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME OR BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     include(${CMAKE_CURRENT_LIST_DIR}/Renderer.cmake)
 endif()
 
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    include(${CMAKE_CURRENT_LIST_DIR}/GameOwners.cmake)
+endif()
+
+# Checked retail data storage, independent of optional fixtures.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_credits_data STATIC src/runtime/credits_data.cpp)
+    target_include_directories(beachlife_credits_data PUBLIC "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(beachlife_credits_data PUBLIC beachlife_data beachlife_formats)
+    target_compile_features(beachlife_credits_data PUBLIC cxx_std_20)
+
+    add_library(beachlife_reconstructed_credits_data STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_credits_data.cpp")
+    target_include_directories(beachlife_reconstructed_credits_data PUBLIC "${BEACHLIFE_DECOMP_SOURCE}")
+    target_link_libraries(beachlife_reconstructed_credits_data PUBLIC
+        beachlife_credits_data Threads::Threads)
+    target_compile_features(beachlife_reconstructed_credits_data PUBLIC cxx_std_20)
+    add_dependencies(beachlife_reconstructed_credits_data verify_reconstructed_source)
+    foreach(target IN ITEMS beachlife_credits_data beachlife_reconstructed_credits_data)
+        set_target_properties(${target} PROPERTIES
+            CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /GL- /W4 /WX)
+        else()
+            target_compile_options(${target} PRIVATE -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        endif()
+    endforeach()
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -1235,7 +1265,7 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_dependencies(beachlife_reconstructed_renderer_clip verify_reconstructed_source)
     add_executable(reconstructed_renderer_clip_tests tests/reconstructed_renderer_clip.cpp)
     target_link_libraries(reconstructed_renderer_clip_tests PRIVATE
-        beachlife_reconstructed_renderer_clip)
+        beachlife_reconstructed_renderer_clip beachlife_reconstructed_renderer_clip_mode)
     set_target_properties(beachlife_reconstructed_renderer_clip
         reconstructed_renderer_clip_tests PROPERTIES
         CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
@@ -1251,6 +1281,13 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_test(NAME reconstructed_renderer_clip COMMAND reconstructed_renderer_clip_tests)
     set_tests_properties(reconstructed_renderer_clip PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+            AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_test(NAME reconstructed_renderer_clip_mode
+            COMMAND reconstructed_renderer_clip_tests --clip-mode)
+        set_tests_properties(reconstructed_renderer_clip_mode PROPERTIES
+            LABELS "reconstructed;experimental;renderer-owner;x11" TIMEOUT 30)
+    endif()
 endif()
 
 # Complete drawing composes actual clipping, pixels, kernels and image lifetime.
@@ -2701,9 +2738,6 @@ endif()
 # Complete resource owner and mounted metadata/palette/raw bank composition.
 # All these subsystems already live below the optional-test return.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
-    add_library(beachlife_resource_pool_host STATIC src/runtime/resource_pool_host.cpp)
-    target_compile_features(beachlife_resource_pool_host PUBLIC cxx_std_20)
-    target_link_libraries(beachlife_resource_pool_host PUBLIC Threads::Threads)
     # Pool lock calls in the actual list archive use the real host boundary.
     target_link_libraries(beachlife_reconstructed_screen_list PUBLIC
         $<LINK_ONLY:beachlife_resource_pool_host>)
@@ -4152,4 +4186,43 @@ if(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
         "${CMAKE_CURRENT_BINARY_DIR}/generated-renderer-recovery")
     set_tests_properties(reconstructed_renderer_recovery PROPERTIES
         LABELS "reconstructed;experimental;mode0;vulkan;x11" TIMEOUT 60)
+endif()
+
+# Genuine scheduler-owner lifetimes; the library is also available without tests.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+        add_executable(reconstructed_game_update_pair_owner_tests
+            tests/reconstructed_game_update_pair_owner.cpp)
+        target_link_libraries(reconstructed_game_update_pair_owner_tests PRIVATE
+            beachlife_reconstructed_game_update_pair_owner)
+        set_target_properties(reconstructed_game_update_pair_owner_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_game_update_pair_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_game_update_pair_owner_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_game_update_pair_owner
+            COMMAND reconstructed_game_update_pair_owner_tests)
+        set_tests_properties(reconstructed_game_update_pair_owner PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()
+
+# Read scalar credits records through the real local-file and language owners.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND BEACHLIFE_BUILD_RECONSTRUCTED_TESTS
+        AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+    add_executable(reconstructed_credits_data_tests tests/reconstructed_credits_data.cpp)
+    target_link_libraries(reconstructed_credits_data_tests PRIVATE
+        beachlife_reconstructed_credits_data beachlife_reconstructed_screen_localization)
+    target_compile_features(reconstructed_credits_data_tests PRIVATE cxx_std_20)
+    set_target_properties(reconstructed_credits_data_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_credits_data_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_credits_data_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_credits_data COMMAND reconstructed_credits_data_tests
+        "${CMAKE_CURRENT_BINARY_DIR}/generated-credits-data")
+    set_tests_properties(reconstructed_credits_data PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()

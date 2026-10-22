@@ -213,9 +213,9 @@ Ambiguous case aliases, missing files, directory reads, changed image sizes and
 truncated reads report errors. Keep the source image unchanged while using it.
 
 Reading a loose disc file does not decompress an installer cabinet.
-`game-files` maps the English game's Data/ tree and BeachLife.ini from the
-supported groups, excluding installer support files, executables and
-placeholders. `game-cat image.iso logical/path` streams one mapped asset,
+`game-files` maps the English game's Data/ tree, BeachLife.ini and the exact
+root BeachLife.exe entry from the supported groups, excluding installer
+support files, other executables and placeholders. `game-cat image.iso logical/path` streams one mapped asset,
 including decompression and original size/MD5 checks. It is a diagnostic
 command; a failure can leave partial stdout, so consumers must check its exit
 status. Preparation stages output before making it available. The development
@@ -292,3 +292,18 @@ prepared-source portability patch.
 A live resource stream can report its logical cursor with `stream_position`.
 The query performs no I/O or allocation and leaves both the cursor and a failed
 query's output argument unchanged. Closed or foreign-session tokens fail.
+
+The English preparation profile also retains the root `BeachLife.exe` file as
+read-only data for reconstructed constants. It is the one named file selected
+from the existing UK cabinet groups, through the same size, checksum, staging
+and manifest path as the other files. No other root executable or DLL is added.
+No original executable code is loaded or run. A constants consumer independently
+checks its supported executable revision before decoding data.
+
+Cache format 1, profile and identity remain unchanged. A set prepared without
+this file requires one Prepare/repair with the original ISO available. The
+existing loading worker verifies and reuses the Data and INI files, adds the
+missing executable, and publishes the complete manifest. An old incomplete set
+cannot start offline; after repair all reads work from the local cache without
+an open ISO. Older application versions do not accept the added manifest path;
+this is not a bidirectional cache-schema compatibility guarantee.

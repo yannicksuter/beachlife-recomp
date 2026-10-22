@@ -278,3 +278,23 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         target_compile_options(beachlife_reconstructed_renderer_recovery PRIVATE -fno-lto)
     endif()
 endif()
+
+# Pure clip-mode selection is also available without the optional fixtures.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_clip_mode STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_set_clip_mode.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_clip_mode PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_clip_mode PUBLIC cxx_std_20)
+    target_compile_definitions(beachlife_reconstructed_renderer_clip_mode PUBLIC
+        BEACHLIFE_DECOMP_RENDERER_QUEUE=1)
+    set_target_properties(beachlife_reconstructed_renderer_clip_mode PROPERTIES
+        CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_clip_mode PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_clip_mode PRIVATE -fno-lto)
+    endif()
+    add_dependencies(beachlife_reconstructed_renderer_clip_mode verify_reconstructed_source)
+endif()

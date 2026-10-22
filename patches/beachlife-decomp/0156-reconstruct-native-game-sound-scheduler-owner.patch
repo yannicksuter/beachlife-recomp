@@ -1,0 +1,433 @@
+diff --git a/src/pool_lock_acquire.h b/src/pool_lock_acquire.h
+--- a/src/pool_lock_acquire.h
++++ b/src/pool_lock_acquire.h
+@@ -1,7 +1,7 @@
+ #ifndef POOL_LOCK_ACQUIRE_H
+ #define POOL_LOCK_ACQUIRE_H
+ 
+-#include <windows.h>
++#include "pool_platform.h"
+ 
+ // Descriptive adaptive-spin state; original declarations and origin unknown.
+ extern unsigned int pool_spin_limit;
+diff --git a/src/pool_lock_guard.h b/src/pool_lock_guard.h
+--- a/src/pool_lock_guard.h
++++ b/src/pool_lock_guard.h
+@@ -1,7 +1,7 @@
+ #ifndef POOL_LOCK_GUARD_H
+ #define POOL_LOCK_GUARD_H
+ 
+-#include <windows.h>
++#include "pool_platform.h"
+ 
+ // Descriptive 32-bit storage. Original type spelling and library origin are unknown.
+ extern volatile LONG pool_lock_word;
+diff --git a/src/pool_platform.h b/src/pool_platform.h
+new file mode 100644
+--- /dev/null
++++ b/src/pool_platform.h
+@@ -0,0 +1,14 @@
++#ifndef BEACHLIFE_NATIVE_POOL_PLATFORM_H
++#define BEACHLIFE_NATIVE_POOL_PLATFORM_H
++
++// Native declarations for the existing real atomic exchange and thread wait.
++// Legacy C symbol names are retained for ABI compatibility with the host file.
++using LONG = int;
++using DWORD = unsigned int;
++static_assert(sizeof(LONG) == 4 && sizeof(DWORD) == 4);
++#define InterlockedExchange BeachlifePoolLockTestExchange
++#define Sleep               BeachlifePoolLockTestSleep
++extern "C" LONG InterlockedExchange(LONG* target, LONG value);
++extern "C" void Sleep(DWORD milliseconds);
++
++#endif
+diff --git a/src/startup_game_object_sound_list_destructor.cpp b/src/startup_game_object_sound_list_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_game_object_sound_list_destructor.cpp
+@@ -0,0 +1,19 @@
++#include "startup_game_update_pair.h"
++
++// FUNCTION: BEACHLIFE 0x004d2e00
++GameObjectSoundList::~GameObjectSoundList()
++{
++    GameSoundNode* node = head->next;
++    while (node != head)
++    {
++        GameSoundNode* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(GameSoundNode));
++    }
++    head->next = head;
++    head->previous = head;
++    GameSoundNode* released = head;
++    if (released != 0)
++        ReturnPool(released, sizeof(GameSoundNode));
++}
+diff --git a/src/startup_game_point_sound_list_base.cpp b/src/startup_game_point_sound_list_base.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_game_point_sound_list_base.cpp
+@@ -0,0 +1,7 @@
++#include "startup_game_update_pair.h"
++
++// FUNCTION: BEACHLIFE 0x00437de0
++GamePointSoundListBase::GamePointSoundListBase(const GameSoundAllocator&, GameSoundNode* initial)
++{
++    head = initial;
++}
+diff --git a/src/startup_game_point_sound_list_destructor.cpp b/src/startup_game_point_sound_list_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_game_point_sound_list_destructor.cpp
+@@ -0,0 +1,19 @@
++#include "startup_game_update_pair.h"
++
++// FUNCTION: BEACHLIFE 0x004d2d60
++GamePointSoundList::~GamePointSoundList()
++{
++    GameSoundNode* node = head->next;
++    while (node != head)
++    {
++        GameSoundNode* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(GameSoundNode));
++    }
++    head->next = head;
++    head->previous = head;
++    GameSoundNode* released = head;
++    if (released != 0)
++        ReturnPool(released, sizeof(GameSoundNode));
++}
+diff --git a/src/startup_game_update_pair.h b/src/startup_game_update_pair.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_game_update_pair.h
+@@ -0,0 +1,215 @@
++#ifndef STARTUP_GAME_UPDATE_PAIR_H
++#define STARTUP_GAME_UPDATE_PAIR_H
++
++#include "pool_allocate.h"
++#include "pool_lock_acquire.h"
++#include "pool_return.h"
++#include "startup_sound_position.h"
++
++#include <new>
++
++// Observed object-sound record (list at scheduler +8).
++struct GameObjectSound
++{
++    unsigned int object_id;
++    float volume_04;
++    char name_08[0x20];
++    unsigned char playing_28;
++    // Nonzero: keep playing while loud music runs.
++    unsigned char ignores_music_29;
++    unsigned char unknown_2a[2];
++    int voice_2c;
++};
++
++// Observed point-sound record (list at scheduler +4).
++struct GamePointSound
++{
++    char name_00[0x20];
++    WindowAudioVector position_20;
++    float volume_2c;
++    int limit_30;
++    int voice_34;
++    unsigned char retrying_38;
++    unsigned char unknown_39[3];
++    float retry_delay_3c;
++};
++
++// Observed node/sentinel shapes of the two sound lists; allocator unknown.
++struct GameSoundNode
++{
++    GameSoundNode* next;
++    GameSoundNode* previous;
++    void* sound;
++};
++
++struct GameSoundIterator
++{
++    GameSoundNode* node;
++
++    GameSoundIterator() { }
++    GameSoundIterator(const GameSoundIterator& other)
++        : node(other.node)
++    {
++    }
++
++    GameSoundIterator operator++(int)
++    {
++        GameSoundIterator old(*this);
++        node = node->next;
++        return old;
++    }
++};
++
++struct GameSoundList
++{
++    GameSoundNode* head;
++
++    // Folded list erase 0x004209d0 (also CircularList::Erase); hidden iterator
++    // result plus position, RET8.
++    GameSoundIterator Erase(GameSoundIterator position);
++};
++
++// Empty default-argument allocator of both sound lists; its real (empty)
++// destructor is the folded 0x00437d10 named by the constructor's unwind map.
++struct GameSoundAllocator
++{
++    GameSoundAllocator() { }
++    ~GameSoundAllocator() { }
++};
++
++// Head holder of the point-sound list. Its two-argument constructor is a real
++// out-of-line call (folded 0x00437de0, stores the head, RET8); empty destructor.
++struct GamePointSoundListBase : GameSoundList
++{
++    GamePointSoundListBase(const GameSoundAllocator& allocator, GameSoundNode* initial);
++    ~GamePointSoundListBase() { }
++};
++
++// Head holder of the object-sound list; its constructor is expanded inline.
++struct GameObjectSoundListBase : GameSoundList
++{
++    explicit GameObjectSoundListBase(const GameSoundAllocator&) { head = 0; }
++    ~GameObjectSoundListBase() { }
++};
++
++// Point-sound list (+4): 12-byte pool nodes, released through an inline pool
++// return under the out-of-line pool lock. Real destructor 0x004d2d60.
++struct GamePointSoundList : GamePointSoundListBase
++{
++    explicit GamePointSoundList(const GameSoundAllocator& allocator = GameSoundAllocator())
++        : GamePointSoundListBase(allocator, 0)
++    {
++        // Native storage has held a PoolChunkLink; begin the real node lifetime.
++        GameSoundNode* sentinel = ::new (AllocatePoolBytes(sizeof(GameSoundNode))) GameSoundNode;
++        sentinel->next = sentinel;
++        sentinel->previous = sentinel;
++        head = sentinel;
++    }
++    ~GamePointSoundList();
++
++    static void FreeNode(GameSoundNode* node)
++    {
++        if (node)
++        {
++            AcquirePoolLock(&pool_lock_word);
++            PoolChunkLink* link = ::new (static_cast<void*>(node)) PoolChunkLink;
++            link->next = pool_chunk_buckets[(sizeof(GameSoundNode) - 1) / 8];
++            pool_chunk_buckets[(sizeof(GameSoundNode) - 1) / 8] = link;
++            pool_lock_word = 0;
++        }
++    }
++
++    void Clear()
++    {
++        GameSoundNode* node = head->next;
++        while (node != head)
++        {
++            GameSoundNode* current = node;
++            node = node->next;
++            FreeNode(current);
++        }
++        head->next = head;
++        head->previous = head;
++    }
++};
++
++// Object-sound list (+8): 12-byte pool nodes released through the real
++// ReturnPool 0x004123f0. Real destructor 0x004d2e00.
++struct GameObjectSoundList : GameObjectSoundListBase
++{
++    explicit GameObjectSoundList(const GameSoundAllocator& allocator = GameSoundAllocator())
++        : GameObjectSoundListBase(allocator)
++    {
++        // Native storage has held a PoolChunkLink; begin the real node lifetime.
++        GameSoundNode* sentinel = ::new (AllocatePoolBytes(sizeof(GameSoundNode))) GameSoundNode;
++        sentinel->next = sentinel;
++        sentinel->previous = sentinel;
++        head = sentinel;
++    }
++    ~GameObjectSoundList();
++
++    static void FreeNode(GameSoundNode* node)
++    {
++        if (node)
++            ReturnPool(node, sizeof(GameSoundNode));
++    }
++
++    void Clear()
++    {
++        GameSoundNode* node = head->next;
++        while (node != head)
++        {
++            GameSoundNode* current = node;
++            node = node->next;
++            FreeNode(current);
++        }
++        head->next = head;
++        head->previous = head;
++    }
++};
++
++struct GameUpdatePair;
++
++// Actual slot 0x005baefc.
++extern GameUpdatePair* game_update_pair;
++
++// Empty first base that publishes the scheduler while it is constructed; its
++// out-of-line destructor 0x004d3080 clears the slot again.
++struct GameUpdatePairRegistration
++{
++    GameUpdatePairRegistration();
++    ~GameUpdatePairRegistration();
++};
++
++// Actual 12-byte x86 positional-sound scheduler at Game+0x50.
++struct GameUpdatePair : GameUpdatePairRegistration
++{
++    unsigned char enabled_00;
++    unsigned char unknown_01[3];
++    GamePointSoundList point_sounds_04;
++    GameObjectSoundList object_sounds_08;
++
++    // Actual 0x004d2510, RET4.
++    explicit GameUpdatePair(unsigned char enabled);
++
++    // Actual 0x004d2760; calls 0x004d2990 then 0x004d2bd0 with the same float.
++    void Update(float delta);
++    // Actual 0x004d2990 (sounds attached to world objects, list at +8) and
++    // 0x004d2bd0 (sounds at fixed points, list at +4); RET4 each.
++    void UpdateObjectSounds(float delta);
++    void UpdatePointSounds(float delta);
++
++    // Native host ownership exposes ordinary destruction without inventing a Game
++    // friend implementation. This changes access only, not layout or cleanup.
++public:
++    // The real enclosing Game directly calls ordinary cleanup 0x004d2630.
++    friend struct ScreenRequestGamePrefix;
++    ~GameUpdatePair();
++};
++
++inline GameUpdatePairRegistration::GameUpdatePairRegistration()
++{
++    game_update_pair = static_cast<GameUpdatePair*>(this);
++}
++
++#endif
+diff --git a/src/startup_game_update_pair_constructor.cpp b/src/startup_game_update_pair_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_game_update_pair_constructor.cpp
+@@ -0,0 +1,9 @@
++#include "startup_game_update_pair.h"
++
++// FUNCTION: BEACHLIFE 0x004d2510
++GameUpdatePair::GameUpdatePair(unsigned char enabled)
++    : enabled_00(enabled)
++{
++    point_sounds_04.Clear();
++    object_sounds_08.Clear();
++}
+diff --git a/src/startup_game_update_pair_destructor.cpp b/src/startup_game_update_pair_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_game_update_pair_destructor.cpp
+@@ -0,0 +1,52 @@
++#include "startup_game_update_pair.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d2630
++GameUpdatePair::~GameUpdatePair()
++{
++    GameSoundNode* point_end = point_sounds_04.head;
++    GameSoundNode* point = point_sounds_04.head->next;
++    while (point != point_end)
++    {
++        void* sound = point->sound;
++        if (sound != 0)
++            ::operator delete(sound);
++        point = point->next;
++    }
++
++    GameSoundNode* object_end = object_sounds_08.head;
++    GameSoundNode* object = object_sounds_08.head->next;
++    while (object != object_end)
++    {
++        void* sound = object->sound;
++        if (sound != 0)
++            ::operator delete(sound);
++        object = object->next;
++    }
++
++    GameSoundNode* node = point_sounds_04.head->next;
++    while (node != point_sounds_04.head)
++    {
++        GameSoundNode* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(GameSoundNode));
++    }
++    point_sounds_04.head->next = point_sounds_04.head;
++    point_sounds_04.head->previous = point_sounds_04.head;
++
++    node = object_sounds_08.head->next;
++    while (node != object_sounds_08.head)
++    {
++        GameSoundNode* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(GameSoundNode));
++    }
++    object_sounds_08.head->next = object_sounds_08.head;
++    object_sounds_08.head->previous = object_sounds_08.head;
++
++    // Real automatic cleanup releases object-list storage, point-list storage,
++    // then the registration base. Neither sound record stops an audio voice.
++}
+diff --git a/src/startup_game_update_pair_globals.cpp b/src/startup_game_update_pair_globals.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_game_update_pair_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_game_update_pair.h"
++
++// GLOBAL: BEACHLIFE 0x005baefc
++GameUpdatePair* game_update_pair = 0;
+diff --git a/src/startup_game_update_pair_registration_destructor.cpp b/src/startup_game_update_pair_registration_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_game_update_pair_registration_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_game_update_pair.h"
++
++// FUNCTION: BEACHLIFE 0x004d3080
++GameUpdatePairRegistration::~GameUpdatePairRegistration()
++{
++    game_update_pair = 0;
++}
+diff --git a/src/startup_sound_position.h b/src/startup_sound_position.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_sound_position.h
+@@ -0,0 +1,13 @@
++#ifndef STARTUP_SOUND_POSITION_H
++#define STARTUP_SOUND_POSITION_H
++
++// Same observed value type used by the original positional-sound records.
++// Keep it independent of the still-borrowed WindowAudioState declaration.
++struct WindowAudioVector
++{
++    float x;
++    float y;
++    float z;
++};
++
++#endif

@@ -360,7 +360,7 @@ void check_handoff(
     check_repair_locked(image, cache); // an open PreparedFile independently retains the lock
     check_bytes(*stream, std::string_view("loose file\0\xff", 12));
     stream.reset();
-    expect(data::prepare_content(image, cache).files_reused == 5);
+    expect(data::prepare_content(image, cache).files_reused == 6);
     settings = launcher::load_settings(config);
     expect(!settings.content.identity.empty());
 
@@ -384,7 +384,7 @@ void check_handoff(
     check_bridge_bytes(retained.get(), std::string_view("loose file\0\xff", 12));
     retained.reset();
     expect(weak.expired());
-    expect(data::prepare_content(image, cache).files_reused == 5);
+    expect(data::prepare_content(image, cache).files_reused == 6);
 
     // Repeated warm and disconnected sessions use fresh results and the saved
     // mount. Each survives the startup owner, and each releases its last lock.
@@ -408,7 +408,7 @@ void check_handoff(
         {
             fs::rename(offline, image);
         }
-        expect(data::prepare_content(image, cache).files_reused == 5);
+        expect(data::prepare_content(image, cache).files_reused == 6);
     }
 
     // A required step failing before the handoff cannot publish its source.
@@ -441,7 +441,7 @@ void check_handoff(
         reject_handoff(content, result);
     }
     check_previous();
-    expect(data::prepare_content(image, cache).files_reused == 5);
+    expect(data::prepare_content(image, cache).files_reused == 6);
 
     for (bool staged : {false, true})
     {
@@ -488,7 +488,7 @@ void check_handoff(
         }
         result.reset();
         expect(weak.expired());
-        expect(data::prepare_content(image, cache).files_reused == 5);
+        expect(data::prepare_content(image, cache).files_reused == 6);
         expect(launcher::load_settings(config) == settings);
         check_previous();
     }
@@ -497,7 +497,7 @@ void check_handoff(
     source = complete(true);
     check_previous();
     source.reset();
-    expect(data::prepare_content(image, cache).files_reused == 5);
+    expect(data::prepare_content(image, cache).files_reused == 6);
 
     // A later game-thread exception tears down its binding and retained source.
     bool raised = false;
@@ -517,7 +517,7 @@ void check_handoff(
     check_previous();
     source = complete(true); // cancellation/errors cannot poison the next Play
     source.reset();
-    expect(data::prepare_content(image, cache).files_reused == 5);
+    expect(data::prepare_content(image, cache).files_reused == 6);
     check_previous();
     previous.reset();
     expect(files::open("BeachLife.ini", "rb") == nullptr);
@@ -875,7 +875,7 @@ int main(int argc, char** argv)
             expect(locked); // the queued work keeps the mount alive until destroyed
         }
         expect(weak.expired());
-        expect(data::prepare_content(image, cache).files_reused == 5);
+        expect(data::prepare_content(image, cache).files_reused == 6);
         check_preview(image, cache);
         expect(files::open("BeachLife.ini", "rb") == nullptr);
 

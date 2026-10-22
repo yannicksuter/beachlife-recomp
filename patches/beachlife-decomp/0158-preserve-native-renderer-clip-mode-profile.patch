@@ -1,0 +1,141 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1741,51 +1741,3 @@
+ {
+     return RefillPool(bytes);
+ }
+-
+-#include "startup_screen_renderer.h"
+-
+-typedef char ClipModeUnsignedWidth[(sizeof(unsigned int) == 4) ? 1 : -1];
+-typedef char ClipModeIntWidth[(sizeof(int) == 4) ? 1 : -1];
+-typedef char ClipModeRendererSize[(sizeof(ScreenRequestRenderer) == 0x7c) ? 1 : -1];
+-typedef char ClipModeOpaque48[(offsetof(ScreenRequestRenderer, unknown_48) == 0x48) ? 1 : -1];
+-typedef char ClipModeSuppression[(offsetof(ScreenRequestRenderer, rectangle_suppressed_4d) == 0x4d) ? 1 : -1];
+-typedef char ClipModeOpaque4e[(offsetof(ScreenRequestRenderer, unknown_4e) == 0x4e) ? 1 : -1];
+-typedef char ClipModeWord50[(offsetof(ScreenRequestRenderer, word_50) == 0x50) ? 1 : -1];
+-typedef char ClipModeWord54[(offsetof(ScreenRequestRenderer, clip_mode_54) == 0x54) ? 1 : -1];
+-typedef char ClipModeWord58[(offsetof(ScreenRequestRenderer, word_58) == 0x58) ? 1 : -1];
+-typedef char ClipModeOpaque5c[(offsetof(ScreenRequestRenderer, unknown_5c) == 0x5c) ? 1 : -1];
+-typedef char ClipModeOpaque5e[(offsetof(ScreenRequestRenderer, unknown_5e) == 0x5e) ? 1 : -1];
+-typedef char ClipModeWord60[(offsetof(ScreenRequestRenderer, word_60) == 0x60) ? 1 : -1];
+-typedef char ClipModeSurfaces[(offsetof(ScreenRequestRenderer, surfaces) == 0x68) ? 1 : -1];
+-typedef char ClipModeSurface[(offsetof(ScreenRequestRenderer, current_surface) == 0x74) ? 1 : -1];
+-typedef char ClipModeLocked[(offsetof(ScreenRequestRenderer, pixels_locked) == 0x78) ? 1 : -1];
+-
+-ScreenRequestRenderer* volatile fixture_clip_mode_receiver;
+-volatile unsigned int fixture_clip_mode_input;
+-volatile unsigned int fixture_clip_mode_previous_bits;
+-volatile unsigned int fixture_clip_mode_after[4];
+-volatile unsigned int fixture_clip_mode_word60_before;
+-volatile unsigned int fixture_clip_mode_word60_after;
+-volatile unsigned int fixture_clip_mode_completed;
+-
+-// Compile/link retention only. Borrow a valid typed renderer; no owner lifetime,
+-// surface, callback or vptr is fabricated. Comparison images are never executed.
+-extern "C" __declspec(dllexport) void FixtureSetClipMode(
+-    ScreenRequestRenderer* renderer, unsigned int mode, unsigned int previous_bits)
+-{
+-    fixture_clip_mode_receiver = renderer;
+-    fixture_clip_mode_input = mode;
+-    fixture_clip_mode_previous_bits = previous_bits;
+-    renderer->clip_mode_54 = -7;
+-    renderer->rectangle_suppressed_4d = 0;
+-    renderer->word_50 = 0x51a735f1;
+-    renderer->word_58 = previous_bits;
+-    fixture_clip_mode_word60_before = renderer->word_60;
+-    renderer->SetClipMode(mode);
+-    fixture_clip_mode_after[0] = static_cast<unsigned int>(renderer->clip_mode_54);
+-    fixture_clip_mode_after[1] = renderer->rectangle_suppressed_4d;
+-    fixture_clip_mode_after[2] = renderer->word_50;
+-    fixture_clip_mode_after[3] = renderer->word_58;
+-    fixture_clip_mode_word60_after = renderer->word_60;
+-    fixture_clip_mode_completed = 1;
+-}
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -29,7 +29,7 @@
+ 0x005a8914,global,4,?pool_chunk_begin@@3PADA
+ 0x005a8918,global,4,?pool_chunk_end@@3PADA
+ 0x004123f0,function,289,?ReturnPool@@YAXPAXI@Z
+-0x004d3890,function,1,?ControllerSlot24@MainMenuController@@UAEXXZ
++0x004d3890,function,1,?ControllerSlot1c@MainMenuController@@UAEXXZ
+ 0x0040e240,function,131,?AccessPixels@ScreenRequestRenderer@@QAEPAGXZ
+ 0x004b2ff0,function,189,?CreateNode@CircularList@@QAEPAUCircularListValueNode@@ABQAUActiveScreenEntry@@@Z
+ 0x004b2fb0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUActiveScreenEntry@@@Z
+@@ -123,4 +123,3 @@
+ 0x00460340,function,39,?FlagAt00460340@VariableEntity@@QAE_NXZ
+ 0x0057feec,string,17,
+ 0x004fd420,widechar,6,
+-0x0040f7e0,function,59,?SetClipMode@ScreenRequestRenderer@@QAEXI@Z
+diff --git a/src/startup_renderer_set_clip_mode.cpp b/src/startup_renderer_set_clip_mode.cpp
+deleted file mode 100644
+--- a/src/startup_renderer_set_clip_mode.cpp
++++ /dev/null
+@@ -1,22 +0,0 @@
+-#include "startup_screen_renderer.h"
+-
+-// FUNCTION: BEACHLIFE 0x0040f7e0
+-void ScreenRequestRenderer::SetClipMode(unsigned int mode)
+-{
+-    clip_mode_54 = static_cast<int>(mode);
+-    rectangle_suppressed_4d = 1;
+-    word_50 = 0;
+-
+-    switch (mode)
+-    {
+-    case 0:
+-        word_58 = 0x40000000;
+-        break;
+-    case 1:
+-        word_58 = 0x3f800000;
+-        break;
+-    case 2:
+-        word_58 = 0x3f000000;
+-        break;
+-    }
+-}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -38,13 +38,7 @@
+     unsigned int height;
+     unsigned char unknown_0c[0x38];
+     unsigned int format_44;
+-    unsigned char unknown_48[5];
+-    unsigned char rectangle_suppressed_4d;
+-    unsigned char unknown_4e[2];
+-    unsigned int word_50;
+-    int clip_mode_54;
+-    unsigned int word_58;
+-    unsigned char unknown_5c[2];
++    unsigned char unknown_48[0x16];
+     unsigned char unknown_5e[2];
+     unsigned int word_60;
+     unsigned char unknown_64[4];
+@@ -55,7 +49,6 @@
+ 
+     void SelectSurface(int surface);
+     void SetWord60(unsigned int value);
+-    void SetClipMode(unsigned int mode);
+     unsigned int ConvertColour(int red, int green, int blue);
+ 
+     int CreateSurface(int width, int height, int mode);
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -638,12 +638,6 @@
+       "size": 793,
+       "name": "ScreenImageList::PopulateBuildings",
+       "name_status": "Descriptive complete real ImageList building population; original fixed793B."
+-    },
+-    {
+-      "address": "0x0040f7e0",
+-      "size": 59,
+-      "name": "ScreenRequestRenderer::SetClipMode",
+-      "name_status": "Descriptive; full unsigned32 mode, three actual word58 cases, unchanged default. R975 whole source/CFG/field proof and genuine WorldTest caller."
+     }
+   ],
+   "library_functions": [

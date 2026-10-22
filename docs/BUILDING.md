@@ -1913,3 +1913,56 @@ then-back checks, indexed entry reload and preparation clear are retained. CPU
 pixel allocations survive the supported display transition. Window/display
 identity changes, unavailable exact modes and failed GPU presentation are errors;
 this does not recreate a lost GPU device or construct a Game/GUI/Intro owner.
+
+
+The experimental positional-sound scheduler has its genuine constructor,
+list and payload cleanup, and global registration lifetime. Its owner and pool
+libraries are available with reconstructed tests disabled. Pool declarations use
+the existing real host atomic exchange and thread wait; production targets do
+not include fixture platform headers. Sound playback, scheduler updates and the
+complete Game owner remain separate capabilities.
+
+The optional Linux scheduler-owner fixture checks empty and populated lists,
+payload release order, returned pool nodes and overlapping owner lifetimes. It
+retains the original unconditional global clear when an older owner is destroyed.
+
+
+Experimental credits-data libraries decode the supported locally supplied
+`BeachLife.exe` as data. They verify its complete size and SHA-256, validate
+the PE32 data mapping, and preserve all 205 scalar rows and the adjacent
+writable format. No original table, text or executable is bundled or executed.
+A single game-thread binding owns publication; uninitialized, duplicate and
+foreign-thread access is rejected. Both libraries are available with
+reconstructed tests disabled and the experimental option remains off by default.
+
+The optional Linux generated-input fixture exercises malformed mappings, row
+and format preservation, binding lifetime and actual reconstructed BLE text
+lookup. Preparation retains the required executable through the existing worker;
+completed prepared mounts work with the ISO disconnected. Older caches need one
+repair with the ISO present. The complete credits controller and the normal
+Play-to-menu connection remain separate.
+
+
+The experimental `beachlife_reconstructed_renderer_clip_mode` library keeps the
+original mode word, rectangle suppression and three scale-bit values, and is
+available with reconstructed tests disabled. The focused
+`reconstructed_renderer_clip_mode` fixture selects `--clip-mode` on the existing
+clipping executable: one genuine renderer and six generated TIFFs exercise
+half, normal and double clipping, suppressed queue publication, and an unknown
+full-width mode under the defined unscaled branch. It uses the existing hidden
+SDL X11 window and platform Video recorder; it does not qualify GPU presentation,
+a Game owner or a menu. The remaining default clipping cases are a separate test.
+
+
+
+The matching profile includes the complete 59-byte renderer clip-mode setter.
+It passes strict comparison and raw byte equality. The coherent renderer prefix
+retains its 124-byte layout, and a typed borrowed caller exercises every accessed
+field without constructing a renderer owner or executing the comparison image.
+
+A control changing mode 2 to the mode-1 value is rejected at 73.33% against the
+fixed original 59-byte extent; its emitted body is 49 bytes after equal stores
+merge. All 128 prior scores and raw-byte results remain unchanged. The early
+native inverse preserves both native source profiles and the existing
+experimental clip-mode capability. This matching increment does not connect
+Game, Intro or menu rendering.

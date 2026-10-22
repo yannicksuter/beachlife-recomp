@@ -42,8 +42,8 @@ def check(executable, api_test):
         prepared = json.loads(run('prepare', image, cache))
         # Use the independently calculated host path also under Wine wrappers.
         root = cache/identity(original)
-        assert prepared['identity'] == root.name and prepared['files'] == 5
-        assert prepared['written'] == 5 and prepared['reused'] == 0
+        assert prepared['identity'] == root.name and prepared['files'] == 6
+        assert prepared['written'] == 6 and prepared['reused'] == 0
         manifest = json.loads(run('vfs-list', root))
         assert manifest['source_sha256'] == hashlib.sha256(original).hexdigest()
         assert manifest['total_bytes'] == prepared['bytes'] == sum(map(len, expected.values()))
@@ -68,7 +68,7 @@ def check(executable, api_test):
         run('vfs-read', root, 'BeachLife.ini', 0, 9999, fails=True)
         times = {p: (root/'files'/p).stat().st_mtime_ns for p in expected}
         repeated = json.loads(run('prepare', renamed, cache))
-        assert repeated['identity'] == root.name and repeated['reused'] == 5 and repeated['written'] == 0
+        assert repeated['identity'] == root.name and repeated['reused'] == 6 and repeated['written'] == 0
         assert times == {p: (root/'files'/p).stat().st_mtime_ns for p in expected}
 
         # Same source filename, different contents => separate prepared set.
@@ -87,7 +87,7 @@ def check(executable, api_test):
             else: asset.unlink()
             run('verify', root, fails=True)
             fixed = json.loads(run('prepare', renamed, cache))
-            assert fixed['reused'] == 4 and fixed['written'] == 1
+            assert fixed['reused'] == 5 and fixed['written'] == 1
             assert asset.read_bytes() == expected['Data/Sprites/test.dat']
             run('verify', root)
 
@@ -163,7 +163,7 @@ def check(executable, api_test):
             run('verify', api_root)  # two readers can share a mount
         finally:
             held.terminate(); held.communicate(timeout=10)
-        assert json.loads(run('prepare', ascii_image, api_cache))['reused'] == 5
+        assert json.loads(run('prepare', ascii_image, api_cache))['reused'] == 6
 
         # System ancestors can be aliases, as with macOS /var -> /private/var.
         # Public preparation resolves them before using the low-level storage API.

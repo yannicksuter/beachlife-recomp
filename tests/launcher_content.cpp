@@ -111,7 +111,7 @@ int main(int argc, char** argv)
         gate.release();
         service.prepare(); // resumes verified files, after the cancelled job unwinds
         auto ready = settled(service);
-        expect(ready.state == State::Ready && ready.files == 5 && ready.language == "en");
+        expect(ready.state == State::Ready && ready.files == 6 && ready.language == "en");
         settings.content = ready.binding;
         const auto root = cache / ready.binding.identity;
         {
