@@ -4190,3 +4190,42 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_tests_properties(reconstructed_jpeg_export PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Append after the existing renderer-owner target. This capability inherits its
+# experimental subsystem-test availability; no tests-disabled/production claim.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_capture STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_capture_native.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_capture PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_capture PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_capture PUBLIC
+        beachlife_reconstructed_renderer_owner
+        beachlife_reconstructed_surface_pixels
+        beachlife_reconstructed_tga
+        beachlife_reconstructed_jpeg_export)
+    add_dependencies(beachlife_reconstructed_renderer_capture verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_renderer_capture PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_capture PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_capture PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+            AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_executable(reconstructed_renderer_capture_tests tests/reconstructed_renderer_capture.cpp)
+        target_link_libraries(reconstructed_renderer_capture_tests PRIVATE
+            beachlife_reconstructed_renderer_capture)
+        set_target_properties(reconstructed_renderer_capture_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_renderer_capture_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_capture_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_renderer_capture COMMAND reconstructed_renderer_capture_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated-renderer-capture")
+        set_tests_properties(reconstructed_renderer_capture PROPERTIES
+            LABELS "reconstructed;experimental;renderer-capture;x11" TIMEOUT 30)
+    endif()
+endif()

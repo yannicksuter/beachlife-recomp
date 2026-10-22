@@ -1763,3 +1763,19 @@ I/O; this is not a claim about original malformed input behavior. Windows/macOS,
 codec allocation failure and close-only failure remain separate qualification
 gates. This target alone does not execute renderer capture, presentation, the
 Game owner or a menu. Default reconstructed source selection is unchanged.
+
+
+The experimental `reconstructed_renderer_capture` test exercises the complete
+capture method through a genuinely constructed software renderer, six generated
+TIFF inputs, the real TGA image lifetime, and the native JPEG exporter. Literal
+RGB555 full-frame, cropped and high-bit cases compare encoded output with
+independently specified RGB passed to the same codec. A real missing-directory
+failure still cleans up the image and clears the pending flag. The sole control
+changes that final clear to one.
+
+This focused Linux x86-64 check uses a real hidden x11 window and leak checks.
+The existing `Present` method is not selected by this target. The hardware565
+capture branch remains complete source but unqualified: the native owner rejects
+hardware construction. Short terminated fixture filenames exercise a bounded
+read of opaque storage; they do not establish its original general capacity.
+This is capture-subsystem evidence, not a reconstructed Game/menu or GPU result.
