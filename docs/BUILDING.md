@@ -1801,3 +1801,16 @@ capacity-instead-of-end source control scores 75% against the same original
 extent, while all prior matching results remain intact. The comparison fixture
 borrows the proven 16-byte owner prefix and establishes no owner lifetime. An
 early inverse patch keeps both native source selections unchanged.
+
+`beachlife_renderer_words` supplies owned RGB555/RGB565 CPU surfaces for the
+native renderer. It preserves exact source-key words, supports contained
+unscaled copies with overlapping storage, and keeps unlocked pixel borrows
+valid until storage is exchanged or destroyed. Operations reject wrong-thread
+access, incompatible formats, invalid bounds and conflicting locks. Logical
+pixel conversion is independent of the physical GPU format.
+
+Build `renderer_word_surface_tests` and run `ctest -R '^renderer_word_surface$'`
+for generated ownership, keyed-copy, overlap, bounds and literal color checks.
+This target needs no disc data, SDL runtime initialization or reconstructed
+game owner. Full-screen display selection, GPU presentation and the complete
+game/controller connection require their own integration.
