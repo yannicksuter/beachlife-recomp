@@ -1872,3 +1872,44 @@ image is never executed. Both native profiles retain their existing selections;
 the append and scanner source does not gain native or game-runtime credit from
 the comparison. The stream parser still needs a separate native pointer-domain
 adaptation before experimental execution.
+
+
+The experimental renderer provides the original mode-0 startup route through
+real SDL fullscreen display selection and owned RGB565 front/back surfaces.
+It requires the exact requested pixel dimensions and density; it does not
+select a nearest resolution or force the software-renderer mode. Offscreen
+surfaces retain explicit ownership, and capture reads the back image before
+real GPU presentation exchanges its pixel storage. The software path remains
+selected by its original mode argument.
+
+The renderer owner, presentation and blit libraries are available with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and reconstructed tests disabled. The
+option remains off by default. The optional Linux mode-0 fixture uses six
+generated TIFFs, real Vulkan presentation, downloaded pixel comparisons and
+normal owner cleanup. It needs X11 with an actual density-1 800×600 fullscreen
+mode; other displays are not silently substituted.
+
+This capability does not connect Play to the Game/Intro/menu loop. The actual
+COM loss/restore methods cannot operate on the native owner’s null COM fields;
+a real typed recovery boundary and the complete Game/GUI ownership connection
+remain separate. Windows/macOS, device recovery and allocation-failure timing
+are not qualified by the Linux owner fixture.
+
+
+The matching profile reconstructs the complete 793-byte building-list population
+method, including its availability checks, count text, count-dependent colours
+and pointer-vector growth. The linked comparison uses the real catalog,
+building-count and pool dependencies; comparison-only boundaries remain excluded
+and the image is never executed.
+
+The method passes full strict comparison, while raw bytes differ. A control that
+changes the no-building colour must fail against the same complete original
+extent and retain every earlier method result. Both native source profiles keep
+their existing selections, including the experimental mode-0 renderer; this
+matching result does not qualify the building-list owner or connect the menu.
+Experimental native rendering has typed surface status and exact fullscreen-mode
+restoration on the existing SDL GPU window. The original software skip, primary-
+then-back checks, indexed entry reload and preparation clear are retained. CPU
+pixel allocations survive the supported display transition. Window/display
+identity changes, unavailable exact modes and failed GPU presentation are errors;
+this does not recreate a lost GPU device or construct a Game/GUI/Intro owner.

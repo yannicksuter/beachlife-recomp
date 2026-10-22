@@ -1,0 +1,91 @@
+diff --git a/src/startup_renderer_restore_surface_native.cpp b/src/startup_renderer_restore_surface_native.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_restore_surface_native.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_renderer.h"
++#include "runtime/renderer_fullscreen_display.h"
++
++#include <stdexcept>
++
++// Native SDK boundary for the complete original 0x0040e3a0 algorithm.
++void ScreenRequestRenderer::RestoreSurface(int surface)
++{
++    if (software_mode == 0)
++    {
++        if (!native_fullscreen || !native_chain
++            || native_primary != &native_chain->front_surface()
++            || native_back != &native_chain->back_surface())
++            throw std::logic_error("Native renderer recovery capability is incomplete");
++        ScreenSurfacePosition* selected = surface_storage[surface];
++        if (!selected->active || selected->software || !selected->native_surface)
++            throw std::logic_error("Native indexed surface recovery storage is absent");
++        native_fullscreen->restore_surface(*native_chain, *selected->native_surface);
++        // Original reload after Restore, before caller Prepare/MarkPrepared.
++        surface_storage[surface]->prepared = 0;
++    }
++}
+diff --git a/src/startup_renderer_restore_surfaces_native.cpp b/src/startup_renderer_restore_surfaces_native.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_restore_surfaces_native.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_renderer.h"
++#include "runtime/renderer_fullscreen_display.h"
++
++#include <stdexcept>
++
++// Native SDK boundary for the complete original 0x00410ce0 algorithm.
++void ScreenRequestRenderer::RestoreSurfaces()
++{
++    // The original skip byte is this same first software-mode byte.
++    if (software_mode == 0)
++    {
++        if (!native_fullscreen || !native_chain
++            || native_primary != &native_chain->front_surface()
++            || native_back != &native_chain->back_surface())
++            throw std::logic_error("Native renderer recovery capability is incomplete");
++
++        if (native_fullscreen->surface_lost(*native_chain, *native_primary))
++            native_fullscreen->restore_surface(*native_chain, *native_primary);
++        if (native_fullscreen->surface_lost(*native_chain, *native_back))
++            native_fullscreen->restore_surface(*native_chain, *native_back);
++    }
++}
+diff --git a/src/startup_renderer_surface_lost_native.cpp b/src/startup_renderer_surface_lost_native.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_surface_lost_native.cpp
+@@ -0,0 +1,19 @@
++#include "startup_screen_renderer.h"
++#include "runtime/renderer_fullscreen_display.h"
++
++#include <stdexcept>
++
++// Native SDK boundary for the complete original 0x0040e370 algorithm.
++unsigned char ScreenRequestRenderer::SurfaceLost(int surface)
++{
++    if (software_mode)
++        return 0;
++    if (!native_fullscreen || !native_chain
++        || native_primary != &native_chain->front_surface()
++        || native_back != &native_chain->back_surface())
++        throw std::logic_error("Native renderer recovery capability is incomplete");
++    ScreenSurfacePosition* selected = surface_storage[surface];
++    if (!selected->active || selected->software || !selected->native_surface)
++        throw std::logic_error("Native indexed surface recovery storage is absent");
++    return native_fullscreen->surface_lost(*native_chain, *selected->native_surface);
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -182,6 +182,9 @@
+     // Actual 0x0040c740; copies the current source buffer to the selected surface.
+     void RenderDefault();
+     void Present();
++    void RestoreSurfaces();
++    unsigned char SurfaceLost(int surface);
++    void RestoreSurface(int surface);
+     // Full real 0x00410e70 remains a separate native dependency.
+     void CaptureFrame(const ScreenRectangle& bounds);
+ 

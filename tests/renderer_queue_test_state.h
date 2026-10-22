@@ -76,6 +76,12 @@ struct Snapshot
     decltype(ScreenRequestRenderer::sea_state_134) sea_state_134{};
     decltype(ScreenRequestRenderer::initialized_168) initialized_168{};
     decltype(ScreenRequestRenderer::native_display) native_display{};
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+    decltype(ScreenRequestRenderer::native_fullscreen) native_fullscreen{};
+    decltype(ScreenRequestRenderer::native_chain) native_chain{};
+    decltype(ScreenRequestRenderer::native_primary) native_primary{};
+    decltype(ScreenRequestRenderer::native_back) native_back{};
+#endif
     std::array<unsigned char, 3> unknown_01{};
     std::array<unsigned char, 4> unknown_20{};
     std::array<unsigned char, 4> display_mode_flags_48{};
@@ -125,6 +131,12 @@ struct Snapshot
         sea_state_134 = r.sea_state_134;
         initialized_168 = r.initialized_168;
         native_display = r.native_display;
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+        native_fullscreen = r.native_fullscreen;
+        native_chain = r.native_chain;
+        native_primary = r.native_primary;
+        native_back = r.native_back;
+#endif
         std::copy(std::begin(r.unknown_01), std::end(r.unknown_01), unknown_01.begin());
         std::copy(std::begin(r.unknown_20), std::end(r.unknown_20), unknown_20.begin());
         std::copy(std::begin(r.display_mode_flags_48),
@@ -163,6 +175,13 @@ template <class Guard> struct FrameSnapshot
 
 inline bool equal(const ScreenRequestRenderer& a, const Snapshot& b)
 {
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+    if (a.native_fullscreen != b.native_fullscreen || a.native_chain != b.native_chain ||
+        a.native_primary != b.native_primary || a.native_back != b.native_back)
+    {
+        return false;
+    }
+#endif
     if (a.software_mode != b.software_mode || a.width != b.width || a.height != b.height ||
         a.pixels_1c != b.pixels_1c || a.window_34 != b.window_34 || a.draw != b.draw ||
         a.primary_surface != b.primary_surface || a.back_surface != b.back_surface ||
@@ -206,22 +225,26 @@ inline bool equal(const ScreenRequestRenderer& a, const Snapshot& b)
 // Logical observed members/values, never ABI padding or vector/deque internals.
 template <class State> std::size_t compared_bytes(const State& r)
 {
-    return sizeof(r.software_mode) + sizeof(r.width) + sizeof(r.height) + sizeof(r.pixels_1c) +
-           sizeof(r.window_34) + sizeof(r.draw) + sizeof(r.primary_surface) +
-           sizeof(r.back_surface) + sizeof(r.format_44) + sizeof(r.flag_4c) +
-           sizeof(r.rectangle_suppressed_4d) + sizeof(r.rectangle_enabled_4e) +
-           sizeof(r.rectangle_ready_4f) + sizeof(r.word_50) + sizeof(r.clip_mode_54) +
-           sizeof(r.word_58) + sizeof(r.unscaled_clip_5c) + sizeof(r.clip_flag_5d) +
-           sizeof(r.word_60) + sizeof(r.device_context_64) + sizeof(r.current_surface) +
-           sizeof(r.pixels_locked) + sizeof(r.fill_color) + sizeof(r.dirty_rectangle_count) +
-           sizeof(r.bitmap_info) + sizeof(r.capture_pending_ac) + sizeof(r.buffer_130) +
-           sizeof(r.sea_state_134) + sizeof(r.initialized_168) + sizeof(r.native_display) +
-           sizeof(r.unknown_01) + sizeof(r.unknown_20) + sizeof(r.display_mode_flags_48) +
-           sizeof(r.unknown_5e) + sizeof(r.unknown_79) + sizeof(r.unknown_ad) +
-           sizeof(r.haze_images_138) + sizeof(r.unknown_150) + sizeof(r.unknown_169) +
-           sizeof(r.clip_rectangle) + sizeof(r.window_rectangle_24) +
-           r.surface_storage.size() * sizeof(ScreenSurfacePosition*) + sizeof(void*) +
-           sizeof(std::size_t) + r.dirty_rectangles.values.size() * sizeof(ScreenRectangle);
+    return
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+        sizeof(r.native_fullscreen) + sizeof(r.native_chain) + sizeof(r.native_primary) +
+        sizeof(r.native_back) +
+#endif
+        sizeof(r.software_mode) + sizeof(r.width) + sizeof(r.height) + sizeof(r.pixels_1c) +
+        sizeof(r.window_34) + sizeof(r.draw) + sizeof(r.primary_surface) + sizeof(r.back_surface) +
+        sizeof(r.format_44) + sizeof(r.flag_4c) + sizeof(r.rectangle_suppressed_4d) +
+        sizeof(r.rectangle_enabled_4e) + sizeof(r.rectangle_ready_4f) + sizeof(r.word_50) +
+        sizeof(r.clip_mode_54) + sizeof(r.word_58) + sizeof(r.unscaled_clip_5c) +
+        sizeof(r.clip_flag_5d) + sizeof(r.word_60) + sizeof(r.device_context_64) +
+        sizeof(r.current_surface) + sizeof(r.pixels_locked) + sizeof(r.fill_color) +
+        sizeof(r.dirty_rectangle_count) + sizeof(r.bitmap_info) + sizeof(r.capture_pending_ac) +
+        sizeof(r.buffer_130) + sizeof(r.sea_state_134) + sizeof(r.initialized_168) +
+        sizeof(r.native_display) + sizeof(r.unknown_01) + sizeof(r.unknown_20) +
+        sizeof(r.display_mode_flags_48) + sizeof(r.unknown_5e) + sizeof(r.unknown_79) +
+        sizeof(r.unknown_ad) + sizeof(r.haze_images_138) + sizeof(r.unknown_150) +
+        sizeof(r.unknown_169) + sizeof(r.clip_rectangle) + sizeof(r.window_rectangle_24) +
+        r.surface_storage.size() * sizeof(ScreenSurfacePosition*) + sizeof(void*) +
+        sizeof(std::size_t) + r.dirty_rectangles.values.size() * sizeof(ScreenRectangle);
 }
 
 // Only for scoped method views with RestoreOwnedState already active. No whole
@@ -272,15 +295,29 @@ inline void initialize(ScreenRequestRenderer& r, unsigned int seed)
     r.initialized_168 = 0x7b;
     pattern(r.unknown_169, seed + 11U);
     r.native_display = nullptr;
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+    r.native_fullscreen = nullptr;
+    r.native_chain = nullptr;
+    r.native_primary = nullptr;
+    r.native_back = nullptr;
+#endif
 }
 
 inline bool same_entry_extension(const ScreenSurfacePosition& a, const ScreenSurfacePosition& b)
 {
-    return a.video_memory == b.video_memory && same_bytes(a.unknown_0d, b.unknown_0d);
+    return
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+        a.native_surface == b.native_surface && a.native_surface_owned == b.native_surface_owned &&
+#endif
+        a.video_memory == b.video_memory && same_bytes(a.unknown_0d, b.unknown_0d);
 }
 
 inline void initialize_entry_extension(ScreenSurfacePosition& entry, unsigned int seed)
 {
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+    entry.native_surface = nullptr;
+    entry.native_surface_owned = false;
+#endif
     entry.video_memory = static_cast<unsigned char>(seed);
     pattern(entry.unknown_0d, seed + 37U);
 }

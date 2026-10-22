@@ -85,6 +85,16 @@ WordSurfaceDescription WordSurface16::description() const noexcept
     return {width_, height_, static_cast<std::size_t>(width_) * 2, format_};
 }
 
+void WordSurface16::validate_storage() const
+{
+    require_thread();
+    if (!pixels_ || words_ != checked_word_count(width_, height_))
+    {
+        throw std::logic_error("Word surface owned storage is incomplete");
+    }
+    (void)word_masks(format_);
+}
+
 void WordSurface16::require_thread() const
 {
     if (thread_ != std::this_thread::get_id())
