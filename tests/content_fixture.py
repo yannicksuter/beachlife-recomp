@@ -25,12 +25,13 @@ def content_files(*, screen=False, configuration=None):
               ('Data/Sprites/test.dat', bytes(range(256))*300, False),
               ('Data/empty.bin', b'', False),
               ('Data/loose.txt', b'loose file\x00\xff', True),
+              ('BeachLife.exe', b'test', True),
               ('Setup.exe', b'not game content', False)]
     if screen:
         assets[1] = ('Data/Screens/FrontScreen.tga', screen_tga(), False)
     if configuration is not None:
         # Keep every compressed game entry contiguous before the loose/support
-        # groups. Existing callers without configuration keep identical bytes.
+        # groups, including the one generated executable descriptor.
         assets.insert(4, ('Data/Script/GameParameters.pis', bytes(configuration), False))
     header = bytearray(16384)
     struct.pack_into('<5I', header, 0, 0x28635349, 0x01006000, 0, DESCRIPTOR, 0x600)
@@ -50,9 +51,9 @@ def content_files(*, screen=False, configuration=None):
 
     for i, name in enumerate(directories):
         struct.pack_into('<I', header, TABLE+i*4, text(name)-TABLE)
-    loose_index = len(assets) - 2
+    loose_index = len(assets) - 3
     groups = [('Ess_English', 0, 0), ('UK Comp', 1, loose_index-1),
-              ('UK Uncomp', loose_index, loose_index), ('<Support>Files', loose_index+1, loose_index+1)]
+              ('UK Uncomp', loose_index, loose_index+1), ('<Support>Files', loose_index+2, loose_index+2)]
     for i, (name, first, last) in enumerate(groups):
         node = 0x280+i*0x40
         descriptor = node+12
@@ -90,6 +91,21 @@ def content_files(*, screen=False, configuration=None):
 
 def iso_files(files):
     image = fixture()
+    # Replace the base indexer's one generated executable instead of creating a
+    # duplicate root path. All executable bytes still come from this fixture.
+    for directory, encoding in ((20, 'ascii'), (22, 'utf-16-be')):
+        start = directory*SECTOR
+        position = start
+        records = bytearray()
+        while image[position]:
+            size = image[position]
+            name = bytes(image[position+33:position+33+image[position+32]])
+            if name not in (b'\0', b'\1') and name.decode(encoding).lower() == 'beachlife.exe;1':
+                pass
+            else:
+                records += image[position:position+size]
+            position += size
+        image[start:start+SECTOR] = records + bytes(SECTOR-len(records))
     for name, body in files.items():
         parts = name.split('/')
         assert len(parts) == 1 or len(parts) == 2 and parts[0] == 'Data'

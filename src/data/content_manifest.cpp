@@ -101,7 +101,7 @@ void validate(const ContentManifest& manifest)
     std::uint64_t total = 0;
     std::size_t encoded_size = 512; // identity fields plus conservative per-entry JSON overhead
     std::set<std::string> paths;
-    bool ini = false, data = false;
+    bool ini = false, data = false, executable = false;
     for (const auto& file : manifest.files)
     {
         if (file.path.size() + 192 > max_content_manifest_bytes - encoded_size)
@@ -125,6 +125,10 @@ void validate(const ContentManifest& manifest)
         {
             ini = true;
         }
+        else if (path.key == "beachlife.exe")
+        {
+            executable = true;
+        }
         else if (path.key.starts_with("data/"))
         {
             data = true;
@@ -145,6 +149,13 @@ void validate(const ContentManifest& manifest)
                 throw std::runtime_error("Manifest file/directory conflict.");
             }
         }
+    }
+    // Keep the identity/schema stable: repair can reuse the old verified assets
+    // and add this one file before atomically replacing the old manifest.
+    if (!executable)
+    {
+        throw std::runtime_error("Prepared game data requires BeachLife.exe; prepare or repair it "
+                                 "from the original ISO.");
     }
     if (!ini || !data || total != manifest.total_bytes)
     {

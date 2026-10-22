@@ -24,7 +24,7 @@ GameIndex map_game_files(const CabinetIndex& cabinet, const IsoIndex& iso)
     std::map<std::string, GameAsset> assets;
     std::set<std::string> groups;
     std::set<std::size_t> selected;
-    bool data_found = false, ini_found = false;
+    bool data_found = false, ini_found = false, executable_found = false;
     GameIndex result;
     for (const auto& group : cabinet.groups)
     {
@@ -62,7 +62,10 @@ GameIndex map_game_files(const CabinetIndex& cabinet, const IsoIndex& iso)
             const auto path = normalize_game_path(raw);
             const bool ini = config && path.key == "beachlife.ini";
             const bool asset = data && path.key.starts_with("data/");
-            if (!ini && !asset)
+            // The one root executable is cached only as data for native constants.
+            // Both existing cabinet and external descriptors keep their normal checks.
+            const bool executable = data && path.key == "beachlife.exe";
+            if (!ini && !asset && !executable)
             {
                 continue;
             }
@@ -98,12 +101,13 @@ GameIndex map_game_files(const CabinetIndex& cabinet, const IsoIndex& iso)
             result.total_bytes += file.size;
             data_found |= asset;
             ini_found |= ini;
+            executable_found |= executable;
         }
     }
-    if (!data_found || !ini_found || !groups.contains("UK Comp"))
+    if (!data_found || !ini_found || !executable_found || !groups.contains("UK Comp"))
     {
-        throw std::runtime_error(
-            "Unsupported game layout: expected English game data and BeachLife.ini.");
+        throw std::runtime_error("Unsupported game layout: expected English game data, "
+                                 "BeachLife.ini and BeachLife.exe.");
     }
     for (auto& [key, file] : assets)
     {

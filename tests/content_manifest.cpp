@@ -29,12 +29,13 @@ int main()
     input.source_sha256 = std::string(64, 'a');
     input.profile = "uk-english-v1";
     input.language = "en";
-    input.files = {
-        {{"BeachLife.ini", 2}, std::string(64, 'b')}, {{"Data/a.bin", 3}, std::string(64, 'c')}};
-    input.total_bytes = 5;
+    input.files = {{{"BeachLife.ini", 2}, std::string(64, 'b')},
+        {{"Data/a.bin", 3}, std::string(64, 'c')},
+        {{"BeachLife.exe", 4}, std::string(64, 'd')}};
+    input.total_bytes = 9;
     const auto json = content_manifest_json(input);
     const auto parsed = parse_content_manifest(json);
-    expect(parsed.identity() == input.identity() && parsed.files.size() == 2 &&
+    expect(parsed.identity() == input.identity() && parsed.files.size() == 3 &&
            parsed.files[1].size == 3);
     auto other = input;
     other.source_sha256[0] = 'b';
@@ -54,7 +55,7 @@ int main()
             content_manifest_json(other);
         });
     other = input;
-    other.total_bytes = 6;
+    other.total_bytes = 10;
     rejects(
         [&]
         {
@@ -69,7 +70,29 @@ int main()
         });
     other = input;
     other.files.erase(other.files.begin());
-    other.total_bytes = 3;
+    other.total_bytes = 7;
+    rejects(
+        [&]
+        {
+            content_manifest_json(other);
+        });
+    other = input;
+    other.files.pop_back();
+    other.total_bytes = 5;
+    rejects(
+        [&]
+        {
+            content_manifest_json(other);
+        }); // old sets require one repair
+    other = input;
+    other.files.back().path = "Setup.exe";
+    rejects(
+        [&]
+        {
+            content_manifest_json(other);
+        }); // no broad executable allowlist
+    other = input;
+    other.files.push_back({{"BEACHLIFE.EXE", 0}, std::string(64, 'e')});
     rejects(
         [&]
         {

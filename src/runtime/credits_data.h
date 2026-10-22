@@ -22,7 +22,8 @@ struct CreditsRow
 };
 
 // An owned, verified input snapshot. No executable is mapped or loaded as code.
-// The executable source is explicit; the normal prepared game mount excludes it.
+// Read through an explicit FileSource, including the prepared local game cache.
+// Preparation retains BeachLife.exe as data; this reader still checks its revision.
 class CreditsData
 {
   public:

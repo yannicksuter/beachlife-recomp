@@ -1937,8 +1937,10 @@ reconstructed tests disabled and the experimental option remains off by default.
 
 The optional Linux generated-input fixture exercises malformed mappings, row
 and format preservation, binding lifetime and actual reconstructed BLE text
-lookup. This data capability is separate from preparation-cache integration,
-the complete credits controller, and the normal Play-to-menu connection.
+lookup. Preparation retains the required executable through the existing worker;
+completed prepared mounts work with the ISO disconnected. Older caches need one
+repair with the ISO present. The complete credits controller and the normal
+Play-to-menu connection remain separate.
 
 
 The experimental `beachlife_reconstructed_renderer_clip_mode` library keeps the
