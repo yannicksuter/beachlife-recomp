@@ -1,0 +1,145 @@
+diff --git a/src/startup_renderer_present_globals.cpp b/src/startup_renderer_present_globals.cpp
+new file mode 100644
+index 0000000..ec228d2
+--- /dev/null
++++ b/src/startup_renderer_present_globals.cpp
+@@ -0,0 +1,15 @@
++#include "startup_renderer_present_effect.h"
++
++// Genuine zero-initialized retail storage, not fixture or callback providers.
++// GLOBAL: BEACHLIFE 0x005a88b5
++unsigned char render_effect_active;
++// GLOBAL: BEACHLIFE 0x005a88b6
++unsigned char render_effect_decreasing;
++// GLOBAL: BEACHLIFE 0x005a88b8
++unsigned int render_effect_mode;
++// GLOBAL: BEACHLIFE 0x005a88bc
++unsigned int render_effect_countdown;
++// GLOBAL: BEACHLIFE 0x005a88c0
++unsigned int render_effect_step;
++// GLOBAL: BEACHLIFE 0x005a88c4
++unsigned char render_effect_hold;
+diff --git a/src/startup_renderer_present_native.cpp b/src/startup_renderer_present_native.cpp
+new file mode 100644
+index 0000000..c127f66
+--- /dev/null
++++ b/src/startup_renderer_present_native.cpp
+@@ -0,0 +1,118 @@
++#include "startup_screen_renderer.h"
++#include "startup_screen_item.h"
++#include "startup_renderer_present_effect.h"
++
++#include "runtime/renderer_bitmap.h"
++#include "runtime/renderer_software_display.h"
++
++#include <limits>
++#include <span>
++#include <stdexcept>
++
++// Native SDK adaptation of the complete 0x0040f5f0 algorithm.
++// CaptureFrame remains a separate real native dependency; no provider is supplied.
++void ScreenRequestRenderer::Present()
++{
++    if (capture_pending_ac)
++    {
++        ScreenRectangle bounds = { 0, 0, static_cast<int>(width), static_cast<int>(height) };
++        CaptureFrame(bounds);
++    }
++
++    if (!software_mode)
++    {
++        throw std::runtime_error("Native hardware renderer presentation is unsupported");
++    }
++
++    current_surface = 0;
++    unsigned short* pixels = AccessPixels();
++    if (render_effect_active)
++    {
++        unsigned int mode = render_effect_mode;
++        if (mode == 0 && render_effect_countdown != 0)
++            --render_effect_countdown;
++
++        if (render_effect_hold)
++        {
++            ApplyPresentEffect(pixels, width, height, 4);
++            if (--render_effect_countdown == 0)
++                render_effect_hold = 0;
++        }
++        else
++        {
++            ApplyPresentEffect(pixels, width, height, mode);
++            unsigned char decreasing = render_effect_decreasing;
++            mode = render_effect_mode;
++            if (!decreasing)
++            {
++                if (mode == 4)
++                {
++                    render_effect_countdown = 20;
++                    render_effect_decreasing = 1;
++                    render_effect_hold = 1;
++                }
++                else
++                {
++                    unsigned int previous = render_effect_step++;
++                    if (static_cast<int>(previous) > 1)
++                    {
++                        ++render_effect_mode;
++                        render_effect_step = 0;
++                    }
++                }
++            }
++            else if (mode == 0)
++            {
++                render_effect_active = 0;
++                render_effect_decreasing = 0;
++            }
++            else
++            {
++                unsigned int previous = render_effect_step++;
++                if (static_cast<int>(previous) > 1)
++                {
++                    --render_effect_mode;
++                    render_effect_step = 0;
++                }
++            }
++        }
++    }
++
++    if (!pixels)
++        return;
++
++    // Pass the actual owned surface extent, not an invented complete DIB.
++    // Odd-width storage is not padded/repaired here; the host boundary rejects
++    // an insufficient DWORD-aligned DIB span. The first native domain is even.
++    try
++    {
++        ScreenSurfacePosition* selected = surface_storage[0];
++        const std::size_t allocated_words = static_cast<std::size_t>(selected->width) * selected->height;
++        const std::size_t row_bytes = static_cast<std::size_t>(width) * 2;
++        if (row_bytes > std::numeric_limits<std::size_t>::max() - 3)
++            throw std::overflow_error("Native renderer DIB stride overflows");
++        const std::size_t row_stride = (row_bytes + 3) & ~std::size_t(3);
++        if (bitmap_info->bmiHeader.biSize != 40 || bitmap_info->bmiHeader.biPlanes != 1
++            || bitmap_info->bmiHeader.biBitCount != 16 || bitmap_info->bmiHeader.biCompression != 0
++            || bitmap_info->bmiHeader.biWidth != static_cast<int>(width)
++            || bitmap_info->bmiHeader.biHeight != -static_cast<int>(height))
++            throw std::invalid_argument("Native renderer bitmap description is unsupported");
++        device_context_64->present_rgb555(std::as_bytes(std::span(pixels, allocated_words)),
++            static_cast<int>(width),
++            static_cast<int>(height),
++            row_stride);
++    }
++    catch (...)
++    {
++        // Original StretchDIBits failure reaches the same cleanup tail.
++        // Ignore this actual host-boundary failure; do not invent a game
++        // exception, successful presentation or Win32 diagnostic allocation.
++    }
++
++    if (!software_mode)
++    {
++        DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
++        surface->vtable->Unlock(surface, 0);
++    }
++    pixels_locked = 0;
++}

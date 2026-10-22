@@ -1779,3 +1779,18 @@ capture branch remains complete source but unqualified: the native owner rejects
 hardware construction. Short terminated fixture filenames exercise a bounded
 read of opaque storage; they do not establish its original general capacity.
 This is capture-subsystem evidence, not a reconstructed Game/menu or GPU result.
+
+The experimental renderer presentation target composes the complete windowed
+`Present()` algorithm with the genuine renderer, pixel access, fade effect,
+frame capture and JPEG service. The six effect globals have one real storage
+owner. Capture runs before the effect; the original countdown, signed old-step
+comparison, surface selection and lock cleanup remain intact. An unavailable
+host drawing operation reaches the original cleanup tail. Unsupported hardware
+presentation remains an explicit separate capability.
+
+`reconstructed_renderer_present_tests` uses generated TIFFs and a genuine renderer
+to check literal effect states/colors, capture-before-effect ordering through
+real JPEG output, failed bitmap validation, and the original null-pixel early
+return. Its Video recorder observes the platform boundary; it supplies no game
+method. This does not qualify GPU presentation, mode0, a complete Game/controller,
+or the menu. Existing experimental subsystem-test selection remains unchanged.
