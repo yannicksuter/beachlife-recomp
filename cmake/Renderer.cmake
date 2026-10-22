@@ -252,3 +252,29 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
                 target_compile_options(beachlife_reconstructed_surface_operations PRIVATE -fno-lto)
         endif()
 endif()
+
+# Real typed surface-status and restoration adapters. FullscreenDisplay and
+# WordSurface16 remain in their existing host archives, each compiled once.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_recovery STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_restore_surfaces_native.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_surface_lost_native.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_restore_surface_native.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_recovery PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}" "${CMAKE_SOURCE_DIR}/src")
+    target_compile_features(beachlife_reconstructed_renderer_recovery PUBLIC cxx_std_20)
+    target_compile_definitions(beachlife_reconstructed_renderer_recovery PUBLIC
+        BEACHLIFE_DECOMP_RENDERER_QUEUE=1)
+    target_link_libraries(beachlife_reconstructed_renderer_recovery PUBLIC
+        beachlife_reconstructed_renderer_owner
+        beachlife_reconstructed_surface_operations
+        beachlife_reconstructed_renderer_present beachlife_renderer_display)
+    add_dependencies(beachlife_reconstructed_renderer_recovery verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_renderer_recovery PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_recovery PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_recovery PRIVATE -fno-lto)
+    endif()
+endif()

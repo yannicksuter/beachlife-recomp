@@ -1907,3 +1907,9 @@ changes the no-building colour must fail against the same complete original
 extent and retain every earlier method result. Both native source profiles keep
 their existing selections, including the experimental mode-0 renderer; this
 matching result does not qualify the building-list owner or connect the menu.
+Experimental native rendering has typed surface status and exact fullscreen-mode
+restoration on the existing SDL GPU window. The original software skip, primary-
+then-back checks, indexed entry reload and preparation clear are retained. CPU
+pixel allocations survive the supported display transition. Window/display
+identity changes, unavailable exact modes and failed GPU presentation are errors;
+this does not recreate a lost GPU device or construct a Game/GUI/Intro owner.

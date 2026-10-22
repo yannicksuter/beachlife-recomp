@@ -4135,3 +4135,21 @@ if(TARGET reconstructed_surface_create_tests)
     target_link_libraries(reconstructed_surface_create_tests PRIVATE
         beachlife_reconstructed_pool_refill)
 endif()
+
+if(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
+        AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+    add_executable(reconstructed_renderer_recovery_tests tests/reconstructed_renderer_recovery.cpp)
+    target_link_libraries(reconstructed_renderer_recovery_tests PRIVATE
+        beachlife_reconstructed_renderer_recovery beachlife_reconstructed_renderer_present
+        beachlife_reconstructed_surface_operations beachlife_runtime)
+    set_target_properties(reconstructed_renderer_recovery_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_renderer_recovery_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_renderer_recovery_tests PRIVATE -fno-lto)
+    add_test(NAME reconstructed_renderer_recovery COMMAND reconstructed_renderer_recovery_tests
+        "${CMAKE_CURRENT_BINARY_DIR}/generated-renderer-recovery")
+    set_tests_properties(reconstructed_renderer_recovery PROPERTIES
+        LABELS "reconstructed;experimental;mode0;vulkan;x11" TIMEOUT 60)
+endif()

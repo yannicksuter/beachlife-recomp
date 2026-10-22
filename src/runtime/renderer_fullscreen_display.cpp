@@ -42,14 +42,25 @@ std::span<const std::uint16_t> FlipChain16::front_pixels() const
     return front_.pixels();
 }
 
-void FlipChain16::present(platform::Video& video, ImDrawData* overlay)
+void FlipChain16::present(platform::Video& video, ImDrawData* overlay, bool& presentation_failed)
 {
     if (locked())
     {
         throw std::logic_error("Cannot flip a locked fullscreen surface");
     }
     const auto frame = convert_words(back_.pixels(), width(), height(), format());
-    video.present(frame, overlay);
+    try
+    {
+        video.present(frame, overlay);
+    }
+    catch (...)
+    {
+        // SDL GPU exposes errors on actual operations, not a renderer-reset
+        // event that recreates this Video's device. Never report mode recovery
+        // as recovery from a failed Video presentation.
+        presentation_failed = true;
+        throw;
+    }
     // Roles keep their addresses and keys; only their backing allocations move.
     // A thrown conversion/presentation leaves both allocations in their roles.
     front_.exchange_storage(back_);
@@ -131,6 +142,10 @@ void FullscreenDisplay::set_display_mode(int width, int height, unsigned int bit
     {
         fail("Cannot identify fullscreen renderer display");
     }
+    if (display_ && display != display_)
+    {
+        throw std::runtime_error("Fullscreen renderer moved to another display");
+    }
     int count = 0;
     SDL_DisplayMode** modes = SDL_GetFullscreenDisplayModes(display, &count);
     if (!modes)
@@ -173,25 +188,105 @@ void FullscreenDisplay::set_display_mode(int width, int height, unsigned int bit
     }
     width_ = width;
     height_ = height;
+    display_ = display;
     mode_ready_ = true;
 }
 
-void FullscreenDisplay::require_mode() const
+bool FullscreenDisplay::mode_changed() const
 {
     SDL_Window* target = window();
-    if (!mode_ready_ || !(SDL_GetWindowFlags(target) & SDL_WINDOW_FULLSCREEN))
+    if (presentation_failed_)
     {
-        throw std::logic_error("Fullscreen renderer mode has not been established");
+        throw std::runtime_error(
+            "Fullscreen Video presentation failed; device recovery is unavailable");
+    }
+    if (!display_ || width_ <= 0 || height_ <= 0)
+    {
+        throw std::logic_error("Fullscreen renderer has no established mode to recover");
+    }
+    const SDL_DisplayID display = SDL_GetDisplayForWindow(target);
+    if (!display)
+    {
+        fail("Cannot identify fullscreen renderer recovery display");
+    }
+    if (display != display_)
+    {
+        throw std::runtime_error("Fullscreen renderer moved to another display");
+    }
+    const auto flags = SDL_GetWindowFlags(target);
+    if (flags & SDL_WINDOW_MINIMIZED)
+    {
+        throw std::runtime_error("Restore the minimized renderer window before surface recovery");
+    }
+    if (!mode_ready_ || !(flags & SDL_WINDOW_FULLSCREEN))
+    {
+        return true;
+    }
+    const SDL_DisplayMode* requested = SDL_GetWindowFullscreenMode(target);
+    const SDL_DisplayMode* applied = SDL_GetCurrentDisplayMode(display);
+    if (!applied)
+    {
+        fail("Cannot query fullscreen renderer recovery mode");
     }
     int width = 0, height = 0;
     if (!SDL_GetWindowSizeInPixels(target, &width, &height))
     {
         fail("Cannot query fullscreen renderer pixels");
     }
-    if (width != width_ || height != height_)
+    // A null requested mode denotes borderless desktop fullscreen. Matching
+    // dimensions alone must not make that an accepted exclusive mode.
+    return !requested || requested->displayID != display_ || requested->w != width_ ||
+           requested->h != height_ || requested->pixel_density != 1.0f ||
+           applied->displayID != display_ || applied->w != width_ || applied->h != height_ ||
+           applied->pixel_density != 1.0f || width != width_ || height != height_;
+}
+
+void FullscreenDisplay::require_mode() const
+{
+    if (mode_changed())
     {
-        throw std::runtime_error("Fullscreen renderer geometry changed");
+        throw std::runtime_error("Fullscreen renderer exact mode needs recovery");
     }
+}
+
+void FullscreenDisplay::validate_surface(
+    const FlipChain16& chain, const WordSurface16& surface) const
+{
+    chain.front_.validate_storage();
+    chain.back_.validate_storage();
+    surface.validate_storage();
+    const auto back = chain.back_.description();
+    if (chain.width() != width_ || chain.height() != height_ || back.width != width_ ||
+        back.height != height_ || back.format != chain.format() ||
+        surface.description().format != chain.format())
+    {
+        throw std::logic_error("Fullscreen surface does not match its owned chain");
+    }
+}
+
+bool FullscreenDisplay::surface_lost(const FlipChain16& chain, const WordSurface16& surface) const
+{
+    validate_surface(chain, surface);
+    return mode_changed();
+}
+
+void FullscreenDisplay::restore_surface(const FlipChain16& chain, WordSurface16& surface)
+{
+    validate_surface(chain, surface);
+    if (chain.locked() || surface.locked())
+    {
+        throw std::logic_error("Cannot restore fullscreen mode while surface pixels are borrowed");
+    }
+    if (!mode_changed())
+    {
+        return;
+    }
+    // CPU allocations, keys and pixel values survive the actual mode change.
+    // Reapply the original exact-size/density selection, not a nearest mode or
+    // mode1. If either request or verification fails, the error propagates.
+    enter_fullscreen();
+    set_display_mode(width_, height_, 16);
+    require_mode();
 }
 
 std::unique_ptr<FlipChain16> FullscreenDisplay::create_primary(WordFormat format) const
@@ -229,7 +324,7 @@ void FullscreenDisplay::present(FlipChain16& chain, ImDrawData* overlay)
     {
         throw std::invalid_argument("Fullscreen chain does not match the active mode");
     }
-    chain.present(video_, overlay);
+    chain.present(video_, overlay, presentation_failed_);
 }
 
 void FullscreenDisplay::restore_windowed()

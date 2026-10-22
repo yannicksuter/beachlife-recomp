@@ -51,6 +51,9 @@ class WordSurface16
     // before an allocation or a display-mode operation is attempted.
     static std::size_t checked_word_count(int width, int height);
     WordSurfaceDescription description() const noexcept;
+    // Checks the owned allocation and its descriptor without reading pixels.
+    // A valid lock is not a loss of storage. No borrow is ended by this query.
+    void validate_storage() const;
     bool locked() const;
     std::span<std::uint16_t> lock();
     void unlock();

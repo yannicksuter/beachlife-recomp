@@ -53,7 +53,7 @@ class FlipChain16
   private:
     friend class FullscreenDisplay;
     FlipChain16(int width, int height, WordFormat format);
-    void present(platform::Video& video, ImDrawData* overlay);
+    void present(platform::Video& video, ImDrawData* overlay, bool& presentation_failed);
 
     WordSurface16 front_, back_;
 };
@@ -77,13 +77,23 @@ class FullscreenDisplay
     void present(FlipChain16& chain, ImDrawData* overlay = nullptr);
     void restore_windowed();
 
+    // Loss here means that the established exact display mode no longer
+    // applies to this same live window/display. CPU pixels survive that
+    // transition. This is not a query or recreation of a lost GPU device.
+    bool surface_lost(const FlipChain16& chain, const WordSurface16& surface) const;
+    void restore_surface(const FlipChain16& chain, WordSurface16& surface);
+
   private:
     SDL_Window* window() const;
     void require_mode() const;
+    bool mode_changed() const;
+    void validate_surface(const FlipChain16& chain, const WordSurface16& surface) const;
     platform::Video& video_;
     SDL_WindowID window_;
     std::thread::id thread_;
     int width_ = 0, height_ = 0;
     bool mode_ready_ = false;
+    SDL_DisplayID display_ = 0;
+    bool presentation_failed_ = false;
 };
 } // namespace beachlife::runtime::renderer_display
