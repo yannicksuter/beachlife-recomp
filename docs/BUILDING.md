@@ -1823,3 +1823,52 @@ by the freshly compiled count, search and borrowed-pointer fixture. All 124 prio
 matching rows retain their scores and raw-byte results. An early inverse patch
 preserves both native source selections; this match establishes no owning
 lifetime or native gameplay capability.
+
+
+The matching profile includes the VC6 x86 stack-probe compiler helper needed by
+large local buffers. Its 47-byte body agrees with the pinned compiler package,
+walks each 4096-byte stack page, and preserves the original register and stack
+contract. A compile-only 0x1400-byte caller verifies the real compiler call;
+the linked comparison image is never executed. A changed ECX restore is rejected
+against the same complete helper extent, while all 125 existing method results
+are retained. The MSVCRT import library also exposes genuine `strncmp` and
+`strncpy` imports for reconstructed file metadata readers.
+
+This is compiler support, with no additional game-method matching or gameplay
+credit. Both native source profiles remove it before native adaptation and keep
+their existing source selection. Native compilers provide their own stack
+probing support.
+
+The comparison metadata binds the current PDB public alias of a shared empty
+function. Its complete one-byte extent and the caller's complete extent are
+preserved; folded aliases are checked against the actual linked contribution.
+
+
+The matching profile reconstructs the complete 593-byte scenery-list population
+method, including its vector growth and exception cleanup. The original
+21-byte exception handler and 40-byte state metadata are checked separately.
+The selected source includes the real catalog getter and pool-refill dependency;
+`_strupr` is supplied by the genuine MSVCRT import library. The current borrowed
+image-list and frame declarations remain consistent across the comparison image.
+
+A preview-frame to cost-field source control is compared against the same full
+original method extent and must fail matching while retaining every earlier
+method result. Comparison images are never executed. Both native source profiles
+retain their previous selection; this matching increment alone does not connect
+the game window to the reconstructed menu or qualify a full catalog owner.
+
+
+The matching profile reconstructs the complete 718-byte load-panel entry append,
+including its file check, owned strings, optional MP3 scan, tag read and vector
+growth. Its original 35-byte exception-handler code and 48-byte state metadata
+are checked separately. Real scanner and tag-reader bodies supply the direct
+dependencies; the existing compiler stack helper handles their large buffers.
+The original scanner leak and unchecked parsing behavior are preserved.
+
+The combined comparison image retains the scenery-list reconstruction and all
+earlier method results. A control that changes the stored entry value with XOR1
+must fail against the same full original 718-byte extent. This linked matching
+image is never executed. Both native profiles retain their existing selections;
+the append and scanner source does not gain native or game-runtime credit from
+the comparison. The stream parser still needs a separate native pointer-domain
+adaptation before experimental execution.
