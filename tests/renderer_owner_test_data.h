@@ -331,6 +331,12 @@ class RestoreOwnedState
         , markers_(value.buffer_130)
         , sea_(value.sea_state_134)
         , display_(value.native_display)
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+        , native_fullscreen_(value.native_fullscreen)
+        , native_chain_(value.native_chain)
+        , native_primary_(value.native_primary)
+        , native_back_(value.native_back)
+#endif
         , window_(value.window_34)
         , draw_(value.draw)
         , width_(value.width)
@@ -352,6 +358,12 @@ class RestoreOwnedState
         value_.buffer_130 = markers_;
         value_.sea_state_134 = sea_;
         value_.native_display = display_;
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+        value_.native_fullscreen = native_fullscreen_;
+        value_.native_chain = native_chain_;
+        value_.native_primary = native_primary_;
+        value_.native_back = native_back_;
+#endif
         value_.window_34 = window_;
         value_.draw = draw_;
         value_.width = width_;
@@ -381,6 +393,12 @@ class RestoreOwnedState
     unsigned char* markers_;
     RendererSeaStatePrefix* sea_;
     beachlife::runtime::renderer_display::SoftwareDisplay* display_;
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+    decltype(ScreenRequestRenderer::native_fullscreen) native_fullscreen_;
+    decltype(ScreenRequestRenderer::native_chain) native_chain_;
+    decltype(ScreenRequestRenderer::native_primary) native_primary_;
+    decltype(ScreenRequestRenderer::native_back) native_back_;
+#endif
     platform::Video* window_;
     DirectDraw7Prefix* draw_;
     unsigned width_, height_;

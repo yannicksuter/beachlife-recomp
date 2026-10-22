@@ -119,7 +119,9 @@ else()
     target_compile_options(beachlife_renderer_words PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
-add_library(beachlife_renderer_display STATIC src/runtime/renderer_software_display.cpp)
+add_library(beachlife_renderer_display STATIC
+    src/runtime/renderer_software_display.cpp
+    src/runtime/renderer_fullscreen_display.cpp)
 target_include_directories(beachlife_renderer_display PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_compile_features(beachlife_renderer_display PUBLIC cxx_std_20)
 set_target_properties(beachlife_renderer_display PROPERTIES CXX_EXTENSIONS OFF)

@@ -349,6 +349,10 @@ void run_cleanup(Method method,
 
     Frame actual;
     std::memset(&actual, static_cast<int>(pattern & 255), sizeof(actual));
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+    actual.object.native_surface = nullptr;
+    actual.object.native_surface_owned = false;
+#endif
     actual.object.active = static_cast<unsigned char>(active);
     actual.object.software = static_cast<unsigned char>(software);
 #if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
@@ -661,6 +665,10 @@ void run_position(unsigned int layout, unsigned int base_index, unsigned int ind
     unsigned n = 0;
     for (auto& entry : surfaces)
     {
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+        entry.value.native_surface = nullptr;
+        entry.value.native_surface_owned = false;
+#endif
         entry.value.active = static_cast<unsigned char>(n * 37);
         entry.value.software = static_cast<unsigned char>(n * 63);
 #if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)

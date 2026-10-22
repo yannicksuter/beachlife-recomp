@@ -326,6 +326,7 @@ std::size_t run(const fs::path& files)
 
     auto younger = std::make_unique<GuardedOwner>(video, 1);
     check_constructed(*younger, video);
+#if !defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
     bool unsupported = false;
     try
     {
@@ -338,6 +339,9 @@ std::size_t run(const fs::path& files)
     }
     require(unsupported && screen_request_renderer == &younger->owner,
         "unsupported hardware entry mutated the published owner");
+#endif
+    // Mode0 startup now has a separate real-GPU/exact-mode ownership case.
+    // Do not run it through this software RecorderVideo or an 8x4 fake mode.
     older.reset();
     require(screen_request_renderer == nullptr,
         "older owner did not unconditionally clear younger registration");

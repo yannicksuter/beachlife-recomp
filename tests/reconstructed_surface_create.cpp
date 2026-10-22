@@ -25,7 +25,13 @@ static_assert(std::is_standard_layout_v<ScreenSurfacePosition>);
 static_assert(offsetof(ScreenSurfacePosition, video_memory) == 24);
 static_assert(offsetof(ScreenSurfacePosition, unknown_0d) == 25);
 static_assert(offsetof(ScreenSurfacePosition, width) == 28);
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+static_assert(offsetof(ScreenSurfacePosition, native_surface) == 56);
+static_assert(offsetof(ScreenSurfacePosition, native_surface_owned) == 64);
+static_assert(sizeof(ScreenSurfacePosition) == 72);
+#else
 static_assert(sizeof(ScreenSurfacePosition) == 56);
+#endif
 static_assert(offsetof(DirectDraw7VtablePrefix, CreateSurface) == 6 * sizeof(void*));
 static_assert(offsetof(DirectDrawSurface7VtablePrefix, Release) == 2 * sizeof(void*));
 static_assert(offsetof(DirectDrawSurface7VtablePrefix, GetSurfaceDesc) == 22 * sizeof(void*));

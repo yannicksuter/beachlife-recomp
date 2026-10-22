@@ -1872,3 +1872,25 @@ image is never executed. Both native profiles retain their existing selections;
 the append and scanner source does not gain native or game-runtime credit from
 the comparison. The stream parser still needs a separate native pointer-domain
 adaptation before experimental execution.
+
+
+The experimental renderer provides the original mode-0 startup route through
+real SDL fullscreen display selection and owned RGB565 front/back surfaces.
+It requires the exact requested pixel dimensions and density; it does not
+select a nearest resolution or force the software-renderer mode. Offscreen
+surfaces retain explicit ownership, and capture reads the back image before
+real GPU presentation exchanges its pixel storage. The software path remains
+selected by its original mode argument.
+
+The renderer owner, presentation and blit libraries are available with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and reconstructed tests disabled. The
+option remains off by default. The optional Linux mode-0 fixture uses six
+generated TIFFs, real Vulkan presentation, downloaded pixel comparisons and
+normal owner cleanup. It needs X11 with an actual density-1 800×600 fullscreen
+mode; other displays are not silently substituted.
+
+This capability does not connect Play to the Game/Intro/menu loop. The actual
+COM loss/restore methods cannot operate on the native owner’s null COM fields;
+a real typed recovery boundary and the complete Game/GUI ownership connection
+remain separate. Windows/macOS, device recovery and allocation-failure timing
+are not qualified by the Linux owner fixture.
