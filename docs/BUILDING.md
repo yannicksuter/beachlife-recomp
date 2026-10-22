@@ -1823,3 +1823,22 @@ by the freshly compiled count, search and borrowed-pointer fixture. All 124 prio
 matching rows retain their scores and raw-byte results. An early inverse patch
 preserves both native source selections; this match establishes no owning
 lifetime or native gameplay capability.
+
+
+The matching profile includes the VC6 x86 stack-probe compiler helper needed by
+large local buffers. Its 47-byte body agrees with the pinned compiler package,
+walks each 4096-byte stack page, and preserves the original register and stack
+contract. A compile-only 0x1400-byte caller verifies the real compiler call;
+the linked comparison image is never executed. A changed ECX restore is rejected
+against the same complete helper extent, while all 125 existing method results
+are retained. The MSVCRT import library also exposes genuine `strncmp` and
+`strncpy` imports for reconstructed file metadata readers.
+
+This is compiler support, with no additional game-method matching or gameplay
+credit. Both native source profiles remove it before native adaptation and keep
+their existing source selection. Native compilers provide their own stack
+probing support.
+
+The comparison metadata binds the current PDB public alias of a shared empty
+function. Its complete one-byte extent and the caller's complete extent are
+preserved; folded aliases are checked against the actual linked contribution.
