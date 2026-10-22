@@ -467,6 +467,10 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME OR BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     include(${CMAKE_CURRENT_LIST_DIR}/Renderer.cmake)
 endif()
 
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    include(${CMAKE_CURRENT_LIST_DIR}/GameOwners.cmake)
+endif()
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -2701,9 +2705,6 @@ endif()
 # Complete resource owner and mounted metadata/palette/raw bank composition.
 # All these subsystems already live below the optional-test return.
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
-    add_library(beachlife_resource_pool_host STATIC src/runtime/resource_pool_host.cpp)
-    target_compile_features(beachlife_resource_pool_host PUBLIC cxx_std_20)
-    target_link_libraries(beachlife_resource_pool_host PUBLIC Threads::Threads)
     # Pool lock calls in the actual list archive use the real host boundary.
     target_link_libraries(beachlife_reconstructed_screen_list PUBLIC
         $<LINK_ONLY:beachlife_resource_pool_host>)
@@ -4152,4 +4153,24 @@ if(BEACHLIFE_BUILD_RECONSTRUCTED_TESTS AND BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
         "${CMAKE_CURRENT_BINARY_DIR}/generated-renderer-recovery")
     set_tests_properties(reconstructed_renderer_recovery PROPERTIES
         LABELS "reconstructed;experimental;mode0;vulkan;x11" TIMEOUT 60)
+endif()
+
+# Genuine scheduler-owner lifetimes; the library is also available without tests.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+        add_executable(reconstructed_game_update_pair_owner_tests
+            tests/reconstructed_game_update_pair_owner.cpp)
+        target_link_libraries(reconstructed_game_update_pair_owner_tests PRIVATE
+            beachlife_reconstructed_game_update_pair_owner)
+        set_target_properties(reconstructed_game_update_pair_owner_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_game_update_pair_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_game_update_pair_owner_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_game_update_pair_owner
+            COMMAND reconstructed_game_update_pair_owner_tests)
+        set_tests_properties(reconstructed_game_update_pair_owner PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
 endif()

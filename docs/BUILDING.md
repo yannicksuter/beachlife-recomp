@@ -1913,3 +1913,15 @@ then-back checks, indexed entry reload and preparation clear are retained. CPU
 pixel allocations survive the supported display transition. Window/display
 identity changes, unavailable exact modes and failed GPU presentation are errors;
 this does not recreate a lost GPU device or construct a Game/GUI/Intro owner.
+
+
+The experimental positional-sound scheduler has its genuine constructor,
+list and payload cleanup, and global registration lifetime. Its owner and pool
+libraries are available with reconstructed tests disabled. Pool declarations use
+the existing real host atomic exchange and thread wait; production targets do
+not include fixture platform headers. Sound playback, scheduler updates and the
+complete Game owner remain separate capabilities.
+
+The optional Linux scheduler-owner fixture checks empty and populated lists,
+payload release order, returned pool nodes and overlapping owner lifetimes. It
+retains the original unconditional global clear when an older owner is destroyed.
