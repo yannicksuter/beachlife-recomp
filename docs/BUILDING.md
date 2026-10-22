@@ -1952,3 +1952,17 @@ half, normal and double clipping, suppressed queue publication, and an unknown
 full-width mode under the defined unscaled branch. It uses the existing hidden
 SDL X11 window and platform Video recorder; it does not qualify GPU presentation,
 a Game owner or a menu. The remaining default clipping cases are a separate test.
+
+
+
+The matching profile includes the complete 59-byte renderer clip-mode setter.
+It passes strict comparison and raw byte equality. The coherent renderer prefix
+retains its 124-byte layout, and a typed borrowed caller exercises every accessed
+field without constructing a renderer owner or executing the comparison image.
+
+A control changing mode 2 to the mode-1 value is rejected at 73.33% against the
+fixed original 59-byte extent; its emitted body is 49 bytes after equal stores
+merge. All 128 prior scores and raw-byte results remain unchanged. The early
+native inverse preserves both native source profiles and the existing
+experimental clip-mode capability. This matching increment does not connect
+Game, Intro or menu rendering.
