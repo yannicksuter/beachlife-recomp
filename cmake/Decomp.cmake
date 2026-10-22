@@ -1265,7 +1265,7 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_dependencies(beachlife_reconstructed_renderer_clip verify_reconstructed_source)
     add_executable(reconstructed_renderer_clip_tests tests/reconstructed_renderer_clip.cpp)
     target_link_libraries(reconstructed_renderer_clip_tests PRIVATE
-        beachlife_reconstructed_renderer_clip)
+        beachlife_reconstructed_renderer_clip beachlife_reconstructed_renderer_clip_mode)
     set_target_properties(beachlife_reconstructed_renderer_clip
         reconstructed_renderer_clip_tests PROPERTIES
         CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
@@ -1281,6 +1281,13 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_test(NAME reconstructed_renderer_clip COMMAND reconstructed_renderer_clip_tests)
     set_tests_properties(reconstructed_renderer_clip PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+            AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_test(NAME reconstructed_renderer_clip_mode
+            COMMAND reconstructed_renderer_clip_tests --clip-mode)
+        set_tests_properties(reconstructed_renderer_clip_mode PROPERTIES
+            LABELS "reconstructed;experimental;renderer-owner;x11" TIMEOUT 30)
+    endif()
 endif()
 
 # Complete drawing composes actual clipping, pixels, kernels and image lifetime.

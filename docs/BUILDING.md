@@ -1939,3 +1939,14 @@ The optional Linux generated-input fixture exercises malformed mappings, row
 and format preservation, binding lifetime and actual reconstructed BLE text
 lookup. This data capability is separate from preparation-cache integration,
 the complete credits controller, and the normal Play-to-menu connection.
+
+
+The experimental `beachlife_reconstructed_renderer_clip_mode` library keeps the
+original mode word, rectangle suppression and three scale-bit values, and is
+available with reconstructed tests disabled. The focused
+`reconstructed_renderer_clip_mode` fixture selects `--clip-mode` on the existing
+clipping executable: one genuine renderer and six generated TIFFs exercise
+half, normal and double clipping, suppressed queue publication, and an unknown
+full-width mode under the defined unscaled branch. It uses the existing hidden
+SDL X11 window and platform Video recorder; it does not qualify GPU presentation,
+a Game owner or a menu. The remaining default clipping cases are a separate test.

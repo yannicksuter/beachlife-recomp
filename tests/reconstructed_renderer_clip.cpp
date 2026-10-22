@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <exception>
 #include <initializer_list>
+#include <string_view>
 
 static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && INT_MAX == 2147483647);
 static_assert(sizeof(unsigned int) == 4);
@@ -574,12 +575,101 @@ void run_repeated()
     check(pixels[0] == 0x1234 && pixels[1] == 0xabcd && surfaces[0] == &surface,
         "borrowed storage changed");
 }
+
+void run_clip_modes()
+{
+    struct ClipModeCase
+    {
+        unsigned int mode;
+        unsigned char unscaled;
+        unsigned char clip_flag;
+        unsigned int expected_word58;
+        std::array<int, 6> initial;
+        std::array<int, 6> expected;
+    };
+    // Literal half/normal/double clipping, followed by the original full-width
+    // unknown mode under a defined unscaled branch. No unknown mode reaches the
+    // uninitialized scaled bounds in ClipRectangle.
+    constexpr std::array<ClipModeCase, 4> cases{{
+        {0, 0, 0, 0x40000000U, {11, 21, 2, 3, 22, 23}, {11, 21, 2, 3, 5, 5}},
+        {1, 0, 0, 0x3f800000U, {11, 21, 2, 3, 22, 23}, {11, 21, 2, 3, 10, 9}},
+        {2, 0, 0, 0x3f000000U, {5, 15, 2, 3, 22, 23}, {10, 20, 7, 8, 22, 22}},
+        {0x80000003U, 1, 255, 0x3f000000U, {11, 21, 2, 3, 22, 23}, {11, 21, 2, 3, 10, 9}},
+    }};
+    ++sessions;
+    std::size_t setters = 0;
+    unsigned short pixels[2] = {0x1234, 0xabcd};
+    ScreenSurfacePosition surface{};
+    ScreenSurfacePosition* surfaces[1] = {&surface};
+    Frame frame{};
+    initialize(frame, pixels, surfaces);
+    auto& renderer = frame.renderer;
+    renderer.dirty_rectangles.values = {{-40, -40, -30, -30}, {200, 200, 210, 210}};
+    renderer.dirty_rectangle_count = 2;
+    for (const auto& test : cases)
+    {
+        renderer.clip_rectangle = {10, 20, 9, 7};
+        renderer.unscaled_clip_5c = test.unscaled;
+        renderer.clip_flag_5d = test.clip_flag;
+        renderer.rectangle_enabled_4e = 0x81;
+        renderer.rectangle_ready_4f = 0xfe;
+        renderer.rectangle_suppressed_4d = 0;
+        renderer.word_50 = 0xa17e3c59U;
+        renderer_queue_test::Snapshot expected = renderer;
+        expected.clip_mode_54 = std::bit_cast<int>(test.mode);
+        expected.rectangle_suppressed_4d = 1;
+        expected.word_50 = 0;
+        expected.word_58 = test.expected_word58;
+        renderer.SetClipMode(test.mode);
+        ++setters;
+        Words words{};
+        words.before.fill(0x69);
+        words.after.fill(0x96);
+        words.value = test.initial;
+        const bool result = renderer.ClipRectangle(words.value[0],
+            words.value[1],
+            words.value[2],
+            words.value[3],
+            words.value[4],
+            words.value[5]);
+        ++calls;
+        check(result, "clip-mode unexpectedly rejected the rectangle");
+        // Check geometry first: the mode2-to-mode1 control must fail through
+        // real clipping, before the independent setter/member preservation check.
+        check(words.value == test.expected, "clip-mode geometry differs");
+        check(renderer_queue_test::equal(renderer, expected), "clip-mode state or queue changed");
+        for (std::size_t i = 0; i < words.before.size(); ++i)
+        {
+            check(
+                words.before[i] == 0x69 && words.after[i] == 0x96, "clip-mode word guard changed");
+            check(frame.before[i] == 0xa5 && frame.after[i] == 0x5a,
+                "clip-mode renderer guard changed");
+        }
+        check(pixels[0] == 0x1234 && pixels[1] == 0xabcd && surfaces[0] == &surface,
+            "clip-mode borrowed storage changed");
+        ++case_index;
+    }
+    std::printf("renderer clip mode: %zu sessions, %zu setters, %zu clips, %zu checks\n",
+        sessions,
+        setters,
+        calls,
+        checks);
+}
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     try
     {
+        if (argc == 2 && std::string_view(argv[1]) == "--clip-mode")
+        {
+            run_clip_modes();
+            return 0;
+        }
+        if (argc != 1)
+        {
+            fail("unexpected clipping fixture argument");
+        }
         // The accepted 38 literal argument/alias cases are unchanged. Seed live
         // dirty values to ensure every suppressing combination preserves storage.
         for (const Literal& literal : literals)
