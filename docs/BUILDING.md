@@ -1742,3 +1742,84 @@ original extent, while all 122 previous results are retained. The real
 are not executed. Native source selections and their existing Float
 qualification remain unchanged. This does not qualify a complete parser
 owner or frontend flow.
+
+
+The experimental JPEG export target connects the complete game wrapper to a
+real host file encoder built from the pinned stb source. The codec patch leaves
+stb's default behavior unchanged and permits an explicit sampling choice; this
+service selects Y 2x2 / Cb,Cr 1x1 (4:2:0), including quality100. Input is tightly
+packed top-down RGB. File output completes and closes before the game's result
+global is published; source buffers remain borrowed and partial failed output
+is retained. The codec's internal memory, quantization/bitstream details, path
+sharing, failure timing and full IJL error behavior are not byte-matched.
+
+With experimental reconstructed tests enabled on Linux,
+`reconstructed_jpeg_export_tests` uses the genuine four-argument TgaImage owner,
+generated colors, a real JPEG decoder, literal sampling/quantization markers,
+odd and one-pixel extents, guarded input, and actual missing-path and `/dev/full`
+failures. `BEACHLIFE_RECONSTRUCTED_JPEG_FIXTURE_ROOT` selects its generated output
+directory. The host boundary rejects unrepresentable dimensions/indexing before
+I/O; this is not a claim about original malformed input behavior. Windows/macOS,
+codec allocation failure and close-only failure remain separate qualification
+gates. This target alone does not execute renderer capture, presentation, the
+Game owner or a menu. Default reconstructed source selection is unchanged.
+
+
+The experimental `reconstructed_renderer_capture` test exercises the complete
+capture method through a genuinely constructed software renderer, six generated
+TIFF inputs, the real TGA image lifetime, and the native JPEG exporter. Literal
+RGB555 full-frame, cropped and high-bit cases compare encoded output with
+independently specified RGB passed to the same codec. A real missing-directory
+failure still cleans up the image and clears the pending flag. The sole control
+changes that final clear to one.
+
+This focused Linux x86-64 check uses a real hidden x11 window and leak checks.
+The existing `Present` method is not selected by this target. The hardware565
+capture branch remains complete source but unqualified: the native owner rejects
+hardware construction. Short terminated fixture filenames exercise a bounded
+read of opaque storage; they do not establish its original general capacity.
+This is capture-subsystem evidence, not a reconstructed Game/menu or GPU result.
+
+The experimental renderer presentation target composes the complete windowed
+`Present()` algorithm with the genuine renderer, pixel access, fade effect,
+frame capture and JPEG service. The six effect globals have one real storage
+owner. Capture runs before the effect; the original countdown, signed old-step
+comparison, surface selection and lock cleanup remain intact. An unavailable
+host drawing operation reaches the original cleanup tail. Unsupported hardware
+presentation remains an explicit separate capability.
+
+`reconstructed_renderer_present_tests` uses generated TIFFs and a genuine renderer
+to check literal effect states/colors, capture-before-effect ordering through
+real JPEG output, failed bitmap validation, and the original null-pixel early
+return. Its Video recorder observes the platform boundary; it supplies no game
+method. This does not qualify GPU presentation, mode0, a complete Game/controller,
+or the menu. Existing experimental subsystem-test selection remains unchanged.
+
+The matching profile also reconstructs the Panel13c entry count as its original
+signed pointer difference. Its complete 10-byte method is byte-identical; a
+capacity-instead-of-end source control scores 75% against the same original
+extent, while all prior matching results remain intact. The comparison fixture
+borrows the proven 16-byte owner prefix and establishes no owner lifetime. An
+early inverse patch keeps both native source selections unchanged.
+
+`beachlife_renderer_words` supplies owned RGB555/RGB565 CPU surfaces for the
+native renderer. It preserves exact source-key words, supports contained
+unscaled copies with overlapping storage, and keeps unlocked pixel borrows
+valid until storage is exchanged or destroyed. Operations reject wrong-thread
+access, incompatible formats, invalid bounds and conflicting locks. Logical
+pixel conversion is independent of the physical GPU format.
+
+Build `renderer_word_surface_tests` and run `ctest -R '^renderer_word_surface$'`
+for generated ownership, keyed-copy, overlap, bounds and literal color checks.
+This target needs no disc data, SDL runtime initialization or reconstructed
+game owner. Full-screen display selection, GPU presentation and the complete
+game/controller connection require their own integration.
+
+The matching profile also reconstructs the complete 147-byte Panel13c directory
+and file-name search. It is strictly matched and byte-identical; changing the
+second comparison to use the directory rejects the control at 80% against the
+same original extent. The 36-byte owner and 28-byte entry declarations are shared
+by the freshly compiled count, search and borrowed-pointer fixture. All 124 prior
+matching rows retain their scores and raw-byte results. An early inverse patch
+preserves both native source selections; this match establishes no owning
+lifetime or native gameplay capability.

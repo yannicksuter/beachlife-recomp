@@ -433,6 +433,36 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
 endif()
 
 
+# Insert before the reconstructed-test early return. Both libraries are usable
+# without the optional generated test and remain experimental-only.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_jpeg_export STATIC src/runtime/jpeg_export.cpp)
+    target_include_directories(beachlife_jpeg_export PUBLIC "${CMAKE_SOURCE_DIR}/src")
+    target_include_directories(beachlife_jpeg_export SYSTEM PRIVATE
+        "${BEACHLIFE_PREPARED}/stb")
+    target_compile_features(beachlife_jpeg_export PUBLIC cxx_std_20)
+    add_dependencies(beachlife_jpeg_export verify_prepared)
+
+    add_library(beachlife_reconstructed_jpeg_export STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_jpeg_export.cpp")
+    target_include_directories(beachlife_reconstructed_jpeg_export PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_jpeg_export PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_jpeg_export PUBLIC beachlife_jpeg_export)
+    add_dependencies(beachlife_reconstructed_jpeg_export verify_reconstructed_source)
+    set_target_properties(beachlife_jpeg_export beachlife_reconstructed_jpeg_export PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_jpeg_export PRIVATE /GL- /W4 /WX)
+        target_compile_options(beachlife_reconstructed_jpeg_export PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_jpeg_export PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_compile_options(beachlife_reconstructed_jpeg_export PRIVATE -fno-lto)
+    endif()
+endif()
+
+
 if(NOT BEACHLIFE_BUILD_RECONSTRUCTED_TESTS)
     return()
 endif()
@@ -4137,4 +4167,101 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
             endif()
         endif()
     endforeach()
+endif()
+
+# The initial generated failure case uses Linux's real /dev/full device.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(reconstructed_jpeg_export_tests tests/reconstructed_jpeg_export.cpp)
+    target_include_directories(reconstructed_jpeg_export_tests SYSTEM PRIVATE
+        "${BEACHLIFE_PREPARED}/stb")
+    target_link_libraries(reconstructed_jpeg_export_tests PRIVATE
+        beachlife_reconstructed_jpeg_export beachlife_reconstructed_tga)
+    add_dependencies(reconstructed_jpeg_export_tests verify_prepared)
+    set_target_properties(reconstructed_jpeg_export_tests PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    target_compile_options(reconstructed_jpeg_export_tests PRIVATE
+        -fno-lto -Wall -Wextra -Wpedantic -Werror)
+    target_link_options(reconstructed_jpeg_export_tests PRIVATE -fno-lto)
+    set(BEACHLIFE_RECONSTRUCTED_JPEG_FIXTURE_ROOT
+        "${CMAKE_CURRENT_BINARY_DIR}/jpeg-export-fixture" CACHE PATH
+        "Generated JPEG export output directory")
+    add_test(NAME reconstructed_jpeg_export COMMAND reconstructed_jpeg_export_tests
+        "${BEACHLIFE_RECONSTRUCTED_JPEG_FIXTURE_ROOT}" "/dev/full")
+    set_tests_properties(reconstructed_jpeg_export PROPERTIES
+        LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+endif()
+
+# Append after the existing renderer-owner target. This capability inherits its
+# experimental subsystem-test availability; no tests-disabled/production claim.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_capture STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_capture_native.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_capture PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_capture PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_capture PUBLIC
+        beachlife_reconstructed_renderer_owner
+        beachlife_reconstructed_surface_pixels
+        beachlife_reconstructed_tga
+        beachlife_reconstructed_jpeg_export)
+    add_dependencies(beachlife_reconstructed_renderer_capture verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_renderer_capture PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_capture PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_capture PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+            AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_executable(reconstructed_renderer_capture_tests tests/reconstructed_renderer_capture.cpp)
+        target_link_libraries(reconstructed_renderer_capture_tests PRIVATE
+            beachlife_reconstructed_renderer_capture)
+        set_target_properties(reconstructed_renderer_capture_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_renderer_capture_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_capture_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_renderer_capture COMMAND reconstructed_renderer_capture_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated-renderer-capture")
+        set_tests_properties(reconstructed_renderer_capture PROPERTIES
+            LABELS "reconstructed;experimental;renderer-capture;x11" TIMEOUT 30)
+    endif()
+endif()
+
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_renderer_present STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_present_native.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_renderer_present_globals.cpp")
+    target_include_directories(beachlife_reconstructed_renderer_present PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_renderer_present PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_renderer_present PUBLIC
+        beachlife_reconstructed_renderer_capture
+        beachlife_reconstructed_renderer_present_effect)
+    add_dependencies(beachlife_reconstructed_renderer_present verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_renderer_present PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_renderer_present PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_renderer_present PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+            AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+        add_executable(reconstructed_renderer_present_tests tests/reconstructed_renderer_present.cpp)
+        target_link_libraries(reconstructed_renderer_present_tests PRIVATE
+            beachlife_reconstructed_renderer_present)
+        set_target_properties(reconstructed_renderer_present_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_renderer_present_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_renderer_present_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_renderer_present COMMAND reconstructed_renderer_present_tests
+            "${CMAKE_CURRENT_BINARY_DIR}/generated-renderer-present")
+        set_tests_properties(reconstructed_renderer_present PROPERTIES
+            LABELS "reconstructed;experimental;renderer-present;x11" TIMEOUT 30)
+    endif()
 endif()

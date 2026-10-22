@@ -1,0 +1,129 @@
+diff --git a/src/startup_directdraw_surface.h b/src/startup_directdraw_surface.h
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -52,11 +52,16 @@
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceUnlockMethod)(DirectDrawSurface7Prefix*,
+     SurfaceApiRectangle*);
+ 
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceBltMethod)(DirectDrawSurface7Prefix*, SurfaceApiRectangle*,
++    DirectDrawSurface7Prefix*, SurfaceApiRectangle*, unsigned int, void*);
++
+ struct DirectDrawSurface7VtablePrefix
+ {
+     void* unused_00[2];
+     SurfaceReleaseMethod Release;
+-    void* unused_0c[19];
++    void* unused_0c[2];
++    SurfaceBltMethod Blt; // Original slot5 (+0x14); all later observed slots stay fixed.
++    void* unused_18[16];
+     SurfaceDescriptionMethod GetSurfaceDesc;
+     void* unused_5c;
+     SurfaceStatusMethod IsLost;
+diff --git a/src/startup_renderer_capture_native.cpp b/src/startup_renderer_capture_native.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_capture_native.cpp
+@@ -0,0 +1,103 @@
++#include "startup_directdraw_surface.h"
++#include "startup_jpeg_export.h"
++#include "startup_screen_item.h"
++#include "startup_screen_renderer.h"
++#include "surface_error_sink.h"
++#include "tga_image.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00410e70
++void ScreenRequestRenderer::CaptureFrame(const ScreenRectangle& bounds)
++{
++    int capture_width = bounds.right - bounds.left;
++    int capture_height = bounds.bottom - bounds.top;
++    // The image is used even when its allocation fails (original).
++    TgaImage* image = new TgaImage(capture_width, capture_height, 24, 0);
++    unsigned char* row = image->pixels;
++    current_surface = 0;
++    if (format_44 == 0)
++    {
++        // Converts a system-memory copy of the first surface from 5:6:5.
++        SurfaceDescription description;
++        memset(&description, 0, sizeof(description));
++        description.size = sizeof(description);
++        description.flags = 7; // Caps, height and width.
++        description.height = height;
++        description.width = width;
++        description.caps = 0x840; // Offscreen plain, system memory.
++        DirectDrawSurface7Prefix* copy;
++        SurfaceResult result = draw->vtable->CreateSurface(draw, &description, &copy, 0);
++        if (result < 0)
++            IgnoreSurfaceError(result);
++        result = copy->vtable->Blt(copy, 0, surface_storage[0]->surface, 0, 0x1000000, 0);
++        if (result < 0)
++            IgnoreSurfaceError(result);
++        SurfaceDescription locked;
++        memset(&locked, 0, sizeof(locked));
++        locked.size = sizeof(locked);
++        if (copy->vtable->Lock(copy, 0, &locked, 0, 0) >= 0)
++        {
++            // Rows are addressed with the renderer width, not the locked pitch.
++            int stride = capture_width * 3;
++            for (int y = bounds.top; y < bounds.top + capture_height; y++)
++            {
++                unsigned char* out = row;
++                for (int x = bounds.left; x < bounds.left + capture_width; x++)
++                {
++                    unsigned short* pixel = static_cast<unsigned short*>(locked.pixels) + y * width + x;
++                    int red = static_cast<unsigned char>(*pixel >> 8) & 0xf8;
++                    int green = (*pixel >> 3) & 0xfc;
++                    int blue = static_cast<unsigned char>(*pixel << 3);
++                    out[0] = static_cast<unsigned char>(red + (red >> 5));
++                    out[1] = static_cast<unsigned char>(green + (green >> 6));
++                    out[2] = static_cast<unsigned char>(blue + (blue >> 5));
++                    out += 3;
++                }
++                row += stride;
++            }
++        }
++        // Released while still locked (original).
++        copy->vtable->Release(copy);
++    }
++    else
++    {
++        // Converts the current surface from 5:5:5.
++        unsigned short* pixels = AccessPixels();
++        if (pixels)
++        {
++            int stride = capture_width * 3;
++            for (int y = bounds.top; y < bounds.top + capture_height; y++)
++            {
++                unsigned char* out = row;
++                for (int x = bounds.left; x < bounds.left + capture_width; x++)
++                {
++                    unsigned short* pixel = pixels + y * width + x;
++                    int red = (*pixel >> 7) & 0xf8;
++                    int green = (*pixel >> 2) & 0xf8;
++                    int blue = static_cast<unsigned char>(*pixel << 3);
++                    out[0] = static_cast<unsigned char>(red + (red >> 5));
++                    out[1] = static_cast<unsigned char>(green + (green >> 5));
++                    out[2] = static_cast<unsigned char>(blue + (blue >> 5));
++                    out += 3;
++                }
++                row += stride;
++            }
++        }
++        // Unlocked even when the access failed (original).
++        if (!software_mode)
++        {
++            DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
++            surface->vtable->Unlock(surface, 0);
++        }
++        pixels_locked = 0;
++    }
++    ScreenRectangle area = { 0, 0, capture_width, capture_height };
++    // Original +0xad is a terminated filename inside the retained opaque
++    // byte storage. Its general capacity/producer remain unproved; no new
++    // capacity or truncation repair is inferred for this native read view.
++    const char* capture_path = reinterpret_cast<const char*>(unknown_ad);
++    ExportJpegImage(&area, image->pixels, capture_path, 100);
++    delete image;
++    capture_pending_ac = 0;
++}
