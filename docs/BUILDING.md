@@ -1856,3 +1856,19 @@ original method extent and must fail matching while retaining every earlier
 method result. Comparison images are never executed. Both native source profiles
 retain their previous selection; this matching increment alone does not connect
 the game window to the reconstructed menu or qualify a full catalog owner.
+
+
+The matching profile reconstructs the complete 718-byte load-panel entry append,
+including its file check, owned strings, optional MP3 scan, tag read and vector
+growth. Its original 35-byte exception-handler code and 48-byte state metadata
+are checked separately. Real scanner and tag-reader bodies supply the direct
+dependencies; the existing compiler stack helper handles their large buffers.
+The original scanner leak and unchecked parsing behavior are preserved.
+
+The combined comparison image retains the scenery-list reconstruction and all
+earlier method results. A control that changes the stored entry value with XOR1
+must fail against the same full original 718-byte extent. This linked matching
+image is never executed. Both native profiles retain their existing selections;
+the append and scanner source does not gain native or game-runtime credit from
+the comparison. The stream parser still needs a separate native pointer-domain
+adaptation before experimental execution.
