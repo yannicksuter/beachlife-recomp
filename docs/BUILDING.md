@@ -1814,3 +1814,12 @@ for generated ownership, keyed-copy, overlap, bounds and literal color checks.
 This target needs no disc data, SDL runtime initialization or reconstructed
 game owner. Full-screen display selection, GPU presentation and the complete
 game/controller connection require their own integration.
+
+The matching profile also reconstructs the complete 147-byte Panel13c directory
+and file-name search. It is strictly matched and byte-identical; changing the
+second comparison to use the directory rejects the control at 80% against the
+same original extent. The 36-byte owner and 28-byte entry declarations are shared
+by the freshly compiled count, search and borrowed-pointer fixture. All 124 prior
+matching rows retain their scores and raw-byte results. An early inverse patch
+preserves both native source selections; this match establishes no owning
+lifetime or native gameplay capability.
