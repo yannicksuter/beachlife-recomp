@@ -1794,3 +1794,10 @@ real JPEG output, failed bitmap validation, and the original null-pixel early
 return. Its Video recorder observes the platform boundary; it supplies no game
 method. This does not qualify GPU presentation, mode0, a complete Game/controller,
 or the menu. Existing experimental subsystem-test selection remains unchanged.
+
+The matching profile also reconstructs the Panel13c entry count as its original
+signed pointer difference. Its complete 10-byte method is byte-identical; a
+capacity-instead-of-end source control scores 75% against the same original
+extent, while all prior matching results remain intact. The comparison fixture
+borrows the proven 16-byte owner prefix and establishes no owner lifetime. An
+early inverse patch keeps both native source selections unchanged.
