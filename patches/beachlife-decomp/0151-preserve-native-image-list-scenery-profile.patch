@@ -1,0 +1,722 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1582,61 +1582,3 @@
+     frame[sizeof(frame) - 1] = static_cast<unsigned char>(value ^ 0xa5u);
+     return frame[0] + frame[sizeof(frame) - 1];
+ }
+-
+-#include "startup_screen_image_list.h"
+-#include "startup_variable_state.h"
+-
+-typedef char SceneryBaseSize[sizeof(ScreenItem) == 68 ? 1 : -1];
+-typedef char SceneryReceiverSize[sizeof(ScreenImageList) == 132 ? 1 : -1];
+-typedef char SceneryFrameSize[sizeof(ScreenImageListFrame) == 152 ? 1 : -1];
+-typedef char SceneryRangeSize[sizeof(ScreenImageListVector60) == 12 ? 1 : -1];
+-typedef char SceneryFlagOffset[offsetof(ScreenImageList, flag_5c) == 0x5c ? 1 : -1];
+-typedef char SceneryRangeOffset[offsetof(ScreenImageList, vector_60) == 0x60 ? 1 : -1];
+-typedef char SceneryRangeEnd[offsetof(ScreenImageListVector60, end) == 4 ? 1 : -1];
+-typedef char SceneryRangeCapacity[offsetof(ScreenImageListVector60, capacity) == 8 ? 1 : -1];
+-typedef char SceneryFrameThumbnail[offsetof(ScreenImageListFrame, thumbnail_00) == 0 ? 1 : -1];
+-typedef char SceneryFramePreview[offsetof(ScreenImageListFrame, preview_frame_04) == 4 ? 1 : -1];
+-typedef char SceneryFrameText[offsetof(ScreenImageListFrame, text_08) == 8 ? 1 : -1];
+-typedef char SceneryFrameFeature[offsetof(ScreenImageListFrame, feature_0c) == 12 ? 1 : -1];
+-typedef char SceneryFrameCounted[offsetof(ScreenImageListFrame, counted_94) == 0x94 ? 1 : -1];
+-typedef char SceneryCountOffset[offsetof(VariableCatalog, scenery_count_34) == 0x34 ? 1 : -1];
+-typedef char SceneryNameOffset[offsetof(VariableScenery, name_04) == 4 ? 1 : -1];
+-typedef char SceneryKindOffset[offsetof(VariableScenery, list_kind_2c4) == 0x2c4 ? 1 : -1];
+-typedef char SceneryCostOffset[offsetof(VariableScenery, cost_2d0) == 0x2d0 ? 1 : -1];
+-typedef char SceneryPreviewOffset[offsetof(VariableScenery, preview_frame_300) == 0x300 ? 1 : -1];
+-
+-// Comparison-only storage for the observed zero-filled root. No catalog
+-// constructor, owner lifetime or game provider is supplied by this fixture.
+-// GLOBAL: BEACHLIFE 0x005bac38
+-VariableCatalog* variable_catalog;
+-
+-ScreenImageList* volatile fixture_scenery_receiver;
+-ScreenImageListFrame** volatile fixture_scenery_begin_before;
+-ScreenImageListFrame** volatile fixture_scenery_end_before;
+-ScreenImageListFrame** volatile fixture_scenery_capacity_before;
+-ScreenImageListFrame** volatile fixture_scenery_begin_after;
+-ScreenImageListFrame** volatile fixture_scenery_end_after;
+-ScreenImageListFrame** volatile fixture_scenery_capacity_after;
+-volatile unsigned char fixture_scenery_flag_before;
+-volatile unsigned char fixture_scenery_flag_after;
+-volatile int fixture_scenery_last_preview;
+-volatile unsigned int fixture_scenery_completed;
+-
+-// The caller supplies a real live receiver/catalog and valid owned storage.
+-// This typed call is compiled for PDB/operand proof; no image is executed.
+-extern "C" __declspec(dllexport) void FixturePopulateScenery(ScreenImageList* item, int kind, const char* thumbnail)
+-{
+-    fixture_scenery_receiver = item;
+-    fixture_scenery_begin_before = item->vector_60.begin;
+-    fixture_scenery_end_before = item->vector_60.end;
+-    fixture_scenery_capacity_before = item->vector_60.capacity.data;
+-    fixture_scenery_flag_before = item->flag_5c;
+-    item->PopulateScenery(kind, thumbnail);
+-    fixture_scenery_begin_after = item->vector_60.begin;
+-    fixture_scenery_end_after = item->vector_60.end;
+-    fixture_scenery_capacity_after = item->vector_60.capacity.data;
+-    fixture_scenery_flag_after = item->flag_5c;
+-    if (item->vector_60.end != item->vector_60.begin)
+-        fixture_scenery_last_preview = item->vector_60.end[-1]->preview_frame_04;
+-    fixture_scenery_completed = 1;
+-}
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -103,8 +103,3 @@
+ 0x004ab120,function,165,?ReadFloat@GuiParserState@@QAEXAAM@Z
+ 0x004cdb40,function,10,?EntryCount@ScreenLoadPanel13cOwner@@QAEHXZ
+ 0x004ce370,function,147,?ContainsEntry@ScreenLoadPanel13cOwner@@QAE_NPBD0@Z
+-0x004b4450,function,593,?PopulateScenery@ScreenImageList@@QAEXHPBD@Z
+-0x00449780,function,25,?Scenery@VariableCatalog@@QAEPAUVariableScenery@@I@Z
+-0x004127e0,library,350,?RefillPool@@YAPAXI@Z
+-0x005bac38,global,4,?variable_catalog@@3PAUVariableCatalog@@A
+-0x0057ff00,string,11,
+diff --git a/msvcrt.def b/msvcrt.def
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -18,4 +18,3 @@
+     atof
+     strncmp
+     strncpy
+-    _strupr
+diff --git a/src/node_storage.h b/src/node_storage.h
+deleted file mode 100644
+--- a/src/node_storage.h
++++ /dev/null
+@@ -1,53 +0,0 @@
+-#ifndef NODE_STORAGE_H
+-#define NODE_STORAGE_H
+-
+-#include "pool_chunk_acquire.h"
+-#include "pool_lock_acquire.h"
+-#include "pool_lock_guard.h"
+-#include "pool_refill.h"
+-#include "pool_return.h"
+-
+-#include <new>
+-
+-// Library inlines of the container storage front end observed expanded in
+-// game methods: blocks above 128 bytes use the heap, smaller blocks the
+-// locked size buckets. No separate retail bodies; no game-byte credit.
+-inline const unsigned int& MaxUnsigned(const unsigned int& left, const unsigned int& right)
+-{
+-    return left < right ? right : left;
+-}
+-
+-inline void* AllocateNodeStorage(unsigned int bytes)
+-{
+-    if (bytes > 128)
+-    {
+-        return ::operator new(bytes);
+-    }
+-    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
+-    AcquirePoolLock(&pool_lock_word);
+-    PoolLockGuard guard;
+-    PoolChunkLink* result = *bucket;
+-    if (result != 0)
+-    {
+-        *bucket = result->next;
+-    }
+-    else
+-    {
+-        result = static_cast<PoolChunkLink*>(RefillPool(bytes));
+-    }
+-    return result;
+-}
+-
+-inline void ReleaseNodeStorage(void* storage, unsigned int bytes)
+-{
+-    if (bytes > 128)
+-    {
+-        ::operator delete(storage);
+-    }
+-    else
+-    {
+-        ReturnPool(storage, bytes);
+-    }
+-}
+-
+-#endif
+diff --git a/src/pool_refill.cpp b/src/pool_refill.cpp
+deleted file mode 100644
+--- a/src/pool_refill.cpp
++++ /dev/null
+@@ -1,30 +0,0 @@
+-#include "pool_refill.h"
+-
+-// FUNCTION: BEACHLIFE 0x004127e0
+-void* RefillPool(unsigned int bytes)
+-{
+-    unsigned int block_size = (bytes + 7) & ~7u;
+-    int count = 20;
+-    char* chunk = AcquirePoolChunk(block_size, count);
+-    if (count == 1)
+-    {
+-        return chunk;
+-    }
+-
+-    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (block_size - 1) / 8;
+-    PoolChunkLink* result = reinterpret_cast<PoolChunkLink*>(chunk);
+-    PoolChunkLink* next = reinterpret_cast<PoolChunkLink*>(chunk + block_size);
+-    *bucket = next;
+-    for (int index = 1;; ++index)
+-    {
+-        PoolChunkLink* current = next;
+-        next = reinterpret_cast<PoolChunkLink*>(reinterpret_cast<char*>(next) + block_size);
+-        if (count - 1 == index)
+-        {
+-            current->next = 0;
+-            break;
+-        }
+-        current->next = next;
+-    }
+-    return result;
+-}
+diff --git a/src/pool_refill.h b/src/pool_refill.h
+deleted file mode 100644
+--- a/src/pool_refill.h
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#ifndef POOL_REFILL_H
+-#define POOL_REFILL_H
+-
+-#include "pool_chunk_acquire.h"
+-
+-void* RefillPool(unsigned int bytes);
+-
+-#endif
+diff --git a/src/startup_screen_image_list.h b/src/startup_screen_image_list.h
+deleted file mode 100644
+--- a/src/startup_screen_image_list.h
++++ /dev/null
+@@ -1,238 +0,0 @@
+-#ifndef STARTUP_SCREEN_IMAGE_LIST_H
+-#define STARTUP_SCREEN_IMAGE_LIST_H
+-
+-#include "copy_trivial.h"
+-#include "startup_screen_item.h"
+-
+-#include <algorithm>
+-
+-struct ScreenImageItem;
+-
+-// Element of vector_60, a 0x98-byte entry built by PopulateBuildings 0x004b3ec0:
+-// owns the text at +0x08 (inline destructor, deleted through its scalar
+-// deleting destructor 0x004b4cb0).
+-struct ScreenImageListFrame
+-{
+-    const char* thumbnail_00;      // Thumbnail resource name.
+-    int preview_frame_04;          // The catalog entry's preview frame.
+-    char* text_08;                 // Tooltip key, e.g. BUILD_TIPTEXT_<NAME>.
+-    unsigned int feature_0c;       // Catalog index reported when the frame is selected.
+-    unsigned short count_10[0x40]; // Building count text when counted_94.
+-    unsigned int colour_90;
+-    unsigned char counted_94;
+-    unsigned char unknown_95[3];
+-
+-    // Inline constructor expanded in PopulateBuildings.
+-    ScreenImageListFrame()
+-    {
+-        thumbnail_00 = 0;
+-        preview_frame_04 = 0;
+-        text_08 = 0;
+-        feature_0c = 0xffffffff;
+-        counted_94 = 0;
+-    }
+-    ~ScreenImageListFrame()
+-    {
+-        if (text_08)
+-            delete[] text_08;
+-    }
+-};
+-
+-// Element of range_78, a text label: empty destructor (scalar deleting
+-// destructor 0x004b4ce0). The render slot 0x004b3a40 proves these fields; the
+-// text capacity follows from font_80, its producer is separate.
+-struct ScreenImageListMarker
+-{
+-    unsigned short text_00[0x40];
+-    int font_80; // Index into the manager's fonts.
+-    unsigned int colour_84;
+-    int x_88;
+-    int y_8c;
+-    int width_90;
+-
+-    ~ScreenImageListMarker() { }
+-};
+-
+-// Empty plain-data tag passed by reference to the growth insertion.
+-struct ScreenImageListTrueType
+-{
+-};
+-
+-// Library delete functor used with std::for_each.
+-template <class T>
+-struct ScreenImageListDelete
+-{
+-    void operator()(T* item) const { delete item; }
+-};
+-
+-// Category names matched by the image-list constructor, 0x0057fd08:
+-// BUILD_HOTEL_SMALL ... BUILD_BILLBOARD_SMALL.
+-extern const char* image_list_categories[10];
+-
+-// Empty default-argument allocator of the vectors; its (empty) destructor is
+-// the folded 0x00437d10 named by the constructor's unwind map.
+-struct ScreenImageListAllocator
+-{
+-    ScreenImageListAllocator() { }
+-    ~ScreenImageListAllocator() { }
+-};
+-
+-// Pointer-vector member at +0x60; element type not yet proved. Its capacity
+-// proxy is built by the folded out-of-line constructor 0x00437de0.
+-struct ScreenImageListCapacity60
+-{
+-    ScreenImageListFrame** data;
+-
+-    ScreenImageListCapacity60(const ScreenImageListAllocator& allocator, ScreenImageListFrame** value);
+-    ~ScreenImageListCapacity60() { }
+-    // Folded out-of-line 0x004b4eb0, RET8: frees count slots (pooled up to 128
+-    // bytes); body separate.
+-    void Deallocate(ScreenImageListFrame** storage, unsigned int count);
+-};
+-
+-struct ScreenImageListVector60
+-{
+-    ScreenImageListFrame** begin;
+-    ScreenImageListFrame** end;
+-    ScreenImageListCapacity60 capacity;
+-
+-    explicit ScreenImageListVector60(const ScreenImageListAllocator& allocator = ScreenImageListAllocator())
+-        : begin(0)
+-        , end(0)
+-        , capacity(allocator, 0)
+-    {
+-    }
+-    // Inline: frees the storage only. Out-of-line copy 0x004b4d90 serves the
+-    // unwind funclets.
+-    ~ScreenImageListVector60()
+-    {
+-        if (begin)
+-            capacity.Deallocate(begin, static_cast<unsigned int>(capacity.data - begin));
+-    }
+-    // Folded out-of-line 0x004e80d0, RET8: erase(first, last); body separate.
+-    ScreenImageListFrame** Erase(ScreenImageListFrame** first, ScreenImageListFrame** last);
+-    // Library clear(): erase(begin, end) keeps the storage.
+-    void Clear() { end = static_cast<ScreenImageListFrame**>(CopyTrivial(end, end, begin)); }
+-    // Folded out-of-line 0x004c3a30, RET 0x14: library growth insertion of count
+-    // copies, shared with other pointer-sized vectors; body separate.
+-    void InsertOverflow(ScreenImageListFrame** position, ScreenImageListFrame* const& value,
+-        const ScreenImageListTrueType& plain, unsigned int count, bool at_end);
+-    // Library push_back; PopulateBuildings also expands the growth path once.
+-    void PushBack(ScreenImageListFrame* const& value)
+-    {
+-        if (end != capacity.data)
+-        {
+-            ::new (end) ScreenImageListFrame*(value);
+-            ++end;
+-        }
+-        else
+-        {
+-            InsertOverflow(end, value, ScreenImageListTrueType(), 1, true);
+-        }
+-    }
+-};
+-
+-// Pointer-vector member at +0x6c; element type not yet proved. Its capacity
+-// proxy is built by the folded out-of-line constructor 0x00437de0.
+-struct ScreenImageListCapacity6c
+-{
+-    ScreenItem** data;
+-
+-    ScreenImageListCapacity6c(const ScreenImageListAllocator& allocator, ScreenItem** value);
+-    ~ScreenImageListCapacity6c() { }
+-    // Folded out-of-line 0x004b4eb0, RET8: frees count slots (pooled up to 128
+-    // bytes); body separate.
+-    void Deallocate(ScreenItem** storage, unsigned int count);
+-};
+-
+-struct ScreenImageListVector6c
+-{
+-    ScreenItem** begin;
+-    ScreenItem** end;
+-    ScreenImageListCapacity6c capacity;
+-
+-    explicit ScreenImageListVector6c(const ScreenImageListAllocator& allocator = ScreenImageListAllocator())
+-        : begin(0)
+-        , end(0)
+-        , capacity(allocator, 0)
+-    {
+-    }
+-    // Inline: frees the storage only. Out-of-line copy 0x004b4d00 serves the
+-    // unwind funclets.
+-    ~ScreenImageListVector6c()
+-    {
+-        if (begin)
+-            capacity.Deallocate(begin, static_cast<unsigned int>(capacity.data - begin));
+-    }
+-    // Folded out-of-line 0x004e80d0, RET8: erase(first, last); body separate.
+-    ScreenItem** Erase(ScreenItem** first, ScreenItem** last);
+-    // Library clear(): erase(begin, end) keeps the storage.
+-    void Clear() { end = static_cast<ScreenItem**>(CopyTrivial(end, end, begin)); }
+-};
+-
+-// Pointer-vector member at +0x78 with an inline empty construction.
+-struct ScreenImageListCapacity78
+-{
+-    ScreenImageListMarker** data;
+-
+-    ScreenImageListCapacity78(ScreenImageListMarker** value)
+-        : data(value)
+-    {
+-    }
+-    ~ScreenImageListCapacity78() { }
+-    // Folded out-of-line 0x004b4eb0, RET8; body separate.
+-    void Deallocate(ScreenImageListMarker** storage, unsigned int count);
+-};
+-
+-struct ScreenImageListRange78
+-{
+-    ScreenImageListMarker** begin;
+-    ScreenImageListMarker** end;
+-    ScreenImageListCapacity78 capacity;
+-
+-    ScreenImageListRange78()
+-        : begin(0)
+-        , end(0)
+-        , capacity(0)
+-    {
+-    }
+-    // Inline: frees the storage only. Out-of-line copy 0x004b4e20 serves the
+-    // unwind funclets.
+-    ~ScreenImageListRange78()
+-    {
+-        if (begin)
+-            capacity.Deallocate(begin, static_cast<unsigned int>(capacity.data - begin));
+-    }
+-    // Folded out-of-line 0x004e80d0, RET8; body separate.
+-    ScreenImageListMarker** Erase(ScreenImageListMarker** first, ScreenImageListMarker** last);
+-    // Library clear(): erase(begin, end) keeps the storage.
+-    void Clear() { end = static_cast<ScreenImageListMarker**>(CopyTrivial(end, end, begin)); }
+-};
+-
+-// Accessed ImageList projection; full native class remains separate. Original original allocation 0x84, kind 17 and table
+-// 0x004f46ac (21 slots). Descriptive names only. The ordinary destructor and
+-// the differing slots are separate required children.
+-struct ScreenImageList : ScreenItem
+-{
+-    int category_44; // Index of the name in image_list_categories.
+-    int value_a_48;
+-    int value_b_4c;
+-    ScreenImageItem* image_50;
+-    int selected_54; // Highlighted item index, -1 for none.
+-    float timer_58;  // Refresh timer while flag_5c is set.
+-    unsigned char flag_5c;
+-    unsigned char unknown_5d[3];
+-    ScreenImageListVector60 vector_60;
+-    ScreenImageListVector6c vector_6c;
+-    ScreenImageListRange78 range_78;
+-
+-    // Matching-only borrowed receiver: no construction or derived table.
+-    void PopulateBuildings(int kind, const char* thumbnail, const char* grey_thumbnail);
+-    void PopulateScenery(int kind, const char* thumbnail);
+-
+-private:
+-    ScreenImageList();
+-    ~ScreenImageList();
+-};
+-
+-#endif
+diff --git a/src/startup_screen_image_list_scenery.cpp b/src/startup_screen_image_list_scenery.cpp
+deleted file mode 100644
+--- a/src/startup_screen_image_list_scenery.cpp
++++ /dev/null
+@@ -1,55 +0,0 @@
+-#include "node_storage.h"
+-#include "startup_screen_image_list.h"
+-#include "startup_variable_state.h"
+-
+-#include <stdio.h>
+-#include <string.h>
+-
+-// FUNCTION: BEACHLIFE 0x004b4450
+-void ScreenImageList::PopulateScenery(int kind, const char* thumbnail)
+-{
+-    unsigned int count = variable_catalog->scenery_count_34;
+-    for (unsigned int index = 0; index < count; ++index)
+-    {
+-        VariableScenery* scenery = variable_catalog->Scenery(index);
+-        if (scenery->list_kind_2c4 != kind)
+-            continue;
+-        char text[0x80];
+-        sprintf(text, "SP_DESC_%s", scenery->name_04);
+-        _strupr(text);
+-        ScreenImageListFrame* frame = new ScreenImageListFrame;
+-        frame->thumbnail_00 = thumbnail;
+-        frame->preview_frame_04 = scenery->preview_frame_300;
+-        frame->feature_0c = index;
+-        frame->text_08 = new char[strlen(text) + 1];
+-        strcpy(frame->text_08, text);
+-
+-        // Library push_back, expanded here with its growth and node storage.
+-        ScreenImageListFrame** position = vector_60.end;
+-        if (position != vector_60.capacity.data)
+-        {
+-            ::new (position) ScreenImageListFrame*(frame);
+-            ++vector_60.end;
+-        }
+-        else
+-        {
+-            unsigned int minimum = 1;
+-            unsigned int size = static_cast<unsigned int>(position - vector_60.begin);
+-            unsigned int length = size + MaxUnsigned(size, minimum);
+-            ScreenImageListFrame** storage = length
+-                                               ? static_cast<ScreenImageListFrame**>(AllocateNodeStorage(length * sizeof(ScreenImageListFrame*)))
+-                                               : 0;
+-            ScreenImageListFrame** stored
+-                = static_cast<ScreenImageListFrame**>(CopyTrivial(vector_60.begin, position, storage));
+-            *stored = frame;
+-            position = stored + 1;
+-            if (vector_60.begin)
+-                ReleaseNodeStorage(vector_60.begin,
+-                    static_cast<unsigned int>(vector_60.capacity.data - vector_60.begin) * sizeof(ScreenImageListFrame*));
+-            vector_60.begin = storage;
+-            vector_60.end = position;
+-            vector_60.capacity.data = storage + length;
+-        }
+-    }
+-    flag_5c = 0;
+-}
+diff --git a/src/startup_variable_catalog_scenery.cpp b/src/startup_variable_catalog_scenery.cpp
+deleted file mode 100644
+--- a/src/startup_variable_catalog_scenery.cpp
++++ /dev/null
+@@ -1,9 +0,0 @@
+-#include "startup_variable_state.h"
+-
+-// FUNCTION: BEACHLIFE 0x00449780
+-VariableScenery* VariableCatalog::Scenery(unsigned int index)
+-{
+-    // The observed record stride exceeds the currently named scenery prefix.
+-    // Keep the retail x86 address calculation without inventing owner fields.
+-    return reinterpret_cast<VariableScenery*>(reinterpret_cast<unsigned char*>(this) + 0x5409c + index * 0x314);
+-}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+deleted file mode 100644
+--- a/src/startup_variable_state.h
++++ /dev/null
+@@ -1,182 +0,0 @@
+-#ifndef STARTUP_VARIABLE_STATE_H
+-#define STARTUP_VARIABLE_STATE_H
+-
+-// Descriptive read views for actual receivers in 0x004c8a30. No constructors,
+-// destructors, concrete owner sizes or native lifetime substitutes are supplied.
+-struct VariableEconomy
+-{
+-    unsigned char unknown_00[0x80];
+-    float value_80;
+-};
+-
+-struct VariableTransport
+-{
+-    // Actual 0x0042d160/RET8 and 0x0042d2f0/RET4, x87 results.
+-    float FindNext(unsigned char mode, unsigned int* value);
+-    float ScheduleAt(unsigned int index);
+-};
+-
+-struct VariableBuilding
+-{
+-    unsigned char unknown_00[4];
+-    char name_04[0x1c0];
+-    int preview_frame_1c4; // Frame of the build-panel preview.
+-    int list_kind_1c8;     // Build-panel list the building appears in.
+-    int cost_1cc;
+-    unsigned char unknown_1d0[4];
+-    unsigned int footprint_x_1d4; // Overlay marker extent before rotation.
+-    unsigned int footprint_y_1d8;
+-    unsigned int capacity_1dc;
+-    unsigned char unknown_1e0[8];
+-    unsigned int hours_1e8;
+-    unsigned char unknown_1ec[0x9c];
+-    unsigned int capacity_288;
+-    unsigned char unknown_28c[0x94];
+-    char required_320[0x9d4];
+-    int power_cf4;
+-};
+-
+-struct VariableScenery
+-{
+-    unsigned char unknown_00[4];
+-    char name_04[0x2c0];
+-    int list_kind_2c4; // Build-panel list; 1 = paths.
+-    unsigned char unknown_2c8[8];
+-    int cost_2d0;
+-    unsigned char unknown_2d4[0x2c];
+-    int preview_frame_300; // Frame of the build-panel preview.
+-    float rating_304;      // Star rating, 0..1 (drawn x100).
+-    unsigned char unknown_308[4];
+-    int flag_30c; // Selects build mode 8 instead of 7 for the path list.
+-};
+-
+-struct VariableGuestState
+-{
+-    unsigned char unknown_00[0x1c4];
+-    unsigned int word_1c4;
+-};
+-
+-// Observed nested keyline state only; no owner size or lifetime is inferred.
+-// Observed event schedule of an entity: 0x74-byte records with the male and
+-// female appeal at +0x68/+0x6c. Size not proved.
+-struct VariableEventSchedule
+-{
+-    // Actual 0x00429300 and 0x00429320, RET4 (x87 results).
+-    float MaleAppeal(int index);
+-    float FemaleAppeal(int index);
+-};
+-
+-// Observed staff state; +0xc4 selects the female photo. Size not proved.
+-struct VariableStaffState
+-{
+-    unsigned char unknown_00[0xc4];
+-    int female_c4;
+-};
+-
+-struct VariableKeylineState
+-{
+-    const char* model_name_00; // Guests: fat_bloke, fit_bloke, gail or shaz.
+-    unsigned char unknown_04[0x14];
+-    int rotation_18; // Odd quarter turns swap a building's footprint.
+-    unsigned char unknown_1c[0xd];
+-    unsigned char enabled_29;
+-};
+-
+-struct VariableEntity
+-{
+-    unsigned char unknown_00[6];
+-    // The prior name span covered opaque bytes now proved to contain these fields.
+-    char name_06[0x26];
+-    unsigned char kind_2c;
+-    unsigned char unknown_2d[3];
+-    float x_30; // World position; the overlay markers scale it to the map.
+-    float y_34;
+-    unsigned char unknown_38[0xc];
+-    VariableKeylineState* keyline_state_44;
+-    unsigned char unknown_48[0x18];
+-    VariableBuilding* building_60;
+-    unsigned char unknown_64[0x90];
+-    VariableGuestState* guest_f4;
+-    unsigned char unknown_f8[0xc];
+-    VariableStaffState* staff_104;
+-    unsigned char unknown_108[4];
+-    float morale_10c; // Staff; drawn as a 0..4 smiley.
+-    unsigned char unknown_110[0x60];
+-    VariableEventSchedule* events_170;
+-    unsigned char unknown_174[0xf0];
+-    float happiness_264; // Guests; drawn as a 0..4 smiley.
+-    unsigned char unknown_268[0xd4];
+-    int power_state_33c; // Generator state 0..3; nonzero shows the second lit frame.
+-    unsigned char unknown_340[0x418];
+-    unsigned char byte_758;
+-
+-    // Actual 0x00460310 and 0x00460340; AL results, no stack arguments.
+-    bool FlagAt00460310();
+-    bool FlagAt00460340();
+-    // Actual 0x00460510 and 0x00460660 (x87 results): this building's male and
+-    // female appeal; bodies separate.
+-    float MaleAppeal();
+-    float FemaleAppeal();
+-    // Actual 0x004607f0: the generator's current output, 0 when idle; body
+-    // separate. Descriptive name.
+-    int PowerOutput();
+-};
+-
+-struct VariableCatalog
+-{
+-    unsigned char unknown_00[0x0c];
+-    unsigned int building_count_0c;
+-    unsigned char unknown_10[0x24];
+-    unsigned int scenery_count_34;
+-
+-    VariableBuilding* Building(unsigned int index); // 0x004493a0, RET4.
+-    unsigned int FindBuilding(const char* name);    // 0x004490d0, RET4.
+-    const char* HoursName(unsigned int index);      // 0x004493e0, RET4.
+-    VariableScenery* Scenery(unsigned int index);   // 0x00449780, RET4.
+-    float MaleAppeal(unsigned int index);           // 0x00452bd0, RET4.
+-    float FemaleAppeal(unsigned int index);         // 0x00452c20, RET4.
+-};
+-
+-struct VariableWeather
+-{
+-    float Red();   // 0x00438a50, RET0.
+-    float Green(); // 0x00438a70, RET0.
+-    float Blue();  // 0x00438a90, RET0.
+-    // Actual 0x00438520, RET0; called after a screen-size change.
+-    void RefreshForScreenSize();
+-};
+-
+-// The observed fixed prefix ends at the inline guest-pointer storage. Its
+-// allocation capacity is not recovered. The source's explicit x86 tail access
+-// is a source-composition gate, not a native array or complete world owner.
+-struct VariableWorldPrefix
+-{
+-    unsigned char unknown_00[4];
+-    unsigned int buildings_04;
+-    unsigned int guests_08;
+-    unsigned int entities_0c;
+-    unsigned char unknown_10[0x12110];
+-    // Inline building table; the guest (+0x128f0) and entity (+0x14060) tables
+-    // follow this prefix.
+-    VariableEntity* buildings_12120[500];
+-
+-    // Actual 0x0042fab0, RET4; low-byte flag, real world owner required.
+-    void SetKeylines(unsigned char enabled);
+-
+-    VariableEntity** FindNamed(const char* name, unsigned int* count); // 0x0042efe0, RET8.
+-    unsigned int HasNamed(const char* name);                           // 0x0042f000, RET4, EAX test.
+-    VariableEntity** ByType(unsigned char type, unsigned int* count);  // 0x0042f020, RET8.
+-    VariableEntity** AllStaff(unsigned int* count);                    // 0x0042f0e0, RET4.
+-    unsigned int CountType(unsigned char type);                        // 0x0042f0f0, RET4.
+-};
+-
+-// These declarations name the existing original roots; they define no storage.
+-extern VariableWorldPrefix* variable_world; // 0x005ab14c.
+-extern VariableWeather* variable_weather;   // 0x005baba0.
+-extern VariableCatalog* variable_catalog;   // 0x005bac38.
+-
+-// Existing real cdecl targets. Their complete sources are separate.
+-const char* ReadVariableFilterTitle(); // 0x004c2390.
+-float GetGameVersion();                // 0x004e3cb0, existing version.cpp.
+-
+-#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -620,12 +620,6 @@
+       "address": "0x004ce370",
+       "size": 147,
+       "name_status": "Descriptive genuine Panel13c initializer child; original147B string search, no generic-library credit inferred from strcmp intrinsics"
+-    },
+-    {
+-      "address": "0x004b4450",
+-      "size": 593,
+-      "name": "ScreenImageList::PopulateScenery",
+-      "name_status": "Descriptive source name; complete original entry and thiscall RET8 independently audited"
+     }
+   ],
+   "library_functions": [
+@@ -703,10 +697,6 @@
+     ],
+     "window_sound_find_sample.cpp": [
+       "/GX"
+-    ],
+-    "startup_screen_image_list_scenery.cpp": [
+-      "/GX",
+-      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

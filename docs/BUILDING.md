@@ -1842,3 +1842,17 @@ probing support.
 The comparison metadata binds the current PDB public alias of a shared empty
 function. Its complete one-byte extent and the caller's complete extent are
 preserved; folded aliases are checked against the actual linked contribution.
+
+
+The matching profile reconstructs the complete 593-byte scenery-list population
+method, including its vector growth and exception cleanup. The original
+21-byte exception handler and 40-byte state metadata are checked separately.
+The selected source includes the real catalog getter and pool-refill dependency;
+`_strupr` is supplied by the genuine MSVCRT import library. The current borrowed
+image-list and frame declarations remain consistent across the comparison image.
+
+A preview-frame to cost-field source control is compared against the same full
+original method extent and must fail matching while retaining every earlier
+method result. Comparison images are never executed. Both native source profiles
+retain their previous selection; this matching increment alone does not connect
+the game window to the reconstructed menu or qualify a full catalog owner.
