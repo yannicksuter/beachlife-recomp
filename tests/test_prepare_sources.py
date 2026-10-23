@@ -22,7 +22,7 @@ class PreparedSourceTests(unittest.TestCase):
                                                stderr=subprocess.DEVNULL).strip()
 
             git(repo, 'init', '-q')
-            names = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype')
+            names = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype', 'dr-libs', 'pl-mpeg')
             for name in names:
                 checkout = repo / 'extern' / name
                 checkout.mkdir(parents=True)
