@@ -93,6 +93,9 @@ class FullscreenDisplay
     std::thread::id thread_;
     int width_ = 0, height_ = 0;
     bool mode_ready_ = false;
+    // The requested mode is emulated: no real display mode change, and the
+    // logical surface is scaled into the window the player's settings chose.
+    bool emulated_ = false;
     SDL_DisplayID display_ = 0;
     bool presentation_failed_ = false;
 };

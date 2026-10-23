@@ -114,6 +114,13 @@ std::vector<DisplayMode> FullscreenDisplay::enumerate_modes() const
 void FullscreenDisplay::enter_fullscreen()
 {
     SDL_Window* target = window();
+    // A windowed Play window keeps the player's choice: the game's exclusive
+    // mode is emulated inside it, as current Windows emulates DirectDraw modes.
+    if (!(SDL_GetWindowFlags(target) & SDL_WINDOW_FULLSCREEN))
+    {
+        emulated_ = true;
+        return;
+    }
     if (!SDL_SetWindowFullscreen(target, true))
     {
         fail("Cannot enter fullscreen renderer mode");
@@ -128,7 +135,7 @@ void FullscreenDisplay::enter_fullscreen()
 void FullscreenDisplay::set_display_mode(int width, int height, unsigned int bits)
 {
     SDL_Window* target = window();
-    if (!(SDL_GetWindowFlags(target) & SDL_WINDOW_FULLSCREEN))
+    if (!emulated_ && !(SDL_GetWindowFlags(target) & SDL_WINDOW_FULLSCREEN))
     {
         throw std::logic_error("Select fullscreen before setting the display mode");
     }
@@ -141,6 +148,22 @@ void FullscreenDisplay::set_display_mode(int width, int height, unsigned int bit
     if (!display)
     {
         fail("Cannot identify fullscreen renderer display");
+    }
+    const auto emulate = [&]
+    {
+        // Keep the window's current presentation (desktop fullscreen or a
+        // window) and scale the logical width x height surface into it.
+        emulated_ = true;
+        width_ = width;
+        height_ = height;
+        display_ = display;
+        mode_ready_ = true;
+        video_.set_game_mode(width, height, true);
+    };
+    if (emulated_)
+    {
+        emulate();
+        return;
     }
     if (display_ && display != display_)
     {
@@ -167,7 +190,9 @@ void FullscreenDisplay::set_display_mode(int width, int height, unsigned int bit
     }
     if (!selected)
     {
-        throw std::runtime_error("The requested exact fullscreen mode is unavailable");
+        // Most current displays have no exact density-1 800x600 mode.
+        emulate();
+        return;
     }
     mode_ready_ = false;
     if (!SDL_SetWindowFullscreenMode(target, selected))
@@ -184,12 +209,21 @@ void FullscreenDisplay::set_display_mode(int width, int height, unsigned int bit
     if (applied->w != width || applied->h != height || applied->pixel_density != 1.0f ||
         pixel_width != width || pixel_height != height || !SDL_GetWindowFullscreenMode(target))
     {
-        throw std::runtime_error("Window system did not apply the requested exact fullscreen mode");
+        // The window system declined the mode (for example Wayland): return to
+        // desktop fullscreen and emulate it.
+        if (!SDL_SetWindowFullscreenMode(target, nullptr))
+        {
+            fail("Cannot return to desktop fullscreen");
+        }
+        sync_window(target);
+        emulate();
+        return;
     }
     width_ = width;
     height_ = height;
     display_ = display;
     mode_ready_ = true;
+    video_.set_game_mode(width, height, true);
 }
 
 bool FullscreenDisplay::mode_changed() const
@@ -203,6 +237,10 @@ bool FullscreenDisplay::mode_changed() const
     if (!display_ || width_ <= 0 || height_ <= 0)
     {
         throw std::logic_error("Fullscreen renderer has no established mode to recover");
+    }
+    if (emulated_)
+    {
+        return false; // no real display mode exists that could be lost
     }
     const SDL_DisplayID display = SDL_GetDisplayForWindow(target);
     if (!display)
@@ -298,6 +336,10 @@ std::unique_ptr<FlipChain16> FullscreenDisplay::create_primary(WordFormat format
 Rectangle FullscreenDisplay::screen_rectangle() const
 {
     require_mode();
+    if (emulated_)
+    {
+        return {0, 0, width_, height_}; // the emulated mode is the whole screen
+    }
     const SDL_DisplayID display = SDL_GetDisplayForWindow(window());
     if (!display)
     {
@@ -340,5 +382,6 @@ void FullscreenDisplay::restore_windowed()
         throw std::runtime_error("Window system did not restore windowed mode");
     }
     mode_ready_ = false;
+    video_.set_game_mode(0, 0, false);
 }
 } // namespace beachlife::runtime::renderer_display

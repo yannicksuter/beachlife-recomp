@@ -75,6 +75,15 @@ class WordSurface16
         int top,
         bool use_source_key = false);
 
+    // DirectDraw Blt's point-sampled stretch between fully contained, nonempty
+    // rectangles. Left/top are inclusive and right/bottom exclusive. Source
+    // colour keys are compared before writing, with no filtering of word values.
+    // Overlap reads the original source rectangle, including when scaling down.
+    void blit_from(const WordSurface16& source,
+        Rectangle source_rectangle,
+        Rectangle destination_rectangle,
+        bool use_source_key = false);
+
   private:
     friend class FlipChain16;
     void require_thread() const;

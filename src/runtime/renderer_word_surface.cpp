@@ -3,6 +3,7 @@
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace beachlife::runtime::renderer_display
 {
@@ -202,6 +203,83 @@ void WordSurface16::copy_from(
             if (value != *source.source_key_)
             {
                 output[column] = value;
+            }
+        }
+    }
+}
+
+void WordSurface16::blit_from(const WordSurface16& source,
+    Rectangle source_rectangle,
+    Rectangle destination_rectangle,
+    bool use_source_key)
+{
+    require_unlocked();
+    source.require_unlocked();
+    if (format_ != source.format_)
+    {
+        throw std::invalid_argument("Word surface blit formats differ");
+    }
+    const auto contained = [](Rectangle rectangle, int width, int height)
+    {
+        return rectangle.left >= 0 && rectangle.top >= 0 && rectangle.right > rectangle.left &&
+               rectangle.bottom > rectangle.top && rectangle.right <= width &&
+               rectangle.bottom <= height;
+    };
+    if (!contained(source_rectangle, source.width_, source.height_) ||
+        !contained(destination_rectangle, width_, height_))
+    {
+        throw std::out_of_range("Word surface blit rectangles must be nonempty and contained");
+    }
+    if (use_source_key && !source.source_key_)
+    {
+        throw std::logic_error("Word surface source key has not been set");
+    }
+    const int source_width = source_rectangle.right - source_rectangle.left;
+    const int source_height = source_rectangle.bottom - source_rectangle.top;
+    const int destination_width = destination_rectangle.right - destination_rectangle.left;
+    const int destination_height = destination_rectangle.bottom - destination_rectangle.top;
+    if (source_width == destination_width && source_height == destination_height)
+    {
+        copy_from(source,
+            source_rectangle,
+            destination_rectangle.left,
+            destination_rectangle.top,
+            use_source_key);
+        return;
+    }
+
+    // Directional memmove ordering cannot protect every stretched self-blit.
+    // Snapshot just the input rectangle before any destination word is written.
+    std::vector<std::uint16_t> snapshot;
+    const auto* input = source.pixels_.get() +
+                        static_cast<std::size_t>(source_rectangle.top) * source.width_ +
+                        source_rectangle.left;
+    int pitch = source.width_;
+    if (this == &source)
+    {
+        snapshot.resize(static_cast<std::size_t>(source_width) * source_height);
+        for (int y = 0; y < source_height; ++y)
+        {
+            std::memcpy(snapshot.data() + static_cast<std::size_t>(y) * source_width,
+                input + static_cast<std::size_t>(y) * pitch,
+                static_cast<std::size_t>(source_width) * sizeof(*input));
+        }
+        input = snapshot.data();
+        pitch = source_width;
+    }
+    for (int y = 0; y < destination_height; ++y)
+    {
+        const auto source_y = static_cast<std::int64_t>(y) * source_height / destination_height;
+        auto* output = pixels_.get() +
+                       static_cast<std::size_t>(y + destination_rectangle.top) * width_ +
+                       destination_rectangle.left;
+        for (int x = 0; x < destination_width; ++x)
+        {
+            const auto source_x = static_cast<std::int64_t>(x) * source_width / destination_width;
+            const auto value = input[source_y * pitch + source_x];
+            if (!use_source_key || value != *source.source_key_)
+            {
+                output[x] = value;
             }
         }
     }

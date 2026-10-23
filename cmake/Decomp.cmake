@@ -4226,3 +4226,43 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME AND BEACHLIFE_BUILD_RECONSTRUCTED_TESTS
     set_tests_properties(reconstructed_credits_data PROPERTIES
         LABELS "reconstructed;experimental;headless" TIMEOUT 30)
 endif()
+
+# Genuine credits-owner lifetime over the selected GUI and real pool owners.
+# Existing GUI dependencies currently belong to the optional fixture selection.
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    add_library(beachlife_reconstructed_credits_owner STATIC
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_credits_owner_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_credits_owner_reset.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_owner190_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_owner190_list_storage.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_manager_owner190_visit.cpp")
+    target_include_directories(beachlife_reconstructed_credits_owner PUBLIC
+        "${BEACHLIFE_DECOMP_SOURCE}")
+    target_compile_features(beachlife_reconstructed_credits_owner PUBLIC cxx_std_20)
+    target_link_libraries(beachlife_reconstructed_credits_owner PUBLIC
+        beachlife_reconstructed_menu_owner190_entry_destroy
+        beachlife_reconstructed_screen_child_ring)
+    add_dependencies(beachlife_reconstructed_credits_owner verify_reconstructed_source)
+    set_target_properties(beachlife_reconstructed_credits_owner PROPERTIES
+        CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+    if(MSVC)
+        target_compile_options(beachlife_reconstructed_credits_owner PRIVATE /GL-)
+    else()
+        target_compile_options(beachlife_reconstructed_credits_owner PRIVATE -fno-lto)
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(reconstructed_credits_owner_tests tests/reconstructed_credits_owner.cpp)
+        target_link_libraries(reconstructed_credits_owner_tests PRIVATE
+            beachlife_reconstructed_credits_owner)
+        target_compile_features(reconstructed_credits_owner_tests PRIVATE cxx_std_20)
+        set_target_properties(reconstructed_credits_owner_tests PROPERTIES
+            CXX_EXTENSIONS OFF INTERPROCEDURAL_OPTIMIZATION FALSE)
+        target_compile_options(reconstructed_credits_owner_tests PRIVATE
+            -fno-lto -Wall -Wextra -Wpedantic -Werror)
+        target_link_options(reconstructed_credits_owner_tests PRIVATE -fno-lto)
+        add_test(NAME reconstructed_credits_owner COMMAND reconstructed_credits_owner_tests)
+        set_tests_properties(reconstructed_credits_owner PROPERTIES
+            LABELS "reconstructed;experimental;headless" TIMEOUT 30)
+    endif()
+endif()

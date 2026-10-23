@@ -684,12 +684,29 @@ def game(tool, args):
     if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
         raise ValueError('Comparator reported an error; inspect comparison.log.')
     report = json.loads((reports / 'comparison.json').read_text())
+    # Identical-code folding gives several symbols one rebuilt address and the
+    # comparator reports only one of their names. A folded function counts only
+    # when its rebuilt bytes equal the original bytes exactly.
+    rebuilt = {}
+    for line in binary.with_suffix('.map').read_text(errors='replace').splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[1].startswith('?') and re.fullmatch(r'[0-9a-fA-F]{8}', parts[2]):
+            rebuilt.setdefault(parts[1], int(parts[2], 16))
+    with (metadata / 'metadata.csv').open(newline='') as stream:
+        symbol_at = {int(row['address'], 16): row['symbol'] for row in csv.DictReader(stream)
+                     if row.get('type') == 'function' and row.get('symbol')}
     def compare_functions(items):
         functions = []
         for item in items:
             row = next((row for row in report['data'] if int(row['address'], 16) == int(item['address'], 16)), None)
             if row is None:
-                raise ValueError(f"Comparator did not find {item['name']}.")
+                address = rebuilt.get(symbol_at.get(int(item['address'], 16), ''))
+                if address is None or read_va(original, int(item['address'], 16), item['size']) != \
+                        read_va(binary, address, item['size']):
+                    raise ValueError(f"Comparator did not find {item['name']}.")
+                functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
+                                  'normalized_match': 1.0, 'exact_bytes': True, 'folded': True})
+                continue
             exact = read_va(original, int(item['address'], 16), item['size']) == read_va(binary, int(row['recomp'], 16), item['size'])
             functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
                               'normalized_match': row['matching'], 'exact_bytes': exact})

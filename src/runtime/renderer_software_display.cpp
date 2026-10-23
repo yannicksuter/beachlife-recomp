@@ -129,6 +129,7 @@ void DrawingContext::present_rgb555(std::span<const std::byte> pixels,
 {
     checked_window(video_, window_, thread_);
     frame_ = convert_rgb555(pixels, width, height, row_stride);
+    video_.set_frame_size(width, height);
     video_.present(frame_, overlay);
 }
 
@@ -200,6 +201,7 @@ void SoftwareDisplay::resize_client(int width, int height)
         fail("Cannot resize renderer client area");
     }
     sync_window(target);
+    video_.set_game_mode(width, height, false);
 }
 
 void SoftwareDisplay::clear_topmost()

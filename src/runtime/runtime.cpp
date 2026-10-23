@@ -6,6 +6,7 @@
 #include "runtime/configured_runtime.h"
 #include "runtime/content_startup.h"
 #include "runtime/fps_overlay.h"
+#include "runtime/game_host.h"
 #include "runtime/loading_view.h"
 #include "runtime/startup.h"
 
@@ -71,6 +72,127 @@ std::string api_title(const std::string& driver)
 }
 
 // Esc or closing the window returns to the launcher.
+GameEntry game_entry = nullptr;
+
+// In the decompiled game Esc is game input; only closing the window quits.
+// --frames/--screenshot checks for the decompiled game: save frame N, then quit.
+struct GamePumpState
+{
+    platform::Video* video;
+    std::uint64_t frames = 0, limit = 0;
+    std::filesystem::path screenshot;
+    // Development checks: BEACHLIFE_BOOT_CLICKS="frame:x,y;..." in game
+    // coordinates clicks the left button at those frames.
+    struct Click
+    {
+        std::uint64_t frame;
+        double x, y;
+    };
+    std::vector<Click> clicks;
+    // BEACHLIFE_BOOT_SHOTS="frame,..." also saves <screenshot>-<frame>.png.
+    std::vector<std::uint64_t> shots;
+};
+
+std::vector<std::uint64_t> scripted_shots()
+{
+    std::vector<std::uint64_t> shots;
+    const char* text = SDL_getenv("BEACHLIFE_BOOT_SHOTS");
+    for (const char* cursor = text; cursor && *cursor;)
+    {
+        unsigned long long frame = 0;
+        int used = 0;
+        if (std::sscanf(cursor, "%llu%n", &frame, &used) != 1)
+        {
+            break;
+        }
+        shots.push_back(frame);
+        cursor += used;
+        cursor += *cursor == ',';
+    }
+    return shots;
+}
+
+std::vector<GamePumpState::Click> scripted_clicks()
+{
+    std::vector<GamePumpState::Click> clicks;
+    const char* text = SDL_getenv("BEACHLIFE_BOOT_CLICKS");
+    for (const char* cursor = text; cursor && *cursor;)
+    {
+        unsigned long long frame = 0;
+        double x = 0, y = 0;
+        int used = 0;
+        if (std::sscanf(cursor, "%llu:%lf,%lf%n", &frame, &x, &y, &used) != 3)
+        {
+            break;
+        }
+        clicks.push_back({frame, x, y});
+        cursor += used;
+        cursor += *cursor == ';';
+    }
+    return clicks;
+}
+
+void click(platform::Video& video, double x, double y, bool down)
+{
+    const auto point = video.presentation_transform().to_window(x, y);
+    SDL_Window* window = video.window();
+    if (down)
+    {
+        SDL_WarpMouseInWindow(window, static_cast<float>(point.x), static_cast<float>(point.y));
+    }
+    SDL_Event event{};
+    event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.windowID = SDL_GetWindowID(window);
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.down = down;
+    event.button.clicks = 1;
+    event.button.x = static_cast<float>(point.x);
+    event.button.y = static_cast<float>(point.y);
+    SDL_PushEvent(&event);
+}
+
+bool game_pump(void* context)
+{
+    auto& state = *static_cast<GamePumpState*>(context);
+    ++state.frames;
+    for (const auto& scripted : state.clicks)
+    {
+        if (scripted.frame == state.frames || scripted.frame + 2 == state.frames)
+        {
+            click(*state.video, scripted.x, scripted.y, scripted.frame == state.frames);
+        }
+    }
+    if (state.limit && state.frames == state.limit && !state.screenshot.empty())
+    {
+        state.video->save_next(state.screenshot);
+    }
+    for (const auto shot : state.shots)
+    {
+        if (shot == state.frames && !state.screenshot.empty())
+        {
+            auto file = state.screenshot;
+            file.replace_filename(
+                file.stem().string() + "-" + std::to_string(shot) + file.extension().string());
+            state.video->save_next(file);
+        }
+    }
+    if (state.limit && state.frames > state.limit + 1)
+    {
+        return false;
+    }
+    bool running = true;
+    SDL_Event event;
+    while (SDL_PollEvent(&event))
+    {
+        ImGui_ImplSDL3_ProcessEvent(&event);
+        if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+        {
+            running = false;
+        }
+    }
+    return running;
+}
+
 bool leaves(const SDL_Event& event)
 {
     return event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
@@ -239,6 +361,7 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
     // The configuration owns its caller-thread VFS binding and retained mount.
     // Keep it alive through the game loop, and destroy it before the window.
     std::unique_ptr<StartupConfiguration> game_configuration;
+    std::shared_ptr<const data::FileSource> game_source;
     std::function<void()> initialize;
     if (game_result)
     {
@@ -249,6 +372,7 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             {
                 throw std::runtime_error("Loading completed without mounted game data.");
             }
+            game_source = source;
             game_configuration = configuration(std::move(source));
             if (!game_configuration)
             {
@@ -265,6 +389,18 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
     if (options.prepare_only)
     {
         return 0;
+    }
+    if (game_entry && game_result)
+    {
+        SDL_SetWindowTitle(video.window(), "Beach Life - boot build");
+        GamePumpState pump{&video,
+            0,
+            static_cast<std::uint64_t>(options.frames),
+            options.screenshot,
+            scripted_clicks(),
+            scripted_shots()};
+        GameHost host{video, game_pump, &pump, game_source};
+        return game_entry(host);
     }
     if (!options.preview_screen.empty())
     {
@@ -431,6 +567,11 @@ int detail::run_with_configuration(const Options& options, ConfigurationFactory 
         }
         return 1;
     }
+}
+
+void set_game_entry(GameEntry entry)
+{
+    game_entry = entry;
 }
 
 int run(const Options& options)
