@@ -32,7 +32,8 @@ commit and dirty marker come from Git. `--build-info` emits the complete JSON
 record. Local builds use channel `dev`; Actions sets `test` or `release` and
 records its PR/run IDs. Test/release packages require clean committed sources.
 
-SDL3, Dear ImGui, stb, FreeType, unshield and zlib are immutable Git submodule pins.
+SDL3, Dear ImGui, stb, FreeType, unshield, zlib, dr_libs (MP3) and pl_mpeg (MPEG-1 for the
+boot build's compat layer) are immutable Git submodule pins.
 Dependency setup is an explicit network step; CMake never fetches source.
 Configuration exports each clean pin into the build directory, applies any ordered
 `patches/<name>/series`,
@@ -453,6 +454,37 @@ For a separate Linux sanitizer build, add
 `-DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'` at configuration.
 Windows cross builds need an explicit execution environment to run CTest,
 as described below. Hosted CI and hardware qualification remain separate checks.
+
+### Boot build
+
+The boot build compiles all decompiled game source as one tree and links it
+with a generated, loud trap for every game function that is not decompiled
+yet. Calling a trap stops the game and names the function and its original
+address. That tells you what to decompile next. A boot build with traps is a
+development tool, never release gameplay. It currently supports Linux x86-64.
+
+```sh
+cmake --preset debug -B build/boot \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
+cmake --build build/boot --target beachlife_boot_link
+./build/boot/beachlife_boot_link
+```
+
+`BEACHLIFE_ENABLE_BOOT_GAME` selects the `native-game` profile: the
+`native-experimental` series followed by `game-series`. `build/boot/boot/traps.json`
+lists every trap; pass `-DBEACHLIFE_BOOT_INVENTORY=<inventory.json>` to give each
+trap its original address. Files that need the Windows SDK are left out until
+they have a native adaptation; their functions become traps too.
+
+The decompiled game compiles against `src/platform/compat`: the subset of the
+Windows, DirectInput and Miles APIs the retail executable imports, implemented
+on SDL3, so decompiled code keeps its original API calls. An API that is declared
+there but not implemented yet becomes a trap like missing game code.
+
+`game-series` is written from a local merge tree. `tools/game_tree.py init`
+creates it under `build/game-tree/work` from the current series. Commit merged
+source there, check that every file compiles with `tools/game_tree.py check`,
+then run `tools/game_tree.py patches` to rewrite `game-series`.
 
 ## Linux
 
@@ -1966,3 +1998,14 @@ merge. All 128 prior scores and raw-byte results remain unchanged. The early
 native inverse preserves both native source profiles and the existing
 experimental clip-mode capability. This matching increment does not connect
 Game, Intro or menu rendering.
+
+The experimental credits-owner lifetime target is
+`reconstructed_credits_owner_tests` (`ctest -R '^reconstructed_credits_owner$'`).
+It constructs the real owner and pool sentinel, exercises Reset, and destroys
+nonempty lists through the genuine entry callback and Text/base destructors.
+The native pointer layout is separate from the VC6 layout. The spacing field
+keeps its original uninitialized constructor behavior; Reset establishes its
+first defined value. Native copying is disabled until a real list-copy body
+is selected. Existing GUI dependencies currently require the optional
+reconstructed-test configuration. This headless lifetime proof does not select
+the credits producer, scrolling/rendering loop, or complete Game/GUI startup.
