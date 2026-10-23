@@ -1,0 +1,704 @@
+diff --git a/src/startup_directdraw_surface.h b/src/startup_directdraw_surface.h
+index 81466d7a80ef94574c725ddd7be84e879a7c04f6..7adff7d711b74e65b9adf7c3caa2c3f41d1502e2 100644
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -1,6 +1,8 @@
+ #ifndef STARTUP_DIRECTDRAW_SURFACE_H
+ #define STARTUP_DIRECTDRAW_SURFACE_H
+ 
++#include <cstddef>
++
+ #if defined(_MSC_VER)
+ #define SURFACE_STDCALL __stdcall
+ #elif defined(__i386__)
+@@ -29,39 +31,60 @@ struct SurfaceDescription
+     unsigned int height;
+     unsigned int width;
+     int pitch;
+-    unsigned char unknown_14[0x10];
++    unsigned int back_buffer_count; // Original +0x14.
++    unsigned char unknown_18[0x0c];
+     void* pixels;
+     unsigned char unknown_28[0x40];
+     unsigned int caps;
+     unsigned char unknown_6c[0x10];
+ };
+ 
++struct SurfaceCapabilities
++{
++    unsigned int caps;
++    unsigned int caps2;
++    unsigned int caps3;
++    unsigned int caps4;
++};
++
+ typedef int SurfaceResult;
++typedef unsigned int(SURFACE_STDCALL* SurfaceAddRefMethod)(DirectDrawSurface7Prefix*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceAttachedMethod)(
++    DirectDrawSurface7Prefix*, SurfaceCapabilities*, DirectDrawSurface7Prefix**);
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceCreateMethod)(
+     DirectDraw7Prefix*, SurfaceDescription*, DirectDrawSurface7Prefix**, SurfaceOuterUnknown*);
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceDescriptionMethod)(
+     DirectDrawSurface7Prefix*, SurfaceDescription*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceDisplayModeMethod)(
++    DirectDraw7Prefix*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+ typedef unsigned int(SURFACE_STDCALL* SurfaceReleaseMethod)(DirectDrawSurface7Prefix*);
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceStatusMethod)(DirectDrawSurface7Prefix*);
+-typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(DirectDrawSurface7Prefix*,
+-    SurfaceApiRectangle*, SurfaceDescription*, unsigned int, void*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(
++    DirectDrawSurface7Prefix*, SurfaceApiRectangle*, SurfaceDescription*, unsigned int, void*);
+ 
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceColorKeyMethod)(
+     DirectDrawSurface7Prefix*, unsigned int, SurfaceColorKey*);
+ 
+-typedef SurfaceResult(SURFACE_STDCALL* SurfaceUnlockMethod)(DirectDrawSurface7Prefix*,
+-    SurfaceApiRectangle*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceUnlockMethod)(
++    DirectDrawSurface7Prefix*, SurfaceApiRectangle*);
+ 
+-typedef SurfaceResult(SURFACE_STDCALL* SurfaceBltMethod)(DirectDrawSurface7Prefix*, SurfaceApiRectangle*,
+-    DirectDrawSurface7Prefix*, SurfaceApiRectangle*, unsigned int, void*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceBltMethod)(DirectDrawSurface7Prefix*,
++    SurfaceApiRectangle*,
++    DirectDrawSurface7Prefix*,
++    SurfaceApiRectangle*,
++    unsigned int,
++    void*);
+ 
+ struct DirectDrawSurface7VtablePrefix
+ {
+-    void* unused_00[2];
++    void* unused_00;
++    SurfaceAddRefMethod AddRef; // Original slot1 (+0x04).
+     SurfaceReleaseMethod Release;
+     void* unused_0c[2];
+     SurfaceBltMethod Blt; // Original slot5 (+0x14); all later observed slots stay fixed.
+-    void* unused_18[16];
++    void* unused_18[6];
++    SurfaceAttachedMethod GetAttachedSurface; // Original slot12 (+0x30).
++    void* unused_34[9];
+     SurfaceDescriptionMethod GetSurfaceDesc;
+     void* unused_5c;
+     SurfaceStatusMethod IsLost;
+@@ -83,6 +106,8 @@ struct DirectDraw7VtablePrefix
+ {
+     void* unused_00[6];
+     SurfaceCreateMethod CreateSurface;
++    void* unused_1c[14];
++    SurfaceDisplayModeMethod SetDisplayMode; // Original slot21 (+0x54).
+ };
+ 
+ struct DirectDraw7Prefix
+@@ -90,4 +115,17 @@ struct DirectDraw7Prefix
+     const DirectDraw7VtablePrefix* vtable;
+ };
+ 
++#if defined(_M_IX86) || defined(__i386__)
++static_assert(sizeof(SurfaceDescription) == 0x7c);
++static_assert(offsetof(SurfaceDescription, back_buffer_count) == 0x14);
++static_assert(offsetof(SurfaceDescription, pixels) == 0x24);
++static_assert(offsetof(SurfaceDescription, caps) == 0x68);
++static_assert(offsetof(DirectDrawSurface7VtablePrefix, AddRef) == 0x04);
++static_assert(offsetof(DirectDrawSurface7VtablePrefix, Blt) == 0x14);
++static_assert(offsetof(DirectDrawSurface7VtablePrefix, GetAttachedSurface) == 0x30);
++static_assert(offsetof(DirectDrawSurface7VtablePrefix, GetSurfaceDesc) == 0x58);
++static_assert(offsetof(DirectDrawSurface7VtablePrefix, Unlock) == 0x80);
++static_assert(offsetof(DirectDraw7VtablePrefix, SetDisplayMode) == 0x54);
++#endif
++
+ #endif
+diff --git a/src/startup_font_fit_text_to_width.cpp b/src/startup_font_fit_text_to_width.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..354008333881dab2a58f9d37512ac2ef4234d7bd
+--- /dev/null
++++ b/src/startup_font_fit_text_to_width.cpp
+@@ -0,0 +1,49 @@
++#include "startup_screen_text.h"
++
++#include <cstddef>
++
++namespace
++{
++// The retail CRT's wide strings contain 16-bit units. Host wchar_t may have
++// four bytes, so retain the unchecked wcslen/wcscat operations on actual units.
++std::size_t TextLength16(const unsigned short* text)
++{
++    const unsigned short* end = text;
++    while (*end != 0)
++    {
++        ++end;
++    }
++    return static_cast<std::size_t>(end - text);
++}
++
++void AppendText16(unsigned short* destination, const unsigned short* source)
++{
++    while (*destination != 0)
++    {
++        ++destination;
++    }
++    do
++    {
++        *destination++ = *source;
++    } while (*source++ != 0);
++}
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x004a05e0
++void ScreenFontRenderer::FitTextToWidth(unsigned short* text, int width)
++{
++    int measured = MeasureText(text);
++    if (measured > width)
++    {
++        unsigned short* cut = text + TextLength16(text) - 1;
++        do
++        {
++            --cut;
++            *cut = 0;
++            const unsigned short ellipsis[] = {'.', '.', '.', 0};
++            // The retail call passes the newly terminated cut position.
++            AppendText16(cut, ellipsis);
++            measured = MeasureText(text);
++        } while (measured > width);
++    }
++}
+diff --git a/src/startup_renderer_destructor_native.cpp b/src/startup_renderer_destructor_native.cpp
+index fc99e4f42191366dccfdb16757e17acd693e2b69..ab5b5ed4c42f6f3b7aa6971c0448196e6adb543d 100644
+--- a/src/startup_renderer_destructor_native.cpp
++++ b/src/startup_renderer_destructor_native.cpp
+@@ -1,13 +1,14 @@
+-#include "startup_screen_renderer.h"
+ #include "startup_renderer_sea_state.h"
++#include "startup_screen_renderer.h"
+ #include "tga_image.h"
+ 
+-#include "runtime/renderer_software_display.h"
+ #include "runtime/renderer_fullscreen_display.h"
++#include "runtime/renderer_software_display.h"
+ 
+ #include <new>
+ 
+ // Native SDK/container adaptation of the complete 0x0040bd40 owner.
++// FUNCTION: BEACHLIFE 0x0040bd40
+ ScreenRequestRenderer::~ScreenRequestRenderer()
+ {
+     TgaImage** image_slot = haze_images_138;
+@@ -26,9 +27,8 @@ ScreenRequestRenderer::~ScreenRequestRenderer()
+     ::operator delete(pixels_1c);
+ 
+     ScreenSurfacePosition** surface_slot = surface_storage.data();
+-    ScreenSurfacePosition** surface_end = surface_storage.empty()
+-                                            ? surface_slot
+-                                            : surface_slot + surface_storage.size();
++    ScreenSurfacePosition** surface_end =
++        surface_storage.empty() ? surface_slot : surface_slot + surface_storage.size();
+     while (surface_slot != surface_end)
+     {
+         ScreenSurfacePosition* entry = *surface_slot;
+diff --git a/src/startup_renderer_restore_surface_native.cpp b/src/startup_renderer_restore_surface_native.cpp
+index 183f251bb4f703c6dc32a7d9cae75438c5490cfd..03e5d85582d242e1135ef6e17cc8a2cca3dc9cfa 100644
+--- a/src/startup_renderer_restore_surface_native.cpp
++++ b/src/startup_renderer_restore_surface_native.cpp
+@@ -1,20 +1,25 @@
+-#include "startup_screen_renderer.h"
+ #include "runtime/renderer_fullscreen_display.h"
++#include "startup_screen_renderer.h"
+ 
+ #include <stdexcept>
+ 
+ // Native SDK boundary for the complete original 0x0040e3a0 algorithm.
++// FUNCTION: BEACHLIFE 0x0040e3a0
+ void ScreenRequestRenderer::RestoreSurface(int surface)
+ {
+     if (software_mode == 0)
+     {
+-        if (!native_fullscreen || !native_chain
+-            || native_primary != &native_chain->front_surface()
+-            || native_back != &native_chain->back_surface())
++        if (!native_fullscreen || !native_chain ||
++            native_primary != &native_chain->front_surface() ||
++            native_back != &native_chain->back_surface())
++        {
+             throw std::logic_error("Native renderer recovery capability is incomplete");
++        }
+         ScreenSurfacePosition* selected = surface_storage[surface];
+         if (!selected->active || selected->software || !selected->native_surface)
++        {
+             throw std::logic_error("Native indexed surface recovery storage is absent");
++        }
+         native_fullscreen->restore_surface(*native_chain, *selected->native_surface);
+         // Original reload after Restore, before caller Prepare/MarkPrepared.
+         surface_storage[surface]->prepared = 0;
+diff --git a/src/startup_renderer_select_surface.cpp b/src/startup_renderer_select_surface.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a10dd9d3ed4416225e2c88d732252fff1795d4fc
+--- /dev/null
++++ b/src/startup_renderer_select_surface.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e230
++void ScreenRequestRenderer::SelectSurface(int surface)
++{
++    current_surface = surface;
++}
+diff --git a/src/startup_renderer_set_screen_size.cpp b/src/startup_renderer_set_screen_size.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9daf69f12658b28fa255aef738c559f2472dd010
+--- /dev/null
++++ b/src/startup_renderer_set_screen_size.cpp
+@@ -0,0 +1,142 @@
++#include "startup_screen_renderer.h"
++
++#include "runtime/renderer_bitmap.h"
++#include "runtime/renderer_fullscreen_display.h"
++#include "runtime/renderer_software_display.h"
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00410960
++unsigned char ScreenRequestRenderer::SetScreenSize(int requested_width, int requested_height)
++{
++    const unsigned char was_software = software_mode;
++    unsigned char successful = 1;
++    width = requested_width;
++    height = requested_height;
++
++    if (was_software)
++    {
++        beachlife::runtime::renderer_display::SoftwareDisplay stored_window(*window_34);
++        stored_window.resize_client(requested_width, requested_height);
++        stored_window.clear_topmost();
++        ResizeSurface(0, width, height);
++        bitmap_info->bmiHeader.biWidth = requested_width;
++        bitmap_info->bmiHeader.biHeight = -requested_height;
++    }
++    else
++    {
++        try
++        {
++            if (native_fullscreen)
++            {
++                using namespace beachlife::runtime::renderer_display;
++                // Back and primary are borrowed roles of one native owner.
++                // End that owner at the original primary release point. As in
++                // initialization, actual host exceptions propagate unchanged.
++                delete native_chain;
++                native_chain = 0;
++                native_primary = 0;
++                native_back = 0;
++
++                FullscreenDisplay* device = native_fullscreen;
++                device->set_display_mode(requested_width, requested_height, 16);
++                device = native_fullscreen;
++                native_chain =
++                    device->create_primary(format_44 == 1 ? WordFormat::Rgb555 : WordFormat::Rgb565)
++                        .release();
++                native_primary = &native_chain->front_surface();
++                native_back = &native_chain->back_surface();
++
++                ScreenSurfacePosition* entry = surface_storage[0];
++                entry->surface = 0;
++                entry->native_surface = native_back;
++                entry->native_surface_owned = false;
++                entry->width = width;
++                entry->height = height;
++                WordSurface16* attached = native_back;
++                entry->pitch = static_cast<unsigned int>(attached->description().pitch);
++            }
++            else
++            {
++                DirectDrawSurface7Prefix* old_back = back_surface;
++                if (old_back)
++                {
++                    old_back->vtable->Release(old_back);
++                }
++                DirectDrawSurface7Prefix* old_primary = primary_surface;
++                if (old_primary)
++                {
++                    old_primary->vtable->Release(old_primary);
++                }
++
++                DirectDraw7Prefix* device = draw;
++                if (device->vtable->SetDisplayMode(
++                        device, requested_width, requested_height, 16, 0, 0) < 0)
++                {
++                    throw const_cast<char*>("SetDisplayMode failed");
++                }
++
++                SurfaceDescription description;
++                memset(&description, 0, sizeof(description));
++                description.size = sizeof(description);
++                description.flags = 0x21;
++                description.caps = 0x218;
++                description.back_buffer_count = 1;
++                device = draw;
++                if (device->vtable->CreateSurface(device, &description, &primary_surface, 0) < 0)
++                {
++                    throw const_cast<char*>("CreateSurface failed");
++                }
++
++                DirectDrawSurface7Prefix* primary = primary_surface;
++                SurfaceCapabilities capabilities;
++                memset(&capabilities, 0, sizeof(capabilities));
++                capabilities.caps = 4;
++                if (primary->vtable->GetAttachedSurface(primary, &capabilities, &back_surface) < 0)
++                {
++                    throw const_cast<char*>("GetAttachedSurface failed");
++                }
++
++                DirectDrawSurface7Prefix* attached = back_surface;
++                attached->vtable->AddRef(attached);
++                ScreenSurfacePosition* entry = surface_storage[0];
++                entry->surface = back_surface;
++                entry->width = width;
++                entry->height = height;
++                SurfaceDescription attached_description;
++                memset(&attached_description, 0, sizeof(attached_description));
++                attached_description.size = sizeof(attached_description);
++                attached = back_surface;
++                attached->vtable->GetSurfaceDesc(attached, &attached_description);
++                entry->pitch = attached_description.pitch;
++            }
++        }
++        catch (char*)
++        {
++            successful = 0;
++        }
++    }
++
++    clip_rectangle.x = 0;
++    clip_rectangle.y = 0;
++    clip_rectangle.width = width;
++    clip_rectangle.height = height;
++    ::operator delete(pixels_1c);
++    const unsigned int pixel_bytes = width * height * 4;
++    void* pixel_storage = ::operator new(pixel_bytes);
++    pixels_1c = new (pixel_storage) unsigned short[pixel_bytes / sizeof(unsigned short)];
++
++    if (buffer_130)
++    {
++        ::operator delete(buffer_130);
++        const unsigned int allocation_count = width * height;
++        void* storage = ::operator new(allocation_count);
++        unsigned char* replacement = new (storage) unsigned char[allocation_count];
++        const unsigned int clear_count = width * height;
++        buffer_130 = replacement;
++        memset(replacement, 0, clear_count);
++    }
++    rectangle_suppressed_4d = 1;
++    word_50 = 0;
++    return successful;
++}
+diff --git a/src/startup_renderer_set_unscaled_clip.cpp b/src/startup_renderer_set_unscaled_clip.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..38beaeb5ae36c1de3845271384d585458fe203bd
+--- /dev/null
++++ b/src/startup_renderer_set_unscaled_clip.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x00483590
++void ScreenRequestRenderer::SetUnscaledClip(unsigned char value)
++{
++    unscaled_clip_5c = value;
++}
+diff --git a/src/startup_renderer_surface_lost_native.cpp b/src/startup_renderer_surface_lost_native.cpp
+index 7ef460721330bff877283ee48a0899e3fd16cb6b..4d86baa734a375c128736de9fa74666329578417 100644
+--- a/src/startup_renderer_surface_lost_native.cpp
++++ b/src/startup_renderer_surface_lost_native.cpp
+@@ -1,19 +1,25 @@
+-#include "startup_screen_renderer.h"
+ #include "runtime/renderer_fullscreen_display.h"
++#include "startup_screen_renderer.h"
+ 
+ #include <stdexcept>
+ 
+ // Native SDK boundary for the complete original 0x0040e370 algorithm.
++// FUNCTION: BEACHLIFE 0x0040e370
+ unsigned char ScreenRequestRenderer::SurfaceLost(int surface)
+ {
+     if (software_mode)
++    {
+         return 0;
+-    if (!native_fullscreen || !native_chain
+-        || native_primary != &native_chain->front_surface()
+-        || native_back != &native_chain->back_surface())
++    }
++    if (!native_fullscreen || !native_chain || native_primary != &native_chain->front_surface() ||
++        native_back != &native_chain->back_surface())
++    {
+         throw std::logic_error("Native renderer recovery capability is incomplete");
++    }
+     ScreenSurfacePosition* selected = surface_storage[surface];
+     if (!selected->active || selected->software || !selected->native_surface)
++    {
+         throw std::logic_error("Native indexed surface recovery storage is absent");
++    }
+     return native_fullscreen->surface_lost(*native_chain, *selected->native_surface);
+ }
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 3792ae9a7eb7545dfc58465bde60ce6b4c97f7e7..8a53e3f9941dd18c5b2c9dcaa235401b2c747e11 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -2,10 +2,10 @@
+ #define STARTUP_SCREEN_RENDERER_H
+ 
+ #define BEACHLIFE_DECOMP_RENDERER_MARKER_BUFFER 1
+-#define BEACHLIFE_DECOMP_RENDERER_SEA_STATE     1
+-#define BEACHLIFE_DECOMP_SURFACE_PREPARE        1
+-#define BEACHLIFE_DECOMP_SURFACE_TABLE          1
+-#define BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE  1
++#define BEACHLIFE_DECOMP_RENDERER_SEA_STATE 1
++#define BEACHLIFE_DECOMP_SURFACE_PREPARE 1
++#define BEACHLIFE_DECOMP_SURFACE_TABLE 1
++#define BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE 1
+ 
+ #include "startup_directdraw_surface.h"
+ #include "startup_render_rectangle.h"
+@@ -89,7 +89,9 @@ struct ScreenSurfacePosition
+ struct ScreenRequestRenderer : ScreenRendererRegistration
+ {
+     ScreenRequestRenderer(beachlife::platform::Video& window,
+-        unsigned int requested_width, unsigned int requested_height, unsigned char mode);
++        unsigned int requested_width,
++        unsigned int requested_height,
++        unsigned char mode);
+     ~ScreenRequestRenderer();
+     ScreenRequestRenderer(const ScreenRequestRenderer&) = delete;
+     ScreenRequestRenderer& operator=(const ScreenRequestRenderer&) = delete;
+@@ -97,8 +99,14 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+     // Native SDK adapter: qualified software entry plus a prospective exact-mode
+     // fullscreen startup domain. Original full error paths remain separately
+     // reconstructed; no 1312-byte match or whole hardware-route claim.
+-    unsigned char InitializeDisplay(beachlife::platform::Video& window, unsigned char mode,
+-        unsigned int requested_width, unsigned int requested_height, unsigned int bits);
++    unsigned char InitializeDisplay(beachlife::platform::Video& window,
++        unsigned char mode,
++        unsigned int requested_width,
++        unsigned int requested_height,
++        unsigned int bits);
++
++    // Actual 0x00410960, RET8/AL; preserves the current surface selection.
++    unsigned char SetScreenSize(int width, int height);
+ 
+     // Actual 0x0040f7e0; full mode word and original rectangle suppression.
+     void SetClipMode(unsigned int mode);
+@@ -192,6 +200,12 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+     void CaptureFrame(const ScreenRectangle& bounds);
+ 
+     int CreateSurface(int width, int height, int mode);
++    // Actual 0x0040e230, RET4; changes only the selected index.
++    void SelectSurface(int surface);
++    // Actual 0x0040e3d0, RET12/AL; reallocates only when dimensions differ.
++    unsigned char ResizeSurface(int surface, int width, int height);
++    // Actual 0x0040e4c0, RET4; recreates a hardware entry at its stored size.
++    void RecreateSurface(int surface);
+     // Actual 0x00410d20, RET4; returned index owns the copied rectangle.
+     int CreateRectangleSurface(const ScreenRectangle& bounds);
+     void InitializeSurface(int width, int height, ScreenSurfacePosition* entry, unsigned char mode);
+@@ -199,7 +213,8 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+     // Actual 0x0040e650, RET12; whole keyed source to the back surface.
+     void BlitSurface(int x, int y, int surface);
+     // Actual 0x0040e990, RET12; source and destination rectangles stay distinct.
+-    void BlitSurfaceRegion(const ScreenRectangle& destination, const ScreenRectangle& source, int surface);
++    void BlitSurfaceRegion(
++        const ScreenRectangle& destination, const ScreenRectangle& source, int surface);
+     unsigned short* AccessPixels();
+     void UnlockPixels();
+     void CleanupSurface(int surface);
+@@ -208,15 +223,23 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+     void PositionSurface(int surface, int x, int y);
+ 
+     // Actual target 0x0040cb10. References name the six observed mutable words.
+-    bool ClipRectangle(int& destination_x, int& destination_y,
+-        int& source_left, int& source_top, int& source_right, int& source_bottom);
++    bool ClipRectangle(int& destination_x,
++        int& destination_y,
++        int& source_left,
++        int& source_top,
++        int& source_right,
++        int& source_bottom);
+ 
+     // Actual target 0x0040cd70; native queue storage has a separate library contract.
+     void AccumulateRectangle(ScreenRectangle bounds);
+ 
+     // Actual target 0x0040c550; six observed argument words.
+-    void DrawTga(const ScreenPoint& destination, const ScreenRectangle& bounds,
+-        TgaImage* image, int mode, unsigned int flags, unsigned int extra);
++    void DrawTga(const ScreenPoint& destination,
++        const ScreenRectangle& bounds,
++        TgaImage* image,
++        int mode,
++        unsigned int flags,
++        unsigned int extra);
+ };
+ 
+ // The existing startup_gui_rectangle.cpp remains the sole storage definition.
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index b3d03a941215cae6392aac479cf87ba318430bd3..a2932a36a14842ed3eae11fc71be053f13f6c8b6 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -163,20 +163,36 @@ struct ScreenFontRenderer
+     void DrawTextLine(int x, int y, const unsigned short* text);
+ 
+     // Actual 0x0049fdd0 and 0x0049ff20, each RET44. Bodies remain separate.
+-    void DrawGlyphDirect(const unsigned char* source, int source_stride,
+-        unsigned short* destination, int destination_stride,
+-        int source_x, int source_y, int destination_x, int destination_y,
+-        int width, int height, const unsigned short* palette);
+-    void DrawGlyphSurface(const unsigned char* source, int source_stride,
+-        unsigned short* destination, int destination_stride,
+-        int source_x, int source_y, int destination_x, int destination_y,
+-        int width, int height, const unsigned short* palette);
++    void DrawGlyphDirect(const unsigned char* source,
++        int source_stride,
++        unsigned short* destination,
++        int destination_stride,
++        int source_x,
++        int source_y,
++        int destination_x,
++        int destination_y,
++        int width,
++        int height,
++        const unsigned short* palette);
++    void DrawGlyphSurface(const unsigned char* source,
++        int source_stride,
++        unsigned short* destination,
++        int destination_stride,
++        int source_x,
++        int source_y,
++        int destination_x,
++        int destination_y,
++        int width,
++        int height,
++        const unsigned short* palette);
+ 
+     unsigned int MeasureText(const unsigned short* text);
+-    unsigned int CountWrappedLines(const unsigned short* text,
+-        unsigned int width, unsigned int spacing);
+-    unsigned int MeasureWrappedText(const unsigned short* text,
+-        unsigned int width, unsigned int spacing);
++    unsigned int CountWrappedLines(
++        const unsigned short* text, unsigned int width, unsigned int spacing);
++    unsigned int MeasureWrappedText(
++        const unsigned short* text, unsigned int width, unsigned int spacing);
++    // Actual 0x004a05e0, RET8; truncation and ellipsis writes stay unchecked.
++    void FitTextToWidth(unsigned short* text, int width);
+ };
+ 
+ extern ScreenTextLookup* screen_text_lookup;
+diff --git a/src/startup_surface_create.cpp b/src/startup_surface_create.cpp
+index 2ca08426ec31c8323892d72d26c6132cb425ff0e..c540871c1687ed67165692e0ded35b0da61e9dcb 100644
+--- a/src/startup_surface_create.cpp
++++ b/src/startup_surface_create.cpp
+@@ -4,6 +4,7 @@
+ 
+ // Native standard-library backing adaptation of the complete 0x0040def0.
+ // The container owns pointer slots only. Entries retain their real raw lifetime.
++// FUNCTION: BEACHLIFE 0x0040def0
+ int ScreenRequestRenderer::CreateSurface(int image_width, int image_height, int mode)
+ {
+     ScreenSurfacePosition* selected = 0;
+diff --git a/src/startup_surface_position_xyz.cpp b/src/startup_surface_position_xyz.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..42ea0a5b3e52dd20d8506b2a9bb18ddfb36ed0cb
+--- /dev/null
++++ b/src/startup_surface_position_xyz.cpp
+@@ -0,0 +1,9 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e350
++void ScreenRequestRenderer::PositionSurface(int surface, int x, int y)
++{
++    ScreenSurfacePosition* selected = surface_storage[surface];
++    selected->position.x = x;
++    selected->position.y = y;
++}
+diff --git a/src/startup_surface_recreate.cpp b/src/startup_surface_recreate.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..397d87574409b3ca1f140b9c0b8036123ac5d161
+--- /dev/null
++++ b/src/startup_surface_recreate.cpp
+@@ -0,0 +1,27 @@
++#include "runtime/renderer_word_surface.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e4c0
++void ScreenRequestRenderer::RecreateSurface(int index)
++{
++    if (!software_mode)
++    {
++        ScreenSurfacePosition* selected = surface_storage[index];
++        if (selected->native_surface)
++        {
++            // The entry's borrowed back role is owned by the live flip chain.
++            if (selected->native_surface_owned)
++            {
++                delete selected->native_surface;
++            }
++        }
++        else
++        {
++            DirectDrawSurface7Prefix* surface = selected->surface;
++            surface->vtable->Release(surface);
++        }
++        ScreenSurfacePosition* entry = surface_storage[index];
++        InitializeSurface(
++            static_cast<int>(entry->width), static_cast<int>(entry->height), entry, 0);
++    }
++}
+diff --git a/src/startup_surface_resize.cpp b/src/startup_surface_resize.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7c0a493d7975ecaeebe682a6b698e2bc109ef675
+--- /dev/null
++++ b/src/startup_surface_resize.cpp
+@@ -0,0 +1,47 @@
++#include "runtime/renderer_word_surface.h"
++#include "startup_screen_renderer.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x0040e3d0
++unsigned char ScreenRequestRenderer::ResizeSurface(
++    int index, int requested_width, int requested_height)
++{
++    if (software_mode)
++    {
++        ScreenSurfacePosition* entry = surface_storage[index];
++        if (entry->width != static_cast<unsigned int>(requested_width) ||
++            entry->height != static_cast<unsigned int>(requested_height))
++        {
++            // InitializeSurface uses the host's new[] for these trivial words.
++            delete[] entry->pixels;
++            InitializeSurface(requested_width, requested_height, entry, 0);
++            return 1;
++        }
++    }
++    else
++    {
++        ScreenSurfacePosition* entry = surface_storage[index];
++        if (entry->width != static_cast<unsigned int>(requested_width) ||
++            entry->height != static_cast<unsigned int>(requested_height))
++        {
++            if (entry->native_surface)
++            {
++                // Offscreen entries own their host allocation; a chain's back
++                // role is borrowed. Releasing that entry leaves the chain live.
++                if (entry->native_surface_owned)
++                {
++                    delete entry->native_surface;
++                }
++            }
++            else
++            {
++                DirectDrawSurface7Prefix* surface = entry->surface;
++                surface->vtable->Release(surface);
++            }
++            InitializeSurface(requested_width, requested_height, surface_storage[index], 0);
++            return 1;
++        }
++    }
++    return 0;
++}

@@ -17,6 +17,9 @@ that portability series. Intentional behavior changes belong in
 `beachlife-decomp-tweaks/`; they are optional, off by default, and excluded from
 both profiles. Preserve retail timing and bugs in faithful patches.
 
+The `native-game` profile adds `game-series` last: the boot build's merged game
+tree, written by `tools/game_tree.py patches` (see BUILDING, "Boot build").
+
 Patch paths are relative to the exported baseline root, for example
 `src/file_loader.cpp`. Format the reconstructed source before generating its
 patch. The comparison retention fixture is never executed and is not a game

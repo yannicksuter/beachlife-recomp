@@ -1,0 +1,64 @@
+diff --git a/src/startup_timer_native.cpp b/src/startup_timer_native.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a6251d02a4b45bc66cb39df6ae5d7fdb0c971ff0
+--- /dev/null
++++ b/src/startup_timer_native.cpp
+@@ -0,0 +1,20 @@
++#include "startup_timer.h"
++
++#include <x86intrin.h>
++
++// Native adaptation: the retail methods read the CPU timestamp counter with
++// inline rdtsc; the compiler intrinsic reads the same counter.
++
++// FUNCTION: BEACHLIFE 0x004ecf40
++void StartupProfiler::Start()
++{
++    start = __rdtsc();
++}
++
++// FUNCTION: BEACHLIFE 0x004ecf60
++void StartupProfiler::Stop()
++{
++    uint64_t current = __rdtsc();
++    elapsed = current - start;
++    elapsed -= overhead;
++}
+diff --git a/src/winmain_native.cpp b/src/winmain_native.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..546bef5526f1c810c136b341714fd389ad4d603c
+--- /dev/null
++++ b/src/winmain_native.cpp
+@@ -0,0 +1,32 @@
++#include "runtime/game_host.h"
++#include "startup_frame_clock.h"
++#include "startup_screen_manager.h"
++#include "startup_timer.h"
++
++// Native adaptation of WinMain (retail 0x004a07e0) for the boot build. Play
++// has already done what the retail entry does before the Game exists: the
++// single-instance mutex, the CPU check, gameparameters.pis, the window class
++// and window, and COM. The Game receives Play's window. Each retail frame
++// handles at most one window message and then updates and renders; here the
++// host handles the pending SDL events instead. Like the retail loop, the frame
++// that receives the quit request still updates and renders once.
++int beachlife_boot_main(beachlife::runtime::GameHost& host)
++{
++    ScreenRequestGamePrefix* game = new ScreenRequestGamePrefix(nullptr, &host.video);
++    bool running = true;
++    while (running)
++    {
++        running = host.pump_events(host.context);
++        profiler->Reset();
++        profiler->Start();
++        game->Update();
++        profiler->Stop();
++        startup_frame_clock->value_24 = static_cast<int>(profiler->elapsed) / 1000;
++        profiler->Start();
++        game->Render();
++        profiler->Stop();
++        startup_frame_clock->value_20 = static_cast<int>(profiler->elapsed) / 1000;
++    }
++    delete game;
++    return 0;
++}

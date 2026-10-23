@@ -1,0 +1,248 @@
+diff --git a/src/startup_screen_credits_owner_constructor.cpp b/src/startup_screen_credits_owner_constructor.cpp
+new file mode 100644
+index 0000000..e7d682ab95c5b79d6c268050456de48f6eb84a5d
+--- /dev/null
++++ b/src/startup_screen_credits_owner_constructor.cpp
+@@ -0,0 +1,43 @@
++#include "startup_screen_manager_owner190.h"
++#include "pool_allocate.h"
++#include "pool_return.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c1a70
++ScreenManagerOwner190::ScreenManagerOwner190()
++    : index_00(0)
++{
++    entries.head = 0;
++    void* storage = AllocatePoolBytes(sizeof(ScreenManagerOwner190Node));
++    ScreenManagerOwner190Node* sentinel = ::new (storage) ScreenManagerOwner190Node;
++    sentinel->next = sentinel;
++    sentinel->previous = sentinel;
++    entries.head = sentinel;
++
++    try
++    {
++        finish_delay_0c = 0.0f;
++        finishing_10 = 0;
++        ScreenManagerOwner190Node* head = entries.head;
++        ScreenManagerOwner190Node* node = head->next;
++        if (node != head)
++        {
++            do
++            {
++                ScreenManagerOwner190Node* released = node;
++                node = node->next;
++                if (released != 0)
++                    ReturnPool(released, sizeof(ScreenManagerOwner190Node));
++            } while (node != entries.head);
++        }
++        head = entries.head;
++        head->next = head;
++        head = entries.head;
++        head->previous = head;
++    }
++    catch (...)
++    {
++        entries.ReleaseStorage();
++        throw;
++    }
++}
+diff --git a/src/startup_screen_credits_owner_reset.cpp b/src/startup_screen_credits_owner_reset.cpp
+new file mode 100644
+index 0000000..e0009016798f9c7e0a3a0ec7b2e7e50d6e6e9005
+--- /dev/null
++++ b/src/startup_screen_credits_owner_reset.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_manager_owner190.h"
++
++// FUNCTION: BEACHLIFE 0x004c1c40
++void ScreenManagerOwner190::Reset()
++{
++    index_00 = 0;
++    word_08 = 0;
++}
+diff --git a/src/startup_screen_manager_owner190.h b/src/startup_screen_manager_owner190.h
+new file mode 100644
+index 0000000..187e0f54c46d784bae8fa1eccccc31c6c4dc1192
+--- /dev/null
++++ b/src/startup_screen_manager_owner190.h
+@@ -0,0 +1,95 @@
++#ifndef STARTUP_SCREEN_MANAGER_OWNER190_H
++#define STARTUP_SCREEN_MANAGER_OWNER190_H
++
++struct ScreenManagerOwner190Entry;
++
++// The entry payload remains distinct from ActiveScreenEntry.
++struct ScreenManagerOwner190Node
++{
++    ScreenManagerOwner190Node* next;
++    ScreenManagerOwner190Node* previous;
++    ScreenManagerOwner190Entry* entry;
++};
++
++// Real list iterators are returned through a hidden pointer (folded 0x00437a40,
++// 0x004209d0), so the iterator keeps a user-declared copy constructor.
++struct ScreenManagerOwner190Iterator
++{
++    ScreenManagerOwner190Node* node;
++
++    ScreenManagerOwner190Iterator() { }
++    ScreenManagerOwner190Iterator(const ScreenManagerOwner190Iterator& other)
++        : node(other.node)
++    {
++    }
++
++    ScreenManagerOwner190Iterator operator++(int)
++    {
++        ScreenManagerOwner190Iterator old(*this);
++        node = node->next;
++        return old;
++    }
++};
++
++struct ScreenManagerOwner190List
++{
++    ScreenManagerOwner190Node* head;
++
++    // Actual folded 0x00437a40 and distinct insertion 0x004c1fa0.
++    ScreenManagerOwner190Iterator End() const;
++    ScreenManagerOwner190Iterator Insert(ScreenManagerOwner190Iterator position,
++        ScreenManagerOwner190Entry* const& entry);
++
++    // Actual 0x004c1f00. A distinct original container instantiation.
++    void ReleaseStorage();
++    // Folded list erase 0x004209d0; hidden iterator result plus position, RET8.
++    ScreenManagerOwner190Iterator Erase(ScreenManagerOwner190Iterator position);
++};
++
++typedef void (*ScreenManagerOwner190Callback)(ScreenManagerOwner190Entry* entry);
++
++// Actual folded traversal 0x004e8200, also used by the active-screen list.
++// This declaration does not treat the distinct payload as ActiveScreenEntry.
++ScreenManagerOwner190Callback VisitManagerOwner190Entries(ScreenManagerOwner190Iterator first,
++    ScreenManagerOwner190Iterator last, ScreenManagerOwner190Callback callback);
++
++// Actual cdecl 0x004c1ee0: destroys the owned item and then the entry.
++void DestroyManagerOwner190Entry(ScreenManagerOwner190Entry* entry);
++
++// Observed 20-byte x86 allocation at 0x004b1177; all fields retain R566 types.
++// Native pointer-width layout is separate (32-byte owner, 24-byte node on x64).
++// Complete construction owns a real pool sentinel; word_08 stays uninitialized
++// until the real Reset or producer writes it.
++struct ScreenManagerOwner190
++{
++    unsigned int index_00;
++    ScreenManagerOwner190List entries;
++    int word_08; // Spacing countdown to the next credit line.
++    // Set when the last credit leaves the screen; IsFinished then waits for
++    // the delay to run out.
++    float finish_delay_0c;
++    unsigned char finishing_10;
++
++    ~ScreenManagerOwner190() noexcept(false); // Actual 0x004c1b50; cleanup then rethrow.
++    void AddNextEntry();                      // Actual 0x004c1da0, RET0.
++    void Update(float elapsed);               // Actual 0x004c1c50, RET4.
++    // Actual 0x004c1d50: byte +10 set and float +0c below zero.
++    bool IsFinished();
++    // Actual 0x004c1d70, RET0: each entry's item slot 0x1c in list order.
++    void RenderChildren();
++    // Actual 0x004c1c40, RET0; resets index_00 and word_08 only.
++    void Reset();
++
++    // Native ownership exposes the real constructor without a fabricated manager.
++    // Access is descriptive; it changes neither layout nor initialization.
++    ScreenManagerOwner190(); // Actual 0x004c1a70, returns this in EAX, RET0.
++
++    // No real list-copy or ownership-transfer body is selected. Keep this native
++    // surface noncopyable rather than synthesize a shallow owning alias.
++    ScreenManagerOwner190(const ScreenManagerOwner190&) = delete;
++    ScreenManagerOwner190& operator=(const ScreenManagerOwner190&) = delete;
++    ScreenManagerOwner190(ScreenManagerOwner190&&) = delete;
++    ScreenManagerOwner190& operator=(ScreenManagerOwner190&&) = delete;
++};
++
++#endif
+diff --git a/src/startup_screen_manager_owner190_destructor.cpp b/src/startup_screen_manager_owner190_destructor.cpp
+new file mode 100644
+index 0000000..adfec8e11965a616961451aaa27f1116128f5b34
+--- /dev/null
++++ b/src/startup_screen_manager_owner190_destructor.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_manager_owner190.h"
++#include "pool_return.h"
++
++// FUNCTION: BEACHLIFE 0x004c1b50
++ScreenManagerOwner190::~ScreenManagerOwner190() noexcept(false)
++{
++    try
++    {
++        ScreenManagerOwner190Iterator last;
++        last.node = entries.head;
++        ScreenManagerOwner190Iterator first;
++        first.node = entries.head->next;
++        VisitManagerOwner190Entries(first, last, DestroyManagerOwner190Entry);
++
++        ScreenManagerOwner190Node* node = entries.head->next;
++        while (node != entries.head)
++        {
++            ScreenManagerOwner190Node* released = node;
++            node = node->next;
++            if (released != 0)
++                ReturnPool(released, sizeof(ScreenManagerOwner190Node));
++        }
++        entries.head->next = entries.head;
++        entries.head->previous = entries.head;
++    }
++    catch (...)
++    {
++        entries.ReleaseStorage();
++        throw;
++    }
++    entries.ReleaseStorage();
++}
+diff --git a/src/startup_screen_manager_owner190_list_storage.cpp b/src/startup_screen_manager_owner190_list_storage.cpp
+new file mode 100644
+index 0000000..068490bffc4e03f3f5036fe65a92fb5b2c1fb7df
+--- /dev/null
++++ b/src/startup_screen_manager_owner190_list_storage.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_manager_owner190.h"
++#include "pool_return.h"
++
++// FUNCTION: BEACHLIFE 0x004c1f00
++void ScreenManagerOwner190List::ReleaseStorage()
++{
++    ScreenManagerOwner190Node* node = head->next;
++    while (node != head)
++    {
++        ScreenManagerOwner190Node* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(ScreenManagerOwner190Node));
++    }
++    head->next = head;
++    head->previous = head;
++    ScreenManagerOwner190Node* released = head;
++    if (released != 0)
++        ReturnPool(released, sizeof(ScreenManagerOwner190Node));
++}
+diff --git a/src/startup_screen_manager_owner190_visit.cpp b/src/startup_screen_manager_owner190_visit.cpp
+new file mode 100644
+index 0000000..88e7159556123be2375c3964db8e66cbc1533ad4
+--- /dev/null
++++ b/src/startup_screen_manager_owner190_visit.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_manager_owner190.h"
++
++// Native typed projection of shared library traversal 0x004e8200.
++// Its active-screen projection already exists; this earns no new physical credit.
++ScreenManagerOwner190Callback VisitManagerOwner190Entries(ScreenManagerOwner190Iterator first,
++    ScreenManagerOwner190Iterator last, ScreenManagerOwner190Callback callback)
++{
++    while (first.node != last.node)
++    {
++        callback(first.node->entry);
++        first.node = first.node->next;
++    }
++    return callback;
++}

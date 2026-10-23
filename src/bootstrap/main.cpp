@@ -3,6 +3,9 @@
 #include "data/iso9660.h"
 #include "launcher/launcher.h"
 #include "runtime/runtime.h"
+#if BEACHLIFE_BOOT_GAME
+#include "runtime/boot_session.h"
+#endif
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
@@ -14,6 +17,10 @@
 
 int main(int argc, char** argv)
 {
+#if BEACHLIFE_BOOT_GAME
+    // Play runs the decompiled game; missing code stops it at a trap.
+    beachlife::runtime::set_game_entry(beachlife::runtime::run_boot_game);
+#endif
     if (argc == 3 && std::string_view(argv[1]) == "--inspect-iso")
     {
         try

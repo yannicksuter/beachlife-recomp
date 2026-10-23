@@ -15,13 +15,16 @@ import tempfile
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype')
+DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype', 'dr-libs', 'pl-mpeg')
 DECOMP = 'beachlife-decomp'
 DECOMP_PROFILES = {
     'native': ('reconstruction-series', 'native-pre-series', 'series'),
     'matching': ('reconstruction-series',),
     'native-experimental': ('reconstruction-series', 'native-pre-series',
                             'experimental-series', 'series'),
+    # The boot build's one merged game tree, applied last.
+    'native-game': ('reconstruction-series', 'native-pre-series',
+                    'experimental-series', 'series', 'game-series'),
 }
 
 
@@ -51,8 +54,8 @@ def no_symlinks(path, root):
 
 
 def patch_paths(source, name, series_filename='series'):
-    if series_filename not in ('series', 'reconstruction-series',
-                               'native-pre-series', 'experimental-series'):
+    if series_filename not in ('series', 'reconstruction-series', 'native-pre-series',
+                               'experimental-series', 'game-series'):
         raise ValueError('Invalid patch series filename')
     folder = Path(source) / 'patches' / name
     series = folder / series_filename

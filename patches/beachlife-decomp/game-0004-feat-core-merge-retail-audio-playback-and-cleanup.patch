@@ -1,0 +1,540 @@
+diff --git a/src/window_audio.h b/src/window_audio.h
+index d779c8751a95476a6b22bb1100b4762dfbf38d3b..95418cd70efb2c60f21f72a9a7bf01c6f9f4eb34 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -31,7 +31,7 @@ struct WindowAudioState
+ 
+     // Actual 0x004cefd0, RET12. Whole-owner destruction remains separate.
+     WindowAudioState(unsigned char enable, const char* provider_name, const char* bank_name);
+-    ~WindowAudioState();
++    ~WindowAudioState() noexcept(false);
+     void UpdateVoiceFades(float delta);
+     void StopAllSounds();
+     void SetStreamVolume(float level);
+diff --git a/src/window_audio_destructor.cpp b/src/window_audio_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2929c86fd019cbd54fee20c832de850699c2063
+--- /dev/null
++++ b/src/window_audio_destructor.cpp
+@@ -0,0 +1,82 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++#include "window_sound_bank.h"
++#include "window_sound_voice.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004cf330
++WindowAudioState::~WindowAudioState() noexcept(false)
++{
++    try
++    {
++        if (enabled)
++        {
++            void(__stdcall * end_3d_sample)(void*) = AIL_end_3D_sample;
++            for (int index = 0; index < 24; ++index)
++            {
++                if (index >= 0)
++                {
++                    WindowSoundVoice* voice = index < 16 ? voices_74[index] : voices_b4[index - 16];
++                    if (voice)
++                    {
++                        if (index >= 16)
++                        {
++                            if (enabled_3d)
++                            {
++                                end_3d_sample(samples_54[index - 16]);
++                            }
++                        }
++                        else
++                        {
++                            AIL_end_sample(samples_14[index]);
++                        }
++                    }
++                }
++            }
++
++            Update(0.0f);
++            void* current_stream = stream;
++            if (current_stream)
++            {
++                AIL_close_stream(current_stream);
++            }
++            if (enabled_3d)
++            {
++                AIL_close_3D_provider(provider_08);
++            }
++            AIL_close_digital_driver(digital_driver);
++            AIL_shutdown();
++        }
++
++        for (int index = 0; index < 24; ++index)
++        {
++            WindowSoundVoice*& slot = index < 16 ? voices_74[index] : voices_b4[index - 16];
++            WindowSoundVoice* voice = slot;
++            if (voice)
++            {
++                char* name = voice->name;
++                if (name)
++                {
++                    ::operator delete(name);
++                }
++                ::operator delete(voice);
++                slot = 0;
++            }
++        }
++
++        WindowSoundBank* bank = bank_f4;
++        if (bank)
++        {
++            bank->~WindowSoundBank();
++            ::operator delete(bank);
++        }
++    }
++    catch (...)
++    {
++        ClearRegistration();
++        throw;
++    }
++    window_audio_state = 0;
++}
+diff --git a/src/window_audio_initialize_3d_provider.cpp b/src/window_audio_initialize_3d_provider.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..970a99a1d23ae37b4238067984db711a0ce02b57
+--- /dev/null
++++ b/src/window_audio_initialize_3d_provider.cpp
+@@ -0,0 +1,42 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++
++#include <string.h>
++
++extern "C" int _stricmp(const char*, const char*);
++
++// FUNCTION: BEACHLIFE 0x004d0370
++void WindowAudioState::Initialize3DProvider(const char* provider_name)
++{
++    unsigned int cursor = 0;
++    const char* names[64];
++    void* providers[64];
++    void* selected = 0;
++    unsigned int index = 0;
++
++    if (!AIL_enumerate_3D_providers(&cursor, &providers[index], &names[index]))
++    {
++        return;
++    }
++
++    do
++    {
++        if (_stricmp(names[index], provider_name) == 0)
++        {
++            selected = providers[index];
++        }
++        ++index;
++    } while (AIL_enumerate_3D_providers(&cursor, &providers[index], &names[index]));
++
++    if (selected != 0 && AIL_open_3D_provider(selected) == 0)
++    {
++        enabled_3d = 1;
++        provider_08 = selected;
++        void* listener = AIL_open_3D_listener(selected);
++        listener_dc = listener;
++        position_x_e0 = 0.0f;
++        position_y_e4 = 0.0f;
++        position_z_e8 = 0.0f;
++        AIL_set_3D_position(listener, 0.0f, 0.0f, 0.0f);
++    }
++}
+diff --git a/src/window_audio_play_sound.cpp b/src/window_audio_play_sound.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..454f91d69db9c405fb7eec040be9551d02d242f8
+--- /dev/null
++++ b/src/window_audio_play_sound.cpp
+@@ -0,0 +1,9 @@
++#include "window_audio.h"
++
++// FUNCTION: BEACHLIFE 0x004cf710
++int WindowAudioState::PlaySound(const char* name, unsigned int flags, float fade)
++{
++    float scale = scale_d8;
++    int volume = volume_d4;
++    return PlaySoundWithParameters(name, volume, flags, fade, scale);
++}
+diff --git a/src/window_audio_playback.cpp b/src/window_audio_playback.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b0565d4640a31fece3e26243e9bf3d871d2aa5c5
+--- /dev/null
++++ b/src/window_audio_playback.cpp
+@@ -0,0 +1,95 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++#include "window_sound_bank.h"
++#include "window_sound_voice.h"
++#include <new>
++#include <stdio.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004d0040
++int WindowAudioState::PlaySoundWithParameters(
++    const char* name, int volume, unsigned int flags, float fade, float scale)
++{
++    int result = -1;
++    if (enabled)
++    {
++        int index;
++        for (index = 0; index < 16; ++index)
++        {
++            if (voices_74[index] == 0)
++            {
++                break;
++            }
++        }
++        if (index == 16)
++        {
++            return result;
++        }
++
++        void* sample = samples_14[index];
++        AIL_init_sample(sample);
++        result = index;
++        if (sample)
++        {
++            char filename[64];
++            sprintf(filename, "%s%s", name, window_sound_wave_extension);
++            unsigned int bytes;
++            void* data = bank_f4->FindSample(filename, &bytes);
++            if (data)
++            {
++                WindowSoundVoice* voice = new WindowSoundVoice;
++                if (voice)
++                {
++                    voice->name = 0;
++                    voice->data_04 = 0;
++                    voice->word_08 = 0;
++                    voice->bytes_0c = 0;
++                    voice->word_10 = 0;
++                    voice->byte_2c = 0;
++                    voice->word_30 = -1;
++                }
++                voices_74[index] = voice;
++                voice->data_04 = data;
++                voice->bytes_0c = bytes;
++                voice->name = static_cast<char*>(::operator new(strlen(filename) + 1));
++                strcpy(voice->name, filename);
++
++                unsigned int format = voice->word_08;
++                unsigned int sample_bytes = voice->bytes_0c;
++                void* sample_data = voice->data_04;
++                const char* extension = window_sound_wave_extension;
++                if (format)
++                {
++                    extension = window_sound_mp3_extension;
++                }
++                AIL_set_named_sample_file(sample, extension, sample_data, sample_bytes, 0);
++
++                float target_volume = static_cast<float>(volume);
++                voice->scale_14 = scale;
++                voice->volume_18 = target_volume;
++                int initial_volume;
++                if (fade > 0.0f)
++                {
++                    voice->word_10 = 1;
++                    voice->fade_28 = fade;
++                    voice->fade_24 = fade;
++                    voice->word_1c = 0;
++                    voice->word_20 = 0;
++                    initial_volume = 0;
++                }
++                else
++                {
++                    initial_volume = volume;
++                }
++
++                if (flags & 2)
++                {
++                    AIL_set_sample_loop_count(sample, 0);
++                }
++                AIL_start_sample(sample);
++                AIL_set_sample_volume(sample, initial_volume);
++            }
++        }
++    }
++    return result;
++}
+diff --git a/src/window_audio_registration_clear.cpp b/src/window_audio_registration_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..90cec9f36ab829919b8c1f3440b88a6ed598fee8
+--- /dev/null
++++ b/src/window_audio_registration_clear.cpp
+@@ -0,0 +1,8 @@
++#include "window_activation.h"
++#include "window_audio.h"
++
++// FUNCTION: BEACHLIFE 0x004d0540
++void WindowAudioState::ClearRegistration()
++{
++    window_audio_state = 0;
++}
+diff --git a/src/window_audio_set_sound_level.cpp b/src/window_audio_set_sound_level.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..26ed1be1d83aca1c4f83c4653cb8ec5fa0e42778
+--- /dev/null
++++ b/src/window_audio_set_sound_level.cpp
+@@ -0,0 +1,45 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++#include "window_sound_voice.h"
++
++// FUNCTION: BEACHLIFE 0x004cfb00
++void WindowAudioState::SetSoundLevel(int voice, float level)
++{
++    if (voice < 0)
++    {
++        return;
++    }
++
++    // The original keeps this product on the x87 stack through both clamps.
++    long double adjusted = static_cast<long double>(level) * static_cast<long double>(scale_d8);
++    if (!(adjusted >= 0.0L))
++    {
++        adjusted = 0.0L;
++    }
++    else if (adjusted > 1.0L)
++    {
++        adjusted = 1.0L;
++    }
++
++    int volume = static_cast<int>(adjusted * 127.0L);
++    if (volume < 3)
++    {
++        volume = 0;
++    }
++
++    WindowSoundVoice* current = voice < 16 ? voices_74[voice] : voices_b4[voice - 16];
++    if (!current)
++    {
++        return;
++    }
++
++    if (voice >= 16)
++    {
++        AIL_set_3D_sample_volume(samples_54[voice - 16], volume);
++        return;
++    }
++
++    AIL_set_sample_volume(samples_14[voice], volume);
++    // Reload after the SDK call; copy the original argument, not the clamp.
++    voices_74[voice]->scale_14 = level;
++}
+diff --git a/src/window_audio_shutdown_registration.cpp b/src/window_audio_shutdown_registration.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d712457252aad954ef1874791a0305ae4bc5103
+--- /dev/null
++++ b/src/window_audio_shutdown_registration.cpp
+@@ -0,0 +1,19 @@
++#include "miles_imports.h"
++#include "window_audio_initialization.h"
++
++#include <stdlib.h>
++
++void __cdecl MilesShutdownCallback();
++
++// FUNCTION: BEACHLIFE 0x004ee6b0
++int RegisterMilesShutdown()
++{
++    atexit(MilesShutdownCallback);
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004ee6c0
++void __cdecl MilesShutdownCallback()
++{
++    AIL_shutdown();
++}
+diff --git a/src/window_audio_stop_all.cpp b/src/window_audio_stop_all.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f28604040b71ea6be912d0a767ac12fe0f1ef976
+--- /dev/null
++++ b/src/window_audio_stop_all.cpp
+@@ -0,0 +1,34 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++
++// FUNCTION: BEACHLIFE 0x004cfdc0
++void WindowAudioState::StopAllSounds()
++{
++    if (enabled)
++    {
++        void(__stdcall * end_3d_sample)(void*) = AIL_end_3D_sample;
++        for (int index = 0; index < 24; ++index)
++        {
++            if (index >= 0)
++            {
++                WindowSoundVoice* voice = index < 16 ? voices_74[index] : voices_b4[index - 16];
++                if (voice)
++                {
++                    if (index >= 16)
++                    {
++                        if (enabled_3d)
++                        {
++                            end_3d_sample(samples_54[index - 16]);
++                        }
++                    }
++                    else
++                    {
++                        AIL_end_sample(samples_14[index]);
++                    }
++                }
++            }
++        }
++
++        Update(0.0f);
++    }
++}
+diff --git a/src/window_audio_update.cpp b/src/window_audio_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ee0c9b1c95be612f2bd833475ae804bb4b084030
+--- /dev/null
++++ b/src/window_audio_update.cpp
+@@ -0,0 +1,59 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++#include "window_sound_bank.h"
++#include "window_sound_voice.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004cf440
++void WindowAudioState::Update(float delta)
++{
++    if (!enabled)
++    {
++        return;
++    }
++
++    UpdateVoiceFades(delta);
++
++    for (int index = 0; index < 16; ++index)
++    {
++        if (AIL_sample_status(samples_14[index]) == 2 && voices_74[index])
++        {
++            const char* name = voices_74[index]->name;
++            bank_f4->ReleaseSample(name);
++            WindowSoundVoice* voice = voices_74[index];
++            if (voice)
++            {
++                if (voice->name)
++                {
++                    ::operator delete(voice->name);
++                }
++                ::operator delete(voice);
++            }
++            voices_74[index] = 0;
++        }
++    }
++
++    if (enabled_3d)
++    {
++        for (int index = 0; index < 8; ++index)
++        {
++            if (AIL_3D_sample_status(samples_54[index]) == 2 && voices_b4[index])
++            {
++                const char* name = voices_b4[index]->name;
++                bank_f4->ReleaseSample(name);
++                WindowSoundVoice* voice = voices_b4[index];
++                if (voice)
++                {
++                    if (voice->name)
++                    {
++                        ::operator delete(voice->name);
++                    }
++                    ::operator delete(voice);
++                }
++                voices_b4[index] = 0;
++            }
++        }
++    }
++
++    bank_f4->UpdateCache(delta);
++}
+diff --git a/src/window_audio_voice_fades.cpp b/src/window_audio_voice_fades.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..14011bde209d364a25f72aa594c1d76594ac1c1a
+--- /dev/null
++++ b/src/window_audio_voice_fades.cpp
+@@ -0,0 +1,74 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++#include "window_sound_voice.h"
++
++// FUNCTION: BEACHLIFE 0x004d0440
++void WindowAudioState::UpdateVoiceFades(float delta)
++{
++    for (int index = 0; index < 24; ++index)
++    {
++        WindowSoundVoice*& current = index < 16 ? voices_74[index] : voices_b4[index - 16];
++        void*& sample = index < 16 ? samples_14[index] : samples_54[index - 16];
++        WindowSoundVoice* voice = current;
++        if (!voice || !voice->word_10)
++        {
++            continue;
++        }
++
++        // FST stores binary32 without popping the value used by FCOMP.
++        long double remaining =
++            static_cast<long double>(voice->fade_28) - static_cast<long double>(delta);
++        voice->fade_28 = static_cast<float>(remaining);
++        bool finished = !(remaining >= 0.0L);
++        long double volume = static_cast<long double>(voice->volume_18);
++        if (finished)
++        {
++            int converted_volume = static_cast<int>(volume);
++            if (current)
++            {
++                if (index < 16)
++                {
++                    AIL_set_sample_volume(sample, converted_volume);
++                }
++                else
++                {
++                    AIL_set_3D_sample_volume(sample, converted_volume);
++                }
++            }
++
++            if (voice->word_10 == 2 && index >= 0 && current)
++            {
++                if (index < 16)
++                {
++                    AIL_end_sample(sample);
++                }
++                else if (enabled_3d)
++                {
++                    AIL_end_3D_sample(sample);
++                }
++            }
++            voice->word_10 = 0;
++        }
++        else
++        {
++            volume -= static_cast<long double>(voice->word_1c);
++            volume /= static_cast<long double>(voice->fade_24);
++            volume *= static_cast<long double>(delta);
++            volume += static_cast<long double>(voice->word_20);
++            // The following _ftol consumes the retained value, not this store.
++            voice->word_20 = static_cast<float>(volume);
++            int converted_volume = static_cast<int>(volume);
++            if (current)
++            {
++                if (index < 16)
++                {
++                    AIL_set_sample_volume(sample, converted_volume);
++                }
++                else
++                {
++                    AIL_set_3D_sample_volume(sample, converted_volume);
++                }
++            }
++        }
++    }
++}

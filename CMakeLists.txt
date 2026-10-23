@@ -22,6 +22,14 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     endif()
     set(BEACHLIFE_DECOMP_PROFILE native-experimental)
 endif()
+option(BEACHLIFE_ENABLE_BOOT_GAME
+    "Link the merged game tree with loud traps for code not decompiled yet" OFF)
+if(BEACHLIFE_ENABLE_BOOT_GAME)
+    if(NOT BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+        message(FATAL_ERROR "BEACHLIFE_ENABLE_BOOT_GAME requires BEACHLIFE_ENABLE_EXPERIMENTAL_GAME")
+    endif()
+    set(BEACHLIFE_DECOMP_PROFILE native-game)
+endif()
 
 if(WIN32)
     set(BEACHLIFE_SYSTEM windows)
@@ -71,6 +79,12 @@ add_library(beachlife_formats STATIC src/platform/json.cpp src/platform/sha256.c
 target_include_directories(beachlife_formats PUBLIC src)
 target_compile_features(beachlife_formats PUBLIC cxx_std_20)
 set_target_properties(beachlife_formats PROPERTIES CXX_EXTENSIONS OFF)
+# Preparing game files hashes the whole ISO; unoptimized hashing made Debug
+# builds take minutes there.
+if(NOT MSVC)
+    set_source_files_properties(src/platform/sha256.cpp PROPERTIES
+        COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
+endif()
 
 add_library(beachlife_data STATIC src/data/iso9660.cpp src/data/game_path.cpp src/data/source.cpp
     src/data/folder_source.cpp src/data/local_files.cpp src/data/tga.cpp)
@@ -116,6 +130,7 @@ include(cmake/Launcher.cmake)
 include(cmake/Cabinet.cmake)
 include(cmake/Matching.cmake)
 include(cmake/Decomp.cmake)
+include(cmake/Boot.cmake)
 
 if(BUILD_TESTING)
     add_test(NAME bootstrap_cli
@@ -141,6 +156,20 @@ if(BUILD_TESTING)
     add_executable(tga_tests tests/tga.cpp)
     target_link_libraries(tga_tests PRIVATE beachlife_data)
     add_test(NAME tga_images COMMAND tga_tests)
+    add_executable(compat_audio_tests tests/compat_audio.cpp src/platform/compat/miles_audio.cpp)
+    target_include_directories(compat_audio_tests PRIVATE src "${BEACHLIFE_PREPARED}/dr-libs")
+    target_compile_features(compat_audio_tests PRIVATE cxx_std_20)
+    target_link_libraries(compat_audio_tests PRIVATE SDL3::SDL3)
+    add_test(NAME compat_audio COMMAND compat_audio_tests)
+    if(BEACHLIFE_ENABLE_BOOT_GAME)
+        add_executable(compat_miles_tests tests/compat_miles.cpp)
+        target_include_directories(compat_miles_tests PRIVATE src src/platform/compat/include)
+        target_compile_features(compat_miles_tests PRIVATE cxx_std_20)
+        target_link_libraries(compat_miles_tests PRIVATE beachlife_compat beachlife_retail_files)
+        add_test(NAME compat_miles
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_compat_miles.py"
+                "$<TARGET_FILE:compat_miles_tests>")
+    endif()
     add_executable(iso_source_tests tests/iso_source.cpp)
     target_link_libraries(iso_source_tests PRIVATE beachlife_data)
     add_test(NAME iso_file_reads

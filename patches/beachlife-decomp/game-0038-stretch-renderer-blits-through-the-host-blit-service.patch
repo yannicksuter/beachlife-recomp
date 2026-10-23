@@ -1,0 +1,88 @@
+diff --git a/src/startup_renderer_blit_surface.cpp b/src/startup_renderer_blit_surface.cpp
+index a0c877560af5a6752050b76eba9fe92540cad8b4..a81424cbece69dd1314c02670d5ff606033f1cac 100644
+--- a/src/startup_renderer_blit_surface.cpp
++++ b/src/startup_renderer_blit_surface.cpp
+@@ -49,17 +49,16 @@ void ScreenRequestRenderer::BlitSurface(int x, int y, int surface)
+     if (!native_chain || native_back != &native_chain->back_surface() || !source->native_surface)
+         throw std::logic_error("BlitSurface requires the real mode0 back and source surfaces");
+ 
+-    // BltFast's null source rectangle uses the whole actual source. Blt also
+-    // uses the whole source, but its destination dimensions come from the
+-    // entry. Normal initialization keeps those dimensions identical. Stretch
+-    // and clipping are separate host capabilities, never successful no-ops.
+     const auto description = source->native_surface->description();
+-    if (!source->video_memory && (source->width != static_cast<unsigned int>(description.width) || source->height != static_cast<unsigned int>(description.height)))
+-        throw std::logic_error("BlitSurface stretching is outside the typed copy domain");
+-
+-    native_back->copy_from(*source->native_surface,
+-        { 0, 0, description.width, description.height },
+-        x,
+-        y,
+-        true);
++    if (source->video_memory)
++        native_back->copy_from(*source->native_surface,
++            { 0, 0, description.width, description.height },
++            x,
++            y,
++            true);
++    else
++        native_back->blit_from(*source->native_surface,
++            { 0, 0, description.width, description.height },
++            { x, y, static_cast<int>(x + source->width), static_cast<int>(y + source->height) },
++            true);
+ }
+diff --git a/src/startup_renderer_blit_surface_region.cpp b/src/startup_renderer_blit_surface_region.cpp
+index 84a65bc12cb3369d7684615c1092be6dd0879e5a..324aa2d4f50d093fb2cd1dbeb6833200a3ad9457 100644
+--- a/src/startup_renderer_blit_surface_region.cpp
++++ b/src/startup_renderer_blit_surface_region.cpp
+@@ -55,19 +55,8 @@ void ScreenRequestRenderer::BlitSurfaceRegion(
+     if (!native_chain || native_back != &native_chain->back_surface() || !image->native_surface)
+         throw std::logic_error("BlitSurfaceRegion requires the real mode0 back and source surfaces");
+ 
+-    // The original Blt permits distinct source/destination rectangles. The real
+-    // native copy service has a contained, unscaled domain; it must not silently
+-    // ignore either destination edge or invent successful clipping/stretching.
+-    const std::int64_t source_width = std::int64_t(source.right) - source.left;
+-    const std::int64_t source_height = std::int64_t(source.bottom) - source.top;
+-    const std::int64_t destination_width = std::int64_t(destination.right) - destination.left;
+-    const std::int64_t destination_height = std::int64_t(destination.bottom) - destination.top;
+-    if (source_width != destination_width || source_height != destination_height)
+-        throw std::logic_error("BlitSurfaceRegion stretching is outside the typed copy domain");
+-
+-    native_back->copy_from(*image->native_surface,
++    native_back->blit_from(*image->native_surface,
+         { source.left, source.top, source.right, source.bottom },
+-        destination.left,
+-        destination.top,
++        { destination.left, destination.top, destination.right, destination.bottom },
+         true);
+ }
+diff --git a/src/startup_renderer_surface_helpers.cpp b/src/startup_renderer_surface_helpers.cpp
+index 606df6bf56899a04b88f0bcf98c111afa478e58b..925598dd00c6db8f0fcf70623a3337c3aedc0a48 100644
+--- a/src/startup_renderer_surface_helpers.cpp
++++ b/src/startup_renderer_surface_helpers.cpp
+@@ -64,13 +64,15 @@ void ScreenRequestRenderer::BlitBetweenSurfaces(int x, int y, int destination, i
+     if (!target->native_surface || !image->native_surface)
+         throw std::logic_error("BlitBetweenSurfaces requires real source and destination surfaces");
+     const auto description = image->native_surface->description();
+-    if (!image->video_memory
+-        && (image->width != static_cast<unsigned int>(description.width)
+-            || image->height != static_cast<unsigned int>(description.height)))
+-        throw std::logic_error("BlitBetweenSurfaces stretching is outside the typed copy domain");
+-    target->native_surface->copy_from(*image->native_surface,
+-        { 0, 0, description.width, description.height },
+-        x,
+-        y,
+-        true);
++    if (image->video_memory)
++        target->native_surface->copy_from(*image->native_surface,
++            { 0, 0, description.width, description.height },
++            x,
++            y,
++            true);
++    else
++        target->native_surface->blit_from(*image->native_surface,
++            { 0, 0, description.width, description.height },
++            { x, y, static_cast<int>(x + image->width), static_cast<int>(y + image->height) },
++            true);
+ }

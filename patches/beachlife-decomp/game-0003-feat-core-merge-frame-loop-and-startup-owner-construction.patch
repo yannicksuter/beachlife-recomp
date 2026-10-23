@@ -1,0 +1,485 @@
+diff --git a/src/startup_controller.h b/src/startup_controller.h
+index 854f557ef3c9cc1b9c88625b9a264b6aa979ee17..92cfaeae667d179d649b246b59a7d457b2b89c83 100644
+--- a/src/startup_controller.h
++++ b/src/startup_controller.h
+@@ -1,14 +1,31 @@
+ #ifndef STARTUP_CONTROLLER_H
+ #define STARTUP_CONTROLLER_H
+ 
+-// Descriptive observed prefix only; the original class, hierarchy and total size
+-// are unknown. The initial Intro vtable and other data entries share Exit's body.
++// Observed common controller fields and all ten original virtual slots. Names and return types
++// where callers discard results are descriptive. No complete game hierarchy or
++// native lifetime is established by these declarations.
++// VTABLE: BEACHLIFE 0x004f424c
+ struct ControllerState
+ {
+-    unsigned char unknown_00[0x84];
+-    unsigned char active;
++    explicit ControllerState(const char* name);
++    virtual ~ControllerState();
++    virtual int Update() = 0;
++    virtual void RenderBeforeScreens() = 0;
++    virtual void RenderAfterScreens() = 0;
++    virtual void Enter() = 0;
++    virtual void Exit() = 0;
++    virtual const char* ScriptPath() = 0;
++    // Actual observed slot1c has an empty RET0 in Intro/MainMenu.
++    virtual void ControllerSlot1c() = 0;
++    // Actual slot20: two dimension words, selected target 0x004e8fa0/RET8.
++    virtual void ScreenSizeChanged(int width, int height) = 0;
++
++    // Actual current-controller call 0x004e46fa: no arguments, result ignored.
++    virtual void ControllerSlot24() = 0;
+ 
+-    void Exit();
++    char name[128];
++    unsigned char active;
++    unsigned char unknown_85[3];
+ };
+ 
+ #endif
+diff --git a/src/startup_controller_selection.cpp b/src/startup_controller_selection.cpp
+index 393b1201ec18ab6df509dfd03552726ba87d2d2a..ee348e80525552894979e8703332be7d3bcc7a1f 100644
+--- a/src/startup_controller_selection.cpp
++++ b/src/startup_controller_selection.cpp
+@@ -6,8 +6,8 @@ void ControllerSelectionState::SelectPendingController(unsigned int selection)
+     switch (selection)
+     {
+     case 0:
+-        pending = &first_controller->controller;
+-        first_controller->unknown_9c = 0;
++        pending = first_controller;
++        first_controller->byte_9c = 0;
+         break;
+     case 1:
+         pending = controllers[0];
+diff --git a/src/startup_controller_selection.h b/src/startup_controller_selection.h
+index daa811da65a18da552447fa45b5c6fd4e0edf941..dfb86f5f51c26d3ca7af3ed186724f6afd4524da 100644
+--- a/src/startup_controller_selection.h
++++ b/src/startup_controller_selection.h
+@@ -2,23 +2,17 @@
+ #define STARTUP_CONTROLLER_SELECTION_H
+ 
+ #include "startup_controller.h"
++#include "startup_world_test.h"
+ 
+-// Only the first controller is observed with this extra byte; no hierarchy is inferred.
+-struct FirstControllerSelectionPrefix
+-{
+-    ControllerState controller;
+-    unsigned char unknown_85[0x17];
+-    unsigned char unknown_9c;
+-};
+-
+-// Observed pointer prefix only; the original complete game class is unknown.
++// Original Game words00..28, including the actual WorldTest owner at+10.
++// This grouping is a descriptive field view, not a separate owning lifetime.
+ struct ControllerSelectionState
+ {
+     void* instance;
+     void* window;
+     ControllerState* active;
+     ControllerState* pending;
+-    FirstControllerSelectionPrefix* first_controller;
++    WorldTestController* first_controller;
+     ControllerState* controllers[6];
+ 
+     void SelectPendingController(unsigned int selection);
+diff --git a/src/startup_game_update.cpp b/src/startup_game_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9638dc7c58b4af344d48e4be56a1458b71cb90ab
+--- /dev/null
++++ b/src/startup_game_update.cpp
+@@ -0,0 +1,68 @@
++#include <windows.h>
++#include "startup_frame_clock.h"
++#include "startup_game_update_pair.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_manager.h"
++#include "window_activation.h"
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004e3900
++void ScreenRequestGamePrefix::Update()
++{
++    if (controller_selection.active != controller_selection.pending)
++    {
++        controller_selection.active->Exit();
++        controller_selection.active = controller_selection.pending;
++        controller_selection.active->Enter();
++        unsigned long ticks = GetTickCount();
++        clock->Update(static_cast<int>(ticks));
++        startup_input_state->ResetTransition();
++    }
++
++    if (controller_selection.active == controller_selection.controllers[0] && word_b4 != -1)
++    {
++        ProcessWordB4();
++    }
++
++    UpdateBeforeInput();
++    unsigned long ticks = GetTickCount();
++    clock->Update(static_cast<int>(ticks));
++    input->Poll();
++    controller_selection.active->Update();
++    input_motion->Update();
++
++    float delta = startup_frame_clock->delta_seconds;
++    screens->Update(delta);
++    audio->Update(delta);
++    update_pair->Update(delta);
++
++    if (input->IsStateTwo(0x2a) && input->IsStateOne(0x16) && input->IsStateTwo(0x38) &&
++        !window_deactivation_state)
++    {
++        unsigned int* words = words_70;
++        if (!byte_a4)
++        {
++            for (int i = 0; i < 12; ++i)
++            {
++                words[i] = 2;
++            }
++            words[0] = 4;
++            words[1] = 4;
++        }
++        else
++        {
++            for (int i = 0; i < 12; ++i)
++            {
++                words[i] = 8;
++            }
++        }
++
++        FILE* file = fopen(startup_game_state_path, "wb");
++        if (file)
++        {
++            fwrite(words, 0x30, 1, file);
++            fclose(file);
++        }
++    }
++}
+diff --git a/src/startup_input_constructor.cpp b/src/startup_input_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f9e06960682d23b6c5ce35ddbf43f48c36f9da46
+--- /dev/null
++++ b/src/startup_input_constructor.cpp
+@@ -0,0 +1,22 @@
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004ea940
++InputState::InputState(int width, int height, unsigned char windowed)
++{
++    startup_input_state = this;
++    width_14 = width;
++    windowed_1c = windowed;
++    height_18 = height;
++    direct_input = 0;
++    keyboard_device = 0;
++    mouse_device = 0;
++    unknown_120 = 0;
++    unknown_124 = 0;
++    delta_x_128 = 0;
++    delta_y_12c = 0;
++    window_handle = 0;
++    memset(states, 0, sizeof(states));
++}
+diff --git a/src/startup_input_state.h b/src/startup_input_state.h
+index c6902abdda5ce0eb943b907a60f144ca87bba3a9..5d9b9276bb7d388515c248e16956e3f181638054 100644
+--- a/src/startup_input_state.h
++++ b/src/startup_input_state.h
+@@ -1,38 +1,81 @@
+ #ifndef STARTUP_INPUT_STATE_H
+ #define STARTUP_INPUT_STATE_H
+ 
++struct IDirectInput8A;
+ struct IDirectInputDeviceA;
+ 
+-// Descriptive observed prefix only; the original class and complete size are
+-// unknown. The state producer accesses 256 bytes beginning at offset 0x1d.
++// Observed 20-byte buffered event record (DirectInput 8 object-data layout);
++// the pinned VC6 SDK declares a shorter 16-byte record.
++struct InputMouseEvent
++{
++    unsigned int offset;
++    unsigned int data;
++    unsigned int time_stamp;
++    unsigned int sequence;
++    unsigned int app_data;
++};
++
++// Descriptive observed class; Game requests0x614 original x86 bytes.
++// Constructor4ea940 initializes only the explicitly stored fields and the
++// 256 state bytes at+1d; native layout and full device lifetime remain separate.
+ struct InputState
+ {
+-    unsigned char unknown_00[4];
++    IDirectInput8A* direct_input;
+     // Shared public device ABI prefix; creation requests IDirectInput8A.
+     IDirectInputDeviceA* keyboard_device;
+-    unsigned char unknown_08[8];
++    IDirectInputDeviceA* mouse_device;
++    void* window_handle; // HWND of the game window.
+     void* resource_instance;
+-    unsigned char unknown_14[9];
++    int width_14;
++    int height_18;
++    unsigned char windowed_1c;
+     unsigned char states[256];
+     unsigned char unknown_11d[3];
+     unsigned int unknown_120;
+     unsigned int unknown_124;
+-    unsigned char unknown_128[0xc];
++    int delta_x_128;
++    int delta_y_12c;
++    int wheel_130;
+     int unknown_134;
+     int unknown_138;
+-    unsigned char unknown_13c[8];
++    unsigned char unknown_13c[4];
++    unsigned char wheel_present_140;
++    unsigned char system_cursor_141;
++    unsigned char unknown_142[2];
+     int cursor_identifier;
+-    unsigned char unknown_148[0x4c8];
++    unsigned char relative_148;
++    unsigned char unknown_149[0x13];
++    InputMouseEvent mouse_events[60];
++    unsigned long mouse_event_count;
+     unsigned char unknown_610;
+     unsigned char unknown_611;
+ 
++    // Actual 0x004ea940, RET12; no API/device creation or local EH.
++    InputState(int width, int height, unsigned char windowed);
++    ~InputState(); // Actual 0x004ea9c0; real cleanup is a separate source gate.
++
+     unsigned int ReadFirstButtonTransition() const;
++    // Actual 0x004eaa50: DirectInput 8 creation, then keyboard and mouse devices.
++    bool Initialize(void* instance, void* window);
++    // Actual 0x004eab60 and 0x004eac60: bodies separate (R495, R496).
++    unsigned char CreateKeyboard(void* window);
++    unsigned char CreateMouse(void* window);
++    // Actual 0x004eb330: stores +0x141 and hides the Windows cursor when zero.
++    void SetSystemCursor(unsigned char visible);
++    // Actual 0x004eb0b0: ShowCursor(FALSE) until the display count is negative.
++    void HideSystemCursor();
+     unsigned char ReadKeyboardState();
++    // Actual 0x004ead80: buffered mouse events; body separate (R493).
++    unsigned char ReadMouseEvents();
++    // Actual 0x004eaab0: keyboard then mouse; false when the keyboard read fails.
++    bool Poll();
+     unsigned char IsStateTwo(int index) const;
+     unsigned char IsStateOne(int index) const;
+     void ResetTransition();
+     void SetCursorIdentifier(int identifier, int unused);
+     void ApplyCurrentCursor();
++    // Actual 0x004eab20: returns delta_y_12c; body separate.
++    int ReadDeltaY() const;
+     int ReadValue134() const;
+     int ReadValue138() const;
+ };
+diff --git a/src/startup_movie.h b/src/startup_movie.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..57b06a5c77175af60375e2daf5dfac87b8631737
+--- /dev/null
++++ b/src/startup_movie.h
+@@ -0,0 +1,43 @@
++#ifndef STARTUP_MOVIE_H
++#define STARTUP_MOVIE_H
++
++struct IDirectDraw;
++struct IDirectDraw4;
++struct IDirectDrawSurface4;
++
++// Actual 48-byte x86 temporary owner that WinMain's Game constructor builds to
++// play the startup movie. Names are descriptive.
++struct StartupMovie
++{
++    void* window;           // HWND for the cooperative level.
++    int value_04;           // Zero at the only caller; users not yet audited.
++    int value_08;           // Zero at the only caller; users not yet audited.
++    int width;              // Display mode width when not windowed.
++    int height;             // Display mode height when not windowed.
++    unsigned char windowed; // Nonzero: DDSCL_NORMAL and no mode change.
++    unsigned char ready;    // Cleared when DirectDraw setup fails.
++    unsigned char flag_16;  // Passed on by the destructor.
++    unsigned char unknown_17;
++    IDirectDraw* direct_draw;         // DirectDrawCreate result.
++    IDirectDraw4* direct_draw4;       // Queried IDirectDraw4.
++    IDirectDrawSurface4* primary;     // Primary flipping surface.
++    IDirectDrawSurface4* back_buffer; // Attached back buffer.
++    unsigned char unknown_28[8];
++
++    // Actual 0x004ed0d0, RET 0x1c: stores the arguments and calls Initialize.
++    StartupMovie(void* window,
++        int value_04,
++        int value_08,
++        int width,
++        int height,
++        unsigned char windowed,
++        unsigned char flag_16);
++    // Actual 0x004ed130 (body separate).
++    ~StartupMovie();
++    // Actual 0x004ed190, RET4 (body separate).
++    void Play(const char* path);
++    // Actual 0x004ed1c0: DirectDraw, cooperative level, display mode, surfaces.
++    void Initialize();
++};
++
++#endif
+diff --git a/src/startup_movie_constructor.cpp b/src/startup_movie_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..af1a38ed94945c6cb4489ab8090c0776421aff54
+--- /dev/null
++++ b/src/startup_movie_constructor.cpp
+@@ -0,0 +1,25 @@
++#include "startup_movie.h"
++
++// FUNCTION: BEACHLIFE 0x004ed0d0
++StartupMovie::StartupMovie(void* movie_window,
++    int movie_value_04,
++    int movie_value_08,
++    int mode_width,
++    int mode_height,
++    unsigned char movie_windowed,
++    unsigned char movie_flag_16)
++{
++    window = movie_window;
++    value_04 = movie_value_04;
++    value_08 = movie_value_08;
++    width = mode_width;
++    height = mode_height;
++    windowed = movie_windowed;
++    ready = 1;
++    flag_16 = movie_flag_16;
++    direct_draw = 0;
++    direct_draw4 = 0;
++    primary = 0;
++    back_buffer = 0;
++    Initialize();
++}
+diff --git a/src/startup_profiler_constructor.cpp b/src/startup_profiler_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d37d68554acf7348e47ebb319ed51a0c900e494
+--- /dev/null
++++ b/src/startup_profiler_constructor.cpp
+@@ -0,0 +1,18 @@
++#include "startup_timer.h"
++
++// FUNCTION: BEACHLIFE 0x004ecea0
++StartupProfiler::StartupProfiler()
++{
++    Reset();
++    elapsed = 0;
++    long long total = 0;
++    overhead = 0;
++
++    for (int sample = 0; sample < 10; ++sample)
++    {
++        Reset();
++        total += elapsed;
++    }
++    elapsed = 0;
++    overhead = static_cast<int>(total / 10);
++}
+diff --git a/src/startup_profiler_globals.cpp b/src/startup_profiler_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..593faf080cbc08129c9033de774e5675a4566cd6
+--- /dev/null
++++ b/src/startup_profiler_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_timer.h"
++
++// GLOBAL: BEACHLIFE 0x0060b320
++StartupProfiler* profiler;
+diff --git a/src/startup_timer.h b/src/startup_timer.h
+index 3c7cdff428e76b4b16a7391738e2bc9f9793eff9..ed3c673ad3ccf887c992141bd2f2137082f4ddb7 100644
+--- a/src/startup_timer.h
++++ b/src/startup_timer.h
+@@ -1,17 +1,40 @@
+ #ifndef STARTUP_TIMER_H
+ #define STARTUP_TIMER_H
+ 
+-// Observed timer prefix from its capture/elapsed methods and WinMain reads.
+-// Original class name and complete object extent remain unknown.
+-struct StartupProfiler
++#include <stdint.h>
++
++struct StartupProfiler;
++
++// Actual slot 0x0060b320 (WinMain reads the profiler through it).
++extern StartupProfiler* profiler;
++
++// Empty first base that publishes the profiler while it is constructed; its
++// out-of-line destructor 0x004ecfa0 clears the slot again.
++struct StartupProfilerRegistration
+ {
+-    unsigned __int64 start;
+-    unsigned __int64 elapsed;
++    StartupProfilerRegistration();
++    ~StartupProfilerRegistration();
++};
++
++// Actual 24-byte x86 owner at Game+0x38 (rdtsc capture/elapsed methods and
++// WinMain reads). Original class name remains unknown.
++struct StartupProfiler : StartupProfilerRegistration
++{
++    uint64_t start;
++    uint64_t elapsed;
+     int overhead;
+ 
++    // Actual 0x004ecea0: averages ten empty Start/Stop pairs into overhead.
++    StartupProfiler();
++
+     void Reset();
+     void Start();
+     void Stop();
+ };
+ 
++inline StartupProfilerRegistration::StartupProfilerRegistration()
++{
++    profiler = static_cast<StartupProfiler*>(this);
++}
++
+ #endif
+diff --git a/src/startup_world_test.h b/src/startup_world_test.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..de87b1c2ed076a94d2363db8298fb3d4bcdf6233
+--- /dev/null
++++ b/src/startup_world_test.h
+@@ -0,0 +1,31 @@
++#ifndef STARTUP_WORLD_TEST_H
++#define STARTUP_WORLD_TEST_H
++
++#include "startup_controller.h"
++
++// Actual 164-byte x86 "WorldTest" controller at Game+0x10. Field names are
++// descriptive; only the constructor's stores are established here.
++// VTABLE: BEACHLIFE 0x004f4e78
++struct WorldTestController : ControllerState
++{
++    void* object_88; // Slot1c calls an empty method on it; type unresolved.
++    unsigned char byte_8c;
++    unsigned char unknown_8d[0x0f];
++    unsigned char byte_9c;
++    unsigned char unknown_9d[7];
++
++    // Actual 0x004e90c0, RET4: Game passes "WorldTest".
++    explicit WorldTestController(const char* name);
++    virtual ~WorldTestController();                        // Deleting wrapper 0x004e9100.
++    virtual int Update();                                  // 0x004e91e0.
++    virtual void RenderBeforeScreens();                    // 0x004e98d0.
++    virtual void RenderAfterScreens();                     // 0x004e98e0.
++    virtual void Enter();                                  // 0x004e98f0.
++    virtual void Exit();                                   // 0x004e9c60.
++    virtual const char* ScriptPath();                      // 0x004e9ce0.
++    virtual void ControllerSlot1c();                       // 0x004e9d00.
++    virtual void ScreenSizeChanged(int width, int height); // 0x004e9d10, RET8.
++    virtual void ControllerSlot24();                       // 0x004e9fa0.
++};
++
++#endif

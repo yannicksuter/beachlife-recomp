@@ -1,0 +1,3102 @@
+diff --git a/src/startup_building_guest_queue_clear.cpp b/src/startup_building_guest_queue_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d5c1d288630400314b7bdd69e875820d24c62dc
+--- /dev/null
++++ b/src/startup_building_guest_queue_clear.cpp
+@@ -0,0 +1,25 @@
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++
++// FUNCTION: BEACHLIFE 0x00433a20
++void BuildingGuestQueue::Clear()
++{
++    for (unsigned int i = 0; i < static_cast<unsigned int>(
++                                 32 * (guests_08.end.node - guests_08.begin.node - 1)
++                                 + (guests_08.end.current - guests_08.end.first)
++                                 + (guests_08.begin.last - guests_08.begin.current));
++        ++i)
++    {
++        ScreenModeCommand command;
++        command.words[0] = owner_00;
++        command.words[1] = guests_08.At(i);
++        command.words[2] = 0x49;
++        command.words[3] = 0;
++        command.words[4] = 6;
++        screen_mode_commands->QueueCommand(&command);
++    }
++    pending_30.Clear();
++    guests_08.Clear();
++    word_58 = word_60;
++    word_5c = word_64;
++}
+diff --git a/src/startup_building_status.h b/src/startup_building_status.h
+index 8716f74f7755ac4227edad849bcc9d4122a4ddd7..0e92428e7ce1a09782008536bf099dbc9a279419 100644
+--- a/src/startup_building_status.h
++++ b/src/startup_building_status.h
+@@ -52,6 +52,7 @@ struct VariableBuildingStatus
+ 
+     ~VariableBuildingStatus() noexcept(false);                                                     // 0x00420fb0.
+     void LoadState(GameFileReader* file);                                                          // 0x00424120.
++    void SaveState(GameFileReader* file);                                                          // 0x00423e90.
+     float ValueAt004224a0(unsigned int id);                                                        // 0x004224a0.
+     float ValueAt00422430(unsigned int id);                                                        // 0x00422430.
+     CircularListIterator Insert(CircularListIterator position, BuildingStatusEntry* const& entry); // 0x00424540.
+diff --git a/src/startup_entity_building_contents.cpp b/src/startup_entity_building_contents.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0dadb01de07e69a72a233348bb89b0a969e27b6e
+--- /dev/null
++++ b/src/startup_entity_building_contents.cpp
+@@ -0,0 +1,90 @@
++#include "startup_variable_state.h"
++#include <string.h>
++
++static bool IsBuildingStaff(unsigned char kind)
++{
++    return kind == 6 || kind == 17 || kind == 14 || kind == 16 || kind == 15 || kind == 18;
++}
++
++// FUNCTION: BEACHLIFE 0x00461f10
++void VariableEntity::OpenBuildingContents()
++{
++    for (unsigned int i = 0; i < staff_count_8c + pending_staff_90; ++i)
++        if (IsBuildingStaff(variable_world->FindObject(staff_ids_64[i])->kind_2c))
++            variable_world->FindObject(staff_ids_64[i])->visible_40 = 1;
++    for (unsigned int i = 0; i < additional_staff_count_bc; ++i)
++        if (IsBuildingStaff(variable_world->FindObject(additional_staff_94[i])->kind_2c))
++            variable_world->FindObject(additional_staff_94[i])->visible_40 = 1;
++    for (int i = 0; i < contents_count_36c; ++i)
++        variable_world->FindObject(contents_370[i])->OpenContainedEntity();
++    if (events_170)
++        events_170->Open();
++}
++
++// FUNCTION: BEACHLIFE 0x00462050
++void VariableEntity::CloseBuildingContents()
++{
++    for (unsigned int i = 0; i < staff_count_8c + pending_staff_90; ++i)
++        if (IsBuildingStaff(variable_world->FindObject(staff_ids_64[i])->kind_2c))
++        {
++            reinterpret_cast<unsigned char*>(&removal_rectangle_c0)[i] = 0;
++            variable_world->FindObject(staff_ids_64[i])->visible_40 = 0;
++        }
++    for (unsigned int i = 0; i < additional_staff_count_bc; ++i)
++        if (IsBuildingStaff(variable_world->FindObject(additional_staff_94[i])->kind_2c))
++            variable_world->FindObject(additional_staff_94[i])->visible_40 = 0;
++    for (int i = 0; i < contents_count_36c; ++i)
++        variable_world->FindObject(contents_370[i])->CloseContainedEntity();
++    if (events_170 && events_170->ActiveEvent() != -1)
++    {
++        events_170->StopEvent();
++        events_170->Reset();
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0045ed60
++void VariableEntity::SetDrinkValue(float amount)
++{
++    VariableBuilding* building = building_60;
++    drink_value_20c = amount;
++    int index = -1;
++    for (unsigned int i = 0; i < building->rows_1f4; ++i)
++        if (_stricmp("Beer", variable_catalog->FeatureName(building->features_1fc[i])) == 0)
++        {
++            index = i;
++            break;
++        }
++    VariableCatalogUnlock* drink = variable_catalog->UnlockRecord(drink_type_210);
++    float& value = index == -1 ? feature_value_1f4 : drink_feature_values_1f8[index];
++    value = drink->base_value_c4;
++    value = static_cast<double>(drink->base_value_c4) + static_cast<double>(drink->multiplier_c8) * drink_value_20c;
++}
++
++// FUNCTION: BEACHLIFE 0x0045ee10
++void VariableEntity::SetDrinkType(unsigned int type)
++{
++    if (drink_type_210 == type)
++        return;
++    VariableBuilding* building = building_60;
++    drink_type_210 = type;
++    for (unsigned int i = 0; i < building->rows_1f4; ++i)
++        if (_stricmp("Beer", variable_catalog->FeatureName(building->features_1fc[i])) == 0)
++        {
++            VariableCatalogUnlock* drink = variable_catalog->UnlockRecord(drink_type_210);
++            drink_feature_values_1f8[i] = drink->base_value_c4;
++            drink_feature_values_1f8[i] = static_cast<double>(drink->base_value_c4) + static_cast<double>(drink_value_20c) * drink->multiplier_c8;
++            drink_feature_types_1d0[i] = drink->feature_type_cc;
++            return;
++        }
++}
++
++// FUNCTION: BEACHLIFE 0x0046ade0
++void VariableEntity::WeatherChanged()
++{
++    for (int i = 0; i < 26; ++i)
++    {
++        float change;
++        memcpy(&change, &variable_weather->values_2b00[i], sizeof(change));
++        weather_values_16c[i] += change;
++    }
++}
+diff --git a/src/startup_entity_values.cpp b/src/startup_entity_values.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f67dec664e9a693892ad727f23fe17bb1860defc
+--- /dev/null
++++ b/src/startup_entity_values.cpp
+@@ -0,0 +1,40 @@
++#include "startup_variable_state.h"
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x00453a00
++void VariableEntity::SetEntityId(unsigned int id)
++{
++    id_28 = id;
++}
++
++// FUNCTION: BEACHLIFE 0x00453920
++ScreenPoint VariableEntity::TilePosition()
++{
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    return overlay_map->WorldToTile(&position);
++}
++
++// FUNCTION: BEACHLIFE 0x00467d70
++float VariableEntity::GuestValue467d70()
++{
++    return guest_value_360;
++}
++
++// FUNCTION: BEACHLIFE 0x0047ab00
++float VariableEntity::GuestValue47ab00()
++{
++    if (!(guest_value_34c >= 0.0f))
++    {
++        float value = -guest_value_34c;
++        if (value > 1.0f)
++            value = 1.0f;
++        return value;
++    }
++    return 0.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x0048f0f0
++const char* VariableEntity::StaffName()
++{
++    return name_06;
++}
+diff --git a/src/startup_game_file.h b/src/startup_game_file.h
+index d95786972137713a3c704d3b0cae2c1b32f6ee70..49bec413f9681e0fbeda7f3434ddd93b148d19a9 100644
+--- a/src/startup_game_file.h
++++ b/src/startup_game_file.h
+@@ -14,12 +14,12 @@ struct GameFileBase
+     virtual void Unknown04() = 0;
+     virtual void Unknown08(unsigned int unused, unsigned short value) = 0;
+     virtual void Unknown0c(unsigned int unused, unsigned int value) = 0;
+-    virtual void Unknown10(unsigned int unused, const unsigned int* values, int count) = 0;
++    virtual void Unknown10(const char* name, const unsigned int* values, int count) = 0;
+     virtual void Unknown14(unsigned int unused, const unsigned char* values, int count) = 0;
+     virtual void Unknown18(unsigned int unused, unsigned char value) = 0;
+     virtual void Unknown1c(unsigned int unused, const unsigned short* text) = 0;
+-    virtual void Unknown20(unsigned int unused, const unsigned int* values, int count) = 0;
+-    virtual void Unknown24(unsigned int unused, unsigned int value) = 0;
++    virtual void Unknown20(const char* name, const unsigned int* values, int count) = 0;
++    virtual void Unknown24(const char* name, unsigned int value) = 0;
+     virtual void Unknown28(const char* name, unsigned int value) = 0;
+     virtual void Unknown2c(unsigned int unused, unsigned short value) = 0;
+     virtual void Unknown30(const char* name, unsigned int value) = 0;
+@@ -57,12 +57,12 @@ struct GameFileReader : GameFileBase
+     virtual void Unknown04();  // Shared physical RET0 at 0x004d3890; no body here.
+     virtual void Unknown08(unsigned int unused, unsigned short value);
+     virtual void Unknown0c(unsigned int unused, unsigned int value);
+-    virtual void Unknown10(unsigned int unused, const unsigned int* values, int count);
++    virtual void Unknown10(const char* name, const unsigned int* values, int count);
+     virtual void Unknown14(unsigned int unused, const unsigned char* values, int count);
+     virtual void Unknown18(unsigned int unused, unsigned char value);
+     virtual void Unknown1c(unsigned int unused, const unsigned short* text);
+-    virtual void Unknown20(unsigned int unused, const unsigned int* values, int count);
+-    virtual void Unknown24(unsigned int unused, unsigned int value);
++    virtual void Unknown20(const char* name, const unsigned int* values, int count);
++    virtual void Unknown24(const char* name, unsigned int value);
+     virtual void Unknown28(const char* name, unsigned int value);
+     virtual void Unknown2c(unsigned int unused, unsigned short value);
+     virtual void Unknown30(const char* name, unsigned int value);
+diff --git a/src/startup_game_file_write.cpp b/src/startup_game_file_write.cpp
+index 191579d42274ba36b254a8042e655da50b6b5860..2125485e19a632530b57d41bee7b371a7018eba7 100644
+--- a/src/startup_game_file_write.cpp
++++ b/src/startup_game_file_write.cpp
+@@ -35,7 +35,7 @@ void GameFileReader::Unknown28(const char*, unsigned int value)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0049e540
+-void GameFileReader::Unknown24(unsigned int, unsigned int value)
++void GameFileReader::Unknown24(const char*, unsigned int value)
+ {
+     unsigned char tag = 6;
+     fwrite(&tag, 1, 1, file_08);
+@@ -67,7 +67,7 @@ void GameFileReader::Unknown08(unsigned int, unsigned short value)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0049e580
+-void GameFileReader::Unknown20(unsigned int, const unsigned int* values, int count)
++void GameFileReader::Unknown20(const char*, const unsigned int* values, int count)
+ {
+     unsigned char tag = 7;
+     fwrite(&tag, 1, 1, file_08);
+@@ -93,7 +93,7 @@ void GameFileReader::Unknown14(unsigned int, const unsigned char* values, int co
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0049e730
+-void GameFileReader::Unknown10(unsigned int, const unsigned int* values, int count)
++void GameFileReader::Unknown10(const char*, const unsigned int* values, int count)
+ {
+     unsigned char tag = 11;
+     fwrite(&tag, 1, 1, file_08);
+diff --git a/src/startup_game_point_sounds.cpp b/src/startup_game_point_sounds.cpp
+index d1abdb54856956478bd038a09335c9d9555a8d5c..e5c4b47284616a8397f13c70fbb24c79d053ea1a 100644
+--- a/src/startup_game_point_sounds.cpp
++++ b/src/startup_game_point_sounds.cpp
+@@ -30,7 +30,8 @@ void GameUpdatePair::UpdatePointSounds(float delta)
+             if (voice == -1 || window_audio_state->VoiceStatus(voice) < sound->limit_30)
+             {
+                 if (window_audio_state->PlaySoundAtPosition(
+-                        sound->name_00, sound->volume_2c, &sound->position_20, 1, voice) == -1)
++                        sound->name_00, sound->volume_2c, &sound->position_20, 1, voice)
++                    == -1)
+                 {
+                     // Keep a sound that could not start until its retry delay ends.
+                     if (sound->retrying_38)
+@@ -64,3 +65,21 @@ void GameUpdatePair::UpdatePointSounds(float delta)
+         }
+     }
+ }
++
++// FUNCTION: BEACHLIFE 0x004d2d00
++void GameUpdatePair::ClearFlaggedPointSounds()
++{
++    GameSoundIterator it;
++    it.node = point_sounds_04.head->next;
++    while (it.node != point_sounds_04.head)
++    {
++        GamePointSound* sound = static_cast<GamePointSound*>(it.node->sound);
++        if (sound->retrying_38)
++        {
++            delete sound;
++            point_sounds_04.Erase(it++);
++        }
++        else
++            it.node = it.node->next;
++    }
++}
+diff --git a/src/startup_input_delta_x.cpp b/src/startup_input_delta_x.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2dc8800ba91ce6c4402910ebed2beb6d63f39420
+--- /dev/null
++++ b/src/startup_input_delta_x.cpp
+@@ -0,0 +1,7 @@
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eab10
++int InputState::ReadDeltaX() const
++{
++    return delta_x_128;
++}
+diff --git a/src/startup_overlay_archive_tiles.cpp b/src/startup_overlay_archive_tiles.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..bc202974679531f25914dfbf0e6473c62bf0425a
+--- /dev/null
++++ b/src/startup_overlay_archive_tiles.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x00409130
++unsigned short* OverlayArchive::Depths(int x, int y)
++{
++    for (int i = 0; i < 4; ++i)
++        if (tiles_04[i].x == x && tiles_04[i].y == y)
++            return tiles_04[i].depths;
++    LoadTile(x, y);
++    unsigned short* result = tiles_04[next_00].depths;
++    next_00 = (next_00 + 1) % 4;
++    return result;
++}
++
++// FUNCTION: BEACHLIFE 0x004091a0
++unsigned short* OverlayArchive::Colours(int x, int y)
++{
++    for (int i = 0; i < 4; ++i)
++        if (tiles_04[i].x == x && tiles_04[i].y == y)
++            return tiles_04[i].colours;
++    LoadTile(x, y);
++    unsigned short* result = tiles_04[next_00].colours;
++    next_00 = (next_00 + 1) % 4;
++    return result;
++}
+diff --git a/src/startup_overlay_constructor.cpp b/src/startup_overlay_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a5c62c20e02d8d32a0b8c139057c3d7a73520be
+--- /dev/null
++++ b/src/startup_overlay_constructor.cpp
+@@ -0,0 +1,51 @@
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00418600
++OverlayMapPrefix::OverlayMapPrefix(DebugFont* font, ScreenRequestRenderer* renderer, const char* path)
++{
++    overlay_map = this;
++    font_a8 = font;
++    renderer_fc = renderer;
++    file_a0 = 0;
++    word_a4 = 0;
++    word_bc = 1;
++    loaded_c0 = 0;
++    scroll_x_c4 = 0;
++    scroll_y_c8 = 0;
++    mapped_file_f4 = 0;
++    word_f8 = 0;
++    map_width_cc = 0;
++    map_height_d0 = 0;
++    tile_size_dc = 0;
++    view_x_e4 = 0.0f;
++    view_y_e8 = 0.0f;
++    view_target_x_ec = 0.0f;
++    view_target_y_f0 = 0.0f;
++    input_x_14c = 0.0f;
++    input_y_150 = 0.0f;
++    cached_tiles_e0 = 0;
++    value_12c = 0.0f;
++    view_ac.left = 0;
++    view_ac.top = 0;
++    view_ac.right = screen_request_renderer->width;
++    view_ac.bottom = screen_request_renderer->height - 100;
++    flag_100 = 0;
++    flag_103 = 1;
++    flag_101 = 0;
++    flag_102 = 0;
++    flag_130 = 0;
++    flag_131 = 0;
++    value_134 = 0.0f;
++    value_138 = 0.0f;
++    word_13c = 0;
++    word_140 = 0;
++    word_144 = 0;
++    word_148 = 0;
++    archive_154 = new (std::nothrow) OverlayArchive(path);
++    pending_104.clear();
++    rendered_guests_158 = 0;
++    depth_bias_15c = 0;
++    depth_scale_160 = 16;
++}
+diff --git a/src/startup_overlay_mapped_file_release.cpp b/src/startup_overlay_mapped_file_release.cpp
+index dca517a03b3634db6eac50c1d157af64b474d23a..39a08a13b4568fc75566056efe2df93a7229f71d 100644
+--- a/src/startup_overlay_mapped_file_release.cpp
++++ b/src/startup_overlay_mapped_file_release.cpp
+@@ -1,6 +1,22 @@
+ #include "startup_screen_overlay_layout.h"
+ #include <windows.h>
+ 
++// FUNCTION: BEACHLIFE 0x0049eef0
++OverlayMappedFile::~OverlayMappedFile()
++{
++    CloseHandle(mapping_08);
++    CloseHandle(file_04);
++}
++
++// FUNCTION: BEACHLIFE 0x0049ef10
++void* OverlayMappedFile::MapView(unsigned int offset, unsigned int bytes)
++{
++    void* result = MapViewOfFile(mapping_08, FILE_MAP_ALL_ACCESS, 0, offset, bytes);
++    if (!result)
++        GetLastError();
++    return result;
++}
++
+ // FUNCTION: BEACHLIFE 0x0049ef40
+ void OverlayMappedFile::ReleaseView(void* view)
+ {
+diff --git a/src/startup_overlay_prepare_map.cpp b/src/startup_overlay_prepare_map.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb59717176c406d7b4f9bf7e02cbfeb1898433a7
+--- /dev/null
++++ b/src/startup_overlay_prepare_map.cpp
+@@ -0,0 +1,70 @@
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_renderer_display.h"
++#include <windows.h>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00419a30
++bool OverlayMapPrefix::PrepareMap(int width, int height, int tile_size, float progress)
++{
++    if (loaded_c0)
++        Unload();
++    map_width_cc = 4096;
++    map_height_d0 = 4096;
++    cache_width_d4 = width;
++    cache_height_d8 = height;
++    tile_size_dc = tile_size;
++    cached_tiles_e0 = static_cast<OverlayCachedTile*>(::operator new(width * height * sizeof(OverlayCachedTile), std::nothrow));
++    for (int y = 0; y < 32; ++y)
++        for (int x = 0; x < 32; ++x)
++        {
++            OverlayCachedTile& tile = cached_tiles_e0[y * cache_width_d4 + x];
++            tile.ready = 0;
++            tile.view = 0;
++            tile.water_01 = 0;
++        }
++    FILE* file = fopen("data/temp/map", "rb");
++    bool create = true;
++    if (file)
++    {
++        fclose(file);
++        if (flag_103)
++            create = false;
++        else
++            DeleteFileA("data/temp/map");
++    }
++    if (create)
++    {
++        file = fopen("data/temp/map", "a+b");
++        if (!file)
++            StartupFatal("Sorry Could not open the temporary map file... Exiting");
++        unsigned short* row = static_cast<unsigned short*>(::operator new(tile_size_dc * tile_size_dc * 128, std::nothrow));
++        unsigned int total = cache_height_d8 * cache_width_d4;
++        unsigned int completed = 0;
++        unsigned short* source = static_cast<unsigned short*>(::operator new(0x400000, std::nothrow));
++        for (int y = 0; y < static_cast<int>(cache_height_d8); ++y)
++        {
++            archive_154->LoadRow(y, source);
++            for (int x = 0; x < static_cast<int>(cache_width_d4); ++x)
++            {
++                const unsigned short* colours = source + x * 0x8000;
++                const unsigned short* depths = colours + 0x4000;
++                for (int pixel = 0; pixel < tile_size_dc * tile_size_dc; ++pixel)
++                {
++                    row[(x * tile_size_dc * tile_size_dc + pixel) * 2] = colours[pixel];
++                    row[(x * tile_size_dc * tile_size_dc + pixel) * 2 + 1] = depths[pixel];
++                }
++                ++completed;
++                if ((completed & 7) == 0)
++                    screen_request_renderer->SetViewScale(static_cast<double>(completed) / static_cast<int>(total) * progress);
++            }
++            fwrite(row, tile_size_dc * tile_size_dc * 128, 1, file);
++        }
++        ::operator delete(source);
++        fclose(file);
++        ::operator delete(row);
++    }
++    mapped_file_f4 = new (std::nothrow) OverlayMappedFile("data/temp/map");
++    loaded_c0 = 1;
++    return true;
++}
+diff --git a/src/startup_overlay_settings.cpp b/src/startup_overlay_settings.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d81b6381fc81b877752a9d42d9c19707359d2f70
+--- /dev/null
++++ b/src/startup_overlay_settings.cpp
+@@ -0,0 +1,19 @@
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x00418940
++void OverlayMapPrefix::SetDepthPlane(int value)
++{
++    depth_bias_15c = value;
++}
++
++// FUNCTION: BEACHLIFE 0x00418950
++void OverlayMapPrefix::SetDepthSlant(int value)
++{
++    depth_scale_160 = value;
++}
++
++// FUNCTION: BEACHLIFE 0x00418fd0
++void OverlayMapPrefix::SetWordBc(unsigned int value)
++{
++    word_bc = value;
++}
+diff --git a/src/startup_overlay_tile_mask.cpp b/src/startup_overlay_tile_mask.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..cd7797c5fdf98efcb958e5e895d3c87868ddd4c1
+--- /dev/null
++++ b/src/startup_overlay_tile_mask.cpp
+@@ -0,0 +1,84 @@
++#include "startup_screen_overlay_layout.h"
++
++static void EnsureMaskTile(OverlayMapPrefix* map, int x, int y, unsigned int stride)
++{
++    if (!map->cached_tiles_e0[y * stride + x].ready)
++    {
++        map->cached_tiles_e0[y * map->cache_width_d4 + x].ready = 1;
++        unsigned int bytes = map->tile_size_dc * map->tile_size_dc * 4;
++        void* view = map->mapped_file_f4->MapView((y * map->cache_width_d4 + x) * bytes, bytes);
++        map->cached_tiles_e0[y * map->cache_width_d4 + x].view = view;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0041a130
++void OverlayMapPrefix::DrawTileMask(int tile_x, int tile_y, int x, int y, const unsigned char* data)
++{
++    archive_154->Depths(tile_x, tile_y);
++    archive_154->Colours(tile_x, tile_y);
++    EnsureMaskTile(overlay_map, tile_x, tile_y, overlay_map->cache_height_d8);
++    EnsureMaskTile(this, tile_x, tile_y, cache_width_d4);
++    int size = tile_size_dc;
++    int active_y = tile_y;
++    for (int row = 0; row < 33; ++row, ++y)
++    {
++        int active_x = tile_x;
++        int column = x;
++        if (y > size - 1)
++            active_y = tile_y + y / size;
++        int row_offset = (y % size) * size;
++        int pixel = row_offset + x;
++        EnsureMaskTile(overlay_map, tile_x, active_y, overlay_map->cache_height_d8);
++        EnsureMaskTile(this, tile_x, active_y, cache_width_d4);
++        unsigned int* view = static_cast<unsigned int*>(cached_tiles_e0[active_y * cache_width_d4 + tile_x].view);
++        const unsigned short* colours = archive_154->Colours(tile_x, active_y);
++        const unsigned short* depths = archive_154->Depths(tile_x, active_y);
++        int decoded = 0;
++        while (decoded < 62)
++        {
++            int run = static_cast<signed char>(*data++);
++            if (run >= 0)
++            {
++                data += run;
++                decoded += run;
++                for (int i = 0; i < run; ++i)
++                {
++                    if (column >= size)
++                    {
++                        active_x = (active_x + 1) % static_cast<int>(cache_width_d4);
++                        column %= size;
++                        EnsureMaskTile(overlay_map, active_x, active_y, overlay_map->cache_height_d8);
++                        EnsureMaskTile(this, active_x, active_y, cache_width_d4);
++                        view = static_cast<unsigned int*>(cached_tiles_e0[active_y * cache_width_d4 + active_x].view);
++                        colours = archive_154->Colours(active_x, active_y);
++                        depths = archive_154->Depths(active_x, active_y);
++                        pixel = row_offset + column;
++                    }
++                    unsigned int value = view[pixel];
++                    if (static_cast<unsigned short>(value >> 16) == depths[pixel])
++                        view[pixel] = (value & 0xffff0000u) + colours[pixel];
++                    ++pixel;
++                    ++column;
++                }
++            }
++            else
++            {
++                decoded -= run;
++                column -= run;
++                if (column > size)
++                {
++                    column %= size;
++                    active_x = (active_x + 1) % static_cast<int>(cache_width_d4);
++                    EnsureMaskTile(overlay_map, active_x, active_y, overlay_map->cache_height_d8);
++                    EnsureMaskTile(overlay_map, active_x, active_y, overlay_map->cache_width_d4);
++                    view = static_cast<unsigned int*>(overlay_map->cached_tiles_e0[active_y * overlay_map->cache_width_d4 + active_x].view);
++                    colours = archive_154->Colours(active_x, active_y);
++                    depths = archive_154->Depths(active_x, active_y);
++                    pixel = row_offset + column;
++                }
++                else
++                    pixel -= run;
++            }
++        }
++    }
++}
+diff --git a/src/startup_overlay_view_update.cpp b/src/startup_overlay_view_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ab73e72c9ca066b81d56c176d02fe3df7618537
+--- /dev/null
++++ b/src/startup_overlay_view_update.cpp
+@@ -0,0 +1,130 @@
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++#include "startup_world_cursor_names.h"
++#include "window_activation.h"
++#include <cmath>
++
++// FUNCTION: BEACHLIFE 0x0041a930
++static double InterpolateOverlayFraction(float fraction)
++{
++    double square = static_cast<double>(fraction) * fraction;
++    return square * 3.0 - square * fraction * 2.0;
++}
++
++// FUNCTION: BEACHLIFE 0x0041a950
++void OverlayMapPrefix::InterpolateView()
++{
++    if (flag_131)
++    {
++        float fraction = (static_cast<double>(window_deactivation_state->clock_158) - value_138) / value_134;
++        if (fraction > 1.0f)
++        {
++            flag_131 = 0;
++            flag_130 = 0;
++            view_x_e4 = static_cast<int>(word_144);
++            view_y_e8 = static_cast<int>(word_148);
++        }
++        double factor = InterpolateOverlayFraction(fraction);
++        view_x_e4 = static_cast<int>(word_144 - word_13c) * factor + static_cast<int>(word_13c);
++        view_y_e8 = static_cast<int>(word_148 - word_140) * factor + static_cast<int>(word_140);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0041aa40
++void OverlayMapPrefix::ScrollView(float x, float y)
++{
++    if (std::fabs(x) >= 1.1920928955078125e-7)
++        input_x_14c = x;
++    if (std::fabs(y) >= 1.1920928955078125e-7)
++        input_y_150 = y;
++    view_target_x_ec += x;
++    view_target_y_f0 += y;
++    if (view_target_x_ec > 60.0f)
++        view_target_x_ec = 60.0f;
++    if (view_target_y_f0 > 60.0f)
++        view_target_y_f0 = 60.0f;
++    if (!(view_target_x_ec >= -60.0f))
++        view_target_x_ec = -60.0f;
++    if (!(view_target_y_f0 >= -60.0f))
++        view_target_y_f0 = -60.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x0041ab20
++void OverlayMapPrefix::UpdateViewTiles()
++{
++    float scale = renderer_fc->clip_mode_54 == 0 ? 0.5f : renderer_fc->clip_mode_54 == 2 ? 2.0f
++                                                                                         : 1.0f;
++    int left = scroll_x_c4 / tile_size_dc;
++    int top = scroll_y_c8 / tile_size_dc;
++    int right = (scroll_x_c4 + static_cast<int>(static_cast<unsigned int>(view_ac.right) * static_cast<double>(scale))) / tile_size_dc;
++    int bottom = (scroll_y_c8 + static_cast<int>(static_cast<unsigned int>(view_ac.bottom) * static_cast<double>(scale))) / tile_size_dc;
++    for (int y = 0; y < static_cast<int>(cache_height_d8); ++y)
++    {
++        for (int x = 0; x < static_cast<int>(cache_width_d4); ++x)
++        {
++            // The initial ready test in retail uses height as the row stride.
++            unsigned char ready = cached_tiles_e0[y * cache_height_d8 + x].ready;
++            if (x >= left && x <= right && y >= top && y <= bottom)
++            {
++                if (!ready)
++                {
++                    cached_tiles_e0[y * cache_width_d4 + x].ready = 1;
++                    unsigned int bytes = tile_size_dc * tile_size_dc * 4;
++                    void* view = mapped_file_f4->MapView((y * cache_width_d4 + x) * bytes, bytes);
++                    cached_tiles_e0[y * cache_width_d4 + x].view = view;
++                }
++            }
++            else if (ready)
++            {
++                OverlayCachedTile& tile = cached_tiles_e0[y * cache_width_d4 + x];
++                if (tile.ready && tile.view)
++                {
++                    mapped_file_f4->ReleaseView(tile.view);
++                    cached_tiles_e0[y * cache_width_d4 + x].view = 0;
++                }
++                cached_tiles_e0[y * cache_width_d4 + x].ready = 0;
++            }
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00418a40
++void OverlayMapPrefix::UpdateTime(float time)
++{
++    if (!(value_12c >= 0.5f))
++        value_12c = time - 1.0f;
++    while (static_cast<double>(time) - value_12c > 1.0)
++    {
++        if (!pending_104.empty())
++        {
++            int index = pending_104.front();
++            int x = index % static_cast<int>(cache_width_d4);
++            int y = index / static_cast<int>(cache_width_d4);
++            RefreshTile(x, y);
++            ScreenRectangle rectangle = { x * tile_size_dc, y * tile_size_dc, (x + 1) * tile_size_dc, (y + 1) * tile_size_dc };
++            world_cursor_names->RefreshRectangle(&rectangle);
++            unsigned int count = variable_world->buildings_04;
++            VariableEntity** buildings = variable_world->buildings_12120;
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                VariableEntity* building = buildings[i];
++                ScreenRectangle intersection;
++                if (ScreenRectanglesOverlap(&rectangle, building->BuildingRectangle(), &intersection)
++                    && !building->FlagAt00460340() && !building->FlagAt00460310())
++                {
++                    ScreenWorldPosition position = { building->x_30, building->y_34, building->z_38 };
++                    building->keyline_state_44->UpdateBuildingRectangle(&intersection, &position, building->building_60->footprint_x_1d4, building->building_60->footprint_y_1d8);
++                }
++            }
++            pending_104.pop_front();
++        }
++        value_12c += 1.0f;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0041b490
++bool OverlayMapPrefix::LoadWaterAnimation(const char* path)
++{
++    return renderer_fc->LoadWaterAnimation(path);
++}
+diff --git a/src/startup_renderer_image_resize.cpp b/src/startup_renderer_image_resize.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f11746d5aa030328378877df806646beb127eb0f
+--- /dev/null
++++ b/src/startup_renderer_image_resize.cpp
+@@ -0,0 +1,29 @@
++#include "startup_screen_renderer.h"
++#include "tga_image.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x0040f4e0
++void ScreenRequestRenderer::ResizeImages(TgaImage* source, TgaImage* destination)
++{
++    TgaImage* images[6];
++    images[0] = source;
++    int level = 0;
++    while (images[level]->width / 2 >= destination->width)
++    {
++        TgaImage* previous = images[level];
++        ++level;
++        images[level] = new (std::nothrow) TgaImage(previous->width / 2, previous->height / 2, 16, 0);
++        if (format_44 == 0)
++            ResizeImage565(previous, images[level]);
++        else
++            ResizeImage555(previous, images[level]);
++        if (level > 1)
++            delete previous;
++    }
++    if (format_44 == 0)
++        ResizeImage565(images[level], destination);
++    else
++        ResizeImage555(images[level], destination);
++    if (level > 0)
++        delete images[level];
++}
+diff --git a/src/startup_renderer_misc.cpp b/src/startup_renderer_misc.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec16369b1cd319f5f0e72668c22acc738bc182de
+--- /dev/null
++++ b/src/startup_renderer_misc.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_renderer.h"
++#include "startup_renderer_sea_state.h"
++#include "startup_screen_item.h"
++
++// FUNCTION: BEACHLIFE 0x0040bf30
++void ScreenRequestRenderer::UpdateSeaTime(float time)
++{
++    sea_state_134->UpdateTime(time);
++}
++
++// FUNCTION: BEACHLIFE 0x0040c240
++void ScreenRequestRenderer::FillSizedRectangle(RenderRectangle* rectangle, unsigned int colour)
++{
++    ScreenRectangle bounds = { rectangle->x, rectangle->y, rectangle->x + rectangle->width, rectangle->y + rectangle->height };
++    FillRectangle(bounds, colour);
++}
+diff --git a/src/startup_renderer_sea_state.h b/src/startup_renderer_sea_state.h
+index dbcabb04bef1598f0d7e0505adec02cce099a572..5fb374c656594c96d452746736e19e27048d9a21 100644
+--- a/src/startup_renderer_sea_state.h
++++ b/src/startup_renderer_sea_state.h
+@@ -17,6 +17,7 @@ struct RendererSeaStatePrefix
+ 
+     // Actual 0x004184f0, RET4; stores the argument byte without normalization.
+     void SetSeaEnabled(unsigned char enabled);
++    void UpdateTime(float time);                        // 0x00418550.
+     const unsigned char* TileData(int column, int row); // 0x00418500.
+ };
+ 
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 40a475eaad8b1b75770277f8716c400b2dd557ae..77095b1dd4835804feed5f2238c56cd6562b224d 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -136,8 +136,10 @@ struct ScreenDialogResource
+ 
+     int CurrentFrameValue();              // 0x00412b00.
+     void SelectionOffset(int* x, int* y); // 0x00413d00.
+-    void UpdateTerrainIntersection(const ScreenRectangle* rectangle, const ScreenWorldPosition* position,
+-        int x, int y);                                                                     // 0x00414b30.
++    void UpdateTerrainIntersection(ScreenRectangle* rectangle, const ScreenWorldPosition* position,
++        int x, int y); // 0x00414b30.
++    void UpdateTerrainIntersectionTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y,
++        int offset_x, int offset_y, unsigned int depth, int x, int y);                     // 0x00414c10.
+     float SetAnimation(const char* name, float time, const ScreenWorldPosition* position); // 0x004168e0.
+     void UpdateBuildingRectangle(ScreenRectangle* rectangle, const ScreenWorldPosition* position,
+         unsigned int width, unsigned int height);                                                   // 0x00414240.
+diff --git a/src/startup_screen_dialog_selection_offset.cpp b/src/startup_screen_dialog_selection_offset.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a47f53b5e43cf6968d6899f89afbb3acf94f7206
+--- /dev/null
++++ b/src/startup_screen_dialog_selection_offset.cpp
+@@ -0,0 +1,31 @@
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x00413d00
++void ScreenDialogResource::SelectionOffset(int* x, int* y)
++{
++    unsigned int frame = record->format_18 == 5 ? 0 : word_10;
++    const unsigned char* data = record->frames[frame]->SelectData(word_14, word_18);
++    int height = record->frames[word_10]->height_10;
++    int width = record->frames[word_10]->width_0e;
++    for (int row = 0; row < height; ++row)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            int run = static_cast<signed char>(*data++);
++            if (run < 0)
++                column -= run;
++            else
++            {
++                data += run;
++                column += run;
++                if (*data > 0)
++                {
++                    *x = column;
++                    *y = row;
++                    return;
++                }
++            }
++        }
++    }
++}
+diff --git a/src/startup_screen_dialog_terrain_intersection.cpp b/src/startup_screen_dialog_terrain_intersection.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a51e25928beaa7772ce521edc0f34903ef2d4e5
+--- /dev/null
++++ b/src/startup_screen_dialog_terrain_intersection.cpp
+@@ -0,0 +1,21 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_point.h"
++
++// FUNCTION: BEACHLIFE 0x00414b30
++void ScreenDialogResource::UpdateTerrainIntersection(ScreenRectangle* rectangle,
++    const ScreenWorldPosition* position, int x, int y)
++{
++    ScreenPoint point = overlay_map->WorldToScreen(*position);
++    point.x += CurrentFrameValue();
++    point.y += SelectedFrame()->word_14;
++    unsigned int depth = (overlay_map->DepthAt(position) + 8) | 1;
++    point.x += overlay_map->scroll_x_c4;
++    point.y += overlay_map->scroll_y_c8;
++    rectangle->left -= point.x;
++    rectangle->right -= point.x;
++    rectangle->top -= point.y;
++    rectangle->bottom -= point.y;
++    int size = overlay_map->tile_size_dc;
++    UpdateTerrainIntersectionTiles(rectangle, point.x / size, point.y / size, point.x % size, point.y % size, depth, x, y);
++}
+diff --git a/src/startup_screen_dialog_terrain_tiles.cpp b/src/startup_screen_dialog_terrain_tiles.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ccd21f2dfd229223b2ee52d033304cfd93e5d01c
+--- /dev/null
++++ b/src/startup_screen_dialog_terrain_tiles.cpp
+@@ -0,0 +1,163 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_point.h"
++#include "render_mask_setup.h"
++
++static unsigned int* TerrainTileView(OverlayMapPrefix* map, int x, int y)
++{
++    unsigned int indices[] = { y * map->cache_height_d8 + x, y * map->cache_width_d4 + x };
++    for (unsigned int i = 0; i < 2; ++i)
++    {
++        if (!map->cached_tiles_e0[indices[i]].ready)
++        {
++            OverlayCachedTile& tile = map->cached_tiles_e0[y * map->cache_width_d4 + x];
++            tile.ready = 1;
++            unsigned int bytes = map->tile_size_dc * map->tile_size_dc * 4;
++            tile.view = map->mapped_file_f4->MapView((y * map->cache_width_d4 + x) * bytes, bytes);
++        }
++    }
++    return static_cast<unsigned int*>(map->cached_tiles_e0[y * map->cache_width_d4 + x].view);
++}
++
++// FUNCTION: BEACHLIFE 0x00414470
++void ScreenDialogResource::UpdateBuildingTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y,
++    int offset_x, int offset_y, float depth_step, unsigned int depth)
++{
++    if (record->format_18 != 5)
++        return;
++    const unsigned char* colours = record->frames[0]->SelectData(word_14, word_18);
++    const unsigned char* depths = record->frames[1]->SelectData(word_14, word_18);
++    OverlayMapPrefix* map = overlay_map;
++    const unsigned short* palette = record->palettes[0];
++    int width = SelectedFrame()->width_0e;
++    for (int row = 0; row < rectangle->top; ++row)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            int run = static_cast<signed char>(*colours++);
++            ++depths;
++            if (run > 0)
++            {
++                colours += run;
++                depths += run;
++                column += run;
++            }
++            else
++                column -= run;
++        }
++    }
++    for (int row = rectangle->top; row < rectangle->bottom; ++row)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            int run = static_cast<signed char>(*colours++);
++            ++depths;
++            if (run > 0)
++            {
++                for (int i = 0; i < run; ++i, ++column, ++colours, ++depths)
++                {
++                    if (column >= rectangle->left && column < rectangle->right)
++                    {
++                        int x = offset_x + column;
++                        int y = offset_y + row;
++                        unsigned int* view = TerrainTileView(map, tile_x + x / 128, tile_y + y / 128);
++                        unsigned int value = (static_cast<unsigned short>(static_cast<int>(*depths * static_cast<double>(depth_step)))
++                                                 + static_cast<unsigned int>(static_cast<unsigned short>(depth)))
++                                          << 16;
++                        value = (value & 0xfffeffffu) + 0x10000;
++                        int pixel = (y % 128) * 128 + x % 128;
++                        if ((view[pixel] & 0xffff0000u) <= value)
++                            view[pixel] = value + palette[*colours];
++                    }
++                }
++            }
++            else
++                column -= run;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004161f0
++void ScreenDialogResource::DrawTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y,
++    float, unsigned int depth)
++{
++    OverlayMapPrefix* map = overlay_map;
++    const unsigned char* data = record->frames[0]->SelectData(word_14, word_18);
++    const unsigned short* palette = record->palettes[0];
++    unsigned int half = render_half_mask >> 1;
++    unsigned int quarter = render_quarter_mask >> 2;
++    int width = SelectedFrame()->width_0e;
++    int height = SelectedFrame()->height_10;
++    int size = map->tile_size_dc;
++    int active_y = tile_y;
++    for (int row = 0; row < height; ++row)
++    {
++        int y = offset_y + row;
++        int active_x = tile_x;
++        int column = offset_x;
++        if (y > size - 1)
++            active_y = tile_y + y / size;
++        int row_offset = (y % size) * size;
++        int pixel = row_offset + column;
++        unsigned int* view = TerrainTileView(map, active_x, active_y);
++        unsigned int row_depth = ((depth & 0xffffu) + static_cast<unsigned int>(row) * 16) << 16;
++        int decoded = 0;
++        while (decoded < width)
++        {
++            int run = static_cast<signed char>(*data++);
++            if (run >= 0)
++            {
++                decoded += run;
++                for (int i = 0; i < run; ++i)
++                {
++                    if (column >= size)
++                    {
++                        active_x = (active_x + 1) % static_cast<int>(overlay_map->cache_width_d4);
++                        column %= size;
++                        view = TerrainTileView(map, active_x, active_y);
++                        pixel = row_offset + column;
++                    }
++                    unsigned int old_depth = view[pixel] & 0xffff0000u;
++                    if (old_depth <= row_depth)
++                    {
++                        unsigned int mode = *data & 0xc0u;
++                        unsigned int colour = palette[*data - mode];
++                        unsigned int old_colour = view[pixel] & 0xffffu;
++                        switch (mode)
++                        {
++                        case 0x40:
++                            colour = ((colour >> 1) & half) + ((old_colour >> 2) & quarter) + ((colour >> 2) & quarter);
++                            break;
++                        case 0x80:
++                            colour = ((old_colour >> 1) & half) + ((colour >> 1) & half);
++                            break;
++                        case 0xc0:
++                            colour = ((old_colour >> 1) & half) + ((old_colour >> 2) & quarter) + ((colour >> 2) & quarter);
++                            break;
++                        }
++                        view[pixel] = old_depth + (colour & 0xffffu);
++                    }
++                    ++data;
++                    ++pixel;
++                    ++column;
++                }
++            }
++            else
++            {
++                decoded -= run;
++                column -= run;
++                if (column > size)
++                {
++                    column %= size;
++                    active_x = (active_x + 1) % static_cast<int>(overlay_map->cache_width_d4);
++                    view = TerrainTileView(map, active_x, active_y);
++                    pixel = row_offset + column;
++                }
++                else
++                    pixel -= run;
++            }
++        }
++    }
++}
+diff --git a/src/startup_screen_image_resource.cpp b/src/startup_screen_image_resource.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..65454e5669cc2bc5936d1e1145e03edbbb2979b2
+--- /dev/null
++++ b/src/startup_screen_image_resource.cpp
+@@ -0,0 +1,18 @@
++#include "startup_screen_image_item.h"
++#include "startup_screen_dialog_resource.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004c3e30
++void ScreenImageItem::SetResource(const char* name)
++{
++    if (strcmp(resource_name, name) == 0)
++        return;
++    strcpy(resource_name, name);
++    screen_dialog_resources->Release(resource);
++    resource = screen_dialog_resources->Find(resource_name);
++    unsigned short height = resource->record->frames[resource->word_10]->height_10;
++    unsigned short width = resource->record->frames[resource->word_10]->width_0e;
++    rectangle.bottom = rectangle.top + height;
++    rectangle.right = rectangle.left + width;
++    MarkPrepared();
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 378bd3039cc80cdc5d590457061c8443b177f8da..7db0b5baa0725e11a11e795ae1bdb7bc83e9039a 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -436,6 +436,8 @@ struct ScreenManager
+     void RefreshScreenContents(); // 0x004b1b00.
+     bool RequestMessageScreen(const char* name, const char* message,
+         ScreenRequestContext* context, unsigned char flag); // 0x004b1620.
++    bool RequestNamedScreen(const char* name, const char* text,
++        ScreenRequestContext* context, unsigned char flag); // 0x004b15f0.
+     void ToggleLoadGamePanel();                             // 0x004ae360.
+     void ToggleSaveGamePanel();                             // 0x004ae440.
+     // Actual 0x004b11d0; destroy/release the captured owner, then clear +190.
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index d3326eb37521b6485e89b106e0ad13edde11695a..a01ad26d236aa88d244b54e50adaac5cf631fdcf 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -20,7 +20,19 @@ struct ScreenTerrainEntityNode : CircularListNode
+ struct ScreenTerrainCell
+ {
+     CircularList* Objects(); // 0x004452d0.
+-    unsigned char unknown_00[0x48];
++    ScreenTerrainCell* parent_00;
++    ScreenTerrainCell* next_04;
++    unsigned int visited_generation_08;
++    unsigned int linked_generation_0c;
++    ScreenTerrainCell* neighbours_10[8];
++    unsigned char closed_30;
++    unsigned char open_31;
++    unsigned char unknown_32[2];
++    int score_34;
++    int distance_38;
++    int cost_3c;
++    int x_40;
++    int y_44;
+     unsigned int flags_48;
+     CircularList objects_4c;
+     unsigned short depth_50;
+@@ -33,6 +45,9 @@ static_assert(sizeof(void*) != 4 || sizeof(ScreenTerrainCell) == 0x54);
+ 
+ struct ScreenTerrainRouteNode
+ {
++    ScreenTerrainRouteNode(const ScreenPoint* points, unsigned int count, unsigned int word04,
++        unsigned int word08, unsigned int word0c, unsigned int word10, unsigned int word14,
++        unsigned int word18, unsigned int word1c, unsigned int word20, unsigned int word24); // 0x00445600.
+     void* data_00;
+     unsigned char unknown_04[0x28];
+     unsigned char disabled_2c;
+@@ -46,6 +61,7 @@ struct ScreenTerrainGrid
+         const char* height_map, float height_scale, const char* grid); // 0x004456e0.
+     ~ScreenTerrainGrid() noexcept(false);                              // 0x00445c50.
+     void LoadState(GameFileReader* file);                              // 0x00447720.
++    void SaveState(GameFileReader* file);                              // 0x00446cb0.
+     int tile_size_00;
+     unsigned int width_04;
+     unsigned int height_08;
+@@ -83,6 +99,11 @@ struct ScreenTerrainGrid
+     ScreenWorldPosition TileOrigin(int x, int y);                                           // 0x00446200.
+     ScreenWorldPosition TilePosition(int x, int y, int direction);                          // 0x00446260.
+     void SaveGridMap();                                                                     // 0x00445b40.
++    void AppendFirstRoute(ScreenTerrainRouteNode* route);                                   // 0x004467c0.
++    void AppendSecondRoute(ScreenTerrainRouteNode* route);                                  // 0x004467f0.
++    void AddArrivalRoutePoint(ScreenWorldPosition position, unsigned int kind);             // 0x00446820.
++    void SetArrivalPosition(ScreenWorldPosition position, int heading, ScreenPoint tile);   // 0x00447800.
++    void SetDeparturePosition(ScreenWorldPosition position, int heading, ScreenPoint tile); // 0x00447840.
+     void BuildingBounds(ScreenPoint& point, unsigned int width, unsigned int height,
+         int* first, int* last, unsigned int rotation); // 0x004464f0.
+     void RectangleTiles(const ScreenRectangle* rectangle, int* left, int* top,
+@@ -132,6 +153,13 @@ struct ScreenSceneryPlacement
+     int word_4c;
+ };
+ 
++struct ScreenEntityPlacement
++{
++    char name[64];
++    ScreenWorldPosition position;
++    unsigned int heading;
++};
++
+ struct ScreenBuildingPlacement
+ {
+     char name[32];
+@@ -166,6 +194,7 @@ struct ScreenModeCommandQueue
+     ScreenModeCommandNode* CreateNode(const ScreenModeCommand& command);                                    // 0x0042e5e0.
+     ~ScreenModeCommandQueue() noexcept(false);                                                              // 0x0042dd90.
+     void LoadState(GameFileReader* file);                                                                   // 0x0042e390.
++    void SaveState(GameFileReader* file);                                                                   // 0x0042e260.
+     bool QueueDelayed(ScreenModeCommand* command, float delay);                                             // 0x0042dee0.
+     bool QueueCommand(ScreenModeCommand* command);                                                          // 0x0042de60.
+     void QueuePlacement(ScreenModeCommand* command, const void* placement);                                 // 0x0042df20.
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index 919aa2de0bdaf706dc2d0ed44ef975dacb72e8c7..afc2967708ce6302b2a8597c95adcbaa2ddd4e57 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -12,6 +12,10 @@ struct DebugFont;
+ 
+ struct OverlayMappedFile
+ {
++    explicit OverlayMappedFile(const char* path); // 0x0049ee90.
++    const char* path_00;
++    void* file_04;
++    void* mapping_08;
+     void ReleaseView(void* view);                           // 0x0049ef40.
+     void* MapView(unsigned int offset, unsigned int bytes); // 0x0049ef10.
+     ~OverlayMappedFile();                                   // 0x0049eef0.
+@@ -33,18 +37,31 @@ struct ScreenRequestRenderer;
+ 
+ struct OverlayArchive
+ {
+-    unsigned char unknown_00[0x40024];
++    struct Tile
++    {
++        int x;
++        int y;
++        unsigned short colours[128 * 128];
++        unsigned short depths[128 * 128];
++    };
++    void LoadRow(int y, void* buffer); // 0x00409210.
++    int next_00;
++    Tile tiles_04[4];
+     FILE* file_40024;
+-    ~OverlayArchive() noexcept(false);     // 0x00409050.
+-    unsigned short* Depths(int x, int y);  // 0x00409130.
+-    unsigned short* Colours(int x, int y); // 0x004091a0.
++    unsigned int offsets_40028[32][32];
++    unsigned int sizes_41028[32][32];
++    explicit OverlayArchive(const char* path); // 0x00408f30.
++    ~OverlayArchive() noexcept(false);         // 0x00409050.
++    unsigned short* Depths(int x, int y);      // 0x00409130.
++    unsigned short* Colours(int x, int y);     // 0x004091a0.
++    void LoadTile(int x, int y);               // 0x00409060.
+ };
+ 
+ struct OverlayMapPrefix
+ {
+     OverlayMapPrefix(DebugFont* font, ScreenRequestRenderer* renderer, const char* path); // 0x00418600.
+     bool LoadWaterAnimation(const char* path);                                            // 0x0041b490.
+-    void PrepareMap(int width, int height, int tile_size, float progress);                // 0x00419a30.
++    bool PrepareMap(int width, int height, int tile_size, float progress);                // 0x00419a30.
+     void SetDepthPlane(int value);                                                        // 0x00418940.
+     void SetDepthSlant(int value);                                                        // 0x00418950.
+     void SetWordBc(unsigned int value);                                                   // 0x00418fd0.
+@@ -57,12 +74,14 @@ struct OverlayMapPrefix
+     void UpdateTime(float time);                                                          // 0x00418a40.
+     ~OverlayMapPrefix() noexcept(false);                                                  // 0x00418820.
+     void LoadState(GameFileReader* file);                                                 // 0x0041b900.
++    void SaveState(GameFileReader* file);                                                 // 0x0041b6c0.
+     void SetViewScale(float scale);                                                       // 0x00419a10.
+     unsigned char unknown_00[0xa0];
+     FILE* file_a0;
+-    unsigned char unknown_a4[8];
++    unsigned int word_a4;
++    DebugFont* font_a8;
+     ScreenRectangle view_ac;
+-    unsigned char unknown_bc[4];
++    unsigned int word_bc;
+     unsigned char loaded_c0;
+     unsigned char unknown_c1[3];
+     int scroll_x_c4;
+@@ -78,9 +97,19 @@ struct OverlayMapPrefix
+     float view_target_x_ec;
+     float view_target_y_f0;
+     OverlayMappedFile* mapped_file_f4;
+-    unsigned char unknown_f8[4];
++    unsigned int word_f8;
+     ScreenRequestRenderer* renderer_fc;
+-    unsigned char unknown_100[4];
++    union
++    {
++        unsigned char unknown_100[4];
++        struct
++        {
++            unsigned char flag_100;
++            unsigned char flag_101;
++            unsigned char flag_102;
++            unsigned char flag_103;
++        };
++    };
+     std::deque<unsigned int> pending_104; // Retail deque occupies 0x28 bytes.
+     float value_12c;
+     unsigned char flag_130;
+@@ -123,7 +152,9 @@ struct OverlayMapPrefix
+     bool ContainsEntity(VariableEntity* entity);                                    // 0x004193f0.
+     void ProjectWorldPosition(const ScreenWorldPosition* position, int* x, int* y); // 0x00418f70.
+     void SetViewPosition(int x, int y);                                             // 0x0041a7c0.
++    void MoveView(ScreenWorldPosition position, float duration);                    // 0x0041a7f0.
+     void ScrollView(float x, float y);                                              // 0x0041aa40.
++    void RefreshTile(int x, int y);                                                 // 0x00419d50.
+     ScreenPoint TileToScreen(const ScreenPoint& tile);                              // 0x0041b440.
+ };
+ 
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index fc16fd3af868edfa190fc7da8758028ba4da9181..9d22d3285de7a78fd13ebaedb8b4453d608703ec 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -233,6 +233,9 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+     void BlitBetweenSurfaces(int x, int y, int destination, int source);                               // 0x0040e7f0.
+     void ResizeSurfaceImageEntries(ScreenSurfacePosition* source, ScreenSurfacePosition* destination); // 0x0040f2e0.
+     void ResizeImages(TgaImage* source, TgaImage* destination);                                        // 0x0040f4e0.
++    void ResizeImage565(TgaImage* source, TgaImage* destination);                                      // 0x0040eb20.
++    void ResizeImage555(TgaImage* source, TgaImage* destination);                                      // 0x0040ef00.
++    bool LoadWaterAnimation(const char* path);                                                         // 0x0040bf50.
+     void ResizeSurfaceImage(int source, int destination);                                              // 0x0040eb00.
+     unsigned short* AccessPixels();
+     void UnlockPixels();
+diff --git a/src/startup_ticker_methods.cpp b/src/startup_ticker_methods.cpp
+index 312ddc6d700323cb02e37aca72584703df8b450d..c655a1ee3f861e1541e239ddb5056bb0b248eb80 100644
+--- a/src/startup_ticker_methods.cpp
++++ b/src/startup_ticker_methods.cpp
+@@ -272,3 +272,154 @@ void VariableTicker::LoadState(GameFileReader* file)
+     file->Unknown60(suppressed_84, 100);
+     file->ReadFloat(&value_214);
+ }
++
++// FUNCTION: BEACHLIFE 0x00429950
++VariableTicker::VariableTicker()
++    : current_50()
++    , word_60(0)
++    , word_64(0)
++    , word_68(0)
++    , word_6c(0)
++    , word_70(0)
++    , word_74(0)
++    , word_78(0)
++    , suppressed_count_7c(0)
++    , flag_80(0)
++    , flag_81(0)
++    , value_214(25.0f)
++{
++    for (int i = 0; i < 100; ++i)
++        suppressed_84[i] = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00429fb0
++void VariableTicker::AddHistory(const char* key, unsigned int id)
++{
++    TickerHistoryMessage* message = new (std::nothrow) TickerHistoryMessage;
++    if (message)
++    {
++        message->text_0c = 0;
++        message->key_10 = 0;
++    }
++    message->id_00 = id;
++    message->day_04 = window_deactivation_state->day_15c;
++    message->time_08 = window_deactivation_state->render_value_160;
++    message->key_10 = CopyTickerKey(key);
++    history_28.push_back(message);
++    if (history_28.size() > 6)
++    {
++        TickerHistoryMessage* oldest = history_28.front();
++        history_28.pop_front();
++        DeleteHistoryMessage(oldest);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0042a300
++void VariableTicker::AddMessage(const char* key, unsigned int id, unsigned char flag)
++{
++    for (unsigned int i = 0; i < suppressed_count_7c; ++i)
++        if (suppressed_84[i] == flag)
++            return;
++    if (screen_manager->CanShowTickerMessage())
++    {
++        screen_manager->ShowTickerMessage(key, 2);
++        AddHistory(key, id);
++        return;
++    }
++    if (pending_00.size() > 15)
++    {
++        TickerQueuedMessage* oldest = pending_00.front();
++        pending_00.pop_front();
++        DeleteQueuedMessage(oldest);
++    }
++    TickerQueuedMessage* message = new (std::nothrow) TickerQueuedMessage;
++    if (message)
++    {
++        message->text_04 = 0;
++        message->key_08 = 0;
++    }
++    message->id_00 = id;
++    message->key_08 = CopyTickerKey(key);
++    pending_00.push_back(message);
++}
++
++// FUNCTION: BEACHLIFE 0x0042a940
++void VariableTicker::AddNamedMessage(const char* name)
++{
++    if (strcmp(name, "MESS_TYPE_WORLD") == 0)
++        flag_80 = 1;
++    else if (strcmp(name, "MESS_TYPE_OBJECT") == 0)
++        flag_81 = 1;
++    else
++    {
++        static const char* names[] = { "MESS_TYPE_SCENERY", "MESS_TYPE_BUILDING", "MESS_TYPE_GUEST", "MESS_TYPE_VEHICLE", "MESS_TYPE_STAFF", "MESS_TYPE_LIFEGUARD", "MESS_TYPE_MECHANIC", "MESS_TYPE_REP", "MESS_TYPE_BUILDER", "MESS_TYPE_CLEANER", "MESS_TYPE_SECURITYGUARD" };
++        for (unsigned int i = 0; i < 11; ++i)
++            if (strcmp(name, names[i]) == 0)
++            {
++                suppressed_84[suppressed_count_7c++] = i + 3;
++                return;
++            }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0042b6a0
++const char* VariableTicker::FeatureMessage(unsigned int feature)
++{
++    switch (feature)
++    {
++    case 0:
++        return "FEEDBACK_ACCOMMODATION";
++    case 1:
++        return "FEEDBACK_ALCOHOL";
++    case 2:
++        return "FEEDBACK_AMUSEMENT";
++    case 3:
++        return "FEEDBACK_FIRSTAID";
++    case 4:
++        return "FEEDBACK_HEADACHE";
++    case 5:
++        return "FEEDBACK_MEALS";
++    case 6:
++        return "FEEDBACK_PARTYFUN";
++    case 7:
++        return "FEEDBACK_SHOWER";
++    case 8:
++        return "FEEDBACK_SNACKS";
++    case 9:
++        return "FEEDBACK_SOFTDRINKS";
++    case 10:
++        return "FEEDBACK_SOUVENIRS";
++    case 11:
++        return "FEEDBACK_SPORTSFUN";
++    case 12:
++        return "FEEDBACK_SUNBATHING";
++    case 13:
++        return "FEEDBACK_SWIMMINGFUN";
++    case 14:
++        return "FEEDBACK_TOILET";
++    case 15:
++        return "FEEDBACK_WATERSPORTSFUN";
++    case 16:
++        return "FEEDBACK_STROLLAROUND";
++    case 17:
++        return "FEEDBACK_LEAVERESORT";
++    case 18:
++        return "FEEDBACK_VANDALISE";
++    case 19:
++        return "FEEDBACK_FIGHT";
++    case 20:
++        return "FEEDBACK_FLIRT";
++    case 21:
++        return "FEEDBACK_UMBRELLAS";
++    case 22:
++        return "FEEDBACK_SUNTANLOTION";
++    case 23:
++        return "FEEDBACK_HARDSEX";
++    case 24:
++        return "FEEDBACK_SLEEP";
++    case 25:
++        return "FEEDBACK_SCARED";
++    default:
++        return 0;
++    }
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 01d24206ba28c023646199153b23a150bad15a33..40321eee8e2c73a37ddb5f599d6e7f58dcba967e 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -16,6 +16,7 @@ struct ScreenWorldPosition;
+ struct ScreenWorldPosition;
+ struct GameFileReader;
+ struct ScreenModeCommand;
++struct VariableEntity;
+ 
+ // Descriptive views for actual receivers in 0x004c8a30. No constructors,
+ // destructors, concrete owner sizes or native lifetime substitutes are supplied.
+@@ -24,6 +25,7 @@ struct VariableEconomy
+     explicit VariableEconomy(const unsigned short* name); // 0x00432e10.
+     ~VariableEconomy() noexcept(false);                   // Folded empty 0x004d3890.
+     void LoadState(GameFileReader* file);                 // 0x00432ea0.
++    void SaveState(GameFileReader* file);                 // 0x00432e40.
+ 
+     unsigned char unknown_00[0x80];
+     float value_80;
+@@ -70,9 +72,11 @@ struct VariableTicker
+     void AddMessage(const char* key, unsigned int id, unsigned char flag); // 0x0042a300.
+     const char* FeatureMessage(unsigned int feature);                      // 0x0042b6a0.
+ 
+-    void Update();                        // 0x00429c40.
+-    ~VariableTicker() noexcept(false);    // 0x00429a40.
+-    void LoadState(GameFileReader* file); // 0x0042b0d0.
++    void Update();                              // 0x00429c40.
++    ~VariableTicker() noexcept(false);          // 0x00429a40.
++    void LoadState(GameFileReader* file);       // 0x0042b0d0.
++    void SaveState(GameFileReader* file);       // 0x0042ad70.
++    void RemoveEntityMessages(unsigned int id); // 0x0042a840.
+ 
+     void AddMessage(const unsigned short* text, unsigned int id, unsigned char flag);     // 0x0042a4d0.
+     const unsigned short* FirstMessage(float* time, unsigned int* day, unsigned int* id); // 0x00429e50.
+@@ -116,12 +120,15 @@ struct VariableTransport
+     unsigned int previous_total_68;
+     ~VariableTransport() noexcept(false); // 0x0042c9e0.
+     void LoadState(GameFileReader* file); // 0x0042d650.
++    void SaveState(GameFileReader* file); // 0x0042d3a0.
+ 
+     // Actual 0x0042d160/RET8 and 0x0042d2f0/RET4, x87 results.
+     float FindNext(unsigned char mode, unsigned int* value);
+     unsigned char TakeArrival(WorldTransportArrival* arrival); // 0x0042cc20.
+     float ScheduleAt(unsigned int index);
+-    void StartDay(); // 0x0042d100.
++    void StartDay();                                   // 0x0042d100.
++    void RecordDeparture(VariableEntity* guest);       // 0x0042d110.
++    void Schedule(const WorldTransportRecord* record); // 0x0042cb10.
+ };
+ 
+ struct VariableBuilding
+@@ -205,6 +212,10 @@ struct VariableGuestState
+ // female appeal at +0x68/+0x6c. Size not proved.
+ struct VariableEventSchedule
+ {
++    void Open();                         // 0x00428f60.
++    int ActiveEvent();                   // 0x00428f30.
++    void StopEvent();                    // 0x004290a0.
++    void Reset();                        // 0x00428200.
+     void SetEvent(int index, int event); // 0x004291e0.
+     bool IsInProgress(int index);        // 0x00429260.
+     int CurrentEvent(int index);         // 0x00429380.
+@@ -224,6 +235,14 @@ struct VariableStaffState
+ 
+ struct BuildingGuestQueue
+ {
++    unsigned int owner_00;
++    unsigned int word_04;
++    WorldDequeStorage<unsigned int> guests_08;
++    WorldDequeStorage<unsigned int> pending_30;
++    unsigned int word_58;
++    unsigned int word_5c;
++    unsigned int word_60;
++    unsigned int word_64;
+     void Clear(); // 0x00433a20.
+ };
+ 
+@@ -283,8 +302,8 @@ struct VariableEntity
+     virtual bool CanSelectAtPointer() = 0; // Slot 0x5c.
+ 
+     virtual unsigned char Unknown5c() = 0;                      // Slot 0x60.
+-    virtual void Unknown60() = 0;                               // Slot 0x64.
+-    virtual void SetPosition(ScreenWorldPosition position) = 0; // Slot 0x68.
++    virtual void SetPosition(ScreenWorldPosition position) = 0; // Slot 0x64.
++    virtual void SetHeading(unsigned int heading) = 0;          // Slot 0x68.
+     virtual void Unknown6c() = 0;
+     virtual void Unknown70() = 0;
+ 
+@@ -318,9 +337,20 @@ struct VariableEntity
+     unsigned int staff_ids_64[10];
+     unsigned int staff_count_8c;
+     unsigned int pending_staff_90;
+-    unsigned char unknown_94[0xc];
+-    unsigned char byte_a0;
+-    unsigned char unknown_a1[0x1f];
++    union
++    {
++        struct
++        {
++            unsigned char unknown_94[0xc];
++            unsigned char byte_a0;
++            unsigned char unknown_a1[0x1f];
++        };
++        struct
++        {
++            unsigned int additional_staff_94[10];
++            unsigned int additional_staff_count_bc;
++        };
++    };
+     ScreenRectangle removal_rectangle_c0;
+     unsigned char unknown_d0[8];
+     ScreenWorldPosition staff_position_d8;
+@@ -375,12 +405,17 @@ struct VariableEntity
+             unsigned int building_value_330;
+             unsigned char unknown_334[8];
+             int power_state_33c; // Generator state 0..3; nonzero shows the second lit frame.
+-            unsigned char unknown_340[0x10];
++            unsigned char unknown_340[0xc];
++            float guest_value_34c;
+             int building_value_350;
+-            unsigned char unknown_354[0x10];
++            unsigned char unknown_354[0xc];
++            float guest_value_360;
+             unsigned char byte_364;
+             unsigned char closed_365;
+-            unsigned char unknown_366[0x9a];
++            unsigned char unknown_366[6];
++            int contents_count_36c;
++            unsigned int contents_370[32];
++            unsigned char unknown_3f0[0x10];
+             ScreenRectangle building_rectangle_400;
+             unsigned char unknown_410[0x18];
+             ScreenContextRowIterator rows_begin_428;
+@@ -396,6 +431,22 @@ struct VariableEntity
+             unsigned int builder_index_7f0;
+         };
+         struct
++        {
++            unsigned char unknown_guest_10c[0x60];
++            float weather_values_16c[26];
++            unsigned char unknown_guest_1d4[0x1fc];
++            unsigned char unhappy_departure_3d0;
++        };
++        struct
++        {
++            unsigned char unknown_drink_10c[0xc4];
++            unsigned int drink_feature_types_1d0[5];
++            unsigned char unknown_drink_1e4[0x10];
++            float feature_value_1f4;
++            float drink_feature_values_1f8[5];
++            float drink_value_20c;
++        };
++        struct
+         {
+             unsigned int passengers_10c[300];
+             unsigned int passenger_count_5bc;
+@@ -437,6 +488,8 @@ struct VariableEntity
+     // Actual 0x004607f0: the generator's current output, 0 when idle; body
+     // separate. Descriptive name.
+     int PowerOutput();
++    void OverloadPower();                                     // 0x00460790.
++    void RemoveGuest(unsigned int id);                        // 0x0045c960.
+     void SetKind(unsigned char kind);                         // 0x004539f0.
+     void SetEntityId(unsigned int id);                        // 0x00453a00.
+     float GuestValue467d70();                                 // 0x00467d70.
+@@ -452,6 +505,8 @@ struct VariableEntity
+     void SetVehicleVariant(unsigned char variant);            // 0x00494da0.
+     void SetTransport(unsigned int id);                       // 0x00478560.
+     void SetHappiness(float value);                           // 0x0046b180.
++    void OpenContainedEntity();                               // 0x00494330.
++    void CloseContainedEntity();                              // 0x00494300.
+     void WeatherChanged();                                    // 0x0046ade0.
+     ScreenRectangle* BuildingRectangle();                     // 0x0045f170.
+     void RequestRemoval();                                    // 0x0041f240.
+@@ -511,7 +566,10 @@ struct VariableCatalogUnlock
+     char name_04[0x40];
+     char beer_44[0x40];
+     char cocktail_84[0x40];
+-    unsigned char unknown_c4[0x14];
++    float base_value_c4;
++    float multiplier_c8;
++    unsigned int feature_type_cc;
++    unsigned char unknown_d0[8];
+     unsigned char flag_d8;
+ };
+ 
+@@ -550,6 +608,7 @@ struct VariableCatalog
+     VariableBuilding* Building(unsigned int index);          // 0x004493a0, RET4.
+     unsigned int FindBuilding(const char* name);             // 0x004490d0, RET4.
+     const char* HoursName(unsigned int index);               // 0x004493e0, RET4.
++    const char* FeatureName(unsigned int index);             // 0x00449090.
+     unsigned int FindFeatureType(const char* name);          // 0x00448f30.
+     unsigned int FeatureType(unsigned int feature);          // 0x004490b0.
+     VariableScenery* Scenery(unsigned int index);            // 0x00449780, RET4.
+@@ -572,8 +631,10 @@ struct VariableWeather
+     void SelectEventBuilding(const char* name);     // 0x0043a3f0.
+     VariableWeather();                              // 0x00437ef0.
+     void Update();                                  // 0x004385a0.
++    void AddEvent(WorldWeatherEvent event);         // 0x00439f10.
+     ~VariableWeather() noexcept(false);             // 0x00438350.
+     void LoadState(GameFileReader* file);           // 0x0043a4c0.
++    void SaveState(GameFileReader* file);           // 0x0043a730.
+ 
+     unsigned short colour_table_00[18 * 128];
+     unsigned char unknown_1200[0x18c0];
+@@ -672,6 +733,7 @@ private:
+ public:
+     ~VariableWorldPrefix() noexcept(false); // 0x0042e780.
+     void LoadState(GameFileReader* file);   // 0x0042fd30.
++    void SaveState(GameFileReader* file);   // 0x0042fb20.
+ };
+ 
+ using VariableWorldObject = VariableEntity;
+diff --git a/src/startup_world_broadcast.cpp b/src/startup_world_broadcast.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..912d86b35b0c96d9883c41b27d7a436646cf7a06
+--- /dev/null
++++ b/src/startup_world_broadcast.cpp
+@@ -0,0 +1,20 @@
++#include "window_activation.h"
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++
++// FUNCTION: BEACHLIFE 0x0043dac0
++void WindowDeactivationState::BroadcastCommand(ScreenModeCommand* command)
++{
++    const unsigned char types[] = { 6, 7, 8, 9, 10, 11, 12, 3 };
++    for (unsigned int type = 0; type < sizeof(types); ++type)
++    {
++        ScreenModeCommandQueue* queue = commands_0c;
++        unsigned int count = 0;
++        VariableEntity** entities = variable_world->ByType(types[type], &count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            command->words[1] = entities[i]->id_28;
++            queue->QueueCommand(command);
++        }
++    }
++}
+diff --git a/src/startup_world_container_constructors.cpp b/src/startup_world_container_constructors.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e4efee06d2f44ded32565aa421b4ea9cd9f2e0c1
+--- /dev/null
++++ b/src/startup_world_container_constructors.cpp
+@@ -0,0 +1,85 @@
++#include "startup_world_repairs.h"
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++#include "pool_allocate.h"
++#include "pool_return.h"
++#include <new>
++
++template <class Node>
++static Node* NewWorldSentinel()
++{
++    Node* node = ::new (AllocatePoolBytes(sizeof(Node))) Node;
++    node->next = node;
++    node->previous = node;
++    return node;
++}
++
++// FUNCTION: BEACHLIFE 0x00435ed0
++WorldRepairManager::WorldRepairManager()
++{
++    repairs_00.head = NewWorldSentinel<WorldRepairNode<WorldRepairEntry> >();
++    word_04 = 0;
++    try
++    {
++        pending_08.head = NewWorldSentinel<WorldRepairNode<WorldRepairEntry> >();
++        word_0c = 0;
++        try
++        {
++            assignments_10.head = NewWorldSentinel<WorldRepairNode<WorldRepairAssignment> >();
++        }
++        catch (...)
++        {
++            ReturnPool(pending_08.head, sizeof(WorldRepairNode<WorldRepairEntry>));
++            throw;
++        }
++    }
++    catch (...)
++    {
++        ReturnPool(repairs_00.head, sizeof(WorldRepairNode<WorldRepairEntry>));
++        throw;
++    }
++    word_14 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0042c8e0
++VariableTransport::VariableTransport()
++{
++    scheduled_00.head = NewWorldSentinel<WorldTransportNode>();
++    try
++    {
++        pending_08.head = NewWorldSentinel<WorldTransportNode>();
++    }
++    catch (...)
++    {
++        ReturnPool(scheduled_00.head, sizeof(WorldTransportNode));
++        throw;
++    }
++    male_5c = 0;
++    female_60 = 0;
++    last_count_64 = 0;
++    previous_total_68 = 0;
++    for (unsigned int i = 0; i < variable_catalog->guest_count_18; ++i)
++        weights_0c[i] = 0.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x0042d100
++void VariableTransport::StartDay()
++{
++    cursor_04 = scheduled_00.head->next;
++}
++
++// FUNCTION: BEACHLIFE 0x0042dc90
++ScreenModeCommandQueue::ScreenModeCommandQueue()
++{
++    screen_mode_commands = this;
++    head = NewWorldSentinel<ScreenModeCommandNode>();
++    try
++    {
++        pending_head_04 = NewWorldSentinel<ScreenModeCommandNode>();
++    }
++    catch (...)
++    {
++        ReturnPool(head, sizeof(ScreenModeCommandNode));
++        throw;
++    }
++}
+diff --git a/src/startup_world_day_statistics.cpp b/src/startup_world_day_statistics.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..60fa8565f2e97f735fa466b486769cd7b1a2fa25
+--- /dev/null
++++ b/src/startup_world_day_statistics.cpp
+@@ -0,0 +1,40 @@
++#include "window_activation.h"
++
++#include <cstring>
++
++static float AdvanceDayHistory(unsigned int* history, float value, unsigned int day)
++{
++    // The retail loop copies forwards, propagating the previous first entry.
++    for (unsigned int i = 1; i < 128; ++i)
++        history[i] = history[i - 1];
++    std::memcpy(history, &value, sizeof(value));
++    if (day == 0)
++        return value;
++    double sum = 0.0;
++    for (unsigned int i = 0; i < day && i < 128; ++i)
++    {
++        float entry;
++        std::memcpy(&entry, history + i, sizeof(entry));
++        sum += entry;
++    }
++    return static_cast<float>(sum / day);
++}
++
++// FUNCTION: BEACHLIFE 0x004413e0
++void WindowDeactivationState::UpdateDayStatistics()
++{
++    profit_7a0 = AdvanceDayHistory(words_7ac, income_770 - spent_78c, day_15c);
++    cost_7a4 = AdvanceDayHistory(words_bac, spent_78c, day_15c);
++    income_7a8 = AdvanceDayHistory(words_9ac, income_770, day_15c);
++    income_770 = 0.0f;
++    spent_78c = 0.0f;
++    building_spent_790 = 0.0f;
++    scenery_spent_794 = 0.0f;
++    income_774 = 0.0f;
++    income_778 = 0.0f;
++    cost_798 = 0.0f;
++    cost_79c = 0.0f;
++    income_77c = 0.0f;
++    income_780 = 0.0f;
++    income_784 = 0.0f;
++}
+diff --git a/src/startup_world_dispatch_placement.cpp b/src/startup_world_dispatch_placement.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b7ecf41a4a379a4978ceec4747bd322fad6cb131
+--- /dev/null
++++ b/src/startup_world_dispatch_placement.cpp
+@@ -0,0 +1,96 @@
++#include "window_activation.h"
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++
++// FUNCTION: BEACHLIFE 0x0043d830
++bool WindowDeactivationState::DispatchPlacement(ScreenModeCommand* command, const void* placement)
++{
++    bool paused = deactivation_requested != 0;
++    if (paused)
++        deactivation_requested = 0;
++    VariableEntity* entity;
++    switch (command->words[4])
++    {
++    case 1:
++        entity = PlaceEntity1(placement);
++        break;
++    case 2:
++        entity = PlaceEntity2(placement);
++        break;
++    case 3:
++        entity = PlaceEntity3(placement);
++        break;
++    case 4:
++        entity = PlaceEntity4(placement);
++        break;
++    case 5:
++        entity = PlaceEntity5(placement);
++        break;
++    case 6:
++        entity = PlaceEntity6(placement);
++        break;
++    case 7:
++        entity = PlaceEntity7(placement);
++        break;
++    case 8:
++        entity = PlaceEntity8(placement);
++        break;
++    case 9:
++        entity = PlaceEntity9(placement);
++        break;
++    case 10:
++        entity = PlaceEntity10(placement);
++        break;
++    case 11:
++        entity = PlaceEntity11(placement);
++        break;
++    case 12:
++        entity = PlaceEntity12(placement);
++        break;
++    case 13:
++        entity = PlaceEntity13(placement);
++        break;
++    case 14:
++        entity = PlaceEntity14(placement);
++        break;
++    case 15:
++        entity = PlaceEntity15(placement);
++        break;
++    case 16:
++        entity = PlaceEntity16(placement);
++        break;
++    case 17:
++        entity = PlaceEntity17(placement);
++        break;
++    case 18:
++        entity = PlaceEntity18(placement);
++        break;
++    case 19:
++    {
++        const ScreenEntityPlacement* data = static_cast<const ScreenEntityPlacement*>(placement);
++        entity = world_10->CreateEntity(data->name, 19);
++        entity->SetKind(19);
++        entity->SetMovementMode(0);
++        entity->SetPosition(data->position);
++        entity->SetHeading(data->heading);
++        break;
++    }
++    case 20:
++        entity = PlaceEntity20(placement);
++        break;
++    default:
++        return false;
++    }
++    if (paused)
++        deactivation_requested = 1;
++    if (!entity)
++        return false;
++    ScreenModeCommand response;
++    response.words[0] = -2;
++    response.words[1] = command->words[0];
++    response.words[2] = 1;
++    response.words[3] = 0;
++    response.words[4] = entity->id_28;
++    screen_mode_commands->QueueCommand(&response);
++    return true;
++}
+diff --git a/src/startup_world_entity_removal.cpp b/src/startup_world_entity_removal.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fab4839b14c4d48428301ec1f7d7411e03ea81fd
+--- /dev/null
++++ b/src/startup_world_entity_removal.cpp
+@@ -0,0 +1,42 @@
++#include "window_activation.h"
++#include "startup_variable_state.h"
++
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0043d420
++void WindowDeactivationState::PrepareEntityRemoval(VariableEntity* entity)
++{
++    screen_manager->CloseContextScreens(reinterpret_cast<ScreenRequestContext*>(entity));
++    if (entity->kind_2c == 3)
++    {
++        --guests_43c;
++        if (entity->state_3c == 0x29)
++        {
++            transport_24->RecordDeparture(entity);
++            if (entity->unhappy_departure_3d0)
++            {
++                ++unhappy_760[entity->guest_f4->word_1c4];
++                ++unhappy_768[entity->guest_f4->word_1c4];
++            }
++            ++departed_748[entity->guest_f4->word_1c4];
++            ++departed_758[entity->guest_f4->word_1c4];
++        }
++        VariableEntity** buildings = world_10->buildings_12120;
++        unsigned int count = world_10->buildings_04;
++        for (unsigned int i = 0; i < count; ++i)
++            buildings[i]->RemoveGuest(entity->id_28);
++    }
++    else if (entity->kind_2c == 2)
++        --word_444;
++    if (entity->kind_2c == 1)
++    {
++        if (std::strstr(entity->name_06, "Litter"))
++        {
++            --litter_440;
++            ticker_30->RemoveEntityMessages(entity->id_28);
++            return;
++        }
++        value_448 -= entity->scenery_f4->rating_304;
++    }
++    ticker_30->RemoveEntityMessages(entity->id_28);
++}
+diff --git a/src/startup_world_event_storage.cpp b/src/startup_world_event_storage.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..72178fde94ff30f7d5b3225ba0d7d2dd905627e0
+--- /dev/null
++++ b/src/startup_world_event_storage.cpp
+@@ -0,0 +1,90 @@
++#include "startup_world_subsystems.h"
++#include "pool_allocate.h"
++
++#include <cstring>
++#include <new>
++
++template <class T>
++static void InitializeEventDeque(WorldDequeStorage<T>& deque)
++{
++    deque.map_count = 8;
++    deque.map = static_cast<T**>(AllocatePoolBytes(8 * sizeof(T*)));
++    T** node = deque.map + 3;
++    try
++    {
++        *node = static_cast<T*>(32 * sizeof(T) > 128
++                                    ? ::operator new(32 * sizeof(T), std::nothrow)
++                                    : AllocatePoolBytes(32 * sizeof(T)));
++    }
++    catch (...)
++    {
++        WorldDequeStorage<T>::FreeSlots(deque.map, 8 * sizeof(T*));
++        deque.map = 0;
++        deque.map_count = 0;
++        throw;
++    }
++    deque.begin = { *node, *node, *node + 32, node };
++    deque.end = deque.begin;
++}
++
++// FUNCTION: BEACHLIFE 0x004250d0
++WorldSubsystem44::WorldSubsystem44()
++{
++    world_subsystem_44 = this;
++    InitializeEventDeque(indices_00);
++    try
++    {
++        InitializeEventDeque(records_28);
++    }
++    catch (...)
++    {
++        indices_00.ReleaseStorage();
++        throw;
++    }
++    word_50 = 0;
++    word_58 = 0;
++    count_54 = 0;
++    word_5c = 0;
++    offset_60 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00427300
++void WorldSubsystem44::PopIndexBlock()
++{
++    WorldDequeStorage<int>::FreeSlots(indices_00.end.first, 32 * sizeof(int));
++    --indices_00.end.node;
++    indices_00.end.first = *indices_00.end.node;
++    indices_00.end.last = indices_00.end.first + 32;
++    indices_00.end.current = indices_00.end.last - 1;
++}
++
++// FUNCTION: BEACHLIFE 0x0042c570
++void WorldSubsystem44::ReserveIndexMap(unsigned int count, unsigned char front)
++{
++    WorldDequeStorage<int>& deque = indices_00;
++    unsigned int old_nodes = static_cast<unsigned int>(deque.end.node - deque.begin.node) + 1;
++    unsigned int new_nodes = old_nodes + count;
++    int** begin;
++    if (deque.map_count > new_nodes * 2)
++    {
++        begin = deque.map + (deque.map_count - new_nodes) / 2 + (front ? count : 0);
++        std::memmove(begin, deque.begin.node, old_nodes * sizeof(int*));
++    }
++    else
++    {
++        unsigned int size = deque.map_count + (deque.map_count < count ? count : deque.map_count) + 2;
++        int** map = static_cast<int**>(size == 0 ? 0 : size * sizeof(int*) > 128 ? ::operator new(size * sizeof(int*), std::nothrow)
++                                                                                 : AllocatePoolBytes(size * sizeof(int*)));
++        begin = map + (size - new_nodes) / 2 + (front ? count : 0);
++        std::memmove(begin, deque.begin.node, old_nodes * sizeof(int*));
++        WorldDequeStorage<int>::FreeSlots(deque.map, deque.map_count * sizeof(int*));
++        deque.map = map;
++        deque.map_count = size;
++    }
++    deque.begin.node = begin;
++    deque.begin.first = *begin;
++    deque.begin.last = deque.begin.first + 32;
++    deque.end.node = begin + old_nodes - 1;
++    deque.end.first = *deque.end.node;
++    deque.end.last = deque.end.first + 32;
++}
+diff --git a/src/startup_world_power_overload.cpp b/src/startup_world_power_overload.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..87c89d422aeecfbf6f81e570da829f898bf2a3b1
+--- /dev/null
++++ b/src/startup_world_power_overload.cpp
+@@ -0,0 +1,23 @@
++#include "window_activation.h"
++#include "startup_variable_state.h"
++
++#include <cmath>
++#include <cstdlib>
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0043f1d0
++void WindowDeactivationState::ApplyPowerOverload(VariableEntity** buildings, unsigned int count)
++{
++    if (!((power_3ac > power_output_3a8 && !(power_output_3a8 >= power_capacity_3a4))
++            || !(std::fabs(power_capacity_3a4) >= 1.1920928955078125e-7)))
++        return;
++    VariableEntity* building = buildings[static_cast<unsigned int>(std::rand()) % count];
++    if (building->building_60->power_cf4 <= 0 || building->byte_364
++        || building->FlagAt00460310() || building->FlagAt00460340())
++        return;
++    const char* name = building->building_60->name_04;
++    if (std::strcmp(name, "HANDYMAN") != 0 && std::strcmp(name, "BUILDERYARD") != 0
++        && std::strcmp(name, "HOTEL") != 0 && std::strcmp(name, "COMPLAINTHUT") != 0
++        && std::strcmp(name, "ACCOMBLK") != 0)
++        building->OverloadPower();
++}
+diff --git a/src/startup_world_repairs.h b/src/startup_world_repairs.h
+index 06a291da245d617829fe819d499e9ef4ba5aff78..3437a965ffb09ba8c76d44b6c6269ed9fb6ac486 100644
+--- a/src/startup_world_repairs.h
++++ b/src/startup_world_repairs.h
+@@ -53,6 +53,7 @@ struct WorldRepairManager
+ 
+     ~WorldRepairManager() noexcept(false); // 0x00436010.
+     void LoadState(GameFileReader* file);  // 0x004375a0.
++    void SaveState(GameFileReader* file);  // 0x00437360.
+     void Clear();                          // 0x00437230.
+     void RequestRepair(unsigned int id);   // 0x00436230.
+ };
+diff --git a/src/startup_world_route_clear.cpp b/src/startup_world_route_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..28f4b763ffcf1066b3c2f2cd1b42d114b6373dcb
+--- /dev/null
++++ b/src/startup_world_route_clear.cpp
+@@ -0,0 +1,34 @@
++#include "startup_world_subsystems.h"
++
++#include <cstdlib>
++
++// FUNCTION: BEACHLIFE 0x00430e80
++void WorldRouteFinder::Clear()
++{
++    if (data_8c)
++    {
++        AllocationNode* node = data_8c->next;
++        while (node)
++        {
++            AllocationNode* old = node;
++            node = node->next;
++            std::free(old);
++        }
++    }
++    cell_34.closed_30 = 0;
++    cell_34.open_31 = 0;
++    cell_34.visited_generation_08 = 0;
++    cell_34.linked_generation_0c = 0;
++    cell_34.score_34 = 0;
++    cell_34.distance_38 = 0;
++    cell_34.cost_3c = 0;
++    cell_34.parent_00 = 0;
++    cell_34.next_04 = 0;
++    for (unsigned int i = 0; i < 8; ++i)
++        cell_34.neighbours_10[i] = 0;
++    cell_34.linked_generation_0c = generation_08;
++    cell_34.next_04 = 0;
++    cell_34.x_40 = -1;
++    cell_34.y_44 = -1;
++    data_88 = 0;
++}
+diff --git a/src/startup_world_save_state.cpp b/src/startup_world_save_state.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a5efd6329e1423202c141512b3e81c336f714190
+--- /dev/null
++++ b/src/startup_world_save_state.cpp
+@@ -0,0 +1,109 @@
++#include "window_activation.h"
++#include "startup_game_file.h"
++#include "startup_variable_state.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_world_repairs.h"
++
++#include <cstring>
++
++// GLOBAL: BEACHLIFE 0x00573cc0
++const char* world_state_class_name = "Class name : World";
++
++static void WriteWorldFloat(GameFileReader* file, const char* label, float value)
++{
++    unsigned int bits;
++    std::memcpy(&bits, &value, sizeof(bits));
++    file->Unknown30(label, bits);
++}
++
++// FUNCTION: BEACHLIFE 0x0043f660
++void WindowDeactivationState::SaveState(GameFileReader* file)
++{
++    file->Unknown04();
++    file->Unknown3c(world_state_class_name);
++    file->Unknown24("sizeof", 0xde4);
++    file->Unknown38("m_MapName", path_54);
++    WriteWorldFloat(file, "m_fGameStartTime", value_154);
++    WriteWorldFloat(file, "m_fGameTime", clock_158);
++    file->Unknown28("m_GameDay", day_15c);
++    WriteWorldFloat(file, "m_GameDayTime", render_value_160);
++    WriteWorldFloat(file, "m_LastGameDayTime", value_164);
++    WriteWorldFloat(file, "m_fLastGameDayTime", value_168);
++    WriteWorldFloat(file, "m_fGameDeltaTime", value_16c);
++    WriteWorldFloat(file, "m_fGameSpeed", speed_factor_170);
++    file->Unknown28("m_GameSpeedLevel", speed_index_174);
++    WriteWorldFloat(file, "m_fNextStaffFeedbackTime", value_178);
++    file->Unknown34("m_bStartup", flag_17c);
++    file->Unknown28("m_NumValidBuildings", buildable_count_180);
++    file->Unknown20("m_ValidBuildingIDs", buildable_indices_184, 128);
++    file->Unknown34("m_bBreakDownsAllowed", flag_384);
++    file->Unknown34("m_bAllowLitter", flag_385);
++    file->Unknown20("m_BoatList", words_388, 5);
++    file->Unknown28("m_NumBoats", word_39c);
++    WriteWorldFloat(file, "m_fPowerUse", power_use_3a0);
++    WriteWorldFloat(file, "m_fMaxPower", power_capacity_3a4);
++    WriteWorldFloat(file, "m_fCurrentPower", power_output_3a8);
++    WriteWorldFloat(file, "m_fPowerDemand", power_3ac);
++    file->Unknown28("m_ScriptFlags", word_3b4);
++    file->Unknown20("m_ScriptVars", words_3b8, 32);
++    file->Unknown34("m_bPaused", deactivation_requested);
++    file->Unknown34("m_bForcedPaused", pause_requested_43a);
++    file->Unknown28("m_NumGuests", guests_43c);
++    file->Unknown28("m_NumLitter", litter_440);
++    file->Unknown28("m_NumBuildings", word_444);
++    WriteWorldFloat(file, "m_fScenicVal", value_448);
++    WriteWorldFloat(file, "m_fWaterContam", value_6f4);
++    for (unsigned int i = 0; i < 4; ++i)
++        file->Unknown24("m_iObjectiveStatus", objective_state_72c[i]);
++    file->Unknown20("m_TotalGuestArrive", arrived_740, 2);
++    file->Unknown20("m_TotalGuestDepart", departed_748, 2);
++    file->Unknown20("m_TodayGuestArrive", arrived_750, 2);
++    file->Unknown20("m_TodayGuestDepart", departed_758, 2);
++    file->Unknown20("m_TotalGuestUnhappyDepart", unhappy_760, 2);
++    file->Unknown20("m_TodayGuestUnhappyDepart", unhappy_768, 2);
++    WriteWorldFloat(file, "m_fIncomeToday", income_770);
++    WriteWorldFloat(file, "m_fDemolishIncomeToday", income_774);
++    WriteWorldFloat(file, "m_fFineIncomeToday", income_778);
++    WriteWorldFloat(file, "m_fAccomIncomeToday", income_77c);
++    WriteWorldFloat(file, "m_fAttractIncomeToday", income_780);
++    WriteWorldFloat(file, "m_fRetailIncomeToday", income_784);
++    WriteWorldFloat(file, "m_fTotalFines", income_788);
++    WriteWorldFloat(file, "m_fCostsToday", spent_78c);
++    WriteWorldFloat(file, "m_fConstructCostToday", building_spent_790);
++    WriteWorldFloat(file, "m_fSceneryCostToday", scenery_spent_794);
++    WriteWorldFloat(file, "m_fWagesCostToday", cost_798);
++    WriteWorldFloat(file, "m_fStockCostToday", cost_79c);
++    WriteWorldFloat(file, "m_fAverageProfit", profit_7a0);
++    WriteWorldFloat(file, "m_fAverageCost", cost_7a4);
++    WriteWorldFloat(file, "m_fAverageIncome", income_7a8);
++    file->Unknown10("m_fProfitRecord", words_7ac, 128);
++    file->Unknown10("m_fIncomeRecord", words_9ac, 128);
++    file->Unknown10("m_fCostRecord", words_bac, 128);
++    file->Unknown28("m_BuildingsConstructed", buildings_bought_dac);
++    file->Unknown28("m_DiffBuildingsConstructed", different_db0);
++    file->Unknown28("m_BarsConstructed", bars_db4);
++    file->Unknown28("m_BuildingsLeftToBuild", remaining_db8);
++    WriteWorldFloat(file, "m_fAverageTotty", totty_rating_dbc);
++    WriteWorldFloat(file, "m_fAverageBeauty", beauty_rating_dc0);
++    WriteWorldFloat(file, "m_fAverageSafety", safety_rating_dc4);
++    file->Unknown28("m_PartyCount", party_dc8);
++    file->Unknown28("m_ShagCount", shag_dcc);
++    file->Unknown28("m_PissedCount", pissed_dd0);
++    file->Unknown28("m_GuestsDrowned", drowned_dd4);
++    file->Unknown28("m_GuestsEaten", eaten_dd8);
++    file->Unknown28("m_UnbuiltAfterStartup", total_ddc);
++    file->Unknown28("Worldscript state", subsystem_20->index_35c);
++    terrain_14->SaveState(file);
++    subsystem_18->SaveState(file);
++    world_10->SaveState(file);
++    economy_1c->SaveState(file);
++    transport_24->SaveState(file);
++    subsystem_44->SaveState(file);
++    repairs_28->SaveState(file);
++    ticker_30->SaveState(file);
++    commands_0c->SaveState(file);
++    map_34->SaveState(file);
++    cleaning_2c->SaveState(file);
++    building_status_48->SaveState(file);
++    weather_40->SaveState(file);
++}
+diff --git a/src/startup_world_script_actions.cpp b/src/startup_world_script_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8c27c9fd260ce0ad66890321f314bafe1519576c
+--- /dev/null
++++ b/src/startup_world_script_actions.cpp
+@@ -0,0 +1,349 @@
++#include "startup_world_script_actions.h"
++#include "startup_game_file.h"
++#include "startup_variable_state.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_world_cursor_names.h"
++#include "window_activation.h"
++
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++static float ScriptFloat(std::uintptr_t data)
++{
++    unsigned int bits = static_cast<unsigned int>(data);
++    float value;
++    std::memcpy(&value, &bits, sizeof(value));
++    return value;
++}
++
++static unsigned int ScriptFloatBits(float value)
++{
++    unsigned int bits;
++    std::memcpy(&bits, &value, sizeof(bits));
++    return bits;
++}
++
++static ScreenWorldPosition RandomScriptPosition(ScreenPoint* tile)
++{
++    for (;;)
++    {
++        ScreenWorldPosition position;
++        position.x = static_cast<float>(std::rand() * static_cast<double>(1.0f / 32767.0f) * 3998.0f + 1.0f);
++        position.y = static_cast<float>(std::rand() * static_cast<double>(1.0f / 32767.0f) * 7998.0f + 1.0f);
++        position.z = 0.0f;
++        *tile = overlay_map->WorldToTile(&position);
++        ScreenTerrainGrid* terrain = screen_terrain_grid;
++        unsigned int index = (static_cast<unsigned int>(tile->y) % terrain->height_08) * terrain->width_04
++                           + static_cast<unsigned int>(tile->x) % terrain->width_04;
++        unsigned int flags = terrain->cells_0c[index].flags_48;
++        if ((flags & 0x10000002) != 0 && (flags & 0x10) == 0)
++            return position;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004db4b0
++void WorldSubsystem20::Action::Update()
++{
++    switch (kind_04)
++    {
++    case 0:
++    {
++        unsigned int speed = *static_cast<unsigned int*>(data_08);
++        if (speed != 7)
++            window_deactivation_state->SetGameSpeed(speed);
++        break;
++    }
++    case 1:
++    {
++        WorldActionCommandData* data = static_cast<WorldActionCommandData*>(data_08);
++        ScreenModeCommand command = MakeCommand(data);
++        if (data->maximum_38 < 0.0f || data->maximum_38 > 0.0f)
++        {
++            float delay = static_cast<float>(std::rand() * static_cast<double>(1.0f / 32767.0f)
++                                                 * (static_cast<double>(data->maximum_38) - data->minimum_34)
++                                             + data->minimum_34);
++            screen_mode_commands->QueueDelayed(&command, delay);
++        }
++        else if (data->minimum_34 < 0.0f || data->minimum_34 > 0.0f)
++            screen_mode_commands->QueueDelayed(&command, data->minimum_34);
++        else
++            screen_mode_commands->QueueCommand(&command);
++        break;
++    }
++    case 2:
++    {
++        if (window_deactivation_state->loading_438)
++            break;
++        WorldActionStateData* data = static_cast<WorldActionStateData*>(data_08);
++        WorldSubsystem20* controller = window_deactivation_state->subsystem_20;
++        unsigned int index = -1;
++        unsigned int i = 0;
++        for (; i < controller->count_32c; ++i)
++        {
++            if (std::strcmp(controller->names_330[i], data->name_00) == 0)
++            {
++                index = i;
++                break;
++            }
++        }
++        // Retail checks the search cursor, leaving an unmatched index at -1.
++        if (i == static_cast<unsigned int>(-1))
++            StartupFatal("Invalid State in WorldScript");
++        ScreenModeCommand command;
++        command.words[0] = -2;
++        command.words[1] = -2;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = index;
++        if (data->delay_04 < 0.0f || data->delay_04 > 0.0f)
++            screen_mode_commands->QueueDelayed(&command, data->delay_04);
++        else
++            screen_mode_commands->QueueCommand(&command);
++        break;
++    }
++    case 4:
++    {
++        WorldActionBranchData* data = static_cast<WorldActionBranchData*>(data_08);
++        Action* action = Evaluate(data->left_08.kind, data->left_08.data, data->right_10.kind, data->right_10.data, data->comparison_18)
++                           ? data->first_00
++                           : data->second_04;
++        while (action)
++        {
++            action->Update();
++            action = action->next;
++        }
++        break;
++    }
++    case 6:
++    case 7:
++    case 8:
++    case 9:
++    {
++        WorldActionArithmeticData* data = static_cast<WorldActionArithmeticData*>(data_08);
++        WorldScriptValue left = window_deactivation_state->ReadScriptValue(data->left_00.kind, data->left_00.data);
++        WorldScriptValue right = window_deactivation_state->ReadScriptValue(data->right_08.kind, data->right_08.data);
++        unsigned int type;
++        unsigned int result;
++        if (left.kind == 2)
++        {
++            unsigned int a = static_cast<unsigned int>(left.data);
++            unsigned int b = right.kind == 3 ? static_cast<unsigned int>(static_cast<long long>(ScriptFloat(right.data)))
++                                             : static_cast<unsigned int>(right.data);
++            if (kind_04 == 6)
++                result = a + b;
++            else if (kind_04 == 7)
++                result = a - b;
++            else if (kind_04 == 8)
++                result = a / b;
++            else
++                result = a * b;
++            type = 2;
++        }
++        else
++        {
++            double a = ScriptFloat(left.data);
++            double b = right.kind == 3 ? static_cast<double>(ScriptFloat(right.data))
++                                       : static_cast<double>(static_cast<unsigned int>(right.data));
++            float value;
++            if (kind_04 == 6)
++                value = static_cast<float>(a + b);
++            else if (kind_04 == 7)
++                value = static_cast<float>(a - b);
++            else if (kind_04 == 8)
++                value = static_cast<float>(a / b);
++            else
++                value = static_cast<float>(a * b);
++            type = 3;
++            result = ScriptFloatBits(value);
++        }
++        if (kind_04 == 6)
++            data = static_cast<WorldActionArithmeticData*>(data_08);
++        window_deactivation_state->WriteScriptValue(data->left_00.kind, data->left_00.data, type, result);
++        break;
++    }
++    case 10:
++    {
++        WorldActionArithmeticData* data = static_cast<WorldActionArithmeticData*>(data_08);
++        WorldScriptValue value = window_deactivation_state->ReadScriptValue(data->right_08.kind, data->right_08.data);
++        window_deactivation_state->WriteScriptValue(data->left_00.kind, data->left_00.data, value.kind, value.data);
++        break;
++    }
++    case 11:
++        window_audio_state->PlaySoundAtLevel(*static_cast<const char**>(data_08), 1.0f, 1, 0.0f);
++        break;
++    case 12:
++    {
++        if (window_deactivation_state->loading_438)
++            break;
++        WorldActionCreateData* data = static_cast<WorldActionCreateData*>(data_08);
++        ScreenModeCommand command;
++        command.words[0] = -2;
++        command.words[1] = -2;
++        command.words[2] = 0;
++        command.words[3] = 0;
++        command.words[4] = data->kind_00;
++        if (data->kind_00 == 3)
++        {
++            ScreenEntityPlacement placement;
++            for (int i = 0; i < data->count_18; ++i)
++            {
++                std::strcpy(placement.name, data->name_04);
++                if (data->x_0c < 0 && data->y_10 < 0)
++                {
++                    ScreenPoint tile;
++                    ScreenWorldPosition position = RandomScriptPosition(&tile);
++                    placement.position.x = position.x;
++                    placement.position.y = position.y;
++                }
++                else
++                {
++                    placement.position.x = static_cast<float>(data->x_0c);
++                    placement.position.y = static_cast<float>(data->y_10);
++                }
++                screen_mode_commands->QueuePlacement(&command, &placement);
++            }
++        }
++        else if (data->kind_00 == 2)
++        {
++            ScreenBuildingPlacement placement;
++            std::strcpy(placement.name, data->name_04);
++            placement.tile = { data->x_0c, data->y_10 };
++            placement.rotation = data->rotation_14;
++            for (unsigned int i = 0; i < 5; ++i)
++                placement.values_4c[i] = data->values_1c[i];
++            placement.word_60 = data->word_30;
++            placement.value_64 = data->value_34;
++            placement.word_68 = data->word_38;
++            placement.byte_6c = data->flag_3c;
++            screen_mode_commands->QueuePlacement(&command, &placement);
++        }
++        else if (data->kind_00 == 1)
++        {
++            ScreenSceneryPlacement placement;
++            placement.word_4c = -2;
++            std::strcpy(placement.name, data->name_04);
++            std::strcpy(placement.model, data->model_08);
++            placement.enabled = 1;
++            placement.rotation = static_cast<unsigned char>(data->rotation_14);
++            for (int i = 0; i < data->count_18; ++i)
++            {
++                if (data->x_0c < 0 && data->y_10 < 0)
++                    RandomScriptPosition(&placement.tile);
++                else
++                    placement.tile = { data->x_0c, data->y_10 };
++                screen_mode_commands->QueuePlacement(&command, &placement);
++            }
++        }
++        else
++            StartupFatal("WorldCommand::PerformCommand - Invalid Creation Message");
++        break;
++    }
++    case 13:
++    case 14:
++    {
++        if (window_deactivation_state->loading_438)
++            break;
++        WorldActionStripData* data = static_cast<WorldActionStripData*>(data_08);
++        ScreenPoint point = data->point_00;
++        for (int i = 0; i < data->count_0c; ++i)
++        {
++            ScreenTerrainGrid* terrain = screen_terrain_grid;
++            unsigned int index = (static_cast<unsigned int>(point.y) % terrain->height_08) * terrain->width_04
++                               + static_cast<unsigned int>(point.x) % terrain->width_04;
++            terrain->cells_0c[index].flags_48 |= kind_04 == 13 ? 0x10000080 : 0x7000;
++            world_cursor_names->UpdateTile(point.x, point.y, 0);
++            screen_terrain_grid->Step(point.x, point.y, data->direction_08, &point);
++        }
++        break;
++    }
++    case 15:
++    {
++        WorldActionNamedData* data = static_cast<WorldActionNamedData*>(data_08);
++        world_subsystem_3c->AddScript(data->name_00, data->text_04);
++        break;
++    }
++    case 16:
++    {
++        WorldActionRouteData* data = static_cast<WorldActionRouteData*>(data_08);
++        ScreenTerrainRouteNode* route = new (std::nothrow) ScreenTerrainRouteNode(data->points_08, data->count_04, data->words_0c[0], data->words_0c[1], data->words_0c[2], data->words_0c[3], data->words_0c[4], data->words_0c[5], data->words_0c[6], data->words_0c[7], 10);
++        if (data->kind_00 == 1)
++            screen_terrain_grid->AppendFirstRoute(route);
++        else
++            screen_terrain_grid->AppendSecondRoute(route);
++        break;
++    }
++    case 17:
++    {
++        WorldActionPositionData* data = static_cast<WorldActionPositionData*>(data_08);
++        CurrentScreenTerrain()->AddArrivalRoutePoint(data->position_00, data->word_0c);
++        break;
++    }
++    case 18:
++    case 19:
++    {
++        WorldActionEndpointData* data = static_cast<WorldActionEndpointData*>(data_08);
++        if (kind_04 == 18)
++            CurrentScreenTerrain()->SetArrivalPosition(data->position_00, data->heading_14, data->tile_0c);
++        else
++            CurrentScreenTerrain()->SetDeparturePosition(data->position_00, data->heading_14, data->tile_0c);
++        break;
++    }
++    case 20:
++    {
++        WorldActionTransportData* data = static_cast<WorldActionTransportData*>(data_08);
++        WorldTransportRecord record;
++        record.count_5a4 = data->count_5b0;
++        record.kind_00 = data->kind_0c;
++        record.repeat_5b0 = data->repeat_08;
++        record.time_5a8 = data->time_00;
++        record.day_5ac = data->day_04;
++        for (unsigned int i = 0; i < 20; ++i)
++        {
++            std::strcpy(record.names_54[i], data->names_10[i]);
++            record.counts_554[i] = data->counts_510[i];
++            record.random_04[i] = data->random_560[i];
++        }
++        window_deactivation_state->transport_24->Schedule(&record);
++        break;
++    }
++    case 21:
++    {
++        WorldActionEntryData* data = static_cast<WorldActionEntryData*>(data_08);
++        window_deactivation_state->AddScriptEntry(data->kind_08, data->first_00, data->second_04);
++        break;
++    }
++    case 22:
++    {
++        WorldEventRecord* data = static_cast<WorldEventRecord*>(data_08);
++        WorldEventRecord record = *data;
++        if (data->data_34)
++        {
++            const char* text = static_cast<const char*>(data->data_34);
++            record.data_34 = ::operator new(std::strlen(text) + 1, std::nothrow);
++            std::strcpy(static_cast<char*>(record.data_34), text);
++        }
++        world_subsystem_44->AddEvent(record);
++        break;
++    }
++    case 23:
++        variable_weather->AddEvent(*static_cast<WorldWeatherEvent*>(data_08));
++        break;
++    case 24:
++    {
++        WorldActionPositionData* data = static_cast<WorldActionPositionData*>(data_08);
++        screen_manager->word_98 = -1;
++        overlay_map->MoveView(data->position_00, data->duration_0c);
++        break;
++    }
++    case 25:
++    {
++        WorldActionNamedData* data = static_cast<WorldActionNamedData*>(data_08);
++        screen_manager->RequestNamedScreen(data->name_00, data->text_04, 0, 1);
++        break;
++    }
++    case 26:
++        StartupFatal("WorldCommand::PerformCommands - An Undefiened command has been called");
++        break;
++    }
++}
+diff --git a/src/startup_world_script_actions.h b/src/startup_world_script_actions.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..04e78260d78f5a2e66503523c9b5084585a829e0
+--- /dev/null
++++ b/src/startup_world_script_actions.h
+@@ -0,0 +1,110 @@
++#ifndef STARTUP_WORLD_SCRIPT_ACTIONS_H
++#define STARTUP_WORLD_SCRIPT_ACTIONS_H
++
++#include "startup_world_script_values.h"
++#include "startup_world_subsystems.h"
++
++struct WorldActionCommandData
++{
++    unsigned int word_00;
++    WorldScriptOperand operands_04[3];
++    unsigned char unknown_1c[0x18];
++    float minimum_34;
++    float maximum_38;
++};
++
++struct WorldActionBranchData
++{
++    WorldSubsystem20::Action* first_00;
++    WorldSubsystem20::Action* second_04;
++    WorldScriptOperand left_08;
++    WorldScriptOperand right_10;
++    unsigned int comparison_18;
++};
++
++struct WorldActionArithmeticData
++{
++    WorldScriptOperand left_00;
++    WorldScriptOperand right_08;
++};
++
++struct WorldActionStateData
++{
++    const char* name_00;
++    float delay_04;
++};
++
++struct WorldActionCreateData
++{
++    unsigned int kind_00;
++    const char* name_04;
++    const char* model_08;
++    int x_0c;
++    int y_10;
++    unsigned int rotation_14;
++    int count_18;
++    float values_1c[5];
++    int word_30;
++    float value_34;
++    int word_38;
++    unsigned char flag_3c;
++};
++
++struct WorldActionStripData
++{
++    ScreenPoint point_00;
++    int direction_08;
++    int count_0c;
++};
++
++struct WorldActionNamedData
++{
++    const char* name_00;
++    const char* text_04;
++};
++
++struct WorldActionRouteData
++{
++    unsigned int kind_00;
++    unsigned int count_04;
++    const ScreenPoint* points_08;
++    unsigned int words_0c[8];
++};
++
++struct WorldActionPositionData
++{
++    ScreenWorldPosition position_00;
++    union
++    {
++        unsigned int word_0c;
++        float duration_0c;
++    };
++};
++
++struct WorldActionEndpointData
++{
++    ScreenWorldPosition position_00;
++    ScreenPoint tile_0c;
++    int heading_14;
++};
++
++struct WorldActionTransportData
++{
++    float time_00;
++    unsigned int day_04;
++    int repeat_08;
++    int kind_0c;
++    char names_10[20][64];
++    unsigned int counts_510[20];
++    unsigned int random_560[20];
++    int count_5b0;
++};
++
++struct WorldActionEntryData
++{
++    std::uintptr_t first_00;
++    std::uintptr_t second_04;
++    unsigned int kind_08;
++};
++
++#endif
+diff --git a/src/startup_world_script_controller.cpp b/src/startup_world_script_controller.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d43fef5e535cc7bce8aa83691cff5137d767d6df
+--- /dev/null
++++ b/src/startup_world_script_controller.cpp
+@@ -0,0 +1,116 @@
++#include "startup_world_subsystems.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_game_file.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004dcb60
++bool WorldSubsystem20::DispatchCommand(ScreenModeCommand command)
++{
++    Group& group = groups_0c[index_35c];
++    for (unsigned int i = 0; i < group.count_40; ++i)
++        if (group.commands_04[i].id_00 == static_cast<unsigned int>(command.words[2]))
++        {
++            for (Action* action = group.commands_04[i].actions_04; action; action = action->next)
++                action->Update();
++            return true;
++        }
++    return false;
++}
++
++static int FindStartupGroup(WorldSubsystem20* controller)
++{
++    int selected = -1;
++    unsigned int i = 0;
++    if (controller->count_32c)
++    {
++        for (; i < controller->count_32c; ++i)
++            if (strcmp(controller->names_330[i], "STATE_WORLD_STARTUP") == 0)
++            {
++                selected = i;
++                break;
++            }
++        // Retail tests the search cursor, rather than the selected index.
++        if (i == 0xffffffffu)
++            StartupFatal("Invalid State in WorldScript");
++    }
++    return selected;
++}
++
++// FUNCTION: BEACHLIFE 0x004dcbc0
++void WorldSubsystem20::PrepareLoad()
++{
++    int index = FindStartupGroup(this);
++    index_35c = index;
++    for (Action* action = groups_0c[index].start_44; action; action = action->next)
++        action->Update();
++}
++
++// FUNCTION: BEACHLIFE 0x004dcc70
++void WorldSubsystem20::Start(float progress)
++{
++    int index = FindStartupGroup(this);
++    index_35c = index;
++    Action* action = groups_0c[index].start_44;
++    if (action)
++    {
++        int count = 0;
++        for (Action* next = action; next; next = next->next)
++            ++count;
++        int completed = 0;
++        while (action)
++        {
++            if (completed % 64 == 0)
++                overlay_map->SetViewScale(static_cast<double>(completed) / count * progress + (1.0 - progress));
++            action->Update();
++            action = action->next;
++            ++completed;
++        }
++        overlay_map->SetViewScale(1.0f);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004dcd90
++void WorldSubsystem20::ResetCommandState()
++{
++    for (Action* action = groups_0c[index_35c].reset_48; action; action = action->next)
++        action->Update();
++}
++
++// FUNCTION: BEACHLIFE 0x004dcdc0
++void WorldSubsystem20::SelectCommandState(unsigned int index)
++{
++    index_35c = index;
++    for (Action* action = groups_0c[index].start_44; action; action = action->next)
++        action->Update();
++}
++
++// FUNCTION: BEACHLIFE 0x004daf60
++WorldSubsystem20::Group::~Group() noexcept(false)
++{
++    while (start_44)
++    {
++        Action* action = start_44;
++        start_44 = action->next;
++        delete action;
++    }
++    while (reset_48)
++    {
++        Action* action = reset_48;
++        reset_48 = action->next;
++        delete action;
++    }
++    while (actions_4c)
++    {
++        Action* action = actions_4c;
++        actions_4c = action->next;
++        delete action;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004d5280
++WorldSubsystemScript::Rule::~Rule() noexcept(false)
++{
++    delete first_170;
++    delete second_174;
++    delete third_178;
++}
+diff --git a/src/startup_world_script_values.h b/src/startup_world_script_values.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..2e089ee7be77d89d4e27c08cadb38fc4de30619c
+--- /dev/null
++++ b/src/startup_world_script_values.h
+@@ -0,0 +1,20 @@
++#ifndef STARTUP_WORLD_SCRIPT_VALUES_H
++#define STARTUP_WORLD_SCRIPT_VALUES_H
++
++#include <cstdint>
++
++// Script operands hold either an immediate word or a pointer to typed data.
++// Native pointers retain their width; scalar arithmetic still uses 32 bits.
++struct WorldScriptOperand
++{
++    unsigned int kind;
++    std::uintptr_t data;
++};
++
++struct WorldScriptValue
++{
++    unsigned int kind;
++    std::uintptr_t data;
++};
++
++#endif
+diff --git a/src/startup_world_subsystem_lifetime.cpp b/src/startup_world_subsystem_lifetime.cpp
+index 44013883c1bb06073ac04c01de54d776cd12b3a4..76135a91851a4334148c9f3a5afc7367de4f3684 100644
+--- a/src/startup_world_subsystem_lifetime.cpp
++++ b/src/startup_world_subsystem_lifetime.cpp
+@@ -47,3 +47,21 @@ WorldSubsystem4c::~WorldSubsystem4c() noexcept(false)
+     }
+     world_subsystem_4c = 0;
+ }
++
++// FUNCTION: BEACHLIFE 0x00424690
++WorldSubsystem4c::WorldSubsystem4c()
++{
++    world_subsystem_4c = this;
++    word_00 = 0;
++    for (int i = 0; i < 26; ++i)
++    {
++        data_04[i] = 0;
++        messages_d4[i] = 0;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00424700
++unsigned int* WorldSubsystem4c::MessageCounts()
++{
++    return messages_d4;
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 837fad1222891e6e7b9033b221b220ac8d6f4d51..80605f99069b96a7bcedbb2dc55b3dd4c8f29adc 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -4,16 +4,25 @@
+ #include "startup_list_types.h"
+ #include "startup_world_deque.h"
+ #include "startup_screen_mode_world.h"
++#include "startup_world_script_values.h"
+ 
+ struct GameFileReader;
+ struct ScreenModeCommand;
+ struct ScreenTerrainGrid;
++struct WorldActionCommandData;
+ struct WorldRouteFinder
+ {
+-    unsigned char unknown_00[0x34];
++    struct AllocationNode
++    {
++        void* data;
++        AllocationNode* next;
++    };
++    unsigned char unknown_00[8];
++    unsigned int generation_08;
++    unsigned char unknown_0c[0x28];
+     ScreenTerrainCell cell_34;
+     void* data_88;
+-    void* data_8c;
++    AllocationNode* data_8c;
+     void Clear();                        // 0x00430e80.
+     ~WorldRouteFinder() noexcept(false); // 0x00430980.
+ };
+@@ -54,6 +63,7 @@ struct WorldSubsystem18
+     WorldRouteFinder* route_finder_00;
+     ~WorldSubsystem18() noexcept(false);  // 0x00431930.
+     void LoadState(GameFileReader* file); // 0x00431f50.
++    void SaveState(GameFileReader* file); // 0x00431e50.
+ };
+ struct WorldSubsystem20
+ {
+@@ -62,11 +72,28 @@ struct WorldSubsystem20
+     struct Action
+     {
+         Action* next;
+-        void Update(); // 0x004db4b0.
++        unsigned int kind_04;
++        void* data_08;
++        ~Action() noexcept(false);                                         // 0x004db250.
++        void Update();                                                     // 0x004db4b0.
++        ScreenModeCommand MakeCommand(const WorldActionCommandData* data); // 0x004dc9a0.
++        bool Evaluate(unsigned int left_kind, std::uintptr_t left_data, unsigned int right_kind,
++            std::uintptr_t right_data, unsigned int comparison); // 0x004dc500.
+     };
+     struct Group
+     {
+-        unsigned char unknown_00[0x4c];
++        struct Command
++        {
++            unsigned int id_00;
++            Action* actions_04;
++            Action* actions_08;
++            ~Command() noexcept(false); // 0x004db1f0.
++        };
++        unsigned int word_00;
++        Command commands_04[5];
++        unsigned int count_40;
++        Action* start_44;
++        Action* reset_48;
+         Action* actions_4c;
+         ~Group() noexcept(false); // 0x004daf60.
+     };
+@@ -79,7 +106,7 @@ struct WorldSubsystem20
+     ~WorldSubsystem20() noexcept(false);             // 0x004dcae0.
+     void Update();                                   // 0x004dcb20.
+     void SetIndex(unsigned int index);               // 0x004dcb50.
+-    void DispatchCommand(ScreenModeCommand command); // 0x004dcb60.
++    bool DispatchCommand(ScreenModeCommand command); // 0x004dcb60.
+     void ResetCommandState();                        // 0x004dcd90.
+     void SelectCommandState(unsigned int index);     // 0x004dcdc0.
+ };
+@@ -93,13 +120,30 @@ struct WorldCleaningManager
+     int word_0c;
+     ~WorldCleaningManager() noexcept(false); // 0x0041f9b0.
+     void LoadState(GameFileReader* file);    // 0x004207f0.
++    void SaveState(GameFileReader* file);    // 0x00420680.
+     void RequestCleaning(unsigned int id);   // 0x0041fb90.
+ };
+ struct WorldSubsystemScript
+ {
++    struct Expression
++    {
++        ~Expression() noexcept(false); // 0x004d3cd0.
++    };
+     struct Rule
+     {
+-        unsigned char unknown_00[0x17c];
++        struct Command
++        {
++            unsigned int id_00;
++            Expression* first_04;
++            Expression* second_08;
++            ~Command() noexcept(false); // 0x004d5470.
++        };
++        unsigned int word_00;
++        Command commands_04[30];
++        unsigned int count_16c;
++        Expression* first_170;
++        Expression* second_174;
++        Expression* third_178;
+         ~Rule() noexcept(false); // 0x004d5280.
+     };
+     Rule rules_00[60];
+@@ -108,9 +152,10 @@ struct WorldSubsystemScript
+ };
+ struct WorldSubsystem3c
+ {
+-    WorldSubsystem3c();               // 0x004dac90.
+-    int LoadScript(const char* path); // 0x004dae00.
+-    WorldSubsystem20* Controller();   // 0x004dae90.
++    WorldSubsystem3c();                                 // 0x004dac90.
++    int LoadScript(const char* path);                   // 0x004dae00.
++    void AddScript(const char* name, const char* text); // 0x004dad40.
++    WorldSubsystem20* Controller();                     // 0x004dae90.
+     WorldSubsystemScript* scripts_00[10];
+     char* names_28[10];
+     unsigned int count_50;
+@@ -132,8 +177,10 @@ struct WorldSubsystem44
+     void ReserveIndexMap(unsigned int count, unsigned char front); // 0x0042c570.
+     void PopIndexBlock();                                          // 0x00427300.
+     void Update();                                                 // 0x00425630.
++    void AddEvent(WorldEventRecord event);                         // 0x00425480.
+     ~WorldSubsystem44() noexcept(false);                           // 0x00425260.
+     void LoadState(GameFileReader* file);                          // 0x004265f0.
++    void SaveState(GameFileReader* file);                          // 0x004267d0.
+ };
+ struct WorldFeatureEntry
+ {
+diff --git a/src/window_activation.h b/src/window_activation.h
+index 72e4cb9124cb39d1ee44ecd0779cfe91cae6f37a..91cf178c840bd31f12d572498f1555f80d884625 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -210,6 +210,30 @@ struct WindowDeactivationState
+     unsigned int CycleBuilding(unsigned int id, unsigned char forward);                 // 0x0043cf20.
+     unsigned int CycleStaff(unsigned int id, unsigned int type, unsigned char forward); // 0x0043d0b0.
+     void SaveState(GameFileReader* file);                                               // 0x0043f660.
++    WorldScriptValue ReadScriptValue(unsigned int kind, std::uintptr_t data);           // 0x0043e020.
++    void WriteScriptValue(unsigned int kind, std::uintptr_t data, unsigned int value_kind,
++        std::uintptr_t value);                                                           // 0x0043eb50.
++    void AddScriptEntry(unsigned int kind, std::uintptr_t first, std::uintptr_t second); // 0x00441340.
++
++    VariableEntity* PlaceEntity1(const void* placement);  // 0x00440170.
++    VariableEntity* PlaceEntity2(const void* placement);  // 0x004402d0.
++    VariableEntity* PlaceEntity3(const void* placement);  // 0x00440640.
++    VariableEntity* PlaceEntity4(const void* placement);  // 0x00440840.
++    VariableEntity* PlaceEntity5(const void* placement);  // 0x00440770.
++    VariableEntity* PlaceEntity6(const void* placement);  // 0x00440990.
++    VariableEntity* PlaceEntity7(const void* placement);  // 0x00440a40.
++    VariableEntity* PlaceEntity8(const void* placement);  // 0x00440af0.
++    VariableEntity* PlaceEntity9(const void* placement);  // 0x00440dd0.
++    VariableEntity* PlaceEntity10(const void* placement); // 0x00440ba0.
++    VariableEntity* PlaceEntity11(const void* placement); // 0x00440c70.
++    VariableEntity* PlaceEntity12(const void* placement); // 0x00440d20.
++    VariableEntity* PlaceEntity13(const void* placement); // 0x00440e80.
++    VariableEntity* PlaceEntity14(const void* placement); // 0x00441130.
++    VariableEntity* PlaceEntity15(const void* placement); // 0x00440ff0.
++    VariableEntity* PlaceEntity16(const void* placement); // 0x00440f50.
++    VariableEntity* PlaceEntity17(const void* placement); // 0x004411d0.
++    VariableEntity* PlaceEntity18(const void* placement); // 0x00441270.
++    VariableEntity* PlaceEntity20(const void* placement); // 0x00441090.
+     void LoadState(GameFileReader* file);
+     ~WindowDeactivationState() noexcept(false); // Actual ordinary 0x0043c420.
+ };
+diff --git a/src/window_audio_listener.cpp b/src/window_audio_listener.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..45d34c19a3480a8b76078b74e68f685029a87e4a
+--- /dev/null
++++ b/src/window_audio_listener.cpp
+@@ -0,0 +1,10 @@
++#include "window_audio.h"
++#include <mss.h>
++
++// FUNCTION: BEACHLIFE 0x004cfa70
++void WindowAudioState::SetListenerPosition(const WindowAudioVector* position)
++{
++    position_e0 = *position;
++    if (enabled_3d)
++        AIL_set_3D_position(listener_dc, position_e0.x, position_e0.y, position_e0.z);
++}

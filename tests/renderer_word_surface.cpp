@@ -124,6 +124,145 @@ void copies()
         "RGB555 key comparison discarded bit15");
 }
 
+void stretches()
+{
+    WordSurface16 source(4, 4, WordFormat::Rgb565);
+    WordSurface16 destination(7, 5, WordFormat::Rgb565);
+    assign(source, {99, 99, 99, 99, 99, 10, 0, 12, 99, 20, 21, 22, 99, 99, 99, 99});
+    auto pixels = destination.lock();
+    std::fill(pixels.begin(), pixels.end(), 7);
+    destination.unlock();
+    source.set_source_key(0);
+    destination.blit_from(source, {1, 1, 4, 3}, {1, 1, 6, 4}, true);
+    // 3x2 -> 5x3, with nonzero rectangle origins and keyed holes. No blending
+    // or colour conversion is permitted, and words outside the target survive.
+    equal(destination,
+        std::array<std::uint16_t, 35>{7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            10,
+            10,
+            7,
+            7,
+            12,
+            7,
+            7,
+            10,
+            10,
+            7,
+            7,
+            12,
+            7,
+            7,
+            20,
+            20,
+            21,
+            21,
+            22,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7},
+        "Noninteger keyed stretch sampled the wrong source word");
+
+    WordSurface16 large(5, 3, WordFormat::Rgb565);
+    WordSurface16 small(3, 2, WordFormat::Rgb565);
+    assign(large, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15});
+    large.set_source_key(1);
+    small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2});
+    equal(small,
+        std::array<std::uint16_t, 6>{1, 2, 4, 6, 7, 9},
+        "Shrinking must use point samples and ignore an unrequested key");
+
+    WordSurface16 overlap(6, 2, WordFormat::Rgb565);
+    assign(overlap, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    overlap.blit_from(overlap, {1, 0, 4, 1}, {0, 0, 6, 2});
+    equal(overlap,
+        std::array<std::uint16_t, 12>{2, 2, 3, 3, 4, 4, 2, 2, 3, 3, 4, 4},
+        "Overlapping stretch must read the original source rectangle");
+    overlap.blit_from(overlap, {0, 0, 6, 2}, {1, 1, 4, 2});
+    equal(overlap,
+        std::array<std::uint16_t, 12>{2, 2, 3, 3, 4, 4, 2, 2, 3, 4, 4, 4},
+        "Overlapping shrink must read the original source rectangle");
+
+    WordSurface16 high_bit(2, 1, WordFormat::Rgb555);
+    WordSurface16 target555(4, 1, WordFormat::Rgb555);
+    assign(high_bit, {0, 0x8000});
+    assign(target555, {0x1234, 0x1234, 0x1234, 0x1234});
+    high_bit.set_source_key(0);
+    target555.blit_from(high_bit, {0, 0, 2, 1}, {0, 0, 4, 1}, true);
+    equal(target555,
+        std::array<std::uint16_t, 4>{0x1234, 0x1234, 0x8000, 0x8000},
+        "RGB555 stretched key comparison must retain bit15");
+
+    small.lock();
+    rejects<std::logic_error>(
+        [&]
+        {
+            small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2});
+        });
+    small.unlock();
+    large.lock();
+    rejects<std::logic_error>(
+        [&]
+        {
+            small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2});
+        });
+    large.unlock();
+    rejects<std::logic_error>(
+        [&]
+        {
+            small.blit_from(overlap, {0, 0, 6, 2}, {0, 0, 3, 2}, true);
+        });
+    rejects<std::invalid_argument>(
+        [&]
+        {
+            small.blit_from(high_bit, {0, 0, 2, 1}, {0, 0, 3, 2});
+        });
+    rejects<std::out_of_range>(
+        [&]
+        {
+            small.blit_from(large, {-1, 0, 5, 3}, {0, 0, 3, 2});
+        });
+    rejects<std::out_of_range>(
+        [&]
+        {
+            small.blit_from(large, {0, 0, 6, 3}, {0, 0, 3, 2});
+        });
+    rejects<std::out_of_range>(
+        [&]
+        {
+            small.blit_from(large, {0, 0, 5, 3}, {-1, 0, 3, 2});
+        });
+    rejects<std::out_of_range>(
+        [&]
+        {
+            small.blit_from(large, {0, 0, 5, 3}, {0, 0, 4, 2});
+        });
+    rejects<std::out_of_range>(
+        [&]
+        {
+            small.blit_from(large, {0, 0, 0, 3}, {0, 0, 3, 2});
+        });
+    rejects<std::out_of_range>(
+        [&]
+        {
+            small.blit_from(large, {0, 0, 5, 3}, {3, 0, 0, 2});
+        });
+    equal(small,
+        std::array<std::uint16_t, 6>{1, 2, 4, 6, 7, 9},
+        "Rejected stretch modified destination storage");
+}
+
 void boundaries()
 {
     rejects<std::invalid_argument>(
@@ -263,9 +402,10 @@ int main()
     try
     {
         copies();
+        stretches();
         boundaries();
         conversion();
-        std::printf("{\"groups\":3,\"checks\":%u}\n", checks);
+        std::printf("{\"groups\":4,\"checks\":%u}\n", checks);
         return 0;
     }
     catch (const std::exception& error)

@@ -184,6 +184,10 @@ class SdlGpuVideo : public Video
     {
         return info_;
     }
+    bool stretch() const override
+    {
+        return settings_.stretch;
+    }
     void new_overlay_frame() override
     {
         // Fonts added since the atlas was uploaded: upload it again.
@@ -206,6 +210,7 @@ class SdlGpuVideo : public Video
         {
             throw std::runtime_error("Malformed frame");
         }
+        set_frame_size(frame.width, frame.height);
         prepare_frame(width, height);
         SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device_);
         if (!commands)
@@ -257,11 +262,9 @@ class SdlGpuVideo : public Video
         clear.load_op = SDL_GPU_LOADOP_CLEAR;
         clear.store_op = SDL_GPU_STOREOP_STORE;
         SDL_EndGPURenderPass(SDL_BeginGPURenderPass(commands, &clear, 1, nullptr));
-        const SDL_Rect rect = frame_rect(frame.width,
-            frame.height,
-            static_cast<int>(window_width),
-            static_cast<int>(window_height),
-            settings_.stretch);
+        const SDL_Rect rect =
+            presentation_transform(static_cast<int>(window_width), static_cast<int>(window_height))
+                .destination;
         SDL_GPUBlitInfo blit{};
         blit.source = {frame_texture_, 0, 0, 0, 0, width, height};
         blit.destination = {target,
@@ -446,21 +449,6 @@ class SdlGpuVideo : public Video
 std::unique_ptr<Video> create_video(const VideoSettings& settings)
 {
     return std::make_unique<SdlGpuVideo>(settings);
-}
-
-SDL_Rect frame_rect(
-    int frame_width, int frame_height, int window_width, int window_height, bool stretch)
-{
-    if (stretch || frame_width <= 0 || frame_height <= 0)
-    {
-        return {0, 0, window_width, window_height};
-    }
-    // The largest size with the frame's proportions, centred; rounding never exceeds the window.
-    const double scale = std::min(static_cast<double>(window_width) / frame_width,
-        static_cast<double>(window_height) / frame_height);
-    const int width = std::min(window_width, static_cast<int>(frame_width * scale + 0.5));
-    const int height = std::min(window_height, static_cast<int>(frame_height * scale + 0.5));
-    return {(window_width - width) / 2, (window_height - height) / 2, width, height};
 }
 
 } // namespace beachlife::platform

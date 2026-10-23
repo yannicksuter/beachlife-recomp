@@ -215,7 +215,11 @@ def build_report(inventory, comparison, target, root):
                         'comparison_linked_matches': sum(f['comparison_linked'] for f in matched),
                         'library_matched_bytes': sum(f['size'] for f in functions if f['kind'] == 'library' and f['status'] == 'matched'),
                         'unclassified_matched_methods': sum(f['kind'] == 'unclassified' and f['status'] == 'matched' for f in functions),
-                        'unclassified_matched_bytes': sum(f['size'] for f in functions if f['kind'] == 'unclassified' and f['status'] == 'matched')}}
+                        'unclassified_matched_bytes': sum(f['size'] for f in functions if f['kind'] == 'unclassified' and f['status'] == 'matched'),
+                        # Optional run-track state: in the boot build's game tree, or a trap there.
+                        'boot_methods': sum(f.get('boot') == 'in_tree' for f in functions),
+                        'boot_bytes': sum(f['size'] or 0 for f in functions if f.get('boot') == 'in_tree'),
+                        'boot_traps': sum(f.get('boot') == 'trap' for f in functions)}}
 
 
 def render(report):
@@ -226,6 +230,10 @@ def render(report):
         return f'<div class="meter {style}" aria-hidden="true"><span style="width:{value or 0:.5f}%"></span></div>'
     def link_cell(value):
         return '<span class="yes">Yes</span>' if value else '<span class="no">—</span>'
+
+    def boot_cell(value):
+        return {'in_tree': '<span class="yes">In tree</span>',
+                'trap': '<span class="no">Trap</span>'}.get(value, '<span class="no">—</span>')
     cards = []
     for category in categories.values():
         members = [f for f in functions if f['category'] == category['id']]
@@ -245,14 +253,16 @@ def render(report):
         score = percent(100 * f['score']) if f['score'] is not None else '—'
         if f['score'] is not None and f['score'] < 1 and score == '100.00%':
             score = '&lt;100%'
-        search = escaped(' '.join([f['name'], f['address'], source, unit['name'], f['note']]).lower())
+        search = escaped(' '.join([f['name'], f['address'], source, unit['name'], f['note'],
+                                   f.get('boot') or '']).lower())
         rows.append(f'<tr data-category="{f["category"]}" data-status="{f["status"]}" data-search="{search}">'
                     f'<td><strong>{escaped(f["name"])}</strong><span class="secondary mono">{escaped(f["address"])} · {str(f["size"]) + " B" if f["size"] else "extent pending"}</span>'
                     f'<span class="method-note">{escaped(f["note"])}</span></td>'
                     f'<td>{escaped(unit["name"])}<span class="secondary source">{escaped(source)}</span><span class="kind">{escaped(f["kind"])}</span></td>'
                     f'<td><span class="badge {f["status"]}">{status_labels[f["status"]]}</span><span class="score">{score}</span>'
                     f'{"<span class=raw>Raw bytes exact</span>" if f["raw_exact"] else ""}</td>'
-                    f'<td>{link_cell(f["comparison_linked"])}</td><td>{link_cell(f["native_tested"])}</td><td>{link_cell(f["runtime_linked"])}</td></tr>')
+                    f'<td>{link_cell(f["comparison_linked"])}</td><td>{link_cell(f["native_tested"])}</td><td>{link_cell(f["runtime_linked"])}</td>'
+                    f'<td>{boot_cell(f.get("boot"))}</td></tr>')
     tu_rows = []
     for source in sorted({f['source'] for f in functions if f.get('source')}):
         members = [f for f in functions if f.get('source') == source]
@@ -281,6 +291,8 @@ def render(report):
         'MAP_PERCENT': percent(percentage(m['mapped_bytes'], m['executable_bytes'])),
         'MAP_DETAIL': f'{m["mapped_bytes"]:,} / {m["executable_bytes"]:,} executable bytes',
         'NATIVE_COUNT': f'{m["native_tested_matches"]}<small> / {m["matched_methods"]}</small>',
+        'BOOT_COUNT': f'{m["boot_methods"]}<small> in tree</small>',
+        'BOOT_DETAIL': f'{m["boot_bytes"]:,} bounded bytes · {m["boot_traps"]} traps',
         'COMPARISON_COUNT': f'{m["comparison_linked_matches"]} / {m["matched_methods"]}',
         'RAW_DETAIL': f'{m["raw_methods"]} methods · {m["raw_bytes"]:,} bytes',
         'UNKNOWN_DETAIL': f'{m["unknown_bytes"]:,} bytes · {percent(percentage(m["unknown_bytes"], m["executable_bytes"]))}',

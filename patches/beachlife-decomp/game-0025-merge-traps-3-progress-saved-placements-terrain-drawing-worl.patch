@@ -1,0 +1,3957 @@
+diff --git a/src/library_list_distance.cpp b/src/library_list_distance.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..753d8851eefb3ff5d5465da93b9bda3f9550ffdf
+--- /dev/null
++++ b/src/library_list_distance.cpp
+@@ -0,0 +1,10 @@
++#include "library_list_distance.h"
++
++// LIBRARY: BEACHLIFE 0x00420d60
++int CountListRange(const CircularListIterator& first, const CircularListIterator& last, const ListIteratorTag&)
++{
++    unsigned int count = 0;
++    for (CircularListNode* node = first.node; node != last.node; node = node->next)
++        ++count;
++    return count;
++}
+diff --git a/src/library_list_distance.h b/src/library_list_distance.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1aa8730493776a261bf398461128e84336bd6237
+--- /dev/null
++++ b/src/library_list_distance.h
+@@ -0,0 +1,46 @@
++#ifndef LIBRARY_LIST_DISTANCE_H
++#define LIBRARY_LIST_DISTANCE_H
++
++#include "startup_list.h"
++
++// Library-side list size as the original expands it: the end and begin
++// iterators and an empty iterator-category temporary are passed by reference
++// to the shared counting body. Descriptive names; the original library
++// declarations are not recovered.
++struct ListIteratorTag
++{
++};
++
++// Actual shared cdecl body 0x00420d60: counts nodes from first up to last.
++int CountListRange(const CircularListIterator& first, const CircularListIterator& last, const ListIteratorTag& category);
++
++inline ListIteratorTag ListIteratorCategory(const CircularListIterator&)
++{
++    return ListIteratorTag();
++}
++
++inline CircularListIterator ListBegin(const CircularList& list)
++{
++    CircularListIterator result;
++    result.node = list.head->next;
++    return result;
++}
++
++inline CircularListIterator ListEnd(const CircularList& list)
++{
++    CircularListIterator result;
++    result.node = list.head;
++    return result;
++}
++
++inline int ListDistance(const CircularListIterator& first, const CircularListIterator& last)
++{
++    return CountListRange(first, last, ListIteratorCategory(first));
++}
++
++inline int ListSize(const CircularList& list)
++{
++    return ListDistance(ListBegin(list), ListEnd(list));
++}
++
++#endif
+diff --git a/src/startup_active_screen.h b/src/startup_active_screen.h
+index d993e087571c058b9292b6291a72b725f768ede2..9e6145342bdec143459411392117e2f341526c67 100644
+--- a/src/startup_active_screen.h
++++ b/src/startup_active_screen.h
+@@ -2,7 +2,7 @@
+ #define STARTUP_ACTIVE_SCREEN_H
+ 
+ struct ScreenDialog;
+-struct ScreenRequestContext;
++#include "startup_screen_request_context.h"
+ 
+ // Observed active-screen entry, allocated as 16 bytes on original x86.
+ // Names, integer signedness and the complete context class remain descriptive.
+diff --git a/src/startup_animation_sound.h b/src/startup_animation_sound.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..04960c0240810d571fd7cd1bd96ce714075e6b07
+--- /dev/null
++++ b/src/startup_animation_sound.h
+@@ -0,0 +1,11 @@
++#ifndef STARTUP_ANIMATION_SOUND_H
++#define STARTUP_ANIMATION_SOUND_H
++
++struct ScreenWorldPosition;
++struct AnimationSoundLookup
++{
++    unsigned char Play(const char* name, int animation, const ScreenWorldPosition* position); // 0x004d1990.
++};
++extern AnimationSoundLookup* animation_sounds; // 0x005baef8.
++
++#endif
+diff --git a/src/startup_overlay_draw_tile.cpp b/src/startup_overlay_draw_tile.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c4689d47fa8b7219f3b91b1ee08f51f35fe6b7ce
+--- /dev/null
++++ b/src/startup_overlay_draw_tile.cpp
+@@ -0,0 +1,109 @@
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_renderer.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00446200
++ScreenWorldPosition ScreenTerrainGrid::TileOrigin(int x, int y)
++{
++    int half = tile_size_00 / 2;
++    ScreenWorldPosition result;
++    result.x = static_cast<float>(half * x);
++    result.y = static_cast<float>(y * tile_size_00 - ((x & 1) ? 0 : half));
++    result.z = 0.0f;
++    return result;
++}
++
++// FUNCTION: BEACHLIFE 0x00418d00
++unsigned short OverlayMapPrefix::DepthAt(const ScreenWorldPosition* position)
++{
++    int x = static_cast<int>(position->x);
++    int y = static_cast<int>(position->y * 0.5);
++    if (y < 0 || y >= 4096)
++        return 0;
++    y += static_cast<int>(HeightAt(x, y));
++    return static_cast<unsigned short>(static_cast<int>(y * (1.0 / 4096.0) * depth_scale_160) + depth_bias_15c + (y << 4));
++}
++
++static ScreenPoint TileCorner(int x, int y)
++{
++    unsigned int size = screen_terrain_grid->tile_size_00;
++    ScreenPoint result;
++    result.x = (size >> 1) * x;
++    result.y = (size >> 1) * y + (size >> 2) * ((x & 1) - 1);
++    return result;
++}
++
++// FUNCTION: BEACHLIFE 0x00418fe0
++void OverlayMapPrefix::DrawTile(int x, int y, unsigned int colour)
++{
++    int scroll_y = scroll_y_c8;
++    int scroll_x = scroll_x_c4;
++    ScreenPoint west;
++    ScreenPoint east;
++    ScreenPoint south;
++    screen_terrain_grid->Step(x, y, 4, &west);
++    screen_terrain_grid->Step(x, y, 2, &east);
++    screen_terrain_grid->Step(x, y, 3, &south);
++    ScreenPoint top = TileCorner(x, y);
++    top.y -= static_cast<int>(HeightAt(top.x, top.y));
++    ScreenPoint unused = TileCorner(west.x, west.y);
++    HeightAt(unused.x, unused.y);
++    ScreenPoint middle = TileCorner(east.x, east.y);
++    middle.y -= static_cast<int>(HeightAt(middle.x, middle.y));
++    ScreenPoint bottom = TileCorner(south.x, south.y);
++    bottom.y -= static_cast<int>(HeightAt(bottom.x, bottom.y));
++    ScreenWorldPosition origin = screen_terrain_grid->TileOrigin(x, y);
++    unsigned int depth = overlay_map->DepthAt(&origin) + 16;
++    top.x -= scroll_x;
++    top.y -= scroll_y;
++    middle.y -= scroll_y;
++    bottom.y -= scroll_y;
++    ScreenRequestRenderer* renderer = renderer_fc;
++    float scale;
++    memcpy(&scale, &screen_request_renderer->word_58, sizeof(scale));
++    if (renderer->clip_mode_54 == 2)
++    {
++        top.x = static_cast<int>(top.x * static_cast<double>(scale));
++        top.y = static_cast<int>(top.y * static_cast<double>(scale));
++        middle.y = static_cast<int>(middle.y * static_cast<double>(scale));
++        bottom.y = static_cast<int>(bottom.y * static_cast<double>(scale));
++    }
++    else
++        scale = 1.0f;
++    int width = renderer->width;
++    int height = renderer->height;
++    int row = top.y;
++    int span = 1;
++    for (int phase = 0; phase < 2; ++phase)
++    {
++        if (phase)
++            span -= 8;
++        int end = phase ? bottom.y : middle.y;
++        while (row <= end)
++        {
++            if (row >= 0 && row < height)
++            {
++                int parity = row % 2;
++                int column = (top.x - span / 2) * 2 + (parity ? 0 : 2);
++                if (parity < span)
++                {
++                    unsigned int count = static_cast<unsigned int>(span - parity + 1) >> 1;
++                    do
++                    {
++                        if (column >= 0 && column < width * 2)
++                        {
++                            unsigned short* pixel = renderer->pixels_1c + row * width * 2 + column;
++                            if (pixel[1] <= static_cast<unsigned short>(depth))
++                                pixel[0] = static_cast<unsigned short>(colour);
++                        }
++                        column += 4;
++                    } while (--count);
++                }
++            }
++            ++row;
++            span += phase ? -4 : 4;
++            depth += static_cast<int>(16.0 / scale);
++        }
++    }
++}
+diff --git a/src/startup_screen_bar.h b/src/startup_screen_bar.h
+index 26cdc74b78d085d7b1656397d0154106b347d347..305641eca249c5fa0fabcea24d4722ece8c79de2 100644
+--- a/src/startup_screen_bar.h
++++ b/src/startup_screen_bar.h
+@@ -3,7 +3,7 @@
+ 
+ #include "startup_screen_item.h"
+ 
+-struct ScreenRequestContext;
++#include "startup_screen_request_context.h"
+ 
+ // Genuine "Bar" object: original allocation 0x80, kind 18 and table 0x004f4900
+ // (21 slots). Descriptive names only. The differing slots are separate
+diff --git a/src/startup_screen_button_draw.cpp b/src/startup_screen_button_draw.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4512c187c2c24917ebadb0fe0c3166f84b2f238f
+--- /dev/null
++++ b/src/startup_screen_button_draw.cpp
+@@ -0,0 +1,85 @@
++#include "startup_screen_button.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_request_context.h"
++#include "startup_screen_text.h"
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004a1170
++void ScreenButtonPrefix::Unresolved0c()
++{
++    char message[80];
++    unsigned short variable_text[128];
++
++    if (!state_30)
++        return;
++    unsigned int state = word_44;
++    if (state == word_48 && !preparation_flag)
++        return;
++
++    if (resource_name_70)
++    {
++        ScreenDialogResource* resource;
++        ScreenDialogResourceRecord* record;
++        int plane;
++        if (flag_64)
++        {
++            unsigned char enabled = flag_65;
++            resource = resource_74;
++            int count = resource->record->frames[resource->word_10]->plane_count_0c;
++            record = resource->record;
++            if (enabled)
++                plane = 2 % count;
++            else
++                plane = 0 % count;
++        }
++        else
++        {
++            if (state == 4)
++                state = 1;
++            resource = resource_74;
++            unsigned int count = resource->record->frames[resource->word_10]->plane_count_0c;
++            record = resource->record;
++            plane = static_cast<int>(state % count);
++        }
++        unsigned int frame = resource->word_10;
++        if (plane >= static_cast<int>(record->frames[frame]->plane_count_0c))
++        {
++            plane = record->frames[frame]->plane_count_0c - 1;
++            sprintf(message, "%s %d", resource->name, plane);
++        }
++        resource->word_18 = plane;
++        resource_74->Draw(rectangle.left, rectangle.top, 0, 99999.0f);
++    }
++
++    if (text_54 && word_4c != 2)
++    {
++        ScreenFontRenderer* font = screen_manager->fonts_2c[0];
++        font->SetWord18(2);
++        font->SetState14(0);
++        font->SetWord10(resource_name_70 ? 0xffffffffu : 0);
++        int top = rectangle.top;
++        int bottom = rectangle.bottom;
++        int left = rectangle.left;
++        font->SetRectangle(left, top + 3, rectangle.right - left, bottom - top - 2);
++
++        unsigned int text_kind = word_78;
++        if (text_kind == 1)
++        {
++            ScreenRequestContext* context = screen_manager->CurrentContext();
++            context->ReadText(text_54, variable_text);
++            font->DrawText(0, 2, variable_text);
++        }
++        else if (text_kind == 0)
++        {
++            const char* key = text_54;
++            ScreenTextLookup* lookup = screen_text_lookup;
++            const unsigned short* text = lookup->LookupText(key);
++            font->DrawText(0, 2, text);
++        }
++    }
++
++    unsigned int current = word_44;
++    preparation_flag = 0;
++    word_48 = current;
++}
+diff --git a/src/startup_screen_button_update.cpp b/src/startup_screen_button_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc2602a8dc159a79335ee49f694a4ade4acfc045
+--- /dev/null
++++ b/src/startup_screen_button_update.cpp
+@@ -0,0 +1,75 @@
++#include "startup_screen_button.h"
++#include "startup_screen_button_constants.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_request_context.h"
++#include "startup_frame_clock.h"
++#include "startup_input_motion.h"
++#include "window_activation.h"
++#include <stdio.h>
++#include <stdlib.h>
++
++// FUNCTION: BEACHLIFE 0x004a0f90
++void ScreenButtonPrefix::Unresolved04(float elapsed)
++{
++    if (state_30 == 0)
++        return;
++
++    if (word_4c >= 1 && word_4c <= 2)
++    {
++        unsigned short state_text[32];
++        char key[128];
++        ScreenRequestContext* context = screen_manager->CurrentContext();
++        sprintf(key, screen_button_state_key_format, text_54);
++        if (context != 0)
++            context->ReadText(key, state_text);
++        else
++            screen_request_game->ReadText(key, state_text);
++
++        if (_wtol(reinterpret_cast<const wchar_t*>(state_text)) != 0)
++        {
++            if (word_44 == 3)
++                word_44 = 0;
++        }
++        else
++            word_44 = 3;
++    }
++
++    if (word_44 == 3)
++        return;
++
++    ScreenItem::Unresolved04(elapsed);
++    if (flag_64 != 0)
++    {
++        elapsed_68 += elapsed;
++        if (elapsed_68 > 0.75f)
++        {
++            unsigned char next = flag_65 == 0;
++            elapsed_68 = 0.0f;
++            flag_65 = next;
++            MarkPrepared();
++        }
++    }
++
++    if (word_44 == 4)
++    {
++        if (startup_frame_clock->seconds - time_58 >= 0.05f)
++        {
++            window_audio_state->PlaySound(screen_button_click_sound, 1, 0.0f);
++            if (flag_7d == 0)
++                action_5c(word_2c);
++            else
++                action_60(word_2c);
++            if (word_44 != 3)
++                word_44 = 1;
++            float now = startup_frame_clock->seconds;
++            state_42 = 1;
++            time_58 = now;
++        }
++        return;
++    }
++
++    if (word_44 == 1 && flag_7c == 0 && startup_frame_clock->seconds - time_58 >= 0.05f && ReadState41() == 0)
++    {
++        word_44 = ReadState40() != 0 ? 2 : 0;
++    }
++}
+diff --git a/src/startup_screen_combo_box.h b/src/startup_screen_combo_box.h
+index b7594f1ae20363634008a556293671d0c485b39a..982a7c775b9281e6185be1ec120c9441b65370d2 100644
+--- a/src/startup_screen_combo_box.h
++++ b/src/startup_screen_combo_box.h
+@@ -3,13 +3,61 @@
+ 
+ #include "startup_screen_item.h"
+ 
++struct ScreenButtonPrefix;
++struct ScreenFrameItem;
++struct ScreenScrollBarPrefix;
++struct ScreenComboBoxEntry;
++extern const char* combo_button_resources[3];
++void InitializeComboButtonResources(); // 0x004a3330.
++
++struct ScreenComboBoxCapacity
++{
++    ScreenComboBoxEntry** data;
++    explicit ScreenComboBoxCapacity(ScreenComboBoxEntry** value)
++        : data(value)
++    {
++    }
++};
++
++struct ScreenComboBoxRange
++{
++    ScreenComboBoxEntry** begin;
++    ScreenComboBoxEntry** end;
++    ScreenComboBoxCapacity capacity;
++    ScreenComboBoxRange()
++        : begin(0)
++        , end(0)
++        , capacity(0)
++    {
++    }
++    ~ScreenComboBoxRange(); // 0x004a4f70: releases only the slot storage.
++    void Clear() { end = begin; }
++};
++
+ // Genuine "ComboBox" object: original allocation 0x90 and table 0x004f43c4.
+ // Descriptive names only; the field tail, destructor and overriding slots are
+ // separate required children and are not supplied here.
+ // VTABLE: BEACHLIFE 0x004f43c4
+ struct ScreenComboBox : ScreenItem
+ {
+-    unsigned char unknown_44[0x4c];
++    unsigned int word_44; // Tested before any store in the constructor (original).
++    int list_type_48;     // From the name: GuestFilter 0 ... CocktailList 12.
++    int style_4c;         // Button resource style, value_d.
++    int font_50;          // Font index, value_b.
++    int value_a_54;
++    unsigned int word_58; // Selected entry index (drawn by Unresolved0c).
++    unsigned int word_5c;
++    ScreenScrollBarPrefix* list_60; // The open list's owned scroll bar (0x78-byte kind 5).
++    ScreenItem* list_64;
++    ScreenFrameItem* field_68; // Text field left of the button.
++    unsigned int word_6c;      // The scroll bar's first visible row, copied each update.
++    int row_height_70;         // Twice the font's line height.
++    int value_c_74;
++    ScreenComboBoxRange range_78;
++    ScreenButtonPrefix* button_84; // Drop-down button at the right edge.
++    unsigned char flag_88;
++    unsigned char unknown_89[3];
++    int value_e_8c;
+ 
+     // Actual 0x004a3360, RET 0x28; separate complete body required.
+     ScreenComboBox(ScreenRectangle initial,
+diff --git a/src/startup_screen_combo_box_constructor.cpp b/src/startup_screen_combo_box_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fce53ee84245e4cc52232bf387fae3a07ff95f2f
+--- /dev/null
++++ b/src/startup_screen_combo_box_constructor.cpp
+@@ -0,0 +1,82 @@
++#include "startup_screen_button.h"
++#include "startup_screen_button_constants.h"
++#include "startup_screen_combo_box.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_font_data.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_manager.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004a3360
++ScreenComboBox::ScreenComboBox(
++    ScreenRectangle initial, const char* name, int value_a, int value_b, int value_c, int value_d, int value_e)
++    : ScreenItem(initial)
++    , style_4c(value_d)
++    , flag_88(1)
++    , value_e_8c(value_e)
++{
++    kind_28 = 2;
++    list_60 = 0;
++    value_a_54 = value_a;
++    list_64 = 0;
++    word_58 = 0;
++    value_c_74 = value_c;
++    font_50 = value_b;
++    int line_height = screen_manager->fonts_04[font_50]->unknown_10804[0];
++    row_height_70 = line_height + line_height;
++
++    // An unknown name leaves the list type unset (original).
++    if (_stricmp(name, "GuestFilter") == 0)
++        list_type_48 = 0;
++    else if (_stricmp(name, "ResolutionList") == 0)
++        list_type_48 = 1;
++    else if (_stricmp(name, "CellPaint") == 0)
++        list_type_48 = 2;
++    else if (_stricmp(name, "Scenario") == 0)
++        list_type_48 = 3;
++    else if (_stricmp(name, "BeerList") == 0)
++        list_type_48 = 4;
++    else if (_stricmp(name, "TestList") == 0)
++        list_type_48 = 5;
++    else if (_stricmp(name, "BuildingFilter") == 0)
++        list_type_48 = 6;
++    else if (_stricmp(name, "StaffFilter") == 0)
++        list_type_48 = 7;
++    else if (_stricmp(name, "StaffHire") == 0)
++        list_type_48 = 8;
++    else if (_stricmp(name, "EventType0") == 0)
++        list_type_48 = 9;
++    else if (_stricmp(name, "EventType1") == 0)
++        list_type_48 = 10;
++    else if (_stricmp(name, "EventType2") == 0)
++        list_type_48 = 11;
++    else if (_stricmp(name, "CocktailList") == 0)
++        list_type_48 = 12;
++
++    word_6c = 0;
++    range_78.Clear();
++
++    // The drop-down button takes its resource's frame size at the right edge.
++    ScreenDialogResource* resource = screen_dialog_resources->Lookup(combo_button_resources[style_4c]);
++    ScreenDialogResourceFrame* frame = resource->record->frames[resource->word_10];
++    unsigned short width = frame->width_0e;
++    unsigned short height = frame->height_10;
++    ScreenRectangle bounds;
++    bounds.left = rectangle.right - width;
++    bounds.top = rectangle.top;
++    bounds.right = rectangle.right;
++    bounds.bottom = rectangle.top + height;
++    screen_dialog_resources->Release(resource);
++    button_84 = new ScreenButtonPrefix(bounds, combo_button_resources[style_4c], screen_button_no_text_name, "NONE", "NONE");
++
++    ScreenRectangle field = rectangle;
++    field.right = bounds.left;
++    field.bottom = rectangle.right; // The retail constructor passes the right edge here.
++    field_68 = new ScreenFrameItem(field, 1);
++    field_68->word_48 = style_4c;
++
++    if (word_44)
++        MarkPrepared();
++    word_44 = 0;
++}
+diff --git a/src/startup_screen_combo_resources.cpp b/src/startup_screen_combo_resources.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a993b06b6ce66a63013331be1c48161bd73e35e7
+--- /dev/null
++++ b/src/startup_screen_combo_resources.cpp
+@@ -0,0 +1,19 @@
++#include "startup_screen_combo_box.h"
++
++// GLOBAL: BEACHLIFE 0x0057e520
++const char* combo_button_resource_names[3] = {
++    "UI3_combobox_button", "UI3_combobox_button_w", "UI3_combobox_button_b"
++};
++// GLOBAL: BEACHLIFE 0x005baebc
++const char* combo_button_resources[3] = { };
++
++// FUNCTION: BEACHLIFE 0x004a3330
++void InitializeComboButtonResources()
++{
++    const char* first = combo_button_resource_names[0];
++    const char* second = combo_button_resource_names[1];
++    const char* third = combo_button_resource_names[2];
++    combo_button_resources[0] = first;
++    combo_button_resources[1] = second;
++    combo_button_resources[2] = third;
++}
+diff --git a/src/startup_screen_dialog_animation.cpp b/src/startup_screen_dialog_animation.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..52d32605fa9309fdcd3500b47e5e7beaa07b6c0e
+--- /dev/null
++++ b/src/startup_screen_dialog_animation.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_animation_sound.h"
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x005baef8
++AnimationSoundLookup* animation_sounds = 0;
++
++// FUNCTION: BEACHLIFE 0x004168e0
++float ScreenDialogResource::SetAnimation(const char* animation, float time, const ScreenWorldPosition* position)
++{
++    int index = 0;
++    for (; index < record->frame_count; ++index)
++        if (_stricmp(record->frames[index]->name, animation) == 0)
++            break;
++    if (index >= record->frame_count)
++    {
++        for (index = 0; index < record->frame_count; ++index)
++            if (_stricmp(record->frames[index]->name, "walk_normal") == 0)
++                break;
++        if (index >= record->frame_count)
++            index = 0;
++    }
++    if (word_10 != static_cast<unsigned int>(index))
++    {
++        word_10 = index;
++        word_14 = 0;
++    }
++    if (position)
++        flag_2a = animation_sounds->Play(name, index, position);
++    word_04 = time;
++    return static_cast<float>(record->frames[index]->count_0a) / word_0c;
++}
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 66a180d7ff81ba266a4eac6815a5cd08144be4a3..8b24c033b0536ec3c9d81da68339b6215e2da835 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -108,9 +108,21 @@ struct ScreenDialogResource
+     // Actual 0x00412ae0 ownership body is a separate source dependency.
+     ~ScreenDialogResource();
+ 
+-    int CurrentFrameValue();                                                       // 0x00412b00.
+-    float SetAnimation(const char* name, unsigned int first, unsigned int second); // 0x004168e0.
+-    void DrawWorld(const ScreenWorldPosition* position, float time);               // 0x00413f10.
++    ScreenDialogResourceFrame* SelectedFrame() { return record->frames[word_10]; }
++    void SelectVariant(int variant)
++    {
++        char message[80];
++        if (variant >= SelectedFrame()->plane_count_0c)
++        {
++            variant = SelectedFrame()->plane_count_0c - 1;
++            sprintf(message, "%s %d", name, variant);
++        }
++        word_18 = variant;
++    }
++
++    int CurrentFrameValue();                                                               // 0x00412b00.
++    float SetAnimation(const char* name, float time, const ScreenWorldPosition* position); // 0x004168e0.
++    void DrawWorld(const ScreenWorldPosition* position, float time);                       // 0x00413f10.
+     void DrawBuilding(const ScreenWorldPosition* position, unsigned int width,
+         unsigned int height, unsigned char invalid); // 0x00413250.
+     void UpdateFrame(float time);
+diff --git a/src/startup_screen_image_list_constructor.cpp b/src/startup_screen_image_list_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a00805f9cea5ef2544fd86a79ca179a1f4e1fc6
+--- /dev/null
++++ b/src/startup_screen_image_list_constructor.cpp
+@@ -0,0 +1,40 @@
++#include "startup_screen_image_item.h"
++#include "startup_screen_image_list.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004b3120
++ScreenImageList::ScreenImageList(
++    ScreenRectangle initial, const char* name, const char* second_name, int value_a, int value_b)
++    : ScreenItem(initial)
++    , value_a_48(value_a)
++    , value_b_4c(value_b)
++    , timer_58(0)
++    , flag_5c(1)
++{
++    // An unknown name leaves the category unset (original).
++    if (strcmp(name, image_list_categories[0]) == 0)
++        category_44 = 0;
++    else if (strcmp(name, image_list_categories[1]) == 0)
++        category_44 = 1;
++    else if (strcmp(name, image_list_categories[2]) == 0)
++        category_44 = 2;
++    else if (strcmp(name, image_list_categories[3]) == 0)
++        category_44 = 3;
++    else if (strcmp(name, image_list_categories[4]) == 0)
++        category_44 = 4;
++    else if (strcmp(name, image_list_categories[5]) == 0)
++        category_44 = 5;
++    else if (strcmp(name, image_list_categories[6]) == 0)
++        category_44 = 6;
++    else if (strcmp(name, image_list_categories[7]) == 0)
++        category_44 = 7;
++    else if (strcmp(name, image_list_categories[8]) == 0)
++        category_44 = 8;
++    else if (strcmp(name, image_list_categories[9]) == 0)
++        category_44 = 9;
++    image_50 = new ScreenImageItem(initial, second_name);
++    vector_6c.Clear();
++    vector_60.Clear();
++    kind_28 = 17;
++}
+diff --git a/src/startup_screen_list_box.h b/src/startup_screen_list_box.h
+index a25eee74521076269be104b55a38fe189855b09a..e9dd8791663c74f12009e091c35dbdae31c1d9fa 100644
+--- a/src/startup_screen_list_box.h
++++ b/src/startup_screen_list_box.h
+@@ -83,7 +83,10 @@ struct ScreenListBoxPrefix : ScreenItem
+     void EnsureRowVisible(int row);                        // 0x004c44f0.
+     void SetFirstVisibleRow(int row);                      // 0x004c46f0.
+ 
+-    void ClearEntries(); // Actual 0x004c41e0.
++    void SetTopRow(int row);                                                       // 0x004c46f0.
++    void ShowRow(int row);                                                         // 0x004c44f0.
++    void AddActionEntry(int row, int x, const char* resource, unsigned int value); // 0x004c4ef0.
++    void ClearEntries();                                                           // Actual 0x004c41e0.
+     void AddEntry(int row,
+         int x,
+         int width,
+diff --git a/src/startup_screen_load_dependencies.h b/src/startup_screen_load_dependencies.h
+index 9cbe690db7da2b5237718652d02831a213c17095..577a8bdfe404c3000123ab214802cef74434e2f7 100644
+--- a/src/startup_screen_load_dependencies.h
++++ b/src/startup_screen_load_dependencies.h
+@@ -19,7 +19,7 @@ struct ScreenLoadPanel13c
+     unsigned char state_0c;
+     unsigned char unknown_0d[3];
+     int mode_10; // Action handler 0x004c2940 writes this word.
+-    int word_14;
++    int playlist_mode_14;
+     unsigned int word_18;
+     unsigned char state_1c;
+     unsigned char unknown_1d[3];
+@@ -29,6 +29,9 @@ struct ScreenLoadPanel13c
+     // Actual 0x004c33c0/RET4; only the argument low byte is read.
+     void InitializeContents(unsigned char reload);
+     void SetEnabled(unsigned char enabled); // 0x004c2760
++    void StartPlayback();                   // 0x004c2470.
++    void SetPlaylistMode(int mode);         // 0x004c3330.
++    void SetTimeOfDay(int night);           // 0x004c2850.
+     void StopPlayback();                    // 0x004c2480; forwards to owner_00.
+     // Actual 0x004c2940, RET4; complete 16-way real method remains separate.
+     void HandleAction(unsigned int action);
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 1adde74c16d867daa58931f565a27bcbe04f5c1d..c58e64e23fcf7a00580386e25860d44ea96585ba 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -24,7 +24,7 @@ struct ScreenManagerAuxiliaryState;
+ struct ScreenChildLink;
+ struct ScreenPlacementStore;
+ struct ScreenRectangle;
+-struct ScreenRequestContext;
++#include "startup_screen_request_context.h"
+ struct ScreenRequestRenderer;
+ struct InputMotionState;
+ struct InputState;
+@@ -168,9 +168,15 @@ struct ScreenRequestGamePrefix : ScreenGameRegistration
+     ~ScreenRequestGamePrefix() noexcept(false); // Actual 0x004e2e00.
+     // Actual 0x004e3dd0; real filesystem/name-range body remains separate.
+     void LoadScenarioNames();
+-    void RefreshSaveRecords();   // 0x004e4740.
+-    void PopulateLoadGameMenu(); // 0x004e4ed0.
++    const unsigned short* ScenarioDirectory(); // 0x004e3d60.
++    void ShowLoadingScreen(const char* path);  // 0x004e3c00.
++    int SelectedSaveScenario();                // 0x004e4eb0.
++    int TimeHours(float value);                // 0x004e5360.
++    int TimeMinutes(float value);              // 0x004e5380.
++    void RefreshSaveRecords();                 // 0x004e4740.
++    void PopulateLoadGameMenu();               // 0x004e4ed0.
+     void PopulateSaveList(ScreenListBoxPrefix* list, unsigned int row_word, unsigned char clear);
++    bool HasScenarioFlag04(unsigned int index); // 0x004e41a0.
+     bool HasScenarioFlag08(unsigned int index); // 0x004e41c0.
+ 
+     void Activate();
+@@ -241,8 +247,8 @@ struct ScreenManager
+     CircularList active;
+     unsigned char byte_c0;
+     unsigned char unknown_c1[3];
+-    unsigned int word_c4;
+-    unsigned int word_c8;
++    const char* word_c4;
++    const char* word_c8;
+     int ticker_repetitions_cc;
+     union
+     {
+@@ -311,6 +317,7 @@ struct ScreenManager
+     unsigned char unknown_194[4];
+ 
+     // Actual 0x004aedb0 and 0x004aedc0; unchecked ten-slot publications.
++    void SetInputEnabled(unsigned char enabled); // 0x004aedd0.
+     void SetFontData(unsigned int index, ScreenFontData* data);
+     void SetFontRenderer(unsigned int index, ScreenFontRenderer* renderer);
+ 
+@@ -381,6 +388,10 @@ struct ScreenManager
+     void ShowItemText(ScreenItem* item, int x, int y, const char* text);
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+     // Actual 0x004b17e0; existing complete named-entry source is separate.
++    void SavePauseState();                    // 0x004b1200.
++    void RestorePauseState();                 // 0x004b1230.
++    void DisableNamedItems(const char* name); // 0x004b1db0.
++    void EnableNamedItems(const char* name);  // 0x004b1de0.
+     bool CloseScreen(const char* name);
+     // Actual 0x004b1890; marks all live active entries closing, RET0.
+     void CloseActiveScreens();
+diff --git a/src/startup_screen_mode_can_move.cpp b/src/startup_screen_mode_can_move.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e47836c5e34ffc89725958db2914dd436adcb81a
+--- /dev/null
++++ b/src/startup_screen_mode_can_move.cpp
+@@ -0,0 +1,63 @@
++#include "startup_screen_modes.h"
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004aa030
++unsigned char ScreenMode9Controller::CanMove(const ScreenPoint* point, int* target)
++{
++    special_16 = 0;
++    *target = -1;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(tile_0c.x, tile_0c.y)].flags_48;
++    unsigned char valid = (flags & 0x80000000) && !(flags & 0x10);
++    const char* name = word_08->name_06;
++    if (strcmp(name, "BUILDER") == 0)
++    {
++        unsigned int count;
++        VariableEntity** selected = variable_world->Selected(&count);
++        if (count && selected[0]->kind_2c == 2 && (selected[0]->FlagAt00460310() || selected[0]->FlagAt00460340()))
++        {
++            special_16 = valid = 1;
++            *target = selected[0]->id_28;
++        }
++        return valid;
++    }
++    bool cleaner = strcmp(name, "CLEANER") == 0;
++    bool security = !cleaner && strcmp(name, "SECURITYGUARD") == 0;
++    bool lifeguard = !cleaner && !security && (strcmp(name, "LIFEG_F") == 0 || strcmp(name, "LIFEG_M") == 0);
++    bool rep = !cleaner && !security && !lifeguard && (strcmp(name, "REP_M") == 0 || strcmp(name, "REP_F") == 0);
++    bool mechanic = !cleaner && !security && !lifeguard && !rep && strcmp(name, "MECHANIC") == 0;
++    if (cleaner || mechanic)
++    {
++        unsigned int count;
++        VariableEntity** selected = cleaner ? variable_world->Selected(&count) : variable_world->SelectedBuildings(&count);
++        if (count && selected[0]->kind_2c == 2 && !selected[0]->FlagAt00460310() && !selected[0]->FlagAt00460340()
++            && (!cleaner || strcmp(selected[0]->name_06, "LOO") == 0))
++        {
++            special_16 = valid = 1;
++            *target = selected[0]->id_28;
++        }
++    }
++    if (cleaner || security || lifeguard || rep || mechanic)
++    {
++        CircularList* objects = screen_terrain_grid->ObjectsAt(point->x, point->y);
++        for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
++        {
++            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++            bool matches;
++            if (cleaner)
++                matches = entity->kind_2c == 1 && entity->scenery_f4->cleanable_308 && !entity->byte_a0;
++            else if (mechanic)
++                matches = entity->kind_2c == 1 && (entity->scenery_f4->repairable_309 || entity->scenery_f4->serviceable_30a);
++            else
++                matches = entity->kind_2c == 3;
++            if (matches)
++            {
++                special_16 = valid = 1;
++                *target = entity->id_28;
++            }
++        }
++    }
++    return valid;
++}
+diff --git a/src/startup_screen_mode_can_place.cpp b/src/startup_screen_mode_can_place.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3197a1c13006694fe10d68561055a6f178c2fbd9
+--- /dev/null
++++ b/src/startup_screen_mode_can_place.cpp
+@@ -0,0 +1,106 @@
++#include "startup_screen_modes.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_variable_state.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004a9c10
++unsigned char ScreenMode1Controller::CanPlace(const ScreenPoint* point)
++{
++    if (screen_terrain_grid->OutsideArea(point->x, point->y, scenery_08->footprint_x_2c8, scenery_08->footprint_y_2cc))
++        return 0;
++    unsigned char valid = 1;
++    ScreenPoint row = *point;
++    ScreenPoint tile = row;
++    unsigned int width = scenery_08->footprint_x_2c8;
++    unsigned int height = scenery_08->footprint_y_2cc;
++    if (word_0c->word_18 & 1)
++    {
++        unsigned int old = width;
++        width = height;
++        height = old;
++    }
++    for (unsigned int x = 0; x < width && valid; ++x)
++    {
++        for (unsigned int y = 0; y < height && valid; ++y)
++        {
++            if (!screen_terrain_grid->CanPlaceScenery(tile.x, tile.y, scenery_08))
++                valid = 0;
++            else
++            {
++                CircularList* objects = screen_terrain_grid->ObjectsAt(tile.x, tile.y);
++                for (CircularListNode* node = objects->head->next; node != objects->head && valid; node = node->next)
++                {
++                    VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++                    if (entity->kind_2c != 1 || strcmp(entity->name_06, "Litter") != 0)
++                        valid = 0;
++                }
++            }
++            screen_terrain_grid->Step(tile.x, tile.y, 0, &tile);
++        }
++        screen_terrain_grid->Step(row.x, row.y, 6, &row);
++        tile = row;
++    }
++    return valid;
++}
++
++// FUNCTION: BEACHLIFE 0x004a7d10
++unsigned char ScreenMode5Controller::CanPlace(int x, int y, unsigned char draw)
++{
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int width = building_0c->footprint_x_1d4 + 2;
++    unsigned int height = building_0c->footprint_y_1d8 + 2;
++    unsigned int rotated = preview_08->word_18 & 1;
++    if (rotated)
++    {
++        unsigned int old = width;
++        width = height;
++        height = old;
++    }
++    ScreenPoint row = { x, y };
++    int first;
++    int last;
++    grid->BuildingBounds(row, height, width, &first, &last, preview_08->word_18);
++    ScreenPoint tile = row;
++    unsigned char valid = 1;
++    for (unsigned int r = 0; r < height; ++r)
++    {
++        for (unsigned int c = 0; c < width; ++c)
++        {
++            unsigned char cell_valid = 1;
++            unsigned int flags = grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++            unsigned int required = building_0c->footprint_e14[rotated ? 2 + r + 25 * c : 2 + 25 * r + c];
++            if (required)
++            {
++                if (required == 0x200)
++                {
++                    if (!screen_terrain_grid->CanPlaceBuilding(tile.x, tile.y, building_0c))
++                        cell_valid = valid = 0;
++                }
++                else
++                {
++                    if (flags & 0x8050)
++                        cell_valid = valid = 0;
++                    if (flags & 0x100)
++                    {
++                        if (!(required & 4))
++                            cell_valid = valid = 0;
++                    }
++                    else if (!(required & flags))
++                        cell_valid = valid = 0;
++                }
++                CircularList* objects = screen_terrain_grid->ObjectsAt(tile.x, tile.y);
++                for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
++                    if (strcmp(static_cast<ScreenTerrainEntityNode*>(node)->entity->name_06, "Bin") == 0)
++                        cell_valid = valid = 0;
++            }
++            if (draw && required)
++                overlay_map->DrawTile(tile.x, tile.y, cell_valid ? colour_14 : colour_10);
++            grid->Step(tile.x, tile.y, first, &tile);
++        }
++        grid->Step(row.x, row.y, last, &tile);
++        row = tile;
++    }
++    return valid;
++}
+diff --git a/src/startup_screen_mode_finish_selection.cpp b/src/startup_screen_mode_finish_selection.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2268dfe39aec110faa718f220dbcbda18d4c182
+--- /dev/null
++++ b/src/startup_screen_mode_finish_selection.cpp
+@@ -0,0 +1,35 @@
++#include "startup_screen_modes.h"
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x004a8e70
++void ScreenMode4Controller::FinishSelection()
++{
++    variable_world->ClearSelectionForType(3);
++    ScreenWorldPosition low;
++    ScreenWorldPosition high;
++    if (!(drag_start_08.x >= drag_end_14.x))
++    {
++        low.x = drag_start_08.x;
++        high.x = drag_end_14.x;
++    }
++    else
++    {
++        low.x = drag_end_14.x;
++        high.x = drag_start_08.x;
++    }
++    if (!(drag_start_08.y >= drag_end_14.y))
++    {
++        low.y = drag_start_08.y;
++        high.y = drag_end_14.y;
++    }
++    else
++    {
++        low.y = drag_end_14.y;
++        high.y = drag_start_08.y;
++    }
++    unsigned int count;
++    VariableEntity** entities = variable_world->InRectangle(3, &count, &low, &high);
++    word_24 = count;
++    for (unsigned int i = 0; i < count; ++i)
++        entities[i]->Unknown50(0, 0);
++}
+diff --git a/src/startup_screen_mode_path_place.cpp b/src/startup_screen_mode_path_place.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..41952b646685cf74601e2d5a2ac95773a2b44b25
+--- /dev/null
++++ b/src/startup_screen_mode_path_place.cpp
+@@ -0,0 +1,47 @@
++#include "startup_screen_modes.h"
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++static void PlacePath(VariableScenery* scenery, const ScreenPoint* point, unsigned int flags)
++{
++    VariableEconomy* economy = window_deactivation_state->economy_1c;
++    economy->value_80 = static_cast<float>(static_cast<double>(economy->value_80) - scenery->cost_2d0);
++    double cost = static_cast<unsigned int>(scenery->cost_2d0);
++    WindowDeactivationState* state = window_deactivation_state;
++    state->spent_78c = static_cast<float>(cost + state->spent_78c);
++    state->scenery_spent_794 = static_cast<float>(cost + state->scenery_spent_794);
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    grid->cells_0c[grid->TileIndex(point->x, point->y)].flags_48 |= flags;
++    world_cursor_names->UpdateTile(point->x, point->y, 0);
++}
++
++// FUNCTION: BEACHLIFE 0x004a9010
++void ScreenMode7Controller::Place(const ScreenPoint* point, unsigned char sound)
++{
++    if (byte_14)
++    {
++        PlacePath(scenery_0c, point, 0x10000080);
++        word_18 = point->x;
++        word_1c = point->y;
++        if (sound)
++            window_audio_state->PlaySound("Cash", 1, 0.0f);
++    }
++    else if (sound)
++        window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
++}
++
++// FUNCTION: BEACHLIFE 0x004a7a30
++void ScreenMode8Controller::Place(const ScreenPoint* point, unsigned char sound)
++{
++    if (byte_14)
++    {
++        PlacePath(scenery_08, point, 0x7000);
++        word_18 = point->x;
++        word_1c = point->y;
++        if (sound)
++            window_audio_state->PlaySound("Cash", 1, 0.0f);
++    }
++    else if (sound)
++        window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
++}
+diff --git a/src/startup_screen_mode_queue_placement.cpp b/src/startup_screen_mode_queue_placement.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..71439284d4c540fc9d229887ca51608f3d019e84
+--- /dev/null
++++ b/src/startup_screen_mode_queue_placement.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_mode_world.h"
++#include "window_activation.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0042df20
++void ScreenModeCommandQueue::QueuePlacement(ScreenModeCommand* command, const void* placement)
++{
++    memcpy(&command->words[7], &window_deactivation_state->clock_158, sizeof(float));
++    Append(0, command, placement);
++}
+diff --git a/src/startup_screen_mode_remove.cpp b/src/startup_screen_mode_remove.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0371b12af7305c03b267c430548d6a2db73d429e
+--- /dev/null
++++ b/src/startup_screen_mode_remove.cpp
+@@ -0,0 +1,81 @@
++#include "startup_screen_modes.h"
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++static bool PathHasClearNeighbours(const ScreenPoint* point)
++{
++    ScreenTerrainCell* neighbours[8];
++    screen_terrain_grid->Neighbours(point->x, point->y, neighbours);
++    for (int index = 0; index < 8; ++index)
++        if (neighbours[index]->flags_48 & 0x10)
++            return false;
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x004a72e0
++unsigned char ScreenMode10Controller::CanRemove(const ScreenPoint* point)
++{
++    unsigned char removable = 0;
++    CircularList* list = screen_terrain_grid->ObjectsAt(point->x, point->y);
++    bool occupied = list->head->next != list->head;
++    for (CircularListNode* node = list->head->next; node != list->head; node = node->next)
++    {
++        VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++        if (entity->kind_2c == 1 && entity->scenery_f4->removable_311 && entity->state_3c != 4)
++            removable = 1;
++    }
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(point->x, point->y)].flags_48;
++    if (!occupied)
++    {
++        if (flags & 0x7000)
++            return 1;
++        if ((flags & 1) && (flags & 0x80000000) && (flags & 0x10000000)
++            && PathHasClearNeighbours(point))
++            return 1;
++    }
++    return removable;
++}
++
++// FUNCTION: BEACHLIFE 0x004a73e0
++unsigned char ScreenMode10Controller::Remove(const ScreenPoint* point)
++{
++    CircularList* list = screen_terrain_grid->ObjectsAt(point->x, point->y);
++    for (CircularListNode* node = list->head->next; node != list->head; node = node->next)
++    {
++        VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++        if (entity->kind_2c == 1 && entity->scenery_f4->removable_311)
++        {
++            entity->RequestRemoval();
++            double refund = static_cast<unsigned int>(entity->scenery_f4->cost_2d0) * 0.75;
++            WindowDeactivationState* state = window_deactivation_state;
++            state->income_770 = static_cast<float>(refund + state->income_770);
++            state->income_774 = static_cast<float>(refund + state->income_774);
++            return 1;
++        }
++    }
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(point->x, point->y)].flags_48;
++    if ((flags & 1) && (flags & 0x80000000) && (flags & 0x10000000)
++        && PathHasClearNeighbours(point))
++    {
++        grid = screen_terrain_grid;
++        grid->cells_0c[grid->TileIndex(point->x, point->y)].flags_48 &= 0xefffff7f;
++        world_cursor_names->UpdateTile(point->x, point->y, 1);
++    }
++    else if (flags & 0x7000)
++    {
++        grid = screen_terrain_grid;
++        grid->cells_0c[grid->TileIndex(point->x, point->y)].flags_48 &= 0xffff8fff;
++        world_cursor_names->UpdateTile(point->x, point->y, 0);
++    }
++    else
++        return 0;
++    WindowDeactivationState* state = window_deactivation_state;
++    state->income_770 = static_cast<float>(5.0 + state->income_770);
++    state->income_774 = static_cast<float>(5.0 + state->income_774);
++    VariableEconomy* economy = window_deactivation_state->economy_1c;
++    economy->value_80 = static_cast<float>(economy->value_80 + 5.0);
++    return 1;
++}
+diff --git a/src/startup_screen_mode_select_pointer.cpp b/src/startup_screen_mode_select_pointer.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d222b82243e8e8f90b766337ecca7842f40cdae3
+--- /dev/null
++++ b/src/startup_screen_mode_select_pointer.cpp
+@@ -0,0 +1,37 @@
++#include "startup_screen_modes.h"
++#include "startup_screen_mode_world.h"
++#include "startup_input_motion.h"
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x004a8a00
++unsigned char ScreenMode4Controller::SelectAtPointer()
++{
++    ScreenPoint pointer = startup_input_motion_state->Position();
++    unsigned int count;
++    VariableEntity** selected = variable_world->Selected(&count);
++    int previous = -1;
++    for (unsigned int i = 0; i < count && previous == -1; ++i)
++        if (selected[i]->kind_2c == 2)
++            previous = selected[i]->id_28;
++    unsigned char result = SelectBuildingAtPointer(1, &pointer, previous);
++    if (!result)
++        result = SelectGuestAtPointer(1, &pointer, previous);
++    if (!result)
++        result = SelectBuildingAtPointer(0, &pointer, previous);
++    if (!result)
++        result = SelectGuestAtPointer(0, &pointer, previous);
++    if (!result && count)
++    {
++        VariableEntity* entity = selected[0];
++        entity->Unknown50(1, 0);
++        ScreenModeCommand command;
++        command.words[0] = entity->id_28;
++        command.words[1] = entity->id_28;
++        command.words[2] = 101;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++        result = 1;
++    }
++    return result;
++}
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 82a6dccade701373616e31e69fb515e111a19754..dc995688a6a60cc02811ea5b297c39104f52db04 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -2,8 +2,17 @@
+ #define STARTUP_SCREEN_MODE_WORLD_H
+ 
+ #include "startup_screen_point.h"
++#include "startup_list.h"
+ #include "startup_world_cursor_names.h"
+ 
++struct VariableEntity;
++struct VariableScenery;
++struct VariableBuilding;
++struct ScreenTerrainEntityNode : CircularListNode
++{
++    VariableEntity* entity;
++};
++
+ // Observed 84-byte terrain cell; mode controllers read and update its flags.
+ struct ScreenTerrainCell
+ {
+@@ -23,10 +32,16 @@ struct ScreenTerrainGrid
+     unsigned char unknown_10[4];
+     float height_scale_14;
+ 
+-    unsigned int TileIndex(int x, int y);                          // 0x0041f850.
+-    ScreenPoint WorldToTile(ScreenWorldPosition position);         // 0x00446170.
+-    void Step(int x, int y, int direction, ScreenPoint* result);   // 0x00446080, RET16.
+-    ScreenWorldPosition TilePosition(int x, int y, int direction); // 0x00446260.
++    bool OutsideArea(int x, int y, unsigned int width, unsigned int height); // 0x00446420.
++    bool CanPlaceScenery(int x, int y, VariableScenery* scenery);            // 0x00446650.
++    bool CanPlaceBuilding(int x, int y, VariableBuilding* building);         // 0x004466d0.
++    CircularList* ObjectsAt(int x, int y);                                   // 0x00446130.
++    void Neighbours(int x, int y, ScreenTerrainCell** output);               // 0x00445e40.
++    unsigned int TileIndex(int x, int y);                                    // 0x0041f850.
++    ScreenPoint WorldToTile(ScreenWorldPosition position);                   // 0x00446170.
++    void Step(int x, int y, int direction, ScreenPoint* result);             // 0x00446080, RET16.
++    ScreenWorldPosition TileOrigin(int x, int y);                            // 0x00446200.
++    ScreenWorldPosition TilePosition(int x, int y, int direction);           // 0x00446260.
+     void BuildingBounds(ScreenPoint& point, unsigned int width, unsigned int height,
+         int* first, int* last, unsigned int rotation); // 0x004464f0.
+ };
+@@ -71,8 +86,9 @@ struct ScreenBuildingPlacement
+ 
+ struct ScreenModeCommandQueue
+ {
+-    void QueueCommand(const ScreenModeCommand* command);                          // 0x0042de60.
+-    void QueuePlacement(const ScreenModeCommand* command, const void* placement); // 0x0042df20.
++    bool QueueCommand(ScreenModeCommand* command);                                          // 0x0042de60.
++    void QueuePlacement(ScreenModeCommand* command, const void* placement);                 // 0x0042df20.
++    void Append(VariableEntity* entity, ScreenModeCommand* command, const void* placement); // 0x0042e080.
+ };
+ extern ScreenModeCommandQueue* screen_mode_commands; // 0x005ab148.
+ 
+diff --git a/src/startup_screen_modes.h b/src/startup_screen_modes.h
+index b2ce0b25addbb917b74a01d3e2d844a3b5421f52..fc48260e4583debc4eb0488334900b11140e6cf7 100644
+--- a/src/startup_screen_modes.h
++++ b/src/startup_screen_modes.h
+@@ -102,8 +102,10 @@ struct ScreenMode4Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    unsigned char SelectAtPointer(); // 0x004a8a00.
+-    void FinishSelection();          // 0x004a8e70.
++    unsigned char SelectBuildingAtPointer(unsigned char flag, const ScreenPoint* point, int previous); // 0x004a8b00.
++    unsigned char SelectGuestAtPointer(unsigned char flag, const ScreenPoint* point, int previous);    // 0x004a8ca0.
++    unsigned char SelectAtPointer();                                                                   // 0x004a8a00.
++    void FinishSelection();                                                                            // 0x004a8e70.
+ 
+     ScreenWorldPosition drag_start_08;
+     ScreenWorldPosition drag_end_14;
+diff --git a/src/startup_screen_mp3_names.cpp b/src/startup_screen_mp3_names.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ee2ff890fbfd284dc0a9105cbd5c393ca965214c
+--- /dev/null
++++ b/src/startup_screen_mp3_names.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_mp3_names.h"
++
++// GLOBAL: BEACHLIFE 0x0058150c
++const char* mp3_playlist_name = "PlayList";
++// GLOBAL: BEACHLIFE 0x0058151c
++const char* mp3_button_sun = "MP3_Sun";
++// GLOBAL: BEACHLIFE 0x00581520
++const char* mp3_button_moon = "MP3_Moon";
++// GLOBAL: BEACHLIFE 0x00581524
++const char* mp3_button_repeat = "MP3_Repeat";
++// GLOBAL: BEACHLIFE 0x00581528
++const char* mp3_button_shuffle = "MP3_Shuffle";
++// GLOBAL: BEACHLIFE 0x0058152c
++const char* mp3_button_delete = "MP3_Delete";
++// GLOBAL: BEACHLIFE 0x00581530
++const char* mp3_button_move_up = "MP3_MoveUp";
++// GLOBAL: BEACHLIFE 0x00581534
++const char* mp3_button_move_down = "MP3_MoveDown";
++// GLOBAL: BEACHLIFE 0x00581540
++const char* mp3_button_play = "MP3_AmpPlay";
+diff --git a/src/startup_screen_mp3_names.h b/src/startup_screen_mp3_names.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..03c4a30a6f58d4c4d4d4a4cde20029b901365ff9
+--- /dev/null
++++ b/src/startup_screen_mp3_names.h
+@@ -0,0 +1,16 @@
++#ifndef STARTUP_SCREEN_MP3_NAMES_H
++#define STARTUP_SCREEN_MP3_NAMES_H
++
++// Original initialized pointers to the MP3 player button names.
++extern const char* mp3_button_sun;       // 0x0058151c -> "MP3_Sun"
++extern const char* mp3_button_moon;      // 0x00581520 -> "MP3_Moon"
++extern const char* mp3_button_repeat;    // 0x00581524 -> "MP3_Repeat"
++extern const char* mp3_button_shuffle;   // 0x00581528 -> "MP3_Shuffle"
++extern const char* mp3_button_delete;    // 0x0058152c -> "MP3_Delete"
++extern const char* mp3_button_move_up;   // 0x00581530 -> "MP3_MoveUp"
++extern const char* mp3_button_move_down; // 0x00581534 -> "MP3_MoveDown"
++extern const char* mp3_button_play;      // 0x00581540 -> "MP3_AmpPlay"
++
++extern const char* mp3_playlist_name; // 0x0058150c.
++
++#endif
+diff --git a/src/startup_screen_mp3_update.cpp b/src/startup_screen_mp3_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa7c678d05cbd6b5e112ab06a52da3cefdeecadd
+--- /dev/null
++++ b/src/startup_screen_mp3_update.cpp
+@@ -0,0 +1,81 @@
++#include "startup_screen_list_box.h"
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mp3_names.h"
++#include "startup_screen_panel13c_owner.h"
++#include "startup_screen_placement.h"
++
++// FUNCTION: BEACHLIFE 0x004c2490
++void ScreenLoadPanel13c::Update()
++{
++    if (state_1c)
++    {
++        // A requested music rescan: rebuild the playlist under a forced pause
++        // and close the "MP3Refreshing" notice.
++        screen_manager->SavePauseState();
++        owner_00->StopPlayback();
++        owner_00->SetCurrentEntry(0);
++        owner_00->ClearEntries();
++        ReloadFromStore();
++        screen_request_game->placement->ResetMusicDefaults();
++        InitializeContents(1);
++        RefreshList(1);
++        list_04->SelectRow(0, 1);
++        EnableControls();
++        state_1c = 0;
++        screen_manager->CloseScreen("MP3Refreshing");
++        screen_manager->RestorePauseState();
++    }
++
++    bool advanced = owner_00->UpdatePlayback();
++    if (!state_0c)
++        return;
++
++    // Moving and repeating only work for a single selected track.
++    int selected = static_cast<int>(list_04->selection.end - list_04->selection.begin);
++    if (selected != word_08)
++    {
++        if (selected > 1)
++        {
++            if (word_08 <= 1)
++            {
++                screen_manager->DisableNamedItems(mp3_button_move_up);
++                screen_manager->DisableNamedItems(mp3_button_move_down);
++                screen_manager->DisableNamedItems(mp3_button_repeat);
++            }
++        }
++        else if (word_08 > 1)
++        {
++            screen_manager->EnableNamedItems(mp3_button_move_up);
++            screen_manager->EnableNamedItems(mp3_button_move_down);
++            screen_manager->EnableNamedItems(mp3_button_repeat);
++        }
++        word_08 = selected;
++    }
++
++    if (owner_00->EntryCount() == 0)
++    {
++        screen_manager->DisableNamedItems(mp3_button_move_up);
++        screen_manager->DisableNamedItems(mp3_button_move_down);
++        screen_manager->DisableNamedItems(mp3_button_repeat);
++        screen_manager->DisableNamedItems(mp3_button_sun);
++        screen_manager->DisableNamedItems(mp3_button_moon);
++        screen_manager->DisableNamedItems(mp3_button_delete);
++        screen_manager->DisableNamedItems(mp3_button_shuffle);
++        screen_manager->DisableNamedItems(mp3_button_play);
++    }
++
++    if (list_04->state_95)
++        HandleAction(7);
++
++    if (advanced && state_0c)
++    {
++        ScreenListBoxPrefix* list = list_04;
++        int top = list->word_64;
++        list->word_84 = 0;
++        int row = list->selection.begin[0];
++        RefreshList(0);
++        list_04->SetTopRow(top);
++        list_04->ShowRow(row);
++    }
++}
+diff --git a/src/startup_screen_number_adjust.h b/src/startup_screen_number_adjust.h
+index acd5aacb6e1b590c2f158055409b6ea2347c073f..70c30f9479ccb7f1156c6b414cf885ab6ae22157 100644
+--- a/src/startup_screen_number_adjust.h
++++ b/src/startup_screen_number_adjust.h
+@@ -3,6 +3,10 @@
+ 
+ #include "startup_screen_item.h"
+ 
++struct ScreenButtonPrefix;
++struct ScreenImageItem;
++extern const char* number_adjust_resources[6];
++
+ // Genuine "NumberAdjust" object: original allocation 0x70, table 0x004f4a5c and
+ // kind 0x13. value_a and value_b are stored at +0x50 and +0x54, the first flag
+ // at +0x6c. Descriptive names only; the field tail, destructor and overriding
+@@ -10,7 +14,18 @@
+ // VTABLE: BEACHLIFE 0x004f4a5c
+ struct ScreenNumberAdjust : ScreenItem
+ {
+-    unsigned char unknown_44[0x2c];
++    unsigned int word_44;
++    ScreenButtonPrefix* increase_48;
++    ScreenButtonPrefix* decrease_4c;
++    int mode_50; // value_a; mode 1 adds the right field.
++    int value_b_54;
++    ScreenImageItem* field_left_58;
++    ScreenImageItem* field_right_5c;
++    unsigned int word_60;
++    unsigned int word_64;
++    char* name_68; // Owned copy of the name.
++    bool flag_6c;
++    unsigned char unknown_6d[3];
+ 
+     // Actual 0x004c5e00, RET 0x24; separate complete body required.
+     ScreenNumberAdjust(ScreenRectangle initial,
+diff --git a/src/startup_screen_number_adjust_constructor.cpp b/src/startup_screen_number_adjust_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..33a0a89a2ce8c54f82d7bf26ee812a9450a44ab6
+--- /dev/null
++++ b/src/startup_screen_number_adjust_constructor.cpp
+@@ -0,0 +1,57 @@
++#include "startup_screen_button.h"
++#include "startup_screen_button_constants.h"
++#include "startup_screen_image_item.h"
++#include "startup_screen_number_adjust.h"
++
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x005815d4
++const char* number_adjust_resources[6] = {
++    "UI3_inc_flat", "UI3_dec_flat", "UI3_field_n_left", "UI3_field_n_right", "NUMWIDGET_TIPTEXT_INC", "NUMWIDGET_TIPTEXT_DEC"
++};
++
++// FUNCTION: BEACHLIFE 0x004c5e00
++ScreenNumberAdjust::ScreenNumberAdjust(
++    ScreenRectangle initial, int value_a, int value_b, const char* name, bool flag, bool second_flag)
++    : ScreenItem(initial)
++    , word_44(0)
++    , mode_50(value_a)
++    , value_b_54(value_b)
++    , field_left_58(0)
++    , field_right_5c(0)
++    , word_64(0)
++    , flag_6c(flag)
++{
++    kind_28 = 0x13;
++    // Children are laid out left to right inside the widget's rectangle.
++    initial = rectangle;
++    field_left_58 = new ScreenImageItem(initial, number_adjust_resources[2]);
++    field_left_58->ConfigureIcon(0);
++    initial.left += 33;
++    if (mode_50 == 1)
++    {
++        initial.right = initial.left + 17;
++        field_right_5c = new ScreenImageItem(initial, number_adjust_resources[3]);
++        field_right_5c->ConfigureIcon(0);
++        initial.left += 24;
++        if (owned_text)
++            field_right_5c->SetOwnedText(owned_text);
++    }
++    initial.right = initial.left + 8;
++    decrease_4c = new ScreenButtonPrefix(initial, number_adjust_resources[1], screen_button_no_text_name, "NONE", "NONE");
++    decrease_4c->flag_50 = 1;
++    if (second_flag)
++        decrease_4c->SetOwnedText(number_adjust_resources[5]);
++    initial.left += 10;
++    initial.right = initial.left + 8;
++    increase_48 = new ScreenButtonPrefix(initial, number_adjust_resources[0], screen_button_no_text_name, "NONE", "NONE");
++    increase_48->flag_50 = 1;
++    if (second_flag)
++        increase_48->SetOwnedText(number_adjust_resources[4]);
++    word_60 = 0;
++    field_left_58->ConfigureIcon(1);
++    if (field_right_5c)
++        field_right_5c->ConfigureIcon(0);
++    name_68 = new char[strlen(name) + 1];
++    strcpy(name_68, name);
++}
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index f4de65bdb56e75d233b393ccded691c9ae19dc5b..7bc07b9c68360daafa86c316384955c2fa42a030 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -7,6 +7,9 @@
+ // Observed prefix of the central object at 0x005a8958 (about 217 code
+ // references): only the two map-extent words the overlay layout reads.
+ // Its real class, owner and lifetime are unresolved.
++struct GameFileReader;
++struct ScreenRequestRenderer;
++
+ struct OverlayMapPrefix
+ {
+     unsigned char unknown_00[0xac];
+@@ -19,10 +22,16 @@ struct OverlayMapPrefix
+     unsigned char unknown_d4[0x10];
+     float view_x_e4;
+     float view_y_e8;
++    unsigned char unknown_ec[0x10];
++    ScreenRequestRenderer* renderer_fc;
++    unsigned char unknown_100[0x5c];
++    unsigned int depth_bias_15c;
++    int depth_scale_160;
+ 
+     void PrepareScreenSize();                                                       // 0x0041b610.
+     void SetScreenSize(int width, int height);                                      // 0x0041b690.
+     void RefreshScreenSize();                                                       // 0x0041ad60.
++    unsigned short DepthAt(const ScreenWorldPosition* position);                    // 0x00418d00.
+     float HeightAt(int x, int y);                                                   // 0x00418d80.
+     ScreenWorldPosition ScreenToWorld(const ScreenPoint& point);                    // 0x0041b360.
+     ScreenPoint WorldToScreen(const ScreenWorldPosition& point);                    // 0x00418960.
+diff --git a/src/startup_screen_panel13c_actions.cpp b/src/startup_screen_panel13c_actions.cpp
+index b7caceea2a4d5daf1e101196ee47e9738d0144a9..9a57af8a4abe0d503a1407bacea72678acc30b9b 100644
+--- a/src/startup_screen_panel13c_actions.cpp
++++ b/src/startup_screen_panel13c_actions.cpp
+@@ -106,7 +106,7 @@ void ScreenLoadPanel13c::HandleAction(unsigned int action)
+         mode_10 = 0;
+         screen_manager->EnableNamedButton(panel13c_sun_action);
+         screen_manager->EnableNamedButton(panel13c_moon_action);
+-        owner_00->word_1c = word_14 == 0 ? 0 : 1;
++        owner_00->word_1c = playlist_mode_14 == 0 ? 0 : 1;
+         RefreshList(0);
+         screen_request_game->placement->flag_14 = 1;
+         return;
+diff --git a/src/startup_screen_panel13c_constructor.cpp b/src/startup_screen_panel13c_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7bc61c5200b70ec630622bad95952604ac69063c
+--- /dev/null
++++ b/src/startup_screen_panel13c_constructor.cpp
+@@ -0,0 +1,17 @@
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_panel13c_owner.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004c23c0
++ScreenLoadPanel13c::ScreenLoadPanel13c()
++{
++    owner_00 = 0;
++    list_04 = 0;
++    word_08 = 0;
++    state_0c = 0;
++    word_18 = 1;
++    state_1c = 0;
++    word_20 = -1;
++    owner_00 = new ScreenLoadPanel13cOwner(window_audio_state);
++    InitializeContents(0);
++}
+diff --git a/src/startup_screen_panel13c_enable.cpp b/src/startup_screen_panel13c_enable.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..530f81ac4330e384725461593f0771591307e583
+--- /dev/null
++++ b/src/startup_screen_panel13c_enable.cpp
+@@ -0,0 +1,50 @@
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_panel13c_owner.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mp3_names.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_shared_methods.h"
++
++// FUNCTION: BEACHLIFE 0x004c2480
++void ScreenLoadPanel13c::StopPlayback()
++{
++    owner_00->StopPlayback();
++}
++
++// FUNCTION: BEACHLIFE 0x004c2760
++void ScreenLoadPanel13c::SetEnabled(unsigned char enabled)
++{
++    if (enabled)
++    {
++        list_04 = screen_manager->FindListBox(mp3_playlist_name);
++        if (list_04)
++        {
++            list_04->state_58 = 1;
++            if (mode_10 == 1)
++            {
++                screen_manager->DisableNamedItems(mp3_button_sun);
++                screen_manager->DisableNamedItems(mp3_button_moon);
++                owner_00->word_1c = 2;
++            }
++            else if (mode_10 == 0)
++            {
++                screen_manager->EnableNamedItems(mp3_button_sun);
++                screen_manager->EnableNamedItems(mp3_button_moon);
++                owner_00->word_1c = playlist_mode_14 == 0 ? 0 : 1;
++            }
++            RefreshList(1);
++            list_04->SelectRow(owner_00->index_10, 1);
++            list_04->ShowRow(owner_00->index_10);
++        }
++    }
++    else
++        screen_request_game->placement->SavePreferences();
++    state_0c = enabled;
++}
++
++// The manager calls the shared empty RET0 destructor at 0x004d3890.
++ScreenLoadPanel140::~ScreenLoadPanel140()
++{
++    IgnoreScreenAction();
++}
+diff --git a/src/startup_screen_panel13c_owner.h b/src/startup_screen_panel13c_owner.h
+index ce0e78ed4d3ab9dd09bc0def6da6d5d73f5f11de..e5f254057c68a6e878cf00c6c4cd81796c3e1c5e 100644
+--- a/src/startup_screen_panel13c_owner.h
++++ b/src/startup_screen_panel13c_owner.h
+@@ -59,6 +59,7 @@ struct ScreenLoadPanel13cOwner
+     explicit ScreenLoadPanel13cOwner(WindowAudioState* audio);
+ 
+     // Actual indexed accessors and append/search methods. Bodies remain separate.
++    bool UpdatePlayback();                     // 0x004cdb00.
+     int EntryCount();                          // Actual 0x004cdb40: entries_end_08 - entries_begin_04.
+     const char* ReadEntryName(int index);      // 0x004cdba0, entry+00
+     const char* ReadEntryDirectory(int index); // 0x004cdbb0, entry+04
+diff --git a/src/startup_screen_panel140_refresh.cpp b/src/startup_screen_panel140_refresh.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5b655c46a757976b70815b5d08f61670dc20476
+--- /dev/null
++++ b/src/startup_screen_panel140_refresh.cpp
+@@ -0,0 +1,60 @@
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_text.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++#include <stdio.h>
++#include <wchar.h>
++
++// GLOBAL: BEACHLIFE 0x00581714
++const char* panel140_action_name_800 = "UI3_bar_message_goto";
++// GLOBAL: BEACHLIFE 0x00581718
++const char* panel140_action_name_640 = "UI2_bar_message_goto";
++
++// FUNCTION: BEACHLIFE 0x004c8820
++void ScreenLoadPanel140::RefreshContents()
++{
++    word_08 = 0;
++    int width;
++    int button_x;
++    int font_index;
++    const char* resource;
++    if (screen_request_renderer->width >= 800)
++    {
++        resource = panel140_action_name_800;
++        width = 400;
++        button_x = 410;
++        font_index = 0;
++    }
++    else
++    {
++        resource = panel140_action_name_640;
++        width = 314;
++        button_x = 324;
++        font_index = 3;
++    }
++    if (!item_00)
++        return;
++    item_00->ClearEntries();
++    float time;
++    unsigned int day;
++    unsigned int id;
++    const unsigned short* message = window_deactivation_state->ticker_30->FirstMessage(&time, &day, &id);
++    while (message)
++    {
++        unsigned short text[512];
++        ScreenRequestGamePrefix* game = screen_request_game;
++        ScreenTextLookup* lookup = screen_text_lookup;
++        int minutes = game->TimeMinutes(time);
++        int hours = game->TimeHours(time);
++        const unsigned short* title = lookup->LookupText("TICKER_DAY");
++        swprintf(text, L"%s %d: %02d:%02d - %s", title, day + 1, hours, minutes, message);
++        item_00->AddEntry(word_08, 5, width, 15, 2, font_index, 0x2a0fb2, text, 1);
++        if (id != 0xffffffff && id != 0xfffffffe)
++            item_00->AddActionEntry(word_08, button_x, resource, id);
++        ++word_08;
++        message = window_deactivation_state->ticker_30->NextMessage(&time, &day, &id);
++    }
++}
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index ee3c71dd86577cb642e0257f6a89a3c0b6b6e868..8272f4cfe1858e7fe12457c20d601f7e78d3bdf3 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -69,6 +69,8 @@ struct ScreenPlacementStore
+     const char* ReadMusicDirectory(int index); // 0x004e6c00, entry+04
+     unsigned int ReadMusicWord08(int index);   // 0x004e6c10
+     unsigned int ReadMusicWord0c(int index);   // 0x004e6c20
++    void ResetMusicDefaults();                 // 0x004e6c40.
++    void SavePreferences();                    // 0x004e6760.
+     void ClearMusicEntries();                  // 0x004e6980
+     void ResetMusicEntries();                  // 0x004e6c40.
+     void AddMusicEntry(const char* directory,
+@@ -76,6 +78,7 @@ struct ScreenPlacementStore
+         unsigned int word_08,
+         unsigned int word_0c); // 0x004e6a00
+ 
++    void GetScreenSize(int* width, int* height); // 0x004e6940.
+     void SetScreenSize(int width, int height);
+     void ClearPlacements();
+ 
+diff --git a/src/startup_screen_placement_load_saved.cpp b/src/startup_screen_placement_load_saved.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8e283ce5af22b336c60db5fa56b7cb515e7f94c5
+--- /dev/null
++++ b/src/startup_screen_placement_load_saved.cpp
+@@ -0,0 +1,51 @@
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_preferences.h"
++#include <windows.h>
++#include <new>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x00586890
++const char* screen_placement_profile_dialog_section = "Dialog";
++// GLOBAL: BEACHLIFE 0x005868c8
++const char* screen_placement_profile_dialog_count_key = "DialogCount";
++// GLOBAL: BEACHLIFE 0x005868cc
++const char* screen_placement_profile_dialog_x_key = "DialogXPos";
++// GLOBAL: BEACHLIFE 0x005868d0
++const char* screen_placement_profile_dialog_y_key = "DialogYPos";
++
++// FUNCTION: BEACHLIFE 0x004e6fe0
++void ScreenPlacementStore::LoadSavedPlacementPreferences()
++{
++    char buffer[128];
++    char key[128];
++    GetPrivateProfileStringA(screen_placement_profile_dialog_section,
++        screen_placement_profile_dialog_count_key,
++        screen_placement_profile_default,
++        buffer,
++        sizeof(buffer),
++        preferences_path_04);
++    if (strcmp(buffer, screen_placement_profile_default) == 0)
++        return;
++    unsigned int count = atoi(buffer);
++    unsigned int loaded = 0;
++    unsigned int group = 0;
++    while (loaded != count)
++    {
++        sprintf(key, "%s%d", screen_placement_profile_dialog_x_key, static_cast<int>(group));
++        GetPrivateProfileStringA(screen_placement_profile_dialog_section, key, screen_placement_profile_default, buffer, sizeof(buffer), preferences_path_04);
++        if (strcmp(buffer, screen_placement_profile_default) != 0)
++        {
++            SavedScreenPlacement* placement = new SavedScreenPlacement;
++            placement->group = group;
++            placement->x = atoi(buffer);
++            sprintf(key, "%s%d", screen_placement_profile_dialog_y_key, static_cast<int>(group));
++            GetPrivateProfileStringA(screen_placement_profile_dialog_section, key, screen_placement_profile_default, buffer, sizeof(buffer), preferences_path_04);
++            placement->y = atoi(buffer);
++            saved.Insert(saved.End(), placement);
++            ++loaded;
++        }
++        ++group;
++    }
++}
+diff --git a/src/startup_screen_placement_load_video.cpp b/src/startup_screen_placement_load_video.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d25d9335e92d66224b1973c68568529f247088d2
+--- /dev/null
++++ b/src/startup_screen_placement_load_video.cpp
+@@ -0,0 +1,74 @@
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_preferences.h"
++#include <windows.h>
++#include <stdlib.h>
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x00586894
++const char* screen_placement_profile_video_section = "Video";
++// GLOBAL: BEACHLIFE 0x005868d4
++const char* screen_placement_profile_width_key = "ResWidth";
++// GLOBAL: BEACHLIFE 0x005868d8
++const char* screen_placement_profile_height_key = "ResHeight";
++// GLOBAL: BEACHLIFE 0x005868dc
++const char* screen_placement_profile_nudge_key = "NudgeScroll";
++// GLOBAL: BEACHLIFE 0x005868e0
++const char* screen_placement_profile_sea_key = "SeaEffects";
++// GLOBAL: BEACHLIFE 0x005868e4
++const char* screen_placement_profile_light_key = "LightEffects";
++// GLOBAL: BEACHLIFE 0x005868e8
++const char* screen_placement_profile_keyline_key = "Keyline";
++
++// FUNCTION: BEACHLIFE 0x004e7c40
++void ScreenPlacementStore::LoadVideoPreferences()
++{
++    char buffer[128];
++    GetPrivateProfileStringA(screen_placement_profile_video_section,
++        screen_placement_profile_width_key,
++        screen_placement_profile_default,
++        buffer,
++        sizeof(buffer),
++        preferences_path_04);
++    if (strcmp(buffer, screen_placement_profile_default) != 0)
++        width_2c = atoi(buffer);
++    GetPrivateProfileStringA(screen_placement_profile_video_section,
++        screen_placement_profile_height_key,
++        screen_placement_profile_default,
++        buffer,
++        sizeof(buffer),
++        preferences_path_04);
++    if (strcmp(buffer, screen_placement_profile_default) != 0)
++        height_30 = atoi(buffer);
++    GetPrivateProfileStringA(screen_placement_profile_video_section,
++        screen_placement_profile_nudge_key,
++        screen_placement_profile_default,
++        buffer,
++        sizeof(buffer),
++        preferences_path_04);
++    if (strcmp(buffer, screen_placement_profile_default) != 0)
++        flag_34 = atoi(buffer) != 0;
++    GetPrivateProfileStringA(screen_placement_profile_video_section,
++        screen_placement_profile_sea_key,
++        screen_placement_profile_default,
++        buffer,
++        sizeof(buffer),
++        preferences_path_04);
++    if (strcmp(buffer, screen_placement_profile_default) != 0)
++        flag_35 = atoi(buffer) != 0;
++    GetPrivateProfileStringA(screen_placement_profile_video_section,
++        screen_placement_profile_light_key,
++        screen_placement_profile_default,
++        buffer,
++        sizeof(buffer),
++        preferences_path_04);
++    if (strcmp(buffer, screen_placement_profile_default) != 0)
++        flag_36 = atoi(buffer) != 0;
++    GetPrivateProfileStringA(screen_placement_profile_video_section,
++        screen_placement_profile_keyline_key,
++        screen_placement_profile_default,
++        buffer,
++        sizeof(buffer),
++        preferences_path_04);
++    if (strcmp(buffer, screen_placement_profile_default) != 0)
++        flag_37 = atoi(buffer) != 0;
++}
+diff --git a/src/startup_screen_placement_music_reset.cpp b/src/startup_screen_placement_music_reset.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e67f2e076e76959e3235033177ba1ae2ede9e9ee
+--- /dev/null
++++ b/src/startup_screen_placement_music_reset.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_defaults.h"
++
++// FUNCTION: BEACHLIFE 0x004e6c40
++void ScreenPlacementStore::ResetMusicDefaults()
++{
++    ClearMusicEntries();
++    for (unsigned int i = 0; i < 12; ++i)
++        AddMusicEntry(screen_placement_default_music_directory,
++            screen_placement_default_music[i].name,
++            screen_placement_default_music[i].word_08,
++            screen_placement_default_music[i].word_0c);
++}
+diff --git a/src/startup_screen_placement_preferences.h b/src/startup_screen_placement_preferences.h
+index af97cb306d8c03f554869be02ea339469d1c016d..7d48336e254de7dd915b9a0facf551332011beeb 100644
+--- a/src/startup_screen_placement_preferences.h
++++ b/src/startup_screen_placement_preferences.h
+@@ -23,4 +23,16 @@ extern const char* screen_placement_profile_playlist_directory_key; // 0x005868b
+ extern const char* screen_placement_profile_playlist_attribute_key; // 0x005868c0
+ extern const char* screen_placement_profile_playlist_time_key;      // 0x005868c4
+ 
++extern const char* screen_placement_profile_dialog_section;   // 0x00586890.
++extern const char* screen_placement_profile_dialog_count_key; // 0x005868c8.
++extern const char* screen_placement_profile_dialog_x_key;     // 0x005868cc.
++extern const char* screen_placement_profile_dialog_y_key;     // 0x005868d0.
++extern const char* screen_placement_profile_video_section;    // 0x00586894.
++extern const char* screen_placement_profile_width_key;        // 0x005868d4.
++extern const char* screen_placement_profile_height_key;       // 0x005868d8.
++extern const char* screen_placement_profile_nudge_key;        // 0x005868dc.
++extern const char* screen_placement_profile_sea_key;          // 0x005868e0.
++extern const char* screen_placement_profile_light_key;        // 0x005868e4.
++extern const char* screen_placement_profile_keyline_key;      // 0x005868e8.
++
+ #endif
+diff --git a/src/startup_screen_placement_saved_save.cpp b/src/startup_screen_placement_saved_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a119c45bbde7994a75fde2de0087998a8a703ab0
+--- /dev/null
++++ b/src/startup_screen_placement_saved_save.cpp
+@@ -0,0 +1,26 @@
++#include "library_list_distance.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_preferences.h"
++
++#include <stdio.h>
++#include <windows.h>
++
++// FUNCTION: BEACHLIFE 0x004e6eb0
++void ScreenPlacementStore::SaveSavedPlacementPreferences()
++{
++    char value[128];
++    char key[128];
++
++    sprintf(value, "%d", ListSize(saved));
++    WritePrivateProfileStringA(screen_placement_profile_dialog_section, screen_placement_profile_dialog_count_key, value, preferences_path_04);
++    for (CircularListNode* node = saved.head->next; node != saved.head; node = node->next)
++    {
++        SavedScreenPlacement* placement = static_cast<SavedScreenPlacementNode*>(node)->placement;
++        sprintf(value, "%d", placement->x);
++        sprintf(key, "%s%d", screen_placement_profile_dialog_x_key, placement->group);
++        WritePrivateProfileStringA(screen_placement_profile_dialog_section, key, value, preferences_path_04);
++        sprintf(value, "%d", placement->y);
++        sprintf(key, "%s%d", screen_placement_profile_dialog_y_key, placement->group);
++        WritePrivateProfileStringA(screen_placement_profile_dialog_section, key, value, preferences_path_04);
++    }
++}
+diff --git a/src/startup_screen_placement_sound_save.cpp b/src/startup_screen_placement_sound_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..841b19b7a7067815ccc356015921c41647c3f8f5
+--- /dev/null
++++ b/src/startup_screen_placement_sound_save.cpp
+@@ -0,0 +1,41 @@
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_music_entry.h"
++#include "startup_screen_placement_preferences.h"
++
++#include <stdio.h>
++#include <windows.h>
++
++// FUNCTION: BEACHLIFE 0x004e71b0
++void ScreenPlacementStore::SaveSoundPreferences()
++{
++    char key[128];
++    char value[1024];
++
++    sprintf(value, "%f", sound_volume_08);
++    WritePrivateProfileStringA(screen_placement_profile_sound_section, screen_placement_profile_music_volume_key, value, preferences_path_04);
++    sprintf(value, "%f", music_volume_0c);
++    WritePrivateProfileStringA(screen_placement_profile_sound_section, screen_placement_profile_effects_volume_key, value, preferences_path_04);
++    sprintf(value, "%s", provider_name_10);
++    WritePrivateProfileStringA(screen_placement_profile_sound_section, screen_placement_profile_provider_key, value, preferences_path_04);
++    sprintf(value, "%d", flag_14);
++    WritePrivateProfileStringA(screen_placement_profile_sound_section, screen_placement_profile_playlist_mode_key, value, preferences_path_04);
++    sprintf(value, "%d", static_cast<int>(music_end_1c - music_begin_18));
++    WritePrivateProfileStringA(screen_placement_profile_sound_section, screen_placement_profile_playlist_count_key, value, preferences_path_04);
++
++    for (unsigned int index = 0; index < static_cast<unsigned int>(music_end_1c - music_begin_18); ++index)
++    {
++        ScreenPlacementMusicEntry* entry = music_begin_18[index];
++        sprintf(value, "%s", entry->name_00);
++        sprintf(key, "%s%d", screen_placement_profile_playlist_track_key, index);
++        WritePrivateProfileStringA(screen_placement_profile_sound_section, key, value, preferences_path_04);
++        sprintf(value, "%s", entry->directory_04);
++        sprintf(key, "%s%d", screen_placement_profile_playlist_directory_key, index);
++        WritePrivateProfileStringA(screen_placement_profile_sound_section, key, value, preferences_path_04);
++        sprintf(value, "%d", entry->word_08);
++        sprintf(key, "%s%d", screen_placement_profile_playlist_attribute_key, index);
++        WritePrivateProfileStringA(screen_placement_profile_sound_section, key, value, preferences_path_04);
++        sprintf(value, "%d", entry->word_0c);
++        sprintf(key, "%s%d", screen_placement_profile_playlist_time_key, index);
++        WritePrivateProfileStringA(screen_placement_profile_sound_section, key, value, preferences_path_04);
++    }
++}
+diff --git a/src/startup_screen_placement_video_save.cpp b/src/startup_screen_placement_video_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb3715817e2bd97b07275a693587cc05d7665ef2
+--- /dev/null
++++ b/src/startup_screen_placement_video_save.cpp
+@@ -0,0 +1,24 @@
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_preferences.h"
++
++#include <stdio.h>
++#include <windows.h>
++
++// FUNCTION: BEACHLIFE 0x004e7b00
++void ScreenPlacementStore::SaveVideoPreferences()
++{
++    char value[128];
++
++    sprintf(value, "%d", width_2c);
++    WritePrivateProfileStringA(screen_placement_profile_video_section, screen_placement_profile_width_key, value, preferences_path_04);
++    sprintf(value, "%d", height_30);
++    WritePrivateProfileStringA(screen_placement_profile_video_section, screen_placement_profile_height_key, value, preferences_path_04);
++    sprintf(value, "%d", flag_34);
++    WritePrivateProfileStringA(screen_placement_profile_video_section, screen_placement_profile_nudge_key, value, preferences_path_04);
++    sprintf(value, "%d", flag_35);
++    WritePrivateProfileStringA(screen_placement_profile_video_section, screen_placement_profile_sea_key, value, preferences_path_04);
++    sprintf(value, "%d", flag_36);
++    WritePrivateProfileStringA(screen_placement_profile_video_section, screen_placement_profile_light_key, value, preferences_path_04);
++    sprintf(value, "%d", flag_37);
++    WritePrivateProfileStringA(screen_placement_profile_video_section, screen_placement_profile_keyline_key, value, preferences_path_04);
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 85d8b7f308930f3fae3c5738d63b7661557b7c92..0c117bbd194517c8a863547957c4e08ee47d26da 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -88,6 +88,7 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+         unsigned int requested_height,
+         unsigned char mode);
+     ~ScreenRequestRenderer();
++    unsigned char SupportsWidth(int width); // 0x00411b50.
+     ScreenRequestRenderer(const ScreenRequestRenderer&) = delete;
+     ScreenRequestRenderer& operator=(const ScreenRequestRenderer&) = delete;
+ 
+diff --git a/src/startup_screen_request_context.h b/src/startup_screen_request_context.h
+index 697bb3b40a59cda3966282a039abe98be2f3f073..cccbaaef2c695a7c9f76b474ea394a2c59885892 100644
+--- a/src/startup_screen_request_context.h
++++ b/src/startup_screen_request_context.h
+@@ -1,48 +1,9 @@
+ #ifndef STARTUP_SCREEN_REQUEST_CONTEXT_H
+ #define STARTUP_SCREEN_REQUEST_CONTEXT_H
+ 
+-// Four-pointer deque iterators used by the indexed table context.
+-struct ScreenContextRowIterator
+-{
+-    unsigned int* current;
+-    unsigned int* first;
+-    unsigned int* last;
+-    unsigned int** node;
++#include "startup_variable_state.h"
+ 
+-    int Distance(const ScreenContextRowIterator& other) const; // 0x00427a60.
+-};
+-
+-// Descriptive virtual boundary only. Its concrete class/vtable is unresolved.
+-struct ScreenRequestContext
+-{
+-    virtual void Unknown00() = 0;
+-    virtual void Unknown04() = 0;
+-    virtual void Unknown08() = 0;
+-    virtual void Unknown0c() = 0;
+-    virtual void Unknown10() = 0;
+-    virtual void Unknown14() = 0;
+-    virtual void ReadText(const char* key, unsigned short* output) = 0;
+-    virtual void WriteValue(const char* key, const void* value) = 0;
+-    virtual void Unknown20() = 0;
+-    virtual void Unknown24() = 0;
+-    virtual void Unknown28() = 0;
+-    virtual void Unknown2c() = 0;
+-    virtual void Unknown30() = 0;
+-    virtual void Unknown34() = 0;
+-    virtual void Unknown38() = 0;
+-    virtual void Unknown3c() = 0;
+-    virtual void Unknown40() = 0;
+-    virtual void Unknown44() = 0;
+-    virtual void Unknown48() = 0;
+-    virtual void Unknown4c() = 0;
+-    virtual void Unknown50() = 0;
+-    virtual void Replaced() = 0;
+-
+-    unsigned char unknown_04[0x24];
+-    unsigned int object_id_28;
+-    unsigned char unknown_2c[0x3fc];
+-    ScreenContextRowIterator rows_begin_428;
+-    ScreenContextRowIterator rows_end_438;
+-};
++// Screen contexts expose the same entity virtual slots and object fields.
++using ScreenRequestContext = VariableEntity;
+ 
+ #endif
+diff --git a/src/startup_screen_table.h b/src/startup_screen_table.h
+index 8c997d72a36af55738845b24e1183a86a1fe5b39..9856353e2fec8805af571c2c4fe5e4cb03be956f 100644
+--- a/src/startup_screen_table.h
++++ b/src/startup_screen_table.h
+@@ -6,7 +6,7 @@
+ #include "startup_screen_table_column.h"
+ #include "startup_screen_table_storage.h"
+ 
+-struct ScreenRequestContext;
++#include "startup_screen_request_context.h"
+ 
+ // The observed child prefix is the real table column type.
+ using ScreenTableChildPrefix = ScreenTableColumn;
+diff --git a/src/startup_screen_table_column.h b/src/startup_screen_table_column.h
+index 39f5541d763aa0a2e439f67bca29f6674dd064b4..46c325f9165c5bf6a11a30f0428cfb477301540c 100644
+--- a/src/startup_screen_table_column.h
++++ b/src/startup_screen_table_column.h
+@@ -6,7 +6,7 @@
+ #include "startup_screen_variable_filter.h"
+ 
+ struct ScreenVariableImage;
+-struct ScreenRequestContext;
++#include "startup_screen_request_context.h"
+ 
+ // Genuine "<COL>" table column: original allocation 0x8c and table 0x004f47ac.
+ // Its source name selects a VAR_, VARIMG_ or FILTER_ column. Descriptive names
+diff --git a/src/startup_screen_table_update.cpp b/src/startup_screen_table_update.cpp
+index 3f839afb886450f313f583f2ffdd771921333d87..6e18808e71821bb96294204e2eda6705fd1546ee 100644
+--- a/src/startup_screen_table_update.cpp
++++ b/src/startup_screen_table_update.cpp
+@@ -145,7 +145,7 @@ bool ScreenTable::HandleTimedCoordinates(int x, int y, int value)
+             selected_row_a4 = row_count_54 - 1;
+         unsigned int selected = -1;
+         if (selected_row_a4 != -1)
+-            selected = rows_64.begin[individual_rows_50 ? selected_row_a4 : 0]->object_id_28;
++            selected = rows_64.begin[individual_rows_50 ? selected_row_a4 : 0]->id_28;
+         screen_manager->SetWord(12, selected);
+     }
+     return handled;
+diff --git a/src/startup_screen_variable_draw.cpp b/src/startup_screen_variable_draw.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9cbd6ebc826ffc2cb606db908729ffd7457c824c
+--- /dev/null
++++ b/src/startup_screen_variable_draw.cpp
+@@ -0,0 +1,769 @@
++#include "startup_screen_variable_item.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_request_context.h"
++#include "startup_screen_text.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <wchar.h>
++
++// FUNCTION: BEACHLIFE 0x004c8a30
++void ScreenVariableItem::Unresolved1c()
++{
++    ScreenManager* initial_manager = screen_manager;
++    ScreenFontRenderer* font = initial_manager->fonts_2c[font_index_68];
++    unsigned int colour = word_64;
++    const char* key = key_44;
++    unsigned int horizontal_offset = 0;
++    unsigned short text[1024];
++    union
++    {
++        char narrow[128];
++        unsigned short wide[64];
++    } scratch;
++
++    if (strcmp(key, "PlayerMoney") == 0)
++    {
++        float value = window_deactivation_state->economy_1c->value_80;
++        swprintf(text, L"%.f", value);
++        if (!(value >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "PlayerMoney$") == 0)
++    {
++        float value = window_deactivation_state->economy_1c->value_80;
++        swprintf(text, L"$%.f", value);
++        if (!(value >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "PlayerMoneyTitle") == 0)
++    {
++        float value = window_deactivation_state->economy_1c->value_80;
++        const unsigned short* format = screen_text_lookup->LookupText("CASH_TITLE");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), value);
++    }
++    else if (strcmp(key, "MaxDistance") == 0)
++        swprintf(text, L"%.0f", window_audio_state->value_f0);
++    else if (strcmp(key, "MinDistance") == 0)
++        swprintf(text, L"%.0f", window_audio_state->value_ec);
++    else if (strcmp(key, "NumGuests") == 0)
++        _itow(window_deactivation_state->guests_43c, text, 10);
++    else if (strcmp(key, "NumGuestsTitle") == 0)
++    {
++        unsigned int guests = window_deactivation_state->guests_43c;
++        const unsigned short* format = screen_text_lookup->LookupText("GUESTS_TITLE");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), guests);
++    }
++    else if (strcmp(key, "Time") == 0)
++    {
++        float time = window_deactivation_state->render_value_160;
++        ScreenRequestGamePrefix* game = screen_request_game;
++        int minutes = game->TimeMinutes(time);
++        int hours = game->TimeHours(time);
++        swprintf(text, L"%d:%02d", hours, minutes);
++    }
++    else if (strcmp(key, "ScriptText") == 0)
++    {
++        const unsigned short* value = screen_text_lookup->LookupText(initial_manager->word_c4);
++        swprintf(text, L"%s", reinterpret_cast<const unsigned short*>(value));
++    }
++    else if (strcmp(key, "MessageText") == 0)
++    {
++        const unsigned short* value = screen_text_lookup->LookupText(initial_manager->word_c8);
++        swprintf(text, L"%s", reinterpret_cast<const unsigned short*>(value));
++    }
++    else if (strcmp(key, "NextFerryTool") == 0)
++    {
++        unsigned int value;
++        float time = window_deactivation_state->transport_24->FindNext(1, &value);
++        if (time > 0.0f)
++        {
++            ScreenRequestGamePrefix* game = screen_request_game;
++            int minutes = game->TimeMinutes(time);
++            int hours = game->TimeHours(time);
++            swprintf(text, L"%d:%02d", hours, minutes);
++        }
++        else
++            swprintf(text, L"-");
++    }
++    else if (strcmp(key, "NextFerry") == 0)
++    {
++        unsigned int value;
++        float time = window_deactivation_state->transport_24->FindNext(1, &value);
++        if (time > 0.0f)
++        {
++            ScreenRequestGamePrefix* game = screen_request_game;
++            int minutes = game->TimeMinutes(time);
++            int hours = game->TimeHours(time);
++            swprintf(text, L"%d:%02d", hours, minutes);
++        }
++        else
++        {
++            time = window_deactivation_state->transport_24->FindNext(0, &value);
++            if (time > 0.0f)
++            {
++                unsigned int arrival = value + 1;
++                ScreenRequestGamePrefix* game = screen_request_game;
++                ScreenTextLookup* lookup = screen_text_lookup;
++                int minutes = game->TimeMinutes(time);
++                int hours = game->TimeHours(time);
++                const unsigned short* format = lookup->LookupText("FP_ARRIVE_FORMAT");
++                swprintf(text, reinterpret_cast<const unsigned short*>(format), hours, minutes, arrival);
++            }
++            else
++                swprintf(text, reinterpret_cast<const unsigned short*>(screen_text_empty));
++        }
++    }
++    else if (strcmp(key, "FerrySchedule") == 0)
++    {
++        swprintf(text, reinterpret_cast<const unsigned short*>(screen_text_empty));
++        unsigned int index = 0;
++        float time = window_deactivation_state->transport_24->ScheduleAt(index);
++        while (time > -1.0f)
++        {
++            ScreenRequestGamePrefix* game = screen_request_game;
++            int minutes = game->TimeMinutes(time);
++            int hours = game->TimeHours(time);
++            swprintf(scratch.wide, L"%d:%02d", hours, minutes);
++            wcscat(text, scratch.wide);
++            time = window_deactivation_state->transport_24->ScheduleAt(++index);
++            if (!(time > -1.0f))
++                break;
++            wcscat(text, L", ");
++        }
++    }
++    else if (strcmp(key, "GameDay") == 0)
++        swprintf(text, L"%d", window_deactivation_state->day_15c + 1);
++    else if (strcmp(key, "GameDayTitle") == 0)
++    {
++        unsigned int day = window_deactivation_state->day_15c + 1;
++        const unsigned short* format = screen_text_lookup->LookupText("DAY_TITLE");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), day);
++    }
++    else if (strcmp(key, "BUILD_BUILDING_DESC") == 0)
++    {
++        VariableBuilding* building = variable_catalog->Building(initial_manager->word_54);
++        sprintf(scratch.narrow, "BUILD_DESC_%s", building->name_04);
++        const unsigned short* value = screen_text_lookup->LookupText(scratch.narrow);
++        swprintf(text, L"%s", reinterpret_cast<const unsigned short*>(value));
++    }
++    else if (strcmp(key, "BUILD_BUILDING_TREE") == 0)
++    {
++        VariableBuilding* selected = variable_catalog->Building(initial_manager->word_54);
++        unsigned int required = variable_catalog->FindBuilding(selected->required_320);
++        VariableBuilding* building = variable_catalog->Building(required);
++        bool available = window_deactivation_state->CanBuild(screen_manager->word_54);
++        if (available)
++        {
++            unsigned int count;
++            VariableEntity** entries = variable_world->FindNamed(building->name_04, &count);
++            bool found = false;
++            unsigned int index = 0;
++            while (index < count && !found)
++            {
++                VariableEntity* entry = entries[index];
++                if (!entry->FlagAt00460310() && !entry->FlagAt00460340())
++                    found = true;
++                ++index;
++            }
++            if (!found)
++                colour = 0xff0000;
++        }
++        else
++            colour = 0xff0000;
++        sprintf(scratch.narrow, "BUILD_SNAME_%s", building->name_04);
++        const unsigned short* value = screen_text_lookup->LookupText(scratch.narrow);
++        swprintf(text, L"%s", reinterpret_cast<const unsigned short*>(value));
++    }
++    else if (strcmp(key, "BUILD_BUILDING_HOURS") == 0)
++    {
++        VariableBuilding* building = variable_catalog->Building(initial_manager->word_54);
++        if (strcmp(variable_catalog->HoursName(building->hours_1e8), "ALLHOURS") == 0)
++            wcscpy(text, reinterpret_cast<const unsigned short*>(screen_text_lookup->LookupText("BI_HOURS_ALLDAY")));
++        else if (strcmp(variable_catalog->HoursName(building->hours_1e8), "MORNING") == 0)
++            wcscpy(text, reinterpret_cast<const unsigned short*>(screen_text_lookup->LookupText("BI_HOURS_MORNING")));
++        else if (strcmp(variable_catalog->HoursName(building->hours_1e8), "DAY") == 0)
++            wcscpy(text, reinterpret_cast<const unsigned short*>(screen_text_lookup->LookupText("BI_HOURS_DAY")));
++        else if (strcmp(variable_catalog->HoursName(building->hours_1e8), "EVENING") == 0)
++            wcscpy(text, reinterpret_cast<const unsigned short*>(screen_text_lookup->LookupText("BI_HOURS_EVENING")));
++        else if (strcmp(variable_catalog->HoursName(building->hours_1e8), "NIGHT") == 0)
++            wcscpy(text, reinterpret_cast<const unsigned short*>(screen_text_lookup->LookupText("BI_HOURS_NIGHT")));
++        // The original has no default assignment to text.
++    }
++    else if (strcmp(key, "BUILD_COST_AMOUNT") == 0)
++    {
++        VariableBuilding* building = variable_catalog->Building(initial_manager->word_54);
++        swprintf(text, L"%d", building->cost_1cc);
++        if (!(window_deactivation_state->economy_1c->value_80 - building->cost_1cc >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "BUILD_POWER_AMOUNT") == 0)
++    {
++        VariableBuilding* building = variable_catalog->Building(initial_manager->word_54);
++        int power = building->power_cf4;
++        unsigned int sign = static_cast<unsigned int>(power >> 31);
++        swprintf(text, L"%d", (static_cast<unsigned int>(power) ^ sign) - sign);
++    }
++    else if (strcmp(key, "BUILD_POWER_AMOUNT") == 0)
++    {
++        // This duplicate key test and body are present in the original.
++        VariableBuilding* building = variable_catalog->Building(initial_manager->word_54);
++        int power = building->power_cf4;
++        unsigned int sign = static_cast<unsigned int>(power >> 31);
++        swprintf(text, L"%d", (static_cast<unsigned int>(power) ^ sign) - sign);
++    }
++    else if (strcmp(key, "BUILD_NAME_TEXT") == 0)
++    {
++        VariableBuilding* building = variable_catalog->Building(initial_manager->word_54);
++        strcpy(scratch.narrow, "BUILDING_NAME_");
++        strcat(scratch.narrow, building->name_04);
++        const unsigned short* value = screen_text_lookup->LookupText(scratch.narrow);
++        wcscpy(text, reinterpret_cast<const unsigned short*>(value));
++    }
++    else if (strcmp(key, "SP_SCENERY_DESC") == 0)
++    {
++        VariableScenery* scenery = variable_catalog->Scenery(initial_manager->word_68);
++        sprintf(scratch.narrow, "SP_DESC_%s", scenery->name_04);
++        _strupr(scratch.narrow);
++        const unsigned short* value = screen_text_lookup->LookupText(scratch.narrow);
++        swprintf(text, L"%s", reinterpret_cast<const unsigned short*>(value));
++    }
++    else if (strcmp(key, "SP_SCENERY_COST") == 0)
++    {
++        VariableScenery* scenery = variable_catalog->Scenery(initial_manager->word_68);
++        swprintf(text, L"%d", scenery->cost_2d0);
++        if (!(window_deactivation_state->economy_1c->value_80 - scenery->cost_2d0 >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "OB_FILTER_HEADING") == 0)
++    {
++        const char* title = ReadVariableFilterTitle();
++        if (title != 0)
++        {
++            const unsigned short* value = screen_text_lookup->LookupText(title);
++            swprintf(text, L"%s", reinterpret_cast<const unsigned short*>(value));
++        }
++        else
++            swprintf(text, reinterpret_cast<const unsigned short*>(screen_text_empty));
++    }
++    else if (strcmp(key, "OB_GUEST_NUM") == 0)
++    {
++        const unsigned short* format = screen_text_lookup->LookupText("OB_NUM_GUESTS");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), screen_manager->word_6c);
++    }
++    else if (strcmp(key, "OB_BUILDING_NUM") == 0)
++    {
++        const unsigned short* format = screen_text_lookup->LookupText("OB_NUM_BUILDINGS");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), screen_manager->word_6c);
++    }
++    else if (strcmp(key, "BUILDMENU_MALE") == 0)
++    {
++        if (variable_catalog->MaleAppeal(initial_manager->word_54) > 0.0f)
++        {
++            const unsigned short* value = screen_text_lookup->LookupText("BUILDMENU_APPEAL");
++            swprintf(text, L"%s", reinterpret_cast<const unsigned short*>(value));
++        }
++        else
++            swprintf(text, reinterpret_cast<const unsigned short*>(screen_text_empty));
++    }
++    else if (strcmp(key, "BUILDMENU_FEMALE") == 0)
++    {
++        if (variable_catalog->FemaleAppeal(initial_manager->word_54) > 0.0f)
++        {
++            const unsigned short* value = screen_text_lookup->LookupText("BUILDMENU_APPEAL");
++            swprintf(text, L"%s", reinterpret_cast<const unsigned short*>(value));
++        }
++        else
++            swprintf(text, reinterpret_cast<const unsigned short*>(screen_text_empty));
++    }
++    else if (strcmp(key, "WORLD_POWER_OUTPUT") == 0)
++        swprintf(text, L"%d", static_cast<int>(window_deactivation_state->power_output_3a8));
++    else if (strcmp(key, "WORLD_POWER_DEMAND") == 0)
++        swprintf(text, L"%d", static_cast<int>(window_deactivation_state->power_3ac));
++    else if (strcmp(key, "WORLD_POWER_USE") == 0)
++        swprintf(text, L"%d", static_cast<int>(window_deactivation_state->power_use_3a0));
++    else if (strcmp(key, "WEATHER_RED") == 0)
++        swprintf(text, L"%d", static_cast<int>(variable_weather->Red() * 255.0f));
++    else if (strcmp(key, "WEATHER_BLUE") == 0)
++        swprintf(text, L"%d", static_cast<int>(variable_weather->Blue() * 255.0f));
++    else if (strcmp(key, "WEATHER_GREEN") == 0)
++        swprintf(text, L"%d", static_cast<int>(variable_weather->Green() * 255.0f));
++    else if (strcmp(key, "LITTER_COUNT") == 0)
++    {
++        unsigned int count = window_deactivation_state->litter_440;
++        const unsigned short* format = screen_text_lookup->LookupText("IS_LITTER_ITEMS");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), count);
++    }
++    else if (strcmp(key, "LITTER_COUNT_NOFORMAT") == 0)
++        swprintf(text, L"%d", window_deactivation_state->litter_440);
++    else if (strcmp(key, "BUILDING_COUNT") == 0)
++        swprintf(text, L"%d", variable_world->CountType(2));
++    else if (strcmp(key, "STAFF_COUNT") == 0)
++    {
++        unsigned int count = variable_world->CountType(7);
++        count += variable_world->CountType(8);
++        count += variable_world->CountType(9);
++        count += variable_world->CountType(10);
++        count += variable_world->CountType(11);
++        count += variable_world->CountType(12);
++        swprintf(text, L"%d", count);
++    }
++    else if (strcmp(key, "GUEST_BREAKDOWN") == 0)
++    {
++        VariableWorldPrefix* world = variable_world;
++        unsigned int first = 0;
++        unsigned int second = 0;
++        VariableEntity* const* guests = world->guests_128f0;
++        unsigned int guest_count = world->guests_08;
++        for (unsigned int index = 0; index < guest_count; ++index)
++        {
++            if (guests[index]->guest_f4->word_1c4 == 0)
++                ++first;
++            else
++                ++second;
++        }
++        unsigned int count = window_deactivation_state->guests_43c;
++        const unsigned short* format = screen_text_lookup->LookupText("IS_GUEST_COUNT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), count, first, second);
++    }
++    else if (strcmp(key, "SCENERY_COUNT") == 0)
++    {
++        unsigned int count;
++        VariableEntity** entries = variable_world->ByType(1, &count);
++        unsigned int scenery = 0;
++        for (unsigned int index = 0; index < count; ++index)
++        {
++            if (strstr(entries[index]->name_06, "Litter") == 0)
++                ++scenery;
++        }
++        const unsigned short* format = screen_text_lookup->LookupText("IS_SCENERY_OBJECTS");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), scenery);
++    }
++    else if (strcmp(key, "ISLAND_TITLE") == 0)
++    {
++        const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->island_6fc);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "ISLAND_AREA") == 0)
++    {
++        const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->area_700);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "ISLAND_WEATHER") == 0)
++    {
++        const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->weather_704);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "ISLAND_TEMP") == 0)
++    {
++        const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->temperature_708);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "ISLAND_HAZARDS") == 0)
++    {
++        const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->hazards_70c);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "ARRIVALS_TODAY") == 0)
++    {
++        unsigned int first = window_deactivation_state->arrived_750;
++        unsigned int second = window_deactivation_state->arrived_754;
++        const unsigned short* format = screen_text_lookup->LookupText("FP_GUEST_FORMAT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), first + second, first, second);
++    }
++    else if (strcmp(key, "ARRIVALS_TOTAL") == 0)
++    {
++        unsigned int first = window_deactivation_state->arrived_740;
++        unsigned int second = window_deactivation_state->arrived_744;
++        const unsigned short* format = screen_text_lookup->LookupText("FP_GUEST_FORMAT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), first + second, first, second);
++    }
++    else if (strcmp(key, "DEPART_TOTAL") == 0)
++    {
++        unsigned int first = window_deactivation_state->departed_748;
++        unsigned int second = window_deactivation_state->departed_74c;
++        const unsigned short* format = screen_text_lookup->LookupText("FP_GUEST_FORMAT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), first + second, first, second);
++    }
++    else if (strcmp(key, "DEPART_TODAY") == 0)
++    {
++        unsigned int first = window_deactivation_state->departed_758;
++        unsigned int second = window_deactivation_state->departed_75c;
++        const unsigned short* format = screen_text_lookup->LookupText("FP_GUEST_FORMAT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), first + second, first, second);
++    }
++    else if (strcmp(key, "UN_DEPART_TOTAL") == 0)
++    {
++        WindowDeactivationState* state = window_deactivation_state;
++        unsigned int departed = state->departed_748 + state->departed_74c;
++        unsigned int unhappy = state->unhappy_760 + state->unhappy_764;
++        // The original keeps this expression in x87 until _ftol. Compiler
++        // excess precision and the finite in-range conversion remain gates.
++        double percent = departed != 0 ? static_cast<double>(unhappy) / (static_cast<double>(departed) * 0.01f) : 0.0;
++        unsigned int second = state->unhappy_764;
++        unsigned int first = state->unhappy_760;
++        int value = static_cast<int>(percent);
++        const unsigned short* format = screen_text_lookup->LookupText("FP_UNHAPPY_FORMAT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), first + second, first, second, value);
++    }
++    else if (strcmp(key, "UN_DEPART_TODAY") == 0)
++    {
++        WindowDeactivationState* state = window_deactivation_state;
++        unsigned int departed = state->departed_758 + state->departed_75c;
++        unsigned int unhappy = state->unhappy_768 + state->unhappy_76c;
++        double percent = departed != 0 ? static_cast<double>(unhappy) / (static_cast<double>(departed) * 0.01f) : 0.0;
++        unsigned int second = state->unhappy_76c;
++        unsigned int first = state->unhappy_768;
++        int value = static_cast<int>(percent);
++        const unsigned short* format = screen_text_lookup->LookupText("FP_UNHAPPY_FORMAT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), first + second, first, second, value);
++    }
++    else if (strcmp(key, "FP_TITLE") == 0)
++    {
++        const char* title = variable_world->HasNamed("WHARF") ? "FP_SUMMARY_FERRY" : "FP_SUMMARY_BUS";
++        const unsigned short* format = screen_text_lookup->LookupText(title);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "FP_NEXT") == 0)
++    {
++        const char* title = variable_world->HasNamed("WHARF") ? "FP_NEXT_FERRY" : "FP_NEXT_BUS";
++        const unsigned short* format = screen_text_lookup->LookupText(title);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "FP_SCHEDULE") == 0)
++    {
++        const char* title = variable_world->HasNamed("WHARF") ? "FP_SCHEDULE_FERRY" : "FP_SCHEDULE_BUS";
++        const unsigned short* format = screen_text_lookup->LookupText(title);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "WORLD_INCOME_$") == 0)
++    {
++        swprintf(text, L"$%.f", window_deactivation_state->income_770);
++        if (!(window_deactivation_state->income_770 >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "WORLD_INCOME_DEMOLISH_$") == 0)
++        swprintf(text, L"$%.f", window_deactivation_state->income_774);
++    else if (strcmp(key, "WORLD_INCOME_FINE_$") == 0)
++        swprintf(text, L"$%.f", window_deactivation_state->income_778);
++    else if (strcmp(key, "WORLD_INCOME_ACC_$") == 0)
++    {
++        swprintf(text, L"$%.f", window_deactivation_state->income_77c);
++        if (!(window_deactivation_state->income_77c >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "WORLD_INCOME_ATTRACT_$") == 0)
++    {
++        swprintf(text, L"$%.f", window_deactivation_state->income_780);
++        if (!(window_deactivation_state->income_780 >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "WORLD_INCOME_RETAIL_$") == 0)
++    {
++        swprintf(text, L"$%.f", window_deactivation_state->income_784);
++        if (!(window_deactivation_state->income_784 >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "WORLD_COST_$") == 0)
++        swprintf(text, L"$%.f", window_deactivation_state->spent_78c);
++    else if (strcmp(key, "WORLD_COST_CON_$") == 0)
++        swprintf(text, L"$%.f", window_deactivation_state->building_spent_790);
++    else if (strcmp(key, "WORLD_COST_WAGES_$") == 0)
++        swprintf(text, L"$%.f", window_deactivation_state->cost_798);
++    else if (strcmp(key, "WORLD_COST_STOCK_$") == 0)
++        swprintf(text, L"$%.f", window_deactivation_state->cost_79c);
++    else if (strcmp(key, "WORLD_COST_SCEN_$") == 0)
++        swprintf(text, L"$%.f", window_deactivation_state->scenery_spent_794);
++    else if (strcmp(key, "WORLD_PROFIT_$") == 0)
++    {
++        WindowDeactivationState* state = window_deactivation_state;
++        double profit = static_cast<double>(state->income_770) - state->spent_78c;
++        // The formatted double and the later sign test's float are distinct.
++        float sign_value = static_cast<float>(profit);
++        swprintf(text, L"$%.f", profit);
++        if (!(sign_value >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "WORLD_PROFIT_AVG_$") == 0)
++    {
++        swprintf(text, L"$%.f", window_deactivation_state->profit_7a0);
++        if (!(window_deactivation_state->profit_7a0 >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "WORLD_COST_AVG_$") == 0)
++        swprintf(text, L"$%.f", window_deactivation_state->cost_7a4);
++    else if (strcmp(key, "WORLD_INCOME_AVG_$") == 0)
++    {
++        swprintf(text, L"$%.f", window_deactivation_state->income_7a8);
++        if (!(window_deactivation_state->income_7a8 >= 0.0f))
++            colour = 0xff0000;
++    }
++    else if (strcmp(key, "SCENARIO_DESCRIPTION") == 0)
++    {
++        ScreenFontRenderer* heading_font = initial_manager->fonts_2c[1];
++        const unsigned short* heading = screen_text_lookup->LookupText("OBJ_SCENARIO_DESCRIPTION");
++        horizontal_offset = heading_font->MeasureText(heading);
++        const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->description_710);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "SCENARIO_OBJECTIVES") == 0)
++    {
++        ScreenFontRenderer* heading_font = initial_manager->fonts_2c[1];
++        const unsigned short* heading = screen_text_lookup->LookupText("OBJ_SCENARIO_OBJECTIVES");
++        horizontal_offset = heading_font->MeasureText(heading);
++        const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->objectives_714);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strncmp(key, "SCENARIO_OBJ_", 13) == 0)
++    {
++        unsigned int index = atoi(key_44 + 13);
++        if (index < window_deactivation_state->objective_count_718)
++        {
++            ScreenFontRenderer* heading_font = screen_manager->fonts_2c[1];
++            const unsigned short* heading = screen_text_lookup->LookupText("OBJ_SCENARIO_PROGRESS");
++            horizontal_offset = heading_font->MeasureText(heading) + 35;
++            const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->objective_keys_71c[index]);
++            swprintf(text, reinterpret_cast<const unsigned short*>(format));
++        }
++        else
++            swprintf(text, reinterpret_cast<const unsigned short*>(screen_text_empty));
++    }
++    else if (strcmp(key, "SCENARIO_TITLE") == 0)
++    {
++        ScreenRequestGamePrefix* game = screen_request_game;
++        if (game->byte_a4 != 0)
++        {
++            sprintf(scratch.narrow, "MAINSS_SANDBOX%d_TITLE", game->scenario_a0 + 1);
++            const unsigned short* format = screen_text_lookup->LookupText(scratch.narrow);
++            swprintf(text, reinterpret_cast<const unsigned short*>(format));
++        }
++        else
++        {
++            const unsigned short* format = screen_text_lookup->LookupText(window_deactivation_state->scenario_title_73c);
++            swprintf(text, reinterpret_cast<const unsigned short*>(format));
++        }
++    }
++    else if (strcmp(key, "STAFF_AMOUNTS") == 0)
++    {
++        unsigned int selection = screen_manager->word_7c;
++        if (selection == 6)
++        {
++            unsigned int count;
++            variable_world->AllStaff(&count);
++            const unsigned short* format = screen_text_lookup->LookupText("STAFFB_STAFF_ALL");
++            swprintf(text, reinterpret_cast<const unsigned short*>(format), count);
++        }
++        else
++        {
++            unsigned char kind;
++            const char* singular;
++            const char* plural;
++            const char* building_name = reinterpret_cast<const char*>(this);
++            switch (selection)
++            {
++            case 0:
++                kind = 11;
++                building_name = "CLEANERSHACK";
++                singular = "STAFFB_TITLE_CLEANER";
++                plural = "STAFFB_FILTER_CLEANERS";
++                break;
++            case 1:
++                kind = 10;
++                building_name = "BUILDERYARD";
++                singular = "STAFFB_TITLE_BUILDER";
++                plural = "STAFFB_FILTER_BUILDERS";
++                break;
++            case 2:
++                kind = 8;
++                building_name = "HANDYMAN";
++                singular = "STAFFB_TITLE_MECHANIC";
++                plural = "STAFFB_FILTER_MECHANICS";
++                break;
++            case 3:
++                kind = 9;
++                building_name = "REP";
++                singular = "STAFFB_TITLE_REP";
++                plural = "STAFFB_FILTER_REP";
++                break;
++            case 4:
++                kind = 7;
++                building_name = "BAYWATCH";
++                singular = "STAFFB_TITLE_LIFEGUARD";
++                plural = "STAFFB_FILTER_LIFEGUARD";
++                break;
++            case 5:
++                kind = 12;
++                building_name = "SECURITY_POST";
++                singular = "STAFFB_TITLE_SECURITY";
++                plural = "STAFFB_FILTER_SECURITY";
++                break;
++            }
++            // Default deliberately does not initialize kind or either title.
++            unsigned int count;
++            VariableEntity** staff = variable_world->ByType(kind, &count);
++            unsigned int active = 0;
++            unsigned int staff_count = count;
++            for (unsigned int index = 0; index < staff_count; ++index)
++            {
++                if (staff[index]->byte_758 == 0)
++                    ++active;
++            }
++            VariableEntity** buildings = variable_world->FindNamed(building_name, &count);
++            unsigned int definition_index = variable_catalog->FindBuilding(building_name);
++            VariableBuilding* building = variable_catalog->Building(definition_index);
++            unsigned int usable = 0;
++            for (unsigned int index = 0; index < count; ++index)
++            {
++                VariableEntity* entry = buildings[index];
++                if (!entry->FlagAt00460310() && !entry->FlagAt00460340())
++                    ++usable;
++            }
++            const unsigned short* title = screen_text_lookup->LookupText(active == 1 ? singular : plural);
++            unsigned int maximum = usable * building->capacity_288;
++            const unsigned short* format = screen_text_lookup->LookupText("STAFFB_HIRED_MAXIMUM");
++            swprintf(text, reinterpret_cast<const unsigned short*>(format), active, reinterpret_cast<const unsigned short*>(title), maximum);
++        }
++    }
++    else if (strcmp(key, "NUM_APARTMENTS") == 0)
++    {
++        unsigned int count;
++        VariableEntity** entries = variable_world->FindNamed("ACCOMBLK", &count);
++        unsigned int capacity = 0;
++        unsigned int remaining = count;
++        while (remaining != 0)
++        {
++            capacity += (*entries)->building_60->capacity_1dc;
++            ++entries;
++            --remaining;
++        }
++        entries = variable_world->FindNamed("HOTEL", &count);
++        remaining = count;
++        while (remaining != 0)
++        {
++            capacity += (*entries)->building_60->capacity_1dc;
++            ++entries;
++            --remaining;
++        }
++        swprintf(text, L"%d", capacity);
++    }
++    else if (strcmp(key, "SS_CUR_SCENARIO_DESC") == 0)
++    {
++        ScreenRequestGamePrefix* game = screen_request_game;
++        if (game->byte_a4 == 0)
++            sprintf(scratch.narrow, "MAINSS_SCENARIO%d_DESC", game->scenario_a0 + 1);
++        else
++            sprintf(scratch.narrow, "MAINSS_SANDBOX%d_DESC", game->scenario_a0 + 1);
++        const unsigned short* format = screen_text_lookup->LookupText(scratch.narrow);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "SS_CUR_SCENARIO_TITLE") == 0)
++    {
++        ScreenRequestGamePrefix* game = screen_request_game;
++        if (game->byte_a4 == 0)
++            sprintf(scratch.narrow, "MAINSS_SCENARIO%d_TITLE", game->scenario_a0 + 1);
++        else
++            sprintf(scratch.narrow, "MAINSS_SANDBOX%d_TITLE", game->scenario_a0 + 1);
++        const unsigned short* format = screen_text_lookup->LookupText(scratch.narrow);
++        swprintf(text, reinterpret_cast<const unsigned short*>(format));
++    }
++    else if (strcmp(key, "SS_CUR_SCENARIO_STATUS") == 0)
++    {
++        ScreenRequestGamePrefix* game = screen_request_game;
++        if (game->byte_a4 != 0)
++            swprintf(text, reinterpret_cast<const unsigned short*>(screen_text_empty));
++        else
++        {
++            unsigned int index = game->scenario_a0;
++            if (game->HasScenarioFlag08(index))
++            {
++                const unsigned short* format = screen_text_lookup->LookupText("MAINSS_SCENARIO_COMPLETE");
++                swprintf(text, reinterpret_cast<const unsigned short*>(format));
++            }
++            else
++            {
++                const char* title = screen_request_game->HasScenarioFlag04(index) ? "MAINSS_SCENARIO_ALWAYS" : "MAINSS_SCENARIO_NOTCOMPLETED";
++                const unsigned short* format = screen_text_lookup->LookupText(title);
++                swprintf(text, reinterpret_cast<const unsigned short*>(format));
++            }
++        }
++    }
++    else if (strcmp(key, "OBJECTIVES_DONE") == 0)
++    {
++        WindowDeactivationState* state = window_deactivation_state;
++        unsigned int completed = 0;
++        unsigned int objective_count = state->objective_count_718;
++        for (unsigned int index = 0; index < objective_count; ++index)
++        {
++            if (state->objective_state_72c[index] == 1)
++                ++completed;
++        }
++        swprintf(text, L"%d", completed);
++    }
++    else if (strcmp(key, "BUILDING_CONSTRUCTED") == 0)
++        swprintf(text, L"%d", window_deactivation_state->buildings_bought_dac);
++    else if (strcmp(key, "BUILDING_DIFF_CONSTRUCTED") == 0)
++        swprintf(text, L"%d", window_deactivation_state->different_db0);
++    else if (strcmp(key, "UNHAPPY_LEAVERS") == 0)
++    {
++        WindowDeactivationState* state = window_deactivation_state;
++        swprintf(text, L"%d", state->unhappy_760 + state->unhappy_764);
++    }
++    else if (strcmp(key, "GUEST_PARTYCOUNT") == 0)
++        swprintf(text, L"%d", window_deactivation_state->party_dc8);
++    else if (strcmp(key, "BUILDING_TREE_COMPELETED") == 0)
++    {
++        WindowDeactivationState* state = window_deactivation_state;
++        unsigned int total = state->total_ddc;
++        unsigned int completed = total - state->remaining_db8;
++        const unsigned short* format = screen_text_lookup->LookupText("PM_BUILD_TREE_FORMAT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), completed, total);
++    }
++    else if (strcmp(key, "GUESTS_DROWNED") == 0)
++        swprintf(text, L"%d", window_deactivation_state->drowned_dd4);
++    else if (strcmp(key, "MECHANIC_COUNT") == 0)
++        swprintf(text, L"%d", variable_world->CountType(8));
++    else if (strcmp(key, "FINE_INCOME_$") == 0)
++        swprintf(text, L"$%d", static_cast<int>(window_deactivation_state->income_788));
++    else if (strcmp(key, "GUESTS_EATEN") == 0)
++        swprintf(text, L"%d", window_deactivation_state->eaten_dd8);
++    else if (strcmp(key, "PM_5_UNIQUE") == 0)
++    {
++        unsigned int count = window_deactivation_state->different_db0;
++        const unsigned short* format = screen_text_lookup->LookupText("PM_5_UNIQUE_FORMAT");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), count);
++    }
++    else if (strcmp(key, "SHAG_COUNT") == 0)
++        swprintf(text, L"%d", window_deactivation_state->shag_dcc);
++    else if (strcmp(key, "PISSED_COUNT") == 0)
++        swprintf(text, L"%d", window_deactivation_state->pissed_dd0);
++    else if (strcmp(key, "BAR_COUNT") == 0)
++        swprintf(text, L"%d", window_deactivation_state->bars_db4);
++    else if (strcmp(key, "MAIN_VERSION") == 0)
++    {
++        ScreenTextLookup* lookup = screen_text_lookup;
++        float version = GetGameVersion();
++        const unsigned short* format = lookup->LookupText("MAINMENU_VERSION");
++        swprintf(text, reinterpret_cast<const unsigned short*>(format), version);
++    }
++    else
++    {
++        ScreenRequestContext* context = screen_manager->CurrentContext();
++        if (context == 0)
++            return;
++        context->ReadText(key, reinterpret_cast<unsigned short*>(text));
++    }
++
++    if ((word_6c & 1) != 0)
++        font->SetWord18(1);
++    else if ((word_6c & 2) != 0)
++        font->SetWord18(0);
++    else if ((word_6c & 4) != 0)
++        font->SetWord18(2);
++    font->SetState14(0);
++    font->SetWord10(colour);
++    font->SetRectangle(rectangle.left + horizontal_offset, rectangle.top, rectangle.right - rectangle.left - horizontal_offset, rectangle.bottom - rectangle.top);
++    font->DrawText(0, 0, reinterpret_cast<const unsigned short*>(text));
++}
+diff --git a/src/startup_screen_variable_image.h b/src/startup_screen_variable_image.h
+index cc675a53bf26c709f1b07feb54d2fee3aeb79ce7..8213984249d2b52078b271ad37bb8ec44a10c099 100644
+--- a/src/startup_screen_variable_image.h
++++ b/src/startup_screen_variable_image.h
+@@ -3,9 +3,13 @@
+ 
+ #include "startup_screen_item.h"
+ 
+-struct ScreenRequestContext;
++#include "startup_screen_request_context.h"
+ struct ScreenDialogResource;
+ 
++extern const char* variable_image_resources[17];                               // 0x00582084.
++void DrawAppealStars(const char* resource, ScreenRectangle bounds, int count); // 0x004cd7b0.
++void DrawRatingStars(const char* resource, ScreenRectangle bounds, int count); // 0x004cd630.
++
+ // Genuine "VariableImage" object: original allocation 0x6c and table 0x004f4cb4.
+ // The table column constructor also creates one for a VARIMG_ column.
+ // VTABLE: BEACHLIFE 0x004f4cb4
+diff --git a/src/startup_screen_variable_image_render.cpp b/src/startup_screen_variable_image_render.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0bf9faff94072fe1bee3a424fc0b5e14916f29bb
+--- /dev/null
++++ b/src/startup_screen_variable_image_render.cpp
+@@ -0,0 +1,232 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_text.h"
++#include "startup_screen_variable_image.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++#include <stdlib.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004cb9e0
++void ScreenVariableImage::Unresolved0c()
++{
++    if (!preparation_flag)
++        return;
++
++    if (strcmp(name_44, "UI3_PANEL_REPEAT") == 0)
++    {
++        if (rectangle.left != rectangle.right)
++        {
++            // Tiled 32 pixels at a time, the last tile flush with the right edge.
++            resource_64 = screen_dialog_resources->Find("UI3_Bar_Filler");
++            for (int x = rectangle.left; x < rectangle.right - 32; x += 32)
++                resource_64->Draw(x, rectangle.top, 0xffff, 999999.0f);
++            resource_64->Draw(rectangle.right - 32, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "BUILD_LARGE_PREVIEW") == 0)
++    {
++        resource_64 = screen_dialog_resources->Lookup(variable_image_resources[0]);
++        VariableBuilding* building = variable_catalog->Building(screen_manager->word_54);
++        resource_64->word_08 = 3;
++        resource_64->word_14 = building->preview_frame_1c4;
++        resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "BUILD_SCENERY_PREVIEW") == 0)
++    {
++        resource_64 = screen_dialog_resources->Lookup(variable_image_resources[0]);
++        VariableScenery* scenery = variable_catalog->Scenery(screen_manager->word_68);
++        resource_64->word_08 = 3;
++        resource_64->word_14 = scenery->preview_frame_300;
++        resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "BUILD_THUMB") == 0)
++    {
++        resource_64 = screen_dialog_resources->Lookup(variable_image_resources[1]);
++        VariableEntity* entity = screen_manager->CurrentContext();
++        resource_64->word_08 = 3;
++        resource_64->word_14 = entity->building_60->preview_frame_1c4;
++        resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "BUILD_ID_MALE_INTENSITY") == 0)
++    {
++        float stars = variable_catalog->MaleAppeal(screen_manager->word_54) * 100.0f;
++        if (stars > 0.0f)
++            DrawAppealStars("UI3_STARS", rectangle, static_cast<int>(stars));
++    }
++    else if (strcmp(name_44, "BUILD_ID_FEMALE_INTENSITY") == 0)
++    {
++        float stars = variable_catalog->FemaleAppeal(screen_manager->word_54) * 100.0f;
++        if (stars > 0.0f)
++            DrawAppealStars("UI3_STARS", rectangle, static_cast<int>(stars));
++    }
++    else if (strcmp(name_44, "SP_ITEM_RATING") == 0)
++    {
++        float stars = variable_catalog->Scenery(screen_manager->word_68)->rating_304 * 100.0f;
++        if (stars > 0.0f)
++            DrawRatingStars("UI3_STARS", rectangle, static_cast<int>(stars));
++    }
++    else if (strcmp(name_44, "MALE_APPEAL_ICON") == 0)
++    {
++        if (variable_catalog->MaleAppeal(screen_manager->word_54) > 0.0f)
++        {
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[2]);
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "FEMALE_APPEAL_ICON") == 0)
++    {
++        if (variable_catalog->FemaleAppeal(screen_manager->word_54) > 0.0f)
++        {
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[3]);
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "BI_MALE_APPEAL_ICON") == 0)
++    {
++        VariableEntity* entity = screen_manager->CurrentContext();
++        if (entity->MaleAppeal() > 0.0f)
++        {
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[4]);
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "BI_FEMALE_APPEAL_ICON") == 0)
++    {
++        VariableEntity* entity = screen_manager->CurrentContext();
++        if (entity->FemaleAppeal() > 0.0f)
++        {
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[5]);
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strncmp(name_44, "OBJ_ICON_", 9) == 0)
++    {
++        unsigned int objective = atoi(name_44 + 9);
++        if (objective < window_deactivation_state->objective_count_718)
++        {
++            // The check sits right of the "OBJ_SCENARIO_PROGRESS" label text.
++            ScreenFontRenderer* font = screen_manager->fonts_2c[1];
++            int offset = font->MeasureText(screen_text_lookup->LookupText("OBJ_SCENARIO_PROGRESS")) + 10;
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[8]);
++            resource_64->word_08 = 3;
++            switch (window_deactivation_state->objective_state_72c[objective])
++            {
++            case 0:
++                resource_64->word_14 = 0;
++                break;
++            case 1:
++                resource_64->word_14 = 1;
++                break;
++            case 2:
++                resource_64->word_14 = 2;
++                break;
++            }
++            resource_64->Draw(rectangle.left + offset, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "STAFF_PHOTO") == 0)
++    {
++        VariableEntity* staff = screen_manager->CurrentContext();
++        // Other kinds draw the null resource (original).
++        resource_64 = 0;
++        switch (staff->kind_2c)
++        {
++        case 7:
++            if (staff->staff_104->female_c4 == 0)
++                resource_64 = screen_dialog_resources->Lookup(variable_image_resources[15]);
++            else
++                resource_64 = screen_dialog_resources->Lookup(variable_image_resources[16]);
++            break;
++        case 8:
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[11]);
++            break;
++        case 9:
++            if (staff->staff_104->female_c4 == 0)
++                resource_64 = screen_dialog_resources->Lookup(variable_image_resources[13]);
++            else
++                resource_64 = screen_dialog_resources->Lookup(variable_image_resources[14]);
++            break;
++        case 10:
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[10]);
++            break;
++        case 11:
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[9]);
++            break;
++        case 12:
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[12]);
++            break;
++        }
++        resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "SCENARIO_PIC_LARGE") == 0)
++    {
++        resource_64 = screen_dialog_resources->Find("ui3_fe_is_pics_large");
++        resource_64->word_08 = 3;
++        resource_64->word_14 = screen_request_game->scenario_a0;
++        resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "GUEST_PHOTO") == 0)
++    {
++        VariableEntity* guest = screen_manager->CurrentContext();
++        resource_64 = screen_dialog_resources->Find("ui3_gp_guests");
++        resource_64->word_08 = 3;
++        resource_64->word_14 = 0;
++        const char* model = guest->keyline_state_44->model_name_00;
++        if (_stricmp(model, "fat_bloke") == 0)
++            resource_64->word_14 = 0;
++        else if (_stricmp(model, "fit_bloke") == 0)
++            resource_64->word_14 = 1;
++        else if (_stricmp(model, "gail") == 0)
++            resource_64->word_14 = 2;
++        else if (_stricmp(model, "shaz") == 0)
++            resource_64->word_14 = 3;
++        resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "SANDBOX_TITLE") == 0)
++    {
++        if (screen_request_game->byte_a4)
++        {
++            const char* label;
++            switch (screen_request_game->placement->menu_script_variant_3c)
++            {
++            case 1:
++                label = "ui3_fe_sandboxlabel_f";
++                break;
++            case 2:
++                label = "ui3_fe_sandboxlabel_i";
++                break;
++            case 3:
++                label = "ui3_fe_sandboxlabel_g";
++                break;
++            case 4:
++                label = "ui3_fe_sandboxlabel_s";
++                break;
++            case 5:
++                label = "ui3_fe_sandboxlabel_p";
++                break;
++            default:
++                label = "ui3_fe_sandboxlabel";
++                break;
++            }
++            resource_64 = screen_dialog_resources->Find(label);
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    preparation_flag = 0;
++}
+diff --git a/src/startup_screen_variable_image_resources.cpp b/src/startup_screen_variable_image_resources.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d63bf18bfc11ab89f31241f2959544267a3f8f16
+--- /dev/null
++++ b/src/startup_screen_variable_image_resources.cpp
+@@ -0,0 +1,6 @@
++#include "startup_screen_variable_image.h"
++
++// GLOBAL: BEACHLIFE 0x00582084
++const char* variable_image_resources[17] = {
++    "UI3_bp_preview", "UI3_bp_thumb", "UI3_bp_gender_male", "UI3_bp_gender_female", "UI3_bi_sideicon_male", "UI3_bi_sideicon_female", "UI3_mp3_pips", "UI3_pp_warnings", "UI3_obj_checks", "ui3_st_ph_cleaner", "ui3_st_ph_builder", "ui3_st_ph_handy", "ui3_st_ph_security", "ui3_st_ph_rep_m", "ui3_st_ph_rep_f", "ui3_st_ph_lifeg_m", "ui3_st_ph_lifeg_f"
++};
+diff --git a/src/startup_screen_variable_image_status.cpp b/src/startup_screen_variable_image_status.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef8fd2be87eb550d7d4699273cbe1f6adb228442
+--- /dev/null
++++ b/src/startup_screen_variable_image_status.cpp
+@@ -0,0 +1,362 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_variable_image.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++#include "window_audio.h"
++
++#include <math.h>
++#include <stdlib.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004cc450
++void ScreenVariableImage::Unresolved1c()
++{
++    // Blink state of the POWER_USE overload bar, shared by every image.
++    static bool overload_blinking;
++    static float overload_next_toggle;
++    static bool overload_visible = true;
++
++    if (strcmp(name_44, "STAR_RATING_UI3") == 0)
++    {
++        DrawRatingStars("UI3_BAR_STARS", rectangle, window_deactivation_state->AverageGuestHappiness());
++    }
++    else if (strcmp(name_44, "STAR_RATING_UI2") == 0)
++    {
++        DrawRatingStars("UI2_BAR_STARS", rectangle, window_deactivation_state->AverageGuestHappiness());
++    }
++    else if (strcmp(name_44, "STAR_RATING_SMALL") == 0)
++    {
++        DrawRatingStars("UI3_STARS", rectangle, window_deactivation_state->AverageGuestHappiness());
++    }
++    else if (strcmp(name_44, "TOTTY_STARS") == 0)
++    {
++        DrawRatingStars("UI3_STARS", rectangle, static_cast<int>(window_deactivation_state->totty_rating_dbc * 100.0f));
++    }
++    else if (strcmp(name_44, "BEAUTY_STARS") == 0)
++    {
++        DrawRatingStars("UI3_STARS", rectangle, static_cast<int>(window_deactivation_state->beauty_rating_dc0 * 100.0f));
++    }
++    else if (strcmp(name_44, "SAFETY_STARS") == 0)
++    {
++        DrawRatingStars("UI3_STARS", rectangle, static_cast<int>(window_deactivation_state->safety_rating_dc4 * 100.0f));
++    }
++    else if (strcmp(name_44, "POWERBAR") == 0)
++    {
++        resource_64 = screen_dialog_resources->Find("UI2_POWERBAR");
++        resource_64->SelectVariant(0);
++        resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "POWERBAR3") == 0)
++    {
++        resource_64 = screen_dialog_resources->Find("UI3_POWERBAR");
++        resource_64->SelectVariant(0);
++        resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "POWER_OUTPUT") == 0)
++    {
++        float capacity = window_deactivation_state->power_capacity_3a4;
++        if (capacity > 0.0f)
++        {
++            float ratio = window_deactivation_state->power_output_3a8 / capacity;
++            if (screen_request_renderer->width >= 800)
++                resource_64 = screen_dialog_resources->Find("UI3_POWERBAR");
++            else
++                resource_64 = screen_dialog_resources->Find("UI2_POWERBAR");
++            float fill = resource_64->SelectedFrame()->width_0e * ratio;
++            int height = resource_64->SelectedFrame()->height_10;
++            resource_64->SelectVariant(2);
++            resource_64->DrawClipped(rectangle.left, rectangle.top, 0, 0, static_cast<int>(fill), height, 0);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "POWER_USE") == 0)
++    {
++        float capacity = window_deactivation_state->power_capacity_3a4;
++        if (capacity > 0.0f)
++        {
++            if (screen_request_renderer->width >= 800)
++                resource_64 = screen_dialog_resources->Find("UI3_POWERBAR");
++            else
++                resource_64 = screen_dialog_resources->Find("UI2_POWERBAR");
++            int width = resource_64->SelectedFrame()->width_0e;
++            int height = resource_64->SelectedFrame()->height_10;
++            float output = window_deactivation_state->power_output_3a8;
++            float full = static_cast<float>(width);
++            float output_fill = output / capacity * full;
++            float use_fill = window_deactivation_state->power_use_3a0 / output * output_fill;
++            if (use_fill > output_fill)
++            {
++                // Use above output: the use bar blinks every 0.75 time units.
++                float now = window_deactivation_state->clock_158;
++                if (!overload_blinking)
++                {
++                    overload_blinking = true;
++                    overload_next_toggle = 0.75f + now;
++                    overload_visible = false;
++                }
++                else if (now > overload_next_toggle)
++                {
++                    overload_next_toggle = 0.75f + now;
++                    overload_visible = !overload_visible;
++                }
++            }
++            else
++            {
++                overload_blinking = false;
++                overload_visible = true;
++            }
++            resource_64->SelectVariant(1);
++            if (overload_visible)
++            {
++                if (use_fill > full)
++                    use_fill = full;
++                resource_64->DrawClipped(rectangle.left, rectangle.top, 0, 0, static_cast<int>(use_fill), height, 0);
++            }
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "GUEST_SMILEY") == 0)
++    {
++        VariableEntity* entity = context_68;
++        if (!entity)
++            entity = screen_manager->CurrentContext();
++        float level = entity->happiness_264;
++        resource_64 = screen_dialog_resources->Find("UI3_gp_smile");
++        resource_64->word_08 = 3;
++        int frame = static_cast<int>(level * 5.0f);
++        if (frame >= 5)
++            frame--;
++        resource_64->word_14 = frame;
++        resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "STAFF_SMILEY") == 0)
++    {
++        VariableEntity* entity = context_68;
++        if (!entity)
++            entity = screen_manager->CurrentContext();
++        float level = entity->morale_10c;
++        resource_64 = screen_dialog_resources->Find("UI3_gp_smile");
++        resource_64->word_08 = 3;
++        int frame = static_cast<int>(level * 5.0f);
++        if (frame >= 5)
++            frame--;
++        resource_64->word_14 = frame;
++        resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "BROWSER_SMILEY") == 0)
++    {
++        VariableEntity* entity = context_68;
++        if (!entity)
++            entity = screen_manager->CurrentContext();
++        float level = entity->happiness_264;
++        resource_64 = screen_dialog_resources->Find("UI3_ob_listsmiles");
++        resource_64->word_08 = 3;
++        int frame = static_cast<int>(level * 5.0f);
++        if (frame >= 5)
++            frame--;
++        resource_64->word_14 = frame;
++        resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "STAFF_BROWSER_SMILEY") == 0)
++    {
++        VariableEntity* entity = context_68;
++        if (!entity)
++            entity = screen_manager->CurrentContext();
++        float level = entity->morale_10c;
++        resource_64 = screen_dialog_resources->Find("UI3_ob_listsmiles");
++        resource_64->word_08 = 3;
++        int frame = static_cast<int>(level * 5.0f);
++        if (frame >= 5)
++            frame--;
++        resource_64->word_14 = frame;
++        resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "POWERGEN_STATUS") == 0)
++    {
++        int frame;
++        VariableEntity* generator = context_68;
++        if (!generator)
++            generator = screen_manager->CurrentContext();
++        resource_64 = screen_dialog_resources->Lookup(variable_image_resources[7]);
++        resource_64->word_08 = 3;
++        frame = 1;
++        if (generator->PowerOutput() == 0)
++            frame = 0;
++        else if (generator->power_state_33c)
++            frame = 2;
++        resource_64->word_14 = frame;
++        resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "MP3_VOL_PIPS") == 0)
++    {
++        // Ten pips upwards from the bottom, the first volume/10 lit.
++        resource_64 = screen_dialog_resources->Lookup(variable_image_resources[6]);
++        resource_64->word_08 = 3;
++        float volume = window_audio_state->stream_volume_10;
++        int y = rectangle.bottom - 12;
++        int lit;
++        if (volume == 0.0f)
++            lit = 0;
++        else
++            lit = static_cast<int>(ceil(volume * 100.0f)) / 10;
++        int unlit = 10 - lit;
++        resource_64->word_14 = 1;
++        for (int i = 0; i < lit; i++)
++        {
++            resource_64->Draw(rectangle.left, y, 0, 999999.0f);
++            y -= 12;
++        }
++        resource_64->word_14 = 0;
++        for (int j = 0; j < unlit; j++)
++        {
++            resource_64->Draw(rectangle.left, y, 0, 999999.0f);
++            y -= 12;
++        }
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "ISLAND_MALE_INTENSITY") == 0)
++    {
++        float total = 0.0f;
++        VariableWorldPrefix* world = variable_world;
++        unsigned int counted = 0;
++        unsigned int count = world->buildings_04;
++        for (unsigned int i = 0; i < count; i++)
++        {
++            float appeal = world->buildings_12120[i]->MaleAppeal() * 100.0f;
++            if (appeal > 0.0f)
++            {
++                total += appeal;
++                counted++;
++            }
++        }
++        if (counted)
++            total /= counted;
++        DrawRatingStars("UI3_STARS", rectangle, static_cast<int>(total));
++    }
++    else if (strcmp(name_44, "ISLAND_FEMALE_INTENSITY") == 0)
++    {
++        float total = 0.0f;
++        VariableWorldPrefix* world = variable_world;
++        unsigned int counted = 0;
++        unsigned int count = world->buildings_04;
++        for (unsigned int i = 0; i < count; i++)
++        {
++            float appeal = world->buildings_12120[i]->FemaleAppeal() * 100.0f;
++            if (appeal > 0.0f)
++            {
++                total += appeal;
++                counted++;
++            }
++        }
++        if (counted)
++            total /= counted;
++        DrawRatingStars("UI3_STARS", rectangle, static_cast<int>(total));
++    }
++    else if (strcmp(name_44, "BI_MALE_APPEAL_STARS") == 0)
++    {
++        float stars = screen_manager->CurrentContext()->MaleAppeal() * 100.0f;
++        if (stars > 0.0f)
++            DrawAppealStars("UI3_bi_stars", rectangle, static_cast<int>(stars));
++    }
++    else if (strcmp(name_44, "BI_FEMALE_APPEAL_STARS") == 0)
++    {
++        float stars = screen_manager->CurrentContext()->FemaleAppeal() * 100.0f;
++        if (stars > 0.0f)
++            DrawAppealStars("UI3_bi_stars", rectangle, static_cast<int>(stars));
++    }
++    else if (strcmp(name_44, "SCENARIO_PIC_LOAD") == 0)
++    {
++        int scenario = screen_request_game->SelectedSaveScenario();
++        if (scenario != -1)
++        {
++            resource_64 = screen_dialog_resources->Find("ui3_fe_is_pics_small");
++            resource_64->word_08 = 3;
++            resource_64->word_14 = scenario;
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "SCENARIO_PIC_SAVE") == 0)
++    {
++        resource_64 = screen_dialog_resources->Find("ui3_fe_is_pics_small");
++        resource_64->word_08 = 3;
++        resource_64->word_14 = screen_request_game->scenario_a0;
++        resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++        screen_dialog_resources->Release(resource_64);
++    }
++    else if (strcmp(name_44, "WATERCLN_BUILT") == 0)
++    {
++        unsigned int count;
++        VariableEntity** found = variable_world->FindNamed("WATERCLN", &count);
++        bool built = false;
++        for (unsigned int i = 0; i < count && !built; i++)
++        {
++            VariableEntity* building = found[i];
++            if (!building->FlagAt00460310() && !building->FlagAt00460340())
++                built = true;
++        }
++        if (built)
++        {
++            resource_64 = screen_dialog_resources->Find("ui3_progress_i_tick");
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "STORE_BUILT") == 0)
++    {
++        unsigned int count;
++        VariableEntity** found = variable_world->FindNamed("GENSTORE", &count);
++        bool built = false;
++        for (unsigned int i = 0; i < count && !built; i++)
++        {
++            VariableEntity* building = found[i];
++            if (!building->FlagAt00460310() && !building->FlagAt00460340())
++                built = true;
++        }
++        if (built)
++        {
++            resource_64 = screen_dialog_resources->Find("ui3_progress_i_tick");
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strcmp(name_44, "CLUB2_BUILT") == 0)
++    {
++        unsigned int count;
++        VariableEntity** found = variable_world->FindNamed("CLUB2", &count);
++        bool built = false;
++        for (unsigned int i = 0; i < count && !built; i++)
++        {
++            VariableEntity* building = found[i];
++            if (!building->FlagAt00460310() && !building->FlagAt00460340())
++                built = true;
++        }
++        if (built)
++        {
++            resource_64 = screen_dialog_resources->Find("ui3_progress_i_tick");
++            resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
++            screen_dialog_resources->Release(resource_64);
++        }
++    }
++    else if (strncmp(name_44, "EVENT_MALE_APPEAL_", 18) == 0)
++    {
++        int event = atoi(name_44 + 18);
++        VariableEntity* entity = screen_manager->CurrentContext();
++        DrawAppealStars("UI3_STARS", rectangle, static_cast<int>(entity->events_170->MaleAppeal(event) * 100.0f));
++    }
++    else if (strncmp(name_44, "EVENT_FEMALE_APPEAL_", 20) == 0)
++    {
++        int event = atoi(name_44 + 20);
++        VariableEntity* entity = screen_manager->CurrentContext();
++        DrawAppealStars("UI3_STARS", rectangle, static_cast<int>(entity->events_170->FemaleAppeal(event) * 100.0f));
++    }
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index eebad254504a30bcb2b12b5f74c6c6bd6b42afb9..91a69927e38efc5d34d3987f54e8ddea47ae8e02 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -11,6 +11,12 @@ struct VariableEconomy
+     float value_80;
+ };
+ 
++struct VariableTicker
++{
++    const unsigned short* FirstMessage(float* time, unsigned int* day, unsigned int* id); // 0x00429e50.
++    const unsigned short* NextMessage(float* time, unsigned int* day, unsigned int* id);  // 0x00429f00.
++};
++
+ struct VariableTransport
+ {
+     // Actual 0x0042d160/RET8 and 0x0042d2f0/RET4, x87 results.
+@@ -38,6 +44,8 @@ struct VariableBuilding
+     unsigned char unknown_28c[0x94];
+     char required_320[0x9d4];
+     int power_cf4;
++    unsigned char unknown_cf8[0x11c];
++    unsigned int* footprint_e14;
+ };
+ 
+ struct VariableScenery
+@@ -54,8 +62,13 @@ struct VariableScenery
+     unsigned char unknown_2d4[0x2c];
+     int preview_frame_300; // Frame of the build-panel preview.
+     float rating_304;      // Star rating, 0..1 (drawn x100).
+-    unsigned char unknown_308[4];
++    unsigned char cleanable_308;
++    unsigned char repairable_309;
++    unsigned char serviceable_30a;
++    unsigned char unknown_30b;
+     int flag_30c; // Selects build mode 8 instead of 7 for the path list.
++    unsigned char unknown_310;
++    unsigned char removable_311;
+ };
+ 
+ struct VariableGuestState
+@@ -90,6 +103,17 @@ struct VariableKeylineState
+     unsigned char enabled_29;
+ };
+ 
++// Four-pointer deque iterators used by the indexed table context.
++struct ScreenContextRowIterator
++{
++    unsigned int* current;
++    unsigned int* first;
++    unsigned int* last;
++    unsigned int** node;
++
++    int Distance(const ScreenContextRowIterator& other) const; // 0x00427a60.
++};
++
+ struct VariableEntity
+ {
+     virtual void Unknown00() = 0;
+@@ -98,8 +122,8 @@ struct VariableEntity
+     virtual void Unknown0c() = 0;
+     virtual void Unknown10() = 0;
+     virtual void Unknown14() = 0;
+-    virtual void Unknown18() = 0;
+-    virtual void Unknown1c() = 0;
++    virtual void ReadText(const char* key, unsigned short* output) = 0;
++    virtual void WriteValue(const char* key, const void* value) = 0;
+     virtual void Unknown20() = 0;
+     virtual void Unknown24() = 0;
+     virtual void Unknown28() = 0;
+@@ -116,7 +140,7 @@ struct VariableEntity
+     // Two word flags; the panel140 list passes (1, 1).
+     virtual void Unknown50(int first, int second) = 0;
+ 
+-    virtual void Unknown54() = 0;
++    virtual void Replaced() = 0;       // Slot 0x54.
+     virtual void ClearSelection() = 0; // Slot 0x58.
+ 
+     unsigned char unknown_04[2];
+@@ -128,12 +152,19 @@ struct VariableEntity
+     float x_30; // World position; the overlay markers scale it to the map.
+     float y_34;
+     float z_38;
+-    unsigned char unknown_3c[8];
++    unsigned int state_3c;
++    unsigned char unknown_40[4];
+     VariableKeylineState* keyline_state_44;
+     unsigned char unknown_48[0x18];
+     VariableBuilding* building_60;
+-    unsigned char unknown_64[0x90];
+-    VariableGuestState* guest_f4;
++    unsigned char unknown_64[0x3c];
++    unsigned char byte_a0;
++    unsigned char unknown_a1[0x53];
++    union
++    {
++        VariableGuestState* guest_f4;
++        VariableScenery* scenery_f4;
++    };
+     unsigned char unknown_f8[0xc];
+     VariableStaffState* staff_104;
+     unsigned char unknown_108[4];
+@@ -150,7 +181,10 @@ struct VariableEntity
+     float happiness_264; // Guests; drawn as a 0..4 smiley.
+     unsigned char unknown_268[0xd4];
+     int power_state_33c; // Generator state 0..3; nonzero shows the second lit frame.
+-    unsigned char unknown_340[0x418];
++    unsigned char unknown_340[0xe8];
++    ScreenContextRowIterator rows_begin_428;
++    ScreenContextRowIterator rows_end_438;
++    unsigned char unknown_448[0x310];
+     unsigned char byte_758;
+     unsigned char unknown_759[0xc];
+     unsigned char target_flag_765;
+@@ -174,6 +208,7 @@ struct VariableEntity
+     // Actual 0x004607f0: the generator's current output, 0 when idle; body
+     // separate. Descriptive name.
+     int PowerOutput();
++    void RequestRemoval();                         // 0x0041f240.
+     void MoveTo(const ScreenWorldPosition* point); // 0x00490340.
+     void MoveToTarget(int target);                 // 0x004903a0.
+ };
+@@ -226,16 +261,19 @@ struct VariableWorldPrefix
+     // Actual 0x0042fab0, RET4; low-byte flag, real world owner required.
+     void SetKeylines(unsigned char enabled);
+ 
+-    VariableEntity* FindObject(unsigned int id);                                                                         // 0x0042ef60.
+-    VariableEntity** FindNamed(const char* name, unsigned int* count);                                                   // 0x0042efe0, RET8.
+-    unsigned int HasNamed(const char* name);                                                                             // 0x0042f000, RET4, EAX test.
+-    VariableEntity** ByType(unsigned char type, unsigned int* count);                                                    // 0x0042f020, RET8.
+-    VariableEntity** AllStaff(unsigned int* count);                                                                      // 0x0042f0e0, RET4.
+-    VariableEntity** Selected(unsigned int* count);                                                                      // 0x0042f360.
+-    unsigned int FindIndex(unsigned int id);                                                                             // 0x0042f820.
+-    VariableEntity** FindMatches(unsigned int* count, const void* key, bool (*predicate)(VariableEntity*, const void*)); // 0x0042f890.
+-    void ClearSelection();                                                                                               // 0x0042f770.
+-    unsigned int CountType(unsigned char type);                                                                          // 0x0042f0f0, RET4.
++    VariableEntity* FindObject(unsigned int id);                                                                                            // 0x0042ef60.
++    VariableEntity** FindNamed(const char* name, unsigned int* count);                                                                      // 0x0042efe0, RET8.
++    unsigned int HasNamed(const char* name);                                                                                                // 0x0042f000, RET4, EAX test.
++    VariableEntity** ByType(unsigned char type, unsigned int* count);                                                                       // 0x0042f020, RET8.
++    VariableEntity** AllStaff(unsigned int* count);                                                                                         // 0x0042f0e0, RET4.
++    VariableEntity** SelectedBuildings(unsigned int* count);                                                                                // 0x0042f230.
++    VariableEntity** Selected(unsigned int* count);                                                                                         // 0x0042f360.
++    unsigned int FindIndex(unsigned int id);                                                                                                // 0x0042f820.
++    VariableEntity** FindMatches(unsigned int* count, const void* key, bool (*predicate)(VariableEntity*, const void*));                    // 0x0042f890.
++    void ClearSelectionForType(unsigned char type);                                                                                         // 0x0042f6d0.
++    VariableEntity** InRectangle(unsigned char type, unsigned int* count, const ScreenWorldPosition* low, const ScreenWorldPosition* high); // 0x0042f510.
++    void ClearSelection();                                                                                                                  // 0x0042f770.
++    unsigned int CountType(unsigned char type);                                                                                             // 0x0042f0f0, RET4.
+ 
+ private:
+     void CountMatches(unsigned int& result, const void* key,
+diff --git a/src/startup_world_cursor_names.h b/src/startup_world_cursor_names.h
+index 5fe22459a8e181653802e18458df946954d3eac2..7618f93593edf2c604045e3070da0ad6c0e75ed8 100644
+--- a/src/startup_world_cursor_names.h
++++ b/src/startup_world_cursor_names.h
+@@ -9,9 +9,10 @@ struct WorldCursorNames
+     const char** names_00;
+     const char** names_04;
+ 
+-    const char* FirstName();  // Actual 0x00432de0: *names_00.
+-    const char* SecondName(); // Actual 0x00432dd0: *names_04.
+-    int CursorValue();        // Actual 0x00432df0: returns 0x43.
++    void UpdateTile(int x, int y, unsigned char remove); // 0x004323d0.
++    const char* FirstName();                             // Actual 0x00432de0: *names_00.
++    const char* SecondName();                            // Actual 0x00432dd0: *names_04.
++    int CursorValue();                                   // Actual 0x00432df0: returns 0x43.
+     // Actual 0x00432260: atoi of the first name's characters 9 and 10.
+     int FirstNameNumber();
+     const char* PreviewName() { return SecondName(); }
+diff --git a/src/startup_world_test.h b/src/startup_world_test.h
+index 310fd9e5a9ccf327bd49eda7796dad6581e97393..5d635db2107b2b8b3dbb274adc22d0377332559e 100644
+--- a/src/startup_world_test.h
++++ b/src/startup_world_test.h
+@@ -12,9 +12,13 @@ struct WorldTestController : ControllerState
+ {
+     WindowDeactivationState* object_88; // Ordinary world cleanup: 0x0043c420.
+     unsigned char byte_8c;
+-    unsigned char unknown_8d[0x0f];
++    unsigned char unknown_8d[3];
++    int waves_90;
++    int crowd_94;
++    int crickets_98;
+     unsigned char byte_9c;
+-    unsigned char unknown_9d[7];
++    unsigned char unknown_9d[3];
++    float ambience_time_a0;
+ 
+     // Actual 0x004e90c0, RET4: Game passes "WorldTest".
+     explicit WorldTestController(const char* name);
+diff --git a/src/startup_world_test_enter.cpp b/src/startup_world_test_enter.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d6a593a9ae82f6cddb9e883b31e37fbcec364db
+--- /dev/null
++++ b/src/startup_world_test_enter.cpp
+@@ -0,0 +1,105 @@
++#include "startup_world_test.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_load_dependencies.h"
++#include "startup_variable_state.h"
++#include "startup_input_state.h"
++#include "startup_input_motion.h"
++#include "startup_wide_text.h"
++#include "window_activation.h"
++#include <windows.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <new>
++
++// GLOBAL: BEACHLIFE 0x00587dd8
++const unsigned short* world_scenario_extension = reinterpret_cast<const unsigned short*>(L".pis");
++
++static void PrepareWorldScreen(WorldTestController* controller)
++{
++    variable_weather->RefreshForScreenSize();
++    screen_manager->SetMode(4);
++    ScreenRequestGamePrefix* game = screen_request_game;
++    game->LoadControllerScreen(controller->ScriptPath());
++    // The retail 0x004af220 entry tail-jumps to this same method.
++    screen_manager->LayoutOverlayDetail();
++    window_audio_state->StopAllSounds();
++    controller->waves_90 = window_audio_state->PlaySound("waves_loop", 2, 0.0f);
++    controller->crowd_94 = window_audio_state->PlaySound("crowdbig", 2, 0.0f);
++    controller->crickets_98 = window_audio_state->PlaySound("cricket_loop", 2, 0.0f);
++    controller->ambience_time_a0 = 0.0f;
++    window_audio_state->SetSoundLevel(controller->waves_90, 0.0f);
++    window_audio_state->SetSoundLevel(controller->crowd_94, 0.0f);
++    window_audio_state->SetSoundLevel(controller->crickets_98, 0.0f);
++    screen_manager->SetInputEnabled(1);
++    startup_input_state->ResetTransition();
++    screen_manager->panel_13c->SetPlaylistMode(screen_request_game->placement->flag_14 ? 0 : 1);
++}
++
++static void SetWorldCameraControls()
++{
++    if (screen_request_game->byte_a4)
++        screen_manager->ShowCameraControls();
++    else
++        screen_manager->HideCameraControls();
++}
++
++// FUNCTION: BEACHLIFE 0x004e9fa0
++void WorldTestController::ControllerSlot24()
++{
++    int width;
++    int height;
++    screen_request_game->placement->GetScreenSize(&width, &height);
++    screen_request_game->SetScreenSize(width, height);
++    PrepareWorldScreen(this);
++    screen_manager->panel_13c->SetTimeOfDay(window_deactivation_state->render_value_160 >= 19.0f ? 1 : 0);
++    screen_manager->panel_13c->StartPlayback();
++    SetWorldCameraControls();
++}
++
++// FUNCTION: BEACHLIFE 0x004e98f0
++void WorldTestController::Enter()
++{
++    active = 1;
++    screen_manager->SetInputEnabled(0);
++    unsigned short wide_path[128];
++    char path[128];
++    char loading_screen[128];
++    ScreenRequestGamePrefix* game = screen_request_game;
++    unsigned int scenario = game->scenario_a0 + 1;
++    const wchar_t* format = game->byte_a4 ? L"%s/SandScenario%d/SandScenario%d%s" : L"%s/Scenario%d/Scenario%d%s";
++    swprintf(wide_path, format, game->ScenarioDirectory(), scenario, scenario, world_scenario_extension);
++    WideCharToMultiByte(0, 0, reinterpret_cast<LPCWSTR>(wide_path), -1, path, 128, 0, 0);
++    if (byte_9c)
++    {
++        sprintf(loading_screen, "data/screens/loading_%d.tga", rand() % 2 + 1);
++        screen_request_game->ShowLoadingScreen(loading_screen);
++    }
++    screen_manager->panel_13c->SetTimeOfDay(0);
++    game = screen_request_game;
++    object_88 = new (std::nothrow) WindowDeactivationState(game->input_motion, game->input, path, byte_9c);
++    if (!byte_9c)
++    {
++        int width;
++        int height;
++        screen_request_game->placement->GetScreenSize(&width, &height);
++        if (screen_request_renderer->SupportsWidth(width))
++            screen_request_game->SetScreenSize(width, height);
++        else
++        {
++            width = 800;
++            height = 600;
++            screen_request_game->SetScreenSize(width, height);
++            screen_request_game->placement->SetScreenSize(width, height);
++            screen_request_game->placement->SavePreferences();
++        }
++        PrepareWorldScreen(this);
++        SetWorldCameraControls();
++    }
++    if (!byte_9c)
++    {
++        object_88->Start();
++        screen_manager->panel_13c->StartPlayback();
++    }
++}
+diff --git a/src/window_activation.h b/src/window_activation.h
+index ae6b3f47809033c82fcdff179bd9b767fa311506..334d99a54e8c61e003f9e9183de529767b4670cf 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -6,6 +6,8 @@
+ 
+ struct VariableWorldPrefix;
+ struct VariableEconomy;
++struct VariableTransport;
++struct VariableTicker;
+ 
+ // Activation and the full Game owner are the same retail object.
+ using WindowActivationTarget = ScreenRequestGamePrefix;
+@@ -23,7 +25,11 @@ struct WindowDeactivationState
+     VariableWorldPrefix* world_10;
+     unsigned char unknown_14[8];
+     VariableEconomy* economy_1c;
+-    unsigned char unknown_20[0x28];
++    unsigned char unknown_20[4];
++    VariableTransport* transport_24;
++    unsigned char unknown_28[8];
++    VariableTicker* ticker_30;
++    unsigned char unknown_34[0x14];
+     VariableBuildingStatus* building_status_48;
+     unsigned char unknown_4c[0x10c];
+     union
+@@ -31,7 +37,7 @@ struct WindowDeactivationState
+         float clock_158;
+         float time_158;
+     }; // Game time; paces the power-overload blink.
+-    unsigned char unknown_15c[4];
++    unsigned int day_15c;
+     float render_value_160;
+     unsigned char unknown_164[0x0c];
+     float speed_factor_170;
+@@ -46,22 +52,69 @@ struct WindowDeactivationState
+     float power_use_3a0;
+     float power_capacity_3a4;
+     float power_output_3a8;
+-    unsigned char unknown_3ac[0x8d];
++    float power_3ac;
++    unsigned char unknown_3b0[0x89];
+     unsigned char deactivation_requested;
+-    unsigned char unknown_43a[0x2de];
++    unsigned char unknown_43a[2];
++    unsigned int guests_43c;
++    unsigned int litter_440;
++    unsigned char unknown_444[0x2b8];
++    const char* island_6fc;
++    const char* area_700;
++    const char* weather_704;
++    const char* temperature_708;
++    const char* hazards_70c;
++    const char* description_710;
++    const char* objectives_714;
+     unsigned int objective_count_718;
+-    unsigned char unknown_71c[0x10];
+-    int objective_state_72c[16]; // 0 open, 1, 2; capacity not proved.
+-    unsigned char unknown_76c[0x20];
++    const char* objective_keys_71c[4];
++    int objective_state_72c[4];
++    const char* scenario_title_73c;
++    unsigned int arrived_740;
++    unsigned int arrived_744;
++    unsigned int departed_748;
++    unsigned int departed_74c;
++    unsigned int arrived_750;
++    unsigned int arrived_754;
++    unsigned int departed_758;
++    unsigned int departed_75c;
++    unsigned int unhappy_760;
++    unsigned int unhappy_764;
++    unsigned int unhappy_768;
++    unsigned int unhappy_76c;
++    float income_770;
++    float income_774;
++    float income_778;
++    float income_77c;
++    float income_780;
++    float income_784;
++    float income_788;
+     float spent_78c;
+     float building_spent_790;
+     float scenery_spent_794;
+-    unsigned char unknown_798[0x614];
++    float cost_798;
++    float cost_79c;
++    float profit_7a0;
++    float cost_7a4;
++    float income_7a8;
++    unsigned char unknown_7ac[0x600];
+     unsigned int buildings_bought_dac;
+-    unsigned char unknown_db0[0xc];
++    unsigned int different_db0;
++    unsigned int bars_db4;
++    unsigned int remaining_db8;
+     float totty_rating_dbc; // Island ratings 0..1 (drawn x100).
+     float beauty_rating_dc0;
+     float safety_rating_dc4;
++    unsigned int party_dc8;
++    unsigned int shag_dcc;
++    unsigned int pissed_dd0;
++    unsigned int drowned_dd4;
++    unsigned int eaten_dd8;
++    unsigned int total_ddc;
++    unsigned char unknown_de0[4];
++
++    WindowDeactivationState(InputMotionState* motion, InputState* input, const char* path, unsigned char loading); // 0x0043b520.
++    void Start();                                                                                                  // 0x0043c740.
+ 
+     // Actual 0x0043cc30, RET4: listed build index (+0x180 count, +0x184 indices)
+     // that is not an already present unique building and whose prerequisite is

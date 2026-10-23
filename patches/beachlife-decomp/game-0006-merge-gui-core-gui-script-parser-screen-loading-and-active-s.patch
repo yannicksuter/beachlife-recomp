@@ -1,0 +1,2537 @@
+diff --git a/src/game_gui_parse_bar.cpp b/src/game_gui_parse_bar.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..de2d6b2b1d9066990e5122c4b8edd92470c08edd
+--- /dev/null
++++ b/src/game_gui_parse_bar.cpp
+@@ -0,0 +1,38 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_bar.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ad1c0
++void GuiParserState::ParseBar()
++{
++    const char* data = buffer;
++    if (data[cursor] == '(')
++    {
++        ++cursor;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++
++        ScreenRectangle rectangle;
++        ReadRectangle(rectangle, current_context);
++        float value_a;
++        ReadFloat(value_a);
++        float value_b;
++        ReadFloat(value_b);
++        char name[64];
++        ReadText(name);
++        int value_c;
++        ReadInteger(value_c, true);
++        ScreenBar* bar = new ScreenBar(rectangle, value_a, value_b, name, value_c);
++        RegisterItem(bar, 0);
++    }
++    else
++    {
++        StartupFatal(
++            "GUIManager::ProcessBar - Script Error \r\nNo open bracket found at file offset - %u",
++            cursor);
++    }
++}
+diff --git a/src/game_gui_parse_column.cpp b/src/game_gui_parse_column.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e44dcd948699782cdbefbc1d4fc44b7743304aae
+--- /dev/null
++++ b/src/game_gui_parse_column.cpp
+@@ -0,0 +1,102 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_table_column.h"
++#include "startup_screen_text.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ab330
++void GuiParserState::ParseColumnContext()
++{
++    const char* data = buffer;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (data[cursor] == '(')
++    {
++        ++cursor;
++        int value_a;
++        ReadInteger(value_a, true);
++        int value_b;
++        ReadInteger(value_b, true);
++        char source[64];
++        ReadText(source);
++        int left;
++        ReadInteger(left, true);
++        int right;
++        ReadInteger(right, true);
++        int value_d;
++        ReadInteger(value_d, true);
++        int value_c;
++        ReadInteger(value_c, false);
++
++        data = buffer;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++
++        // The column takes the open table's top and bottom; left and right are
++        // offsets from the table's left edge.
++        ScreenRectangle bounds;
++        bounds.left = alternate_context_14->GetRectangle().left + left;
++        bounds.right = alternate_context_14->GetRectangle().left + right;
++        bounds.top = alternate_context_14->GetRectangle().top;
++        bounds.bottom = alternate_context_14->GetRectangle().bottom;
++        ScreenTableColumn* column =
++            new ScreenTableColumn(bounds, source, value_a, value_b, value_c, value_d);
++        RegisterItem(column, 0);
++
++        data = buffer;
++        if (data[cursor] == ',')
++        {
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++            ++cursor;
++            char text[64];
++            ReadText(text);
++            column->SetOwnedText(text);
++            screen_text_lookup->LookupText(text);
++        }
++        else
++        {
++            if (data[cursor] == ')')
++            {
++                ++cursor;
++            }
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++        }
++        if (buffer[cursor] == '>')
++        {
++            ++cursor;
++        }
++        else
++        {
++            StartupFatal(
++                "GUIManager::process_col - Script Error \r\nNo close symbol at file offset - %u",
++                cursor);
++        }
++
++        data = buffer;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++    }
++    else
++    {
++        StartupFatal(
++            "GUIManager::process_col - Script Error \r\nNo open bracket found at file offset - %u",
++            cursor);
++    }
++}
+diff --git a/src/game_gui_parse_combo_box.cpp b/src/game_gui_parse_combo_box.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..64b355e707adb17d4f717553b521816b9b875f38
+--- /dev/null
++++ b/src/game_gui_parse_combo_box.cpp
+@@ -0,0 +1,63 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_combo_box.h"
++#include "startup_screen_text.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ac180
++void GuiParserState::ParseComboBox()
++{
++    const char* data = buffer;
++    if (data[cursor] == '(')
++    {
++        ++cursor;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++
++        ScreenRectangle rectangle;
++        ReadRectangle(rectangle, current_context);
++        char name[64];
++        ReadText(name);
++        // The script order differs from the constructor order.
++        int value_c;
++        ReadInteger(value_c, true);
++        int value_a;
++        ReadInteger(value_a, true);
++        int value_b;
++        ReadInteger(value_b, true);
++        int value_d;
++        ReadInteger(value_d, true);
++        int value_e;
++        ReadInteger(value_e, true);
++        ScreenComboBox* combo =
++            new ScreenComboBox(rectangle, name, value_a, value_b, value_c, value_d, value_e);
++        RegisterItem(combo, 0);
++
++        data = buffer;
++        if (data[cursor] != ')')
++        {
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++            char text[64];
++            ReadText(text);
++            combo->SetOwnedText(text);
++            screen_text_lookup->LookupText(text);
++        }
++        else
++        {
++            ++cursor;
++        }
++    }
++    else
++    {
++        StartupFatal("GUIManager::process_combobox - Script Error \r\nNo open bracket found at "
++                     "file offset - %u",
++            cursor);
++    }
++}
+diff --git a/src/game_gui_parse_image_list.cpp b/src/game_gui_parse_image_list.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..322ef6d477731132b11f905a7efd7402526d1722
+--- /dev/null
++++ b/src/game_gui_parse_image_list.cpp
+@@ -0,0 +1,38 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_image_list.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004acf70
++void GuiParserState::ParseImageList()
++{
++    const char* data = buffer;
++    if (data[cursor] == '(')
++    {
++        ++cursor;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++
++        ScreenRectangle rectangle;
++        ReadRectangle(rectangle, current_context);
++        int value_a;
++        ReadInteger(value_a, true);
++        int value_b;
++        ReadInteger(value_b, true);
++        char name[64];
++        ReadText(name);
++        char second_name[64];
++        ReadText(second_name);
++        ScreenImageList* list = new ScreenImageList(rectangle, name, second_name, value_a, value_b);
++        RegisterItem(list, 0);
++    }
++    else
++    {
++        StartupFatal("GUI_Parser::ProcessImageList - Script Error \r\nNo open bracket found at "
++                     "file offset - %u",
++            cursor);
++    }
++}
+diff --git a/src/game_gui_parse_number_adjust.cpp b/src/game_gui_parse_number_adjust.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1d0644492588173519ff09b3f49202bdff71664
+--- /dev/null
++++ b/src/game_gui_parse_number_adjust.cpp
+@@ -0,0 +1,68 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_number_adjust.h"
++#include "startup_screen_text.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ad2f0
++void GuiParserState::ParseNumberAdjust()
++{
++    const char* data = buffer;
++    if (data[cursor] == '(')
++    {
++        ++cursor;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++
++        ScreenRectangle rectangle;
++        ReadRectangle(rectangle, current_context);
++        int value_a;
++        ReadInteger(value_a, true);
++        int value_b;
++        ReadInteger(value_b, true);
++        char name[64];
++        ReadText(name);
++        int value_flag;
++        ReadInteger(value_flag, false);
++        bool flag = value_flag != 0;
++        ScreenNumberAdjust* adjust =
++            new ScreenNumberAdjust(rectangle, value_a, value_b, name, flag, true);
++        RegisterItem(adjust, 0);
++
++        data = buffer;
++        if (data[cursor] == ',')
++        {
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++            ++cursor;
++            char text[64];
++            ReadText(text);
++            adjust->SetOwnedText(text);
++            screen_text_lookup->LookupText(text);
++        }
++        else
++        {
++            if (data[cursor] == ')')
++            {
++                ++cursor;
++            }
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++        }
++    }
++    else
++    {
++        StartupFatal("GUIManager::ProcessNumberWidget - Script Error \r\nNo open bracket found at "
++                     "file offset - %u",
++            cursor);
++    }
++}
+diff --git a/src/game_gui_parse_slider.cpp b/src/game_gui_parse_slider.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7de9cfe9e3fcb57f9ceb097085782da8053b5a14
+--- /dev/null
++++ b/src/game_gui_parse_slider.cpp
+@@ -0,0 +1,57 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_slider.h"
++#include "startup_screen_text.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ac980
++void GuiParserState::ParseSlider()
++{
++    const char* data = buffer;
++    if (data[cursor] == '(')
++    {
++        ++cursor;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++
++        ScreenRectangle rectangle;
++        ReadRectangle(rectangle, current_context);
++        char name[64];
++        ReadText(name);
++        float value_a;
++        ReadFloat(value_a);
++        float value_b;
++        ReadFloat(value_b);
++        int value_c;
++        ReadInteger(value_c, true);
++        ScreenSlider* slider = new ScreenSlider(rectangle, name, value_a, value_b, value_c);
++        RegisterItem(slider, 0);
++
++        data = buffer;
++        if (data[cursor] != ')')
++        {
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++            char text[64];
++            ReadText(text);
++            slider->SetOwnedText(text);
++            screen_text_lookup->LookupText(text);
++        }
++        else
++        {
++            ++cursor;
++        }
++    }
++    else
++    {
++        StartupFatal("GUIManager::process_slider - Script Error \r\nNo open bracket found at file "
++                     "offset - %u",
++            cursor);
++    }
++}
+diff --git a/src/game_gui_parse_table.cpp b/src/game_gui_parse_table.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..84e43504a8471f99c5e9d0bb330d0252f25515bc
+--- /dev/null
++++ b/src/game_gui_parse_table.cpp
+@@ -0,0 +1,58 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_table.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ac7d0
++void GuiParserState::ParseTable()
++{
++    const char* data = buffer;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (data[cursor] == '(')
++    {
++        ++cursor;
++        ScreenRectangle initial;
++        ReadRectangle(initial, current_context);
++        ScreenRectangle content;
++        ReadRectangle(content, current_context);
++        char name[64];
++        ReadText(name);
++        int value_a;
++        ReadInteger(value_a, true);
++        int value_b;
++        ReadInteger(value_b, true);
++        int value_flag;
++        ReadInteger(value_flag, true);
++        bool flag = false;
++        if (value_flag)
++        {
++            flag = true;
++        }
++        ScreenTable* table = new ScreenTable(initial, content, name, value_a, value_b, flag);
++        RegisterItem(table, 0);
++        // The table stays open for its "<COL" entries.
++        alternate_context_14 = table;
++
++        data = buffer;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++        // A missing open brace is not reported.
++        if (data[cursor] == '{')
++        {
++            ++cursor;
++        }
++    }
++    else
++    {
++        StartupFatal("GUIManager::process_table - Script Error \r\nNo open bracket found at file "
++                     "offset - %u",
++            cursor);
++    }
++}
+diff --git a/src/game_gui_parse_variable_image.cpp b/src/game_gui_parse_variable_image.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..cc184e368f6ea6cdb82e425da3d89b7a2f8c9ba6
+--- /dev/null
++++ b/src/game_gui_parse_variable_image.cpp
+@@ -0,0 +1,48 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_text.h"
++#include "startup_screen_variable_image.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004acb30
++void GuiParserState::ParseVariableImage()
++{
++    const char* data = buffer;
++    if (data[cursor] == '(')
++    {
++        ++cursor;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++
++        ScreenRectangle rectangle;
++        ReadRectangle(rectangle, current_context);
++        char name[64];
++        ReadText(name);
++        ScreenVariableImage* image = new ScreenVariableImage(rectangle, name);
++        RegisterItem(image, 0);
++
++        // ReadText consumed the delimiter: a ',' introduces the tip text.
++        data = buffer;
++        if (data[cursor - 1] == ',')
++        {
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++            char text[64];
++            ReadText(text);
++            image->SetOwnedText(text);
++            screen_text_lookup->LookupText(text);
++        }
++    }
++    else
++    {
++        StartupFatal("GUIManager::process_variableimage - Script Error \r\nNo open bracket found "
++                     "at file offset - %u",
++            cursor);
++    }
++}
+diff --git a/src/startup_active_screen_deactivate.cpp b/src/startup_active_screen_deactivate.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..26ba3938d0625449dc0747cf1768dc6d125a5615
+--- /dev/null
++++ b/src/startup_active_screen_deactivate.cpp
+@@ -0,0 +1,14 @@
++#include "startup_active_screen_deactivate.h"
++#include "startup_screen_dialog.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004b2e80
++void DeactivateActiveScreen(ActiveScreenEntry* entry)
++{
++    if (entry)
++    {
++        entry->item->Unresolved24(0);
++        screen_request_renderer->CleanupSurface(entry->surface);
++        delete entry;
++    }
++}
+diff --git a/src/startup_active_screen_deactivate.h b/src/startup_active_screen_deactivate.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb9432aaa44d6d126b72771dc7723e75d68f70d2
+--- /dev/null
++++ b/src/startup_active_screen_deactivate.h
+@@ -0,0 +1,8 @@
++#ifndef STARTUP_ACTIVE_SCREEN_DEACTIVATE_H
++#define STARTUP_ACTIVE_SCREEN_DEACTIVATE_H
++
++#include "startup_active_screen.h"
++
++void DeactivateActiveScreen(ActiveScreenEntry* entry);
++
++#endif
+diff --git a/src/startup_gui_dispatch.cpp b/src/startup_gui_dispatch.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c442bbb0892aadc8707800fe64f91e9efbf427e
+--- /dev/null
++++ b/src/startup_gui_dispatch.cpp
+@@ -0,0 +1,115 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004aa8b0
++bool GuiParserState::DispatchToken(unsigned int token)
++{
++    bool stop = false;
++    switch (token)
++    {
++    case 14:
++        ParseFont();
++        break;
++    case 2:
++        ParseMainItem();
++        break;
++    case 3:
++        ParseMainItem640();
++        break;
++    case 15:
++        ParseTGA();
++        break;
++    case 1:
++        ParseDialogItem();
++        break;
++    case 9:
++        ParseText();
++        break;
++    case 7:
++        ParseButton();
++        break;
++    case 11:
++        ParseComboBox();
++        break;
++    case 6:
++        ParseDefine();
++        break;
++    case 4:
++        ParseTabWindow();
++        break;
++    case 10:
++        ParseVariable();
++        break;
++    case 5:
++        ParseTable();
++        break;
++    case 8:
++        ParseSlider();
++        break;
++    case 12:
++        ParseVariableImage();
++        break;
++    case 13:
++        ParseImage();
++        break;
++    case 16:
++        if (buffer[cursor] == '(')
++        {
++            ++cursor;
++            const char* data = buffer;
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++            ScreenRectangle rectangle;
++            ReadRectangle(rectangle, current_context);
++            data = buffer;
++            while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                   data[cursor] == '\t')
++            {
++                ++cursor;
++            }
++            ++cursor;
++            manager->SetTickerRectangle(rectangle);
++        }
++        else
++        {
++            StartupFatal("GUIManager::process_scrollwindow - Script Error \r\nNo open bracket "
++                         "found at file offset - %u",
++                cursor);
++        }
++        break;
++    case 0:
++        ParseCheckBox();
++        break;
++    case 17:
++        ParseImageList();
++        break;
++    case 18:
++        ParseIcon();
++        break;
++    case 19:
++        ParseBar();
++        break;
++    case 20:
++        ParseNumberAdjust();
++        break;
++    case 21:
++        ParseRadioGroup();
++        break;
++    case 22:
++        ParseRadioButton();
++        break;
++    case 23:
++        ParseListBox();
++        break;
++    case 24:
++        stop = true;
++        break;
++    }
++    return stop;
++}
+diff --git a/src/startup_gui_parse.cpp b/src/startup_gui_parse.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..112e7460087f1c589623a894fc35fdbc16091dc9
+--- /dev/null
++++ b/src/startup_gui_parse.cpp
+@@ -0,0 +1,197 @@
++#include "startup_gui_defined_item.h"
++#include "startup_gui_parser.h"
++#include "startup_screen_child_link.h"
++
++#include <string.h>
++
++void StartupFatal(const char* format, ...);
++
++struct GuiCommandName
++{
++    const char* name;
++    unsigned int token;
++};
++
++// DATA: BEACHLIFE 0x0057ee58
++const GuiCommandName gui_command_names[25] = {
++    {"CheckBox", 0},
++    {"DialogItem", 1},
++    {"MainItem", 2},
++    {"MainItem640", 3},
++    {"TabWindow", 4},
++    {"Table", 5},
++    {"Define", 6},
++    {"Button", 7},
++    {"Slider", 8},
++    {"Text", 9},
++    {"Variable", 10},
++    {"ComboBox", 11},
++    {"VariableImage", 12},
++    {"Image", 13},
++    {"Font", 14},
++    {"TGA", 15},
++    {"TickerText", 16},
++    {"ImageList", 17},
++    {"Icon", 18},
++    {"Bar", 19},
++    {"NumberAdjust", 20},
++    {"RadioGroup", 21},
++    {"RadioButton", 22},
++    {"ListBox", 23},
++    {"StartDebug", 24},
++};
++
++// FUNCTION: BEACHLIFE 0x004aa550
++void GuiParserState::Parse(const char* script, unsigned int size)
++{
++    current_context = 0;
++    alternate_context_10 = 0;
++    alternate_context_14 = 0;
++    context_head = 0;
++    previous_context = 0;
++    last_registered_item = 0;
++    defined_items = 0;
++    registry_head = 0;
++    items_head = 0;
++    items_tail = 0;
++    registry_tail = 0;
++    word_38 = 0;
++    word_3c = 0;
++    bool stop = false;
++    cursor = 0;
++    buffer = script;
++    char command[32];
++    while (cursor < size && !stop)
++    {
++        const char* data = buffer;
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++        if (cursor < size)
++        {
++            char current = data[cursor];
++            if (current == '<')
++            {
++                ++cursor;
++                while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++                       data[cursor] == '\t')
++                {
++                    ++cursor;
++                }
++                unsigned int used = 0;
++                while (data[cursor] != ' ' && data[cursor] != '(' && data[cursor] != '\r' &&
++                       data[cursor] != '\n' && used < 32)
++                {
++                    command[used++] = data[cursor++];
++                }
++                command[used] = 0;
++                if (strncmp("TAB", command, 3) == 0)
++                {
++                    if (alternate_context_10)
++                    {
++                        StartupFatal(
++                            "GUI_Parse - Only one tab can be defined at a time, file offset - %u",
++                            cursor);
++                    }
++                    else
++                    {
++                        ParseTabContext();
++                    }
++                }
++                else if (strncmp("COL", command, 3) == 0)
++                {
++                    ParseColumnContext();
++                }
++                else
++                {
++                    StartupFatal("GUI_Parse - Invalid command at file offset - %u", cursor);
++                }
++            }
++            else if (current == '}')
++            {
++                if (alternate_context_14)
++                {
++                    alternate_context_14 = 0;
++                    ++cursor;
++                }
++                else if (alternate_context_10)
++                {
++                    alternate_context_10 = 0;
++                    ++cursor;
++                }
++                else
++                {
++                    PopContext();
++                    ++cursor;
++                }
++            }
++            else if (current == '/')
++            {
++                ++cursor;
++                while (data[cursor] != '\n')
++                {
++                    ++cursor;
++                }
++            }
++            else if (current == ' ' || current == '(' || current == '\r' || current == '\n')
++            {
++                ++cursor;
++            }
++            else
++            {
++                unsigned int used = 0;
++                while (
++                    data[cursor] != ' ' && data[cursor] != '(' && data[cursor] != '\r' && used < 32)
++                {
++                    command[used++] = data[cursor++];
++                }
++                command[used] = 0;
++                bool unknown = true;
++                for (unsigned int index = 0; index < 25 && unknown; ++index)
++                {
++                    if (strcmp(command, gui_command_names[index].name) == 0)
++                    {
++                        unknown = false;
++                        stop = DispatchToken(gui_command_names[index].token);
++                    }
++                }
++                if (unknown)
++                {
++                    ScreenItem* parent = current_context;
++                    if (!parent)
++                    {
++                        StartupFatal(
++                            "GUI_Parse - No parent for defined item at file offset - %u", cursor);
++                    }
++                    ScreenChildLink* definition = defined_items;
++                    while (definition &&
++                           strcmp(static_cast<GuiDefinedItem*>(definition->item)->identifier,
++                               command) != 0)
++                    {
++                        definition = definition->next;
++                    }
++                    if (definition)
++                    {
++                        parent->Unresolved10(definition->item);
++                    }
++                    else
++                    {
++                        StartupFatal("GUI_Parse - Invalid Command/Defined item at file offset - %u "
++                                     "string %s",
++                            cursor,
++                            command);
++                    }
++                }
++            }
++        }
++    }
++    while (defined_items)
++    {
++        ScreenChildLink* first = defined_items;
++        defined_items = first->next;
++        first->item = 0;
++        delete first;
++    }
++}
+diff --git a/src/startup_gui_parse_button.cpp b/src/startup_gui_parse_button.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5496d5e4a6420555a3c2473aeb70e8460bffd988
+--- /dev/null
++++ b/src/startup_gui_parse_button.cpp
+@@ -0,0 +1,52 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_button.h"
++#include "startup_screen_text.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004abfe0
++void GuiParserState::ParseButton()
++{
++    const char* data = buffer;
++    if (data[cursor] != '(')
++    {
++        StartupFatal("GUIManager::process_button - Script Error \r\nNo open bracket found at file "
++                     "offset - %u",
++            cursor);
++        return;
++    }
++    ++cursor;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    ScreenRectangle rectangle;
++    ReadRectangle(rectangle, current_context);
++    char first_name[64];
++    ReadText(first_name);
++    char second_name[64];
++    ReadText(second_name);
++    char first_action[64];
++    ReadText(first_action);
++    char second_action[64];
++    ReadText(second_action);
++    ScreenButtonPrefix* item =
++        new ScreenButtonPrefix(rectangle, first_name, second_name, first_action, second_action);
++    RegisterItem(item, 0);
++
++    data = buffer;
++    if (data[cursor - 1] == ',')
++    {
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++        char text[64];
++        ReadText(text);
++        item->SetOwnedText(text);
++        screen_text_lookup->LookupText(text);
++    }
++}
+diff --git a/src/startup_gui_parse_checkbox.cpp b/src/startup_gui_parse_checkbox.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..44cfcabde9bb64e962ab0eb0ec4ef7195dfef201
+--- /dev/null
++++ b/src/startup_gui_parse_checkbox.cpp
+@@ -0,0 +1,47 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_checkbox.h"
++#include "startup_screen_text.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004acdf0
++void GuiParserState::ParseCheckBox()
++{
++    const char* data = buffer;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (data[cursor] != '(')
++    {
++        StartupFatal("GUIManager::process_checkbox - Script Error \r\nNo open bracket found at "
++                     "file offset - %u",
++            cursor);
++        return;
++    }
++    ++cursor;
++
++    ScreenRectangle rectangle;
++    ReadRectangle(rectangle, current_context);
++    char resource_name[64];
++    ReadText(resource_name);
++    char name[64];
++    ReadText(name);
++    ScreenCheckBox* item = new ScreenCheckBox(rectangle, resource_name, name);
++    RegisterItem(item, 0);
++
++    data = buffer;
++    if (data[cursor - 1] == ',')
++    {
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++        char text[64];
++        ReadText(text);
++        item->SetOwnedText(text);
++        screen_text_lookup->LookupText(text);
++    }
++}
+diff --git a/src/startup_gui_parse_listbox.cpp b/src/startup_gui_parse_listbox.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0278c77eccc0be2f20b4593a3f1789e7468bc71b
+--- /dev/null
++++ b/src/startup_gui_parse_listbox.cpp
+@@ -0,0 +1,40 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_list_box.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ad840
++void GuiParserState::ParseListBox()
++{
++    const char* data = buffer;
++    if (data[cursor] != '(')
++    {
++        StartupFatal("GUIManager::ProcessListBox - Script Error \r\nNo open bracket found at file "
++                     "offset - %u",
++            cursor);
++        return;
++    }
++    ++cursor;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    ScreenRectangle initial;
++    ReadRectangle(initial, current_context);
++    ScreenRectangle inner;
++    ReadRectangle(inner, current_context);
++    char name[64];
++    ReadText(name);
++    int first_word;
++    ReadInteger(first_word, true);
++    int second_word;
++    ReadInteger(second_word, true);
++    ScreenListBoxPrefix* item = new ScreenListBoxPrefix(initial,
++        inner,
++        name,
++        static_cast<unsigned int>(first_word),
++        static_cast<unsigned int>(second_word));
++    RegisterItem(item, 0);
++}
+diff --git a/src/startup_gui_parse_radio_button.cpp b/src/startup_gui_parse_radio_button.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..24cfce0559d5d8833bb4d4a07d91af2bd6e7f7c1
+--- /dev/null
++++ b/src/startup_gui_parse_radio_button.cpp
+@@ -0,0 +1,65 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_child_link.h"
++#include "startup_screen_radio_item.h"
++#include "startup_screen_text.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ad610
++void GuiParserState::ParseRadioButton()
++{
++    const char* data = buffer;
++    if (data[cursor] != '(')
++    {
++        StartupFatal("GUIManager::ProcessRadioButton - Script Error \r\nNo open bracket found at "
++                     "file offset - %u",
++            cursor);
++        return;
++    }
++    ++cursor;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    ScreenRectangle rectangle;
++    ReadRectangle(rectangle, current_context);
++    char resource_name[64];
++    ReadText(resource_name);
++    int word54;
++    ReadInteger(word54, true);
++    int value;
++    ReadInteger(value, true);
++    char name[64];
++    ReadText(name);
++    ScreenRadioItem* item = new ScreenRadioItem(
++        rectangle, resource_name, name, static_cast<unsigned int>(word54), value);
++
++    if (items_tail == 0)
++    {
++        items_tail = new ScreenChildLink(item);
++        items_head = items_tail;
++    }
++    else
++    {
++        ScreenChildLink* link = new ScreenChildLink(item);
++        items_tail->next = link;
++        items_tail = items_tail->next;
++    }
++    current_context->Unresolved10(item);
++
++    data = buffer;
++    if (data[cursor - 1] == ',')
++    {
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++        char text[64];
++        ReadText(text);
++        item->SetOwnedText(text);
++        screen_text_lookup->LookupText(text);
++    }
++}
+diff --git a/src/startup_gui_parse_radio_group.cpp b/src/startup_gui_parse_radio_group.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8de64a00f2b2eeb490bcd53a3674a0557f35e90d
+--- /dev/null
++++ b/src/startup_gui_parse_radio_group.cpp
+@@ -0,0 +1,44 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_radio_group.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ad4c0
++void GuiParserState::ParseRadioGroup()
++{
++    const char* data = buffer;
++    if (data[cursor] != '(')
++    {
++        StartupFatal("GUIManager::ProcessRadioGroup - Script Error \r\nNo open bracket found at "
++                     "file offset - %u",
++            cursor);
++        return;
++    }
++    ++cursor;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    ScreenRectangle rectangle;
++    ReadRectangle(rectangle, current_context);
++    char variable_name[64];
++    ReadText(variable_name);
++    char resource_name[64];
++    ReadText(resource_name);
++    ScreenRadioGroup* item = new ScreenRadioGroup(rectangle, variable_name, resource_name);
++    RegisterItem(item, 0);
++    PushContext(item);
++
++    data = buffer;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (data[cursor] == '{')
++    {
++        ++cursor;
++    }
++}
+diff --git a/src/startup_gui_parse_tab_window.cpp b/src/startup_gui_parse_tab_window.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..51fdbfb5f47d37de28247190d2bbe4f36c49651c
+--- /dev/null
++++ b/src/startup_gui_parse_tab_window.cpp
+@@ -0,0 +1,43 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_linear_container.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ac4e0
++void GuiParserState::ParseTabWindow()
++{
++    const char* data = buffer;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    if (data[cursor] != '(')
++    {
++        StartupFatal("GUIManager::process_tabwindow - Script Error \r\nNo open bracket found at "
++                     "file offset - %u",
++            cursor);
++        return;
++    }
++    ++cursor;
++
++    ScreenRectangle rectangle;
++    ReadRectangle(rectangle, 0);
++    int value;
++    ReadInteger(value, true);
++    ScreenLinearContainer* item = new ScreenLinearContainer(rectangle, value);
++    RegisterItem(item, 0);
++    PushContext(item);
++
++    data = buffer;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (data[cursor] == '{')
++    {
++        ++cursor;
++    }
++}
+diff --git a/src/startup_gui_parse_variable.cpp b/src/startup_gui_parse_variable.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f4b07bc68a095295b74eff13a32e35519b03f06
+--- /dev/null
++++ b/src/startup_gui_parse_variable.cpp
+@@ -0,0 +1,63 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_text.h"
++#include "startup_screen_variable_item.h"
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004ac610
++void GuiParserState::ParseVariable()
++{
++    const char* data = buffer;
++    if (data[cursor] != '(')
++    {
++        StartupFatal("GUIManager::process_variable - Script Error \r\nNo open bracket found at "
++                     "file offset - %u",
++            cursor);
++        return;
++    }
++    ++cursor;
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    ScreenRectangle rectangle;
++    ReadRectangle(rectangle, current_context);
++    char key[64];
++    ReadText(key);
++    int font;
++    ReadInteger(font, true);
++    int value_64;
++    ReadInteger(value_64, true);
++    int value_6c;
++    ReadInteger(value_6c, false);
++    ScreenVariableItem* item = new ScreenVariableItem(rectangle, key, font, value_64, value_6c);
++    RegisterItem(item, 0);
++
++    data = buffer;
++    if (data[cursor] == ',')
++    {
++        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
++               data[cursor] == '\t')
++        {
++            ++cursor;
++        }
++        ++cursor;
++        char text[64];
++        ReadText(text);
++        item->SetOwnedText(text);
++        screen_text_lookup->LookupText(text);
++        return;
++    }
++
++    if (data[cursor] == ')')
++    {
++        ++cursor;
++    }
++    while (
++        data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    {
++        ++cursor;
++    }
++}
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+index 64a0055a845c078ec1bc5e403d9f02064b2c1e20..584a0ef4f1dcab8a772f3f86f5b0299369463149 100644
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -30,6 +30,28 @@ struct GuiParserState
+     unsigned int word_38;
+     unsigned int word_3c;
+ 
++    explicit GuiParserState(ScreenManager* owner);
++    ~GuiParserState();
++    void Parse(const char* script, unsigned int size);
++    ScreenChildLink* ReadRegistryHead();
++    ScreenChildLink* ReadItemsHead();
++    bool DispatchToken(unsigned int token);
++    void ParseColumnContext();
++    void ParseCheckBox();
++    void ParseTabWindow();
++    void ParseTable();
++    void ParseButton();
++    void ParseSlider();
++    void ParseVariable();
++    void ParseComboBox();
++    void ParseVariableImage();
++    void ParseImageList();
++    void ParseBar();
++    void ParseNumberAdjust();
++    void ParseRadioGroup();
++    void ParseRadioButton();
++    void ParseListBox();
++
+     void ReadInteger(int& value, bool consume_delimiter);
+     void ReadFloat(float& value);
+     void SkipWhitespace();
+diff --git a/src/startup_gui_parser_lifetime.cpp b/src/startup_gui_parser_lifetime.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d395e666e543a763095d68f8cfe0beb2c33fb66
+--- /dev/null
++++ b/src/startup_gui_parser_lifetime.cpp
+@@ -0,0 +1,23 @@
++#include "startup_gui_parser.h"
++
++// FUNCTION: BEACHLIFE 0x004ecfb0
++GuiParserState::GuiParserState(ScreenManager* owner)
++    : manager(owner)
++{
++}
++
++// Shared empty cleanup alias at 0x004d3890.
++// Shared empty cleanup address; the caller retains the item/link ownership.
++GuiParserState::~GuiParserState() {}
++
++// FUNCTION: BEACHLIFE 0x004aa890
++ScreenChildLink* GuiParserState::ReadRegistryHead()
++{
++    return registry_head;
++}
++
++// FUNCTION: BEACHLIFE 0x004aa8a0
++ScreenChildLink* GuiParserState::ReadItemsHead()
++{
++    return items_head;
++}
+diff --git a/src/startup_screen_active_update.cpp b/src/startup_screen_active_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ca1e13f2ef27815a0581049ea26f651dc2c3bdd
+--- /dev/null
++++ b/src/startup_screen_active_update.cpp
+@@ -0,0 +1,57 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004b2d60
++void ScreenManager::UpdateActiveScreens(float elapsed)
++{
++    CircularListNode* node = active.head->next;
++    while (node != active.head)
++    {
++        ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++        if (entry->state == 2)
++        {
++            entry->item->Unresolved24(0);
++            if (entry)
++            {
++                entry->item->Unresolved24(0);
++                screen_request_renderer->CleanupSurface(entry->surface);
++                delete entry;
++            }
++
++            CircularListIterator removed;
++            removed.node = node;
++            node = node->next;
++            active.Erase(removed);
++        }
++        else
++        {
++            node = node->next;
++        }
++    }
++
++    node = active.head->next;
++    while (node != active.head)
++    {
++        ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++        if (entry->state == 0)
++        {
++            request_context_94 = entry->context;
++            entry->item->Unresolved24(1);
++            entry->state = 1;
++        }
++        node = node->next;
++    }
++
++    node = active.head->next;
++    while (node != active.head)
++    {
++        ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++        if (entry->state == 1)
++        {
++            request_context_94 = entry->context;
++            entry->item->Unresolved04(elapsed);
++        }
++        node = node->next;
++    }
++}
+diff --git a/src/startup_screen_bar.h b/src/startup_screen_bar.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..75110faaf48d9a104fd10cb9a003b22fe1bb9dc2
+--- /dev/null
++++ b/src/startup_screen_bar.h
+@@ -0,0 +1,28 @@
++#ifndef STARTUP_SCREEN_BAR_H
++#define STARTUP_SCREEN_BAR_H
++
++#include "startup_screen_item.h"
++
++// Genuine "Bar" object: original allocation 0x80, kind 18 and table 0x004f4900
++// (21 slots). Descriptive names only. The differing slots are separate
++// required children.
++struct ScreenBar : ScreenItem
++{
++    float value_a_44;
++    float value_b_48;
++    char name_4c[0x20]; // Unchecked constructor copy including NUL.
++    int width_6c;
++    int height_70;
++    int value_c_74;
++    float value_78; // -1.0f until set.
++    unsigned int word_7c;
++
++    // Actual 0x004c1340, RET 0x20.
++    ScreenBar(ScreenRectangle initial, float value_a, float value_b, const char* name, int value_c);
++    virtual ~ScreenBar(); // Ordinary 0x004c1400; deleting wrapper 0x004c13e0.
++
++    virtual void Unresolved0c();                      // 0x004c1410.
++    virtual void Unresolved24(unsigned char enabled); // Shared real target 0x004c8510.
++};
++
++#endif
+diff --git a/src/startup_screen_button.h b/src/startup_screen_button.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa78939bfad53715836e98c432d4ccefd6ec652f
+--- /dev/null
++++ b/src/startup_screen_button.h
+@@ -0,0 +1,52 @@
++#ifndef STARTUP_SCREEN_BUTTON_H
++#define STARTUP_SCREEN_BUTTON_H
++
++#include "startup_screen_button_actions.h"
++#include "startup_screen_item.h"
++
++struct ScreenDialogResource;
++
++// Actual 0x80-byte x86 allocation and table 0x004f4370.
++// R279 refines only constructor stores and their directly proven uses.
++// All seven differing entries are declared; fourteen targets truly inherit.
++struct ScreenButtonPrefix : ScreenItem
++{
++    unsigned int word_44;
++    unsigned int word_48;
++    unsigned int word_4c;
++    unsigned char flag_50;
++    unsigned char unknown_51[3];
++    char* text_54;
++    unsigned char unknown_58[4];
++    ScreenButtonActionIdentity action_5c;
++    ScreenButtonActionIdentity action_60;
++    unsigned char flag_64;
++    unsigned char flag_65;
++    unsigned char unknown_66[2];
++    float elapsed_68;
++    float value_6c;
++    char* resource_name_70;
++    ScreenDialogResource* resource_74;
++    unsigned int word_78;
++    unsigned char flag_7c;
++    unsigned char flag_7d;
++    unsigned char unknown_7e[2];
++
++    // Actual 0x004a0b40/RET32: four rectangle words and four string pointers.
++    ScreenButtonPrefix(ScreenRectangle initial,
++        const char* first_name,
++        const char* second_name,
++        const char* first_action,
++        const char* second_action);
++    virtual ~ScreenButtonPrefix();                                // Deleting wrapper 0x004a0e50.
++    virtual void Unresolved04(float elapsed);                     // 0x004a0f90
++    virtual void Unresolved0c();                                  // 0x004a1170
++    virtual void Unresolved24(unsigned char enabled);             // 0x004a0f10
++    virtual bool TestRectangle(int x, int y);                     // 0x004a13a0
++    virtual bool HandleTimedCoordinates(int x, int y, int value); // 0x004a17a0
++    virtual bool HandleTimedEvent(int x, int y, int value);       // 0x004a1940
++
++    void ReplaceNamedResource(const char* name, const char* resource); // 0x004a15c0
++};
++
++#endif
+diff --git a/src/startup_screen_button_actions.h b/src/startup_screen_button_actions.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb19821107053636600a8c5e799ed07c68edba8b
+--- /dev/null
++++ b/src/startup_screen_button_actions.h
+@@ -0,0 +1,19 @@
++#ifndef STARTUP_SCREEN_BUTTON_ACTIONS_H
++#define STARTUP_SCREEN_BUTTON_ACTIONS_H
++
++// Identity-only function pointer: this method never invokes an action.
++// The original invoked return/pointee types are not established. Actual Button
++// callers pass one word and use cdecl cleanup; do not invoke through this type.
++typedef void (*ScreenButtonActionIdentity)();
++
++// Actual 120 writable name/function pairs at 0x0057d7a8, eight bytes each on x86.
++// No callback body or generated replacement table is provided by this atom.
++struct ScreenButtonActionRecord
++{
++    const char* name;
++    ScreenButtonActionIdentity action;
++};
++
++extern ScreenButtonActionRecord screen_button_actions[120];
++
++#endif
+diff --git a/src/startup_screen_button_constants.h b/src/startup_screen_button_constants.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a0a6e9df56369f37bee8c77cb21d14dc3280580
+--- /dev/null
++++ b/src/startup_screen_button_constants.h
+@@ -0,0 +1,15 @@
++#ifndef STARTUP_SCREEN_BUTTON_CONSTANTS_H
++#define STARTUP_SCREEN_BUTTON_CONSTANTS_H
++
++// Actual writable string storage, read by the constructor. These declarations
++// do not provide definitions, infer a larger object extent or replace writers.
++extern char screen_button_no_text_name[];                // 0x004fcf90, initially "None".
++extern char screen_button_variable_prefix[];             // 0x0057e208, initially "BUTVAR_".
++extern char screen_button_state_entry_variable_prefix[]; // 0x0057e1f8, initially "BUTSTATENTVAR_".
++extern char screen_button_state_variable_prefix[];       // 0x0057e1e8, initially "BUTSTATEVAR_".
++
++// Additional actual writable strings read by Button update; definitions remain separate.
++extern char screen_button_state_key_format[]; // 0x0057e21c, initially "%s_STATE".
++extern char screen_button_click_sound[];      // 0x0057e210, initially "ButtonClick".
++
++#endif
+diff --git a/src/startup_screen_checkbox.h b/src/startup_screen_checkbox.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..8522954ffddd669fdbacf9d241158c5bcb86d019
+--- /dev/null
++++ b/src/startup_screen_checkbox.h
+@@ -0,0 +1,29 @@
++#ifndef STARTUP_SCREEN_CHECKBOX_H
++#define STARTUP_SCREEN_CHECKBOX_H
++
++#include "startup_screen_item.h"
++
++struct ScreenDialogResource;
++
++// The CheckBox command constructs this distinct kind1, 0x50-byte x86 item.
++// Its two pointer fields are proved by the actual constructor. Update reads
++// and normalizes the final DWORD; the constructor leaves it uninitialized.
++// These declarations retain every differing slot without providing its body.
++// VTABLE: BEACHLIFE 0x004f4954
++struct ScreenCheckBox : ScreenItem
++{
++    char* owned_name_44;
++    ScreenDialogResource* resource_48;
++    unsigned int word_4c;
++
++    // Actual 0x004c1650, RET24; complete source remains a separate prerequisite.
++    ScreenCheckBox(ScreenRectangle initial, const char* resource_name, const char* name);
++    ~ScreenCheckBox() override;                // Ordinary 0x004c1730; deleting wrapper 0x004c1710.
++    void Unresolved04(float elapsed) override; // 0x004c1810
++    void Unresolved0c() override;              // 0x004c19b0
++    void Unresolved24(unsigned char enabled) override; // Shared physical body 0x004c8510.
++    bool TestRectangle(int x, int y) override;         // 0x004c17a0
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004c18a0
++};
++
++#endif
+diff --git a/src/startup_screen_combo_box.h b/src/startup_screen_combo_box.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..b7594f1ae20363634008a556293671d0c485b39a
+--- /dev/null
++++ b/src/startup_screen_combo_box.h
+@@ -0,0 +1,36 @@
++#ifndef STARTUP_SCREEN_COMBO_BOX_H
++#define STARTUP_SCREEN_COMBO_BOX_H
++
++#include "startup_screen_item.h"
++
++// Genuine "ComboBox" object: original allocation 0x90 and table 0x004f43c4.
++// Descriptive names only; the field tail, destructor and overriding slots are
++// separate required children and are not supplied here.
++// VTABLE: BEACHLIFE 0x004f43c4
++struct ScreenComboBox : ScreenItem
++{
++    unsigned char unknown_44[0x4c];
++
++    // Actual 0x004a3360, RET 0x28; separate complete body required.
++    ScreenComboBox(ScreenRectangle initial,
++        const char* name,
++        int value_a,
++        int value_b,
++        int value_c,
++        int value_d,
++        int value_e);
++
++    // Every differing retail vtable slot remains an explicit dependency.
++    ~ScreenComboBox() override;                                    // 0x004a36d0 (deleting wrapper).
++    void Unresolved04(float elapsed) override;                     // 0x004a42b0
++    void Unresolved0c() override;                                  // 0x004a45d0
++    void ApplyPosition(int dx, int dy) override;                   // 0x004a38c0
++    void MarkPrepared() override;                                  // 0x004a46a0
++    void Unresolved1c() override;                                  // 0x004a46c0
++    void Unresolved24(unsigned char enabled) override;             // 0x004a3910
++    void MoveRectangle(int dx, int dy) override;                   // 0x004a3870
++    bool HandleInput38(int x, int y, int value) override;          // 0x004a3d50
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004a3e70
++};
++
++#endif
+diff --git a/src/startup_screen_image_list.h b/src/startup_screen_image_list.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..8561f6558b63421d215a67688382684c4a73c67e
+--- /dev/null
++++ b/src/startup_screen_image_list.h
+@@ -0,0 +1,32 @@
++#ifndef STARTUP_SCREEN_IMAGE_LIST_H
++#define STARTUP_SCREEN_IMAGE_LIST_H
++
++#include "startup_screen_item.h"
++
++// Genuine "ImageList" object: original allocation 0x84 and table 0x004f46ac.
++// Descriptive names only; the field tail, destructor and overriding slots are
++// separate required children and are not supplied here.
++// VTABLE: BEACHLIFE 0x004f46ac
++struct ScreenImageList : ScreenItem
++{
++    unsigned char unknown_44[0x40];
++
++    // Actual 0x004b3120, RET 0x20; separate complete body required.
++    ScreenImageList(ScreenRectangle initial,
++        const char* name,
++        const char* second_name,
++        int value_a,
++        int value_b);
++
++    // Every differing retail vtable slot remains an explicit dependency.
++    ~ScreenImageList() override;                                   // 0x004b3520 (deleting wrapper).
++    void Unresolved04(float elapsed) override;                     // 0x004b36a0
++    void Unresolved0c() override;                                  // 0x004b3a40
++    void MarkPrepared() override;                                  // 0x004b3b40
++    void Unresolved24(unsigned char enabled) override;             // 0x004b3be0
++    void Unresolved28() override;                                  // 0x004b3db0
++    void MoveRectangle(int dx, int dy) override;                   // 0x004b3b70
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004b38b0
++};
++
++#endif
+diff --git a/src/startup_screen_linear_container.h b/src/startup_screen_linear_container.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..22f02dda620906956b632bdd14c03e23c90ea2b7
+--- /dev/null
++++ b/src/startup_screen_linear_container.h
+@@ -0,0 +1,36 @@
++#ifndef STARTUP_SCREEN_LINEAR_CONTAINER_H
++#define STARTUP_SCREEN_LINEAR_CONTAINER_H
++
++#include "startup_screen_item.h"
++
++struct ScreenChildLink;
++
++// Observed kind8 allocation: 80 bytes on original x86; descriptive class name.
++// The 21 actual slots are retained, with every derived target declared below.
++// Their missing bodies are real dependencies, not inherited replacements.
++// VTABLE: BEACHLIFE 0x004f48a8
++struct ScreenLinearContainer : ScreenItem
++{
++    unsigned char unknown_44[4];
++    ScreenChildLink* children;
++    ScreenItem* selected_child;
++
++    // Actual 0x004c0c70/69B; the fifth argument is read by the parser but ignored
++    // by this constructor. Its complete ordinary source remains a separate atom.
++    ScreenLinearContainer(ScreenRectangle initial, int value);
++    ~ScreenLinearContainer() override;                    // 0x004c0ce0; deleting wrapper0x004c0cc0
++    void Unresolved04(float elapsed) override;            // 0x004c0ea0
++    void Unresolved08() override;                         // 0x004c0ed0
++    void Unresolved0c() override;                         // 0x004c0fa0
++    void Unresolved10(ScreenItem* item) override;         // 0x004c1000
++    void ApplyPosition(int dx, int dy) override;          // 0x004c0d90
++    void MarkPrepared() override;                         // 0x004c0fc0
++    void Unresolved1c() override;                         // 0x004c0fe0
++    void Unresolved24(unsigned char enabled) override;    // 0x004c0ef0
++    void MoveRectangle(int dx, int dy) override;          // 0x004c0d60
++    bool HandleInput38(int x, int y, int value) override; // 0x004c0dd0
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004c0df0
++    void Unresolved4c(unsigned int value) override;                // 0x004c0f50
++};
++
++#endif
+diff --git a/src/startup_screen_load.cpp b/src/startup_screen_load.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e59fe57ac2860795f57ba1927ee20e2e46f402f0
+--- /dev/null
++++ b/src/startup_screen_load.cpp
+@@ -0,0 +1,166 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_child_link.h"
++#include "startup_screen_font_data.h"
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_text.h"
++#include "window_activation.h"
++
++#include <new>
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x005ab14c
++// Actual zero-initialized pointer storage only. The real pointed-to owner and
++// its construction/publication remain dependencies, not supplied providers.
++ScreenFeatureCollection* screen_feature_collection;
++
++// FUNCTION: BEACHLIFE 0x004aedf0
++void ScreenManager::LoadScreen(const char* path)
++{
++    CircularListIterator end = active.End();
++    CircularListIterator begin = active.Begin();
++    VisitActiveScreens(begin, end, DeactivateActiveScreen);
++    active.Clear();
++
++    ScreenLoadPanel13c* first_panel = panel_13c;
++    word_94 = 0;
++    first_panel->SetEnabled(0);
++    panel_140->SetEnabled(0);
++
++    while (items_head)
++    {
++        ScreenChildLink* next = items_head->next;
++        ScreenChildLink* first = items_head;
++        if (first)
++        {
++            first->~ScreenChildLink();
++            ::operator delete(first);
++        }
++        items_head = next;
++    }
++    while (registry)
++    {
++        ScreenChildLink* next = registry->next;
++        registry->item = 0;
++        ScreenChildLink* first = registry;
++        if (first)
++        {
++            first->~ScreenChildLink();
++            ::operator delete(first);
++        }
++        registry = next;
++    }
++    for (unsigned int index = 0; index < 10; ++index)
++    {
++        ScreenFontData* data = fonts_04[index];
++        if (data)
++        {
++            data->~ScreenFontData();
++            ::operator delete(data);
++            ScreenFontRenderer* font = fonts_2c[index];
++            if (font)
++            {
++                font->~ScreenFontRenderer();
++                ::operator delete(font);
++            }
++            fonts_04[index] = 0;
++            fonts_2c[index] = 0;
++        }
++    }
++    if (item_90)
++    {
++        delete item_90;
++    }
++    items_head = 0;
++    registry = 0;
++    item_90 = 0;
++    word_54 = 0;
++    word_70 = 0;
++    word_80 = 0;
++    word_84 = -1;
++    word_58 = 1;
++    word_5c = 17;
++    word_7c = 2;
++
++    unsigned int length = strlen(path);
++    char* file = new char[length + 1];
++    strcpy(file, path);
++    file[length - 4] = '.';
++    file[length - 3] = 'b';
++    file[length - 2] = 'l';
++    file[length - 1] = 'e';
++    unsigned int size = GetFileSize(file);
++    char* buffer = LoadBleFile(file);
++    delete[] file;
++    GuiParserState* parser = new GuiParserState(this);
++    parser->Parse(buffer, size);
++    registry = parser->ReadRegistryHead();
++    items_head = parser->ReadItemsHead();
++    if (parser)
++    {
++        parser->~GuiParserState();
++        ::operator delete(parser);
++    }
++    delete[] buffer;
++
++    if (item_90)
++    {
++        item_90->Unresolved24(1);
++        item_90->MarkPrepared();
++    }
++    if (window_deactivation_state)
++    {
++        SetFeatureAvailability(9, screen_feature_collection->CountByCode(9) != 0);
++        SetFeatureAvailability(11, screen_feature_collection->CountByCode(11) != 0);
++        SetFeatureAvailability(8, screen_feature_collection->CountByCode(8) != 0);
++        SetFeatureAvailability(7, screen_feature_collection->CountByCode(7) != 0);
++        SetFeatureAvailability(12, screen_feature_collection->CountByCode(12) != 0);
++        SetFeatureAvailability(10, screen_feature_collection->CountByCode(10) != 0);
++        if (window_deactivation_state)
++        {
++            const char* resource;
++            if (screen_feature_collection->CountByName("WHARF") == 0)
++            {
++                if (screen_request_renderer->width >= 800)
++                {
++                    resource = "UI3_bar_blob_coach";
++                }
++                else
++                {
++                    resource = "UI2_bar_blob_coach";
++                }
++            }
++            else
++            {
++                if (screen_request_renderer->width >= 800)
++                {
++                    resource = "UI3_bar_blob_ship";
++                }
++                else
++                {
++                    resource = "UI2_bar_blob_ship";
++                }
++            }
++            ScreenChildLink* node = items_head;
++            while (node)
++            {
++                if (node->item->kind_28 == 0)
++                {
++                    static_cast<ScreenButtonPrefix*>(node->item)
++                        ->ReplaceNamedResource("FerryPanel", resource);
++                }
++                node = node->next;
++            }
++        }
++    }
++
++    RefreshAfterLoad();
++    LayoutAfterLoad();
++    if (item_d0)
++    {
++        delete item_d0;
++        item_d0 = 0;
++        flag_d4 = 0;
++    }
++}
+diff --git a/src/startup_screen_load_dependencies.h b/src/startup_screen_load_dependencies.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..f6dc09185c320d84a967543513fe246f6082da68
+--- /dev/null
++++ b/src/startup_screen_load_dependencies.h
+@@ -0,0 +1,87 @@
++#ifndef STARTUP_SCREEN_LOAD_DEPENDENCIES_H
++#define STARTUP_SCREEN_LOAD_DEPENDENCIES_H
++
++#include "startup_active_screen_visit.h"
++#include "startup_screen_button.h"
++#include "startup_screen_item.h"
++
++struct ScreenManager;
++struct ScreenLoadPanel13cOwner;
++struct ScreenListBoxPrefix;
++
++// Actual 36-byte x86 allocation. The nested owner at +00 is constructed by
++// 0x004cd980. Remaining opaque fields require its real source before native
++// lifetime qualification; this declaration does not supply a constructor.
++struct ScreenLoadPanel13c
++{
++    ScreenLoadPanel13cOwner* owner_00;
++    unsigned int word_04;
++    unsigned int word_08;
++    unsigned char state_0c;
++    unsigned char unknown_0d[3];
++    int mode_10;
++    unsigned char unknown_14[4];
++    unsigned int word_18;
++    unsigned char state_1c;
++    unsigned char unknown_1d[3];
++    int word_20;
++
++    ScreenLoadPanel13c(); // 0x004c23c0
++    // Actual 0x004c33c0/RET4; only the argument low byte is read.
++    void InitializeContents(unsigned char reload);
++    void SetEnabled(unsigned char enabled); // 0x004c2760
++    // Actual 0x004c2940, RET4; complete 16-way real method remains separate.
++    void HandleAction(unsigned int action);
++    void Update(); // 0x004c2490, RET0.
++
++  private:
++    friend struct ScreenManager;
++    // Final lifetime is unresolved; no generated owning substitute.
++    ~ScreenLoadPanel13c();
++};
++
++// Actual 12-byte x86 owner. The +00 pointer comes from real FindListBox;
++// its construction does not initialize the three padding bytes.
++struct ScreenLoadPanel140
++{
++    ScreenListBoxPrefix* item_00;
++    unsigned char state_04;
++    unsigned char unknown_05[3];
++    unsigned int word_08;
++
++    ScreenLoadPanel140();                   // 0x004c8760
++    void SetEnabled(unsigned char enabled); // 0x004c87d0
++    void Update();                          // 0x004c8770, RET0.
++    void RefreshContents();                 // 0x004c8820.
++
++  private:
++    friend struct ScreenManager;
++    ~ScreenLoadPanel140();
++};
++
++// The original common helper counts matches and publishes a 32-bit count.
++// This is not a pointer-result or a guessed complete container definition.
++struct ScreenFeatureCollection
++{
++    unsigned int CountByCode(unsigned char key); // 0x0042f0f0
++    unsigned int CountByName(const char* name);  // 0x0042f000
++
++  private:
++    ScreenFeatureCollection();
++    ~ScreenFeatureCollection();
++};
++
++extern ScreenFeatureCollection* screen_feature_collection;
++
++// Actual cdecl 0x004b2e80: genuine deactivation/surface release/free.
++void DeactivateActiveScreen(ActiveScreenEntry* entry);
++
++// Existing actual file helpers, not new providers.
++int GetFileSize(const char* path);
++char* LoadBleFile(const char* path);
++
++// Same actual 418-byte pool entry declared for the Dialog/Frame child rings.
++// No replacement allocator body is supplied.
++void* AllocatePoolBytes(unsigned int bytes);
++
++#endif
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index a772d1f4040ecdcdabbec3be09b0fc975f4ce7a4..e6127f9414282914bc5ccc722843095ff54cb684 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -3,6 +3,7 @@
+ 
+ #include "startup_controller_selection.h"
+ #include "startup_list.h"
++#include "startup_screen_item.h"
+ 
+ // Declaration feature test for fixtures shared with the unchanged default profile.
+ #define BEACHLIFE_DECOMP_FONT_PUBLICATION 1
+@@ -11,6 +12,13 @@
+ 
+ struct ScreenManager;
+ struct ScreenItem;
++struct ScreenLoadPanel13c;
++struct ScreenLoadPanel140;
++struct ScreenListBoxPrefix;
++struct ScreenDialogResource;
++struct ScreenModeController;
++struct ScreenManagerOwner190;
++struct ScreenFontData;
+ struct ScreenFontRenderer;
+ struct ScreenFontData;
+ struct ScreenLoadPanel13c;
+@@ -157,31 +165,146 @@ struct ScreenManager
+     ScreenRequestRenderer* renderer;
+     ScreenFontData* fonts_04[10];
+     ScreenFontRenderer* fonts_2c[10];
+-    unsigned char unknown_54[0x38];
++    unsigned int word_54;
++    unsigned int word_58;
++    unsigned int word_5c;
++    unsigned int word_60;
++    int word_64;
++    unsigned int word_68;
++    unsigned int word_6c;
++    unsigned int word_70;
++    unsigned int word_74;
++    unsigned int word_78;
++    unsigned int word_7c;
++    unsigned int word_80;
++    int word_84;
++    ScreenChildLink* items_head;
+     ScreenChildLink* registry;
+     ScreenItem* item_90;
+-    unsigned char unknown_94[0x28];
++    // Original +0x94 is the borrowed active-screen context, not an integer.
++    union
++    {
++        ScreenRequestContext* word_94;
++        ScreenRequestContext* request_context_94;
++    };
++    int word_98;
++    unsigned char byte_9c;
++    unsigned char unknown_9d[0x0b];
++    unsigned int height_a8;
++    int surface_ac;
++    int surface_b0;
++    int surface_b4;
++    int surface_b8;
+     CircularList active;
+-    unsigned char unknown_c0[0x68];
++    unsigned char byte_c0;
++    unsigned char unknown_c1[3];
++    unsigned int word_c4;
++    unsigned int word_c8;
++    unsigned char unknown_cc[4];
++    union
++    {
++        ScreenItem* item_d0;
++        ScreenItem* ticker_item_d0;
++    };
++    union
++    {
++        unsigned char flag_d4;
++        unsigned char ticker_enabled_d4;
++    };
++    unsigned char unknown_d5[3];
++    ScreenRectangle ticker_rectangle_d8;
++    int overlay_x_e8;
++    int overlay_y_ec;
++    unsigned char unknown_f0[8];
++    unsigned char byte_f8;
++    unsigned char byte_f9;
++    unsigned char byte_fa;
++    unsigned char unknown_fb;
++    ScreenItem* word_fc;
++    ScreenItem* word_100;
++    ScreenDialogResource* word_104;
++    unsigned char unknown_108[0x1b];
++    unsigned char byte_123;
++    ScreenModeController* word_124;
+     int mode;
+     int previous_mode;
+     ScreenManagerAuxiliaryState* auxiliary_130;
+     ScreenItem* item_134;
+     float value_138;
++    ScreenLoadPanel13c* panel_13c;
++    ScreenLoadPanel140* panel_140;
++    unsigned char byte_144;
++    unsigned char unknown_145[3];
++    int word_148;
++    int layout_x_14c;
++    int layout_y_150;
++    int layout_right_154;
++    int layout_bottom_158;
++    unsigned char byte_15c;
++    unsigned char byte_15d;
++    unsigned char byte_15e;
++    unsigned char unknown_15f;
++    ScreenItem* item_160;
++    ScreenDialogResource* overlay_resource_164;
++    ScreenItem* item_168;
++    unsigned char unknown_16c;
++    // Observed name starts at +16d; this preserves storage to the known +190 word.
++    // The original unchecked copy does not establish a safe string capacity.
++    char layout_name_16d[0x23];
++    ScreenManagerOwner190* word_190;
++    unsigned char unknown_194[4];
+ 
++    // Actual 0x004aedb0 and 0x004aedc0; unchecked ten-slot publications.
+     void SetFontData(unsigned int index, ScreenFontData* data);
+     void SetFontRenderer(unsigned int index, ScreenFontRenderer* renderer);
++
++    ScreenManager();
++    // Actual 0x004ae090; no destructor body or complete owner closure here.
++    ~ScreenManager();
++    // Actual 0x004b24b0 returns AL1; the constructor ignores that result.
++    bool InitializeSurfaces();
++    // Actual 0x004b0be0: real resource/renderer/Button initialization.
++    void InitializeOverlay();
++    // Actual 0x004b30b0, receiver ignored. Descriptive spelling of the
++    // observed registration cleanup; no original base class is inferred.
+     void ClearRegistration();
+-    bool CloseScreen(const char* name);
+-    void CloseActiveScreens();
+-    void PrepareNamedScreen(const char* name, unsigned char prepare);
++
++    // Actual loader 0x004aedf0; complete source retained in its separate proposal.
++    void LoadScreen(const char* path);
++    // Actual 0x004af940, 0x004af9a0 and 0x004b2740, respectively.
++    void SelectScreen();
++    void RenderScreens();
++    // Actual 0x004b1b90, RET0; returns the borrowed context at +94.
++    ScreenRequestContext* CurrentContext();
++    void RenderPointer();
++    // Actual 0x004b0f30; complete progress-overlay method remains separate.
++    void RenderProgressOverlay();
++    // Real callees 0x004b1ed0, 0x004b2600 and 0x004b0e40; not implemented here.
++    void SetFeatureAvailability(unsigned char key, bool enabled);
++    void RefreshAfterLoad();
++    void LayoutAfterLoad();
++    // Actual 0x004b0d80, RET0; updates the existing overlay and surface.
++    void UpdateOverlayPosition();
++    // Actual 0x004ae2f0; first exact kind-22 name in the all-items chain.
++    ScreenListBoxPrefix* FindListBox(const char* name);
++    // Actual 0x004af720 and 0x004ae9e0; bodies remain unresolved.
++    void Update(float delta);
++    void SetMode(int value);
+     void ClearItemReference(ScreenItem* item);
+     float ReadItemThreshold();
+     void ShowItemText(ScreenItem* item, int x, int y, const char* text);
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
++    void CloseActiveScreens(); // Actual 0x004b1890; existing complete R330 body.
++    // Actual 0x004b1160, RET0; real pending-new owner operation, source separate.
++    void StartCredits();
++    void SavePlacement(const ScreenRectangle& rectangle, int group);
++    bool CloseScreen(const char* name);
++    void PrepareNamedScreen(const char* name, unsigned char prepare);
+     void ScreenSelect();
+     void ActivateScreens();
+-    void SavePlacement(const ScreenRectangle& rectangle, int group);
++    void UpdateActiveScreens(float elapsed);
++    void PrepareActiveScreens(unsigned char prepare_surface);
++    void SetTickerRectangle(ScreenRectangle rectangle);
+ };
+ 
+ extern ScreenRequestGamePrefix* screen_request_game;
+diff --git a/src/startup_screen_manager_prepare_active.cpp b/src/startup_screen_manager_prepare_active.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f60ca258c8e1d3de9a488df1a01472caa79887fd
+--- /dev/null
++++ b/src/startup_screen_manager_prepare_active.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004b1260
++void ScreenManager::PrepareActiveScreens(unsigned char prepare_surface)
++{
++    CircularListNode* head = active.head;
++    CircularListNode* node = head->next;
++    if (node != head)
++    {
++        do
++        {
++            ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++            if (prepare_surface)
++            {
++                int surface = entry->surface;
++                ScreenRequestRenderer* current_renderer = renderer;
++                current_renderer->PrepareSurface(surface);
++            }
++            entry->item->MarkPrepared();
++            node = node->next;
++        } while (node != active.head);
++    }
++}
+diff --git a/src/startup_screen_manager_ticker.cpp b/src/startup_screen_manager_ticker.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..93f034bec1fd6157c604075028675574ba16ba0b
+--- /dev/null
++++ b/src/startup_screen_manager_ticker.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004af5f0
++void ScreenManager::SetTickerRectangle(ScreenRectangle rectangle)
++{
++    ticker_rectangle_d8 = rectangle;
++    if (ticker_enabled_d4)
++    {
++        ScreenRectangle current;
++        current = ticker_item_d0->GetRectangle();
++        ticker_item_d0->MoveRectangle(0, rectangle.top - current.top);
++    }
++}
+diff --git a/src/startup_screen_number_adjust.h b/src/startup_screen_number_adjust.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..acd5aacb6e1b590c2f158055409b6ea2347c073f
+--- /dev/null
++++ b/src/startup_screen_number_adjust.h
+@@ -0,0 +1,36 @@
++#ifndef STARTUP_SCREEN_NUMBER_ADJUST_H
++#define STARTUP_SCREEN_NUMBER_ADJUST_H
++
++#include "startup_screen_item.h"
++
++// Genuine "NumberAdjust" object: original allocation 0x70, table 0x004f4a5c and
++// kind 0x13. value_a and value_b are stored at +0x50 and +0x54, the first flag
++// at +0x6c. Descriptive names only; the field tail, destructor and overriding
++// slots are separate required children and are not supplied here.
++// VTABLE: BEACHLIFE 0x004f4a5c
++struct ScreenNumberAdjust : ScreenItem
++{
++    unsigned char unknown_44[0x2c];
++
++    // Actual 0x004c5e00, RET 0x24; separate complete body required.
++    ScreenNumberAdjust(ScreenRectangle initial,
++        int value_a,
++        int value_b,
++        const char* name,
++        bool flag,
++        bool second_flag);
++
++    // Every differing retail vtable slot remains an explicit dependency.
++    ~ScreenNumberAdjust() override;                                // 0x004c60b0 (deleting wrapper).
++    void Unresolved04(float elapsed) override;                     // 0x004c61d0
++    void Unresolved0c() override;                                  // 0x004c6490
++    void ApplyPosition(int dx, int dy) override;                   // 0x004c66f0
++    void MarkPrepared() override;                                  // 0x004c6670
++    void Unresolved1c() override;                                  // 0x004c64c0
++    void Unresolved24(unsigned char enabled) override;             // 0x004c6190
++    void MoveRectangle(int dx, int dy) override;                   // 0x004c66a0
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004c63c0
++    void SetOwnedText(const char* text) override;                  // 0x004c6160
++};
++
++#endif
+diff --git a/src/startup_screen_radio_group.h b/src/startup_screen_radio_group.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5b2512f142c3a37cc979491ea6e52ef8e2df99b
+--- /dev/null
++++ b/src/startup_screen_radio_group.h
+@@ -0,0 +1,35 @@
++#ifndef STARTUP_SCREEN_RADIO_GROUP_H
++#define STARTUP_SCREEN_RADIO_GROUP_H
++
++#include "startup_screen_children.h"
++#include "startup_screen_item.h"
++
++struct ScreenDialogResource;
++
++// Observed complete 0x50-byte x86 kind20 object and actual 21-slot table.
++// The owner constructor/destructor and differing virtual bodies remain real
++// source dependencies. This declaration supplies no native lifetime or provider.
++// VTABLE: BEACHLIFE 0x004f4b0c
++struct ScreenRadioGroup : ScreenItem
++{
++    char* variable_name_44;
++    ScreenChildRing children;
++    ScreenDialogResource* resource_4c;
++
++    // Actual 0x004c6ba0, RET24; rectangle and two borrowed constructor strings.
++    ScreenRadioGroup(ScreenRectangle initial, const char* variable_name, const char* resource_name);
++    // Ordinary 0x004c6e00; table entry0x004c6de0 is its deleting wrapper.
++    ~ScreenRadioGroup() override;
++    void Unresolved04(float elapsed) override;
++    void Unresolved0c() override;
++    void Unresolved10(ScreenItem* item) override;
++    void ApplyPosition(int dx, int dy) override;
++    void MarkPrepared() override;
++    void Unresolved1c() override;
++    // Actual shared0x004c8510, not the inherited base0x004ada40.
++    void Unresolved24(unsigned char enabled) override;
++    void MoveRectangle(int dx, int dy) override;
++    bool HandleTimedCoordinates(int x, int y, int value) override;
++};
++
++#endif
+diff --git a/src/startup_screen_radio_item.h b/src/startup_screen_radio_item.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..711fe73b4ad635231d35bfccac0e2957f5791dd9
+--- /dev/null
++++ b/src/startup_screen_radio_item.h
+@@ -0,0 +1,41 @@
++#ifndef STARTUP_SCREEN_RADIO_ITEM_H
++#define STARTUP_SCREEN_RADIO_ITEM_H
++
++#include "startup_screen_item.h"
++
++struct ScreenDialogResource;
++
++// Observed kind21 child, actual 0x58-byte x86 allocation and 21-slot table.
++// These fields come from the real base/constructor stores and group reads.
++// The complete real constructor, destructor and differing virtual bodies still
++// need source; this declaration does not provide a usable native owner.
++// VTABLE: BEACHLIFE 0x004f4ab8
++struct ScreenRadioItem : ScreenItem
++{
++    unsigned int flags_44;
++    int value_48;
++    ScreenDialogResource* resource_4c;
++    char* owned_name_50;
++    unsigned int word_54;
++
++    // Actual 0x004c6740, RET32; semantic meaning of word54 is unresolved.
++    ScreenRadioItem(ScreenRectangle initial,
++        const char* resource_name,
++        const char* name,
++        unsigned int word54,
++        int value);
++    ~ScreenRadioItem() override;               // Ordinary 0x004c6850, deleting wrapper 0x004c6830.
++    void Unresolved04(float elapsed) override; // 0x004c68c0
++    void Unresolved0c() override;              // 0x004c6ac0
++    void Unresolved1c() override;              // 0x004c6b20
++    bool TestRectangle(int x, int y) override; // 0x004c6920
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004c6990
++
++    // Real nonvirtual helpers; each may invoke the genuine slot18 afterwards.
++    void SetFlag02();   // 0x004c6a40
++    void SetFlag04();   // 0x004c6a60
++    void SetFlag10();   // 0x004c6a80
++    void ClearFlag10(); // 0x004c6aa0
++};
++
++#endif
+diff --git a/src/startup_screen_slider.h b/src/startup_screen_slider.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7baa2f80f775f75aec2aa53a8b5daf4041241747
+--- /dev/null
++++ b/src/startup_screen_slider.h
+@@ -0,0 +1,27 @@
++#ifndef STARTUP_SCREEN_SLIDER_H
++#define STARTUP_SCREEN_SLIDER_H
++
++#include "startup_screen_item.h"
++
++// Genuine "Slider" object: original allocation 0x64 and table 0x004f4754.
++// Descriptive names only; the field tail, destructor and overriding slots are
++// separate required children and are not supplied here.
++// VTABLE: BEACHLIFE 0x004f4754
++struct ScreenSlider : ScreenItem
++{
++    unsigned char unknown_44[0x20];
++
++    // Actual 0x004b5b00, RET 0x20; separate complete body required.
++    ScreenSlider(
++        ScreenRectangle initial, const char* name, float value_a, float value_b, int value_c);
++
++    // Every differing retail vtable slot remains an explicit dependency.
++    ~ScreenSlider() override;                                      // 0x004b5cc0 (deleting wrapper).
++    void Unresolved04(float elapsed) override;                     // 0x004b5eb0
++    void ApplyPosition(int dx, int dy) override;                   // 0x004b5e80
++    void Unresolved1c() override;                                  // 0x004b60a0
++    void MoveRectangle(int dx, int dy) override;                   // 0x004b60d0
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004b5d50
++};
++
++#endif
+diff --git a/src/startup_screen_table.h b/src/startup_screen_table.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..dd21e75d184181d128c146a368b574b795435881
+--- /dev/null
++++ b/src/startup_screen_table.h
+@@ -0,0 +1,75 @@
++#ifndef STARTUP_SCREEN_TABLE_H
++#define STARTUP_SCREEN_TABLE_H
++
++#include "startup_screen_item.h"
++
++#include "startup_screen_table_column.h"
++
++// The observed child prefix is the real table column type.
++using ScreenTableChildPrefix = ScreenTableColumn;
++
++// Distinct circular child list of the table: its insert 0x004b95c0 and node
++// creation 0x004b9620 are separate instances from ScreenChildRing's. The
++// node payload at +8 is the borrowed child, typed as the child prefix: the
++// original converts the attached item before inserting it.
++struct ScreenTableNode
++{
++    ScreenTableNode* next;
++    ScreenTableNode* previous;
++    ScreenTableChildPrefix* item;
++};
++
++struct ScreenTableIterator
++{
++    ScreenTableNode* node;
++
++    ScreenTableIterator() {}
++    ScreenTableIterator(const ScreenTableIterator& other)
++        : node(other.node)
++    {
++    }
++};
++
++struct ScreenTableChildRing
++{
++    ScreenTableNode* head;
++
++    ScreenTableIterator End() const; // Shared library body 0x00437a40.
++    // Actual 0x004b95c0, hidden iterator result, RET12; body separate.
++    ScreenTableIterator Insert(ScreenTableIterator position, ScreenTableChildPrefix* const& item);
++    ScreenTableNode* CreateNode(ScreenTableChildPrefix* const& item); // Actual 0x004b9620.
++};
++
++// Genuine table: x86 table 0x004f4800, constructor 0x004b7a30 (separate). Only
++// the fields AddChild uses are named; differing slots are declared.
++struct ScreenTable : ScreenItem
++{
++    int word_44; // Constructor argument, published into each child.
++    unsigned char unknown_48[0x28];
++    ScreenTableChildRing children_70;
++    unsigned char unknown_74[0x34];
++
++    ScreenTable(ScreenRectangle initial,
++        ScreenRectangle content,
++        const char* name,
++        int value_a,
++        int value_b,
++        bool flag);
++
++    virtual ~ScreenTable();                                       // Deleting wrapper 0x004b7e10.
++    virtual void Unresolved04(float elapsed);                     // 0x004b8250
++    virtual void Unresolved08();                                  // 0x004b8130
++    virtual void Unresolved0c();                                  // 0x004b8500
++    virtual void Unresolved10(ScreenItem* item);                  // 0x004b8670
++    virtual void ApplyPosition(int dx, int dy);                   // 0x004b8720
++    virtual void MarkPrepared();                                  // 0x004b84d0
++    virtual void Unresolved1c();                                  // 0x004b85b0
++    virtual void Unresolved24(unsigned char enabled);             // 0x004b7f50
++    virtual void MoveRectangle(int dx, int dy);                   // 0x004b86b0
++    virtual bool HandleInput38(int x, int y, int value);          // 0x004b7fe0
++    virtual bool HandleTimedCoordinates(int x, int y, int value); // 0x004b8030
++};
++
++using ScreenTablePrefix = ScreenTable;
++
++#endif
+diff --git a/src/startup_screen_table_column.h b/src/startup_screen_table_column.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c4e5ebb0db58e8bcc735adab7177828fc87a73c7
+--- /dev/null
++++ b/src/startup_screen_table_column.h
+@@ -0,0 +1,35 @@
++#ifndef STARTUP_SCREEN_TABLE_COLUMN_H
++#define STARTUP_SCREEN_TABLE_COLUMN_H
++
++#include "startup_screen_item.h"
++
++// Genuine "<COL>" table column: original allocation 0x8c and table 0x004f47ac.
++// Its source name selects a VAR_, VARIMG_ or FILTER_ column. Descriptive names
++// only; the field tail, destructor and overriding slots are separate required
++// children and are not supplied here.
++// VTABLE: BEACHLIFE 0x004f47ac
++struct ScreenTableColumn : ScreenItem
++{
++    unsigned int word_44;
++    int table_word_48;
++    unsigned char unknown_4c[0x40];
++
++    // Actual 0x004b6300, RET 0x24; separate complete body required. value_a is
++    // stored at +0x50, value_b at +0x4c and value_c at +0x88.
++    ScreenTableColumn(ScreenRectangle bounds,
++        const char* source,
++        int value_a,
++        int value_b,
++        int value_c,
++        int value_d);
++
++    // Every differing retail vtable slot remains an explicit dependency.
++    ~ScreenTableColumn() override;                                 // 0x004b6620 (deleting wrapper).
++    void ApplyPosition(int dx, int dy) override;                   // 0x004b6900
++    void MarkPrepared() override;                                  // 0x004b6d50
++    void Unresolved24(unsigned char enabled) override;             // 0x004b6820
++    void MoveRectangle(int dx, int dy) override;                   // 0x004b79b0
++    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004b6ce0
++};
++
++#endif
+diff --git a/src/startup_screen_variable_image.h b/src/startup_screen_variable_image.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ce1c66bbcd43ea5599acdcebd2097aff6b6537c
+--- /dev/null
++++ b/src/startup_screen_variable_image.h
+@@ -0,0 +1,25 @@
++#ifndef STARTUP_SCREEN_VARIABLE_IMAGE_H
++#define STARTUP_SCREEN_VARIABLE_IMAGE_H
++
++#include "startup_screen_item.h"
++
++// Genuine "VariableImage" object: original allocation 0x6c and table 0x004f4cb4.
++// The table column constructor (0x004b6300) also creates one for a VARIMG_
++// column. Descriptive names only; the field tail, destructor and overriding
++// slots are separate required children and are not supplied here.
++// VTABLE: BEACHLIFE 0x004f4cb4
++struct ScreenVariableImage : ScreenItem
++{
++    unsigned char unknown_44[0x28];
++
++    // Actual 0x004cb920, RET 0x14; separate complete body required.
++    ScreenVariableImage(ScreenRectangle initial, const char* name);
++
++    // Every differing retail vtable slot remains an explicit dependency.
++    ~ScreenVariableImage() override;                   // 0x004cb990 (deleting wrapper).
++    void Unresolved0c() override;                      // 0x004cb9e0
++    void Unresolved1c() override;                      // 0x004cc450
++    void Unresolved24(unsigned char enabled) override; // 0x004cb9c0
++};
++
++#endif
+diff --git a/src/startup_screen_variable_item.h b/src/startup_screen_variable_item.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2af15e4fd558cef7ba2a6e4dc696a43ee79eb66
+--- /dev/null
++++ b/src/startup_screen_variable_item.h
+@@ -0,0 +1,25 @@
++#ifndef STARTUP_SCREEN_VARIABLE_ITEM_H
++#define STARTUP_SCREEN_VARIABLE_ITEM_H
++
++#include "startup_screen_item.h"
++
++// Genuine kind-13 variable-text widget. Original allocation 0x70;
++// table 0x004f4c5c has 19 inherited entries and the two overrides below.
++// Native construction still requires both real differing virtual bodies.
++struct ScreenVariableItem : ScreenItem
++{
++    char key_44[32];
++    int word_64;
++    int font_index_68;
++    int word_6c;
++
++    ScreenVariableItem(ScreenRectangle initial,
++        const char* key,
++        int font,
++        int value_64,
++        int value_6c);             // 0x004c8980, RET32.
++    virtual ~ScreenVariableItem(); // Ordinary 0x004c8a20; wrapper 0x004c8a00.
++    virtual void Unresolved1c();   // Actual 0x004c8a30, not slot0c Draw.
++};
++
++#endif
