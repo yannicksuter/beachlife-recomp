@@ -1,0 +1,309 @@
+# Read-only game data
+
+Data access is independent of the launcher and does not run the retail game or
+installer. The native directory index is documented in [ISO.md](ISO.md).
+
+The regular CMake presets also build the `beachlife-data` development tool:
+
+```sh
+./build/debug/beachlife-data list orig/Beachlife.iso
+./build/debug/beachlife-data cabinets orig/Beachlife.iso
+./build/debug/beachlife-data game-files orig/Beachlife.iso
+./build/debug/beachlife-data cat orig/Beachlife.iso Readme.htm
+./build/debug/beachlife-data read orig/Beachlife.iso BeachLife.exe 0 64
+```
+
+`list`, `cabinets` and `game-files` emit JSON. `cat` and `read` stream raw bytes to stdout; redirect output
+when saving a file. `read` takes a decimal byte offset and count and rejects a
+range outside that file. Input images are opened read-only. Data commands need
+no window, graphics device, installed game or launcher configuration.
+
+## Prepare once, read locally
+
+Prepare the ISO into persistent local storage without running its installer:
+
+```sh
+./build/debug/beachlife-data prepare orig/Beachlife.iso
+```
+
+The result is JSON with `root`, `identity`, file/byte totals and the number of
+reused/written files. Progress goes to stderr. An optional second path selects
+the cache parent; keep development extractions under ignored `orig/` or outside
+the repository. The defaults are:
+
+| System | Cache parent |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%/BeachLife/content` |
+| macOS | `~/Library/Application Support/BeachLife/content` |
+| Linux | `$XDG_DATA_HOME/beachlife/content`, or `~/.local/share/beachlife/content` |
+
+Each ISO/import-format/language selection gets its own identity directory.
+Identity uses the full ISO SHA-256, independent of its filename and application
+version. Format changes can deliberately select a new directory. Inside it,
+`files/` contains the game's relative paths and `manifest.json` records the
+source identity, selected layout/language, sizes and SHA-256 checksums.
+Saves, screenshots and launcher settings belong outside this read-only tree.
+
+Use the returned `root` with these commands:
+
+```sh
+beachlife-data vfs-list <root>
+beachlife-data vfs-cat <root> Data/Script/GameParameters.pis
+beachlife-data vfs-read <root> Data/Script/GameParameters.pis 0 64
+beachlife-data verify <root>
+```
+
+A prepared set works with the ISO disconnected. Mounting checks the manifest,
+identity, paths, file presence and sizes. It does not hash every asset at each
+launch; `verify` performs the full SHA-256 check. A same-size modification is
+therefore detected by `verify` or the next preparation, rather than ordinary
+reads. Game assets stay in their original formats; decompression does not
+convert sprites, scripts or other game formats.
+
+Preparation checks free space, streams bounded chunks into staging files and
+checks each original MD5 and expanded size before flushing and atomically
+publishing it. The ISO fingerprint is checked again before the final manifest
+is published. Missing/corrupt volumes, changed input or failed writes cannot
+publish a newly ready set. Limits are 16 GiB of selected data and 2 GiB minus
+one byte per asset/volume for the supported cabinet route.
+
+Ctrl+C cancels preparation. Rerunning the same command checks existing files
+against the source checksums, reuses verified files and repairs missing or
+damaged ones. Only a complete manifest is mountable. A damaged set loses its
+ready marker before repair; other identities remain intact. OS locks reject
+concurrent preparation of the same identity, and prevent repair while it is
+mounted. Locks release automatically after a process exits or crashes.
+Symbolic links, hard links, reparse points and special files within managed
+content are rejected. An existing unmarked, nonempty identity directory is
+never adopted. This storage is owned by the current user, not a security
+boundary against another process running as that same user.
+
+## Launcher and runtime handoff
+
+The launcher uses `launcher::ContentService` for background readiness checks.
+Source edits, Browse/drop and Revert invalidate pending results. Play saves the
+selection and opens the game window immediately. Its `runtime::ContentStartup`
+steps run the shared synchronous `launcher::open_content` check/preparation API
+on the existing startup worker: validate the cache, prepare or repair if needed,
+mount `PreparedSource`, save the offline binding, then read `BeachLife.ini`.
+A binding that cannot be saved only loses that offline memory; the game still
+starts. A set published just before the player leaves is still remembered.
+The loading screen shows the actual preparation phases and their byte progress.
+Each preparation phase has an equal share within that startup step; percentages
+measure completed work, not estimated remaining time.
+
+**Prepare files** and **Verify and repair** use the same loading screen, force
+verification from the ISO, and return to the launcher without starting the game
+loop. Esc or closing the window cancels the worker; incomplete setup never saves
+readiness. Completed files remain reusable. The mount survives the loading steps
+for the game session and is released on return, allowing later repair. A graphics
+failure happens before preparation starts. The independent data tool remains
+available for preparation without a graphics device.
+
+`runtime::read_game_files` creates the loading-screen step with shared ownership
+of its `FileSource`. It reports the INI's actual byte count, reads bounded chunks,
+and checks cancellation between reads. Missing, truncated and oversized files
+fail startup. The current small INI read usually finishes within the screen's
+grace period; no artificial delay or whole-cache preload is added. Future startup
+assets can join this queue when their loading requirements are reconstructed.
+The `content_startup` test exercises the complete loading worker without a
+graphics device: preparation, cancellation/resume, saved/offline reads, repair,
+mount lifetime, progress and storage failures.
+
+Normal Play queues `ContentStartup::handoff` last with a fresh, single-use
+`ContentStartup::Result`. The worker stages the existing mount as an owned
+`FileSource`; the main thread adopts it only after loading succeeds and the
+worker has joined. A late cancellation can leave a staged pointer, so pointer
+presence alone never starts a session. Failed or cancelled loading discards the
+result. Prepare-only and image-preview runs do not create this game handoff.
+After that success gate, normal Play constructs `StartupConfiguration` on the
+game thread while the loading screen is still active. It reads
+`Data/Script/GameParameters.pis` once into an immutable snapshot and checks the
+audited 1,242-byte English file identity. The actual reconstructed constructor
+then performs its three file opens through that snapshot. Other file paths
+continue to use the retained mount. Missing, truncated or unsupported input
+reports a loading error before publishing the retail owner.
+
+The host owner retains its `retail_files::Session` until game teardown. The
+reconstructed configuration is destroyed first, then the binding, then its
+snapshot and mounted source; all precede the window. Nested sessions restore
+the previous binding.
+Open file handles retain their source and prepared-set lock independently of
+the session, and must be closed on their creating thread. Preparation workers
+never bind this interface. The headless test covers both sides of cancellation,
+rejected/reused results, prior errors, nested and absent bindings, bridge reads,
+offline sessions and source/stream lock lifetimes. The host bridge is shared by
+the game and reconstructed file libraries. The caller-thread owner parses the
+supported configuration; the remaining startup driver and menu are incomplete.
+The original constructor has no qualified allocation-failure recovery. During
+its synchronous construction, the host installs a temporary process-wide
+allocation handler that terminates on default C++ allocation failure and restores
+the previous handler afterwards. This also applies to other threads during that
+short interval. Snapshot/preflight failures remain ordinary loading errors;
+the reconstructed parser and its failure behavior are unchanged.
+
+**Preview title screen** on Game files follows the same startup path and queues
+`Data/Screens/FrontScreen.tga` after mounting. The command-line equivalent is
+`beachlife --play --preview-screen Data/Screens/FrontScreen.tga`; another supported
+TGA logical path may be selected. It works offline after preparation. The decoder
+reads through `FileSource`, produces top-left RGBA pixels and supports indexed
+and truecolor images, raw or RLE, with both image origins. Unsupported encodings,
+invalid palette references, truncated packets and oversized inputs fail clearly.
+Input is limited to 128 MiB and output to 16M pixels. Palette/index and alpha
+layouts must agree; some non-screen retail TGAs require further format research.
+
+The image read runs on the loading worker with byte progress and cancellation.
+Only a complete result reaches the GPU; the queued source retains its mount lock.
+No image is bundled or written back to the cache. `tga_images` covers generated
+format/range fixtures, and `content_startup` checks preview pixels, offline reads,
+failure propagation and cancellation before presentation.
+
+Launcher settings format 3 remembers the prepared identity and the absolute ISO
+path, size and modification time; format 4 adds the performance overlay, and
+formats 1 to 3 still load. Normal startup
+checks that stamp and the prepared manifest/files, or uses the remembered set
+when the ISO is absent or unreachable (removed media, a drive without its disc). This quick source check is not a content hash: a change
+that preserves both size and timestamp needs explicit **Verify and repair** or
+reselection. Reselecting even the same path clears remembered readiness. Full
+preparation/repair fingerprints the ISO and verifies the assets. The binding
+and prepared contents stay outside application packages and updates.
+
+`beachlife --play` uses the same setup path with saved settings, without opening
+the launcher. Settings it cannot read stop it with that error and stay untouched. The development
+option `--cache-directory folder` selects another cache parent; use the same
+override on later launches. It does not change the persisted default location.
+
+Link `beachlife_cabinet` and include `data/content_prepare.h` for setup and
+`data/content_manifest.h` for mounting:
+
+```cpp
+// On a setup worker; callbacks run synchronously on that worker.
+auto prepared = beachlife::data::prepare_content(iso, cache_parent, options);
+// Pass prepared.root to the runtime when setup completes.
+auto content = std::make_shared<beachlife::data::PreparedSource>(prepared.root);
+auto script = content->open("Data\\Script\\GameParameters.pis");
+```
+
+`PrepareOptions` provides progress and cancellation callbacks.
+`PrepareProgress` reports phase (`fingerprint`, `checking`, `extracting`,
+`confirming`, `ready`), current path and per-phase byte/file counts.
+The startup worker translates callbacks into loading-screen status snapshots
+and handles `PreparationCancelled` separately from errors. Callbacks must not
+throw after `ready`: publication
+has already completed. `PrepareResult` supplies the prepared root, manifest,
+language/profile and reuse counts. The default profile currently supports the
+observed English layout; installer translations are not game languages.
+
+The runtime retains the mounted source through `FileSource`, independently
+of the graphics API. Keep the mount for the runtime's
+lifetime; open streams also retain its shared lock. A file has its own cursor;
+use separate handles for independent readers and synchronize access if sharing
+one handle between threads. A ready data set does not establish
+that reconstructed gameplay is available.
+
+## Source interface
+
+`FileSource` exposes logical-path `open`. `IsoSource` indexes a selected ISO,
+`FolderSource` opens an explicit list of prepared files, and `PreparedSource`
+mounts a complete managed manifest. They return owned `SourceFile`
+objects. Each object exposes size, absolute seek, position and bounded reads.
+Reads stop at the file's own extent; EOF returns zero. Seeking past EOF fails.
+Independent handles have independent positions and outlive their source index.
+Ambiguous case aliases, missing files, directory reads, changed image sizes and
+truncated reads report errors. Keep the source image unchanged while using it.
+
+Reading a loose disc file does not decompress an installer cabinet.
+`game-files` maps the English game's Data/ tree, BeachLife.ini and the exact
+root BeachLife.exe entry from the supported groups, excluding installer
+support files, other executables and placeholders. `game-cat image.iso logical/path` streams one mapped asset,
+including decompression and original size/MD5 checks. It is a diagnostic
+command; a failure can leave partial stdout, so consumers must check its exit
+status. Preparation stages output before making it available. The development
+tool is built locally/with CI; release packages currently contain the launcher.
+
+## Cabinet dependencies
+
+The shared presets build static unshield 1.6.2 and zlib 1.3.2 from immutable
+gitlinks. `tools/setup_dependencies.py` fetches them; configuration exports
+verified copies into the build tree. No dependency checkout is edited and no
+system zlib/OpenSSL installation is used. Only the library sources are built.
+The unshield, zlib and included RSA MD5 notices are retained under `LICENSES/`
+and in native packages. Cabinet metadata uses an adapter over the ISO source
+interface.
+
+`cabinets` reads `data1.hdr` directly from the selected ISO and lists components,
+groups, directory names and file descriptors. It distinguishes cabinet members,
+external loose files and placeholders. The metadata command needs no cabinet
+payload files and creates no extracted files. An immutable header snapshot is
+validated before unshield reads it through bounded, read-only callbacks.
+
+The supported layout is InstallShield 6 with a separate header, capped at
+16 MiB and 100,000 directory/file entries. Invalid offsets, truncated tables,
+unterminated names, invalid group ranges and linked-list cycles report errors.
+Names retain their original bytes: JSON maps each byte
+to the same Unicode code point (`name_encoding: byte-values`) until a source's
+character encoding is established. This is not game-language detection.
+The mapper accepts only the observed ASCII path encoding and English group
+layout. Shared payload links are resolved with bounds, cycle and checksum
+consistency checks. The streaming reader rejects split and obfuscated members;
+unknown editions/layouts require qualification before support is added.
+
+The `cabinet_index` CTest uses generated metadata inside a generated ISO,
+including malformed cases, 64-bit sizes, unusual name bytes and Unicode host
+paths. It never requires a retail cabinet or extracted asset.
+
+## Logical paths
+
+`normalize_game_path` in `src/data/game_path.h` accepts relative UTF-8 names.
+It converts slash/backslash separators, skips repeated separators and `.`
+components, and retains the display spelling. Its lookup key folds ASCII
+letters to lowercase, matching the paths observed in the game. Non-ASCII
+characters remain exact; full Unicode Windows case folding is not implemented.
+
+Absolute paths, drive names, `..`, alternate streams, wildcards, device names,
+trailing dots/spaces, control characters and malformed UTF-8 are rejected.
+Paths are limited to 4096 input bytes. These are logical source names, not
+permission to join unchecked paths onto a native directory; the folder backend
+must separately enforce containment, including symbolic links.
+
+`game_paths` in CTest covers lookup equivalence, preserved Unicode/display
+spelling and invalid paths using generated data.
+`iso_file_reads` checks the independent command-line tool and C++ source
+interface, including binary output, Unicode host paths, range limits, empty
+files, streaming, source lifetime, case collisions and truncation.
+`game_content_paths`, `game_content_reads`, `prepared_folder_reads`,
+`content_manifests` and `prepared_content` cover generated compressed, loose
+and empty assets, malformed inputs, offline reads, source identity, cancellation,
+resumption, repairs, lock lifetime/recovery and unsafe paths. CI runs these on
+Linux/macOS and tests the cross-built data executables on native Windows.
+
+
+The experimental `runtime/resource_files.h` adapter gives resource owners a
+separate thread-bound mounted-file session. A closed stream token stays alive
+until its session ends; a repeated close reports an error without releasing a
+later open. This is an explicit native lifetime policy, with no claim to model
+CRT stream-slot reuse. Read-only descriptor IDs normally start at 3 and remain
+local to the current session. Raw reads distinguish errors from EOF, while
+stream reads report complete elements. Destroy game owners before their session.
+The existing `retail_files` binding and its exactly-once close contract stay
+independent. Connecting the reconstructed resource owner requires its own
+prepared-source portability patch.
+
+A live resource stream can report its logical cursor with `stream_position`.
+The query performs no I/O or allocation and leaves both the cursor and a failed
+query's output argument unchanged. Closed or foreign-session tokens fail.
+
+The English preparation profile also retains the root `BeachLife.exe` file as
+read-only data for reconstructed constants. It is the one named file selected
+from the existing UK cabinet groups, through the same size, checksum, staging
+and manifest path as the other files. No other root executable or DLL is added.
+No original executable code is loaded or run. A constants consumer independently
+checks its supported executable revision before decoding data.
+
+Cache format 1, profile and identity remain unchanged. A set prepared without
+this file requires one Prepare/repair with the original ISO available. The
+existing loading worker verifies and reuses the Data and INI files, adds the
+missing executable, and publishes the complete manifest. An old incomplete set
+cannot start offline; after repair all reads work from the local cache without
+an open ISO. Older application versions do not accept the added manifest path;
+this is not a bidirectional cache-schema compatibility guarantee.

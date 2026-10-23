@@ -1,0 +1,98 @@
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -47,11 +47,26 @@
+     void LoadPlaneData(int plane);
+ };
+ 
+-// Observed prefix only; allocation and the remaining record fields are separate.
++// The producer allocates 36 bytes on x86. Real constructor/destructor bodies
++// define its lifetime; the metadata parser remains a separate method.
+ struct ScreenDialogResourceRecord
+ {
+     const char* name;
+     unsigned int reference_count;
++    int frame_count;
++    ScreenDialogResourceFrame** frames;
++    int palette_count;
++    unsigned short** palettes;
++    unsigned int format_18;
++    unsigned int word_1c;
++    unsigned char unknown_20[4];
++
++    // Actual 0x004171c0 and 0x004171e0; no implicit or default lifetime.
++    ScreenDialogResourceRecord();
++    ~ScreenDialogResourceRecord();
++
++    // Actual 0x00417260 RET8: borrowed FILE* and renderer format word.
++    void ReadMetadata(FILE* stream, unsigned int surface_format);
+ };
+ 
+ // Descriptive 56-byte x86 wrapper. Unnamed words retain their observed width;
+@@ -87,9 +102,14 @@
+ // Only this lookup prefix is established; no complete manager lifetime claim.
+ struct ScreenDialogResourceLookup
+ {
+-    unsigned char unknown_00[0x0c];
++    FILE* metadata_file;
++    int data_file;
++    unsigned char unknown_08[4];
+     int record_count;
+     ScreenDialogResourceRecord** records;
++
++    // Actual 0x00417820: three RET0 paths return -1, -1 and 0.
++    int Load();
+ 
+     ScreenDialogResource* Lookup(const char* name);
+     ScreenDialogResource* Find(const char* name);
+diff --git a/src/startup_screen_dialog_record_constructor.cpp b/src/startup_screen_dialog_record_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_record_constructor.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x004171c0
++ScreenDialogResourceRecord::ScreenDialogResourceRecord()
++{
++    name = 0;
++    frame_count = 0;
++    frames = 0;
++    reference_count = 0;
++    palette_count = 0;
++    palettes = 0;
++    format_18 = 1;
++    word_1c = 0;
++}
+diff --git a/src/startup_screen_dialog_record_destructor.cpp b/src/startup_screen_dialog_record_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_record_destructor.cpp
+@@ -0,0 +1,27 @@
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004171e0
++ScreenDialogResourceRecord::~ScreenDialogResourceRecord()
++{
++    if (name)
++    {
++        ::operator delete(const_cast<char*>(name));
++    }
++    for (int i = 0; i < palette_count; ++i)
++    {
++        ::operator delete(palettes[i]);
++    }
++    ::operator delete(palettes);
++    for (int frame_index = 0; frame_index < frame_count; ++frame_index)
++    {
++        ScreenDialogResourceFrame* frame = frames[frame_index];
++        if (frame)
++        {
++            frame->~ScreenDialogResourceFrame();
++            ::operator delete(frame);
++        }
++    }
++    ::operator delete(frames);
++}

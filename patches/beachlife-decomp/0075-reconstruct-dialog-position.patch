@@ -1,0 +1,69 @@
+Reconstruct filtered dialog child positioning.
+Preserve callback-time coordinates and post-callback link reloads.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -69,6 +69,7 @@
+ volatile int fixture_screen_position;
+ ScreenDialog* volatile fixture_dialog;
+ volatile unsigned char fixture_dialog_preparation;
++volatile int fixture_dialog_position;
+ char fixture_config_byte;
+ StartupConfig* volatile fixture_owner;
+ float GetGameVersion();
+@@ -212,6 +213,8 @@
+     ScreenDialog* dialog = fixture_dialog;
+     dialog->ScreenDialog::MarkPrepared();
+     fixture_dialog_preparation = dialog->preparation_flag;
++    dialog->ScreenDialog::ApplyPosition(19, -23);
++    fixture_dialog_position = dialog->rectangle.left;
+     FrameClock fixture_frame_clock = { 0 };
+     fixture_frame_clock.Update(1000);
+     startup_input_state = &fixture_input;
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -41,3 +41,4 @@
+ 0x004ad990,function,93,??0ScreenItem@@QAE@UScreenRectangle@@@Z
+ 0x004a5ec0,function,36,?MarkPrepared@ScreenDialog@@UAEXXZ
+ 0x004adda0,function,18,??0ScreenChildLink@@QAE@PAUScreenItem@@@Z
++0x004a5c70,function,54,?ApplyPosition@ScreenDialog@@UAEXHH@Z
+--- a/src/startup_screen_dialog.h
++++ b/src/startup_screen_dialog.h
+@@ -14,6 +14,7 @@
+     ScreenChildRing children;
+ 
+     virtual void MarkPrepared();
++    virtual void ApplyPosition(int dx, int dy);
+ };
+ 
+ #endif
+--- /dev/null
++++ b/src/startup_screen_dialog_position.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_dialog.h"
++
++// FUNCTION: BEACHLIFE 0x004a5c70
++void ScreenDialog::ApplyPosition(int, int)
++{
++    for (ScreenChildNode* node = children.head->next; node != children.head; node = node->next)
++    {
++        ScreenItem* child = node->item;
++        if (child->kind_28 == 3 || child->kind_28 == 8)
++            child->ApplyPosition(rectangle.left, rectangle.top);
++    }
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -430,6 +430,12 @@
+       "size": 36,
+       "name": "ScreenDialog::MarkPrepared",
+       "name_status": "descriptive child traversal and partial derived prefix; complete original Dialog lifetime and table unqualified"
++    },
++    {
++      "address": "0x004a5c70",
++      "size": 54,
++      "name": "ScreenDialog::ApplyPosition",
++      "name_status": "descriptive filtered child positioning and partial derived prefix; complete original Dialog and selected subtype lifetimes unqualified"
+     }
+   ],
+   "library_functions": [

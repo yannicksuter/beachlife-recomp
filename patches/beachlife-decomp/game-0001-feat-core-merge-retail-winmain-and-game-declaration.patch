@@ -1,0 +1,344 @@
+diff --git a/src/startup_application.h b/src/startup_application.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..3068cab37a64624d8bad4a179aa0d6fe60f6a808
+--- /dev/null
++++ b/src/startup_application.h
+@@ -0,0 +1,18 @@
++#ifndef STARTUP_APPLICATION_H
++#define STARTUP_APPLICATION_H
++
++#include <windows.h>
++
++#include "startup_config_owner.h"
++#include "startup_frame_clock.h"
++#include "startup_screen_manager.h"
++#include "startup_timer.h"
++
++extern char* window_name;
++extern char* mutex_name;
++extern bool windowed;
++extern StartupProfiler* profiler;
++void StartupFatal(const char* format, ...);
++LRESULT CALLBACK GameWindowProc(HWND, UINT, WPARAM, LPARAM);
++
++#endif
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 7b419e77befc20aabfcee4b623db97ee3fd40888..a772d1f4040ecdcdabbec3be09b0fc975f4ce7a4 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -1,38 +1,153 @@
+ #ifndef STARTUP_SCREEN_MANAGER_H
+ #define STARTUP_SCREEN_MANAGER_H
+ 
++#include "startup_controller_selection.h"
+ #include "startup_list.h"
+ 
+ // Declaration feature test for fixtures shared with the unchanged default profile.
+-#define BEACHLIFE_DECOMP_FONT_PUBLICATION      1
++#define BEACHLIFE_DECOMP_FONT_PUBLICATION 1
+ #define BEACHLIFE_DECOMP_MAIN_ITEM_PUBLICATION 1
+-#define BEACHLIFE_DECOMP_GAME_PROGRESS         1
++#define BEACHLIFE_DECOMP_GAME_PROGRESS 1
+ 
++struct ScreenManager;
+ struct ScreenItem;
+-struct ScreenFontData;
+ struct ScreenFontRenderer;
++struct ScreenFontData;
++struct ScreenLoadPanel13c;
++struct ScreenLoadPanel140;
+ struct ScreenManagerAuxiliaryState;
+ struct ScreenChildLink;
+ struct ScreenPlacementStore;
+ struct ScreenRectangle;
+ struct ScreenRequestContext;
+ struct ScreenRequestRenderer;
++struct InputMotionState;
++struct InputState;
++struct FrameClock;
++struct WindowAudioState;
++struct GameUpdatePair;
++struct GameSaveRecord;
++struct ScreenListBoxPrefix;
++struct ScreenDialogResource;
++struct ScreenModeController;
++struct ScreenManagerOwner190;
+ 
+-// Only the observed placement pointer at original x86+0x54 is described.
+-// This does not recover the complete game class or its lifetime.
+-struct ScreenRequestGamePrefix
++struct StartupProfiler;
++struct DebugFont;
++struct ScreenTextLookup;
++struct ScreenDialogResourceLookup;
++struct ScreenRequestGamePrefix;
++extern ScreenRequestGamePrefix* screen_request_game;
++
++// Descriptive empty first base: actual publication precedes both range member
++// constructors. The real unwind cleanup unconditionally clears the global.
++struct ScreenGameRegistration
+ {
+-    unsigned char unknown_00[0x54];
++    explicit ScreenGameRegistration(ScreenRequestGamePrefix* owner)
++    {
++        screen_request_game = owner;
++    }
++    ~ScreenGameRegistration(); // Actual 0x004e5520, RET0; source dependency.
++};
++
++// Actual three-pointer storage at Game+64. LoadScenarioNames allocates 256-byte
++// UTF-16 strings and publishes their pointers. This member's destructor frees
++// backing slots only; pointee cleanup belongs to the real enclosing methods.
++struct GameScenarioNameRange
++{
++    unsigned short** begin;
++    unsigned short** end;
++    unsigned short** capacity;
++
++    GameScenarioNameRange()
++        : begin(0)
++        , end(0)
++        , capacity(0)
++    {
++    }
++    ~GameScenarioNameRange(); // Actual 0x004e5490, 142B library body.
++};
++
++struct GameSaveRecordRange
++{
++    GameSaveRecord** begin;
++    GameSaveRecord** end;
++    GameSaveRecord** capacity;
++
++    GameSaveRecordRange()
++        : begin(0)
++        , end(0)
++        , capacity(0)
++    {
++    }
++    ~GameSaveRecordRange(); // Actual 0x004e5400, 142B library body.
++};
++
++// Complete observed 200-byte x86 Game storage for the genuine constructor.
++// The retained descriptive class name does not establish a native owner layout.
++// All children are real declared types; missing bodies remain explicit.
++struct ScreenRequestGamePrefix : ScreenGameRegistration
++{
++    ControllerSelectionState controller_selection; // Original00..28.
++    InputMotionState* input_motion;
++    InputState* input;
++    FrameClock* clock;
++    StartupProfiler* profiler;
++    ScreenRequestRenderer* renderer;
++    DebugFont* debug_font;
++    ScreenTextLookup* text;
++    ScreenManager* screens;
++    WindowAudioState* audio;
++    GameUpdatePair* update_pair;
+     ScreenPlacementStore* placement;
+-    // Experimental extension: observed progress words and mode, not full lifetime.
+-    unsigned char unknown_58[0x18];
++    unsigned char unknown_58;
++    unsigned char reload_screen;
++    unsigned char unknown_5a[2];
++    ScreenDialogResourceLookup* resources;
++    unsigned int word_60;
++    GameScenarioNameRange scenario_names;
+     unsigned int words_70[12];
+     unsigned int scenario_a0;
+     unsigned char byte_a4;
++    unsigned char unknown_a5[3];
++    GameSaveRecordRange saves;
++    int word_b4;
++    unsigned char save_info_enabled;
++    unsigned char unknown_b9[3];
++    GameSaveRecord* selected_save;
++    unsigned char unknown_c0[4];
++    unsigned char flag_c4;
++    unsigned char inactive_c5;
++    unsigned char unknown_c6[2];
++
++    // Actual 0x004e2530..004e2ddf, RET8. Whole normal source supplied here.
++    ScreenRequestGamePrefix(void* instance, void* window);
++    ~ScreenRequestGamePrefix(); // Actual 0x004e2e00; separate source dependency.
++    // Actual 0x004e3dd0; real filesystem/name-range body remains separate.
++    void LoadScenarioNames();
+ 
+-    // Actual 0x004e3db0 and 0x004e4000; no full game lifetime is established.
++    void Update();
++    // Actual 0x004e3a50; complete ordered frame path, no arguments.
++    void Render();
++    bool LoadControllerScreen(const char* path);
++    // Actual 0x004e41e0; width/height words, RET8. Real body is separate.
++    void SetScreenSize(int width, int height);
++    // Actual 0x004e3bd0/0x004e3be0 access the preserved byte+c4.
++    unsigned char ReadMenuReturnFlag();
++    void ClearMenuReturnFlag();
++    // Actual 0x004e4000; complete FILE/progress body remains separate.
+     void SetByteA4(unsigned char value);
+     void LoadScenarioProgress();
++    // Actual 0x004e44e0 remains unresolved.
++    void ProcessWordB4();
++    // Actual 0x004e5100; updates the enabled load/save information panel.
++    void UpdateBeforeInput();
++    // Actual 0x004e30b0, RET8; caller-owned 16-bit output, no capacity argument.
++    // Result is ignored here; complete real implementation remains separate.
++    void ReadText(const char* key, unsigned short* output);
++    // Actual 0x004e3640, RET8; consumes a borrowed pointer to one 32-bit value.
++    // The real game-variable implementation and complete owner remain separate.
++    void WriteInteger(const char* key, int* value);
+ };
+ 
+ // Observed manager prefix only. Complete construction, destruction and field
+diff --git a/src/winmain.cpp b/src/winmain.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9631903bc71cd07fc4ee889478a4fcdc23301b41
+--- /dev/null
++++ b/src/winmain.cpp
+@@ -0,0 +1,146 @@
++#include <windows.h>
++#include "startup_application.h"
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004a07e0
++int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int show)
++{
++    bool first_instance = true;
++    HANDLE mutex = CreateMutexA(0, FALSE, mutex_name);
++    if (mutex)
++    {
++        if (GetLastError() == ERROR_ALREADY_EXISTS)
++        {
++            first_instance = false;
++        }
++    }
++    else
++    {
++        first_instance = false;
++    }
++
++    int capabilities;
++    // The retail entrypoint contains this inline CPUID feature probe.
++    __asm {
++        pushfd
++        pop eax
++        mov ebx, eax
++        xor eax, 200000h
++        push eax
++        popfd
++        pushfd
++        pop eax
++        xor eax, ebx
++        and eax, 200000h
++        jz cpu_done
++        xor eax, eax
++        cpuid
++        test eax, eax
++        jz cpu_done
++        mov eax, 1
++        cpuid
++        and eax, 0f00h
++        and edx, 0fffff0ffh
++        or eax, edx
++    cpu_done:
++        mov capabilities, eax
++    }
++
++    bool mmx;
++    if (capabilities & 0x800000)
++    {
++        mmx = true;
++    }
++    else
++    {
++        mmx = false;
++        StartupFatal("Your processor does not have the MMX capability this application requires");
++    }
++
++    if (first_instance && mmx)
++    {
++        StartupConfig* config = new StartupConfig("data/script/gameparameters.pis");
++        windowed = false;
++
++        WNDCLASSEXA window_class;
++        window_class.cbSize = sizeof(window_class);
++        window_class.lpszClassName = window_name;
++        window_class.lpfnWndProc = GameWindowProc;
++        window_class.style = CS_HREDRAW | CS_VREDRAW;
++        window_class.hInstance = instance;
++        window_class.hIcon = LoadIconA(instance, MAKEINTRESOURCEA(104));
++        window_class.hIconSm = LoadIconA(instance, MAKEINTRESOURCEA(104));
++        window_class.hCursor = 0;
++        window_class.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
++        window_class.lpszMenuName = 0;
++        window_class.cbClsExtra = 0;
++        window_class.cbWndExtra = 0;
++        if (!RegisterClassExA(&window_class))
++        {
++            StartupFatal("WinMain - error registering the window class");
++        }
++
++        int border_x = GetSystemMetrics(SM_CXSIZEFRAME);
++        int border_y = GetSystemMetrics(SM_CYSIZEFRAME);
++        int height = 600 + 2 * border_y + GetSystemMetrics(SM_CYCAPTION);
++        char title[256];
++        sprintf(title, "%s", window_name);
++        HWND window;
++        if (windowed)
++        {
++            window = CreateWindowExA(0,
++                window_name,
++                title,
++                0,
++                CW_USEDEFAULT,
++                CW_USEDEFAULT,
++                800 + 2 * border_x,
++                height,
++                0,
++                0,
++                instance,
++                0);
++        }
++        else
++        {
++            window = CreateWindowExA(
++                WS_EX_TOPMOST, window_name, title, WS_POPUP, 0, 0, 800, 600, 0, 0, instance, 0);
++        }
++        if (!window)
++        {
++            StartupFatal("WinMain - error creating window");
++        }
++        ShowWindow(window, show);
++        UpdateWindow(window);
++        CoInitialize(0);
++
++        ScreenRequestGamePrefix* game = new ScreenRequestGamePrefix(instance, window);
++        MSG message;
++        ZeroMemory(&message, sizeof(message));
++        while (message.message != WM_QUIT)
++        {
++            if (PeekMessageA(&message, 0, 0, 0, PM_REMOVE))
++            {
++                TranslateMessage(&message);
++                DispatchMessageA(&message);
++            }
++            profiler->Reset();
++            profiler->Start();
++            game->Update();
++            profiler->Stop();
++            startup_frame_clock->value_24 = static_cast<int>(profiler->elapsed) / 1000;
++            profiler->Start();
++            game->Render();
++            profiler->Stop();
++            startup_frame_clock->value_20 = static_cast<int>(profiler->elapsed) / 1000;
++        }
++
++        delete game;
++        delete config;
++        CoUninitialize();
++        UnregisterClassA("app", window_class.hInstance);
++        ReleaseMutex(mutex);
++        CloseHandle(mutex);
++    }
++    return 0;
++}

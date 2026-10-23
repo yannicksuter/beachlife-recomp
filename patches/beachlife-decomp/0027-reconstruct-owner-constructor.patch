@@ -1,0 +1,142 @@
+Reconstruct typed startup configuration ownership through the actual loader.
+Preserve publication, fixed-buffer entries, temporary cleanup and error paths.
+Use the evidenced constructor-only exception/inlining options and actual CRT conversion.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -60,11 +60,12 @@
+     fixture_config_offset = ClassifyConfigValue("generated", 9);
+     fixture_result = ConvertConfigDecimalPrefix("generated");
+     {
+-        StartupConfigOwnerState fixture_owner_state;
++        StartupConfigOwnerState fixture_owner_state(0);
+     }
+     fixture_config_token.AssignValue("7", 1);
+     fixture_config_tokens.ParseTokens("generated", 9);
+     fixture_config_tokens.LoadAndParse("generated.cfg");
++    StartupConfig fixture_startup_config("generated.pis");
+     StartupConfig* owner = fixture_owner;
+     if (owner)
+     {
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -9,3 +9,10 @@
+ 0x004f3518,float,4,
+ 0x004f3f04,float,4,
+ 0x004ee6f6,library,6,___CxxFrameHandler
++0x004ee6f0,library,6,__ftol
++0x588144,string,79,
++0x585640,string,5,
++0x5880f4,string,78,
++0x5880a8,string,76,
++0x588058,string,78,
++0x588014,string,68,
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -10,3 +10,4 @@
+     vsprintf
+     exit
+     __CxxFrameHandler
++    _ftol
+--- a/src/startup_config_owner.h
++++ b/src/startup_config_owner.h
+@@ -7,6 +7,11 @@
+ 
+ struct StartupConfigOwnerState
+ {
++    StartupConfigOwnerState(StartupConfig* owner)
++    {
++        startup_config_owner = owner;
++    }
++
+     // FUNCTION: BEACHLIFE 0x004ece90
+     ~StartupConfigOwnerState()
+     {
+@@ -26,6 +31,7 @@
+ 
+ struct StartupConfig : StartupConfigOwnerState
+ {
++    StartupConfig(const char* filename);
+     StartupConfigNode* head;
+     ~StartupConfig();
+     void Append(const char* name, bool flag, int integer, float number, const char* text);
+--- /dev/null
++++ b/src/startup_config_owner_constructor.cpp
+@@ -0,0 +1,51 @@
++#include "startup_config_owner.h"
++#include "startup_config_tokens.h"
++
++#include <string.h>
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004eca40
++StartupConfig::StartupConfig(const char* filename)
++    : StartupConfigOwnerState(this)
++{
++    head = 0;
++    ConfigTokenBuffer buffer(filename);
++    int count = (int)buffer.count;
++    if (count > 0)
++    {
++        ConfigToken* token = buffer.tokens;
++        for (; count > 0; --count, ++token)
++        {
++            switch (token->name[0])
++            {
++            case 'b':
++                if (token->kind != 1)
++                    StartupFatal("GameParameters - wrong type in script for boolean (expecting string) - %s - %s", token->name, filename);
++                if (strcmp(token->text, "true") == 0)
++                    Append(token->name, true, 0, 0.0f, 0);
++                else
++                    Append(token->name, false, 0, 0.0f, 0);
++                break;
++            case 'i':
++                if (token->kind != 2)
++                    StartupFatal("GameParameters - wrong type in script for integer (expecting float) - %s - %s", token->name, filename);
++                Append(token->name, false, (int)*token->number, 0.0f, 0);
++                break;
++            case 'f':
++                if (token->kind != 2)
++                    StartupFatal("GameParameters - wrong type in script for float (expecting float) - %s - %s", token->name, filename);
++                Append(token->name, false, 0, *token->number, 0);
++                break;
++            case 's':
++                if (token->kind != 1)
++                    StartupFatal("GameParameters - wrong type in script for string (expecting string) - %s - %s", token->name, filename);
++                Append(token->name, false, 0, 0.0f, token->text);
++                break;
++            default:
++                StartupFatal("GameParameters - error - none defined type (needs prefix) - %s - %s", token->name, filename);
++                break;
++            }
++        }
++    }
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -232,6 +232,12 @@
+       "size": 32,
+       "name": "ConfigTokenBuffer::ConfigTokenBuffer",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004eca40",
++      "size": 448,
++      "name": "StartupConfig::StartupConfig",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [
+@@ -249,6 +255,10 @@
+     ],
+     "startup_config_load_parse.cpp": [
+       "/Ob1"
++    ],
++    "startup_config_owner_constructor.cpp": [
++      "/GX",
++      "/Ob1"
+     ]
+   }
+ }

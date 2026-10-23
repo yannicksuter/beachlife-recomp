@@ -14,14 +14,21 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from build_version import git_output
 from project_version import ROOT, read_version
+from prepare_sources import prepare
 
 TARGETS = ("linux-x86_64", "steamdeck-x86_64", "windows-x86_64", "macos-arm64", "macos-x86_64")
-DOCUMENTS = ("README.md", "docs/BUILDING.md", "docs/RELEASES.md", "docs/INSTALL.md", "LICENSES/README.md")
+DOCUMENTS = ("README.md", "docs/BUILDING.md", "docs/RELEASES.md", "docs/INSTALL.md", "LICENSES/README.md",
+             "LICENSES/unshield.txt", "LICENSES/zlib.txt", "LICENSES/RSA-MD5.txt")
 WINDOWS_DLLS = ("libc++.dll", "libunwind.dll", "libwinpthread-1.dll")
 WINDOWS_NOTICES = ("LICENSE.TXT", "x86_64-w64-mingw32/share/mingw32/COPYING.winpthreads.txt",
                    "x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt")
-MAC_FILES = ("beachlife.app/Contents/MacOS/beachlife", "beachlife.app/Contents/Info.plist")
+MAC_FILES = ("beachlife.app/Contents/MacOS/beachlife", "beachlife.app/Contents/Info.plist",
+             "beachlife.app/Contents/Resources/beachlife.icns")
 MAC_SIGNATURE = "beachlife.app/Contents/_CodeSignature/CodeResources"
+LAUNCHER_RESOURCES = ("header.jpg", "logo.png", "Roboto-Medium.ttf")
+LAUNCHER_NOTICES = ("assets/launcher/README.md", "LICENSES/Apache-2.0.txt",
+                    "LICENSES/SDL.txt", "LICENSES/ImGui.txt", "LICENSES/stb.txt", "LICENSES/FreeType.txt",
+                    "LICENSES/FreeType-BDF.txt", "LICENSES/FreeType-PCF.txt")
 MAC_WRAPPER = b'#!/bin/sh\nexec "$(dirname "$0")/beachlife.app/Contents/MacOS/beachlife" "$@"\n'
 STEAM_LIBRARIES = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
                    "libstdc++.so.6", "libgcc_s.so.1", "ld-linux-x86-64.so.2"}
@@ -30,6 +37,15 @@ STEAM_LIMITS = {"GLIBC": (2, 40), "GLIBCXX": (3, 4, 33), "CXXABI": (1, 3, 15), "
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def native_decomp_profile(info):
+    profile = info.get('decomp_profile', 'native')
+    if profile not in ('native', 'native-experimental', 'native-game'):
+        raise ValueError('Unknown native reconstructed source profile')
+    if profile in ('native-experimental', 'native-game') and info['channel'] == 'release':
+        raise ValueError('Experimental reconstructed code requires a dev or test build')
+    return profile
 
 
 def regular_file(root, relative):
@@ -85,6 +101,11 @@ def payload_names(info):
     if info["system"] == "windows":
         names.update(WINDOWS_DLLS)
         names.update("LICENSES/llvm-mingw/" + Path(name).name for name in WINDOWS_NOTICES)
+    if info.get("capability") == "launcher":
+        prefix = "beachlife.app/Contents/Resources/" if info["system"] == "macos" else ""
+        names.update(prefix + "assets/launcher/" + name for name in LAUNCHER_RESOURCES)
+        names.update((prefix + "assets/app/icon.png", "assets/app/README.md"))
+        names.update(LAUNCHER_NOTICES)
     return names
 
 
@@ -109,13 +130,38 @@ def package(build, output, source=ROOT, toolchain=None):
         data[name] = path.read_bytes()
         modes[name] = 0o755 if path.stat().st_mode & 0o111 else 0o644
 
+    dependencies = []
     for name in DOCUMENTS:
         copy(source, name)
     system = info["system"]
+    if info.get("capability") == "launcher":
+        pin = json.loads(regular_file(source, 'patches/beachlife-decomp/source.json').read_text())
+        if (not isinstance(pin, dict) or set(pin) != {'revision'}
+                or not isinstance(pin['revision'], str)
+                or not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', pin['revision'])):
+            raise ValueError('The reconstructed source pin must contain only a full revision SHA.')
+        profile = native_decomp_profile(info)
+        dependencies.extend(prepare(source, build / 'prepared', verify=True,
+                                    decomp_revision=pin['revision'], decomp_profile=profile))
+        prefix = "beachlife.app/Contents/Resources/" if system == "macos" else ""
+        for name in LAUNCHER_RESOURCES:
+            copy(build, prefix + 'assets/launcher/' + name)
+        copy(build, prefix + 'assets/app/icon.png')
+        copy(source, 'assets/app/README.md')
+        for name in LAUNCHER_NOTICES[:2]:
+            copy(source, name)
+        for dependency, filename, destination in [('sdl', 'LICENSE.txt', 'SDL.txt'),
+                                                  ('imgui', 'LICENSE.txt', 'ImGui.txt'),
+                                                  ('stb', 'LICENSE', 'stb.txt'),
+                                                  ('freetype', 'docs/FTL.TXT', 'FreeType.txt'),
+                                                  ('freetype', 'src/bdf/README', 'FreeType-BDF.txt'),
+                                                  ('freetype', 'src/pcf/README', 'FreeType-PCF.txt')]:
+            copy(build / 'prepared' / dependency, filename, 'LICENSES/' + destination)
     executable = MAC_FILES[0] if system == "macos" else "beachlife.exe" if system == "windows" else "beachlife"
     if system == "macos":
         actual = {p.relative_to(build).as_posix() for p in (build / "beachlife.app").rglob('*') if not p.is_dir()}
-        if actual - set(MAC_FILES) - {MAC_SIGNATURE}:
+        allowed = {name for name in payload_names(info) if name.startswith('beachlife.app/')}
+        if actual - allowed - {MAC_SIGNATURE}:
             raise ValueError("Unexpected files in the application bundle")
         for name in MAC_FILES:
             copy(build, name)
@@ -129,7 +175,6 @@ def package(build, output, source=ROOT, toolchain=None):
         raise ValueError("Executable does not contain the current build version")
     if system != "windows" and modes[executable] != 0o755:
         raise ValueError("Native executable is missing its executable permission")
-    dependencies = []
     if system == "windows":
         if toolchain is None:
             raise ValueError("Windows packaging requires --toolchain for runtime DLLs/notices")
@@ -143,7 +188,10 @@ def package(build, output, source=ROOT, toolchain=None):
         # All imported non-system DLLs must be included. Inspect transitive runtimes too.
         system_dlls = {"kernel32.dll", "ntdll.dll", "msvcrt.dll", "ucrtbase.dll", "advapi32.dll",
                        "user32.dll", "bcrypt.dll", "bcryptprimitives.dll", "userenv.dll",
-                       "ole32.dll", "shell32.dll", "version.dll", "winmm.dll"}
+                       "ole32.dll", "shell32.dll", "version.dll", "winmm.dll",
+                       "cfgmgr32.dll", "comdlg32.dll", "gdi32.dll", "imm32.dll",
+                       "oleaut32.dll", "setupapi.dll", "shlwapi.dll", "rpcrt4.dll",
+                       "dinput8.dll", "dxgi.dll", "d3d11.dll", "d3d12.dll", "hid.dll", "winhttp.dll", "pdh.dll"}
         for name, path in [(executable, build / executable)] + [(n, toolchain / "x86_64-w64-mingw32/bin" / n) for n in WINDOWS_DLLS]:
             report = subprocess.check_output([str(toolchain / "bin/llvm-objdump"), "-p", str(path)], text=True)
             imports = re.findall(r'DLL Name:\s*(\S+)', report)
@@ -213,6 +261,7 @@ def inspect_package(path):
         raise ValueError("Missing package manifest")
     manifest = json.loads(files["SOURCE-MANIFEST.json"][0])
     info = manifest["build"]
+    native_decomp_profile(info)
     if manifest.get("format") != 1 or info["platform"] + '-' + info["architecture"] not in TARGETS:
         raise ValueError("Unsupported package format or target")
     if info["system"] != ("linux" if info["platform"] == "steamdeck" else info["platform"]):
@@ -235,9 +284,11 @@ def inspect_package(path):
 def verify_set(directory, version, sha, channel, run_id=None):
     paths = sorted(p for p in Path(directory).iterdir() if p.name.endswith(('.zip', '.tar.gz')))
     found = set()
+    profiles = set()
     for path in paths:
         manifest, _ = inspect_package(path)
         info = manifest["build"]
+        profiles.add(native_decomp_profile(info))
         target = info["platform"] + '-' + info["architecture"]
         expected_version = version + '+g' + sha[:12]
         extension = '.zip' if info["system"] == 'windows' else '.tar.gz'
@@ -252,6 +303,8 @@ def verify_set(directory, version, sha, channel, run_id=None):
         found.add(target)
     if found != set(TARGETS):
         raise ValueError(f"Incomplete package matrix: {sorted(found)}")
+    if len(profiles) != 1:
+        raise ValueError("Package reconstructed source profiles differ")
     checksums = Path(directory) / 'SHA256SUMS'
     checksums.write_text(''.join(f'{digest(p.read_bytes())}  {p.name}\n' for p in paths))
     return [*paths, checksums]

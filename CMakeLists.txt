@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(beachlife_recomp VERSION 0.1.0 LANGUAGES C CXX)
+project(beachlife_recomp VERSION 0.0.1 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")
@@ -13,6 +13,23 @@ set(BEACHLIFE_BUILD_CHANNEL "dev" CACHE STRING "Build origin: dev, test or relea
 set_property(CACHE BEACHLIFE_BUILD_CHANNEL PROPERTY STRINGS dev test release)
 set(BEACHLIFE_BUILD_PULL_REQUEST "0" CACHE STRING "Source pull request number")
 set(BEACHLIFE_BUILD_RUN "0" CACHE STRING "GitHub Actions run ID")
+option(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
+    "Enable behavior-tested reconstructed code that is still being byte matched" OFF)
+set(BEACHLIFE_DECOMP_PROFILE native)
+if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+    if(BEACHLIFE_BUILD_CHANNEL STREQUAL "release")
+        message(FATAL_ERROR "Experimental reconstructed code requires a dev or test build")
+    endif()
+    set(BEACHLIFE_DECOMP_PROFILE native-experimental)
+endif()
+option(BEACHLIFE_ENABLE_BOOT_GAME
+    "Link the merged game tree with loud traps for code not decompiled yet" OFF)
+if(BEACHLIFE_ENABLE_BOOT_GAME)
+    if(NOT BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
+        message(FATAL_ERROR "BEACHLIFE_ENABLE_BOOT_GAME requires BEACHLIFE_ENABLE_EXPERIMENTAL_GAME")
+    endif()
+    set(BEACHLIFE_DECOMP_PROFILE native-game)
+endif()
 
 if(WIN32)
     set(BEACHLIFE_SYSTEM windows)
@@ -58,16 +75,46 @@ add_custom_target(build_identity
     COMMENT "Record the CMake version and current source revision"
     VERBATIM)
 
+add_library(beachlife_formats STATIC src/platform/json.cpp src/platform/sha256.cpp)
+target_include_directories(beachlife_formats PUBLIC src)
+target_compile_features(beachlife_formats PUBLIC cxx_std_20)
+set_target_properties(beachlife_formats PROPERTIES CXX_EXTENSIONS OFF)
+# Preparing game files hashes the whole ISO; unoptimized hashing made Debug
+# builds take minutes there.
+if(NOT MSVC)
+    set_source_files_properties(src/platform/sha256.cpp PROPERTIES
+        COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
+endif()
+
+add_library(beachlife_data STATIC src/data/iso9660.cpp src/data/game_path.cpp src/data/source.cpp
+    src/data/folder_source.cpp src/data/local_files.cpp src/data/tga.cpp)
+target_include_directories(beachlife_data PUBLIC src)
+target_compile_features(beachlife_data PUBLIC cxx_std_20)
+set_target_properties(beachlife_data PROPERTIES CXX_EXTENSIONS OFF)
+
+add_executable(beachlife-data src/data/main.cpp)
+target_link_libraries(beachlife-data PRIVATE beachlife_data)
+set_target_properties(beachlife-data PROPERTIES CXX_EXTENSIONS OFF)
+if(MINGW)
+    target_link_options(beachlife-data PRIVATE -municode)
+endif()
+
 add_executable(beachlife src/bootstrap/main.cpp)
+target_link_libraries(beachlife PRIVATE beachlife_data)
 target_compile_features(beachlife PRIVATE cxx_std_20)
 set_target_properties(beachlife PROPERTIES CXX_EXTENSIONS OFF)
+if(WIN32)
+    set_target_properties(beachlife PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 target_include_directories(beachlife PRIVATE "${BEACHLIFE_GENERATED}")
 add_dependencies(beachlife build_identity)
-if(MSVC)
-    target_compile_options(beachlife PRIVATE /W4 /WX)
-else()
-    target_compile_options(beachlife PRIVATE -Wall -Wextra -Wpedantic -Werror)
-endif()
+foreach(target beachlife beachlife-data beachlife_data beachlife_formats)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endforeach()
 if(APPLE)
     set_target_properties(beachlife PROPERTIES
         MACOSX_BUNDLE TRUE
@@ -79,6 +126,12 @@ if(APPLE)
         OUTPUT_NAME beachlife)
 endif()
 
+include(cmake/Launcher.cmake)
+include(cmake/Cabinet.cmake)
+include(cmake/Matching.cmake)
+include(cmake/Decomp.cmake)
+include(cmake/Boot.cmake)
+
 if(BUILD_TESTING)
     add_test(NAME bootstrap_cli
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_cli.py"
@@ -86,4 +139,75 @@ if(BUILD_TESTING)
     add_test(NAME build_tools
         COMMAND "${Python3_EXECUTABLE}" -B -m unittest discover -s tests -p "test_*.py")
     set_tests_properties(build_tools PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_executable(launcher_settings_tests tests/launcher_settings.cpp src/launcher/settings.cpp)
+    target_include_directories(launcher_settings_tests PRIVATE src)
+    target_compile_features(launcher_settings_tests PRIVATE cxx_std_20)
+    add_test(NAME launcher_settings COMMAND launcher_settings_tests)
+    add_test(NAME launcher_window
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_launcher.py"
+            "$<TARGET_FILE:beachlife>")
+    add_test(NAME iso_directory_index
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_iso.py"
+            "$<TARGET_FILE:beachlife>")
+    add_executable(game_path_tests tests/game_path.cpp src/data/game_path.cpp)
+    target_include_directories(game_path_tests PRIVATE src)
+    target_compile_features(game_path_tests PRIVATE cxx_std_20)
+    add_test(NAME game_paths COMMAND game_path_tests)
+    add_executable(tga_tests tests/tga.cpp)
+    target_link_libraries(tga_tests PRIVATE beachlife_data)
+    add_test(NAME tga_images COMMAND tga_tests)
+    add_executable(compat_audio_tests tests/compat_audio.cpp src/platform/compat/miles_audio.cpp)
+    target_include_directories(compat_audio_tests PRIVATE src "${BEACHLIFE_PREPARED}/dr-libs")
+    target_compile_features(compat_audio_tests PRIVATE cxx_std_20)
+    target_link_libraries(compat_audio_tests PRIVATE SDL3::SDL3)
+    add_test(NAME compat_audio COMMAND compat_audio_tests)
+    if(BEACHLIFE_ENABLE_BOOT_GAME)
+        add_executable(compat_miles_tests tests/compat_miles.cpp)
+        target_include_directories(compat_miles_tests PRIVATE src src/platform/compat/include)
+        target_compile_features(compat_miles_tests PRIVATE cxx_std_20)
+        target_link_libraries(compat_miles_tests PRIVATE beachlife_compat beachlife_retail_files)
+        add_test(NAME compat_miles
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_compat_miles.py"
+                "$<TARGET_FILE:compat_miles_tests>")
+    endif()
+    add_executable(iso_source_tests tests/iso_source.cpp)
+    target_link_libraries(iso_source_tests PRIVATE beachlife_data)
+    add_test(NAME iso_file_reads
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_data.py"
+            "$<TARGET_FILE:beachlife-data>" "$<TARGET_FILE:iso_source_tests>")
+    add_test(NAME cabinet_index
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_cabinet.py"
+            "$<TARGET_FILE:beachlife-data>")
+    add_executable(folder_source_tests tests/folder_source.cpp)
+    target_link_libraries(folder_source_tests PRIVATE beachlife_data)
+    add_test(NAME prepared_folder_reads
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_folder.py"
+            "$<TARGET_FILE:folder_source_tests>")
+    add_executable(game_index_tests tests/game_index.cpp)
+    target_link_libraries(game_index_tests PRIVATE beachlife_cabinet)
+    add_test(NAME game_content_paths COMMAND game_index_tests)
+    add_test(NAME game_content_reads
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_game_content.py"
+            "$<TARGET_FILE:beachlife-data>")
+    add_executable(content_manifest_tests tests/content_manifest.cpp)
+    target_link_libraries(content_manifest_tests PRIVATE beachlife_cabinet)
+    add_test(NAME content_manifests COMMAND content_manifest_tests)
+    add_executable(content_prepare_tests tests/content_prepare.cpp)
+    target_link_libraries(content_prepare_tests PRIVATE beachlife_cabinet)
+    add_test(NAME prepared_content
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_vfs.py"
+            "$<TARGET_FILE:beachlife-data>" "$<TARGET_FILE:content_prepare_tests>")
+
+    add_executable(retail_constants_cache_tests tests/retail_constants_cache.cpp)
+    target_link_libraries(retail_constants_cache_tests PRIVATE beachlife_launcher_core)
+    set_target_properties(retail_constants_cache_tests PROPERTIES CXX_EXTENSIONS OFF)
+    if(MSVC)
+        target_compile_options(retail_constants_cache_tests PRIVATE /W4 /WX)
+    else()
+        target_compile_options(retail_constants_cache_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME retail_constants_cache
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_retail_constants_cache.py"
+            "$<TARGET_FILE:retail_constants_cache_tests>")
+    set_tests_properties(retail_constants_cache PROPERTIES TIMEOUT 45)
 endif()

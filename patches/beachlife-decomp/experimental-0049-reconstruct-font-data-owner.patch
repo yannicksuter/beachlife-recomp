@@ -1,0 +1,104 @@
+diff --git a/src/startup_screen_font_data.h b/src/startup_screen_font_data.h
+--- a/src/startup_screen_font_data.h
++++ b/src/startup_screen_font_data.h
+@@ -4,12 +4,17 @@
+ // Observed storage used by the measurement methods. The original constructor
+ // copies 1024 words to +4 and 65536 bytes to +804. Image ownership and the
+ // complete original class/lifetime remain separate.
++struct TgaImage;
++
+ struct ScreenFontData
+ {
+-    unsigned char unknown_00[4];
++    TgaImage* image;
+     unsigned short glyphs[256][4];
+     signed char kerning[65536];
+     unsigned int unknown_10804[2];
++
++    explicit ScreenFontData(const char* name); // Actual 0x0049eb70.
++    ~ScreenFontData();                         // Actual 0x004183f0; real body is a separate dependency.
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_font_data_constructor.cpp b/src/startup_screen_font_data_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_font_data_constructor.cpp
+@@ -0,0 +1,58 @@
++#include "startup_screen_font_data.h"
++#include "tga_image.h"
++#include <string.h>
++
++char* LoadFile(const char* filename);
++// Actual 0x004ebd80 TIFF loader, distinct from LoadTgaFile at 0x004ea910.
++// It allocates/constructs the same genuine 0x20-byte image owner.
++TgaImage* LoadTiffFile(const char* filename);
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x0049eb70
++ScreenFontData::ScreenFontData(const char* name)
++{
++    char directory[64];
++    char coordinates_path[64];
++    char image_path[64];
++    strcpy(directory, "Data\\Fonts\\");
++    strcpy(coordinates_path, directory);
++    strcat(coordinates_path, name);
++    strcat(coordinates_path, "TexCoord.Dat");
++
++    char* coordinates = LoadFile(coordinates_path);
++    memcpy(&unknown_10804[0], coordinates, 4);
++    memcpy(&unknown_10804[1], coordinates + 4, 4);
++    const char* source = coordinates + 8;
++    if (source)
++    {
++        for (int glyph = 0; glyph < 256; ++glyph)
++        {
++            for (int word = 0; word < 4; ++word)
++            {
++                memcpy(&glyphs[glyph][word], source, 2);
++                source += 2;
++            }
++        }
++        delete[] coordinates;
++    }
++    else
++        StartupFatal("Font::Font - could not find TexCoord file %s", name);
++
++    strcpy(image_path, directory);
++    strcat(image_path, name);
++    strcat(image_path, ".tiff");
++    image = LoadTiffFile(image_path);
++
++    strcpy(coordinates_path, directory);
++    strcat(coordinates_path, name);
++    strcat(coordinates_path, ".Dat");
++    char* kerning_data = LoadFile(coordinates_path);
++    if (kerning_data)
++    {
++        for (int index = 0; index < 65536; ++index)
++            memcpy(&kerning[index], kerning_data + index, 1);
++        delete[] kerning_data;
++    }
++    else
++        StartupFatal("Font::Font - could not find Kerning file %s", name);
++}
+diff --git a/src/startup_screen_font_data_destructor.cpp b/src/startup_screen_font_data_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_font_data_destructor.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_font_data.h"
++#include "tga_image.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004183f0
++ScreenFontData::~ScreenFontData()
++{
++    TgaImage* released = image;
++    if (released)
++    {
++        released->~TgaImage();
++        ::operator delete(released);
++    }
++}

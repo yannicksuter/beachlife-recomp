@@ -1,0 +1,467 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index a845cd2..16b33f9 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1640,3 +1640,46 @@ extern "C" __declspec(dllexport) void FixturePopulateScenery(ScreenImageList* it
+         fixture_scenery_last_preview = item->vector_60.end[-1]->preview_frame_04;
+     fixture_scenery_completed = 1;
+ }
++
++#include "startup_screen_panel13c_owner.h"
++
++#include <stddef.h>
++
++typedef char Panel13cAddOwnerSize[sizeof(ScreenLoadPanel13cOwner) == 36 ? 1 : -1];
++typedef char Panel13cAddEntrySize[sizeof(ScreenLoadPanel13cEntry) == 28 ? 1 : -1];
++typedef char Panel13cAddScannerSize[sizeof(ScreenLoadPanel13cFileInfo) == 56 ? 1 : -1];
++typedef char Panel13cAddScannerWord[offsetof(ScreenLoadPanel13cFileInfo, word_0c) == 12 ? 1 : -1];
++
++ScreenLoadPanel13cOwner* volatile fixture_panel13c_add_receiver;
++const char* volatile fixture_panel13c_add_directory;
++const char* volatile fixture_panel13c_add_name;
++volatile unsigned int fixture_panel13c_add_word10;
++volatile unsigned int fixture_panel13c_add_word18;
++ScreenLoadPanel13cEntry** volatile fixture_panel13c_add_begin_before;
++ScreenLoadPanel13cEntry** volatile fixture_panel13c_add_end_before;
++ScreenLoadPanel13cEntry** volatile fixture_panel13c_add_limit_before;
++ScreenLoadPanel13cEntry** volatile fixture_panel13c_add_begin_after;
++ScreenLoadPanel13cEntry** volatile fixture_panel13c_add_end_after;
++ScreenLoadPanel13cEntry** volatile fixture_panel13c_add_limit_after;
++volatile bool fixture_panel13c_add_result;
++volatile unsigned int fixture_panel13c_add_completed;
++
++// Compile-only borrowed caller. Never execute the comparison-linked image.
++// This caller neither supplies nor qualifies owner, scanner or entry lifetimes.
++extern "C" __declspec(dllexport) void FixturePanel13cAddEntry(ScreenLoadPanel13cOwner* owner,
++    const char* directory, const char* name, unsigned int word_10, unsigned int word_18)
++{
++    fixture_panel13c_add_receiver = owner;
++    fixture_panel13c_add_directory = directory;
++    fixture_panel13c_add_name = name;
++    fixture_panel13c_add_word10 = word_10;
++    fixture_panel13c_add_word18 = word_18;
++    fixture_panel13c_add_begin_before = owner->entries_begin_04;
++    fixture_panel13c_add_end_before = owner->entries_end_08;
++    fixture_panel13c_add_limit_before = owner->entries_limit_0c;
++    fixture_panel13c_add_result = owner->AddEntry(directory, name, word_10, word_18);
++    fixture_panel13c_add_begin_after = owner->entries_begin_04;
++    fixture_panel13c_add_end_after = owner->entries_end_08;
++    fixture_panel13c_add_limit_after = owner->entries_limit_0c;
++    fixture_panel13c_add_completed = 1;
++}
+diff --git a/metadata.csv b/metadata.csv
+index f23b735..120e332 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -29,7 +29,7 @@ address,type,size,symbol
+ 0x005a8914,global,4,?pool_chunk_begin@@3PADA
+ 0x005a8918,global,4,?pool_chunk_end@@3PADA
+ 0x004123f0,function,289,?ReturnPool@@YAXPAXI@Z
+-0x004d3890,function,1,?ControllerSlot24@MainMenuController@@UAEXXZ
++0x004d3890,function,1,?ControllerSlot1c@MainMenuController@@UAEXXZ
+ 0x0040e240,function,131,?AccessPixels@ScreenRequestRenderer@@QAEPAGXZ
+ 0x004b2ff0,function,189,?CreateNode@CircularList@@QAEPAUCircularListValueNode@@ABQAUActiveScreenEntry@@@Z
+ 0x004b2fb0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUActiveScreenEntry@@@Z
+@@ -108,3 +108,5 @@ address,type,size,symbol
+ 0x004127e0,library,350,?RefillPool@@YAPAXI@Z
+ 0x005bac38,global,4,?variable_catalog@@3PAUVariableCatalog@@A
+ 0x0057ff00,string,11,
++0x004ce0a0,function,718,?AddEntry@ScreenLoadPanel13cOwner@@QAE_NPBD0II@Z
++0x005815c4,string,5,
+diff --git a/src/startup_screen_panel13c_add_entry.cpp b/src/startup_screen_panel13c_add_entry.cpp
+new file mode 100644
+index 0000000..ca9c1c4
+--- /dev/null
++++ b/src/startup_screen_panel13c_add_entry.cpp
+@@ -0,0 +1,78 @@
++#include "copy_trivial.h"
++#include "node_storage.h"
++#include "startup_screen_panel13c_owner.h"
++
++#include <stdio.h>
++#include <string.h>
++
++// Complete typed pointer-range allocation expansion; no new retail body.
++inline ScreenLoadPanel13cEntry** AllocatePanel13cEntries(unsigned int count)
++{
++    return count ? static_cast<ScreenLoadPanel13cEntry**>(AllocateNodeStorage(count * sizeof(ScreenLoadPanel13cEntry*))) : 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004ce0a0
++bool ScreenLoadPanel13cOwner::AddEntry(const char* directory, const char* name, unsigned int word_10,
++    unsigned int word_18)
++{
++    // Only files that exist are listed.
++    bool added;
++    char path[0x400];
++    sprintf(path, "%s%s", directory, name);
++    FILE* file = fopen(path, "rb");
++    if (file)
++    {
++        fclose(file);
++
++        // -1 asks for the stream's own word. The scanner is never released
++        // (original leak).
++        if (word_18 == 0xffffffffu)
++        {
++            ScreenLoadPanel13cFileInfo* info = new ScreenLoadPanel13cFileInfo;
++            info->Scan(directory, name);
++            if (!info->IsValid())
++                goto failed;
++            word_18 = info->word_0c;
++        }
++
++        ScreenLoadPanel13cEntry* entry = new ScreenLoadPanel13cEntry;
++        entry->name_00 = new char[strlen(name) + 1];
++        strcpy(entry->name_00, name);
++        entry->directory_04 = new char[strlen(directory) + 1];
++        strcpy(entry->directory_04, directory);
++        entry->word_10 = word_10;
++        entry->word_18 = word_18;
++
++        ScreenLoadPanel13cEntry** position = entries_end_08;
++        if (position != entries_limit_0c)
++        {
++            if (position)
++                *position = entry;
++            ++entries_end_08;
++            added = true;
++            ReadPanel13cEntryTag(entry);
++            goto finished;
++        }
++
++        // Inline append growth: double the capacity (at least one) in node storage.
++        const unsigned int& minimum = 1u;
++        const unsigned int count = static_cast<unsigned int>(position - entries_begin_04);
++        unsigned int capacity = count + MaxUnsigned(count, minimum);
++        ScreenLoadPanel13cEntry** storage = AllocatePanel13cEntries(capacity);
++        ScreenLoadPanel13cEntry** output = static_cast<ScreenLoadPanel13cEntry**>(CopyTrivial(entries_begin_04, position, storage));
++        *output = entry;
++        ScreenLoadPanel13cEntry** new_end = output + 1;
++        if (entries_begin_04)
++            ReleaseNodeStorage(entries_begin_04, (entries_limit_0c - entries_begin_04) * sizeof(*storage));
++        entries_begin_04 = storage;
++        entries_end_08 = new_end;
++        entries_limit_0c = storage + capacity;
++        added = true;
++        ReadPanel13cEntryTag(entry);
++        goto finished;
++    }
++failed:
++    added = false;
++finished:
++    return added;
++}
+diff --git a/src/startup_screen_panel13c_entry_tag.cpp b/src/startup_screen_panel13c_entry_tag.cpp
+new file mode 100644
+index 0000000..31b6721
+--- /dev/null
++++ b/src/startup_screen_panel13c_entry_tag.cpp
+@@ -0,0 +1,33 @@
++#include "startup_screen_panel13c_owner.h"
++
++#include <stdio.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004ce850
++void ReadPanel13cEntryTag(ScreenLoadPanel13cEntry* entry)
++{
++    char text[128];
++    char tag[128];
++    char path[256];
++    sprintf(path, "%s%s", entry->directory_04, entry->name_00);
++    FILE* file = fopen(path, "rb");
++    if (file)
++    {
++        // The original ignores seek/read failures and does not initialize tag.
++        fseek(file, -128, SEEK_END);
++        fread(tag, 128, 1, file);
++        fclose(file);
++        if (strncmp(tag, "TAG", 3) == 0)
++        {
++            memset(text, 0, sizeof(text));
++            strncpy(text, tag + 33, 30);
++            entry->word_08 = new char[strlen(text) + 1];
++            strcpy(entry->word_08, text);
++
++            memset(text, 0, sizeof(text));
++            strncpy(text, tag + 3, 30);
++            entry->word_0c = new char[strlen(text) + 1];
++            strcpy(entry->word_0c, text);
++        }
++    }
++}
+diff --git a/src/startup_screen_panel13c_file_info_buffer.cpp b/src/startup_screen_panel13c_file_info_buffer.cpp
+new file mode 100644
+index 0000000..22c6ae1
+--- /dev/null
++++ b/src/startup_screen_panel13c_file_info_buffer.cpp
+@@ -0,0 +1,105 @@
++#include "startup_screen_panel13c_owner.h"
++
++#include <string.h>
++
++namespace
++{
++// The original tables have 15/15/3/3 entries at 0x00582674, 0x005826b0,
++// 0x005826ec and 0x005826f8. Reserved indices read the following table or
++// the first DWORD of "%s\\%s". Keep those actual adjacent values here.
++const int bitrate_v1[16] = { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0 };
++const int bitrate_v2[16] = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 44100 };
++const int frequency_v1[4] = { 44100, 48000, 32000, 22050 };
++const int frequency_v2[4] = { 22050, 24000, 16000, 626815781 };
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x004cecc0
++void ScreenLoadPanel13cFileInfo::ScanBytes(const unsigned char* bytes, int count)
++{
++    unsigned char* joined = 0;
++    const unsigned char* cursor;
++    if (word_28 > 0)
++    {
++        joined = new unsigned char[word_28 + static_cast<unsigned int>(count)];
++        memcpy(joined, bytes_24, word_28);
++        memcpy(joined + word_28, bytes, static_cast<unsigned int>(count));
++        count = static_cast<int>(static_cast<unsigned int>(count) + word_28);
++        cursor = joined;
++    }
++    else
++        cursor = bytes;
++
++    const unsigned char* end = cursor + count;
++    cursor += word_20;
++    while (cursor < end)
++    {
++        if (static_cast<int>(end - cursor) < 4)
++        {
++            word_28 = static_cast<unsigned int>(end - cursor);
++            memcpy(bytes_24, cursor, word_28);
++            word_20 = 0;
++            if (joined)
++                delete[] joined;
++            return;
++        }
++
++        if (cursor[0] != 0xff)
++            goto invalid_header;
++        {
++            unsigned char second = cursor[1];
++            if ((second & 0xf0) != 0xf0 && (second & 0xf0) != 0xe0)
++                goto invalid_header;
++
++            unsigned int third = cursor[2];
++            unsigned int frequency_index = (third >> 2) & 3;
++            unsigned char version_bit = second & 8;
++            int frequency = version_bit ? frequency_v1[frequency_index] : frequency_v2[frequency_index];
++            if (frequency == 0)
++                goto invalid_header;
++
++            unsigned int version = ((~static_cast<unsigned int>(second) >> 3) & 1) + 1;
++            unsigned int bitrate_index = third >> 4;
++            int bitrate = version_bit ? bitrate_v1[bitrate_index] : bitrate_v2[bitrate_index];
++            // The original LEA/SHL product wraps in 32 bits before signed IDIV.
++            unsigned int scaled = static_cast<unsigned int>(bitrate) * (version == 1 ? 144000U : 72000U);
++            unsigned int frame_bytes = static_cast<unsigned int>(static_cast<int>(scaled) / frequency);
++            frame_bytes += (third >> 1) & 1;
++            if (frame_bytes <= 1 || frame_bytes > 0x800)
++                goto invalid_header;
++
++            int frames = word_10;
++            if (frames == 0)
++            {
++                word_1c = (second >> 1) & 3;
++                word_04 = (cursor[1] & 8) ? frequency_v1[(cursor[2] >> 2) & 3]
++                                          : frequency_v2[(cursor[2] >> 2) & 3];
++                word_00 = (cursor[1] & 8) ? bitrate_v1[cursor[2] >> 4] : bitrate_v2[cursor[2] >> 4];
++                word_14 = ((~static_cast<unsigned int>(cursor[1]) >> 3) & 1) + 1;
++                word_08 = (cursor[3] & 0xc0) != 0xc0;
++            }
++            else
++            {
++                if (word_04 != frequency)
++                    goto invalid_header;
++                if (word_00 != 0 && word_00 != static_cast<unsigned int>(bitrate))
++                    word_00 = 0;
++            }
++
++            word_10 = static_cast<int>(static_cast<unsigned int>(frames) + 1U);
++            word_2c = static_cast<int>(static_cast<unsigned int>(word_2c) + frame_bytes);
++            bitrate = (cursor[1] & 8) ? bitrate_v1[cursor[2] >> 4] : bitrate_v2[cursor[2] >> 4];
++            word_18 = static_cast<int>(static_cast<unsigned int>(word_18) + static_cast<unsigned int>(bitrate));
++            cursor += frame_bytes;
++            continue;
++        }
++
++    invalid_header:
++        word_30 = static_cast<int>(static_cast<unsigned int>(word_30) + 1U);
++        ++cursor;
++    }
++
++    word_20 = static_cast<unsigned int>(cursor - end);
++    word_28 = 0;
++    if (joined)
++        delete[] joined;
++}
+diff --git a/src/startup_screen_panel13c_file_info_constructor.cpp b/src/startup_screen_panel13c_file_info_constructor.cpp
+new file mode 100644
+index 0000000..ec57ab5
+--- /dev/null
++++ b/src/startup_screen_panel13c_file_info_constructor.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_panel13c_owner.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004ceb50
++ScreenLoadPanel13cFileInfo::ScreenLoadPanel13cFileInfo()
++{
++    word_00 = 0;
++    word_04 = 0;
++    word_08 = 0;
++    word_0c = 0;
++    word_10 = 0;
++    word_14 = 0;
++    word_18 = 0;
++    word_1c = -1;
++    word_20 = 0;
++    word_28 = 0;
++    word_2c = 0;
++    word_30 = 0;
++    state_34 = 0;
++    memset(bytes_24, 0, sizeof(bytes_24));
++}
+diff --git a/src/startup_screen_panel13c_file_info_scan.cpp b/src/startup_screen_panel13c_file_info_scan.cpp
+new file mode 100644
+index 0000000..1a75c17
+--- /dev/null
++++ b/src/startup_screen_panel13c_file_info_scan.cpp
+@@ -0,0 +1,37 @@
++#include "startup_screen_panel13c_owner.h"
++
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004ceb90
++void ScreenLoadPanel13cFileInfo::Scan(const char* directory, const char* name)
++{
++    char path[0x400];
++    unsigned char buffer[0x1000];
++    sprintf(path, "%s\\%s", directory, name);
++    FILE* input = fopen(path, "rb");
++    if (input)
++    {
++        state_34 = 1;
++        int count = static_cast<int>(fread(buffer, 1, sizeof(buffer), input));
++        while (count > 0)
++        {
++            ScanBytes(buffer, count);
++            count = static_cast<int>(fread(buffer, 1, sizeof(buffer), input));
++        }
++        if (word_30 > word_2c)
++            state_34 = 0;
++        else
++        {
++            int frames = word_10;
++            int duration;
++            if (word_14 == 1)
++                duration = frames * 1152 / (word_04 / 1000);
++            else
++                duration = frames * 576 / (word_04 / 1000);
++            state_34 = 1;
++            word_0c = duration;
++            word_18 /= frames;
++        }
++        fclose(input);
++    }
++}
+diff --git a/src/startup_screen_panel13c_file_info_valid.cpp b/src/startup_screen_panel13c_file_info_valid.cpp
+new file mode 100644
+index 0000000..1b6c1f0
+--- /dev/null
++++ b/src/startup_screen_panel13c_file_info_valid.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_panel13c_owner.h"
++
++// FUNCTION: BEACHLIFE 0x004ceca0
++bool ScreenLoadPanel13cFileInfo::IsValid()
++{
++    bool valid = false;
++    if (state_34 && word_1c == 1)
++        valid = true;
++    return valid;
++}
+diff --git a/src/startup_screen_panel13c_owner.h b/src/startup_screen_panel13c_owner.h
+index ad3164f..c3213dc 100644
+--- a/src/startup_screen_panel13c_owner.h
++++ b/src/startup_screen_panel13c_owner.h
+@@ -8,8 +8,8 @@ struct ScreenLoadPanel13cEntry
+ {
+     char* name_00;      // Owned copy of the file name.
+     char* directory_04; // Owned copy of the directory.
+-    unsigned int word_08;
+-    unsigned int word_0c;
++    char* word_08;      // Owned ID3 artist copied from tag offset33.
++    char* word_0c;      // Owned ID3 title copied from tag offset3.
+     unsigned int word_10;
+     unsigned char state_14;
+     unsigned char state_15;
+@@ -34,15 +34,30 @@ struct ScreenLoadPanel13cEntry
+ // descriptive; bodies are separate dependencies.
+ struct ScreenLoadPanel13cFileInfo
+ {
+-    unsigned char unknown_00[0x0c];
++    unsigned int word_00;
++    int word_04;
++    unsigned int word_08;
+     unsigned int word_0c; // Per-stream word AddEntry stores for -1.
+-    unsigned char unknown_10[0x28];
++    int word_10;
++    unsigned int word_14;
++    int word_18;
++    unsigned int word_1c; // Constructor sentinel -1; IsValid later compares 1.
++    unsigned int word_20;
++    unsigned char bytes_24[3];
++    unsigned char unknown_27;
++    unsigned int word_28;
++    int word_2c;
++    int word_30;
++    unsigned char state_34;
++    unsigned char unknown_35[3];
+ 
+     ScreenLoadPanel13cFileInfo(); // Actual 0x004ceb50: clears the fields.
+     // Actual 0x004ceb90, RET8: opens directory\\name ("%s\\%s") and scans it.
+     void Scan(const char* directory, const char* name);
+     // Actual 0x004ceca0: byte +0x34 set and word +0x1c == 1.
+     bool IsValid();
++    // Actual 0x004cecc0, RET8: complete stream-buffer parser is a separate dependency.
++    void ScanBytes(const unsigned char* bytes, int count);
+ };
+ 
+ // Actual cdecl 0x004ce850: reads the entry's ID3v1 tag ("TAG" in the last 128
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 91e42b1..fe23764 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -626,6 +626,12 @@
+       "size": 593,
+       "name": "ScreenImageList::PopulateScenery",
+       "name_status": "Descriptive source name; complete original entry and thiscall RET8 independently audited"
++    },
++    {
++      "name": "ScreenLoadPanel13cOwner::AddEntry",
++      "address": "0x004ce0a0",
++      "size": 718,
++      "name_status": "Descriptive complete Panel13c file-list append; original full body and EH, real scanner/tag/storage dependencies"
+     }
+   ],
+   "library_functions": [
+@@ -707,6 +713,10 @@
+     "startup_screen_image_list_scenery.cpp": [
+       "/GX",
+       "/Ob1"
++    ],
++    "startup_screen_panel13c_add_entry.cpp": [
++      "/GX",
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

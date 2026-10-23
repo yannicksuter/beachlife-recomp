@@ -1,0 +1,378 @@
+diff --git a/src/miles_imports.h b/src/miles_imports.h
+index 4545a273830c6c016e01303317ef4f2893120bfc..652df2ca29065283f842fab233a7e705b7faea07 100644
+--- a/src/miles_imports.h
++++ b/src/miles_imports.h
+@@ -1,8 +1,53 @@
+ #ifndef MILES_IMPORTS_H
+ #define MILES_IMPORTS_H
+ 
++#if defined(_WIN32)
++#define MILES_IMPORT __declspec(dllimport)
++#else
++#define MILES_IMPORT
++#endif
++
+ // Observed x86 import ABIs; these callers ignore the DLL's return register.
+-extern "C" __declspec(dllimport) void __stdcall AIL_set_digital_master_volume(void* driver, int volume);
+-extern "C" __declspec(dllimport) void __stdcall AIL_pause_stream(void* stream, int pause);
++extern "C" MILES_IMPORT void __stdcall AIL_set_digital_master_volume(void* driver, int volume);
++extern "C" MILES_IMPORT void __stdcall AIL_pause_stream(void* stream, int pause);
++
++extern "C" MILES_IMPORT void __stdcall AIL_init_sample(void* sample);
++extern "C" MILES_IMPORT void __stdcall AIL_set_named_sample_file(
++    void* sample, const char* extension, const void* data, unsigned int bytes, int block);
++extern "C" MILES_IMPORT void __stdcall AIL_set_sample_loop_count(void* sample, unsigned int count);
++extern "C" MILES_IMPORT void __stdcall AIL_start_sample(void* sample);
++extern "C" MILES_IMPORT void __stdcall AIL_set_sample_volume(void* sample, int volume);
++
++// Constructor imports: observed x86 argument widths and used return values.
++extern "C" MILES_IMPORT void __stdcall AIL_set_redist_directory(const char* directory);
++extern "C" MILES_IMPORT int __stdcall AIL_startup();
++extern "C" MILES_IMPORT void* __stdcall AIL_open_digital_driver(
++    unsigned int frequency, int bits, int channels, unsigned int flags);
++extern "C" MILES_IMPORT void* __stdcall AIL_allocate_sample_handle(void* driver);
++extern "C" MILES_IMPORT void* __stdcall AIL_allocate_3D_sample_handle(void* provider);
++extern "C" MILES_IMPORT void __stdcall AIL_set_stream_volume(void* stream, int volume);
++extern "C" MILES_IMPORT void __stdcall AIL_set_3D_sample_volume(void* sample, int volume);
++
++// Provider initializer imports, same observed x86 opaque-handle projection.
++extern "C" MILES_IMPORT int __stdcall AIL_enumerate_3D_providers(
++    unsigned int* cursor, void** provider, const char** name);
++extern "C" MILES_IMPORT int __stdcall AIL_open_3D_provider(void* provider);
++extern "C" MILES_IMPORT void* __stdcall AIL_open_3D_listener(void* provider);
++extern "C" MILES_IMPORT void __stdcall AIL_set_3D_position(
++    void* listener, float x, float y, float z);
++
++// Genuine no-argument shutdown import used by the cdecl exit callback.
++extern "C" MILES_IMPORT void __stdcall AIL_shutdown();
++
++// Destructor imports: actual zero/one-word stdcall boundaries, results ignored.
++extern "C" MILES_IMPORT void __stdcall AIL_end_3D_sample(void* sample);
++extern "C" MILES_IMPORT void __stdcall AIL_end_sample(void* sample);
++extern "C" MILES_IMPORT void __stdcall AIL_close_stream(void* stream);
++extern "C" MILES_IMPORT void __stdcall AIL_close_3D_provider(void* provider);
++extern "C" MILES_IMPORT void __stdcall AIL_close_digital_driver(void* driver);
++
++// Update compares the actual status return word with 2.
++extern "C" MILES_IMPORT int __stdcall AIL_sample_status(void* sample);
++extern "C" MILES_IMPORT int __stdcall AIL_3D_sample_status(void* sample);
+ 
+ #endif
+diff --git a/src/window_audio.h b/src/window_audio.h
+index b9faaafcc7c631c9154a6f974eb188e35ee29779..d779c8751a95476a6b22bb1100b4762dfbf38d3b 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -1,13 +1,56 @@
+ #ifndef WINDOW_AUDIO_H
+ #define WINDOW_AUDIO_H
+ 
+-// Descriptive minimum prefix; original class name and full layout are unknown.
++struct WindowSoundVoice;
++struct WindowSoundBank;
++
++// Actual startup allocation is 0xf8 bytes on x86. No vptr is stored by the
++// constructor. These descriptive fields do not establish a native owner ABI.
+ struct WindowAudioState
+ {
+     unsigned char enabled;
++    unsigned char enabled_3d;
++    unsigned char unknown_02[2];
+     void* digital_driver;
+-    unsigned char unknown_08[4];
++    void* provider_08;
+     void* stream;
++    float stream_volume_10;
++    void* samples_14[16];
++    void* samples_54[8];
++    WindowSoundVoice* voices_74[16];
++    WindowSoundVoice* voices_b4[8];
++    int volume_d4;
++    float scale_d8;
++    void* listener_dc;
++    float position_x_e0;
++    float position_y_e4;
++    float position_z_e8;
++    float value_ec;
++    float value_f0;
++    WindowSoundBank* bank_f4;
++
++    // Actual 0x004cefd0, RET12. Whole-owner destruction remains separate.
++    WindowAudioState(unsigned char enable, const char* provider_name, const char* bank_name);
++    ~WindowAudioState();
++    void UpdateVoiceFades(float delta);
++    void StopAllSounds();
++    void SetStreamVolume(float level);
++    void SetEffectsVolume(float level);
++
++    // Actual 0x004d0370, RET4; its caller discards the return register.
++    void Initialize3DProvider(const char* provider_name);
++    // Actual 0x004d0540, RET0; registration cleanup, not owner destruction.
++    void ClearRegistration();
++
++    // Existing R287 declaration for the real 0x004cf710, RET12.
++    int PlaySound(const char* name, unsigned int flags, float fade);
++    // Actual 0x004d0040, RET20; full owner lifetime remains separate.
++    int PlaySoundWithParameters(
++        const char* name, int volume, unsigned int flags, float fade, float scale);
++
++    // Existing genuine declarations from the game/update and Variable sources.
++    void Update(float delta);
++    void SetSoundLevel(int voice, float level);
+ 
+     void MuteDigitalDriver();
+     void UnmuteDigitalDriver();
+diff --git a/src/window_audio_constructor.cpp b/src/window_audio_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..619f2acb4d7f7ff91b93347f1c4599c6c72bf0d6
+--- /dev/null
++++ b/src/window_audio_constructor.cpp
+@@ -0,0 +1,193 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++#include "window_sound_bank.h"
++#include "window_sound_voice.h"
++
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004cefd0
++WindowAudioState::WindowAudioState(
++    unsigned char enable, const char* provider_name, const char* bank_name)
++{
++    window_audio_state = this;
++    enabled = enable;
++    enabled_3d = 0;
++    stream = 0;
++    stream_volume_10 = 0.0f;
++    scale_d8 = 0.0f;
++    value_ec = 250.0f;
++    value_f0 = 750.0f;
++
++    try
++    {
++        if (enable)
++        {
++            AIL_set_redist_directory(window_audio_redist_directory);
++            RegisterMilesShutdown();
++            if (AIL_startup())
++            {
++                digital_driver = AIL_open_digital_driver(22050, 16, 2, 0);
++                if (digital_driver)
++                {
++                    Initialize3DProvider(provider_name);
++                }
++                else
++                {
++                    enabled = 0;
++                }
++            }
++            else
++            {
++                enabled = 0;
++            }
++        }
++
++        int index;
++        for (index = 0; index < 16; ++index)
++        {
++            voices_74[index] = 0;
++        }
++        for (index = 0; index < 8; ++index)
++        {
++            voices_b4[index] = 0;
++        }
++
++        if (enabled)
++        {
++            void*(__stdcall * allocate_sample)(void*) = AIL_allocate_sample_handle;
++            for (index = 0; index < 16; ++index)
++            {
++                samples_14[index] = allocate_sample(digital_driver);
++            }
++
++            if (enabled_3d)
++            {
++                void*(__stdcall * allocate_3d_sample)(void*) = AIL_allocate_3D_sample_handle;
++                for (index = 0; index < 8; ++index)
++                {
++                    samples_54[index] = allocate_3d_sample(provider_08);
++                }
++            }
++        }
++
++        float stream_level = stream_volume_10;
++        if (!(stream_level >= 0.0f))
++        {
++            stream_level = 0.0f;
++        }
++        else if (stream_level > 1.0f)
++        {
++            stream_level = 1.0f;
++        }
++        stream_volume_10 = stream_level;
++
++        if (enabled)
++        {
++            void* current_stream = stream;
++            if (current_stream)
++            {
++                if (!(stream_level >= 0.0f))
++                {
++                    stream_level = 0.0f;
++                }
++                else if (stream_level > 1.0f)
++                {
++                    stream_level = 1.0f;
++                }
++                int volume = static_cast<int>(stream_level * 127.0f);
++                if (volume < 3)
++                {
++                    volume = 0;
++                }
++                AIL_set_stream_volume(current_stream, volume);
++            }
++        }
++
++        float original_scale = scale_d8;
++        float stored_scale = original_scale;
++        if (!(stored_scale >= 0.0f))
++        {
++            stored_scale = 0.0f;
++        }
++        else if (stored_scale > 1.0f)
++        {
++            stored_scale = 1.0f;
++        }
++        scale_d8 = stored_scale;
++
++        if (!(original_scale >= 0.0f))
++        {
++            original_scale = 0.0f;
++        }
++        else if (original_scale > 1.0f)
++        {
++            original_scale = 1.0f;
++        }
++        int volume = static_cast<int>(original_scale * 127.0f);
++        if (volume < 3)
++        {
++            volume = 0;
++        }
++        volume_d4 = volume;
++
++        for (index = 0; index < 16; ++index)
++        {
++            WindowSoundVoice* voice = voices_74[index];
++            if (voice)
++            {
++                float level = voice->scale_14 * scale_d8;
++                if (!(level >= 0.0f))
++                {
++                    level = 0.0f;
++                }
++                else if (level > 1.0f)
++                {
++                    level = 1.0f;
++                }
++                if (!(level >= 0.0f))
++                {
++                    level = 0.0f;
++                }
++                else if (level > 1.0f)
++                {
++                    level = 1.0f;
++                }
++                int sample_volume = static_cast<int>(level * 127.0f);
++                if (sample_volume < 3)
++                {
++                    sample_volume = 0;
++                }
++                if (voice->word_10 == 0)
++                {
++                    if (index >= 16)
++                    {
++                        AIL_set_3D_sample_volume(samples_54[index - 16], sample_volume);
++                    }
++                    else
++                    {
++                        AIL_set_sample_volume(samples_14[index], sample_volume);
++                    }
++                }
++            }
++        }
++
++        char header_path[64];
++        char bank_path[64];
++        const char* header_extension = window_sound_header_extension;
++        const char* basename = bank_name;
++        const char* directory = window_sound_directory;
++        int (*format_path)(char*, const char*, ...) = sprintf;
++        format_path(header_path, "%s%s%s", directory, basename, header_extension);
++
++        const char* bank_extension = window_sound_bank_extension;
++        directory = window_sound_directory;
++        format_path(bank_path, "%s%s%s", directory, basename, bank_extension);
++        bank_f4 = new WindowSoundBank(header_path, bank_path);
++    }
++    catch (...)
++    {
++        ClearRegistration();
++        throw;
++    }
++}
+diff --git a/src/window_audio_initialization.h b/src/window_audio_initialization.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c762bcc235b6e9449b01f365841027995b6818d3
+--- /dev/null
++++ b/src/window_audio_initialization.h
+@@ -0,0 +1,20 @@
++#ifndef WINDOW_AUDIO_INITIALIZATION_H
++#define WINDOW_AUDIO_INITIALIZATION_H
++
++struct WindowAudioState;
++
++// Existing sole owner: window_activation_globals.cpp, 0x005baef4.
++extern WindowAudioState* window_audio_state;
++
++// Genuine mutable pointer slots. Their original initial backing strings are
++// recorded separately; this source packet does not define their storage.
++extern const char* window_audio_redist_directory; // 0x0058270c.
++extern const char* window_sound_directory;        // 0x00582710.
++extern const char* window_sound_header_extension; // 0x0058271c.
++extern const char* window_sound_bank_extension;   // 0x00582720.
++
++// Actual 16-byte 0x004ee6b0 support calls the CRT registration route with the
++// genuine shutdown thunk. No substitute support or Miles implementation here.
++int RegisterMilesShutdown();
++
++#endif
+diff --git a/src/window_sound_voice.h b/src/window_sound_voice.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..972811262c5a60997a1ea227f0764f32bd5114a5
+--- /dev/null
++++ b/src/window_sound_voice.h
+@@ -0,0 +1,24 @@
++#ifndef WINDOW_SOUND_VOICE_H
++#define WINDOW_SOUND_VOICE_H
++
++// Actual 0x34-byte x86 allocation in PlaySoundWithParameters. No owner methods
++// are invented; the bank data and external sample have separate lifetimes.
++struct WindowSoundVoice
++{
++    char* name;
++    void* data_04;
++    unsigned int word_08;
++    unsigned int bytes_0c;
++    unsigned int word_10;
++    float scale_14;
++    float volume_18;
++    float word_1c;
++    float word_20;
++    float fade_24;
++    float fade_28;
++    unsigned char byte_2c;
++    unsigned char unknown_2d[3];
++    int word_30;
++};
++
++#endif

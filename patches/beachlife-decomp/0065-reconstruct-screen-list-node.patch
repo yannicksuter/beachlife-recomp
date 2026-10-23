@@ -1,0 +1,167 @@
+Reconstruct screen-list node allocation and payload construction.
+Preserve the shared inline guard, original cleanup states and
+verified compiler-runtime import identity.
+
+--- /dev/null
++++ b/src/startup_list_node.cpp
+@@ -0,0 +1,55 @@
++#include "startup_list.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004b2ff0
++CircularListValueNode* CircularList::CreateNode(ActiveScreenEntry* const& entry)
++{
++    PoolChunkLink* block;
++    {
++        AcquirePoolLock(&pool_lock_word);
++        PoolLockGuard guard;
++        block = pool_chunk_buckets[1];
++        if (block)
++        {
++            pool_chunk_buckets[1] = block->next;
++        }
++        else
++        {
++            int count = 20;
++            char* chunk = AcquirePoolChunk(16, count);
++            block = reinterpret_cast<PoolChunkLink*>(chunk);
++            if (count != 1)
++            {
++                PoolChunkLink* next = reinterpret_cast<PoolChunkLink*>(chunk + 16);
++                pool_chunk_buckets[1] = next;
++                for (int index = 1;; ++index)
++                {
++                    PoolChunkLink* current = next;
++                    next = reinterpret_cast<PoolChunkLink*>(reinterpret_cast<char*>(next) + 16);
++                    if (count - 1 == index)
++                    {
++                        current->next = 0;
++                        break;
++                    }
++                    current->next = next;
++                }
++            }
++        }
++    }
++    CircularListValueNode* result = reinterpret_cast<CircularListValueNode*>(block);
++    try
++    {
++        new (&result->entry) ActiveScreenEntry*(entry);
++    }
++    catch (...)
++    {
++        ReturnPool(result, 16);
++        throw;
++    }
++    return result;
++}
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -21,6 +21,13 @@
+ 
+ struct ActiveScreenEntry;
+ 
++// Observed pointer payload at x86+8. This prefix does not define the 16-byte
++// allocator slot or recover the original generic node declaration.
++struct CircularListValueNode : CircularListNode
++{
++    ActiveScreenEntry* entry;
++};
++
+ // Observed container prefix only; allocator and full library types are unknown.
+ struct CircularList
+ {
+@@ -29,6 +36,7 @@
+     CircularListIterator End() const;
+     CircularListIterator Begin() const;
+     CircularListIterator Insert(CircularListIterator position, ActiveScreenEntry* const& entry);
++    CircularListValueNode* CreateNode(ActiveScreenEntry* const& entry);
+ };
+ 
+ #endif
+--- a/src/pool_lock_guard.h
++++ b/src/pool_lock_guard.h
+@@ -10,7 +10,8 @@
+ // the original class size, data members, constructor or allocator identity.
+ struct PoolLockGuard
+ {
+-    ~PoolLockGuard();
++    // FUNCTION: BEACHLIFE 0x00412550
++    ~PoolLockGuard() { pool_lock_word = 0; }
+ };
+ 
+ #endif
+--- a/src/pool_lock_guard.cpp
++++ b/src/pool_lock_guard.cpp
+@@ -2,10 +2,3 @@
+ 
+ // GLOBAL: BEACHLIFE 0x005a8908
+ volatile LONG pool_lock_word = 0;
+-
+-// Descriptive destructor spelling for the observed no-argument member cleanup.
+-// FUNCTION: BEACHLIFE 0x00412550
+-PoolLockGuard::~PoolLockGuard()
+-{
+-    pool_lock_word = 0;
+-}
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -12,6 +12,7 @@
+ #include "startup_list.h"
+ #include "startup_list_adaptor.h"
+ CircularListNode* volatile fixture_list_node;
++CircularListValueNode* volatile fixture_value_node;
+ #include "startup_frame_clock.h"
+ #include "../src/startup_screen_item.h"
+ #include "tga_image.h"
+@@ -158,6 +159,8 @@
+     fixture_list_node = fixture_list.Begin().node;
+     CircularListIteratorAdaptor fixture_adaptor(fixture_list.End());
+     fixture_list_node = fixture_adaptor.current.node;
++    ActiveScreenEntry* fixture_active_entry = 0;
++    fixture_value_node = fixture_list.CreateNode(fixture_active_entry);
+     CircularListIterator fixture_search_result;
+     fixture_search_result.node = 0;
+     fixture_list_node = FindScreenByName(&fixture_search_result, fixture_list.Begin(), fixture_list.End(), "generated")->node;
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -31,3 +31,4 @@
+ 0x004123f0,function,289,?ReturnPool@@YAXPAXI@Z
+ 0x004d3890,function,1,?IgnoreSurfaceError@@YAXH@Z
+ 0x0040e240,function,131,?AccessPixels@ScreenRequestRenderer@@QAEPAGXZ
++0x004b2ff0,function,189,?CreateNode@CircularList@@QAEPAUCircularListValueNode@@ABQAUActiveScreenEntry@@@Z
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -445,6 +445,10 @@
+     ],
+     "pool_return.cpp": [
+       "/Ob1"
++    ],
++    "startup_list_node.cpp": [
++      "/GX",
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -512,6 +516,15 @@
+       "size": 1,
+       "name": "IgnoreSurfaceError",
+       "name_status": "descriptive ignored-result call; shared code identity and other alias declarations remain unknown"
++    },
++    {
++      "address": "0x004b2ff0",
++      "size": 189,
++      "name": "CircularList::CreateNode",
++      "name_status": "descriptive observed node builder; original class, exact declarations and library provenance unknown"
+     }
+-  ]
++  ],
++  "runtime_stdcall_imports": {
++    "_CxxThrowException": 8
++  }
+ }

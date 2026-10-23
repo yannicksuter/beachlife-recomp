@@ -1,0 +1,65 @@
+Preserve quoted-value and signed-byte token extent rules, including the unconditional first-byte read.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -41,6 +41,7 @@
+     fixture_config_offset = SkipConfigSeparators("generated", 9);
+     fixture_config_offset = HasConfigNameDelimiters("generated", 9);
+     fixture_config_offset = GetConfigNameExtent("generated", 9);
++    fixture_config_offset = GetConfigValueExtent("generated", 9);
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- a/src/startup_config_scan.h
++++ b/src/startup_config_scan.h
+@@ -5,5 +5,6 @@
+ int SkipConfigSeparators(const char* buffer, int size);
+ int HasConfigNameDelimiters(const char* buffer, int size);
+ int GetConfigNameExtent(const char* buffer, int size);
++int GetConfigValueExtent(const char* buffer, int size);
+ 
+ #endif
+--- /dev/null
++++ b/src/startup_config_value_extent.cpp
+@@ -0,0 +1,26 @@
++#include "startup_config_scan.h"
++
++// Descriptive name; the original symbol and declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ec310
++int GetConfigValueExtent(const char* buffer, int size)
++{
++    int index = 0;
++    if (buffer[0] == '"')
++    {
++        for (index = 1; index < size; ++index)
++        {
++            if (buffer[index] == '"')
++                return index + 1;
++        }
++    }
++    else
++    {
++        for (; index < size; ++index)
++        {
++            signed char value = (signed char)buffer[index];
++            if (value <= 32 || value >= 122)
++                break;
++        }
++    }
++    return index;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -118,6 +118,12 @@
+       "size": 31,
+       "name": "GetConfigNameExtent",
+       "name_status": "descriptive, original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec310",
++      "size": 71,
++      "name": "GetConfigValueExtent",
++      "name_status": "descriptive, original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

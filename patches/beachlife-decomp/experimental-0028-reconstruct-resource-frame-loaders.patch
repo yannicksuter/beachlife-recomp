@@ -1,0 +1,148 @@
+diff --git a/src/startup_screen_dialog_frame_io.h b/src/startup_screen_dialog_frame_io.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_io.h
+@@ -0,0 +1,43 @@
++#ifndef STARTUP_SCREEN_DIALOG_FRAME_IO_H
++#define STARTUP_SCREEN_DIALOG_FRAME_IO_H
++
++#include <limits.h>
++#if defined(_WIN32)
++#include <io.h>
++#else
++#include <unistd.h>
++#endif
++
++static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && sizeof(unsigned int) == 4,
++    "Resource file words require 32-bit int");
++
++// Decode the original signed EAX/long word without an implementation-defined
++// unsigned-to-signed narrowing on an LP64 host.
++inline int ScreenDialogFrameSigned32(unsigned int value)
++{
++    return value <= 0x7fffffffU ? static_cast<int>(value)
++                                : -1 - static_cast<int>(0xffffffffU - value);
++}
++
++inline int ScreenDialogFrameSeek32(int descriptor, unsigned int displacement, int origin)
++{
++    const int signed_displacement = ScreenDialogFrameSigned32(displacement);
++#if defined(_WIN32)
++    const long result = ::_lseek(descriptor, static_cast<long>(signed_displacement), origin);
++#else
++    const off_t result = ::lseek(descriptor, static_cast<off_t>(signed_displacement), origin);
++#endif
++    return ScreenDialogFrameSigned32(static_cast<unsigned int>(result));
++}
++
++inline int ScreenDialogFrameRead32(int descriptor, void* buffer, unsigned int bytes)
++{
++#if defined(_WIN32)
++    const int result = ::_read(descriptor, buffer, bytes);
++#else
++    const ssize_t result = ::read(descriptor, buffer, bytes);
++#endif
++    return ScreenDialogFrameSigned32(static_cast<unsigned int>(result));
++}
++
++#endif
+diff --git a/src/startup_screen_dialog_frame_load_all.cpp b/src/startup_screen_dialog_frame_load_all.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_load_all.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_dialog_frame_file.h"
++#include "startup_screen_dialog_resource.h"
++
++#include "startup_screen_dialog_frame_io.h"
++#include <new>
++
++#define _lseek ScreenDialogFrameSeek32
++#define _read  ScreenDialogFrameRead32
++
++// FUNCTION: BEACHLIFE 0x00416f10
++void ScreenDialogResourceFrame::LoadAllData()
++{
++    screen_dialog_frame_cursor = _lseek(screen_dialog_frame_file,
++        static_cast<long>(file_offset_1c - screen_dialog_frame_cursor),
++        1);
++
++    indices_44 = static_cast<unsigned short*>(
++        ::operator new(2 * plane_count_0c * count_0a));
++    int read_result = _read(screen_dialog_frame_file, indices_44, 2 * plane_count_0c * count_0a);
++    screen_dialog_frame_cursor += read_result;
++
++    offsets_70 = static_cast<unsigned int*>(::operator new(4 * offset_count_40));
++    read_result = _read(screen_dialog_frame_file, offsets_70, 4 * offset_count_40);
++    screen_dialog_frame_cursor += read_result;
++
++    unsigned int data_bytes = data_size_18;
++    whole_data_48 = 1;
++    data_4c = static_cast<unsigned char*>(::operator new(data_bytes));
++    read_result = _read(screen_dialog_frame_file, data_4c, data_size_18);
++    screen_dialog_frame_cursor += read_result;
++    loaded_08 = 1;
++}
+diff --git a/src/startup_screen_dialog_frame_load_plane.cpp b/src/startup_screen_dialog_frame_load_plane.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_load_plane.cpp
+@@ -0,0 +1,58 @@
++#include "startup_screen_dialog_frame_file.h"
++#include "startup_screen_dialog_resource.h"
++
++#include "startup_screen_dialog_frame_io.h"
++#include <new>
++
++#define _lseek ScreenDialogFrameSeek32
++#define _read  ScreenDialogFrameRead32
++
++// FUNCTION: BEACHLIFE 0x00416fe0
++void ScreenDialogResourceFrame::LoadPlaneData(int plane)
++{
++    unsigned char index_ready = index_ready_16;
++    whole_data_48 = 0;
++    if (!index_ready)
++    {
++        screen_dialog_frame_cursor = _lseek(screen_dialog_frame_file,
++            static_cast<long>(file_offset_1c - screen_dialog_frame_cursor),
++            1);
++
++        indices_44 = static_cast<unsigned short*>(
++            ::operator new(2 * plane_count_0c * count_0a));
++        int read_result = _read(screen_dialog_frame_file, indices_44, 2 * plane_count_0c * count_0a);
++        screen_dialog_frame_cursor += read_result;
++
++        offsets_70 = static_cast<unsigned int*>(::operator new(4 * offset_count_40));
++        read_result = _read(screen_dialog_frame_file, offsets_70, 4 * offset_count_40);
++        screen_dialog_frame_cursor += read_result;
++
++        for (int i = 0; i < plane_count_0c; ++i)
++        {
++            plane_offsets_20[i] = offsets_70[indices_44[count_0a * i]];
++        }
++        index_ready_16 = 1;
++    }
++
++    unsigned int plane_offset = plane_offsets_20[plane];
++    screen_dialog_frame_cursor = _lseek(screen_dialog_frame_file,
++        static_cast<long>(file_offset_1c
++                          + 2 * (count_0a * plane_count_0c + 2 * offset_count_40)
++                          - screen_dialog_frame_cursor + plane_offset),
++        1);
++
++    unsigned int end;
++    if (plane == plane_count_0c - 1)
++    {
++        end = data_size_18;
++    }
++    else
++    {
++        end = plane_offsets_20[plane + 1];
++    }
++    unsigned int data_bytes = end - plane_offsets_20[plane];
++    plane_data_50[plane] = static_cast<unsigned char*>(::operator new(data_bytes));
++    int read_result = _read(screen_dialog_frame_file, plane_data_50[plane], data_bytes);
++    screen_dialog_frame_cursor += read_result;
++    loaded_08 = 1;
++}

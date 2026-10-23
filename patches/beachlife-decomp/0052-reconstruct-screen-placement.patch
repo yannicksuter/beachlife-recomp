@@ -1,0 +1,90 @@
+Reconstruct saved placement lookup used by screen selection.
+Preserve first-match traversal, unchanged miss outputs and ordered aliased writes.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1,3 +1,4 @@
++#include "startup_screen_placement.h"
+ #include "startup_controller_selection.h"
+ #include "startup_screen_name_search.h"
+ #include "startup_input_motion.h"
+@@ -105,6 +106,12 @@
+     fixture_config_offset = fixture_input.ReadValue138();
+     fixture_config_offset = fixture_input.ReadKeyboardState();
+     fixture_input.ReadFirstButtonTransition();
++    ScreenPlacementStore fixture_placement = { 0 };
++    CircularListNode fixture_placement_end = { 0 };
++    fixture_placement_end.next = &fixture_placement_end;
++    fixture_placement_end.previous = &fixture_placement_end;
++    fixture_placement.saved.head = &fixture_placement_end;
++    fixture_placement.FindPlacement(0, 0, 0);
+     ScreenItem fixture_screen_item = { 0 };
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
+     FrameClock fixture_frame_clock = { 0 };
+--- /dev/null
++++ b/src/startup_screen_placement.cpp
+@@ -0,0 +1,19 @@
++#include "startup_screen_placement.h"
++
++// FUNCTION: BEACHLIFE 0x004e68b0
++bool ScreenPlacementStore::FindPlacement(int group, int* x, int* y)
++{
++    bool found = false;
++    for (CircularListNode* current = saved.head->next; current != saved.head; current = current->next)
++    {
++        SavedScreenPlacement* placement = static_cast<SavedScreenPlacementNode*>(current)->placement;
++        if (placement->group == group)
++        {
++            *x = placement->x;
++            *y = placement->y;
++            found = true;
++            break;
++        }
++    }
++    return found;
++}
+--- /dev/null
++++ b/src/startup_screen_placement.h
+@@ -0,0 +1,27 @@
++#ifndef STARTUP_SCREEN_PLACEMENT_H
++#define STARTUP_SCREEN_PLACEMENT_H
++
++#include "startup_list.h"
++
++struct SavedScreenPlacement
++{
++    int x;
++    int y;
++    int group;
++};
++
++struct SavedScreenPlacementNode : CircularListNode
++{
++    SavedScreenPlacement* placement;
++};
++
++// Observed prefix only. Original complete class and field names are unknown.
++struct ScreenPlacementStore
++{
++    unsigned char unknown_00[0x28];
++    CircularList saved;
++
++    bool FindPlacement(int group, int* x, int* y);
++};
++
++#endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -363,6 +363,12 @@
+       "address": "0x004eaaf0",
+       "size": 7,
+       "name": "InputState::ReadFirstButtonTransition",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004e68b0",
++      "size": 60,
++      "name": "ScreenPlacementStore::FindPlacement",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],

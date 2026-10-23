@@ -9,6 +9,10 @@ from project_version import read_version
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
 from check_cli import check
+from check_launcher import check as check_launcher
+from check_iso import check as check_iso
+from check_runtime import check as check_runtime
+from check_startup import check as check_startup
 
 
 def smoke(path):
@@ -23,6 +27,13 @@ def smoke(path):
             destination.chmod(mode)
         executable = root / ('beachlife.exe' if info['system'] == 'windows' else 'beachlife')
         check(executable, info)
+        if info.get('capability') == 'launcher':
+            check_launcher(executable)
+            check_iso(executable)
+            if check_startup(executable) == 77:
+                print('Game loading needs a usable graphics device; package launcher checks passed.')
+            if check_runtime(executable) == 77:
+                print('Game rendering needs a usable graphics device; runtime presentation was not verified.')
     print(f'Package startup and identity verified: {Path(path).name}')
 
 

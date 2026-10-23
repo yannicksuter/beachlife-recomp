@@ -1,0 +1,69 @@
+diff --git a/src/startup_list.h b/src/startup_list.h
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -36,6 +36,8 @@
+ {
+     CircularListNode* head;
+ 
++    // Actual 0x004e81d0; releases nodes while retaining the real sentinel.
++    void Clear();
+     CircularListIterator End() const;
+     CircularListIterator Begin() const;
+     CircularListIterator Insert(CircularListIterator position, ActiveScreenEntry* const& entry);
+diff --git a/src/startup_active_screen_visit.cpp b/src/startup_active_screen_visit.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_active_screen_visit.cpp
+@@ -0,0 +1,13 @@
++#include "startup_active_screen_visit.h"
++
++// FUNCTION: BEACHLIFE 0x004e8200
++ActiveScreenCallback VisitActiveScreens(CircularListIterator first,
++    CircularListIterator last, ActiveScreenCallback callback)
++{
++    while (first.node != last.node)
++    {
++        callback(static_cast<CircularListValueNode*>(first.node)->entry);
++        first.node = first.node->next;
++    }
++    return callback;
++}
+diff --git a/src/startup_active_screen_visit.h b/src/startup_active_screen_visit.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_active_screen_visit.h
+@@ -0,0 +1,12 @@
++#ifndef STARTUP_ACTIVE_SCREEN_VISIT_H
++#define STARTUP_ACTIVE_SCREEN_VISIT_H
++
++#include "startup_list.h"
++
++typedef void (*ActiveScreenCallback)(ActiveScreenEntry* entry);
++
++// Actual cdecl 0x004e8200: iterator values and callback, returns the callback.
++ActiveScreenCallback VisitActiveScreens(CircularListIterator first,
++    CircularListIterator last, ActiveScreenCallback callback);
++
++#endif
+diff --git a/src/startup_list_clear.cpp b/src/startup_list_clear.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_list_clear.cpp
+@@ -0,0 +1,17 @@
++#include "startup_list.h"
++#include "pool_return.h"
++
++// FUNCTION: BEACHLIFE 0x004e81d0
++void CircularList::Clear()
++{
++    CircularListNode* node = head->next;
++    while (node != head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(CircularListValueNode));
++    }
++    head->next = head;
++    head->previous = head;
++}

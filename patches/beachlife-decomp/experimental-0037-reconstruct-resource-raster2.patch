@@ -1,0 +1,94 @@
+diff --git a/src/startup_resource_raster2.cpp b/src/startup_resource_raster2.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_raster2.cpp
+@@ -0,0 +1,76 @@
++#include "startup_resource_rasters.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00408b50
++void ResourceRaster2(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom)
++{
++    unsigned char* row = reinterpret_cast<unsigned char*>(destination) + y * static_cast<int>(stride) * 4;
++    if (left > 0 || top > 0 || right < width || bottom < height)
++    {
++        ResourceRaster1Direct(destination, source, palette, stride, x, y, width, height, left, top, right, bottom);
++        return;
++    }
++    if (height <= 0)
++        return;
++
++    row += x * 4;
++    do
++    {
++        unsigned char* output = row;
++        int column = 0;
++        unsigned char adjacent = 0;
++        while (column < width)
++        {
++            signed char packet = static_cast<signed char>(*source++);
++            if (packet < 0)
++            {
++                output -= static_cast<int>(packet) * 4;
++                column -= packet;
++                adjacent = 0;
++            }
++            else
++            {
++                unsigned int index = *source++;
++                unsigned char remaining = static_cast<unsigned char>(packet - 1);
++                ++column;
++                unsigned int previous;
++                memcpy(&previous, output, sizeof(previous));
++                unsigned short colour = palette[index];
++                unsigned int pixel = (previous & 0xffff0000u) + (adjacent ? colour : static_cast<unsigned int>(width) & 0xffffu);
++                memcpy(output, &pixel, sizeof(pixel));
++                output += 4;
++
++                if (remaining != 0)
++                {
++                    if (static_cast<signed char>(remaining) > 1)
++                    {
++                        int count = static_cast<signed char>(remaining - 1);
++                        column += count;
++                        do
++                        {
++                            index = *source;
++                            colour = palette[index];
++                            memcpy(&previous, output, sizeof(previous));
++                            pixel = (previous & 0xffff0000u) + colour;
++                            memcpy(output, &pixel, sizeof(pixel));
++                            output += 4;
++                            ++source;
++                        } while (--count != 0);
++                    }
++
++                    index = *source++;
++                    ++column;
++                    colour = palette[index];
++                    memcpy(&previous, output, sizeof(previous));
++                    pixel = (previous & 0xffff0000u) + colour;
++                    memcpy(output, &pixel, sizeof(pixel));
++                    output += 4;
++                }
++                adjacent = 1;
++            }
++        }
++        row += static_cast<int>(stride) * 4;
++    } while (--height != 0);
++}
+diff --git a/src/startup_resource_rasters.h b/src/startup_resource_rasters.h
+--- a/src/startup_resource_rasters.h
++++ b/src/startup_resource_rasters.h
+@@ -13,4 +13,9 @@
+     const unsigned short* palette, unsigned int stride, int x, int y,
+     int width, int height, int left, int top, int right, int bottom);
+ 
++// Actual 0x00408b50 cdecl: twelve argument words and RET0.
++void ResourceRaster2(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom);
++
+ #endif

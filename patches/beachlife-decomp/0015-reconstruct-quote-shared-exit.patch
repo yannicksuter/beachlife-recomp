@@ -1,0 +1,63 @@
+Reconstruct quote seeking with the original shared final exit and CR comment scan.
+Positive extents retain the original extra readable-byte precondition.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -51,6 +51,7 @@
+     fixture_config_offset = HasConfigNameDelimiters("generated", 9);
+     fixture_config_offset = GetConfigNameExtent("generated", 9);
+     fixture_config_offset = GetConfigValueExtent("generated", 9);
++    fixture_config_offset = SeekConfigQuotedName("generated", 9);
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/startup_config_quote_seeker.cpp
+@@ -0,0 +1,23 @@
++#include "startup_config_scan.h"
++
++// Descriptive name; positive extents require a readable lookahead byte at buffer[size].
++// FUNCTION: BEACHLIFE 0x004ec3c0
++int SeekConfigQuotedName(const char* buffer, int size)
++{
++    int index = 0;
++    while (index < size)
++    {
++        if (buffer[index] == '\'')
++            return index;
++        if (buffer[++index] == '/')
++        {
++            do
++            {
++                if (index >= size)
++                    goto done;
++            } while (buffer[++index] != '\r');
++        }
++    }
++done:
++    return size;
++}
+--- a/src/startup_config_scan.h
++++ b/src/startup_config_scan.h
+@@ -7,4 +7,6 @@
+ int GetConfigNameExtent(const char* buffer, int size);
+ int GetConfigValueExtent(const char* buffer, int size);
+ 
++int SeekConfigQuotedName(const char* buffer, int size);
++
+ #endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -160,6 +160,12 @@
+       "size": 79,
+       "name": "ConfigToken::AssignName",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec3c0",
++      "size": 53,
++      "name": "SeekConfigQuotedName",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

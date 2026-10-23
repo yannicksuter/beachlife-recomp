@@ -1,0 +1,92 @@
+diff --git a/src/startup_renderer_surface_position.cpp b/src/startup_renderer_surface_position.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_renderer_surface_position.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e310
++ScreenPoint ScreenRequestRenderer::SurfacePosition()
++{
++    return surfaces[current_surface]->position;
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -30,6 +30,7 @@
+ struct ScreenRequestRenderer
+ {
+     unsigned int SurfacePitch();
++    ScreenPoint SurfacePosition();
+ 
+     unsigned char software_mode;
+     unsigned char unknown_01[3];
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -547,8 +547,41 @@
+     fixture_pitch_result = fixture_pitch_renderer.SurfacePitch();
+ }
+ 
++// Comparison-only typed two-word surface position observation; never run this image.
++typedef char FixtureIntWidth[(sizeof(int) == 4) ? 1 : -1];
++typedef char FixturePointSize[(sizeof(ScreenPoint) == 8) ? 1 : -1];
++typedef char FixturePointY[(offsetof(ScreenPoint, y) == 4) ? 1 : -1];
++typedef char FixtureSurfaceSize[(sizeof(ScreenSurfacePosition) == 40) ? 1 : -1];
++typedef char FixtureSurfacePosition[(offsetof(ScreenSurfacePosition, position) == 28) ? 1 : -1];
++typedef char FixtureRendererSize[(sizeof(ScreenRequestRenderer) == 124) ? 1 : -1];
++typedef char FixtureSurfaceArray[(offsetof(ScreenRequestRenderer, surfaces) == 104) ? 1 : -1];
++typedef char FixtureCurrentSurface[(offsetof(ScreenRequestRenderer, current_surface) == 116) ? 1 : -1];
++
++// Generated live aggregates; no retail constructor or method is substituted.
++ScreenSurfacePosition fixture_position_surfaces[2] = { 0 };
++ScreenSurfacePosition* fixture_position_entries[2] = { 0 };
++ScreenRequestRenderer fixture_position_renderer = { 0 };
++volatile int fixture_position_x;
++volatile int fixture_position_y;
++
++extern "C" void fixture_surface_position_call()
++{
++    fixture_position_surfaces[0].position.x = -42;
++    fixture_position_surfaces[0].position.y = 99;
++    fixture_position_surfaces[1].position.x = -123456789;
++    fixture_position_surfaces[1].position.y = 305419896;
++    fixture_position_entries[0] = &fixture_position_surfaces[0];
++    fixture_position_entries[1] = &fixture_position_surfaces[1];
++    fixture_position_renderer.surfaces = fixture_position_entries;
++    fixture_position_renderer.current_surface = 1;
++    ScreenPoint position = fixture_position_renderer.SurfacePosition();
++    fixture_position_x = position.x;
++    fixture_position_y = position.y;
++}
++
+ extern "C" void fixture_entry()
+ {
++    fixture_surface_position_call();
+     fixture_surface_pitch_call();
+     fixture_resource_lookup_call();
+     fixture_resource_destruction();
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -60,3 +60,4 @@
+ 0x00417c20,function,13,?Lookup@ScreenDialogResourceLookup@@QAEPAUScreenDialogResource@@PBD@Z
+ 0x00417c30,function,221,?Find@ScreenDialogResourceLookup@@QAEPAUScreenDialogResource@@PBD@Z
+ 0x0040e2d0,function,13,?SurfacePitch@ScreenRequestRenderer@@QAEIXZ
++0x0040e310,function,27,?SurfacePosition@ScreenRequestRenderer@@QAE?AUScreenPoint@@XZ
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -484,6 +484,12 @@
+       "size": 13,
+       "name": "ScreenRequestRenderer::SurfacePitch",
+       "name_status": "descriptive; full EAX return from current surface pitch field"
++    },
++    {
++      "address": "0x0040e310",
++      "size": 27,
++      "name": "ScreenRequestRenderer::SurfacePosition",
++      "name_status": "descriptive; actual hidden output buffer receives both position words and returns in EAX"
+     }
+   ],
+   "library_functions": [

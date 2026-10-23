@@ -1,0 +1,102 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1292,51 +1292,3 @@
+     fixture_listbox_prepare_begin_after = item->entries.begin;
+     fixture_listbox_prepare_end_after = item->entries.end;
+ }
+-
+-#include "startup_screen_renderer.h"
+-
+-typedef char SelectSurfaceIntWidth[(sizeof(int) == 4) ? 1 : -1];
+-typedef char SelectSurfacePointerWidth[(sizeof(void*) == 4) ? 1 : -1];
+-typedef char SelectSurfaceRendererSize[(sizeof(ScreenRequestRenderer) == 0x7c) ? 1 : -1];
+-typedef char SelectSurfaceMode[(offsetof(ScreenRequestRenderer, software_mode) == 0) ? 1 : -1];
+-typedef char SelectSurfaceOpaque01[(offsetof(ScreenRequestRenderer, unknown_01) == 1) ? 1 : -1];
+-typedef char SelectSurfaceWidth[(offsetof(ScreenRequestRenderer, width) == 4) ? 1 : -1];
+-typedef char SelectSurfaceHeight[(offsetof(ScreenRequestRenderer, height) == 8) ? 1 : -1];
+-typedef char SelectSurfaceOpaque0c[(offsetof(ScreenRequestRenderer, unknown_0c) == 0x0c) ? 1 : -1];
+-typedef char SelectSurfaceFormat[(offsetof(ScreenRequestRenderer, format_44) == 0x44) ? 1 : -1];
+-typedef char SelectSurfaceOpaque48[(offsetof(ScreenRequestRenderer, unknown_48) == 0x48) ? 1 : -1];
+-typedef char SelectSurfaceOpaque5e[(offsetof(ScreenRequestRenderer, unknown_5e) == 0x5e) ? 1 : -1];
+-typedef char SelectSurfaceWord60[(offsetof(ScreenRequestRenderer, word_60) == 0x60) ? 1 : -1];
+-typedef char SelectSurfaceOpaque64[(offsetof(ScreenRequestRenderer, unknown_64) == 0x64) ? 1 : -1];
+-typedef char SelectSurfaceTable[(offsetof(ScreenRequestRenderer, surfaces) == 0x68) ? 1 : -1];
+-typedef char SelectSurfaceOpaque6c[(offsetof(ScreenRequestRenderer, unknown_6c) == 0x6c) ? 1 : -1];
+-typedef char SelectSurfaceIndex[(offsetof(ScreenRequestRenderer, current_surface) == 0x74) ? 1 : -1];
+-typedef char SelectSurfaceLock[(offsetof(ScreenRequestRenderer, pixels_locked) == 0x78) ? 1 : -1];
+-
+-ScreenRequestRenderer* volatile fixture_select_surface_receiver;
+-volatile int fixture_select_surface_input;
+-volatile int fixture_select_surface_before;
+-volatile int fixture_select_surface_after;
+-ScreenSurfacePosition** volatile fixture_select_surface_table_before;
+-ScreenSurfacePosition** volatile fixture_select_surface_table_after;
+-volatile unsigned char fixture_select_surface_lock_before;
+-volatile unsigned char fixture_select_surface_lock_after;
+-volatile unsigned int fixture_select_surface_completed;
+-
+-// Compile/link retention only: borrow a genuinely live renderer with initialized
+-// typed fields. This helper constructs no owner and never executes in the
+-// comparison-only image. It does not manufacture a surface, table or vptr.
+-extern "C" __declspec(dllexport) void FixtureSelectSurface(
+-    ScreenRequestRenderer* renderer, int surface)
+-{
+-    fixture_select_surface_receiver = renderer;
+-    fixture_select_surface_input = surface;
+-    fixture_select_surface_before = renderer->current_surface;
+-    fixture_select_surface_table_before = renderer->surfaces;
+-    fixture_select_surface_lock_before = renderer->pixels_locked;
+-    renderer->SelectSurface(surface);
+-    fixture_select_surface_after = renderer->current_surface;
+-    fixture_select_surface_table_after = renderer->surfaces;
+-    fixture_select_surface_lock_after = renderer->pixels_locked;
+-    fixture_select_surface_completed = 1;
+-}
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -93,4 +93,3 @@
+ 0x004c53d0,function,106,?MoveRectangle@ScreenListBoxPrefix@@UAEXHH@Z
+ 0x004c41e0,function,149,?ClearEntries@ScreenListBoxPrefix@@QAEXXZ
+ 0x004c53a0,function,39,?MarkPrepared@ScreenListBoxPrefix@@UAEXXZ
+-0x0040e230,function,10,?SelectSurface@ScreenRequestRenderer@@QAEXH@Z
+diff --git a/src/startup_renderer_select_surface.cpp b/src/startup_renderer_select_surface.cpp
+deleted file mode 100644
+--- a/src/startup_renderer_select_surface.cpp
++++ /dev/null
+@@ -1,7 +0,0 @@
+-#include "startup_screen_renderer.h"
+-
+-// FUNCTION: BEACHLIFE 0x0040e230
+-void ScreenRequestRenderer::SelectSurface(int surface)
+-{
+-    current_surface = surface;
+-}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -47,7 +47,6 @@
+     int current_surface;
+     unsigned char pixels_locked;
+ 
+-    void SelectSurface(int surface);
+     void SetWord60(unsigned int value);
+     unsigned int ConvertColour(int red, int green, int blue);
+ 
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -585,12 +585,6 @@
+       "size": 39,
+       "name": "ScreenListBoxPrefix::MarkPrepared",
+       "name_status": "descriptive class/name; borrowed matching receiver, full derived table/lifetime not supplied"
+-    },
+-    {
+-      "address": "0x0040e230",
+-      "size": 10,
+-      "name": "ScreenRequestRenderer::SelectSurface",
+-      "name_status": "Descriptive full-word current-surface setter; actual renderer+74 store, real render caller and void thiscall contract proven"
+     }
+   ],
+   "library_functions": [

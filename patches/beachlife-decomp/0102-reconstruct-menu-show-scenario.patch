@@ -1,0 +1,116 @@
+Reconstruct the complete Scenario menu callback with explicit game and manager children.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 79da08dc31466b11ce9345e5fcc19313a200def8..0e9d91fd35906229c03d3eeae1a8374682b9195d 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1009,3 +1009,21 @@ extern "C" __declspec(dllexport) void FixtureMenuShowExtras(unsigned int value)
+     MenuShowExtras(value);
+     fixture_menu_extras_completed = 1;
+ }
++
++#include "startup_gui_show_scenario.h"
++
++typedef void (*MenuShowScenarioAction)(unsigned int);
++
++volatile unsigned int fixture_menu_scenario_input;
++MenuShowScenarioAction volatile fixture_menu_scenario_callback;
++volatile unsigned int fixture_menu_scenario_completed;
++
++// Compile/link retention only. This helper and its comparison image are never
++// executed: the callback reaches comparison-only game and manager anchors.
++extern "C" __declspec(dllexport) void FixtureMenuShowScenario(unsigned int value)
++{
++    fixture_menu_scenario_input = value;
++    fixture_menu_scenario_callback = &MenuShowScenario;
++    MenuShowScenario(value);
++    fixture_menu_scenario_completed = 1;
++}
+diff --git a/metadata.csv b/metadata.csv
+index 2d633f9267d12366d0b851e1a65cd40c1aa8a71e..b2157847af797c32760dd57b0e6145ec7d232ba9 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -80,3 +80,6 @@ address,type,size,symbol
+ 0x004b1320,function,651,?RequestScreen@ScreenManager@@QAE_NPBDPAUScreenRequestContext@@E@Z
+ 0x004b11d0,function,43,?ReleaseOwner190@ScreenManager@@QAEXXZ
+ 0x0057e488,string,13,
++0x004a2ff0,function,45,?MenuShowScenario@@YAXI@Z
++0x004e3db0,function,18,?SetByteA4@ScreenRequestGamePrefix@@QAEXE@Z
++0x0057e4b4,string,15,
+diff --git a/src/startup_gui_show_scenario.cpp b/src/startup_gui_show_scenario.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c65ae5d4fb43c8608248734f16402406e1edcf9
+--- /dev/null
++++ b/src/startup_gui_show_scenario.cpp
+@@ -0,0 +1,10 @@
++#include "startup_gui_show_scenario.h"
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004a2ff0
++void MenuShowScenario(unsigned int)
++{
++    screen_request_game->SetByteA4(0);
++    screen_manager->CloseActiveScreens();
++    screen_manager->RequestScreen("ScenarioScreen", 0, 0);
++}
+diff --git a/src/startup_gui_show_scenario.h b/src/startup_gui_show_scenario.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..96c9b93e2fb6a6e0fef22a2bbabd9c411d54f67d
+--- /dev/null
++++ b/src/startup_gui_show_scenario.h
+@@ -0,0 +1,7 @@
++#ifndef STARTUP_GUI_SHOW_SCENARIO_H
++#define STARTUP_GUI_SHOW_SCENARIO_H
++
++// The observed cdecl action caller passes one word; this callback ignores it.
++void MenuShowScenario(unsigned int value);
++
++#endif
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 6cf1e62f73d025e58fe96843b06782534cc4df3d..43b4aff049292fbfebdb27c62d625fc9a6b0dff4 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -20,6 +20,8 @@ struct ScreenRequestGamePrefix
+     ScreenPlacementStore* placement;
+ 
+     bool LoadControllerScreen(const char* path);
++    // Actual 0x004e3db0, RET4: stores the byte at +a4, then calls 0x004e4000.
++    void SetByteA4(unsigned char value);
+ };
+ 
+ // Observed manager prefix only. Complete construction, destruction and field
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index df381749fa5656127d206243fb54168485ca7bc0..cca9cd33d2794e78c65764611afb0cea8cab1263 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -522,6 +522,11 @@
+       "address": "0x004a2f50",
+       "size": 42,
+       "name": "MenuShowExtras"
++    },
++    {
++      "address": "0x004a2ff0",
++      "size": 45,
++      "name": "MenuShowScenario"
+     }
+   ],
+   "library_functions": [
+@@ -796,6 +801,18 @@
+       "kind": "void-member",
+       "return_type": "void",
+       "parameters": []
++    },
++    {
++      "address": "0x004e3db0",
++      "size": 18,
++      "name": "ScreenRequestGamePrefix::SetByteA4",
++      "symbol": "?SetByteA4@ScreenRequestGamePrefix@@QAEXE@Z",
++      "header": "startup_screen_manager.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "unsigned char"
++      ]
+     }
+   ]
+ }

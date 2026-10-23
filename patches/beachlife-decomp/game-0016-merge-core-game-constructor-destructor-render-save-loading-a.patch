@@ -1,0 +1,4126 @@
+diff --git a/src/game_load_scenario_names.cpp b/src/game_load_scenario_names.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f922d46b370fe0d5f20bf559f3d13b3be798abb
+--- /dev/null
++++ b/src/game_load_scenario_names.cpp
+@@ -0,0 +1,92 @@
++#include <windows.h>
++#include <io.h>
++#include <stdio.h>
++#include <string.h>
++
++#include <new>
++
++#include "copy_trivial.h"
++#include "pool_allocate.h"
++#include "pool_return.h"
++#include "startup_screen_manager.h"
++
++// Library max: the larger count by reference.
++inline const unsigned int& LargerCount(const unsigned int& left, const unsigned int& right)
++{
++    return left < right ? right : left;
++}
++
++// FUNCTION: BEACHLIFE 0x004e3dd0
++void ScreenRequestGamePrefix::LoadScenarioNames()
++{
++    // Library clear(): erase(begin, end) keeps the storage. The previous name
++    // strings are not freed (original leak).
++    scenario_names.end = static_cast<unsigned short**>(
++        CopyTrivial(scenario_names.end, scenario_names.end, scenario_names.begin));
++
++    char pattern[128];
++    _finddata_t found;
++    sprintf(pattern, "%s*.*", scenario_directory);
++    long handle = _findfirst(pattern, &found);
++    if (handle != -1)
++    {
++        do
++        {
++            if ((found.attrib & _A_SUBDIR) && strcmp(".", found.name) != 0 &&
++                strcmp("..", found.name) != 0)
++            {
++                unsigned short* name = new unsigned short[128];
++                MultiByteToWideChar(CP_ACP,
++                    MB_PRECOMPOSED,
++                    found.name,
++                    -1,
++                    name,
++                    static_cast<int>(strlen(found.name) + 1));
++
++                // Library push_back with the pooled allocator.
++                unsigned short** position = scenario_names.end;
++                if (position != scenario_names.capacity.data)
++                {
++                    ::new (position) unsigned short*(name);
++                    ++scenario_names.end;
++                }
++                else
++                {
++                    unsigned int size = static_cast<unsigned int>(position - scenario_names.begin);
++                    unsigned int one = 1;
++                    unsigned int length = size + LargerCount(size, one);
++                    unsigned short** storage = 0;
++                    if (length != 0)
++                    {
++                        unsigned int bytes = length * sizeof(unsigned short*);
++                        storage = static_cast<unsigned short**>(
++                            bytes > 128 ? ::operator new(bytes) : AllocatePoolBytes(bytes));
++                    }
++                    unsigned short** stored = static_cast<unsigned short**>(
++                        CopyTrivial(scenario_names.begin, position, storage));
++                    *stored = name;
++                    ++stored;
++                    unsigned short** previous = scenario_names.begin;
++                    if (previous)
++                    {
++                        unsigned int previous_bytes =
++                            static_cast<unsigned int>(scenario_names.capacity.data - previous) *
++                            sizeof(unsigned short*);
++                        if (previous_bytes > 128)
++                        {
++                            ::operator delete(previous);
++                        }
++                        else
++                        {
++                            ReturnPool(previous, previous_bytes);
++                        }
++                    }
++                    scenario_names.begin = storage;
++                    scenario_names.end = stored;
++                    scenario_names.capacity.data = storage + length;
++                }
++            }
++        } while (_findnext(handle, &found) != -1);
++    }
++    _findclose(handle);
++}
+diff --git a/src/game_save_record_range_destructor.cpp b/src/game_save_record_range_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..72e29d47db8c64ae54ccf6e926cb921997703b02
+--- /dev/null
++++ b/src/game_save_record_range_destructor.cpp
+@@ -0,0 +1,31 @@
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "startup_screen_manager.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e5400
++GameSaveRecordRange::~GameSaveRecordRange()
++{
++    // Library pointer-vector storage release; the save records are not freed here.
++    GameSaveRecord** storage = begin;
++    if (storage)
++    {
++        unsigned int bytes = static_cast<unsigned int>(capacity.data - storage) * sizeof(*storage);
++        if (bytes > 128)
++        {
++            ::operator delete(storage);
++        }
++        else
++        {
++            PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
++            AcquirePoolLock(&pool_lock_word);
++            // The returned pointer slots now become a live pool link.
++            PoolChunkLink* link = ::new (static_cast<void*>(storage)) PoolChunkLink;
++            link->next = *bucket;
++            *bucket = link;
++            pool_lock_word = 0;
++        }
++    }
++}
+diff --git a/src/game_scenario_name_range_destructor.cpp b/src/game_scenario_name_range_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..466caa989c009d15bb8ddd8ec241554224cafb60
+--- /dev/null
++++ b/src/game_scenario_name_range_destructor.cpp
+@@ -0,0 +1,31 @@
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "startup_screen_manager.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e5490
++GameScenarioNameRange::~GameScenarioNameRange()
++{
++    // Library pointer-vector storage release; the pointees are not freed here.
++    unsigned short** storage = begin;
++    if (storage)
++    {
++        unsigned int bytes = static_cast<unsigned int>(capacity.data - storage) * sizeof(*storage);
++        if (bytes > 128)
++        {
++            ::operator delete(storage);
++        }
++        else
++        {
++            PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
++            AcquirePoolLock(&pool_lock_word);
++            // The returned pointer slots now become a live pool link.
++            PoolChunkLink* link = ::new (static_cast<void*>(storage)) PoolChunkLink;
++            link->next = *bucket;
++            *bucket = link;
++            pool_lock_word = 0;
++        }
++    }
++}
+diff --git a/src/startup_application.h b/src/startup_application.h
+index 3068cab37a64624d8bad4a179aa0d6fe60f6a808..9e32e69f215655be0d97fb13d905af7e76ac5231 100644
+--- a/src/startup_application.h
++++ b/src/startup_application.h
+@@ -3,14 +3,12 @@
+ 
+ #include <windows.h>
+ 
++#include "startup_application_state.h"
+ #include "startup_config_owner.h"
+ #include "startup_frame_clock.h"
+ #include "startup_screen_manager.h"
+ #include "startup_timer.h"
+ 
+-extern char* window_name;
+-extern char* mutex_name;
+-extern bool windowed;
+ extern StartupProfiler* profiler;
+ void StartupFatal(const char* format, ...);
+ LRESULT CALLBACK GameWindowProc(HWND, UINT, WPARAM, LPARAM);
+diff --git a/src/startup_application_globals.cpp b/src/startup_application_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b5ed93bc89836f4329abc2f4feb64f0838358da
+--- /dev/null
++++ b/src/startup_application_globals.cpp
+@@ -0,0 +1,14 @@
++#include "startup_application_state.h"
++
++namespace
++{
++char application_window_name[] = "Beach Life";
++char application_mutex_name[] = "Beach Life mutex";
++} // namespace
++
++// GLOBAL: BEACHLIFE 0x0057d6b0
++char* window_name = application_window_name;
++// GLOBAL: BEACHLIFE 0x0057d6b4
++char* mutex_name = application_mutex_name;
++// GLOBAL: BEACHLIFE 0x005baeb8
++bool windowed;
+diff --git a/src/startup_application_state.h b/src/startup_application_state.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..60cad3ea38ccb03144e5ecdef4bcfa000addcf76
+--- /dev/null
++++ b/src/startup_application_state.h
+@@ -0,0 +1,8 @@
++#ifndef STARTUP_APPLICATION_STATE_H
++#define STARTUP_APPLICATION_STATE_H
++
++extern char* window_name;
++extern char* mutex_name;
++extern bool windowed;
++
++#endif
+diff --git a/src/startup_config_owner.h b/src/startup_config_owner.h
+index 04b1cdc44890a8d259662e5a64ef5b4fac783f14..e41936063008de36934cc645af884e5dd2ddc900 100644
+--- a/src/startup_config_owner.h
++++ b/src/startup_config_owner.h
+@@ -33,6 +33,9 @@ struct StartupConfig : StartupConfigOwnerState
+ {
+     StartupConfig(const char* filename);
+     StartupConfigNode* head;
++    bool GetBool(bool* value, const char* name);          // 0x004eccb0.
++    bool GetInteger(int* value, const char* name);        // 0x004ecce0.
++    bool GetString(const char** value, const char* name); // 0x004ecd10.
+     ~StartupConfig();
+     void Append(const char* name, bool flag, int integer, float number, const char* text);
+ };
+diff --git a/src/startup_controller.h b/src/startup_controller.h
+index e08f3f637e2456486d6bd89f13ae2ff59f9eb5f7..d4ee583032676e4f1c3af4c3775c31c2e7f5df35 100644
+--- a/src/startup_controller.h
++++ b/src/startup_controller.h
+@@ -8,7 +8,7 @@
+ struct ControllerState
+ {
+     explicit ControllerState(const char* name);
+-    virtual ~ControllerState(); // 0x0049ee50; deleting wrapper 0x0049ee30.
++    virtual ~ControllerState() noexcept(false); // 0x0049ee50; deleting wrapper 0x0049ee30.
+     virtual int Update() = 0;
+     virtual void RenderBeforeScreens() = 0;
+     virtual void RenderAfterScreens() = 0;
+diff --git a/src/startup_controller_constructor.cpp b/src/startup_controller_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ab35962b6cdd52f39fdaf176711946ebb88307f
+--- /dev/null
++++ b/src/startup_controller_constructor.cpp
+@@ -0,0 +1,9 @@
++#include "startup_controller.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0049edf0
++ControllerState::ControllerState(const char* controller_name)
++{
++    strcpy(name, controller_name);
++    active = 0;
++}
+diff --git a/src/startup_controller_destructor.cpp b/src/startup_controller_destructor.cpp
+index f227850936f364355110d1a7da98ab521ee0461a..f2415edb518c70c2a579537381794a5156932c2c 100644
+--- a/src/startup_controller_destructor.cpp
++++ b/src/startup_controller_destructor.cpp
+@@ -1,6 +1,6 @@
+ #include "startup_controller.h"
+ 
+ // FUNCTION: BEACHLIFE 0x0049ee50
+-ControllerState::~ControllerState()
++ControllerState::~ControllerState() noexcept(false)
+ {
+ }
+diff --git a/src/startup_direct_draw4.h b/src/startup_direct_draw4.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f8f9e68d5f24cf6360ebcf94f4d7d7550ae0c8a
+--- /dev/null
++++ b/src/startup_direct_draw4.h
+@@ -0,0 +1,49 @@
++#ifndef STARTUP_DIRECT_DRAW4_H
++#define STARTUP_DIRECT_DRAW4_H
++
++#include <windows.h>
++#include <ddraw.h>
++
++// DirectDraw 6 platform ABI used by the movie player (DDRAW.dll, dxguid). The
++// pinned VC6 SDK only declares interfaces up to IDirectDraw2; DX6-only
++// parameter structures stay opaque here.
++#ifndef DDSCL_FPUSETUP
++#define DDSCL_FPUSETUP 0x00000800
++#endif
++
++// IDirectDraw4 in DDRAW.dll slot order (slot offsets after IUnknown's three).
++struct IDirectDraw4 : public IUnknown
++{
++    STDMETHOD(Compact)() PURE;
++    STDMETHOD(CreateClipper)(DWORD flags, LPDIRECTDRAWCLIPPER* clipper, IUnknown* outer) PURE;
++    STDMETHOD(CreatePalette)(
++        DWORD flags, LPPALETTEENTRY entries, LPDIRECTDRAWPALETTE* palette, IUnknown* outer) PURE;
++    STDMETHOD(CreateSurface)(void* description, void** surface, IUnknown* outer) PURE;
++    STDMETHOD(DuplicateSurface)(void* surface, void** duplicate) PURE;
++    STDMETHOD(EnumDisplayModes)(
++        DWORD flags, void* description, LPVOID context, void* callback) PURE;
++    STDMETHOD(EnumSurfaces)(DWORD flags, void* description, LPVOID context, void* callback) PURE;
++    STDMETHOD(FlipToGDISurface)() PURE;
++    STDMETHOD(GetCaps)(LPDDCAPS driver, LPDDCAPS emulation) PURE;
++    STDMETHOD(GetDisplayMode)(void* description) PURE;
++    STDMETHOD(GetFourCCCodes)(LPDWORD count, LPDWORD codes) PURE;
++    STDMETHOD(GetGDISurface)(void** surface) PURE;
++    STDMETHOD(GetMonitorFrequency)(LPDWORD frequency) PURE;
++    STDMETHOD(GetScanLine)(LPDWORD line) PURE;
++    STDMETHOD(GetVerticalBlankStatus)(LPBOOL in_blank) PURE;
++    STDMETHOD(Initialize)(GUID* guid) PURE;
++    STDMETHOD(RestoreDisplayMode)() PURE;
++    STDMETHOD(SetCooperativeLevel)(HWND window, DWORD flags) PURE;
++    STDMETHOD(SetDisplayMode)(
++        DWORD width, DWORD height, DWORD bpp, DWORD refresh, DWORD flags) PURE;
++};
++
++// IDirectDrawSurface4 (DDRAW.dll). Only the IUnknown prefix is declared here;
++// its DX6 surface slots belong to the surface bodies that use them.
++struct IDirectDrawSurface4 : public IUnknown
++{
++};
++
++extern "C" const GUID IID_IDirectDraw4;
++
++#endif
+diff --git a/src/startup_direct_input8.h b/src/startup_direct_input8.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d36170709bb885e3b02a4a124d28705c36140f7d
+--- /dev/null
++++ b/src/startup_direct_input8.h
+@@ -0,0 +1,37 @@
++#ifndef STARTUP_DIRECT_INPUT8_H
++#define STARTUP_DIRECT_INPUT8_H
++
++#include <windows.h>
++#include <dinput.h>
++
++// DirectInput 8 creation ABI used by the game (DINPUT8.dll and dxguid). The
++// pinned VC6 SDK only declares DirectInput 5.
++#define DIRECTINPUT8_VERSION 0x0800
++
++#ifndef DISCL_NOWINKEY
++#define DISCL_NOWINKEY 0x00000010
++#endif
++
++// IDirectInput8A in DINPUT8.dll slot order. Devices are used through the
++// shared IDirectInputDeviceA prefix; DI8-only parameter structures are opaque.
++struct IDirectInput8A : public IUnknown
++{
++    STDMETHOD(CreateDevice)(REFGUID guid, IDirectInputDeviceA** device, LPUNKNOWN outer) PURE;
++    STDMETHOD(EnumDevices)(
++        DWORD device_type, LPDIENUMDEVICESCALLBACKA callback, LPVOID context, DWORD flags) PURE;
++    STDMETHOD(GetDeviceStatus)(REFGUID instance) PURE;
++    STDMETHOD(RunControlPanel)(HWND owner, DWORD flags) PURE;
++    STDMETHOD(Initialize)(HINSTANCE instance, DWORD version) PURE;
++    STDMETHOD(FindDevice)(REFGUID guid, LPCSTR name, LPGUID instance) PURE;
++    STDMETHOD(EnumDevicesBySemantics)(
++        LPCSTR user, void* action_format, void* callback, LPVOID context, DWORD flags) PURE;
++    STDMETHOD(ConfigureDevices)(void* callback, void* parameters, DWORD flags, LPVOID data) PURE;
++};
++
++extern "C" const GUID IID_IDirectInput8A;
++// Original DIMOUSESTATE2 format: three axes and eight buttons.
++extern "C" const DIDATAFORMAT c_dfDIMouse2;
++extern "C" HRESULT WINAPI DirectInput8Create(
++    HINSTANCE instance, DWORD version, REFIID interface_id, LPVOID* output, LPUNKNOWN outer);
++
++#endif
+diff --git a/src/startup_exit_game.h b/src/startup_exit_game.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..341109b05064c9475adb9cadad207d505561bc37
+--- /dev/null
++++ b/src/startup_exit_game.h
+@@ -0,0 +1,27 @@
++#ifndef STARTUP_EXIT_GAME_H
++#define STARTUP_EXIT_GAME_H
++
++#include "startup_controller.h"
++
++// Actual 140-byte x86 "ExitGame" controller at Game+0x1c. Shared cells are
++// folded identical bodies; each slot remains this class's own override.
++// VTABLE: BEACHLIFE 0x004f4d54
++struct ExitGameController : ControllerState
++{
++    unsigned char unknown_88[4];
++
++    // Actual 0x004e8230, RET4: Game passes "ExitGame".
++    explicit ExitGameController(const char* name);
++    virtual ~ExitGameController();                         // 0x004e8250, deleting wrapper, RET4.
++    virtual int Update();                                  // 0x004e8290, RET0.
++    virtual void RenderBeforeScreens();                    // 0x004d3890, RET0.
++    virtual void RenderAfterScreens();                     // 0x00437d10, RET0.
++    virtual void Enter();                                  // 0x004e8300, RET0.
++    virtual void Exit();                                   // 0x004e8f30, RET0.
++    virtual const char* ScriptPath();                      // 0x004e8370, RET0.
++    virtual void ControllerSlot1c();                       // 0x00437d10, RET0.
++    virtual void ScreenSizeChanged(int width, int height); // 0x004e8fa0, RET8.
++    virtual void ControllerSlot24();                       // 0x00437d10, RET0.
++};
++
++#endif
+diff --git a/src/startup_exit_game_constructor.cpp b/src/startup_exit_game_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0cbfe8b2627b0f5a920bba4c4af0704851f39994
+--- /dev/null
++++ b/src/startup_exit_game_constructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_exit_game.h"
++
++// FUNCTION: BEACHLIFE 0x004e8230
++ExitGameController::ExitGameController(const char* name)
++    : ControllerState(name)
++{
++}
+diff --git a/src/startup_game_constructor.cpp b/src/startup_game_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..148fab1438da7db119d957e8a3f9e67ed24c77cc
+--- /dev/null
++++ b/src/startup_game_constructor.cpp
+@@ -0,0 +1,167 @@
++#include "startup_screen_manager.h"
++#include "startup_game_constructor_dependencies.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_text.h"
++#include "startup_movie.h"
++#include "startup_screen_renderer.h"
++#include "startup_debug_font.h"
++#include "startup_input_state.h"
++#include "startup_input_motion.h"
++#include "startup_frame_clock.h"
++#include "startup_timer.h"
++#include "startup_screen_dialog_resource.h"
++#include "window_audio.h"
++#include "startup_game_update_pair.h"
++#include "startup_main_menu.h"
++#include "startup_intro.h"
++#include "startup_exit_game.h"
++#include "startup_reset_game.h"
++#include "startup_load_game.h"
++#include "startup_game_won.h"
++#include "startup_config_owner.h"
++#include "copy_trivial.h"
++
++#include <io.h>
++#include <new>
++#include <stdio.h>
++#include <windows.h>
++
++// The original reuses this 280-byte automatic storage first for the movie
++// pathname and later for the MSVCRT find record. Character access changes only
++// its object representation; no find-record member is read before _findfirst.
++typedef char GameConstructorFindRecordSize[(sizeof(_finddata_t) == 280) ? 1 : -1];
++
++// FUNCTION: BEACHLIFE 0x004e2530
++ScreenRequestGamePrefix::ScreenRequestGamePrefix(void* instance, void* window)
++    : ScreenGameRegistration(this)
++{
++    _finddata_t file_information;
++
++    inactive_c5 = 0;
++    controller_selection.instance = instance;
++    controller_selection.window = window;
++    reload_screen = 0;
++    word_b4 = -1;
++    save_info_enabled = 0;
++    byte_a4 = 0;
++    selected_save = 0;
++
++    scenario_names.end = static_cast<unsigned short**>(
++        CopyTrivial(scenario_names.end, scenario_names.end, scenario_names.begin));
++    saves.end = static_cast<GameSaveRecord**>(CopyTrivial(saves.end, saves.end, saves.begin));
++
++    placement = new ScreenPlacementStore;
++    switch (placement->menu_script_variant_3c)
++    {
++    case 0:
++        text = new ScreenTextLookup("data/text_uk.uni");
++        break;
++    case 1:
++        text = new ScreenTextLookup("data/text_french.uni");
++        break;
++    case 2:
++        text = new ScreenTextLookup("data/text_italian.uni");
++        break;
++    case 3:
++        text = new ScreenTextLookup("data/text_german.uni");
++        break;
++    case 4:
++        text = new ScreenTextLookup("data/text_spanish.uni");
++        break;
++    case 5:
++        text = new ScreenTextLookup("data/text_polish.uni");
++        break;
++    default:
++        text = new ScreenTextLookup("data/text_uk.uni");
++        break;
++    }
++
++    SetFatalWindow(window);
++    bool play_movie;
++    startup_config_owner->GetBool(&play_movie, "bPLAY_MOVIE");
++    if (play_movie)
++    {
++        while (ShowCursor(FALSE) >= 0)
++        {
++        }
++
++        char* movie_path = reinterpret_cast<char*>(&file_information);
++        sprintf(movie_path, "%s%s", startup_movie_directory, startup_movie_filename);
++        StartupMovie* movie = new StartupMovie(controller_selection.window, 0, 0, 640, 480, 0, 0);
++        movie->Play(movie_path);
++        if (movie)
++        {
++            movie->~StartupMovie();
++            ::operator delete(movie);
++        }
++
++        while (ShowCursor(TRUE) < 0)
++        {
++        }
++    }
++
++    // Game's window is Play's Video.
++    renderer = new ScreenRequestRenderer(*static_cast<beachlife::platform::Video*>(window), 800, 600, 0);
++    if (!renderer->initialized_168)
++        ShowFatalWindowMessage(controller_selection.window, screen_text_lookup->LookupText("ERROR_DIRECTX"));
++
++    const char* font_filename;
++    const char* font_name;
++    int font_size;
++    startup_config_owner->GetString(&font_filename, "sDEBUGFONT_FILENAME");
++    startup_config_owner->GetString(&font_name, "sDEBUGFONT_NAME");
++    startup_config_owner->GetInteger(&font_size, "iDEBUGFONT_SIZE");
++    if (*font_filename != 'X')
++        AddFontResourceA(font_filename);
++    debug_font = new DebugFont(font_name, static_cast<unsigned int>(font_size), 0);
++    if (*font_filename != 'X')
++        RemoveFontResourceA(font_filename);
++
++    input = new InputState(static_cast<int>(screen_request_renderer->width),
++        static_cast<int>(screen_request_renderer->height),
++        renderer->software_mode);
++    if (!input->Initialize(instance, window))
++        ShowFatalWindowMessage(controller_selection.window, screen_text_lookup->LookupText("ERROR_DIRECTX"));
++    if (!placement->byte_38)
++        startup_input_state->SetSystemCursor(0);
++
++    input_motion = new InputMotionState("data/cursor.tga", window);
++    clock = new FrameClock(static_cast<int>(GetTickCount()));
++    profiler = new StartupProfiler;
++    resources = new ScreenDialogResourceLookup;
++    word_60 = 0;
++
++    bool sound_enabled;
++    startup_config_owner->GetBool(&sound_enabled, "bSOUND_ENABLED");
++    audio = new WindowAudioState(static_cast<unsigned char>(sound_enabled), placement->provider_name_10, startup_sound_bank_name);
++    audio->SetStreamVolume(placement->sound_volume_08);
++    audio->SetEffectsVolume(placement->music_volume_0c);
++    update_pair = new GameUpdatePair(static_cast<unsigned char>(sound_enabled));
++    screens = new ScreenManager;
++
++    controller_selection.first_controller = new WorldTestController("WorldTest");
++    controller_selection.controllers[0] = new MainMenuController("MainMenu");
++    controller_selection.controllers[1] = new IntroController("Intro");
++    controller_selection.controllers[2] = new ExitGameController("ExitGame");
++    controller_selection.controllers[3] = new ResetGameController("ResetGame");
++    controller_selection.controllers[4] = new LoadGameController("LoadGame");
++    controller_selection.controllers[5] = new GameWonController("GameWon");
++
++    LoadScenarioNames();
++    LoadScenarioProgress();
++    controller_selection.active = controller_selection.controllers[1];
++    controller_selection.pending = controller_selection.controllers[1];
++    screen_request_renderer->SetUnscaledClip(0);
++
++    long find_handle = _findfirst("photos", &file_information);
++    if (find_handle == -1)
++        CreateDirectoryA("photos", 0);
++    _findclose(find_handle);
++    find_handle = _findfirst("SaveGames", &file_information);
++    if (find_handle == -1)
++        CreateDirectoryA("SaveGames", 0);
++    _findclose(find_handle);
++
++    window_deactivation_enabled = 1;
++    controller_selection.active->Enter();
++}
+diff --git a/src/startup_game_constructor_dependencies.h b/src/startup_game_constructor_dependencies.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..4011d9b9dfe102edc59a6ecb21b044f4d705bc11
+--- /dev/null
++++ b/src/startup_game_constructor_dependencies.h
+@@ -0,0 +1,11 @@
++#ifndef STARTUP_GAME_CONSTRUCTOR_DEPENDENCIES_H
++#define STARTUP_GAME_CONSTRUCTOR_DEPENDENCIES_H
++
++#include "startup_window_fatal.h"
++
++extern const char* startup_movie_directory; // 0x0058634c.
++extern const char* startup_movie_filename;  // 0x00586350.
++extern const char* startup_sound_bank_name; // 0x00586354.
++extern unsigned char window_deactivation_enabled;
++
++#endif
+diff --git a/src/startup_game_constructor_globals.cpp b/src/startup_game_constructor_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e57d7cf4b605cb48ddf3fbf617deac337f272839
+--- /dev/null
++++ b/src/startup_game_constructor_globals.cpp
+@@ -0,0 +1,8 @@
++#include "startup_game_constructor_dependencies.h"
++
++// GLOBAL: BEACHLIFE 0x0058634c
++const char* startup_movie_directory = "data/movies/";
++// GLOBAL: BEACHLIFE 0x00586350
++const char* startup_movie_filename = "eidosmovie.mpg";
++// GLOBAL: BEACHLIFE 0x00586354
++const char* startup_sound_bank_name = "blsnd";
+diff --git a/src/startup_game_destructor.cpp b/src/startup_game_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..eee295125e3a4aefa9731f95c04cd22e35465754
+--- /dev/null
++++ b/src/startup_game_destructor.cpp
+@@ -0,0 +1,149 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_text.h"
++#include "startup_screen_renderer.h"
++#include "startup_debug_font.h"
++#include "startup_input_state.h"
++#include "startup_input_motion.h"
++#include "startup_frame_clock.h"
++#include "startup_timer.h"
++#include "startup_screen_dialog_resource.h"
++#include "window_audio.h"
++#include "startup_game_update_pair.h"
++#include "copy_trivial.h"
++
++#include <new>
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004e2e00
++ScreenRequestGamePrefix::~ScreenRequestGamePrefix() noexcept(false)
++{
++    FILE* progress = fopen(startup_game_state_path, "wb");
++    if (progress)
++    {
++        fwrite(words_70, 48, 1, progress);
++        fclose(progress);
++    }
++
++    // Each direct ordinary destructor is followed by a separate scalar release.
++    // A throwing destructor therefore does not release its captured allocation.
++    ScreenPlacementStore* old_placement = placement;
++    if (old_placement)
++    {
++        old_placement->~ScreenPlacementStore();
++        ::operator delete(old_placement);
++    }
++
++    ScreenTextLookup* old_text = text;
++    if (old_text)
++    {
++        old_text->~ScreenTextLookup();
++        ::operator delete(old_text);
++    }
++
++    // These seven calls instead use the real virtual scalar-deleting slot.
++    // Each member is read after the preceding destruction has completed.
++    delete controller_selection.first_controller;
++    delete controller_selection.controllers[0];
++    delete controller_selection.controllers[1];
++    delete controller_selection.controllers[2];
++    delete controller_selection.controllers[3];
++    delete controller_selection.controllers[4];
++    delete controller_selection.controllers[5];
++
++    ScreenManager* old_screens = screens;
++    if (old_screens)
++    {
++        old_screens->~ScreenManager();
++        ::operator delete(old_screens);
++    }
++
++    WindowAudioState* old_audio = audio;
++    if (old_audio)
++    {
++        old_audio->~WindowAudioState();
++        ::operator delete(old_audio);
++    }
++
++    GameUpdatePair* old_update_pair = update_pair;
++    if (old_update_pair)
++    {
++        old_update_pair->~GameUpdatePair();
++        ::operator delete(old_update_pair);
++    }
++
++    DebugFont* old_debug_font = debug_font;
++    if (old_debug_font)
++    {
++        old_debug_font->~DebugFont();
++        ::operator delete(old_debug_font);
++    }
++
++    InputMotionState* old_input_motion = input_motion;
++    if (old_input_motion)
++    {
++        old_input_motion->~InputMotionState();
++        ::operator delete(old_input_motion);
++    }
++
++    StartupProfiler* old_profiler = profiler;
++    if (old_profiler)
++    {
++        old_profiler->~StartupProfiler();
++        ::operator delete(old_profiler);
++    }
++
++    FrameClock* old_clock = clock;
++    if (old_clock)
++    {
++        old_clock->~FrameClock();
++        ::operator delete(old_clock);
++    }
++
++    InputState* old_input = input;
++    if (old_input)
++    {
++        old_input->~InputState();
++        ::operator delete(old_input);
++    }
++
++    ScreenRequestRenderer* old_renderer = renderer;
++    if (old_renderer)
++    {
++        old_renderer->~ScreenRequestRenderer();
++        ::operator delete(old_renderer);
++    }
++
++    ScreenDialogResourceLookup* old_resources = resources;
++    if (old_resources)
++    {
++        old_resources->~ScreenDialogResourceLookup();
++        ::operator delete(old_resources);
++    }
++
++    unsigned int index = 0;
++    if (scenario_names.end - scenario_names.begin != 0)
++    {
++        do
++        {
++            ::operator delete(scenario_names.begin[index]);
++            ++index;
++        } while (index < static_cast<unsigned int>(scenario_names.end - scenario_names.begin));
++    }
++    scenario_names.end = static_cast<unsigned short**>(
++        CopyTrivial(scenario_names.end, scenario_names.end, scenario_names.begin));
++
++    GameSaveRecord** record = saves.begin;
++    while (record != saves.end)
++    {
++        GameSaveRecord* saved = *record;
++        if (saved)
++            ::operator delete(saved);
++        ++record;
++    }
++    saves.Erase(saves.begin, saves.end);
++    save_info_enabled = 0;
++
++    // Genuine members then release saves and scenario backing storage in that
++    // order; the first registration base unconditionally clears the Game slot.
++}
+diff --git a/src/startup_game_file.h b/src/startup_game_file.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..4505b40a2f192bc535afd5be5820dd3d16f157a9
+--- /dev/null
++++ b/src/startup_game_file.h
+@@ -0,0 +1,103 @@
++#ifndef STARTUP_GAME_FILE_H
++#define STARTUP_GAME_FILE_H
++
++#include <stdio.h>
++
++// Actual abstract base: original vptr +00, normalized mode byte +04 and
++// untouched bytes +05..07. Constructor 0x0049ef60 and ordinary destructor
++// 0x0049efa0 remain separate source dependencies. No substitute body is supplied.
++// VTABLE: BEACHLIFE 0x004f42e4
++struct GameFileBase
++{
++    explicit GameFileBase(int mode);
++    virtual ~GameFileBase();
++    virtual void Unknown04() = 0;
++    virtual void Unknown08(unsigned int unused, unsigned short value) = 0;
++    virtual void Unknown0c(unsigned int unused, unsigned int value) = 0;
++    virtual void Unknown10(unsigned int unused, const unsigned int* values, int count) = 0;
++    virtual void Unknown14(unsigned int unused, const unsigned char* values, int count) = 0;
++    virtual void Unknown18(unsigned int unused, unsigned char value) = 0;
++    virtual void Unknown1c(unsigned int unused, const unsigned short* text) = 0;
++    virtual void Unknown20(unsigned int unused, const unsigned int* values, int count) = 0;
++    virtual void Unknown24(unsigned int unused, unsigned int value) = 0;
++    virtual void Unknown28(unsigned int unused, unsigned int value) = 0;
++    virtual void Unknown2c(unsigned int unused, unsigned short value) = 0;
++    virtual void Unknown30(unsigned int unused, unsigned int value) = 0;
++    virtual void Unknown34(unsigned int unused, unsigned char value) = 0;
++    virtual void Unknown38(unsigned int unused, const char* text) = 0;
++    virtual void Unknown3c(const char* text) = 0;
++    virtual void Unknown40() = 0;
++    virtual void ReadString(char* buffer, int capacity) = 0;
++    virtual void Unknown48(unsigned short* value) = 0;
++    virtual void Unknown4c(unsigned int* value) = 0;
++    virtual void Unknown50(unsigned int* values, int count) = 0;
++    virtual void Unknown54(unsigned char* values, int count) = 0;
++    virtual void Unknown58(unsigned char* value) = 0;
++    virtual void Unknown5c(unsigned short* text, int capacity) = 0;
++    virtual void Unknown60(unsigned int* values, int count) = 0;
++    virtual void Unknown64(unsigned short* value) = 0;
++    virtual void Unknown68(unsigned int* value) = 0;
++    virtual void ReadInt(int* value) = 0;
++    virtual void ReadText(char* buffer, int capacity) = 0;
++    virtual void ReadFloat(float* value) = 0;
++    virtual void ReadByte(unsigned char* value) = 0;
++
++    unsigned char write_mode;
++    unsigned char unknown_05[3];
++};
++
++// Original 12-byte derived owner. Unnamed virtual declarations describe only
++// observed argument widths/storage; their names, signedness and result contracts
++// are not recovered APIs. No missing slot is inherited from a different target.
++// VTABLE: BEACHLIFE 0x004f41d0
++struct GameFileReader : GameFileBase
++{
++    GameFileReader(int base, const char* path);
++    virtual ~GameFileReader(); // Ordinary 0x0049e340; deleting wrapper 0x0049e320.
++    virtual void Unknown04();  // Shared physical RET0 at 0x004d3890; no body here.
++    virtual void Unknown08(unsigned int unused, unsigned short value);
++    virtual void Unknown0c(unsigned int unused, unsigned int value);
++    virtual void Unknown10(unsigned int unused, const unsigned int* values, int count);
++    virtual void Unknown14(unsigned int unused, const unsigned char* values, int count);
++    virtual void Unknown18(unsigned int unused, unsigned char value);
++    virtual void Unknown1c(unsigned int unused, const unsigned short* text);
++    virtual void Unknown20(unsigned int unused, const unsigned int* values, int count);
++    virtual void Unknown24(unsigned int unused, unsigned int value);
++    virtual void Unknown28(unsigned int unused, unsigned int value);
++    virtual void Unknown2c(unsigned int unused, unsigned short value);
++    virtual void Unknown30(unsigned int unused, unsigned int value);
++    virtual void Unknown34(unsigned int unused, unsigned char value);
++    virtual void Unknown38(unsigned int unused, const char* text);
++    virtual void Unknown3c(const char* text);
++    virtual void Unknown40(); // Shared physical RET0 at 0x004d3890; no body here.
++    virtual void ReadString(char* buffer, int capacity);
++    virtual void Unknown48(unsigned short* value);
++    virtual void Unknown4c(unsigned int* value);
++    virtual void Unknown50(unsigned int* values, int count);
++    virtual void Unknown54(unsigned char* values, int count);
++    virtual void Unknown58(unsigned char* value);
++    virtual void Unknown5c(unsigned short* text, int capacity);
++    virtual void Unknown60(unsigned int* values, int count);
++    virtual void Unknown64(unsigned short* value);
++    virtual void Unknown68(unsigned int* value);
++    virtual void ReadInt(int* value);
++    virtual void ReadText(char* buffer, int capacity);
++    virtual void ReadFloat(float* value);
++    virtual void ReadByte(unsigned char* value);
++
++    FILE* file_08;
++};
++
++// Existing source 0x004ea170: formats the message and exits.
++void StartupFatal(const char* format, ...);
++
++// Original initialized data used by the save loader.
++extern const char* startup_save_signature; // 0x00586330 -> "BeachLife Save".
++extern const char* startup_save_directory; // 0x00586334 -> "savegames/".
++extern const float startup_save_version;   // 1.6, 0x004f4d40.
++
++// Actual writable pointer 0x0057d580 -> "Binary Serial Stream" at 0x0057d584.
++// Separate initialized-data owner is still required; this is not a new constant.
++extern const char* game_file_stream_name;
++
++#endif
+diff --git a/src/startup_game_file_base_constructor.cpp b/src/startup_game_file_base_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..15b8a15f176c5d4a0710d50542bc1b32ee531d6b
+--- /dev/null
++++ b/src/startup_game_file_base_constructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x0049ef60
++GameFileBase::GameFileBase(int mode)
++    : write_mode(mode ? 1 : 0)
++{
++}
+diff --git a/src/startup_game_file_base_destructor.cpp b/src/startup_game_file_base_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..33aa8de17640223857f17cb3e3b31e33f84ef134
+--- /dev/null
++++ b/src/startup_game_file_base_destructor.cpp
+@@ -0,0 +1,4 @@
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x0049efa0
++GameFileBase::~GameFileBase() {}
+diff --git a/src/startup_game_file_constructor.cpp b/src/startup_game_file_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b89dcc6e1ab9e85da9b4bac6a8a7fdc385bfd6c8
+--- /dev/null
++++ b/src/startup_game_file_constructor.cpp
+@@ -0,0 +1,41 @@
++#include "startup_game_file.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0049e1e0
++GameFileReader::GameFileReader(int base, const char* path)
++    : GameFileBase(base)
++{
++    file_08 = fopen(path, write_mode ? "wb" : "rb");
++    if (!write_mode)
++    {
++        unsigned char tag;
++        int length;
++        char header[128];
++        char* output = header;
++        fread(&tag, 1, 1, file_08);
++        fread(&length, 4, 1, file_08);
++        // The original inlined reader retains this test of its stack buffer.
++        // It does not clamp the encoded length to that buffer's capacity.
++        if (output)
++        {
++            fgets(output, length + 1, file_08);
++        }
++        else
++        {
++            for (int i = 0; i < length; ++i)
++            {
++                fgetc(file_08);
++            }
++        }
++    }
++    else
++    {
++        const char* header = game_file_stream_name;
++        unsigned char tag = 0;
++        fwrite(&tag, 1, 1, file_08);
++        int length = static_cast<int>(strlen(header));
++        fwrite(&length, 4, 1, file_08);
++        fwrite(header, 1, length, file_08);
++    }
++}
+diff --git a/src/startup_game_file_destructor.cpp b/src/startup_game_file_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..041949b494cb33be7fbb877275890fc68c006ad6
+--- /dev/null
++++ b/src/startup_game_file_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x0049e340
++GameFileReader::~GameFileReader()
++{
++    fclose(file_08);
++}
+diff --git a/src/startup_game_file_globals.cpp b/src/startup_game_file_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..492fd77c950d65e85ef9e67609c72e74329844aa
+--- /dev/null
++++ b/src/startup_game_file_globals.cpp
+@@ -0,0 +1,10 @@
++#include "startup_game_file.h"
++
++// GLOBAL: BEACHLIFE 0x0057d580
++const char* game_file_stream_name = "Binary Serial Stream";
++// GLOBAL: BEACHLIFE 0x00586330
++const char* startup_save_signature = "BeachLife Save";
++// GLOBAL: BEACHLIFE 0x00586334
++const char* startup_save_directory = "savegames/";
++// GLOBAL: BEACHLIFE 0x004f4d40
++const float startup_save_version = 1.6f;
+diff --git a/src/startup_game_file_read_byte.cpp b/src/startup_game_file_read_byte.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc96b6455ab5e758da5aa2f91beb4083781ae4f0
+--- /dev/null
++++ b/src/startup_game_file_read_byte.cpp
+@@ -0,0 +1,9 @@
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x0049e9b0
++void GameFileReader::ReadByte(unsigned char* value)
++{
++    unsigned char tag;
++    fread(&tag, 1, 1, file_08);
++    fread(value, 1, 1, file_08);
++}
+diff --git a/src/startup_game_file_read_string.cpp b/src/startup_game_file_read_string.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..91a9ed61847eb02101695fa890952011b0f29892
+--- /dev/null
++++ b/src/startup_game_file_read_string.cpp
+@@ -0,0 +1,21 @@
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x0049e830
++void GameFileReader::ReadString(char* buffer, int)
++{
++    unsigned char tag;
++    int length;
++    fread(&tag, 1, 1, file_08);
++    fread(&length, 4, 1, file_08);
++    if (buffer)
++    {
++        fgets(buffer, length + 1, file_08);
++    }
++    else
++    {
++        for (int i = 0; i < length; ++i)
++        {
++            fgetc(file_08);
++        }
++    }
++}
+diff --git a/src/startup_game_file_read_text.cpp b/src/startup_game_file_read_text.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..30c205bd5ce35cea6184e9bdbf068fd448760a64
+--- /dev/null
++++ b/src/startup_game_file_read_text.cpp
+@@ -0,0 +1,18 @@
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x0049e8b0
++void GameFileReader::ReadText(char* buffer, int)
++{
++    unsigned char tag;
++    int length;
++    fread(&tag, 1, 1, file_08);
++    fread(&length, 4, 1, file_08);
++    if (length)
++    {
++        fgets(buffer, length + 1, file_08);
++    }
++    else
++    {
++        buffer[0] = 0;
++    }
++}
+diff --git a/src/startup_game_file_read_word.cpp b/src/startup_game_file_read_word.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..107e1639616a2b0e7bade6e6a843d069083ea486
+--- /dev/null
++++ b/src/startup_game_file_read_word.cpp
+@@ -0,0 +1,17 @@
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x0049eaf0
++void GameFileReader::ReadInt(int* value)
++{
++    unsigned char tag;
++    fread(&tag, 1, 1, file_08);
++    fread(value, 4, 1, file_08);
++}
++
++// Typed alias of the same physical 0x0049eaf0 body (table slot +74).
++void GameFileReader::ReadFloat(float* value)
++{
++    unsigned char tag;
++    fread(&tag, 1, 1, file_08);
++    fread(value, 4, 1, file_08);
++}
+diff --git a/src/startup_game_load_save.cpp b/src/startup_game_load_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..440b1e7910c3a6be31cb822464f167f72ae8ac11
+--- /dev/null
++++ b/src/startup_game_load_save.cpp
+@@ -0,0 +1,70 @@
++#include <float.h>
++#include <math.h>
++#include <stdio.h>
++#include <string.h>
++
++#include "startup_controller_selection.h"
++#include "startup_game_file.h"
++#include "startup_game_save_record.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004e44e0
++void ScreenRequestGamePrefix::ProcessWordB4()
++{
++    // Load the save selected at word_b4; the listed records are released first.
++    unsigned int number = saves.begin[word_b4]->word_00;
++    for (GameSaveRecord** record = saves.begin; record != saves.end; ++record)
++    {
++        if (*record)
++            delete *record;
++    }
++    saves.Erase(saves.begin, saves.end);
++    save_info_enabled = 0;
++    word_b4 = -1;
++
++    char path[128];
++    sprintf(path, "%s/save%d.dat", startup_save_directory, number);
++    GameFileReader* file = new GameFileReader(0, path);
++
++    char text[128];
++    file->ReadString(text, 128);
++    if (strcmp(text, startup_save_signature) != 0)
++        StartupFatal("Attempted to load incorrect file");
++
++    float version;
++    file->ReadFloat(&version);
++    if (fabs(version - startup_save_version) > FLT_EPSILON)
++        StartupFatal("Save file has incorrect version number");
++
++    int header;
++    file->ReadInt(&header);
++    controller_selection.active->Exit();
++
++    int scenario;
++    int value;
++    float time;
++    file->ReadInt(&scenario);
++    file->ReadInt(&value);
++    file->ReadFloat(&time);
++    file->ReadFloat(&time);
++    file->ReadInt(&value);
++    file->ReadText(text, 64);
++    unsigned char flag;
++    file->ReadByte(&flag);
++    byte_a4 = flag;
++    LoadScenarioProgress();
++
++    controller_selection.active = controller_selection.first_controller;
++    scenario_a0 = scenario;
++    controller_selection.pending = controller_selection.first_controller;
++    controller_selection.first_controller->byte_9c = 1;
++    controller_selection.active->Enter();
++    screen_request_renderer->SetWord60(0);
++    window_deactivation_state->LoadState(file);
++    controller_selection.active->ControllerSlot24();
++    screen_manager->ApplyScreenLayout();
++    screen_manager->ApplyLoadedScenario();
++    delete file;
++}
+diff --git a/src/startup_game_menu_return_clear.cpp b/src/startup_game_menu_return_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c207e9c820c2c631f84cf96f3fba543e13500435
+--- /dev/null
++++ b/src/startup_game_menu_return_clear.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004e3be0
++void ScreenRequestGamePrefix::ClearMenuReturnFlag()
++{
++    flag_c4 = 0;
++}
+diff --git a/src/startup_game_menu_return_read.cpp b/src/startup_game_menu_return_read.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..afec25d828fc9ee47cd07b402a2008d22b5c5daf
+--- /dev/null
++++ b/src/startup_game_menu_return_read.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004e3bd0
++unsigned char ScreenRequestGamePrefix::ReadMenuReturnFlag()
++{
++    return flag_c4;
++}
+diff --git a/src/startup_game_object_sounds.cpp b/src/startup_game_object_sounds.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4b8677775f86755dc2ea1b67ffa915ba78f84dd
+--- /dev/null
++++ b/src/startup_game_object_sounds.cpp
+@@ -0,0 +1,79 @@
++#include <math.h>
++
++#include "startup_game_update_pair.h"
++#include "startup_variable_state.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++
++// Positional-sound tuning words shared by both scheduler passes (0x004f4d24..).
++extern const float game_sound_start_fade;  // 0.1, 0x004f4d24.
++extern const float game_sound_level_fade;  // 0.1, 0x004f4d28.
++extern const float game_sound_stop_fade;   // 0.2, 0x004f4d2c.
++extern const float game_sound_music_level; // 0.05, 0x004f4d34.
++
++// FUNCTION: BEACHLIFE 0x004d2990
++void GameUpdatePair::UpdateObjectSounds(float)
++{
++    if (!enabled_00)
++    {
++        return;
++    }
++
++    float near_distance = window_audio_state->NearDistance();
++    float far_distance = window_audio_state->FarDistance();
++    for (GameSoundNode* node = object_sounds_08.head->next; node != object_sounds_08.head;
++        node = node->next)
++    {
++        GameObjectSound* sound = static_cast<GameObjectSound*>(node->sound);
++        VariableWorldObject* object = variable_world->FindObject(sound->object_id);
++        if (!object)
++        {
++            continue;
++        }
++
++        WindowAudioVector listener = window_audio_state->position_e0;
++        float dx = listener.x - object->X();
++        float dy = listener.y - object->Y();
++        float vertical = dy - object->Unknown44();
++        float distance = static_cast<float>(sqrt(vertical * vertical + dx * dx));
++        if (sound->playing_28)
++        {
++            bool out_of_range = distance > far_distance;
++            if ((!sound->ignores_music_29 && window_audio_state->IsStreamPlaying() &&
++                    window_audio_state->stream_volume_10 > game_sound_music_level) ||
++                out_of_range)
++            {
++                window_audio_state->StopSound(sound->voice_2c, game_sound_stop_fade);
++                sound->playing_28 = 0;
++            }
++            else
++            {
++                float level =
++                    distance > far_distance ? 0.0f
++                    : distance < near_distance
++                        ? 1.0f
++                        : 1.0f - (distance - near_distance) / (far_distance - near_distance);
++                window_audio_state->FadeSoundLevel(
++                    sound->voice_2c, level * sound->volume_04, game_sound_level_fade);
++            }
++        }
++        else if (distance < far_distance)
++        {
++            if (sound->ignores_music_29 || !window_audio_state->IsStreamPlaying() ||
++                !(window_audio_state->stream_volume_10 > game_sound_music_level))
++            {
++                float level = distance < near_distance ? 1.0f
++                                                       : 1.0f - (distance - near_distance) /
++                                                                    (far_distance - near_distance);
++                float volume = level * sound->volume_04;
++                int voice = window_audio_state->PlaySoundAtLevel(
++                    sound->name_08, volume, 2, game_sound_start_fade);
++                sound->voice_2c = voice;
++                if (voice != -1)
++                {
++                    sound->playing_28 = 1;
++                }
++            }
++        }
++    }
++}
+diff --git a/src/startup_game_point_sounds.cpp b/src/startup_game_point_sounds.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d1abdb54856956478bd038a09335c9d9555a8d5c
+--- /dev/null
++++ b/src/startup_game_point_sounds.cpp
+@@ -0,0 +1,66 @@
++#include "startup_game_update_pair.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++
++// Retry window for a point sound that could not start, 0.25 (0x004f4d30).
++extern const float game_sound_retry_delay;
++
++// FUNCTION: BEACHLIFE 0x004d2bd0
++void GameUpdatePair::UpdatePointSounds(float delta)
++{
++    if (!enabled_00)
++    {
++        return;
++    }
++
++    float far_distance = window_audio_state->FarDistance();
++    float far_squared = far_distance * far_distance;
++    WindowAudioVector listener = window_audio_state->position_e0;
++    GameSoundIterator it;
++    it.node = point_sounds_04.head->next;
++    while (it.node != point_sounds_04.head)
++    {
++        GamePointSound* sound = static_cast<GamePointSound*>(it.node->sound);
++        float dx = listener.x - sound->position_20.x;
++        float dy = listener.y - sound->position_20.y;
++        bool expired = true;
++        if (!(dy * dy + dx * dx > far_squared))
++        {
++            int voice = sound->voice_34;
++            if (voice == -1 || window_audio_state->VoiceStatus(voice) < sound->limit_30)
++            {
++                if (window_audio_state->PlaySoundAtPosition(
++                        sound->name_00, sound->volume_2c, &sound->position_20, 1, voice) == -1)
++                {
++                    // Keep a sound that could not start until its retry delay ends.
++                    if (sound->retrying_38)
++                    {
++                        if ((sound->retry_delay_3c -= delta) > 0.0f)
++                        {
++                            expired = false;
++                        }
++                    }
++                    else
++                    {
++                        sound->retrying_38 = 1;
++                        sound->retry_delay_3c = game_sound_retry_delay;
++                        expired = false;
++                    }
++                }
++            }
++        }
++
++        if (expired)
++        {
++            if (sound)
++            {
++                delete sound;
++            }
++            point_sounds_04.Erase(it++);
++        }
++        else
++        {
++            it.node = it.node->next;
++        }
++    }
++}
+diff --git a/src/startup_game_refresh_save_records.cpp b/src/startup_game_refresh_save_records.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c9fafb0131bf9afccaecadb121830460424d9f2
+--- /dev/null
++++ b/src/startup_game_refresh_save_records.cpp
+@@ -0,0 +1,126 @@
++#include <windows.h>
++
++#include "startup_game_file.h"
++#include "startup_game_save_record.h"
++#include "startup_screen_manager.h"
++
++#include <algorithm>
++#include <float.h>
++#include <io.h>
++#include <math.h>
++#include <new>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++namespace
++{
++// The original expanded sort compares the +04 words unsigned, descending.
++struct SaveRecordNewer
++{
++    bool operator()(const GameSaveRecord* left, const GameSaveRecord* right) const
++    {
++        return static_cast<unsigned int>(left->time_04) > static_cast<unsigned int>(right->time_04);
++    }
++};
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x004e4740
++void ScreenRequestGamePrefix::RefreshSaveRecords()
++{
++    GameSaveRecord** current = saves.begin;
++    while (current != saves.end)
++    {
++        GameSaveRecord* record = *current;
++        if (record)
++        {
++            ::operator delete(record);
++        }
++        ++current;
++    }
++    saves.Erase(saves.begin, saves.end);
++    save_info_enabled = 0;
++
++    char pattern[128];
++    _finddata_t found;
++    sprintf(pattern, "%s/save*.dat", startup_save_directory);
++    long handle = _findfirst(pattern, &found);
++    long status = handle;
++    while (status != -1)
++    {
++        // These original branches do not advance enumeration.
++        if (strcmp(found.name, ".") == 0 || strcmp(found.name, "..") == 0)
++        {
++            continue;
++        }
++
++        int number = atoi(found.name + 4);
++        char path[128];
++        sprintf(path, "%s/%s", startup_save_directory, found.name);
++        FILE* probe = fopen(path, "rb");
++        if (probe)
++        {
++            fclose(probe);
++            // Only a failed construction releases the pending allocation.
++            // Later read/append failures do not acquire a cleanup guard.
++            GameFileReader* file = new GameFileReader(0, path);
++            char signature[128];
++            file->ReadString(signature, 128);
++            bool signature_matches = strcmp(signature, startup_save_signature) == 0;
++            float version;
++            file->ReadFloat(&version);
++            // A NaN version is unordered and is not rejected by the original.
++            // Widen before subtraction to retain its unrounded comparison near
++            // the exact binary32 version and epsilon boundary.
++            if (!(fabs(static_cast<double>(version) - startup_save_version) > FLT_EPSILON) &&
++                signature_matches)
++            {
++                GameSaveRecord* record = new GameSaveRecord;
++                record->word_00 = static_cast<unsigned int>(number);
++                int timestamp;
++                file->ReadInt(&timestamp);
++                record->time_04 = timestamp;
++                int scenario;
++                file->ReadInt(&scenario);
++                record->word_08 = static_cast<unsigned int>(scenario);
++                int value;
++                file->ReadInt(&value);
++                record->day_0c = value;
++                float time;
++                file->ReadFloat(&time);
++                record->time_10 = time;
++                file->ReadFloat(&time);
++                record->cash_14 = time;
++                file->ReadInt(&value);
++                record->guests_18 = value;
++                file->ReadText(record->name_1c, 64);
++                unsigned char ignored_flag;
++                file->ReadByte(&ignored_flag);
++
++                GameSaveRecord** position = saves.end;
++                if (position != saves.capacity.data)
++                {
++                    if (position)
++                    {
++                        ::new (position) GameSaveRecord*(record);
++                    }
++                    ++saves.end;
++                }
++                else
++                {
++                    saves.InsertOverflow(position, record, GameSaveRecordTrueType(), 1, true);
++                }
++            }
++            delete file;
++        }
++        status = _findnext(handle, &found);
++    }
++    _findclose(handle);
++
++    GameSaveRecord** last = saves.end;
++    GameSaveRecord** first = saves.begin;
++    if (first != last)
++    {
++        std::sort(first, last, SaveRecordNewer());
++    }
++}
+diff --git a/src/startup_game_registration_destructor.cpp b/src/startup_game_registration_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a4d3d81e88102e744713ebaf87ef02f151d10528
+--- /dev/null
++++ b/src/startup_game_registration_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004e5520
++ScreenGameRegistration::~ScreenGameRegistration()
++{
++    screen_request_game = 0;
++}
+diff --git a/src/startup_game_render.cpp b/src/startup_game_render.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fdcf32e653696fcfe4699bb22ea926195e714d7
+--- /dev/null
++++ b/src/startup_game_render.cpp
+@@ -0,0 +1,39 @@
++#include "startup_screen_manager.h"
++#include "startup_config_owner.h"
++#include "startup_screen_renderer.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004e3a50
++void ScreenRequestGamePrefix::Render()
++{
++    if (reload_screen)
++    {
++        const char* path = controller_selection.active->ScriptPath();
++        screens->LoadScreen(path);
++        screens->SelectScreen();
++        reload_screen = 0;
++    }
++
++    controller_selection.active->RenderBeforeScreens();
++    ScreenRequestRenderer* rectangle_renderer = screen_request_renderer;
++    RenderRectangle bounds = { 0, 0, static_cast<int>(rectangle_renderer->width), static_cast<int>(rectangle_renderer->height) };
++    rectangle_renderer->SetRectangle(bounds);
++    screens->RenderScreens();
++
++    bool night_day_enabled;
++    startup_config_owner->GetBool(&night_day_enabled, "bNIGHT_DAY_ENABLED");
++    if (night_day_enabled && window_deactivation_state)
++    {
++        float value = window_deactivation_state->render_value_160;
++        renderer->RenderNightDay(value);
++    }
++    else
++    {
++        renderer->RenderDefault();
++    }
++
++    renderer->RestoreSurfaces();
++    controller_selection.active->RenderAfterScreens();
++    screens->RenderPointer();
++    renderer->Present();
++}
+diff --git a/src/startup_game_save_globals.cpp b/src/startup_game_save_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6120d4dfbb167d4abda925cf7428c4f44ff24fa3
+--- /dev/null
++++ b/src/startup_game_save_globals.cpp
+@@ -0,0 +1,11 @@
++#include "startup_game_save_record.h"
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x0058632c
++const char* scenario_directory = "data/Scenario/";
++// GLOBAL: BEACHLIFE 0x0058633c
++const char* game_load_list_box_name = "LoadListBox";
++// GLOBAL: BEACHLIFE 0x00586340
++const char* game_save_list_box_name = "SaveListBox";
++// GLOBAL: BEACHLIFE 0x00586344
++const char* game_load_info_box_name = "LoadInfoBox";
+diff --git a/src/startup_game_save_menu.cpp b/src/startup_game_save_menu.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..28f9fcfa63eaf5b39f101e81eff12eaa1111fd9c
+--- /dev/null
++++ b/src/startup_game_save_menu.cpp
+@@ -0,0 +1,150 @@
++#include <windows.h>
++
++// Retail wide formatting uses the MSVCRT 16-bit, size-less ABI.
++
++#include "startup_game_save_record.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++
++#include <math.h>
++#include <stdio.h>
++#include <time.h>
++
++// FUNCTION: BEACHLIFE 0x004e5100
++void ScreenRequestGamePrefix::UpdateBeforeInput()
++{
++    unsigned char enabled = save_info_enabled;
++    selected_save = 0;
++    if (enabled == 0)
++    {
++        return;
++    }
++
++    ScreenListBoxPrefix* info = screens->FindListBox(game_load_info_box_name);
++    ScreenListBoxPrefix* list = screens->FindListBox(game_load_list_box_name);
++    info->state_59 = 0;
++    info->ClearEntries();
++    if (list->selection.begin == list->selection.end)
++    {
++        return;
++    }
++
++    list->word_84 = 0;
++    GameSaveRecord* record = saves.begin[*list->selection.begin];
++    selected_save = record;
++    const unsigned short* text = screen_text_lookup->LookupText(record->name_1c);
++    info->AddEntry(0, 0, 350, 15, 2, 0, 0, text, 1);
++
++    float time = record->time_10;
++    double fraction =
++        (static_cast<double>(time) - static_cast<unsigned int>(floor(static_cast<double>(time)))) *
++        60.0;
++    int minutes = 0;
++    if (fraction >= 15.0)
++    {
++        minutes = 15;
++    }
++    if (fraction >= 30.0)
++    {
++        minutes = 30;
++    }
++    if (fraction >= 45.0)
++    {
++        minutes = 45;
++    }
++
++    int hours = static_cast<int>(floor(static_cast<double>(record->time_10)));
++    int day = record->day_0c + 1;
++    const unsigned short* format = screen_text_lookup->LookupText("LOADSAVE_DAYTIME_CONTENTS");
++    unsigned short buffer[128];
++    swprintf(buffer, format, day, hours, minutes);
++    info->AddEntry(1, 0, 350, 15, 2, 0, 0, buffer, 1);
++
++    double cash = record->cash_14;
++    format = screen_text_lookup->LookupText("LOADSAVE_CASH_CONTENTS");
++    swprintf(buffer, format, cash);
++    info->AddEntry(2, 0, 350, 15, 2, 0, 0, buffer, 1);
++
++    time_t timestamp = record->time_04;
++    struct tm* date = localtime(&timestamp);
++    int year = date->tm_year + 1900;
++    int month = date->tm_mon + 1;
++    int month_day = date->tm_mday;
++    int minute = date->tm_min;
++    int hour = date->tm_hour;
++    format = screen_text_lookup->LookupText("LOADSAVE_INFO_TIME_CONTENTS");
++    swprintf(buffer, format, hour, minute, month_day, month, year);
++    info->AddEntry(3, 0, 350, 15, 2, 0, 0, buffer, 1);
++
++    int guests = record->guests_18;
++    format = screen_text_lookup->LookupText("LOADSAVE_GUESTS_CONTENTS");
++    swprintf(buffer, format, guests);
++    info->AddEntry(4, 0, 350, 15, 2, 0, 0, buffer, 1);
++}
++
++#include "startup_game_save_record.h"
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004e4ed0
++void ScreenRequestGamePrefix::PopulateLoadGameMenu()
++{
++    const char* name = game_load_list_box_name;
++    ScreenListBoxPrefix* list = screens->FindListBox(name);
++    PopulateSaveList(list, 0, 1);
++    save_info_enabled = 1;
++}
++
++#include "startup_game_save_record.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++
++#include <stdio.h>
++#include <time.h>
++#include <wchar.h>
++
++// FUNCTION: BEACHLIFE 0x004e4f90
++void ScreenRequestGamePrefix::PopulateSaveList(
++    ScreenListBoxPrefix* list, unsigned int row_word, unsigned char clear)
++{
++    if (clear)
++    {
++        list->ClearEntries();
++    }
++    list->state_58 = 0;
++    selected_save = 0;
++
++    unsigned int count = static_cast<unsigned int>(saves.end - saves.begin);
++    for (unsigned int index = 0; index < count; ++index, ++row_word)
++    {
++        GameSaveRecord* record = saves.begin[index];
++        const unsigned short* name = screen_text_lookup->LookupText(record->name_1c);
++        list->AddEntry(static_cast<int>(row_word), 0, 300, 15, 2, 0, 0, name, 1);
++
++        // The original MSVCRT ABI uses 16-bit wchar_t and 32-bit time_t.
++        unsigned short text[128];
++        double cash = record->cash_14;
++        int day = record->day_0c + 1;
++        const unsigned short* info_format =
++            screen_text_lookup->LookupText("LOADSAVE_INFO_CONTENTS");
++        swprintf(text, info_format, day, cash);
++        list->AddEntry(static_cast<int>(row_word), 279, 106, 15, 2, 0, 0, text, 0);
++
++        time_t timestamp = record->time_04;
++        tm* local = localtime(&timestamp);
++        int year = local->tm_year + 1900;
++        int month = local->tm_mon + 1;
++        int date = local->tm_mday;
++        int minute = local->tm_min;
++        int hour = local->tm_hour;
++        const unsigned short* time_format =
++            screen_text_lookup->LookupText("LOADSAVE_TIME_CONTENTS");
++        swprintf(text, time_format, hour, minute, date, month, year);
++        list->AddEntry(static_cast<int>(row_word), 390, 115, 15, 2, 0, 0, text, 0);
++    }
++    if (count)
++    {
++        list->SelectRow(0, 1);
++    }
++}
+diff --git a/src/startup_game_save_record.h b/src/startup_game_save_record.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..ed1150fa03ae6fa9d34690a365dae41af60cf0b4
+--- /dev/null
++++ b/src/startup_game_save_record.h
+@@ -0,0 +1,23 @@
++#ifndef STARTUP_GAME_SAVE_RECORD_H
++#define STARTUP_GAME_SAVE_RECORD_H
++
++// Actual producer allocation is 0x60 bytes. ReadText receives the inline key
++// at +0x1c with a nominal 64-byte capacity; the reader uses its encoded length.
++struct GameSaveRecord
++{
++    unsigned int word_00;
++    int time_04;
++    unsigned int word_08;
++    int day_0c;
++    float time_10;
++    float cash_14;
++    int guests_18;
++    char name_1c[64];
++    unsigned char unknown_5c[4];
++};
++
++extern const char* game_load_info_box_name;
++extern const char* game_load_list_box_name;
++extern const char* game_save_list_box_name;
++
++#endif
+diff --git a/src/startup_game_save_record_range_erase.cpp b/src/startup_game_save_record_range_erase.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..268f976b842c76b7baba99e40cfc915df9a7de4a
+--- /dev/null
++++ b/src/startup_game_save_record_range_erase.cpp
+@@ -0,0 +1,21 @@
++#include "startup_screen_manager.h"
++
++#include <stddef.h>
++#include <string.h>
++
++// LIBRARY: BEACHLIFE 0x004e80d0
++GameSaveRecord** GameSaveRecordRange::Erase(GameSaveRecord** first, GameSaveRecord** last)
++{
++    GameSaveRecord** old_end = end;
++    if (old_end == last)
++    {
++        end = first;
++        return first;
++    }
++
++    ptrdiff_t suffix_count = old_end - last;
++    GameSaveRecord** copied =
++        static_cast<GameSaveRecord**>(memmove(first, last, suffix_count * sizeof(*first)));
++    end = copied + suffix_count;
++    return first;
++}
+diff --git a/src/startup_game_set_screen_size.cpp b/src/startup_game_set_screen_size.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b98a2281f8b49987fbc9838a10444b8dee0cd173
+--- /dev/null
++++ b/src/startup_game_set_screen_size.cpp
+@@ -0,0 +1,26 @@
++#include "startup_screen_manager.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_text.h"
++#include "startup_window_fatal.h"
++
++// FUNCTION: BEACHLIFE 0x004e41e0
++void ScreenRequestGamePrefix::SetScreenSize(int width, int height)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    if (renderer->width == static_cast<unsigned int>(width)
++        && renderer->height == static_cast<unsigned int>(height))
++    {
++        return;
++    }
++
++    if (!renderer->SetScreenSize(width, height))
++    {
++        const unsigned short* message = screen_text_lookup->LookupText("ERROR_DIRECTX");
++        ShowFatalWindowMessage(controller_selection.window, message);
++    }
++
++    startup_input_state->SetScreenSize(width, height);
++    controller_selection.active->ScreenSizeChanged(width, height);
++}
+diff --git a/src/startup_game_update_pair.cpp b/src/startup_game_update_pair.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..439f634b2d6f794bbef6959c87ab8f7cfe9d53bf
+--- /dev/null
++++ b/src/startup_game_update_pair.cpp
+@@ -0,0 +1,8 @@
++#include "startup_game_update_pair.h"
++
++// FUNCTION: BEACHLIFE 0x004d2760
++void GameUpdatePair::Update(float delta)
++{
++    UpdateObjectSounds(delta);
++    UpdatePointSounds(delta);
++}
+diff --git a/src/startup_game_variables.cpp b/src/startup_game_variables.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7c6052f00454cf71373525fe4d8ada440936286e
+--- /dev/null
++++ b/src/startup_game_variables.cpp
+@@ -0,0 +1,184 @@
++#include <windows.h>
++
++// Retail variable text uses the MSVCRT 16-bit, size-less ABI.
++
++#include "startup_game_save_record.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_placement.h"
++#include "window_activation.h"
++
++#include <stdlib.h>
++#include <string.h>
++#include <wchar.h>
++
++// The actual MSVCRT boundary writes 16-bit code units and has no size argument.
++// A native wchar32/format adapter requires separate qualification.
++typedef char GameReadTextWideWord[(sizeof(wchar_t) == 2) ? 1 : -1];
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004e30b0
++void ScreenRequestGamePrefix::ReadText(const char* key, unsigned short* output)
++{
++    wchar_t* text = reinterpret_cast<wchar_t*>(output);
++    if (strcmp(key, "GAME_NUDGE") == 0)
++    {
++        swprintf(text, L"%d", static_cast<int>(placement->flag_34));
++    }
++    else if (strcmp(key, "GAME_SEA") == 0)
++    {
++        swprintf(text, L"%d", static_cast<int>(placement->flag_35));
++    }
++    else if (strcmp(key, "GAME_LIGHTS") == 0)
++    {
++        swprintf(text, L"%d", static_cast<int>(placement->flag_36));
++    }
++    else if (strcmp(key, "GAME_KEYLINES") == 0)
++    {
++        swprintf(text, L"%d", static_cast<int>(placement->flag_37));
++    }
++    else if (strcmp(key, "STAFF_MAKEALL_STATE") == 0 || strcmp(key, "STAFF_DISMISS_STATE") == 0)
++    {
++        swprintf(text, L"%d", (screens->word_84 != -1) ? 1 : 0);
++    }
++    else if (strcmp(key, "LOADSAVE_LOAD_STATE") == 0 ||
++             strcmp(key, "LOADSAVE_LOADDELETE_STATE") == 0)
++    {
++        ScreenListBoxPrefix* list = screens->FindListBox(game_load_list_box_name);
++        bool enabled = saves.end != saves.begin;
++        if (list->selection.end - list->selection.begin != 1)
++        {
++            enabled = false;
++        }
++        swprintf(text, L"%d", enabled ? 1 : 0);
++    }
++    else if (strcmp(key, "LOADSAVE_SAVE_STATE") == 0)
++    {
++        ScreenListBoxPrefix* list = screens->FindListBox(game_save_list_box_name);
++        swprintf(text, L"%d", (list->selection.end - list->selection.begin == 1) ? 1 : 0);
++    }
++    else if (strcmp(key, "LOADSAVE_SAVEDELETE_STATE") == 0)
++    {
++        ScreenListBoxPrefix* list = screens->FindListBox(game_save_list_box_name);
++        bool enabled = saves.end != saves.begin;
++        if (list->selection.end - list->selection.begin != 1)
++        {
++            enabled = false;
++        }
++        if (list->selection.end != list->selection.begin)
++        {
++            list->word_84 = 0;
++            if (*list->selection.begin == 0)
++            {
++                swprintf(text, L"%d", 0);
++                return;
++            }
++        }
++        swprintf(text, L"%d", enabled ? 1 : 0);
++    }
++    else if (strcmp(key, "GAME_SCENARIO_SELECT") == 0)
++    {
++        swprintf(text, L"%d", static_cast<int>(scenario_a0));
++    }
++    else if (strncmp(key, "GAME_SCENARIO_SELECT_STATUS_", 28) == 0)
++    {
++        int index = atoi(key + 28);
++        unsigned char mode = byte_a4;
++        unsigned char flags = static_cast<unsigned char>(words_70[index]);
++        if (mode == 0)
++        {
++            swprintf(text, L"%d", (flags & 1) ? 1 : 0);
++        }
++        else
++        {
++            swprintf(text, L"%d", (flags & 0x0c) ? 1 : 0);
++        }
++    }
++    else if (strcmp(key, "GAME_GAME_SPEED") == 0)
++    {
++        swprintf(text, L"%d", static_cast<int>(window_deactivation_state->speed_index_174));
++    }
++    else if (strncmp(key, "GAME_GAME_SPEED_STATUS_", 23) == 0)
++    {
++        swprintf(text, L"%d", 1);
++    }
++    else if (strcmp(key, "PLAYLIST_MODE") == 0)
++    {
++        int mode = screen_manager->panel_13c->mode_10;
++        if (mode == 0)
++        {
++            swprintf(text, L"%d", 1);
++        }
++        else if (mode == 1)
++        {
++            swprintf(text, L"%d", 0);
++        }
++    }
++    else if (strncmp(key, "PLAYLIST_MODE_STATUS_", 21) == 0)
++    {
++        swprintf(text, L"%d", 1);
++    }
++    else
++    {
++        StartupFatal("Game::GetVariable - data keyword not recognised - %s", key);
++    }
++}
++
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++#include <string.h>
++
++void StartupFatal(const char* format, ...);
++
++// FUNCTION: BEACHLIFE 0x004e3640
++void ScreenRequestGamePrefix::WriteInteger(const char* key, int* value)
++{
++    if (strcmp(key, "GAME_NUDGE") == 0)
++    {
++        unsigned char enabled = *value != 0;
++        placement->flag_34 = enabled;
++    }
++    else if (strcmp(key, "GAME_SEA") == 0)
++    {
++        unsigned char enabled = *value != 0;
++        placement->flag_35 = enabled;
++        screen_request_renderer->SetSeaEnabled(enabled);
++    }
++    else if (strcmp(key, "GAME_LIGHTS") == 0)
++    {
++        unsigned char enabled = *value != 0;
++        placement->flag_36 = enabled;
++    }
++    else if (strcmp(key, "GAME_KEYLINES") == 0)
++    {
++        unsigned char enabled = *value != 0;
++        placement->flag_37 = enabled;
++        variable_world->SetKeylines(enabled);
++    }
++    else if (strcmp(key, "GAME_SCENARIO_SELECT") == 0)
++    {
++        scenario_a0 = static_cast<unsigned int>(*value);
++    }
++    else if (strcmp(key, "GAME_GAME_SPEED") == 0)
++    {
++        unsigned int index = static_cast<unsigned int>(*value);
++        WindowDeactivationState* state = window_deactivation_state;
++        state->SetGameSpeed(index);
++    }
++    else if (strcmp(key, "PLAYLIST_MODE") == 0)
++    {
++        unsigned int action = (*value == 0) ? 9 : 8;
++        screen_manager->panel_13c->HandleAction(action);
++    }
++    else
++    {
++        StartupFatal("Unknown set variable in Game");
++    }
++}
+diff --git a/src/startup_game_won.h b/src/startup_game_won.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..35f450a168413589dd6a2ee5ccbf36866de40d70
+--- /dev/null
++++ b/src/startup_game_won.h
+@@ -0,0 +1,102 @@
++#ifndef STARTUP_GAME_WON_H
++#define STARTUP_GAME_WON_H
++
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "startup_controller.h"
++#include "startup_list.h"
++
++#include <new>
++
++// Empty default-argument allocator of the GameWon list; its real (empty)
++// destructor is the folded 0x00437d10 named by the constructor's unwind map.
++struct GameWonListAllocator
++{
++    GameWonListAllocator() {}
++    ~GameWonListAllocator() {}
++};
++
++// Head holder of the GameWon list. The original stores head = 0 before the
++// unwind state that names this subobject (empty destructor 0x00437d10), so the
++// store belongs to this constructor.
++struct GameWonListBase
++{
++    CircularListNode* head;
++
++    explicit GameWonListBase(const GameWonListAllocator&)
++        : head(0)
++    {
++    }
++    ~GameWonListBase() {}
++};
++
++// Observed list member at +0x90: construction buys the self-linked sentinel
++// from the 16-byte pool bucket under the pool lock (same inline pool idiom as
++// the R581 mode-2 list; the original template identity is not inferred).
++struct GameWonList : GameWonListBase
++{
++    explicit GameWonList(const GameWonListAllocator& allocator = GameWonListAllocator())
++        : GameWonListBase(allocator)
++    {
++        PoolChunkLink* block;
++        {
++            AcquirePoolLock(&pool_lock_word);
++            PoolLockGuard guard;
++            block = pool_chunk_buckets[1];
++            if (block)
++            {
++                pool_chunk_buckets[1] = block->next;
++            }
++            else
++            {
++                int count = 20;
++                char* chunk = AcquirePoolChunk(16, count);
++                block = reinterpret_cast<PoolChunkLink*>(chunk);
++                if (count != 1)
++                {
++                    PoolChunkLink* next = reinterpret_cast<PoolChunkLink*>(chunk + 16);
++                    pool_chunk_buckets[1] = next;
++                    for (int index = 1;; ++index)
++                    {
++                        PoolChunkLink* current = next;
++                        next = reinterpret_cast<PoolChunkLink*>(reinterpret_cast<char*>(next) + 16);
++                        if (count - 1 == index)
++                        {
++                            current->next = 0;
++                            break;
++                        }
++                        current->next = next;
++                    }
++                }
++            }
++        }
++        CircularListNode* sentinel = ::new (static_cast<void*>(block)) CircularListNode;
++        sentinel->next = sentinel;
++        sentinel->previous = sentinel;
++        head = sentinel;
++    }
++};
++
++// Actual 148-byte x86 "GameWon" controller at Game+0x28.
++// VTABLE: BEACHLIFE 0x004f4d80
++struct GameWonController : ControllerState
++{
++    unsigned char unknown_88[8];
++    GameWonList list_90;
++
++    // Actual 0x004e8380, RET4: Game passes "GameWon".
++    explicit GameWonController(const char* name);
++    virtual ~GameWonController();                          // 0x004e8470, deleting wrapper.
++    virtual int Update();                                  // 0x004e8580.
++    virtual void RenderBeforeScreens();                    // 0x00437d10.
++    virtual void RenderAfterScreens();                     // 0x004e8630.
++    virtual void Enter();                                  // 0x004e86a0.
++    virtual void Exit();                                   // 0x004e8760.
++    virtual const char* ScriptPath();                      // 0x004e8780.
++    virtual void ControllerSlot1c();                       // 0x00437d10.
++    virtual void ScreenSizeChanged(int width, int height); // 0x004e8fa0, RET8.
++    virtual void ControllerSlot24();                       // 0x00437d10.
++};
++
++#endif
+diff --git a/src/startup_game_won_constructor.cpp b/src/startup_game_won_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2d893e15ab83de38d78d58060aba5214ea3a77f
+--- /dev/null
++++ b/src/startup_game_won_constructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_game_won.h"
++
++// FUNCTION: BEACHLIFE 0x004e8380
++GameWonController::GameWonController(const char* name)
++    : ControllerState(name)
++{
++}
+diff --git a/src/startup_input_destructor.cpp b/src/startup_input_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..020e8317c0c1a94921d746e1d54cd579ccee7f09
+--- /dev/null
++++ b/src/startup_input_destructor.cpp
+@@ -0,0 +1,27 @@
++#include <windows.h>
++
++#include "startup_direct_input8.h"
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004ea9c0
++InputState::~InputState()
++{
++    if (keyboard_device)
++    {
++        keyboard_device->Unacquire();
++        keyboard_device->Release();
++        keyboard_device = 0;
++    }
++    if (mouse_device)
++    {
++        mouse_device->Unacquire();
++        mouse_device->Release();
++        mouse_device = 0;
++    }
++    if (direct_input)
++    {
++        direct_input->Release();
++        direct_input = 0;
++    }
++    ClipCursor(0);
++}
+diff --git a/src/startup_input_hide_cursor.cpp b/src/startup_input_hide_cursor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..853733a41e8a6adce9b0d95faba004bfbbfd6deb
+--- /dev/null
++++ b/src/startup_input_hide_cursor.cpp
+@@ -0,0 +1,12 @@
++#include <windows.h>
++
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eb0b0
++void InputState::HideSystemCursor()
++{
++    // ShowCursor returns the new display count; the cursor is hidden below zero.
++    while (ShowCursor(FALSE) >= 0)
++    {
++    }
++}
+diff --git a/src/startup_input_initialize.cpp b/src/startup_input_initialize.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9d619759b759e76ba09699935c581ee534f0e945
+--- /dev/null
++++ b/src/startup_input_initialize.cpp
+@@ -0,0 +1,23 @@
++#include <windows.h>
++#include "startup_direct_input8.h"
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eaa50
++bool InputState::Initialize(void* instance, void* window)
++{
++    window_handle = window;
++    resource_instance = instance;
++    if (FAILED(DirectInput8Create(static_cast<HINSTANCE>(instance),
++            DIRECTINPUT8_VERSION,
++            IID_IDirectInput8A,
++            reinterpret_cast<void**>(&direct_input),
++            0)))
++    {
++        return false;
++    }
++    if (!CreateKeyboard(window))
++    {
++        return false;
++    }
++    return CreateMouse(window) ? true : false;
++}
+diff --git a/src/startup_input_keyboard_create.cpp b/src/startup_input_keyboard_create.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6c7cccc918b914317420619780bc9fa82f041aec
+--- /dev/null
++++ b/src/startup_input_keyboard_create.cpp
+@@ -0,0 +1,26 @@
++#include <windows.h>
++#include "startup_direct_input8.h"
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eab60
++unsigned char InputState::CreateKeyboard(void* window)
++{
++    HRESULT result = direct_input->CreateDevice(GUID_SysKeyboard, &keyboard_device, 0);
++    if (FAILED(result))
++    {
++        return 0;
++    }
++    result = keyboard_device->SetDataFormat(&c_dfDIKeyboard);
++    if (FAILED(result))
++    {
++        return 0;
++    }
++    result = keyboard_device->SetCooperativeLevel(
++        static_cast<HWND>(window), DISCL_NONEXCLUSIVE | DISCL_FOREGROUND | DISCL_NOWINKEY);
++    if (FAILED(result))
++    {
++        return 0;
++    }
++    keyboard_device->Acquire();
++    return 1;
++}
+diff --git a/src/startup_input_mouse_create.cpp b/src/startup_input_mouse_create.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5cff5c82f55f398022c6aa20b9a94dc24fcb68ef
+--- /dev/null
++++ b/src/startup_input_mouse_create.cpp
+@@ -0,0 +1,48 @@
++#include <windows.h>
++#include "startup_direct_input8.h"
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eac60
++unsigned char InputState::CreateMouse(void* window)
++{
++    HRESULT result = direct_input->CreateDevice(GUID_SysMouse, &mouse_device, 0);
++    if (FAILED(result))
++    {
++        return 0;
++    }
++    result = mouse_device->SetDataFormat(&c_dfDIMouse2);
++    if (FAILED(result))
++    {
++        return 0;
++    }
++    result = mouse_device->SetCooperativeLevel(
++        static_cast<HWND>(window), DISCL_NONEXCLUSIVE | DISCL_FOREGROUND);
++    if (result == DIERR_UNSUPPORTED || FAILED(result))
++    {
++        return 0;
++    }
++
++    DIPROPDWORD buffer_size;
++    buffer_size.diph.dwSize = sizeof(DIPROPDWORD);
++    buffer_size.diph.dwHeaderSize = sizeof(DIPROPHEADER);
++    buffer_size.diph.dwObj = 0;
++    buffer_size.diph.dwHow = DIPH_DEVICE;
++    buffer_size.dwData = 60;
++    result = mouse_device->SetProperty(DIPROP_BUFFERSIZE, &buffer_size.diph);
++    if (FAILED(result))
++    {
++        return 0;
++    }
++    mouse_device->Acquire();
++
++    DIDEVICEOBJECTINSTANCEA wheel;
++    wheel.dwSize = sizeof(DIDEVICEOBJECTINSTANCEA);
++    wheel_present_140 = SUCCEEDED(mouse_device->GetObjectInfo(&wheel, DIMOFS_Z, DIPH_BYOFFSET));
++    mouse_event_count = 0;
++    unknown_610 = 0;
++    unknown_611 = 0;
++    relative_148 = 0;
++    SetSystemCursor(1);
++    cursor_identifier = 0;
++    return 1;
++}
+diff --git a/src/startup_input_mouse_events.cpp b/src/startup_input_mouse_events.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..27fad239d273a0bd814cafab29a5da5964ad30e6
+--- /dev/null
++++ b/src/startup_input_mouse_events.cpp
+@@ -0,0 +1,157 @@
++#include <windows.h>
++#include "startup_input_state.h"
++#include <dinput.h>
++
++// FUNCTION: BEACHLIFE 0x004ead80
++unsigned char InputState::ReadMouseEvents()
++{
++    if (!mouse_device)
++    {
++        return 0;
++    }
++
++    mouse_event_count = 60;
++    HRESULT result = mouse_device->GetDeviceData(sizeof(InputMouseEvent),
++        reinterpret_cast<DIDEVICEOBJECTDATA*>(mouse_events),
++        &mouse_event_count,
++        0);
++    POINT cursor;
++    GetCursorPos(&cursor);
++    wheel_130 = 0;
++    if (FAILED(result))
++    {
++        while (mouse_device->Acquire() == DIERR_INPUTLOST)
++        {
++        }
++        return 1;
++    }
++
++    if (windowed_1c)
++    {
++        RECT window;
++        GetWindowRect(static_cast<HWND>(window_handle), &window);
++        int x = cursor.x - window.left;
++        int y = cursor.y - window.top;
++        y -= GetSystemMetrics(SM_CYFIXEDFRAME);
++        y -= GetSystemMetrics(SM_CYCAPTION);
++        x -= GetSystemMetrics(SM_CXFIXEDFRAME);
++        delta_x_128 = x - unknown_134;
++        delta_y_12c = y - unknown_138;
++        unknown_134 = x;
++        unknown_138 = y;
++        if (x < 0 || x > width_14 || y < 0 || y > height_18)
++        {
++            unknown_134 = -300;
++            unknown_138 = -300;
++        }
++    }
++    else
++    {
++        delta_x_128 = cursor.x - unknown_134;
++        delta_y_12c = cursor.y - unknown_138;
++        unknown_134 = cursor.x;
++        unknown_138 = cursor.y;
++        if (cursor.x < 0)
++        {
++            unknown_134 = 0;
++        }
++        if (unknown_134 >= width_14)
++        {
++            unknown_134 = width_14 - 1;
++        }
++        if (cursor.y < 0)
++        {
++            unknown_138 = 0;
++        }
++        if (unknown_138 >= height_18)
++        {
++            unknown_138 = height_18 - 1;
++        }
++    }
++
++    if (unknown_120 == 1)
++    {
++        unknown_120 = 2;
++    }
++    if (unknown_124 == 1)
++    {
++        unknown_124 = 2;
++    }
++    if (unknown_610)
++    {
++        unknown_120 = 0;
++        unknown_610 = 0;
++    }
++    if (unknown_611)
++    {
++        unknown_124 = 0;
++        unknown_611 = 0;
++    }
++    if (relative_148)
++    {
++        delta_x_128 = 0;
++        delta_y_12c = 0;
++    }
++    if (unknown_134 == -300 || unknown_138 == -300)
++    {
++        return 1;
++    }
++
++    for (unsigned long index = 0; index < mouse_event_count; ++index)
++    {
++        InputMouseEvent& event = mouse_events[index];
++        switch (event.offset)
++        {
++        case DIMOFS_BUTTON0:
++            if (event.data & 0x80)
++            {
++                if (unknown_120 == 0)
++                {
++                    unknown_120 = 1;
++                }
++            }
++            else if (unknown_120 == 1)
++            {
++                unknown_610 = 1;
++            }
++            else
++            {
++                unknown_120 = 0;
++            }
++            break;
++        case DIMOFS_BUTTON1:
++            if (event.data & 0x80)
++            {
++                if (unknown_124 == 0)
++                {
++                    unknown_124 = 1;
++                }
++            }
++            else if (unknown_124 == 1)
++            {
++                unknown_611 = 1;
++            }
++            else
++            {
++                unknown_124 = 0;
++            }
++            break;
++        case DIMOFS_Z:
++            wheel_130 += event.data;
++            break;
++        case DIMOFS_X:
++            if (relative_148)
++            {
++                delta_x_128 += event.data;
++            }
++            break;
++        case DIMOFS_Y:
++            if (relative_148)
++            {
++                delta_y_12c += event.data;
++            }
++            break;
++        }
++    }
++    return 1;
++}
+diff --git a/src/startup_input_poll.cpp b/src/startup_input_poll.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4ab1038f69f0648e28e86916c304fcba3796c74
+--- /dev/null
++++ b/src/startup_input_poll.cpp
+@@ -0,0 +1,11 @@
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eaab0
++bool InputState::Poll()
++{
++    if (!ReadKeyboardState())
++    {
++        return false;
++    }
++    return ReadMouseEvents() ? true : false;
++}
+diff --git a/src/startup_input_read_delta_y.cpp b/src/startup_input_read_delta_y.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c50ce2439792db3dc66f5d2ba459ff7c2ab71b30
+--- /dev/null
++++ b/src/startup_input_read_delta_y.cpp
+@@ -0,0 +1,7 @@
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eab20
++int InputState::ReadDeltaY() const
++{
++    return delta_y_12c;
++}
+diff --git a/src/startup_input_state.h b/src/startup_input_state.h
+index cd105c187a32dc4c25809037ee6d6627f6f16b6c..322650c5b749d155898d2a37dba122b8b49a7809 100644
+--- a/src/startup_input_state.h
++++ b/src/startup_input_state.h
+@@ -52,7 +52,8 @@ struct InputState
+ 
+     // Actual 0x004ea940, RET12; no API/device creation or local EH.
+     InputState(int width, int height, unsigned char windowed);
+-    ~InputState(); // Actual 0x004ea9c0; real cleanup is a separate source gate.
++    void SetScreenSize(int width, int height); // 0x004ea9a0.
++    ~InputState();                             // Actual 0x004ea9c0; real cleanup is a separate source gate.
+ 
+     unsigned int ReadFirstButtonTransition() const;
+     unsigned int ReadSecondButtonTransition() const; // 0x004eab00.
+diff --git a/src/startup_input_system_cursor.cpp b/src/startup_input_system_cursor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f9badb5a0df1e5c4fe8a3dc2da9091381cdf61c
+--- /dev/null
++++ b/src/startup_input_system_cursor.cpp
+@@ -0,0 +1,11 @@
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eb330
++void InputState::SetSystemCursor(unsigned char visible)
++{
++    system_cursor_141 = visible;
++    if (!visible)
++    {
++        HideSystemCursor();
++    }
++}
+diff --git a/src/startup_list_begin.cpp b/src/startup_list_begin.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2348b4477d753c81dd17bfce7ad52816e183855d
+--- /dev/null
++++ b/src/startup_list_begin.cpp
+@@ -0,0 +1,10 @@
++#include "startup_list.h"
++
++// LIBRARY: BEACHLIFE 0x00437af0
++// ?Begin@CircularList@@QBE?AUCircularListIterator@@XZ
++CircularListIterator CircularList::Begin() const
++{
++    CircularListIterator result;
++    result.node = head->next;
++    return result;
++}
+diff --git a/src/startup_list_end.cpp b/src/startup_list_end.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..17985c75c86150d28c54c0e10ab747d48147f836
+--- /dev/null
++++ b/src/startup_list_end.cpp
+@@ -0,0 +1,10 @@
++#include "startup_list.h"
++
++// LIBRARY: BEACHLIFE 0x00437a40
++// ?End@CircularList@@QBE?AUCircularListIterator@@XZ
++CircularListIterator CircularList::End() const
++{
++    CircularListIterator result;
++    result.node = head;
++    return result;
++}
+diff --git a/src/startup_list_release_storage.cpp b/src/startup_list_release_storage.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0c10e83b525c5cb6790941fe7f304955dc02324
+--- /dev/null
++++ b/src/startup_list_release_storage.cpp
+@@ -0,0 +1,24 @@
++#include "pool_return.h"
++#include "startup_list.h"
++
++// FUNCTION: BEACHLIFE 0x004b2f10
++void CircularList::ReleaseStorage()
++{
++    CircularListNode* node = head->next;
++    while (node != head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released != 0)
++        {
++            ReturnPool(released, sizeof(CircularListValueNode));
++        }
++    }
++    head->next = head;
++    head->previous = head;
++    CircularListNode* released = head;
++    if (released != 0)
++    {
++        ReturnPool(released, sizeof(CircularListValueNode));
++    }
++}
+diff --git a/src/startup_load_game.h b/src/startup_load_game.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..3736699779fe204f5619baaeac734ac74f3e449b
+--- /dev/null
++++ b/src/startup_load_game.h
+@@ -0,0 +1,27 @@
++#ifndef STARTUP_LOAD_GAME_H
++#define STARTUP_LOAD_GAME_H
++
++#include "startup_controller.h"
++
++// Actual 140-byte x86 "LoadGame" controller at Game+0x24. Shared cells are
++// folded identical bodies; each slot remains this class's own override.
++// VTABLE: BEACHLIFE 0x004f4ddc
++struct LoadGameController : ControllerState
++{
++    unsigned char unknown_88[4];
++
++    // Actual 0x004e8d20, RET4: Game passes "LoadGame".
++    explicit LoadGameController(const char* name);
++    virtual ~LoadGameController();                         // 0x004e8d40, deleting wrapper, RET4.
++    virtual int Update();                                  // 0x004e8d80, RET0.
++    virtual void RenderBeforeScreens();                    // 0x004d3890, RET0.
++    virtual void RenderAfterScreens();                     // 0x00437d10, RET0.
++    virtual void Enter();                                  // 0x004e8dc0, RET0.
++    virtual void Exit();                                   // 0x004e8f30, RET0.
++    virtual const char* ScriptPath();                      // 0x004e8de0, RET0.
++    virtual void ControllerSlot1c();                       // 0x00437d10, RET0.
++    virtual void ScreenSizeChanged(int width, int height); // 0x004e8fa0, RET8.
++    virtual void ControllerSlot24();                       // 0x00437d10, RET0.
++};
++
++#endif
+diff --git a/src/startup_load_game_constructor.cpp b/src/startup_load_game_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a5d657c0f4a53a4ff1aa6fd0dbee8cc20ff11df4
+--- /dev/null
++++ b/src/startup_load_game_constructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_load_game.h"
++
++// FUNCTION: BEACHLIFE 0x004e8d20
++LoadGameController::LoadGameController(const char* name)
++    : ControllerState(name)
++{
++}
+diff --git a/src/startup_main_menu.h b/src/startup_main_menu.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f66c3efa8c8bec0d0a478b7555b4cf366c1a155
+--- /dev/null
++++ b/src/startup_main_menu.h
+@@ -0,0 +1,29 @@
++#ifndef STARTUP_MAIN_MENU_H
++#define STARTUP_MAIN_MENU_H
++
++#include "startup_controller.h"
++
++// Observed MainMenu controller byte at original x86+0x88. Method bodies are
++// supplied in separate source packets; declarations alone do not establish
++// complete native ownership or the full game hierarchy.
++// VTABLE: BEACHLIFE 0x004f4e08
++struct MainMenuController : ControllerState
++{
++    unsigned char first_entry;
++
++    explicit MainMenuController(const char* name);
++    virtual ~MainMenuController(); // Ordinary0x004e8e30; deleting wrapper0x004e8e10.
++    virtual int Update();
++    virtual void RenderBeforeScreens();
++    virtual void RenderAfterScreens();
++    virtual void Enter();
++    virtual void Exit();
++    virtual const char* ScriptPath();
++    virtual void ControllerSlot1c();
++    virtual void ScreenSizeChanged(int width, int height);
++    virtual void ControllerSlot24();
++};
++
++extern const float main_menu_voice_level;
++
++#endif
+diff --git a/src/startup_main_menu_constructor.cpp b/src/startup_main_menu_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d117362e5def17f89d3a6036f11d0fb8974af2ea
+--- /dev/null
++++ b/src/startup_main_menu_constructor.cpp
+@@ -0,0 +1,8 @@
++#include "startup_main_menu.h"
++
++// FUNCTION: BEACHLIFE 0x004e8df0
++MainMenuController::MainMenuController(const char* name)
++    : ControllerState(name)
++    , first_entry(1)
++{
++}
+diff --git a/src/startup_main_menu_destructor.cpp b/src/startup_main_menu_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0aa55ee3cceabb2f7e666d18e8f2fae87ecee40
+--- /dev/null
++++ b/src/startup_main_menu_destructor.cpp
+@@ -0,0 +1,10 @@
++#include "startup_main_menu.h"
++
++// FUNCTION: BEACHLIFE 0x004e8e30
++MainMenuController::~MainMenuController()
++{
++    if (active)
++    {
++        active = 0;
++    }
++}
+diff --git a/src/startup_main_menu_enter.cpp b/src/startup_main_menu_enter.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..69f8570cf37cb79bfdbec9e955a4f57c05e7eadd
+--- /dev/null
++++ b/src/startup_main_menu_enter.cpp
+@@ -0,0 +1,33 @@
++#include "startup_main_menu.h"
++#include "startup_screen_manager.h"
++#include "window_activation.h"
++
++// GLOBAL: BEACHLIFE 0x004f4e04
++const float main_menu_voice_level = 0.8f;
++
++// FUNCTION: BEACHLIFE 0x004e8e60
++void MainMenuController::Enter()
++{
++    active = 1;
++
++    int voice = window_audio_state->PlaySound("waves_loop", 2, 0.0f);
++    window_audio_state->SetSoundLevel(voice, main_menu_voice_level);
++
++    screen_request_game->SetScreenSize(800, 600);
++    ScreenRequestGamePrefix* game = screen_request_game;
++    const char* path = ScriptPath();
++    game->LoadControllerScreen(path);
++    screen_manager->SetMode(6);
++
++    if (first_entry == 0 && screen_request_game->ReadMenuReturnFlag() == 0)
++    {
++        screen_request_game->LoadScenarioProgress();
++        screen_manager->RequestScreen("ScenarioScreen", 0, 0);
++    }
++    else
++    {
++        screen_manager->RequestScreen("MainMenu", 0, 0);
++        first_entry = 0;
++        screen_request_game->ClearMenuReturnFlag();
++    }
++}
+diff --git a/src/startup_main_menu_path.cpp b/src/startup_main_menu_path.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5339b0dd54046f5e8ded02416e0690a7b2e20e7b
+--- /dev/null
++++ b/src/startup_main_menu_path.cpp
+@@ -0,0 +1,23 @@
++#include "startup_main_menu.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_placement.h"
++
++// FUNCTION: BEACHLIFE 0x004e8f40
++const char* MainMenuController::ScriptPath()
++{
++    switch (screen_request_game->placement->menu_script_variant_3c)
++    {
++    case 1:
++        return "data/script/gui/MainMenu_fre.PIS";
++    case 2:
++        return "data/script/gui/MainMenu_ita.PIS";
++    case 3:
++        return "data/script/gui/MainMenu_ger.PIS";
++    case 4:
++        return "data/script/gui/MainMenu_spa.PIS";
++    case 5:
++        return "data/script/gui/MainMenu_pol.PIS";
++    default:
++        return "data/script/gui/MainMenu.PIS";
++    }
++}
+diff --git a/src/startup_main_menu_update.cpp b/src/startup_main_menu_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f6050e76d8860a0a5171fbc6181a5007268670e
+--- /dev/null
++++ b/src/startup_main_menu_update.cpp
+@@ -0,0 +1,7 @@
++#include "startup_main_menu.h"
++
++// FUNCTION: BEACHLIFE 0x004e8e50
++int MainMenuController::Update()
++{
++    return 0;
++}
+diff --git a/src/startup_movie.h b/src/startup_movie.h
+index 57b06a5c77175af60375e2daf5dfac87b8631737..6ce56245ef16383c63ba35e5ba567d1b9480726b 100644
+--- a/src/startup_movie.h
++++ b/src/startup_movie.h
+@@ -34,10 +34,19 @@ struct StartupMovie
+         unsigned char flag_16);
+     // Actual 0x004ed130 (body separate).
+     ~StartupMovie();
+-    // Actual 0x004ed190, RET4 (body separate).
++    // Actual 0x004ed190, RET4: opens and renders the movie while ready.
+     void Play(const char* path);
+     // Actual 0x004ed1c0: DirectDraw, cooperative level, display mode, surfaces.
+     void Initialize();
++    // Actual 0x004ed260 (primary flipping surface and clipper) and 0x004ed310
++    // (attached back buffer); both clear ready on failure. Bodies separate.
++    void CreatePrimarySurface();
++    void AttachBackBuffer();
++    // Actual 0x004ed390, RET4 (CoCreateInstance, wide path, stream open) and
++    // 0x004ed450 (renders the opened stream to the surfaces); both clear ready
++    // on failure. Bodies separate; descriptive names.
++    void OpenStream(const char* path);
++    void RenderStream();
+ };
+ 
+ #endif
+diff --git a/src/startup_movie_destructor.cpp b/src/startup_movie_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d30ed1854f321aba7b5b277589aea73a791443cf
+--- /dev/null
++++ b/src/startup_movie_destructor.cpp
+@@ -0,0 +1,33 @@
++#include <windows.h>
++
++#include "startup_direct_draw4.h"
++#include "startup_movie.h"
++
++// FUNCTION: BEACHLIFE 0x004ed130
++StartupMovie::~StartupMovie()
++{
++    if (direct_draw)
++    {
++        if (flag_16)
++        {
++            direct_draw->RestoreDisplayMode();
++        }
++        direct_draw->SetCooperativeLevel(static_cast<HWND>(window), DDSCL_NORMAL);
++    }
++    if (back_buffer)
++    {
++        back_buffer->Release();
++    }
++    if (primary)
++    {
++        primary->Release();
++    }
++    if (direct_draw4)
++    {
++        direct_draw4->Release();
++    }
++    if (direct_draw)
++    {
++        direct_draw->Release();
++    }
++}
+diff --git a/src/startup_movie_initialize.cpp b/src/startup_movie_initialize.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..052bb290cae78de06ff12a16b18414b8e66c4a4a
+--- /dev/null
++++ b/src/startup_movie_initialize.cpp
+@@ -0,0 +1,37 @@
++#include <windows.h>
++
++#include "startup_direct_draw4.h"
++#include "startup_movie.h"
++
++// FUNCTION: BEACHLIFE 0x004ed1c0
++void StartupMovie::Initialize()
++{
++    if (DirectDrawCreate(0, &direct_draw, 0) != DD_OK)
++    {
++        return;
++    }
++    direct_draw->QueryInterface(IID_IDirectDraw4, reinterpret_cast<void**>(&direct_draw4));
++    DWORD flags = windowed ? DDSCL_NORMAL : DDSCL_FULLSCREEN | DDSCL_EXCLUSIVE;
++    if (direct_draw4->SetCooperativeLevel(static_cast<HWND>(window), flags | DDSCL_FPUSETUP) ==
++        DD_OK)
++    {
++        if (!windowed)
++        {
++            direct_draw4->SetDisplayMode(width, height, 16, 0, 0);
++        }
++    }
++    else
++    {
++        // The released interface pointer is kept (original quirk).
++        direct_draw4->Release();
++        ready = 0;
++    }
++    if (ready)
++    {
++        CreatePrimarySurface();
++        if (ready)
++        {
++            AttachBackBuffer();
++        }
++    }
++}
+diff --git a/src/startup_movie_play.cpp b/src/startup_movie_play.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..083846427d8092a3d151117cb924d51f62895b16
+--- /dev/null
++++ b/src/startup_movie_play.cpp
+@@ -0,0 +1,14 @@
++#include "startup_movie.h"
++
++// FUNCTION: BEACHLIFE 0x004ed190
++void StartupMovie::Play(const char* path)
++{
++    if (ready)
++    {
++        OpenStream(path);
++        if (ready)
++        {
++            RenderStream();
++        }
++    }
++}
+diff --git a/src/startup_profiler_registration_destructor.cpp b/src/startup_profiler_registration_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e2a103fe623c4c9e64d7df1557f20040fb7067c1
+--- /dev/null
++++ b/src/startup_profiler_registration_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_timer.h"
++
++// FUNCTION: BEACHLIFE 0x004ecfa0
++StartupProfilerRegistration::~StartupProfilerRegistration()
++{
++    profiler = 0;
++}
+diff --git a/src/startup_renderer_rectangle_iterator.cpp b/src/startup_renderer_rectangle_iterator.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..aeeb64be5bbdcea9434ba214ea25a830eb08ea76
+--- /dev/null
++++ b/src/startup_renderer_rectangle_iterator.cpp
+@@ -0,0 +1,19 @@
++#include "startup_renderer_rectangle_queue.h"
++
++// FUNCTION: BEACHLIFE 0x00411d80
++void RendererRectangleIterator::Advance(int amount)
++{
++    int offset = static_cast<int>(current - first) + amount;
++    if (offset >= 0 && offset < 8)
++    {
++        current += amount;
++    }
++    else
++    {
++        int node_offset = offset > 0 ? offset / 8 : (offset + 1) / 8 - 1;
++        node += node_offset;
++        first = *node;
++        current = first + (offset - node_offset * 8);
++        last = first + 8;
++    }
++}
+diff --git a/src/startup_renderer_rectangle_queue.h b/src/startup_renderer_rectangle_queue.h
+index 2d1ca1074351f9518210844596e2054faf8b560b..14e2c22e65e6270bce577182313e03b6fd40e020 100644
+--- a/src/startup_renderer_rectangle_queue.h
++++ b/src/startup_renderer_rectangle_queue.h
+@@ -4,6 +4,22 @@
+ #include <cstddef>
+ #include <deque>
+ 
++// Observed four-word iterator over eight-rectangle blocks. Names and original
++// container/template spelling are unknown; this is not a stock-library claim.
++struct RendererRectangleIterator
++{
++    ScreenRectangle* current;
++    ScreenRectangle* first;
++    ScreenRectangle* last;
++    ScreenRectangle** node;
++
++    void Advance(int amount);
++};
++
++// Actual 0x00411d50 storage-release dispatcher. Its small-block allocator
++// dependency remains unresolved and must not be replaced by a fixture provider.
++void ReleaseRendererRectangleStorage(void* memory, unsigned int size);
++
+ // Native library adaptation of the observed rectangle-value queue. This is not
+ // the original block/iterator ABI or an allocation/failure/timing reconstruction.
+ // Calls require live storage, valid indices/count, and successful allocation.
+diff --git a/src/startup_renderer_storage_release.cpp b/src/startup_renderer_storage_release.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0668fb95d6731576717730d386abb0c6acaecc2d
+--- /dev/null
++++ b/src/startup_renderer_storage_release.cpp
+@@ -0,0 +1,17 @@
++#include "pool_return.h"
++#include "startup_renderer_rectangle_queue.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00411d50
++void ReleaseRendererRectangleStorage(void* memory, unsigned int size)
++{
++    if (size > 128)
++    {
++        ::operator delete(memory);
++    }
++    else
++    {
++        ReturnPool(memory, size);
++    }
++}
+diff --git a/src/startup_reset_game.h b/src/startup_reset_game.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..542f47ecce14f9476b5748393a7ae074234a1476
+--- /dev/null
++++ b/src/startup_reset_game.h
+@@ -0,0 +1,25 @@
++#ifndef STARTUP_RESET_GAME_H
++#define STARTUP_RESET_GAME_H
++
++#include "startup_controller.h"
++
++// Actual 136-byte x86 "ResetGame" controller at Game+0x20. Shared cells are
++// folded identical bodies; each slot remains this class's own override.
++// VTABLE: BEACHLIFE 0x004f4e30
++struct ResetGameController : ControllerState
++{
++    // Actual 0x004e8fb0, RET4: Game passes "ResetGame".
++    explicit ResetGameController(const char* name);
++    virtual ~ResetGameController();                        // 0x004e8fd0, deleting wrapper, RET4.
++    virtual int Update();                                  // 0x004e9010, RET tail jmp 0x4e9034.
++    virtual void RenderBeforeScreens();                    // 0x00437d10, RET0.
++    virtual void RenderAfterScreens();                     // 0x00437d10, RET0.
++    virtual void Enter();                                  // 0x004e9050, RET0.
++    virtual void Exit();                                   // 0x004e8f30, RET0.
++    virtual const char* ScriptPath();                      // 0x004e90a0, RET0.
++    virtual void ControllerSlot1c();                       // 0x00437d10, RET0.
++    virtual void ScreenSizeChanged(int width, int height); // 0x004e8fa0, RET8.
++    virtual void ControllerSlot24();                       // 0x00437d10, RET0.
++};
++
++#endif
+diff --git a/src/startup_reset_game_constructor.cpp b/src/startup_reset_game_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..10e51111751d13783d9374d5cb873e0d30a7618c
+--- /dev/null
++++ b/src/startup_reset_game_constructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_reset_game.h"
++
++// FUNCTION: BEACHLIFE 0x004e8fb0
++ResetGameController::ResetGameController(const char* name)
++    : ControllerState(name)
++{
++}
+diff --git a/src/startup_screen_load_dependencies.h b/src/startup_screen_load_dependencies.h
+index 1e8eb511feea89e015cb64345ca8143508ac5cce..ad2e40a423d9dc81ecbf26cf782d94db2b44789c 100644
+--- a/src/startup_screen_load_dependencies.h
++++ b/src/startup_screen_load_dependencies.h
+@@ -29,6 +29,7 @@ struct ScreenLoadPanel13c
+     // Actual 0x004c33c0/RET4; only the argument low byte is read.
+     void InitializeContents(unsigned char reload);
+     void SetEnabled(unsigned char enabled); // 0x004c2760
++    void StopPlayback();                    // 0x004c2480; forwards to owner_00.
+     // Actual 0x004c2940, RET4; complete 16-way real method remains separate.
+     void HandleAction(unsigned int action);
+     void Update();                        // 0x004c2490, RET0.
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index a3d4a56f3ee817b7447a1146570f0c176ac0a875..ef96a96833d7ca3f22bde08d4b3ca073495846fc 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -54,11 +54,25 @@ struct ScreenGameRegistration
+ // Actual three-pointer storage at Game+64. LoadScenarioNames allocates 256-byte
+ // UTF-16 strings and publishes their pointers. This member's destructor frees
+ // backing slots only; pointee cleanup belongs to the real enclosing methods.
++// End-of-storage slot of the scenario name range: the capacity pointer plus an
++// empty allocator part whose (empty) destructor 0x00437d10 the range
++// destructor's unwind map names for this member (+0x08).
++struct GameScenarioNameCapacity
++{
++    unsigned short** data;
++
++    GameScenarioNameCapacity(unsigned short** value)
++        : data(value)
++    {
++    }
++    ~GameScenarioNameCapacity() { }
++};
++
+ struct GameScenarioNameRange
+ {
+     unsigned short** begin;
+     unsigned short** end;
+-    unsigned short** capacity;
++    GameScenarioNameCapacity capacity;
+ 
+     GameScenarioNameRange()
+         : begin(0)
+@@ -66,14 +80,32 @@ struct GameScenarioNameRange
+         , capacity(0)
+     {
+     }
+-    ~GameScenarioNameRange(); // Actual 0x004e5490, 142B library body.
++    // Actual 0x004e5490, 142B library body: frees the pointer storage only.
++    ~GameScenarioNameRange();
++};
++
++// End-of-storage slot of the save record range (as GameScenarioNameCapacity).
++struct GameSaveRecordCapacity
++{
++    GameSaveRecord** data;
++
++    GameSaveRecordCapacity(GameSaveRecord** value)
++        : data(value)
++    {
++    }
++    ~GameSaveRecordCapacity() { }
++};
++
++// Empty library dispatch tag for the folded pointer-vector growth arm.
++struct GameSaveRecordTrueType
++{
+ };
+ 
+ struct GameSaveRecordRange
+ {
+     GameSaveRecord** begin;
+     GameSaveRecord** end;
+-    GameSaveRecord** capacity;
++    GameSaveRecordCapacity capacity;
+ 
+     GameSaveRecordRange()
+         : begin(0)
+@@ -81,7 +113,17 @@ struct GameSaveRecordRange
+         , capacity(0)
+     {
+     }
+-    ~GameSaveRecordRange(); // Actual 0x004e5400, 142B library body.
++    // Actual 0x004e5400, 142B library body: frees the pointer storage only.
++    ~GameSaveRecordRange();
++
++    // Shared physical library body 0x004e80d0, RET8; typed projection separate.
++    GameSaveRecord** Erase(GameSaveRecord** first, GameSaveRecord** last);
++    // Actual folded library child 0x004c3a30, RET20; body remains separate.
++    void InsertOverflow(GameSaveRecord** position,
++        GameSaveRecord* const& value,
++        const GameSaveRecordTrueType& plain,
++        unsigned int count,
++        bool at_end);
+ };
+ 
+ // Complete observed 200-byte x86 Game storage for the genuine constructor.
+@@ -121,20 +163,23 @@ struct ScreenRequestGamePrefix : ScreenGameRegistration
+     unsigned char inactive_c5;
+     unsigned char unknown_c6[2];
+ 
+-    // Actual 0x004e2530..004e2ddf, RET8. Whole normal source supplied here.
++    // Actual 0x004e2530..004e2ddf, RET8.
+     ScreenRequestGamePrefix(void* instance, void* window);
+-    ~ScreenRequestGamePrefix(); // Actual 0x004e2e00; separate source dependency.
++    ~ScreenRequestGamePrefix() noexcept(false); // Actual 0x004e2e00.
+     // Actual 0x004e3dd0; real filesystem/name-range body remains separate.
+     void LoadScenarioNames();
+-    void RefreshSaveRecords();                  // 0x004e4740.
+-    void PopulateLoadGameMenu();                // 0x004e4ed0.
++    void RefreshSaveRecords();   // 0x004e4740.
++    void PopulateLoadGameMenu(); // 0x004e4ed0.
++    void PopulateSaveList(ScreenListBoxPrefix* list, unsigned int row_word, unsigned char clear);
+     bool HasScenarioFlag08(unsigned int index); // 0x004e41c0.
+ 
++    void Activate();
++    void Deactivate();
+     void Update();
+     // Actual 0x004e3a50; complete ordered frame path, no arguments.
+     void Render();
+     bool LoadControllerScreen(const char* path);
+-    // Actual 0x004e41e0; width/height words, RET8. Real body is separate.
++    // Actual 0x004e41e0; width/height words, RET8.
+     void SetScreenSize(int width, int height);
+     // Actual 0x004e3bd0/0x004e3be0 access the preserved byte+c4.
+     unsigned char ReadMenuReturnFlag();
+@@ -142,7 +187,7 @@ struct ScreenRequestGamePrefix : ScreenGameRegistration
+     // Actual 0x004e4000; complete FILE/progress body remains separate.
+     void SetByteA4(unsigned char value);
+     void LoadScenarioProgress();
+-    // Actual 0x004e44e0 remains unresolved.
++    // Actual 0x004e44e0; loads the selected save after releasing the list records.
+     void ProcessWordB4();
+     // Actual 0x004e5100; updates the enabled load/save information panel.
+     void UpdateBeforeInput();
+@@ -288,12 +333,15 @@ struct ScreenManager
+     void RenderOverlayMarkers();
+     // Actual 0x004b0f30; complete progress-overlay method remains separate.
+     void RenderProgressOverlay();
++    void DisableOverlay(); // 0x004b0fe0.
+     // Real callees 0x004b1ed0, 0x004b2600 and 0x004b0e40; not implemented here.
+     void SetFeatureAvailability(unsigned char key, bool enabled);
+     void RefreshAfterLoad();
+     void LayoutAfterLoad();
+     // Actual 0x004b0d80, RET0; updates the existing overlay and surface.
+     void UpdateOverlayPosition();
++    void ApplyScreenLayout();   // 0x004b2470.
++    void ApplyLoadedScenario(); // 0x004af230.
+     // Actual 0x004ae2f0; first exact kind-22 name in the all-items chain.
+     ScreenListBoxPrefix* FindListBox(const char* name);
+     // Actual 0x004af720 and 0x004ae9e0.
+@@ -344,5 +392,6 @@ struct ScreenManager
+ extern ScreenRequestGamePrefix* screen_request_game;
+ extern ScreenManager* screen_manager;
+ extern const char* startup_game_state_path;
++extern const char* scenario_directory;
+ 
+ #endif
+diff --git a/src/startup_screen_manager_owner190.h b/src/startup_screen_manager_owner190.h
+index 2ea0c10b2427b0f5d7dcf3292b44caf21c040254..5d98fb22ac3a11aca5312b04603b2a94baddf376 100644
+--- a/src/startup_screen_manager_owner190.h
++++ b/src/startup_screen_manager_owner190.h
+@@ -37,8 +37,10 @@ struct ScreenManagerOwner190List
+ 
+     // Actual folded 0x00437a40 and distinct insertion 0x004c1fa0.
+     ScreenManagerOwner190Iterator End() const;
+-    ScreenManagerOwner190Iterator Insert(ScreenManagerOwner190Iterator position,
+-        ScreenManagerOwner190Entry* const& entry);
++    ScreenManagerOwner190Iterator Insert(
++        ScreenManagerOwner190Iterator position, ScreenManagerOwner190Entry* const& entry);
++
++    ScreenManagerOwner190Node* CreateNode(ScreenManagerOwner190Entry* const& entry);
+ 
+     // Actual 0x004c1f00. A distinct original container instantiation.
+     void ReleaseStorage();
+@@ -51,7 +53,8 @@ typedef void (*ScreenManagerOwner190Callback)(ScreenManagerOwner190Entry* entry)
+ // Actual folded traversal 0x004e8200, also used by the active-screen list.
+ // This declaration does not treat the distinct payload as ActiveScreenEntry.
+ ScreenManagerOwner190Callback VisitManagerOwner190Entries(ScreenManagerOwner190Iterator first,
+-    ScreenManagerOwner190Iterator last, ScreenManagerOwner190Callback callback);
++    ScreenManagerOwner190Iterator last,
++    ScreenManagerOwner190Callback callback);
+ 
+ // Actual cdecl 0x004c1ee0: destroys the owned item and then the entry.
+ void DestroyManagerOwner190Entry(ScreenManagerOwner190Entry* entry);
+diff --git a/src/startup_screen_manager_owner190_insert.cpp b/src/startup_screen_manager_owner190_insert.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f0146258d75b87659cb59485406b1c6abb27eb68
+--- /dev/null
++++ b/src/startup_screen_manager_owner190_insert.cpp
+@@ -0,0 +1,17 @@
++#include "startup_screen_manager_owner190.h"
++
++// FUNCTION: BEACHLIFE 0x004c1fa0
++ScreenManagerOwner190Iterator ScreenManagerOwner190List::Insert(
++    ScreenManagerOwner190Iterator position, ScreenManagerOwner190Entry* const& entry)
++{
++    ScreenManagerOwner190Node* node = CreateNode(entry);
++    ScreenManagerOwner190Node* next = position.node;
++    ScreenManagerOwner190Node* previous = next->previous;
++    node->next = next;
++    node->previous = previous;
++    previous->next = node;
++    next->previous = node;
++    ScreenManagerOwner190Iterator result;
++    result.node = node;
++    return result;
++}
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index 862c19e28cf96c9464180e7b14ba43c20fe8f72f..c22aad400f1634f8ff0081cf6d9bb235e8dbba70 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -27,25 +27,57 @@ static_assert(saved_placement_node_slot_bytes <= 128);
+ // Observed prefix only. Original complete class and field names are unknown.
+ struct ScreenPlacementStore
+ {
+-    unsigned char unknown_00[0x18];
++    unsigned char loaded_00;
++    unsigned char unknown_01[3];
++    char* preferences_path_04;
++    float sound_volume_08;
++    float music_volume_0c;
++    char* provider_name_10;
++    unsigned char flag_14;
++    unsigned char unknown_15[3];
+     ScreenPlacementMusicEntry** music_begin_18;
+     ScreenPlacementMusicEntry** music_end_1c;
+     ScreenPlacementMusicEntry** music_limit_20;
+     unsigned char music_enabled_24;
+     unsigned char unknown_25[3];
+     CircularList saved;
+-    unsigned char unknown_2c[0x0c];
++    unsigned int width_2c;
++    unsigned int height_30;
++    unsigned char flag_34;
++    unsigned char flag_35;
++    unsigned char flag_36;
++    unsigned char flag_37;
+     unsigned char byte_38;
+     unsigned char unknown_39[3];
++    // Observed unsigned script selector at original x86+0x3c.
+     unsigned int menu_script_variant_3c;
+ 
+-    void ClearMusicEntries(); // 0x004e6980.
++    ScreenPlacementStore();                  // 0x004e6330, RET0.
++    ~ScreenPlacementStore() noexcept(false); // 0x004e6540, RET0.
++    // Actual 0x004e6d10, returns AL; original constructor publishes it at +00.
++    unsigned char LoadPreferences();
++    // Actual same-receiver/no-argument children; results are not consumed.
++    void LoadSoundPreferences();          // 0x004e7430, RET0; body separate.
++    void LoadSavedPlacementPreferences(); // 0x004e6fe0, RET0; body separate.
++    void LoadVideoPreferences();          // 0x004e7c40, RET0; body separate.
++    void SaveSoundPreferences();          // 0x004e71b0, RET0; body separate.
++    void SaveSavedPlacementPreferences(); // 0x004e6eb0, RET0; body separate.
++    void SaveVideoPreferences();          // 0x004e7b00, RET0; body separate.
++
++    int MusicCount();                          // 0x004e6c30
++    const char* ReadMusicName(int index);      // 0x004e6bf0, entry+00
++    const char* ReadMusicDirectory(int index); // 0x004e6c00, entry+04
++    unsigned int ReadMusicWord08(int index);   // 0x004e6c10
++    unsigned int ReadMusicWord0c(int index);   // 0x004e6c20
++    void ClearMusicEntries();                  // 0x004e6980
+     void AddMusicEntry(const char* directory,
+         const char* name,
+         unsigned int word_08,
+-        unsigned int word_0c);                 // 0x004e6a00.
+-    void SetScreenSize(int width, int height); // 0x004e6960.
+-    void ClearPlacements();                    // 0x004e68f0.
++        unsigned int word_0c); // 0x004e6a00
++
++    void SetScreenSize(int width, int height);
++    void ClearPlacements();
++
+     bool FindPlacement(int group, int* x, int* y);
+     void WritePlacement(int x, int y, int group);
+ };
+diff --git a/src/startup_screen_placement_clear.cpp b/src/startup_screen_placement_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b698d1152c90fb9976aa03cc4a16e5a01a9401f7
+--- /dev/null
++++ b/src/startup_screen_placement_clear.cpp
+@@ -0,0 +1,22 @@
++#include "pool_return.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_visit.h"
++
++// FUNCTION: BEACHLIFE 0x004e68f0
++void ScreenPlacementStore::ClearPlacements()
++{
++    // Free every saved placement, then release the nodes but keep the sentinel.
++    VisitSavedPlacements(saved.Begin(), saved.End(), DeleteSavedPlacement);
++    CircularListNode* node = saved.head->next;
++    while (node != saved.head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released != 0)
++        {
++            ReturnPool(released, sizeof(SavedScreenPlacementNode));
++        }
++    }
++    saved.head->next = saved.head;
++    saved.head->previous = saved.head;
++}
+diff --git a/src/startup_screen_placement_constructor.cpp b/src/startup_screen_placement_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8706c8b8f2e62830fbbf535ec1313fef8ccb32aa
+--- /dev/null
++++ b/src/startup_screen_placement_constructor.cpp
+@@ -0,0 +1,114 @@
++#include "pool_allocate.h"
++#include "pool_return.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_defaults.h"
++
++#include <windows.h>
++#include <new>
++#include <stddef.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004e6330
++ScreenPlacementStore::ScreenPlacementStore()
++{
++    loaded_00 = 0;
++    preferences_path_04 = 0;
++    music_begin_18 = 0;
++    music_end_1c = 0;
++    music_limit_20 = 0;
++    try
++    {
++        saved.head = 0;
++        void* storage = AllocatePoolBytes(sizeof(SavedScreenPlacementNode));
++        SavedScreenPlacementNode* sentinel = ::new (storage) SavedScreenPlacementNode;
++        sentinel->next = sentinel;
++        sentinel->previous = sentinel;
++        saved.head = sentinel;
++        try
++        {
++            CircularListNode* node = saved.head->next;
++            while (node != saved.head)
++            {
++                CircularListNode* released = node;
++                node = node->next;
++                if (released != 0)
++                {
++                    ReturnPool(released, sizeof(SavedScreenPlacementNode));
++                }
++            }
++            saved.head->next = saved.head;
++            saved.head->previous = saved.head;
++
++            // The actual range erase receives begin/end and therefore only
++            // publishes begin as the new end; no trailing elements exist.
++            music_end_1c = music_begin_18;
++            sound_volume_08 = 0.5f;
++            music_volume_0c = 0.75f;
++            flag_14 = 1;
++
++            ScreenPlacementMusicEntry** last = music_end_1c;
++            ScreenPlacementMusicEntry** position = music_begin_18;
++            while (position != last)
++            {
++                ReleasePlacementMusicEntry(*position);
++                ++position;
++            }
++            music_end_1c = music_begin_18;
++
++            for (unsigned int i = 0; i < 12; ++i)
++            {
++                unsigned int word_0c = screen_placement_default_music[i].word_0c;
++                unsigned int word_08 = screen_placement_default_music[i].word_08;
++                const char* name = screen_placement_default_music[i].name;
++                AddMusicEntry(screen_placement_default_music_directory, name, word_08, word_0c);
++            }
++
++            music_enabled_24 = 1;
++            provider_name_10 =
++                static_cast<char*>(::operator new(strlen(screen_placement_default_provider) + 1));
++            strcpy(provider_name_10, screen_placement_default_provider);
++            byte_38 = 1;
++            width_2c = 800;
++            height_30 = 600;
++            flag_34 = 1;
++            flag_35 = 1;
++            flag_36 = 1;
++            flag_37 = 0;
++            menu_script_variant_3c = 0;
++
++            unsigned int required = GetCurrentDirectoryA(0, 0);
++            unsigned int length =
++                static_cast<unsigned int>(strlen(screen_placement_preferences_filename));
++            length += static_cast<unsigned int>(strlen("\\"));
++            length += required;
++            preferences_path_04 = static_cast<char*>(::operator new(length + 1u));
++            GetCurrentDirectoryA(length, preferences_path_04);
++            strcat(preferences_path_04, "\\");
++            strcat(preferences_path_04, screen_placement_preferences_filename);
++            loaded_00 = LoadPreferences();
++        }
++        catch (...)
++        {
++            saved.ReleaseStorage();
++            throw;
++        }
++    }
++    catch (...)
++    {
++        ScreenPlacementMusicEntry** storage = music_begin_18;
++        if (storage != 0)
++        {
++            unsigned int bytes =
++                static_cast<unsigned int>((music_limit_20 - storage) * sizeof(*storage));
++            if (bytes > 128)
++            {
++                ::operator delete(storage);
++            }
++            else
++            {
++                ReturnPool(storage, bytes);
++            }
++        }
++        throw;
++    }
++}
+diff --git a/src/startup_screen_placement_defaults.h b/src/startup_screen_placement_defaults.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..5ff2a9935f0a16a9471bd09c6c4b1f4ce66c3be0
+--- /dev/null
++++ b/src/startup_screen_placement_defaults.h
+@@ -0,0 +1,24 @@
++#ifndef STARTUP_SCREEN_PLACEMENT_DEFAULTS_H
++#define STARTUP_SCREEN_PLACEMENT_DEFAULTS_H
++
++struct ScreenPlacementMusicEntry;
++
++// The constructor traverses exactly these twelve 12-byte original records.
++// Actual initialized writable storage at 0x00586900 remains a separate owner.
++struct ScreenPlacementDefaultMusic
++{
++    const char* name;
++    unsigned int word_08;
++    unsigned int word_0c;
++};
++
++extern ScreenPlacementDefaultMusic screen_placement_default_music[12];
++extern const char* screen_placement_default_music_directory; // 0x005868fc
++extern const char* screen_placement_default_provider;        // 0x005868f8
++extern const char* screen_placement_preferences_filename;    // 0x00586884
++
++// Actual cdecl callback 0x004e7f30, RET0, releases both scalar strings and
++// the entry itself. Its real body is a separate source dependency.
++void ReleasePlacementMusicEntry(ScreenPlacementMusicEntry* entry);
++
++#endif
+diff --git a/src/startup_screen_placement_destructor.cpp b/src/startup_screen_placement_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7d54ebffef3373f496a7e042096594aa7609ad57
+--- /dev/null
++++ b/src/startup_screen_placement_destructor.cpp
+@@ -0,0 +1,137 @@
++#include "pool_return.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_music_entry.h"
++#include "startup_screen_placement_preferences.h"
++
++#include <windows.h>
++#include <new>
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004e6540
++ScreenPlacementStore::~ScreenPlacementStore() noexcept(false)
++{
++    try
++    {
++        try
++        {
++            char buffer[128];
++            FILE* file = fopen(preferences_path_04, "wt");
++            if (file != 0)
++            {
++                fclose(file);
++            }
++
++            const char* path = preferences_path_04;
++            const char* value = screen_placement_profile_version;
++            const char* key = screen_placement_profile_version_key;
++            const char* section = screen_placement_profile_options_section;
++            WritePrivateProfileStringA(section, key, value, path);
++
++            sprintf(buffer, "%d", static_cast<int>(menu_script_variant_3c));
++            path = preferences_path_04;
++            key = screen_placement_profile_language_key;
++            section = screen_placement_profile_language_section;
++            WritePrivateProfileStringA(section, key, buffer, path);
++
++            SaveSoundPreferences();
++            SaveSavedPlacementPreferences();
++            SaveVideoPreferences();
++
++            sprintf(buffer, "%d", static_cast<int>(byte_38));
++            path = preferences_path_04;
++            key = screen_placement_profile_cursor_key;
++            section = screen_placement_profile_mouse_section;
++            WritePrivateProfileStringA(section, key, buffer, path);
++
++            CircularListIterator last = saved.End();
++            CircularListIterator first = saved.Begin();
++            while (first.node != last.node)
++            {
++                // The actual fixed callback at0x004209c0 only forwards this
++                // payload to scalar delete. Read next after that real release.
++                ::operator delete(static_cast<SavedScreenPlacementNode*>(first.node)->placement);
++                first.node = first.node->next;
++            }
++
++            ScreenPlacementMusicEntry** music_last = music_end_1c;
++            ScreenPlacementMusicEntry** position = music_begin_18;
++            while (position != music_last)
++            {
++                ScreenPlacementMusicEntry* entry = *position;
++                if (entry != 0)
++                {
++                    if (entry->name_00 != 0)
++                    {
++                        ::operator delete(entry->name_00);
++                    }
++                    if (entry->directory_04 != 0)
++                    {
++                        ::operator delete(entry->directory_04);
++                    }
++                    ::operator delete(entry);
++                }
++                ++position;
++            }
++
++            CircularListNode* node = saved.head->next;
++            while (node != saved.head)
++            {
++                CircularListNode* released = node;
++                node = node->next;
++                if (released != 0)
++                {
++                    ReturnPool(released, sizeof(SavedScreenPlacementNode));
++                }
++            }
++            saved.head->next = saved.head;
++            saved.head->previous = saved.head;
++
++            // Actual Copy(end,end,begin) returns begin without moving bytes.
++            music_end_1c = music_begin_18;
++            ::operator delete(preferences_path_04);
++            ::operator delete(provider_name_10);
++        }
++        catch (...)
++        {
++            saved.ReleaseStorage();
++            throw;
++        }
++
++        // The actual member cleanup repeats Clear and then frees the sentinel.
++        // Once it begins, its storage release is not retried by unwinding.
++        saved.ReleaseStorage();
++    }
++    catch (...)
++    {
++        ScreenPlacementMusicEntry** storage = music_begin_18;
++        if (storage != 0)
++        {
++            unsigned int bytes =
++                static_cast<unsigned int>((music_limit_20 - storage) * sizeof(*storage));
++            if (bytes > 128)
++            {
++                ::operator delete(storage);
++            }
++            else
++            {
++                ReturnPool(storage, bytes);
++            }
++        }
++        throw;
++    }
++
++    ScreenPlacementMusicEntry** storage = music_begin_18;
++    if (storage != 0)
++    {
++        unsigned int bytes =
++            static_cast<unsigned int>((music_limit_20 - storage) * sizeof(*storage));
++        if (bytes > 128)
++        {
++            ::operator delete(storage);
++        }
++        else
++        {
++            ReturnPool(storage, bytes);
++        }
++    }
++}
+diff --git a/src/startup_screen_placement_globals.cpp b/src/startup_screen_placement_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..349ee95603525dad3f6cf6329219cb51d4e986c0
+--- /dev/null
++++ b/src/startup_screen_placement_globals.cpp
+@@ -0,0 +1,41 @@
++#include "startup_screen_placement_defaults.h"
++#include "startup_screen_placement_preferences.h"
++
++// GLOBAL: BEACHLIFE 0x005868f4
++const char* screen_placement_profile_default = "default";
++// GLOBAL: BEACHLIFE 0x00586880
++const char* screen_placement_profile_version = "1";
++// GLOBAL: BEACHLIFE 0x00586888
++const char* screen_placement_profile_options_section = "Beach Life Options";
++// GLOBAL: BEACHLIFE 0x005868a0
++const char* screen_placement_profile_version_key = "Version";
++// GLOBAL: BEACHLIFE 0x0058689c
++const char* screen_placement_profile_language_section = "Language";
++// GLOBAL: BEACHLIFE 0x005868f0
++const char* screen_placement_profile_language_key = "Language";
++// GLOBAL: BEACHLIFE 0x00586898
++const char* screen_placement_profile_mouse_section = "Mouse";
++// GLOBAL: BEACHLIFE 0x005868ec
++const char* screen_placement_profile_cursor_key = "SystemCursor";
++// GLOBAL: BEACHLIFE 0x005868fc
++const char* screen_placement_default_music_directory = "data\\soundtrack\\";
++// GLOBAL: BEACHLIFE 0x005868f8
++const char* screen_placement_default_provider = "DirectSound3D Software Emulation";
++// GLOBAL: BEACHLIFE 0x00586884
++const char* screen_placement_preferences_filename = "BeachLife.ini";
++
++// GLOBAL: BEACHLIFE 0x00586900
++ScreenPlacementDefaultMusic screen_placement_default_music[12] = {
++    {"Day1.mp3", 0, 232520},
++    {"Day2.mp3", 0, 297504},
++    {"Day3.mp3", 0, 249408},
++    {"Day4.mp3", 0, 213486},
++    {"Day5.mp3", 0, 272002},
++    {"Day6.mp3", 0, 400581},
++    {"Night1.mp3", 1, 572570},
++    {"Night2.mp3", 1, 378720},
++    {"Night3.mp3", 1, 214167},
++    {"Night4.mp3", 1, 375394},
++    {"Night5.mp3", 1, 344788},
++    {"Night6.mp3", 1, 458024},
++};
+diff --git a/src/startup_screen_placement_preferences.cpp b/src/startup_screen_placement_preferences.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a00a7ed8094a210c02f872672c4ed1cca389a4f
+--- /dev/null
++++ b/src/startup_screen_placement_preferences.cpp
+@@ -0,0 +1,46 @@
++#include "startup_screen_placement_preferences.h"
++#include "startup_screen_placement.h"
++
++#include <windows.h>
++#include <stdlib.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004e6d10
++unsigned char ScreenPlacementStore::LoadPreferences()
++{
++    char buffer[128];
++    const char* default_value = screen_placement_profile_default;
++    const char* path = preferences_path_04;
++    const char* key = screen_placement_profile_version_key;
++    const char* section = screen_placement_profile_options_section;
++    GetPrivateProfileStringA(section, key, default_value, buffer, sizeof(buffer), path);
++    if (strcmp(buffer, screen_placement_profile_version) != 0)
++    {
++        return 0;
++    }
++
++    path = preferences_path_04;
++    default_value = screen_placement_profile_default;
++    key = screen_placement_profile_language_key;
++    section = screen_placement_profile_language_section;
++    GetPrivateProfileStringA(section, key, default_value, buffer, sizeof(buffer), path);
++    if (strcmp(buffer, screen_placement_profile_default) != 0)
++    {
++        menu_script_variant_3c = atoi(buffer);
++    }
++
++    LoadSoundPreferences();
++    LoadSavedPlacementPreferences();
++    LoadVideoPreferences();
++
++    path = preferences_path_04;
++    default_value = screen_placement_profile_default;
++    key = screen_placement_profile_cursor_key;
++    section = screen_placement_profile_mouse_section;
++    GetPrivateProfileStringA(section, key, default_value, buffer, sizeof(buffer), path);
++    if (strcmp(buffer, screen_placement_profile_default) != 0)
++    {
++        byte_38 = atoi(buffer) != 0;
++    }
++    return 1;
++}
+diff --git a/src/startup_screen_placement_preferences.h b/src/startup_screen_placement_preferences.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..cbff0c01118786f7288f99891443d7b091805fb3
+--- /dev/null
++++ b/src/startup_screen_placement_preferences.h
+@@ -0,0 +1,15 @@
++#ifndef STARTUP_SCREEN_PLACEMENT_PREFERENCES_H
++#define STARTUP_SCREEN_PLACEMENT_PREFERENCES_H
++
++// Actual writable initialized pointer objects. Their original data owner is a
++// separate source dependency; names do not imply immutable pointers or defaults.
++extern const char* screen_placement_profile_default;          // 0x005868f4
++extern const char* screen_placement_profile_version;          // 0x00586880
++extern const char* screen_placement_profile_options_section;  // 0x00586888
++extern const char* screen_placement_profile_version_key;      // 0x005868a0
++extern const char* screen_placement_profile_language_section; // 0x0058689c
++extern const char* screen_placement_profile_language_key;     // 0x005868f0
++extern const char* screen_placement_profile_mouse_section;    // 0x00586898
++extern const char* screen_placement_profile_cursor_key;       // 0x005868ec
++
++#endif
+diff --git a/src/startup_screen_placement_size.cpp b/src/startup_screen_placement_size.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..683a637b87cec75172cf395dc253d8046d90c4ab
+--- /dev/null
++++ b/src/startup_screen_placement_size.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_placement.h"
++
++// FUNCTION: BEACHLIFE 0x004e6960
++void ScreenPlacementStore::SetScreenSize(int width, int height)
++{
++    width_2c = width;
++    height_30 = height;
++}
+diff --git a/src/startup_screen_placement_visit.h b/src/startup_screen_placement_visit.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..e9f6be2a50f74fa741cec47449f4b0b6024bbc8c
+--- /dev/null
++++ b/src/startup_screen_placement_visit.h
+@@ -0,0 +1,16 @@
++#ifndef STARTUP_SCREEN_PLACEMENT_VISIT_H
++#define STARTUP_SCREEN_PLACEMENT_VISIT_H
++
++#include "startup_screen_placement.h"
++
++typedef void (*SavedPlacementCallback)(SavedScreenPlacement* placement);
++
++// Actual folded cdecl traversal 0x004e8200 (also used for the active-screen
++// and owner190 lists): calls the callback for each payload, returns it.
++SavedPlacementCallback VisitSavedPlacements(
++    CircularListIterator first, CircularListIterator last, SavedPlacementCallback callback);
++
++// Actual cdecl 0x004209c0: forwards the payload to scalar delete.
++void DeleteSavedPlacement(SavedScreenPlacement* placement);
++
++#endif
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 0b27bbe3152a43395a936e165d3752d09c3119e6..407f9e10855504cffcba74af691ed58b856835c9 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -187,6 +187,7 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+ 
+     // Actual 0x0040c740; copies the current source buffer to the selected surface.
+     void RenderDefault();
++    void RenderNightDay(float value); // 0x0040f820.
+     void Present();
+     void RestoreSurfaces();
+     // Retained COM algorithm at 0x00410ce0; the native adapter is RestoreSurfaces.
+diff --git a/src/startup_window_fatal.h b/src/startup_window_fatal.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7459070ce689233bdb255312de0d9c3f0093187f
+--- /dev/null
++++ b/src/startup_window_fatal.h
+@@ -0,0 +1,8 @@
++#ifndef STARTUP_WINDOW_FATAL_H
++#define STARTUP_WINDOW_FATAL_H
++
++// Actual cdecl targets; the message is borrowed UTF-16 text.
++void SetFatalWindow(void* window);                                        // 0x004ea1f0.
++void ShowFatalWindowMessage(void* window, const unsigned short* message); // 0x004ea1a0.
++
++#endif
+diff --git a/src/startup_world_test.h b/src/startup_world_test.h
+index de87b1c2ed076a94d2363db8298fb3d4bcdf6233..310fd9e5a9ccf327bd49eda7796dad6581e97393 100644
+--- a/src/startup_world_test.h
++++ b/src/startup_world_test.h
+@@ -3,12 +3,14 @@
+ 
+ #include "startup_controller.h"
+ 
++struct WindowDeactivationState;
++
+ // Actual 164-byte x86 "WorldTest" controller at Game+0x10. Field names are
+ // descriptive; only the constructor's stores are established here.
+ // VTABLE: BEACHLIFE 0x004f4e78
+ struct WorldTestController : ControllerState
+ {
+-    void* object_88; // Slot1c calls an empty method on it; type unresolved.
++    WindowDeactivationState* object_88; // Ordinary world cleanup: 0x0043c420.
+     unsigned char byte_8c;
+     unsigned char unknown_8d[0x0f];
+     unsigned char byte_9c;
+diff --git a/src/startup_world_test_constructor.cpp b/src/startup_world_test_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..77978f8dd8014f2e09f91d4c3d20eb8c05e18944
+--- /dev/null
++++ b/src/startup_world_test_constructor.cpp
+@@ -0,0 +1,14 @@
++#include <stdlib.h>
++#include <time.h>
++
++#include "startup_world_test.h"
++
++// FUNCTION: BEACHLIFE 0x004e90c0
++WorldTestController::WorldTestController(const char* name)
++    : ControllerState(name)
++{
++    object_88 = 0;
++    byte_8c = 0;
++    byte_9c = 0;
++    srand(time(0));
++}
+diff --git a/src/startup_world_test_destructor.cpp b/src/startup_world_test_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa35e6a99526491d94398e921a39980d40a2fbeb
+--- /dev/null
++++ b/src/startup_world_test_destructor.cpp
+@@ -0,0 +1,33 @@
++#include "window_activation.h"
++#include "startup_world_test.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_renderer.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e9120
++WorldTestController::~WorldTestController()
++{
++    if (active)
++    {
++        window_audio_state->StopAllSounds();
++        screen_manager->panel_13c->StopPlayback();
++        screen_manager->byte_f8 = 0;
++        screen_manager->DisableOverlay();
++
++        WindowDeactivationState* old_world = object_88;
++        if (old_world)
++        {
++            old_world->~WindowDeactivationState();
++            ::operator delete(old_world);
++            object_88 = 0;
++        }
++
++        screen_request_renderer->SetClipMode(1);
++        active = 0;
++    }
++
++    // Genuine ControllerState destruction also runs when the active branch is
++    // skipped or unwinds. The raw world is freed only after its destructor returns.
++}
+diff --git a/src/window_activate.cpp b/src/window_activate.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6e89ca7714f48caa8a343e33a2a1499e2f7f95c
+--- /dev/null
++++ b/src/window_activate.cpp
+@@ -0,0 +1,20 @@
++#include "startup_input_state.h"
++#include "startup_screen_manager.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004e3b70
++void ScreenRequestGamePrefix::Activate()
++{
++    if (window_deactivation_enabled && inactive_c5)
++    {
++        if (window_deactivation_state)
++        {
++            screens->ActivateScreens();
++        }
++        window_audio_state->ResumeAudioStream();
++        window_audio_state->UnmuteDigitalDriver();
++        input->ResetTransition();
++        input->ApplyCurrentCursor();
++        inactive_c5 = 0;
++    }
++}
+diff --git a/src/window_activation.h b/src/window_activation.h
+index 740c14f8648661fd7f165b099a0671ec0bb9e3b7..a1d2de9eb40fe08569f5b16d9e409fa43b183f16 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -1,20 +1,16 @@
+ #ifndef WINDOW_ACTIVATION_H
+ #define WINDOW_ACTIVATION_H
+ 
++#include "startup_screen_manager.h"
+ #include "window_audio.h"
+ 
+ struct VariableWorldPrefix;
+ struct VariableEconomy;
+ 
+-// Descriptive observed prefixes, not recovered complete class layouts.
+-struct WindowActivationTarget
+-{
+-    unsigned char unknown_00[0xc5];
+-    unsigned char inactive;
++// Activation and the full Game owner are the same retail object.
++using WindowActivationTarget = ScreenRequestGamePrefix;
+ 
+-    void Activate();
+-    void Deactivate();
+-};
++struct GameFileReader;
+ 
+ struct WindowDeactivationState
+ {
+@@ -30,7 +26,10 @@ struct WindowDeactivationState
+     }; // Game time; paces the power-overload blink.
+     unsigned char unknown_15c[4];
+     float render_value_160;
+-    unsigned char unknown_164[0x1c];
++    unsigned char unknown_164[0x0c];
++    float speed_factor_170;
++    unsigned int speed_index_174;
++    unsigned char unknown_178[8];
+     unsigned int buildable_count_180;
+     // Inline DWORD storage up to the next recovered field at +0x3a0.
+     // This known storage span does not establish the original array capacity.
+@@ -72,8 +71,14 @@ struct WindowDeactivationState
+     // Actual 0x0043ca60: average guest happiness in percent (96 and above
+     // read 100); body separate. Descriptive name.
+     unsigned int AverageGuestHappiness();
++
++    void SetGameSpeed(unsigned int index);
++    void LoadState(GameFileReader* file);
++    ~WindowDeactivationState() noexcept(false); // Actual ordinary 0x0043c420.
+ };
+ 
++extern float window_game_speed_factors[];
++
+ extern unsigned char window_deactivation_enabled;
+ extern WindowDeactivationState* window_deactivation_state;
+ extern WindowAudioState* window_audio_state;
+diff --git a/src/window_audio.h b/src/window_audio.h
+index b3bc868d91a4068bc272c192e910571ece80c268..96e95299adb34d7437adafe04af334b3a9d299f0 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -1,6 +1,8 @@
+ #ifndef WINDOW_AUDIO_H
+ #define WINDOW_AUDIO_H
+ 
++#include "startup_sound_position.h"
++
+ struct WindowSoundVoice;
+ struct WindowSoundBank;
+ 
+@@ -22,9 +24,7 @@ struct WindowAudioState
+     int volume_d4;
+     float scale_d8;
+     void* listener_dc;
+-    float position_x_e0;
+-    float position_y_e4;
+-    float position_z_e8;
++    WindowAudioVector position_e0; // Original +e0..eb: listener position.
+     float value_ec;
+     float value_f0;
+     WindowSoundBank* bank_f4;
+@@ -52,6 +52,25 @@ struct WindowAudioState
+     void Update(float delta);
+     void SetSoundLevel(int voice, float level);
+ 
++    float NearDistance() const
++    {
++        return value_ec;
++    }
++    float FarDistance() const
++    {
++        return value_f0;
++    }
++    int PlaySoundAtLevel(const char* name, float level, unsigned int flags, float fade);
++    void FadeSoundLevel(int voice, float level, float fade);
++    void StopSound(int voice, float fade);
++    bool IsStreamPlaying();
++    int VoiceStatus(int voice);
++    int PlaySoundAtPosition(const char* name,
++        float level,
++        const WindowAudioVector* position,
++        unsigned int flags,
++        int voice);
++
+     void MuteDigitalDriver();
+     void UnmuteDigitalDriver();
+     void PauseAudioStream();
+diff --git a/src/window_audio_globals.cpp b/src/window_audio_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..61df502f2ef686bc6e6df4774aa018b10fa16da0
+--- /dev/null
++++ b/src/window_audio_globals.cpp
+@@ -0,0 +1,10 @@
++// GLOBAL: BEACHLIFE 0x004f4d24
++extern const float game_sound_start_fade = 0.1f;
++// GLOBAL: BEACHLIFE 0x004f4d28
++extern const float game_sound_level_fade = 0.1f;
++// GLOBAL: BEACHLIFE 0x004f4d2c
++extern const float game_sound_stop_fade = 0.2f;
++// GLOBAL: BEACHLIFE 0x004f4d30
++extern const float game_sound_retry_delay = 0.25f;
++// GLOBAL: BEACHLIFE 0x004f4d34
++extern const float game_sound_music_level = 0.05f;
+diff --git a/src/window_audio_initialize_3d_provider.cpp b/src/window_audio_initialize_3d_provider.cpp
+index 970a99a1d23ae37b4238067984db711a0ce02b57..d6165362fcb18caf25222c471063136260b8a088 100644
+--- a/src/window_audio_initialize_3d_provider.cpp
++++ b/src/window_audio_initialize_3d_provider.cpp
+@@ -34,9 +34,9 @@ void WindowAudioState::Initialize3DProvider(const char* provider_name)
+         provider_08 = selected;
+         void* listener = AIL_open_3D_listener(selected);
+         listener_dc = listener;
+-        position_x_e0 = 0.0f;
+-        position_y_e4 = 0.0f;
+-        position_z_e8 = 0.0f;
++        position_e0.x = 0.0f;
++        position_e0.y = 0.0f;
++        position_e0.z = 0.0f;
+         AIL_set_3D_position(listener, 0.0f, 0.0f, 0.0f);
+     }
+ }
+diff --git a/src/window_deactivate.cpp b/src/window_deactivate.cpp
+index cc8e8bad0b6c540104b1210bab3cc071d0236fc1..6008a0916ed7b594d5642831e72c4ecd2c3f14c8 100644
+--- a/src/window_deactivate.cpp
++++ b/src/window_deactivate.cpp
+@@ -1,14 +1,16 @@
+ #include "window_activation.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004e3b20
+-void WindowActivationTarget::Deactivate()
++void ScreenRequestGamePrefix::Deactivate()
+ {
+-    if (window_deactivation_enabled && !inactive)
++    if (window_deactivation_enabled && !inactive_c5)
+     {
+         if (window_deactivation_state)
++        {
+             window_deactivation_state->deactivation_requested = 1;
++        }
+         window_audio_state->PauseAudioStream();
+         window_audio_state->MuteDigitalDriver();
+-        inactive = 1;
++        inactive_c5 = 1;
+     }
+ }
+diff --git a/src/window_game_speed.h b/src/window_game_speed.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..41eafa47bc075795b0d8e2a21a361c5cf3f5b139
+--- /dev/null
++++ b/src/window_game_speed.h
+@@ -0,0 +1,10 @@
++#ifndef WINDOW_GAME_SPEED_H
++#define WINDOW_GAME_SPEED_H
++
++// Three slots at 0x005babac are proved; the complete original extent is unknown.
++extern float window_game_speed_factors[];
++
++// Actual 0x0043b4f0, registered in the original CRT initializer range.
++void InitializeGameSpeedFactors();
++
++#endif
+diff --git a/src/window_game_speed_globals.cpp b/src/window_game_speed_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f704fce81266c73f4d00a3b81e45375977959c4e
+--- /dev/null
++++ b/src/window_game_speed_globals.cpp
+@@ -0,0 +1,4 @@
++#include "window_game_speed.h"
++
++// GLOBAL: BEACHLIFE 0x005babac
++float window_game_speed_factors[3];
+diff --git a/src/window_game_speed_initialize.cpp b/src/window_game_speed_initialize.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3f51227221366dfc846f5197e208a3c0cba6313
+--- /dev/null
++++ b/src/window_game_speed_initialize.cpp
+@@ -0,0 +1,15 @@
++#include "window_game_speed.h"
++
++// Observed immutable binary32 words at 0x004f34f8..0x004f3504.
++static const float initial_game_speed_factors[3] = {1.0f, 2.0f, 8.0f};
++
++// FUNCTION: BEACHLIFE 0x0043b4f0
++void InitializeGameSpeedFactors()
++{
++    float first = initial_game_speed_factors[0];
++    float second = initial_game_speed_factors[1];
++    float third = initial_game_speed_factors[2];
++    window_game_speed_factors[0] = first;
++    window_game_speed_factors[1] = second;
++    window_game_speed_factors[2] = third;
++}
+diff --git a/src/window_set_game_speed.cpp b/src/window_set_game_speed.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c289e45e4bca4c2205a401312d53359a8b2e8557
+--- /dev/null
++++ b/src/window_set_game_speed.cpp
+@@ -0,0 +1,8 @@
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x0043f480
++void WindowDeactivationState::SetGameSpeed(unsigned int index)
++{
++    speed_factor_170 = window_game_speed_factors[index];
++    speed_index_174 = index;
++}

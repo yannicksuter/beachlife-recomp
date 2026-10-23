@@ -1,0 +1,332 @@
+diff --git a/src/startup_font_count_wrapped_lines.cpp b/src/startup_font_count_wrapped_lines.cpp
+new file mode 100644
+index 0000000..0ee9bb3
+--- /dev/null
++++ b/src/startup_font_count_wrapped_lines.cpp
+@@ -0,0 +1,52 @@
++#include "startup_screen_text.h"
++#include "startup_screen_font_data.h"
++
++// FUNCTION: BEACHLIFE 0x0049faa0
++unsigned int ScreenFontRenderer::CountWrappedLines(const unsigned short* text,
++    unsigned int width, unsigned int spacing)
++{
++    ScreenFontData* data = data_1c;
++    const unsigned short* cursor = text;
++    const unsigned short* word_start = text;
++    unsigned int line_characters = 0;
++    unsigned int word_characters = 0;
++    unsigned int line_width = spacing;
++    unsigned int breaks = 0;
++
++    while (*cursor != 0)
++    {
++        unsigned int current = *cursor;
++        unsigned short advance = static_cast<unsigned short>(
++            data->glyphs[current][2] - data->glyphs[current][0]);
++        unsigned int next = cursor[1];
++        if (next != 0)
++        {
++            advance = static_cast<unsigned short>(
++                advance + data->kerning[current * 255 + next]);
++        }
++        line_width += advance;
++
++        if (cursor != text && current != ' ' && cursor[-1] == ' ')
++        {
++            word_start = cursor;
++            word_characters = 0;
++        }
++        if (current != ' ')
++            ++word_characters;
++
++        if (line_width > width && line_characters > word_characters)
++        {
++            ++breaks;
++            cursor = word_start;
++            line_characters = 0;
++            word_characters = 0;
++            line_width = spacing;
++        }
++        else
++        {
++            ++cursor;
++            ++line_characters;
++        }
++    }
++    return breaks + 1;
++}
+diff --git a/src/startup_font_measure_text.cpp b/src/startup_font_measure_text.cpp
+new file mode 100644
+index 0000000..542562f
+--- /dev/null
++++ b/src/startup_font_measure_text.cpp
+@@ -0,0 +1,24 @@
++#include "startup_screen_text.h"
++#include "startup_screen_font_data.h"
++
++// FUNCTION: BEACHLIFE 0x0049fa30
++unsigned int ScreenFontRenderer::MeasureText(const unsigned short* text)
++{
++    ScreenFontData* data = data_1c;
++    unsigned int width = 0;
++    while (*text != 0)
++    {
++        unsigned int current = *text;
++        unsigned short advance = static_cast<unsigned short>(
++            data->glyphs[current][2] - data->glyphs[current][0]);
++        unsigned int next = text[1];
++        if (next != 0)
++        {
++            advance = static_cast<unsigned short>(
++                advance + data->kerning[current * 255 + next]);
++        }
++        width += advance;
++        ++text;
++    }
++    return width;
++}
+diff --git a/src/startup_font_measure_wrapped_text.cpp b/src/startup_font_measure_wrapped_text.cpp
+new file mode 100644
+index 0000000..ff94e62
+--- /dev/null
++++ b/src/startup_font_measure_wrapped_text.cpp
+@@ -0,0 +1,96 @@
++#include "startup_screen_text.h"
++#include "startup_screen_font_data.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0049fbc0
++unsigned int ScreenFontRenderer::MeasureWrappedText(const unsigned short* text,
++    unsigned int width, unsigned int spacing)
++{
++    ScreenFontData* data = data_1c;
++    const unsigned short* cursor = text;
++    const unsigned short* line_start = text;
++    const unsigned short* word_start = text;
++    unsigned int line_characters = 0;
++    unsigned int word_characters = 0;
++    unsigned int line_width = spacing;
++    unsigned int maximum_width = 0;
++    unsigned short scratch[256];
++
++    while (*cursor != 0)
++    {
++        unsigned int current = *cursor;
++        unsigned short advance = static_cast<unsigned short>(
++            data->glyphs[current][2] - data->glyphs[current][0]);
++        unsigned int next = cursor[1];
++        if (next != 0)
++        {
++            advance = static_cast<unsigned short>(
++                advance + data->kerning[current * 255 + next]);
++        }
++        line_width += advance;
++
++        if (cursor != text && current != ' ' && cursor[-1] == ' ')
++        {
++            word_start = cursor;
++            word_characters = 0;
++        }
++        if (current != ' ')
++            ++word_characters;
++
++        if (line_width > width && line_characters > word_characters)
++        {
++            memset(scratch, 0, sizeof(scratch));
++            unsigned int copy_bytes = (line_characters - word_characters) * 2;
++            memcpy(scratch, line_start, copy_bytes);
++
++            const unsigned short* copied = scratch;
++            unsigned int copied_width = 0;
++            while (*copied != 0)
++            {
++                current = *copied;
++                advance = static_cast<unsigned short>(
++                    data->glyphs[current][2] - data->glyphs[current][0]);
++                next = copied[1];
++                if (next != 0)
++                {
++                    advance = static_cast<unsigned short>(
++                        advance + data->kerning[current * 255 + next]);
++                }
++                copied_width += advance;
++                ++copied;
++            }
++            if (copied_width > maximum_width)
++                maximum_width = copied_width;
++
++            cursor = word_start;
++            line_start = cursor;
++            line_characters = 0;
++            word_characters = 0;
++            line_width = spacing;
++        }
++        else
++        {
++            ++cursor;
++            ++line_characters;
++        }
++    }
++
++    unsigned int remaining_width = 0;
++    while (*line_start != 0)
++    {
++        unsigned int current = *line_start;
++        unsigned short advance = static_cast<unsigned short>(
++            data->glyphs[current][2] - data->glyphs[current][0]);
++        unsigned int next = line_start[1];
++        if (next != 0)
++        {
++            advance = static_cast<unsigned short>(
++                advance + data->kerning[current * 255 + next]);
++        }
++        remaining_width += advance;
++        ++line_start;
++    }
++    if (remaining_width > maximum_width)
++        return remaining_width;
++    return maximum_width;
++}
+diff --git a/src/startup_font_renderer_constructor.cpp b/src/startup_font_renderer_constructor.cpp
+new file mode 100644
+index 0000000..56c2d07
+--- /dev/null
++++ b/src/startup_font_renderer_constructor.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_text.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0049f6c0
++ScreenFontRenderer::ScreenFontRenderer(ScreenFontData* data, ScreenTextLookup* lookup)
++{
++    data_1c = data;
++    lookup_20 = lookup;
++
++    RenderRectangle current = screen_request_renderer->clip_rectangle;
++    rectangle.x = current.x;
++    current = screen_request_renderer->clip_rectangle;
++    rectangle.y = current.y;
++    current = screen_request_renderer->clip_rectangle;
++    rectangle.width = current.width;
++    current = screen_request_renderer->clip_rectangle;
++    rectangle.height = current.height;
++
++    word_10 = 0xffffffff;
++    word_18 = 0;
++    state_14 = 0;
++}
+diff --git a/src/startup_screen_font_data.h b/src/startup_screen_font_data.h
+new file mode 100644
+index 0000000..a59a89d
+--- /dev/null
++++ b/src/startup_screen_font_data.h
+@@ -0,0 +1,15 @@
++#ifndef STARTUP_SCREEN_FONT_DATA_H
++#define STARTUP_SCREEN_FONT_DATA_H
++
++// Observed storage used by the measurement methods. The original constructor
++// copies 1024 words to +4 and 65536 bytes to +804. Image ownership and the
++// complete original class/lifetime remain separate.
++struct ScreenFontData
++{
++    unsigned char unknown_00[4];
++    unsigned short glyphs[256][4];
++    signed char kerning[65536];
++    unsigned int unknown_10804[2];
++};
++
++#endif
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+new file mode 100644
+index 0000000..6f1b539
+--- /dev/null
++++ b/src/startup_screen_text.h
+@@ -0,0 +1,87 @@
++#ifndef STARTUP_SCREEN_TEXT_H
++#define STARTUP_SCREEN_TEXT_H
++
++#include "startup_render_rectangle.h"
++
++struct ScreenFontData;
++struct ScreenTextLookup;
++
++// These pointers are borrowed by the lookup methods. Storage allocation and
++// the complete original owner's construction/destruction remain separate.
++struct ScreenTextValue
++{
++    const char* key;
++    const unsigned short* text;
++};
++
++struct ScreenTextBucket
++{
++    const char* key;
++    ScreenTextValue* value;
++    unsigned char unavailable;
++    unsigned char unknown_09[3];
++};
++
++struct ScreenTextKey
++{
++    const char* text;
++
++    explicit ScreenTextKey(const char* value)
++        : text(value)
++    {
++    }
++
++    // Actual empty cleanup alias at 0x00437d10; no allocation is owned here.
++    ~ScreenTextKey() { }
++};
++
++struct ScreenTextIterator
++{
++    ScreenTextBucket* bucket;
++    ScreenTextLookup* lookup;
++
++    // Same actual RET0 cleanup as ScreenTextKey, with a distinct receiver.
++    ~ScreenTextIterator() { }
++};
++
++// Observed lookup receiver prefix only. Original class/template names and
++// complete construction/destruction are not inferred from these fields.
++struct ScreenTextLookup
++{
++    int end_index;
++    unsigned char unknown_04[4];
++    ScreenTextBucket* buckets;
++    unsigned char unknown_0c[4];
++    int bucket_count;
++    unsigned char unknown_14[4];
++
++    const unsigned short* LookupText(const char* key);
++    ScreenTextIterator FindText(const ScreenTextKey& key);
++    ScreenTextIterator EndText();
++};
++
++// Observed nonpolymorphic constructor prefix. Original names and complete
++// ownership/destruction remain unresolved; the two pointers are borrowed here.
++struct ScreenFontRenderer
++{
++    RenderRectangle rectangle;
++    unsigned int word_10;
++    unsigned char state_14;
++    unsigned char unknown_15[3];
++    unsigned int word_18;
++    ScreenFontData* data_1c;
++    ScreenTextLookup* lookup_20;
++
++    ScreenFontRenderer(ScreenFontData* data, ScreenTextLookup* lookup);
++
++    unsigned int MeasureText(const unsigned short* text);
++    unsigned int CountWrappedLines(const unsigned short* text,
++        unsigned int width, unsigned int spacing);
++    unsigned int MeasureWrappedText(const unsigned short* text,
++        unsigned int width, unsigned int spacing);
++};
++
++extern ScreenTextLookup* screen_text_lookup;
++extern unsigned short screen_text_empty[1];
++
++#endif

@@ -13,6 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import build_version
 import bump_version
+import format_sources
 import package_build as packages
 import release
 from project_version import read_version
@@ -43,6 +44,7 @@ class VersionTests(unittest.TestCase):
         config = {'project_version': '0.1.0', 'channel': 'dev', 'pull_request': '0', 'run_id': '0'}
         first = build_version.identity(self.root, config)
         self.assertFalse(first['dirty'])
+        self.assertEqual(first['decomp_profile'], 'native')
         (self.root / 'note.txt').write_text('edit')
         self.assertTrue(build_version.identity(self.root, config)['dirty'])
         git('add', 'note.txt')
@@ -53,13 +55,27 @@ class VersionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_version.identity(self.root, {**config, 'channel': 'test'})
 
+    def test_experimental_identity_cannot_be_a_release(self):
+        config = {'project_version': '0.1.0', 'channel': 'dev', 'pull_request': '0',
+                  'run_id': '0', 'decomp_profile': 'native-experimental'}
+        with patch.object(build_version, 'git_output', side_effect=['a' * 40, '', '1']):
+            self.assertEqual(build_version.identity(self.root, config)['decomp_profile'],
+                             'native-experimental')
+        with self.assertRaisesRegex(ValueError, 'requires a dev or test build'):
+            build_version.identity(self.root, {**config, 'channel': 'release'})
+        for profile in ('matching', 'unknown', None):
+            with self.subTest(profile=profile), self.assertRaisesRegex(ValueError, 'Unknown native'):
+                build_version.identity(self.root, {**config, 'decomp_profile': profile})
 
-def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corrupt=False):
+
+def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corrupt=False,
+                    profile='native'):
     platform, architecture = target.rsplit('-', 1)
     system = 'linux' if platform == 'steamdeck' else platform
     version = '0.1.0+g' + sha[:12]
     info = {'project_version': '0.1.0', 'build_version': version, 'commit': sha, 'dirty': False,
-            'channel': channel, 'run_id': 7, 'platform': platform, 'system': system, 'architecture': architecture}
+            'channel': channel, 'run_id': 7, 'platform': platform, 'system': system, 'architecture': architecture,
+            'capability': 'launcher', 'decomp_profile': profile}
     data = {name: b'fixture' for name in packages.payload_names(info)}
     manifest = {'format': 1, 'build': info, 'files': {
         name: {'sha256': packages.digest(body), 'bytes': len(body), 'mode': 0o644} for name, body in data.items()}}
@@ -107,6 +123,17 @@ class PackageTests(unittest.TestCase):
                 path = fixture_archive(self.root, target, extra=extra, corrupt=corrupt)
                 with self.assertRaises(ValueError):
                     packages.inspect_package(path)
+
+    def test_archive_rejects_experimental_release_and_mixed_profiles(self):
+        for target in packages.TARGETS:
+            fixture_archive(self.root, target)
+        fixture_archive(self.root, 'linux-x86_64', profile='native-experimental')
+        with self.assertRaisesRegex(ValueError, 'source profiles differ'):
+            packages.verify_set(self.root, '0.1.0', 'a' * 40, 'test', 7)
+        archive = fixture_archive(self.root, 'linux-x86_64', channel='release',
+                                  profile='native-experimental')
+        with self.assertRaisesRegex(ValueError, 'requires a dev or test build'):
+            packages.inspect_package(archive)
 
     def test_symlink_input_is_rejected(self):
         (self.root / 'real').write_text('data')
@@ -175,6 +202,45 @@ class ReleaseTests(unittest.TestCase):
         args = command.call_args.args
         self.assertIn('--draft', args)
         self.assertEqual(args[args.index('--target') + 1], 'a' * 40)
+
+
+class FormatTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.executable = format_sources.formatter(format_sources.default_formatter(), format_sources.pinned_version())
+        except (OSError, ValueError) as error:
+            self.skipTest(str(error))
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
+        for config in ('.clang-format', 'decomp/.clang-format'):
+            (self.root / config).parent.mkdir(exist_ok=True)
+            (self.root / config).write_bytes((format_sources.ROOT / config).read_bytes())
+        (self.root / '.gitignore').write_text('ignored.cpp\n')
+        self.untidy = untidy = '#include <b.h>\n#include <a.h>\nstd::vector<std::vector<int> > table;\nint f(){return 1;}\n'
+        for name in ('src/game.cpp', 'decomp/src/loader.cpp', 'extern/dep/lib.cpp', 'orig/dump.cpp', 'ignored.cpp'):
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_text(untidy)
+
+    def test_formats_only_project_sources_with_their_own_style(self):
+        names = format_sources.sources(self.root)
+        self.assertEqual(names, ['decomp/src/loader.cpp', 'src/game.cpp'])
+        with patch('sys.stdout', new=io.StringIO()) as diff:
+            self.assertEqual(format_sources.run(self.executable, self.root, names, check=True), names)
+            self.assertIn('+int f()\n', diff.getvalue())
+            self.assertIn('int f(){', (self.root / 'src/game.cpp').read_text())
+            format_sources.run(self.executable, self.root, names, check=False)
+            self.assertEqual(format_sources.run(self.executable, self.root, names, check=True), [])
+        native = (self.root / 'src/game.cpp').read_text()
+        self.assertLess(native.index('<a.h>'), native.index('<b.h>'))
+        self.assertIn('<std::vector<int>>', native)
+        # The VC6 sources keep their include order and C++98 template closers.
+        matching = (self.root / 'decomp/src/loader.cpp').read_text()
+        self.assertLess(matching.index('<b.h>'), matching.index('<a.h>'))
+        self.assertIn('<std::vector<int> >', matching)
+        for name in ('extern/dep/lib.cpp', 'orig/dump.cpp', 'ignored.cpp'):
+            self.assertEqual((self.root / name).read_text(), self.untidy)
 
 
 if __name__ == '__main__':

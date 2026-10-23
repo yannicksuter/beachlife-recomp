@@ -1,0 +1,63 @@
+Reconstruct token parsing through the actual matched scanners and setters.
+Preserve sequential slot writes, ignored stored count and unchecked input behavior.
+The caller remains responsible for the original readable/capacity preconditions.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -62,6 +62,7 @@
+         StartupConfigOwnerState fixture_owner_state;
+     }
+     fixture_config_token.AssignValue("7", 1);
++    fixture_config_tokens.ParseTokens("generated", 9);
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/startup_config_token_parser.cpp
+@@ -0,0 +1,21 @@
++#include "startup_config_tokens.h"
++#include "startup_config_scan.h"
++
++// FUNCTION: BEACHLIFE 0x004ec6d0
++void ConfigTokenBuffer::ParseTokens(const char* buffer, int size)
++{
++    int index = SkipConfigSeparators(buffer, size);
++    int token = 0;
++    while (HasConfigNameDelimiters(buffer + index, size - index))
++    {
++        index += SeekConfigQuotedName(buffer + index, size - index);
++        tokens[token].AssignName(buffer + index, size - index);
++        index += GetConfigNameExtent(buffer + index, size - index);
++        index += SkipConfigSeparators(buffer + index, size - index);
++        int length = GetConfigValueExtent(buffer + index, size - index);
++        tokens[token].AssignValue(buffer + index, length);
++        index += length;
++        index += SkipConfigSeparators(buffer + index, size - index);
++        ++token;
++    }
++}
+--- a/src/startup_config_tokens.h
++++ b/src/startup_config_tokens.h
+@@ -19,6 +19,7 @@
+ public:
+     ~ConfigTokenBuffer();
+     int AllocateTokens(unsigned int size);
++    void ParseTokens(const char* buffer, int size);
+ 
+     ConfigToken* tokens;
+     unsigned int count;
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -202,6 +202,12 @@
+       "size": 126,
+       "name": "ConfigToken::AssignValue",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec6d0",
++      "size": 242,
++      "name": "ConfigTokenBuffer::ParseTokens",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

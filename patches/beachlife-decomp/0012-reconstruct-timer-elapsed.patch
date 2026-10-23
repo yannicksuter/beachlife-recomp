@@ -1,0 +1,70 @@
+Reconstruct elapsed timestamp arithmetic with the original signed correction.
+Preserve 64-bit wraparound and the hardware probe register saves.
+Portable native timing remains a separate adaptation.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -35,6 +35,7 @@
+ {
+     StartupProfiler fixture_profiler;
+     fixture_profiler.Start();
++    fixture_profiler.Stop();
+     ConfigToken fixture_config_token;
+     fixture_config_token.Reset();
+     ConfigTokenBuffer fixture_config_tokens;
+--- a/src/startup_timer.h
++++ b/src/startup_timer.h
+@@ -5,13 +5,12 @@
+ // Original class name and complete object extent remain unknown.
+ struct StartupProfiler
+ {
+-    unsigned int start_low;
+-    unsigned int start_high;
+-    int elapsed_low;
+-    unsigned int elapsed_high;
++    unsigned __int64 start;
++    unsigned __int64 elapsed;
+     int overhead;
+ 
+     void Start();
++    void Stop();
+ };
+ 
+ #endif
+--- /dev/null
++++ b/src/startup_timer_elapsed.cpp
+@@ -0,0 +1,19 @@
++#include "startup_timer.h"
++
++// FUNCTION: BEACHLIFE 0x004ecf60
++void StartupProfiler::Stop()
++{
++    unsigned __int64 current;
++    __asm
++        {
++        push eax
++        push edx
++        rdtsc
++        mov dword ptr current, eax
++        mov dword ptr current + 4, edx
++        pop edx
++        pop eax
++        }
++    elapsed = current - start;
++    elapsed -= overhead;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -142,6 +142,12 @@
+       "size": 82,
+       "name": "ConfigTokenBuffer::AllocateTokens",
+       "name_status": "descriptive; original symbol and declarations unknown"
++    },
++    {
++      "address": "0x004ecf60",
++      "size": 60,
++      "name": "StartupProfiler::Stop",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [

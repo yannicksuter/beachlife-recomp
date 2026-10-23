@@ -1,0 +1,100 @@
+Reconstruct dialog preparation and child traversal.
+Preserve the base state update and callback-dependent next and head reloads.
+
+--- /dev/null
++++ b/src/startup_screen_dialog.h
+@@ -0,0 +1,29 @@
++#ifndef STARTUP_SCREEN_DIALOG_H
++#define STARTUP_SCREEN_DIALOG_H
++
++#include "startup_screen_item.h"
++
++// Observed child-ring prefix; this payload is distinct from ActiveScreenEntry.
++struct ScreenChildNode
++{
++    ScreenChildNode* next;
++    ScreenChildNode* previous;
++    ScreenItem* item;
++};
++
++struct ScreenChildRing
++{
++    ScreenChildNode* head;
++};
++
++// Observed derived prefix only. Original complete construction, destruction,
++// hierarchy and virtual table remain unqualified.
++struct ScreenDialog : ScreenItem
++{
++    unsigned char unknown_4c[0x2c];
++    ScreenChildRing children;
++
++    virtual void MarkPrepared();
++};
++
++#endif
+--- /dev/null
++++ b/src/startup_screen_dialog_prepare.cpp
+@@ -0,0 +1,11 @@
++#include "startup_screen_dialog.h"
++
++// FUNCTION: BEACHLIFE 0x004a5ec0
++void ScreenDialog::MarkPrepared()
++{
++    ScreenItem::MarkPrepared();
++    for (ScreenChildNode* node = children.head->next;
++        node != children.head;
++        node = node->next)
++        node->item->MarkPrepared();
++}
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -15,6 +15,7 @@
+ CircularListValueNode* volatile fixture_value_node;
+ #include "startup_frame_clock.h"
+ #include "../src/startup_screen_item.h"
++#include "../src/startup_screen_dialog.h"
+ #include "tga_image.h"
+ #include "startup_config_tokens.h"
+ #include "startup_config_scan.h"
+@@ -65,6 +66,8 @@
+ volatile unsigned char fixture_screen_preparation;
+ volatile int fixture_screen_movement;
+ volatile int fixture_screen_position;
++ScreenDialog* volatile fixture_dialog;
++volatile unsigned char fixture_dialog_preparation;
+ char fixture_config_byte;
+ StartupConfig* volatile fixture_owner;
+ float GetGameVersion();
+@@ -186,6 +189,9 @@
+     fixture_screen_item.ScreenItem::ApplyPosition(5, -9);
+     ::fixture_screen_position = fixture_screen_item.rectangle.bottom;
+     fixture_config_offset = fixture_screen_item.GetRectangle().left;
++    ScreenDialog* dialog = fixture_dialog;
++    dialog->ScreenDialog::MarkPrepared();
++    fixture_dialog_preparation = dialog->preparation_flag;
+     FrameClock fixture_frame_clock = { 0 };
+     fixture_frame_clock.Update(1000);
+     startup_input_state = &fixture_input;
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -39,3 +39,4 @@
+ 0x004ada20,function,21,??1ScreenItem@@UAE@XZ
+ 0x004ee920,library,6,__purecall
+ 0x004ad990,function,93,??0ScreenItem@@QAE@UScreenRectangle@@@Z
++0x004a5ec0,function,36,?MarkPrepared@ScreenDialog@@UAEXXZ
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -424,6 +424,12 @@
+       "size": 93,
+       "name": "ScreenItem::ScreenItem",
+       "name_status": "descriptive base constructor; observed four-word rectangle and partial polymorphic prefix, complete class and original declaration unresolved"
++    },
++    {
++      "address": "0x004a5ec0",
++      "size": 36,
++      "name": "ScreenDialog::MarkPrepared",
++      "name_status": "descriptive child traversal and partial derived prefix; complete original Dialog lifetime and table unqualified"
+     }
+   ],
+   "library_functions": [

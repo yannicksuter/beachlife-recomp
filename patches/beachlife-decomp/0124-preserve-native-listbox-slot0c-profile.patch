@@ -1,0 +1,141 @@
+Restore the unchanged native source projection before native adapters.
+
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 5eddc0c3917aba2042f40779c93fd05df4c8bca8..4240be5b68552ac28ba8f3baf94371e81028e2e2 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -1182,25 +1182,3 @@ extern "C" __declspec(dllexport) void FixtureAudioClearRegistration(WindowAudioS
+     window_audio_state = previous;
+     fixture_audio_clear_restored = window_audio_state;
+ }
+-
+-#include "startup_screen_list_box.h"
+-
+-typedef char ListBoxSlot0cBaseSize[(sizeof(ScreenItem) == 0x44) ? 1 : -1];
+-typedef char ListBoxSlot0cSize[(sizeof(ScreenListBoxPrefix) == 0x98) ? 1 : -1];
+-typedef char ListBoxSlot0cEntriesOffset[(offsetof(ScreenListBoxPrefix, entries) == 0x6c) ? 1 : -1];
+-typedef char ListBoxSlot0cSelectionOffset[(offsetof(ScreenListBoxPrefix, selection) == 0x78) ? 1 : -1];
+-typedef char ListBoxSlot0cOwnedOffset[(offsetof(ScreenListBoxPrefix, owned_item_8c) == 0x8c) ? 1 : -1];
+-typedef char ListBoxSlot0cStateOffset[(offsetof(ScreenListBoxPrefix, state_94) == 0x94) ? 1 : -1];
+-
+-ScreenListBoxPrefix* volatile fixture_list_box_slot0c_owner;
+-ScreenItem* volatile fixture_list_box_slot0c_child;
+-
+-// Compile/link retention only. A nonnull live genuine ListBox is a borrowed
+-// precondition; this helper constructs nothing and never writes any vptr.
+-// The helper and its comparison-only linked image must never be executed.
+-extern "C" __declspec(dllexport) void FixtureListBoxUnresolved0c(ScreenListBoxPrefix* box)
+-{
+-    fixture_list_box_slot0c_owner = box;
+-    fixture_list_box_slot0c_child = box->owned_item_8c;
+-    box->ScreenListBoxPrefix::Unresolved0c();
+-}
+diff --git b/metadata.csv a/metadata.csv
+index 8cca1fd0f30b180620496c62dab39ae82b14d93d..2b8394cefb1f5ba9d75843c8e566464d3bff6cad 100644
+--- b/metadata.csv
++++ a/metadata.csv
+@@ -89,4 +89,3 @@ address,type,size,symbol
+ 0x004c6a60,function,22,?SetFlag04@ScreenRadioItem@@QAEXXZ
+ 0x004c6a80,function,19,?SetFlag10@ScreenRadioItem@@QAEXXZ
+ 0x004d0540,function,11,?ClearRegistration@WindowAudioState@@QAEXXZ
+-0x004c5240,function,16,?Unresolved0c@ScreenListBoxPrefix@@UAEXXZ
+diff --git b/src/startup_screen_list_box.h a/src/startup_screen_list_box.h
+deleted file mode 100644
+index e933d65e815593d26df91ccf17b95bf2308a9a2c..0000000000000000000000000000000000000000
+--- b/src/startup_screen_list_box.h
++++ /dev/null
+@@ -1,61 +0,0 @@
+-#ifndef STARTUP_SCREEN_LIST_BOX_H
+-#define STARTUP_SCREEN_LIST_BOX_H
+-
+-#include "startup_screen_item.h"
+-
+-struct ScreenListBoxEntry;
+-
+-// Observed three-pointer member at original +6c.
+-struct ScreenListBoxEntryRange
+-{
+-    ScreenListBoxEntry** begin;
+-    ScreenListBoxEntry** end;
+-    ScreenListBoxEntry** capacity;
+-
+-    ~ScreenListBoxEntryRange(); // Actual 0x004c5710; not defined or used here.
+-};
+-
+-// Distinct unsigned-word range at original +78.
+-struct ScreenListBoxSelectionRange
+-{
+-    unsigned int* begin;
+-    unsigned int* end;
+-    unsigned int* capacity;
+-
+-    ~ScreenListBoxSelectionRange(); // Actual 0x004c39a0; not defined or used here.
+-};
+-
+-// Matching-only borrowed-receiver projection: owned_item_8c, x86 size 0x98 and
+-// the slot0c override are the only class ABI used here. The current matching
+-// base stays unchanged. Unused derived overrides are intentionally omitted;
+-// this is not the complete 21-slot ListBox table or a constructed/native owner.
+-struct ScreenListBoxPrefix : ScreenItem
+-{
+-    ScreenRectangle rectangle_44;
+-    char* name_54;
+-    unsigned char state_58;
+-    unsigned char state_59;
+-    unsigned char unknown_5a[2];
+-    unsigned int word_5c;
+-    unsigned int word_60;
+-    unsigned int word_64;
+-    unsigned int word_68;
+-    ScreenListBoxEntryRange entries;
+-    ScreenListBoxSelectionRange selection;
+-    unsigned int word_84;
+-    unsigned int word_88;
+-    ScreenItem* owned_item_8c;
+-    float elapsed_90;
+-    unsigned char state_94;
+-    unsigned char state_95;
+-    unsigned char unknown_96[2];
+-
+-    // Genuine declarations only; neither lifetime method is defined or used.
+-    ScreenListBoxPrefix(ScreenRectangle initial, ScreenRectangle inner,
+-        const char* name, unsigned int first_word, unsigned int second_word);
+-    ~ScreenListBoxPrefix();
+-
+-    void Unresolved0c();
+-};
+-
+-#endif
+diff --git b/src/startup_screen_list_box_unresolved0c.cpp a/src/startup_screen_list_box_unresolved0c.cpp
+deleted file mode 100644
+index d6d3b68620a9729ca90d4ba190d17888b60e5093..0000000000000000000000000000000000000000
+--- b/src/startup_screen_list_box_unresolved0c.cpp
++++ /dev/null
+@@ -1,10 +0,0 @@
+-#include "startup_screen_list_box.h"
+-
+-// FUNCTION: BEACHLIFE 0x004c5240
+-void ScreenListBoxPrefix::Unresolved0c()
+-{
+-    if (owned_item_8c != 0)
+-    {
+-        owned_item_8c->Unresolved0c();
+-    }
+-}
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 4eb10962a37cac26f2826aac73ea0286e19a47df..fe14f450b9e95f790d5a4bd32b4a0965fa6b5f4a 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -561,12 +561,6 @@
+       "size": 11,
+       "name": "WindowAudioState::ClearRegistration",
+       "name_status": "descriptive constructor registration cleanup; existing borrowed matching prefix"
+-    },
+-    {
+-      "address": "0x004c5240",
+-      "size": 16,
+-      "name": "ScreenListBoxPrefix::Unresolved0c",
+-      "name_status": "descriptive real kind22 slot0c; borrowed x86 prefix, owned_item_8c and slot0c only"
+     }
+   ],
+   "library_functions": [

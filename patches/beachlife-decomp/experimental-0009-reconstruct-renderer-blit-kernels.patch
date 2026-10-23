@@ -1,0 +1,131 @@
+diff --git a/src/indexed_palette_blit.h b/src/indexed_palette_blit.h
+--- a/src/indexed_palette_blit.h
++++ b/src/indexed_palette_blit.h
+@@ -7,3 +7,24 @@
+     unsigned short* destination, int destination_stride,
+     int source_x, int source_y, int destination_x, int destination_y,
+     int width, int height, const unsigned short* palette);
++
++// Actual target 0x00401190; body remains a separate reconstruction dependency.
++// Same four-byte destination slots; a zero source index leaves the slot untouched.
++void IndexedPaletteBlitTransparent(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette);
++
++// Actual target 0x00401220; body remains a separate reconstruction dependency.
++// destination_pitch is bytes, each output is one halfword, and destination_y is ignored.
++void IndexedPaletteBlitPacked(const unsigned char* source, int source_stride,
++    unsigned short* destination, unsigned int destination_pitch,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette);
++
++// Actual target 0x004012b0; body remains a separate reconstruction dependency.
++// Four-byte destination slots, zero index skipped, selected palette word AND mask.
++void IndexedPaletteBlitMasked(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette, unsigned int mask);
+diff --git a/src/indexed_palette_blit_transparent.cpp b/src/indexed_palette_blit_transparent.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/indexed_palette_blit_transparent.cpp
+@@ -0,0 +1,29 @@
++#include "indexed_palette_blit.h"
++
++// FUNCTION: BEACHLIFE 0x00401190
++void IndexedPaletteBlitTransparent(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette)
++{
++    int source_offset = (source_y + height - 1) * source_stride + source_x;
++    int destination_offset = ((destination_y + height - 1) * destination_stride + destination_x) * 2;
++
++    for (; height != 0; --height)
++    {
++        int remaining = width;
++        while (remaining != 0)
++        {
++            unsigned char index = source[source_offset];
++            if (index != 0)
++            {
++                destination[destination_offset] = palette[index];
++            }
++            destination_offset += 2;
++            ++source_offset;
++            --remaining;
++        }
++        destination_offset -= (destination_stride + width) * 2;
++        source_offset -= source_stride + width;
++    }
++}
+diff --git a/src/indexed_palette_blit_packed.cpp b/src/indexed_palette_blit_packed.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/indexed_palette_blit_packed.cpp
+@@ -0,0 +1,30 @@
++#include "indexed_palette_blit.h"
++
++// FUNCTION: BEACHLIFE 0x00401220
++void IndexedPaletteBlitPacked(const unsigned char* source, int source_stride,
++    unsigned short* destination, unsigned int destination_pitch,
++    int source_x, int source_y, int destination_x, int /* destination_y */,
++    int width, int height, const unsigned short* palette)
++{
++    int source_offset = (source_y + height - 1) * source_stride + source_x;
++    int destination_stride = static_cast<int>(destination_pitch >> 1);
++    int destination_offset = (height - 1) * destination_stride + destination_x;
++
++    for (; height != 0; --height)
++    {
++        int remaining = width;
++        while (remaining != 0)
++        {
++            unsigned char index = source[source_offset];
++            if (index != 0)
++            {
++                destination[destination_offset] = palette[index];
++            }
++            ++destination_offset;
++            ++source_offset;
++            --remaining;
++        }
++        destination_offset -= destination_stride + width;
++        source_offset -= source_stride + width;
++    }
++}
+diff --git a/src/indexed_palette_blit_masked.cpp b/src/indexed_palette_blit_masked.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/indexed_palette_blit_masked.cpp
+@@ -0,0 +1,29 @@
++#include "indexed_palette_blit.h"
++
++// FUNCTION: BEACHLIFE 0x004012b0
++void IndexedPaletteBlitMasked(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette, unsigned int mask)
++{
++    int source_offset = (source_y + height - 1) * source_stride + source_x;
++    int destination_offset = ((destination_y + height - 1) * destination_stride + destination_x) * 2;
++
++    for (; height != 0; --height)
++    {
++        int remaining = width;
++        while (remaining != 0)
++        {
++            unsigned char index = source[source_offset];
++            if (index != 0)
++            {
++                destination[destination_offset] = static_cast<unsigned short>(palette[index] & mask);
++            }
++            destination_offset += 2;
++            ++source_offset;
++            --remaining;
++        }
++        destination_offset -= (destination_stride + width) * 2;
++        source_offset -= source_stride + width;
++    }
++}

@@ -1,0 +1,89 @@
+Reconstruct digital-driver muting through the actual decorated Miles import.
+Preserve enabled-byte gating and forwarding of null driver handles.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2,6 +2,7 @@
+ #include "startup_config_tokens.h"
+ #include "startup_config_scan.h"
+ #include "startup_timer.h"
++#include "window_audio.h"
+ #include "startup_controller.h"
+ #include "startup_config_decimal.h"
+ #include "startup_config_owner.h"
+@@ -75,6 +76,8 @@
+     }
+     ControllerState fixture_controller;
+     fixture_controller.Exit();
++    WindowAudioState fixture_audio = { 0 };
++    fixture_audio.MuteDigitalDriver();
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- /dev/null
++++ b/src/miles_imports.h
+@@ -0,0 +1,7 @@
++#ifndef MILES_IMPORTS_H
++#define MILES_IMPORTS_H
++
++// Observed x86 import ABI; the caller ignores the DLL's return register.
++extern "C" __declspec(dllimport) void __stdcall AIL_set_digital_master_volume(void* driver, int volume);
++
++#endif
+--- /dev/null
++++ b/src/window_audio.h
+@@ -0,0 +1,13 @@
++#ifndef WINDOW_AUDIO_H
++#define WINDOW_AUDIO_H
++
++// Descriptive minimum prefix; original class name and full layout are unknown.
++struct WindowAudioState
++{
++    unsigned char enabled;
++    void* digital_driver;
++
++    void MuteDigitalDriver();
++};
++
++#endif
+--- /dev/null
++++ b/src/window_audio_mute.cpp
+@@ -0,0 +1,9 @@
++#include "window_audio.h"
++#include "miles_imports.h"
++
++// FUNCTION: BEACHLIFE 0x004cf6d0
++void WindowAudioState::MuteDigitalDriver()
++{
++    if (enabled)
++        AIL_set_digital_master_volume(digital_driver, 0);
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -243,6 +243,12 @@
+       "address": "0x004e8f30",
+       "size": 8,
+       "name": "ControllerState::Exit",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004cf6d0",
++      "size": 18,
++      "name": "WindowAudioState::MuteDigitalDriver",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+@@ -266,5 +272,13 @@
+       "/GX",
+       "/Ob1"
+     ]
++  },
++  "stdcall_imports": {
++    "mss32.dll": {
++      "export_names": "decorated",
++      "symbols": {
++        "AIL_set_digital_master_volume": 8
++      }
++    }
+   }
+ }

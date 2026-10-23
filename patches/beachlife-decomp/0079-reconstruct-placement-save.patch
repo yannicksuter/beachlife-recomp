@@ -1,0 +1,139 @@
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -31,6 +31,7 @@
+ typedef char saved_placement_write_store_offset_check[offsetof(ScreenPlacementStore, saved) == 0x28 ? 1 : -1];
+ #include "startup_frame_clock.h"
+ #include "../src/startup_screen_item.h"
++#include "startup_screen_manager.h"
+ #include "../src/startup_screen_dialog.h"
+ #include "tga_image.h"
+ #include "startup_config_tokens.h"
+@@ -123,6 +124,36 @@
+     }
+ }
+ 
++// Generated typed prefixes have static zero initialization. They describe
++// only fields consumed by this comparison; no retail owner lifetime is implied.
++ScreenManager fixture_save_manager = { 0 };
++ScreenRequestGamePrefix fixture_save_game = { 0 };
++ScreenRectangle fixture_save_rectangle = { -17, 29, 41, 67 };
++volatile int fixture_manager_saved_x;
++volatile int fixture_manager_saved_y;
++volatile int fixture_manager_saved_group;
++typedef char save_manager_renderer_check[offsetof(ScreenManager, renderer) == 0 ? 1 : -1];
++typedef char save_manager_registry_check[offsetof(ScreenManager, registry) == 0x8c ? 1 : -1];
++typedef char save_manager_active_check[offsetof(ScreenManager, active) == 0xbc ? 1 : -1];
++typedef char save_manager_mode_check[offsetof(ScreenManager, mode) == 0x128 ? 1 : -1];
++typedef char save_manager_previous_check[offsetof(ScreenManager, previous_mode) == 0x12c ? 1 : -1];
++typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x130 ? 1 : -1];
++typedef char save_game_placement_check[offsetof(ScreenRequestGamePrefix, placement) == 0x54 ? 1 : -1];
++typedef char save_game_prefix_size_check[sizeof(ScreenRequestGamePrefix) == 0x58 ? 1 : -1];
++typedef char save_rectangle_size_check[sizeof(ScreenRectangle) == 16 ? 1 : -1];
++
++// Called after the actual writer creates group5 in the existing fixture store.
++// This helper and the linked comparison image are never executed.
++extern "C" void fixture_save_placement(ScreenPlacementStore* store, SavedScreenPlacement* placement)
++{
++    fixture_save_game.placement = store;
++    screen_request_game = &fixture_save_game;
++    fixture_save_manager.SavePlacement(fixture_save_rectangle, 5);
++    fixture_manager_saved_x = placement->x;
++    fixture_manager_saved_y = placement->y;
++    fixture_manager_saved_group = placement->group;
++}
++
+ extern "C" void fixture_entry()
+ {
+     fixture_child_link_construction();
+@@ -195,6 +226,7 @@
+     fixture_written_x = fixture_written->x;
+     fixture_written_y = fixture_written->y;
+     fixture_written_group = fixture_written->group;
++    fixture_save_placement(&fixture_placement, fixture_written);
+     ScreenRequestRenderer fixture_screen_renderer = { 0 };
+     ScreenSurfacePosition fixture_screen_surface = { 0 };
+     ScreenSurfacePosition* fixture_screen_surfaces[1] = { &fixture_screen_surface };
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -45,3 +45,5 @@
+ 0x004e8110,function,189,?CreateNode@CircularList@@QAEPAUSavedScreenPlacementNode@@ABQAUSavedScreenPlacement@@@Z
+ 0x004e80a0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUSavedScreenPlacement@@@Z
+ 0x004e6830,function,126,?WritePlacement@ScreenPlacementStore@@QAEXHHH@Z
++0x004b2e40,function,55,?SavePlacement@ScreenManager@@QAEXABUScreenRectangle@@H@Z
++0x005bb02c,global,4,?screen_request_game@@3PAUScreenRequestGamePrefix@@A
+--- /dev/null
++++ b/src/startup_placement_save.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_item.h"
++#include "startup_screen_placement.h"
++
++// GLOBAL: BEACHLIFE 0x005bb02c
++ScreenRequestGamePrefix* screen_request_game;
++
++// FUNCTION: BEACHLIFE 0x004b2e40
++void ScreenManager::SavePlacement(const ScreenRectangle& rectangle, int group)
++{
++    if (mode == 6 || previous_mode == 6)
++    {
++        return;
++    }
++    screen_request_game->placement->WritePlacement(rectangle.left, rectangle.top, group);
++}
+--- /dev/null
++++ b/src/startup_screen_manager.h
+@@ -0,0 +1,39 @@
++#ifndef STARTUP_SCREEN_MANAGER_H
++#define STARTUP_SCREEN_MANAGER_H
++
++#include "startup_list.h"
++
++struct ScreenChildLink;
++struct ScreenPlacementStore;
++struct ScreenRectangle;
++struct ScreenRequestContext;
++struct ScreenRequestRenderer;
++
++// Only the observed placement pointer at original x86+0x54 is described.
++// This does not recover the complete game class or its lifetime.
++struct ScreenRequestGamePrefix
++{
++    unsigned char unknown_00[0x54];
++    ScreenPlacementStore* placement;
++};
++
++// Observed manager prefix only. Complete construction, destruction and field
++// meanings remain unqualified; mode values are retained as descriptive words.
++struct ScreenManager
++{
++    ScreenRequestRenderer* renderer;
++    unsigned char unknown_04[0x88];
++    ScreenChildLink* registry;
++    unsigned char unknown_90[0x2c];
++    CircularList active;
++    unsigned char unknown_c0[0x68];
++    int mode;
++    int previous_mode;
++
++    bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
++    void SavePlacement(const ScreenRectangle& rectangle, int group);
++};
++
++extern ScreenRequestGamePrefix* screen_request_game;
++
++#endif
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -442,6 +442,12 @@
+       "size": 126,
+       "name": "ScreenPlacementStore::WritePlacement",
+       "name_status": "descriptive observed application placement writer; original class, complete lifetime and spelling unknown"
++    },
++    {
++      "address": "0x004b2e40",
++      "size": 55,
++      "name": "ScreenManager::SavePlacement",
++      "name_status": "descriptive mode-gated saved-position wrapper; original class, spelling and complete owner lifetimes unknown"
+     }
+   ],
+   "library_functions": [
