@@ -1,0 +1,3771 @@
+diff --git a/src/startup_animation_sound.h b/src/startup_animation_sound.h
+index c5b7480c3c92c90cd58472b7ec8998b70bd42353..902a872b9140b3a95474f3792b0c944674dd0c45 100644
+--- a/src/startup_animation_sound.h
++++ b/src/startup_animation_sound.h
+@@ -2,12 +2,46 @@
+ #define STARTUP_ANIMATION_SOUND_H
+ 
+ struct ScreenWorldPosition;
++struct AnimationSoundEntry
++{
++    char* name_00;
++    char*** sounds_04;
++    int* counts_08;
++    int* next_0c;
++    int* limit_indices_10;
++    float** volumes_14;
++};
++
++struct AnimationObjectSound
++{
++    char* name_00;
++    char* sound_04;
++    float volume_08;
++    unsigned char flags_0c;
++    unsigned char unknown_0d[3];
++};
++
++struct AnimationSoundGroup
++{
++    int count_00;
++    int word_04;
++    char* name_08;
++    char** sounds_0c;
++};
++
+ struct AnimationSoundLookup
+ {
+-    unsigned char unknown_00[0x56c];
++    AnimationSoundEntry animations_00[30];
++    int animation_count_2d0;
++    AnimationObjectSound objects_2d4[20];
++    int object_count_414;
++    AnimationSoundGroup groups_418[16];
++    int group_count_518;
++    int limits_51c[20];
+     float crowd_maximum_56c;
+     float crowd_divisor_570;
+     float crowd_fade_574;
++
+     ~AnimationSoundLookup() noexcept(false);                                                  // 0x004d05b0.
+     unsigned char Play(const char* name, int animation, const ScreenWorldPosition* position); // 0x004d1990.
+ };
+diff --git a/src/startup_animation_sound_methods.cpp b/src/startup_animation_sound_methods.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..40a6e47953cf9e6264214c59e15d8eb2e5d8baa2
+--- /dev/null
++++ b/src/startup_animation_sound_methods.cpp
+@@ -0,0 +1,71 @@
++#include "startup_animation_sound.h"
++#include "startup_game_update_pair.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_point.h"
++
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004d1990
++unsigned char AnimationSoundLookup::Play(const char* name, int animation, const ScreenWorldPosition* position)
++{
++    int index = 0;
++    while (index < animation_count_2d0 && _stricmp(name, animations_00[index].name_00) != 0)
++        ++index;
++    if (index == animation_count_2d0 || animation_count_2d0 <= 0)
++        return 0;
++    AnimationSoundEntry& entry = animations_00[index];
++    if (entry.counts_08[animation] == 0)
++        return 0;
++    WindowAudioVector point = { position->x, position->y, position->z };
++    int limit_index = entry.limit_indices_10[animation];
++    int limit = limit_index == -1 ? -1 : limits_51c[limit_index];
++    int next = entry.next_0c[animation];
++    game_update_pair->QueuePointSound(entry.sounds_04[animation][next], &point, entry.volumes_14[animation][next], limit, limit_index);
++    entry.next_0c[animation] = (entry.next_0c[animation] + 1) % entry.counts_08[animation];
++    return 1;
++}
++
++// FUNCTION: BEACHLIFE 0x004d05b0
++AnimationSoundLookup::~AnimationSoundLookup() noexcept(false)
++{
++    for (int index = 0; index < animation_count_2d0; ++index)
++    {
++        AnimationSoundEntry& entry = animations_00[index];
++        ScreenDialogResource* resource = screen_dialog_resources->Lookup(entry.name_00);
++        for (int animation = 0; animation < resource->record->frame_count; ++animation)
++        {
++            for (int sound = 0; sound < entry.counts_08[animation]; ++sound)
++                ::operator delete(entry.sounds_04[animation][sound]);
++            if (entry.counts_08[animation] != 0)
++            {
++                ::operator delete(entry.sounds_04[animation]);
++                ::operator delete(entry.volumes_14[animation]);
++            }
++        }
++        screen_dialog_resources->Release(resource);
++        ::operator delete(entry.sounds_04);
++        ::operator delete(entry.counts_08);
++        ::operator delete(entry.next_0c);
++        ::operator delete(entry.limit_indices_10);
++        ::operator delete(entry.volumes_14);
++        ::operator delete(entry.name_00);
++    }
++    animation_count_2d0 = 0;
++    for (int index = 0; index < object_count_414; ++index)
++    {
++        ::operator delete(objects_2d4[index].name_00);
++        ::operator delete(objects_2d4[index].sound_04);
++    }
++    object_count_414 = 0;
++    for (int index = 0; index < group_count_518; ++index)
++    {
++        AnimationSoundGroup& group = groups_418[index];
++        ::operator delete(group.name_08);
++        for (int sound = 0; sound < group.count_00; ++sound)
++            ::operator delete(group.sounds_0c[sound]);
++        ::operator delete(group.sounds_0c);
++    }
++    group_count_518 = 0;
++    animation_sounds = 0;
++}
+diff --git a/src/startup_building_status.h b/src/startup_building_status.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ecf6b70caac350512fee50779e453b10206c2d1
+--- /dev/null
++++ b/src/startup_building_status.h
+@@ -0,0 +1,59 @@
++#ifndef STARTUP_BUILDING_STATUS_H
++#define STARTUP_BUILDING_STATUS_H
++
++#include "startup_list.h"
++
++struct GameFileReader;
++struct BuildingStatusEntry
++{
++    unsigned int id_00;
++    int word_04;
++    int* values_08;
++    unsigned int count_0c;
++    float values_10[6];
++    unsigned char byte_28;
++    unsigned char byte_29;
++    unsigned char byte_2a;
++    unsigned char byte_2b;
++    struct Detail
++    {
++        unsigned int word_00;
++        unsigned int word_04;
++        int word_08;
++    };
++    Detail* details_2c[10];
++    int indices_54[10];
++
++    explicit BuildingStatusEntry(unsigned int id); // 0x00420e20.
++};
++
++struct BuildingStatusNode : CircularListNode
++{
++    BuildingStatusEntry* entry;
++};
++
++struct BuildingStatusWorker
++{
++    int id_00;
++    int word_04;
++    unsigned int word_08;
++    int word_0c;
++    unsigned char flag_10;
++    unsigned char unknown_11[3];
++};
++
++struct VariableBuildingStatus
++{
++    CircularListNode* head_00;
++    int word_04;
++    BuildingStatusWorker workers_08[50];
++    unsigned int worker_count_3f0;
++
++    ~VariableBuildingStatus() noexcept(false);                                                     // 0x00420fb0.
++    void LoadState(GameFileReader* file);                                                          // 0x00424120.
++    float ValueAt004224a0(unsigned int id);                                                        // 0x004224a0.
++    float ValueAt00422430(unsigned int id);                                                        // 0x00422430.
++    CircularListIterator Insert(CircularListIterator position, BuildingStatusEntry* const& entry); // 0x00424540.
++};
++
++#endif
+diff --git a/src/startup_building_status_methods.cpp b/src/startup_building_status_methods.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..79a288b306385071daf8cb3e3a305c3cdca980f9
+--- /dev/null
++++ b/src/startup_building_status_methods.cpp
+@@ -0,0 +1,142 @@
++#include "startup_building_status.h"
++#include "startup_game_file.h"
++#include "startup_variable_state.h"
++#include "node_storage.h"
++
++// FUNCTION: BEACHLIFE 0x00424440
++static void DeleteBuildingStatusEntry(BuildingStatusEntry* entry)
++{
++    if (!entry)
++        return;
++    if (entry->values_08)
++    {
++        ::operator delete(entry->values_08);
++        entry->values_08 = 0;
++    }
++    if (entry->details_2c[0])
++    {
++        for (int index = 0; index < 10; ++index)
++        {
++            ::operator delete(entry->details_2c[index]);
++            entry->details_2c[index] = 0;
++        }
++    }
++    ::operator delete(entry);
++}
++
++static void ClearBuildingStatusEntries(VariableBuildingStatus* status)
++{
++    CircularListNode* head = status->head_00;
++    for (CircularListNode* node = head->next; node != head; node = node->next)
++        DeleteBuildingStatusEntry(static_cast<BuildingStatusNode*>(node)->entry);
++    CircularListNode* node = head->next;
++    while (node != head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released)
++            ReleaseNodeStorage(released, sizeof(BuildingStatusNode));
++    }
++    head->next = head;
++    head->previous = head;
++}
++
++// FUNCTION: BEACHLIFE 0x00420fb0
++VariableBuildingStatus::~VariableBuildingStatus() noexcept(false)
++{
++    ClearBuildingStatusEntries(this);
++    if (head_00)
++        ReturnPool(head_00, sizeof(BuildingStatusNode));
++}
++
++static BuildingStatusEntry* FindBuildingStatus(VariableBuildingStatus* status, unsigned int id)
++{
++    for (CircularListNode* node = status->head_00->next; node != status->head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if (entry->id_00 == id)
++            return entry;
++    }
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00422430
++float VariableBuildingStatus::ValueAt00422430(unsigned int id)
++{
++    if (variable_world->FindObject(id))
++    {
++        BuildingStatusEntry* entry = FindBuildingStatus(this, id);
++        if (entry)
++            return entry->byte_29;
++    }
++    return 0.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x004224a0
++float VariableBuildingStatus::ValueAt004224a0(unsigned int id)
++{
++    if (variable_world->FindObject(id))
++    {
++        BuildingStatusEntry* entry = FindBuildingStatus(this, id);
++        if (entry)
++            return entry->byte_28;
++    }
++    return 0.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x00424120
++void VariableBuildingStatus::LoadState(GameFileReader* file)
++{
++    char label[128];
++    unsigned int version;
++    file->Unknown40();
++    file->ReadString(label, 128);
++    file->Unknown68(&version);
++    ClearBuildingStatusEntries(this);
++    unsigned int count;
++    file->Unknown68(&count);
++    for (int index = 0; index < static_cast<int>(count); ++index)
++    {
++        int id;
++        file->ReadInt(&id);
++        BuildingStatusEntry* entry = new (std::nothrow) BuildingStatusEntry(id);
++        file->ReadInt(&entry->word_04);
++        file->ReadInt(reinterpret_cast<int*>(&entry->count_0c));
++        for (unsigned int item = 0; item < entry->count_0c; ++item)
++        {
++            // The retail loop repeatedly loads the first four words.
++            file->ReadInt(entry->values_08);
++            file->ReadInt(entry->values_08 + 1);
++            file->ReadInt(entry->values_08 + 2);
++            file->ReadInt(entry->values_08 + 3);
++        }
++        for (int value = 0; value < 6; ++value)
++            file->ReadFloat(&entry->values_10[value]);
++        file->ReadByte(&entry->byte_28);
++        file->ReadByte(&entry->byte_29);
++        file->ReadByte(&entry->byte_2a);
++        file->ReadByte(&entry->byte_2b);
++        for (int item = 0; item < 10; ++item)
++        {
++            file->Unknown68(&entry->details_2c[item]->word_00);
++            file->Unknown68(&entry->details_2c[item]->word_04);
++            file->ReadInt(&entry->details_2c[item]->word_08);
++        }
++        CircularListIterator end;
++        end.node = head_00;
++        Insert(end, entry);
++    }
++    file->ReadInt(&word_04);
++    file->ReadInt(reinterpret_cast<int*>(&worker_count_3f0));
++    for (unsigned int index = 0; index < worker_count_3f0; ++index)
++    {
++        BuildingStatusWorker& worker = workers_08[index];
++        file->ReadInt(&worker.id_00);
++        file->ReadInt(&worker.word_04);
++        unsigned int value;
++        file->Unknown68(&value);
++        worker.word_08 = value;
++        file->ReadInt(&worker.word_0c);
++        file->ReadByte(&worker.flag_10);
++    }
++}
+diff --git a/src/startup_economy_load.cpp b/src/startup_economy_load.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5e39dd25ffbb8f962b98b52ed1f721d3399b44e
+--- /dev/null
++++ b/src/startup_economy_load.cpp
+@@ -0,0 +1,14 @@
++#include "startup_variable_state.h"
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x00432ea0
++void VariableEconomy::LoadState(GameFileReader* file)
++{
++    char label[128];
++    unsigned int version;
++    file->Unknown40();
++    file->ReadString(label, 128);
++    file->Unknown68(&version);
++    file->Unknown5c(reinterpret_cast<unsigned short*>(unknown_00), 64);
++    file->ReadFloat(&value_80);
++}
+diff --git a/src/startup_game_update_pair.h b/src/startup_game_update_pair.h
+index fb625924befddc0ee7076f7ac72feca713063f4f..e73c6134fd576ef6d454d2ec04807f8abcc6aaab 100644
+--- a/src/startup_game_update_pair.h
++++ b/src/startup_game_update_pair.h
+@@ -199,6 +199,8 @@ struct GameUpdatePair : GameUpdatePairRegistration
+     // 0x004d2bd0 (sounds at fixed points, list at +4); RET4 each.
+     void UpdateObjectSounds(float delta);
+     void UpdatePointSounds(float delta);
++    void QueuePointSound(const char* name, const WindowAudioVector* position,
++        float volume, int limit, int voice); // 0x004d2780.
+ 
+     // Native host ownership exposes ordinary destruction without inventing a Game
+     // friend implementation. This changes access only, not layout or cleanup.
+diff --git a/src/startup_input_motion.h b/src/startup_input_motion.h
+index 046cdef36d66de00377675192fd35592314bf54a..8cd54c14b00f266e909788215a130b5fef19855e 100644
+--- a/src/startup_input_motion.h
++++ b/src/startup_input_motion.h
+@@ -41,8 +41,9 @@ struct InputMotionState : InputMotionRegistration
+     // destructor then clears the slot (its out-of-line copy serves unwinds).
+     ~InputMotionState();
+ 
+-    void SetCursor(unsigned int cursor); // 0x00409700.
+-    ScreenPoint Position();              // 0x004097c0.
++    void SetCursor(unsigned int cursor);           // 0x00409700.
++    void SetSoftwareCursor(unsigned char enabled); // 0x00409690.
++    ScreenPoint Position();                        // 0x004097c0.
+ 
+     unsigned char Update();
+     // Actual 0x004095f0, no stack arguments, AL1 on normal return.
+diff --git a/src/startup_input_motion_cursor_mode.cpp b/src/startup_input_motion_cursor_mode.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0adef2c4da213e16f49932e539108b0279cb5eb
+--- /dev/null
++++ b/src/startup_input_motion_cursor_mode.cpp
+@@ -0,0 +1,22 @@
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++
++#include <windows.h>
++
++// FUNCTION: BEACHLIFE 0x00409690
++void InputMotionState::SetSoftwareCursor(unsigned char enabled)
++{
++    byte_20 = enabled;
++    if (enabled)
++        startup_input_state->HideSystemCursor();
++    else
++        startup_input_state->ShowSystemCursor();
++}
++
++// FUNCTION: BEACHLIFE 0x004eb090
++void InputState::ShowSystemCursor()
++{
++    while (ShowCursor(TRUE) < 0)
++    {
++    }
++}
+diff --git a/src/startup_input_state.h b/src/startup_input_state.h
+index 322650c5b749d155898d2a37dba122b8b49a7809..66521aba44dd9a3d3af9acdfda72985906740b0e 100644
+--- a/src/startup_input_state.h
++++ b/src/startup_input_state.h
+@@ -67,6 +67,7 @@ struct InputState
+     void SetSystemCursor(unsigned char visible);
+     // Actual 0x004eb0b0: ShowCursor(FALSE) until the display count is negative.
+     void HideSystemCursor();
++    void ShowSystemCursor(); // 0x004eb090.
+     unsigned char ReadKeyboardState();
+     // Actual 0x004ead80: buffered mouse events.
+     unsigned char ReadMouseEvents();
+diff --git a/src/startup_overlay_lifecycle.cpp b/src/startup_overlay_lifecycle.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e19dd440effa7ff99b8fd471f0ada7bdada1923
+--- /dev/null
++++ b/src/startup_overlay_lifecycle.cpp
+@@ -0,0 +1,50 @@
++#include "startup_screen_overlay_layout.h"
++#include "startup_game_file.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00418820
++OverlayMapPrefix::~OverlayMapPrefix() noexcept(false)
++{
++    if (file_a0)
++        fclose(file_a0);
++    if (loaded_c0)
++        Unload();
++    delete archive_154;
++    pending_104.clear();
++    overlay_map = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0041b900
++void OverlayMapPrefix::LoadState(GameFileReader* file)
++{
++    char label[128];
++    unsigned int version;
++    file->Unknown40();
++    file->ReadString(label, 128);
++    file->Unknown68(&version);
++    file->Unknown68(reinterpret_cast<unsigned int*>(&scroll_x_c4));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&scroll_y_c8));
++    file->ReadFloat(&view_x_e4);
++    file->ReadFloat(&view_y_e8);
++    file->ReadFloat(&view_target_x_ec);
++    file->ReadFloat(&view_target_y_f0);
++    unsigned int count;
++    file->Unknown68(&count);
++    for (int index = 0; index < static_cast<int>(count); ++index)
++    {
++        unsigned int value;
++        file->Unknown68(&value);
++        pending_104.push_back(value);
++    }
++    file->ReadByte(&flag_130);
++    file->ReadByte(&flag_131);
++    file->ReadFloat(&value_134);
++    file->ReadFloat(&value_138);
++    file->Unknown68(&word_13c);
++    file->Unknown68(&word_140);
++    file->Unknown68(&word_144);
++    file->Unknown68(&word_148);
++    file->ReadFloat(&value_12c);
++    file->ReadInt(&rendered_guests_158);
++    RefreshState();
++}
+diff --git a/src/startup_overlay_mapped_file_release.cpp b/src/startup_overlay_mapped_file_release.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..dca517a03b3634db6eac50c1d157af64b474d23a
+--- /dev/null
++++ b/src/startup_overlay_mapped_file_release.cpp
+@@ -0,0 +1,9 @@
++#include "startup_screen_overlay_layout.h"
++#include <windows.h>
++
++// FUNCTION: BEACHLIFE 0x0049ef40
++void OverlayMappedFile::ReleaseView(void* view)
++{
++    if (!UnmapViewOfFile(view))
++        GetLastError();
++}
+diff --git a/src/startup_overlay_render.cpp b/src/startup_overlay_render.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..41af8800b1160a865da1d45c818e647ab744ec2c
+--- /dev/null
++++ b/src/startup_overlay_render.cpp
+@@ -0,0 +1,152 @@
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include "render_mask_setup.h"
++#include "tga_image.h"
++
++#include <cstring>
++
++// GLOBAL: BEACHLIFE 0x005a8938
++static TgaImage overlay_water_image(128, 128);
++
++// FUNCTION: BEACHLIFE 0x00418fa0
++void OverlayMapPrefix::RenderTerrain()
++{
++    view_ac.bottom = screen_request_renderer->height - screen_request_renderer->word_60;
++    RenderRectangle bounds = { view_ac.left, view_ac.top, view_ac.right, view_ac.bottom };
++    renderer_fc->SetRectangle(bounds);
++}
++
++// FUNCTION: BEACHLIFE 0x00419a10
++void OverlayMapPrefix::SetViewScale(float scale)
++{
++    screen_request_renderer->SetViewScale(scale);
++}
++
++// FUNCTION: BEACHLIFE 0x004193f0
++bool OverlayMapPrefix::ContainsEntity(VariableEntity* entity)
++{
++    int x = static_cast<int>(entity->x_30);
++    int y = static_cast<int>(static_cast<long double>(entity->y_34) * 0.5L);
++    y -= static_cast<int>(HeightAt(x, y));
++    x -= scroll_x_c4;
++    y -= scroll_y_c8;
++    ScreenDialogResource* image = entity->keyline_state_44;
++    x += image->CurrentFrameValue();
++    y += image->SelectedFrame()->word_14;
++    int left = 0, top = 0;
++    int right = image->SelectedFrame()->width_0e;
++    int bottom = image->SelectedFrame()->height_10;
++    return renderer_fc->ClipWorldRectangle(x, y, left, top, right, bottom);
++}
++
++// FUNCTION: BEACHLIFE 0x004194e0
++void OverlayMapPrefix::RenderEntities(VariableEntity** entities, unsigned int count, unsigned char)
++{
++    screen_request_renderer->rectangle_enabled_4e = 1;
++    rendered_guests_158 = 0;
++    for (int i = 0; i < static_cast<int>(count); ++i)
++    {
++        VariableEntity* entity = entities[i];
++        if (!entity->visible_40)
++            continue;
++        if (entity->kind_2c != 2 && entity->kind_2c != 1 && !ContainsEntity(entity))
++            continue;
++        if (entity->kind_2c == 3)
++            ++rendered_guests_158;
++        entity->Unknown3c();
++    }
++    screen_request_renderer->rectangle_enabled_4e = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00419660
++void OverlayMapPrefix::RenderEntityOverlays(VariableEntity** entities, unsigned int count)
++{
++    for (int i = 0; i < static_cast<int>(count); ++i)
++        if (ContainsEntity(entities[i]))
++            entities[i]->Unknown40();
++}
++
++// FUNCTION: BEACHLIFE 0x0041b0c0
++void OverlayMapPrefix::RenderGrid()
++{
++    unsigned char* pixel = reinterpret_cast<unsigned char*>(screen_request_renderer->pixels_1c);
++    int width = screen_request_renderer->width;
++    int height = screen_request_renderer->height;
++    for (int row = 0; row < height; ++row)
++        for (int column = 0; column < width; ++column, pixel += 4)
++        {
++            int y = scroll_y_c8 + row;
++            unsigned int depth = 0;
++            if (y >= 0 && y < 4096)
++            {
++                depth = static_cast<unsigned short>(static_cast<int>(static_cast<long double>(y) * (1.0L / 4096.0L) * depth_scale_160)
++                                                    + depth_bias_15c);
++                depth += y << 4;
++            }
++            unsigned int stored;
++            std::memcpy(&stored, pixel, sizeof(stored));
++            if ((stored >> 16) <= (depth & 0xffffu))
++            {
++                stored = (stored & 0xffff0000u) + ((stored >> 1) & (render_half_mask >> 1));
++                std::memcpy(pixel, &stored, sizeof(stored));
++            }
++        }
++}
++
++// FUNCTION: BEACHLIFE 0x0041b1b0
++void OverlayMapPrefix::RenderWater()
++{
++    float scale;
++    std::memcpy(&scale, &screen_request_renderer->word_58, sizeof(scale));
++    int first_x = scroll_x_c4 / tile_size_dc;
++    int first_y = scroll_y_c8 / tile_size_dc;
++    int last_x = (scroll_x_c4 + static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.right)) / scale)) / 128 + 1;
++    int last_y = (scroll_y_c8 + static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.bottom)) / scale)) / 128 + 1;
++    for (int row = first_y; row < last_y; ++row)
++        for (int column = first_x; column < last_x; ++column)
++        {
++            OverlayCachedTile& tile = cached_tiles_e0[row * cache_width_d4 + column];
++            if (!tile.ready)
++                continue;
++            ScreenPoint position = { column * tile_size_dc - scroll_x_c4, row * tile_size_dc - scroll_y_c8 };
++            ScreenRectangle bounds = { 0, 0, 0, 0 };
++            overlay_water_image.pixels = static_cast<unsigned char*>(tile.view);
++            renderer_fc->DrawWaterTile(column, row, position, bounds, &overlay_water_image, 8, 0, tile.water_01 ? 1 : 0);
++        }
++    ScreenRectangle bounds;
++    while (screen_request_renderer->TakeDirtyRectangle(bounds))
++    {
++    }
++    overlay_water_image.pixels = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0041b4b0
++float OverlayMapPrefix::WaterCoverage()
++{
++    float scale;
++    std::memcpy(&scale, &screen_request_renderer->word_58, sizeof(scale));
++    int width = static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.right)) / scale);
++    int height = static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.bottom)) / scale);
++    ScreenPoint low = CurrentScreenTerrain()->WorldToTile({ static_cast<float>(scroll_x_c4), static_cast<float>(static_cast<long double>(scroll_y_c8) * 2), 0.0f });
++    int last_x = static_cast<int>(static_cast<unsigned int>(width) - 1u);
++    int last_y = static_cast<int>(static_cast<unsigned int>(scroll_y_c8) + static_cast<unsigned int>(height) - 1u);
++    ScreenPoint high = CurrentScreenTerrain()->WorldToTile({ static_cast<float>(static_cast<long double>(last_x) + scroll_x_c4), static_cast<float>(static_cast<long double>(last_y) * 2), 0.0f });
++    if (high.x == 0)
++        high.x = 128;
++    if (high.y == 0)
++        high.y = 128;
++    if (low.x == 128)
++        low.x = 0;
++    if (low.y == 128)
++        low.y = 0;
++    int count = screen_terrain_grid->CountWaterTiles(low.x, low.y, high.x, high.y);
++    if (count > 0)
++    {
++        unsigned int rows = static_cast<unsigned int>(high.y) - static_cast<unsigned int>(low.y);
++        unsigned int columns = static_cast<unsigned int>(high.x) - static_cast<unsigned int>(low.x);
++        return static_cast<float>(static_cast<long double>(count) / static_cast<int>(rows * columns));
++    }
++    return 0.0f;
++}
+diff --git a/src/startup_playlist_advance.cpp b/src/startup_playlist_advance.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..51b4651211ffa8920831ca7d38a11552b12c0c92
+--- /dev/null
++++ b/src/startup_playlist_advance.cpp
+@@ -0,0 +1,44 @@
++#include "startup_screen_panel13c_owner.h"
++#include "window_audio.h"
++
++// FUNCTION: BEACHLIFE 0x004ce6b0
++void ScreenLoadPanel13cOwner::AdvanceTrack()
++{
++    if (entries_begin_04 == entries_end_08)
++        return;
++    if (entries_begin_04[index_10]->state_14)
++    {
++        SetCurrentEntry(index_10);
++        Play(0);
++        return;
++    }
++    if (word_1c == 2)
++    {
++        ++index_10;
++        if (index_10 == entries_end_08 - entries_begin_04)
++            index_10 = 0;
++        SetCurrentEntry(index_10);
++        Play(0);
++        return;
++    }
++    int previous = index_10;
++    do
++    {
++        ++index_10;
++        if (index_10 == entries_end_08 - entries_begin_04)
++            index_10 = 0;
++        if (entries_begin_04[index_10]->word_10 == word_1c)
++            break;
++        if (index_10 == previous)
++        {
++            audio_00->StopStream();
++            state_18 = 0;
++            break;
++        }
++    } while (true);
++    if (state_18)
++    {
++        SetCurrentEntry(index_10);
++        Play(0);
++    }
++}
+diff --git a/src/startup_playlist_shuffle.cpp b/src/startup_playlist_shuffle.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ed9c3aa9575645d6a24ffd66e346605b3818b7f3
+--- /dev/null
++++ b/src/startup_playlist_shuffle.cpp
+@@ -0,0 +1,70 @@
++#include "startup_screen_panel13c_owner.h"
++#include "startup_screen_list_box.h"
++
++#include <algorithm>
++#include <cstdlib>
++#include <new>
++#include <vector>
++
++// FUNCTION: BEACHLIFE 0x004cdc80
++void ScreenLoadPanel13cOwner::ShuffleAll()
++{
++    ScreenLoadPanel13cEntry** first = entries_begin_04;
++    ScreenLoadPanel13cEntry** last = entries_end_08;
++    if (first != last)
++    {
++        for (ScreenLoadPanel13cEntry** entry = first + 1; entry != last; ++entry)
++        {
++            int index = std::rand() % static_cast<int>(entry - first + 1);
++            std::swap(*entry, first[index]);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004cdcc0
++void ScreenLoadPanel13cOwner::ShuffleRows(ScreenListBoxSelectionRange* rows)
++{
++    // Native vector storage for the retail temporary pointer-vector boundary.
++    std::vector<ScreenLoadPanel13cEntry*> selected;
++    for (unsigned int index = 0; index < static_cast<unsigned int>(rows->end - rows->begin); ++index)
++        selected.push_back(entries_begin_04[rows->begin[index]]);
++    for (unsigned int index = 1; index < selected.size(); ++index)
++    {
++        int other = std::rand() % static_cast<int>(index + 1);
++        std::swap(selected[index], selected[other]);
++    }
++    for (unsigned int index = 0; index < static_cast<unsigned int>(rows->end - rows->begin); ++index)
++        entries_begin_04[rows->begin[index]] = selected[index];
++}
++
++// FUNCTION: BEACHLIFE 0x004cde40
++void ScreenLoadPanel13cOwner::MarkForDeletion(int index)
++{
++    entries_begin_04[index]->state_15 = 1;
++}
++
++// FUNCTION: BEACHLIFE 0x004cde60
++void ScreenLoadPanel13cOwner::DeleteMarked()
++{
++    ScreenLoadPanel13cEntry** last = entries_end_08;
++    ScreenLoadPanel13cEntry** destination = entries_begin_04;
++    for (ScreenLoadPanel13cEntry** current = entries_begin_04; current != last; ++current)
++    {
++        ScreenLoadPanel13cEntry* entry = *current;
++        if (entry->state_15)
++        {
++            if (entry->name_00)
++                ::operator delete(entry->name_00);
++            if (entry->directory_04)
++                ::operator delete(entry->directory_04);
++            if (entry->owned_08)
++                ::operator delete(entry->owned_08);
++            if (entry->owned_0c)
++                ::operator delete(entry->owned_0c);
++            ::operator delete(entry);
++        }
++        else
++            *destination++ = entry;
++    }
++    entries_end_08 = destination;
++}
+diff --git a/src/startup_resource_building_004067d0.cpp b/src/startup_resource_building_004067d0.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a303c1d9b1dcae3c99929c6412a020a4299ffef4
+--- /dev/null
++++ b/src/startup_resource_building_004067d0.cpp
+@@ -0,0 +1,11 @@
++#include "startup_resource_rasters.h"
++#include "startup_resource_building_raster.h"
++
++// FUNCTION: BEACHLIFE 0x004067d0
++void ResourceBuildingRasterAt004067d0(unsigned short* destination, const unsigned char* source,
++    const unsigned char* depth, const unsigned short* palette, unsigned int stride,
++    int x, int y, int width, int height, int left, int top, int right, int bottom,
++    int base_depth, float depth_step)
++{
++    DrawBuildingRaster<false, false>(destination, source, depth, palette, stride, x, y, width, height, left, top, right, bottom, base_depth, depth_step);
++}
+diff --git a/src/startup_resource_building_00406c00.cpp b/src/startup_resource_building_00406c00.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..766b057be2ea0f2cd16ce9a95378ecee36a8087d
+--- /dev/null
++++ b/src/startup_resource_building_00406c00.cpp
+@@ -0,0 +1,11 @@
++#include "startup_resource_rasters.h"
++#include "startup_resource_building_raster.h"
++
++// FUNCTION: BEACHLIFE 0x00406c00
++void ResourceBuildingRasterAt00406c00(unsigned short* destination, const unsigned char* source,
++    const unsigned char* depth, const unsigned short* palette, unsigned int stride,
++    int x, int y, int width, int height, int left, int top, int right, int bottom,
++    int base_depth, float depth_step)
++{
++    DrawBuildingRaster<false, true>(destination, source, depth, palette, stride, x, y, width, height, left, top, right, bottom, base_depth, depth_step);
++}
+diff --git a/src/startup_resource_building_00407740.cpp b/src/startup_resource_building_00407740.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3529cdb6b4431081cb09f909286522131a470c9
+--- /dev/null
++++ b/src/startup_resource_building_00407740.cpp
+@@ -0,0 +1,11 @@
++#include "startup_resource_rasters.h"
++#include "startup_resource_building_raster.h"
++
++// FUNCTION: BEACHLIFE 0x00407740
++void ResourceBuildingRasterAt00407740(unsigned short* destination, const unsigned char* source,
++    const unsigned char* depth, const unsigned short* palette, unsigned int stride,
++    int x, int y, int width, int height, int left, int top, int right, int bottom,
++    int base_depth, float depth_step)
++{
++    DrawBuildingRaster<true, false>(destination, source, depth, palette, stride, x, y, width, height, left, top, right, bottom, base_depth, depth_step);
++}
+diff --git a/src/startup_resource_building_00407be0.cpp b/src/startup_resource_building_00407be0.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8457b75391bf223dc078a7eb4cbda5c593d213c
+--- /dev/null
++++ b/src/startup_resource_building_00407be0.cpp
+@@ -0,0 +1,11 @@
++#include "startup_resource_rasters.h"
++#include "startup_resource_building_raster.h"
++
++// FUNCTION: BEACHLIFE 0x00407be0
++void ResourceBuildingRasterAt00407be0(unsigned short* destination, const unsigned char* source,
++    const unsigned char* depth, const unsigned short* palette, unsigned int stride,
++    int x, int y, int width, int height, int left, int top, int right, int bottom,
++    int base_depth, float depth_step)
++{
++    DrawBuildingRaster<true, true>(destination, source, depth, palette, stride, x, y, width, height, left, top, right, bottom, base_depth, depth_step);
++}
+diff --git a/src/startup_resource_building_raster.h b/src/startup_resource_building_raster.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cb4de5aa122817ba9dab75b22b8a85f56eb33ba
+--- /dev/null
++++ b/src/startup_resource_building_raster.h
+@@ -0,0 +1,157 @@
++#ifndef STARTUP_RESOURCE_BUILDING_RASTER_H
++#define STARTUP_RESOURCE_BUILDING_RASTER_H
++
++#include "render_mask_setup.h"
++#include <cstring>
++
++template <bool Blend>
++static void DrawBuildingPixel(unsigned char* output, unsigned char index, unsigned char depth,
++    const unsigned short* palette, int base_depth, float depth_step, bool clipped)
++{
++    unsigned int stored;
++    std::memcpy(&stored, output, sizeof(stored));
++    long double value = depth;
++    if (clipped)
++        value += 1.0L;
++    unsigned int z = ((static_cast<unsigned int>(static_cast<long long>(value * depth_step)) & 0xffffu)
++                         + (static_cast<unsigned int>(base_depth) & 0xffffu))
++                  << 16;
++    if (z >= (stored & 0xffff0000u))
++    {
++        unsigned int colour = palette[index];
++        if (Blend)
++        {
++            unsigned int mask = static_cast<unsigned int>(render_half_mask) >> 1;
++            colour = ((colour >> 1) & mask) + (((stored & 0xffffu) >> 1) & mask);
++        }
++        unsigned int pixel = z + colour;
++        std::memcpy(output, &pixel, sizeof(pixel));
++    }
++}
++
++template <bool Half, bool Blend>
++static void DrawBuildingRaster(unsigned short* destination, const unsigned char* source,
++    const unsigned char* depth, const unsigned short* palette, unsigned int stride,
++    int x, int y, int width, int height, int left, int top, int right, int bottom,
++    int base_depth, float depth_step)
++{
++    if (Half && !Blend && (top & 1))
++        --y;
++    unsigned char* first = reinterpret_cast<unsigned char*>(destination)
++                         + (Half ? (y / 2 * static_cast<int>(stride) + x / 2) * 4
++                                 : (y * static_cast<int>(stride) + x) * 4);
++    bool clipped = left > 0 || top > 0 || right < width || bottom < height;
++    if (clipped)
++    {
++        for (int row = 0; row < top; ++row)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                int packet = static_cast<signed char>(*source++);
++                ++depth;
++                if (packet >= 0)
++                {
++                    source += packet;
++                    depth += packet;
++                    column += packet;
++                }
++                else
++                    column -= packet;
++            }
++        }
++    }
++    int rows = clipped ? bottom - top : height;
++    for (int row = 0; row < rows; ++row)
++    {
++        unsigned char* output = first + (Half ? row / 2 : row) * static_cast<int>(stride) * 4;
++        bool sample_row = !Half || ((row + (Blend ? 0 : top)) & 1) != 0;
++        int remaining_left = clipped && left > 0 ? left : 0;
++        int column = 0;
++        while (column < width)
++        {
++            int packet = static_cast<signed char>(*source++);
++            ++depth;
++            if (packet > 0)
++            {
++                for (int count = packet; count != 0; --count)
++                {
++                    if (remaining_left != 0)
++                        --remaining_left;
++                    else if ((!clipped || column < right) && sample_row && (!Half || (column & 1)))
++                    {
++                        DrawBuildingPixel<Blend>(output, *source, *depth, palette, base_depth, depth_step, clipped);
++                        output += 4;
++                    }
++                    ++source;
++                    ++depth;
++                    ++column;
++                }
++            }
++            else if (packet < 0)
++            {
++                if (!clipped)
++                {
++                    int count = -packet;
++                    if (!Half)
++                    {
++                        output += count * 4;
++                        column += count;
++                    }
++                    else
++                        while (count-- != 0)
++                        {
++                            if (sample_row && (column & 1))
++                                output += 4;
++                            ++column;
++                        }
++                }
++                else if (left > 0)
++                {
++                    signed char count = static_cast<signed char>(-packet);
++                    while (remaining_left != 0 && count != 0)
++                    {
++                        --remaining_left;
++                        ++column;
++                        count = static_cast<signed char>(count - 1);
++                    }
++                    if (!Half)
++                    {
++                        output += static_cast<int>(count) * 4;
++                        column += count;
++                    }
++                    else if (count != 0)
++                    {
++                        int remaining = count;
++                        do
++                        {
++                            if (sample_row && (column & 1))
++                                output += 4;
++                            ++column;
++                        } while (--remaining != 0);
++                    }
++                }
++                else if (!Half)
++                {
++                    if (column < right)
++                        output -= packet * 4;
++                    column -= packet;
++                }
++                else
++                {
++                    signed char count = static_cast<signed char>(-packet);
++                    while (count != 0 && column < right)
++                    {
++                        if (sample_row && (column & 1))
++                            output += 4;
++                        ++column;
++                        count = static_cast<signed char>(count - 1);
++                    }
++                    column += count;
++                }
++            }
++        }
++    }
++}
++
++#endif
+diff --git a/src/startup_resource_world_frame.cpp b/src/startup_resource_world_frame.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..37ea7a1500e1007fbca469cfce098e5dadcedbb0
+--- /dev/null
++++ b/src/startup_resource_world_frame.cpp
+@@ -0,0 +1,31 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_animation_sound.h"
++
++// FUNCTION: BEACHLIFE 0x00416a90
++void ScreenDialogResource::UpdateWorldFrame(float time, const ScreenWorldPosition* position)
++{
++    if (word_04 > time)
++        word_04 = time;
++    long double elapsed = static_cast<long double>(time) - word_04;
++    unsigned int animation = word_10;
++    ScreenDialogResourceFrame* frame = record->frames[animation];
++    if (word_08 == 1)
++    {
++        int remaining = frame->count_0a - static_cast<int>(word_0c * elapsed);
++        word_14 = remaining > 0 ? remaining - 1 : 0;
++    }
++    else if (word_08 == 2)
++    {
++        int index = static_cast<int>(word_0c * elapsed);
++        word_14 = index < frame->count_0a ? index : frame->count_0a - 1;
++    }
++    else if (word_08 != 3)
++    {
++        int index = static_cast<int>(word_0c * elapsed) % frame->count_0a;
++        if (index < word_14 && flag_2a && position)
++            flag_2a = animation_sounds->Play(name, animation, position);
++        word_14 = index;
++    }
++    if (time > 0)
++        frame->time_04 = time;
++}
+diff --git a/src/startup_screen_appeal_stars.cpp b/src/startup_screen_appeal_stars.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6613c368caf22659ad5b37b891528e72c3aeb4ca
+--- /dev/null
++++ b/src/startup_screen_appeal_stars.cpp
+@@ -0,0 +1,21 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_variable_image.h"
++
++// FUNCTION: BEACHLIFE 0x004cd7b0
++void DrawAppealStars(const char* resource, ScreenRectangle bounds, int count)
++{
++    ScreenDialogResource* image = screen_dialog_resources->Find(resource);
++    int width = image->SelectedFrame()->width_0e;
++    int x = bounds.left;
++    for (unsigned int threshold = 0; threshold < 100; threshold += 20)
++    {
++        image->SelectVariant(0);
++        if (static_cast<unsigned int>(count) > threshold)
++            image->SelectVariant(1);
++        if (static_cast<unsigned int>(count) > threshold + 10)
++            image->SelectVariant(2);
++        image->Draw(x, bounds.top, 0, 999999.0f);
++        x += width;
++    }
++    screen_dialog_resources->Release(image);
++}
+diff --git a/src/startup_screen_combo_box.h b/src/startup_screen_combo_box.h
+index 982a7c775b9281e6185be1ec120c9441b65370d2..8b3e05067214627763ad60464f64dd66c1c99907 100644
+--- a/src/startup_screen_combo_box.h
++++ b/src/startup_screen_combo_box.h
+@@ -6,7 +6,13 @@
+ struct ScreenButtonPrefix;
+ struct ScreenFrameItem;
+ struct ScreenScrollBarPrefix;
+-struct ScreenComboBoxEntry;
++struct ScreenComboBoxEntry
++{
++    unsigned short* text;
++    int value;
++};
++
++void DeleteComboBoxEntry(ScreenComboBoxEntry* entry); // 0x004a4f40.
+ extern const char* combo_button_resources[3];
+ void InitializeComboButtonResources(); // 0x004a3330.
+ 
+@@ -69,7 +75,7 @@ struct ScreenComboBox : ScreenItem
+         int value_e);
+ 
+     // Every differing retail vtable slot remains an explicit dependency.
+-    ~ScreenComboBox() override;                                    // 0x004a36d0 (deleting wrapper).
++    ~ScreenComboBox() override;                                    // Ordinary 0x004a36f0; wrapper 0x004a36d0.
+     void Unresolved04(float elapsed) override;                     // 0x004a42b0
+     void Unresolved0c() override;                                  // 0x004a45d0
+     void ApplyPosition(int dx, int dy) override;                   // 0x004a38c0
+@@ -79,6 +85,16 @@ struct ScreenComboBox : ScreenItem
+     void MoveRectangle(int dx, int dy) override;                   // 0x004a3870
+     bool HandleInput38(int x, int y, int value) override;          // 0x004a3d50
+     bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004a3e70
++
++    void AddKey(const char* key, int value);             // 0x004a39f0.
++    void AddText(const unsigned short* text, int value); // 0x004a3ba0.
++    void ClearEntries();                                 // 0x004a48d0.
++    void DrawSeparator(int y);                           // 0x004a4940.
++    void SelectEntry(ScreenComboBoxEntry* entry);        // 0x004a4a00.
++    void PopulateBeer();                                 // 0x004a4c20.
++    void PopulateCocktails();                            // 0x004a4cf0.
++    void PopulateStaffHire();                            // 0x004a4dc0.
++    void PopulateEvents(int kind);                       // 0x004a4e50.
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_combo_box_methods.cpp b/src/startup_screen_combo_box_methods.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a869fd0b1c86278f6d26056e666e2d0f2a222ad
+--- /dev/null
++++ b/src/startup_screen_combo_box_methods.cpp
+@@ -0,0 +1,305 @@
++#include "startup_screen_combo_box.h"
++#include "startup_screen_button.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_scroll_bar.h"
++#include "startup_screen_text.h"
++
++#include <new>
++
++// The retail methods expand this close sequence at each exit from an open list.
++static void CloseComboList(ScreenComboBox* box)
++{
++    if (box->list_60)
++    {
++        delete box->list_60;
++        box->list_60 = 0;
++    }
++    delete box->list_64;
++    box->list_64 = 0;
++    if (box->word_44)
++        box->MarkPrepared();
++    box->word_44 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a4f40
++void DeleteComboBoxEntry(ScreenComboBoxEntry* entry)
++{
++    if (entry)
++    {
++        if (entry->text)
++            ::operator delete(entry->text);
++        ::operator delete(entry);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004a48d0
++void ScreenComboBox::ClearEntries()
++{
++    ScreenComboBoxEntry** last = range_78.end;
++    for (ScreenComboBoxEntry** entry = range_78.begin; entry != last; ++entry)
++        DeleteComboBoxEntry(*entry);
++    range_78.Clear();
++}
++
++// FUNCTION: BEACHLIFE 0x004a36f0
++ScreenComboBox::~ScreenComboBox()
++{
++    ScreenItem::Unresolved24(0);
++    CloseComboList(this);
++    ClearEntries();
++    screen_manager->SetWord(7, 0);
++    button_84->Unresolved24(0);
++    delete list_60;
++    delete list_64;
++    delete button_84;
++    delete field_68;
++    ClearEntries();
++}
++
++// FUNCTION: BEACHLIFE 0x004a3870
++void ScreenComboBox::MoveRectangle(int dx, int dy)
++{
++    ScreenItem::MoveRectangle(dx, dy);
++    if (list_64)
++        list_64->MoveRectangle(dx, dy);
++    if (list_60)
++        list_60->MoveRectangle(dx, dy);
++    button_84->MoveRectangle(dx, dy);
++    field_68->MoveRectangle(dx, dy);
++}
++
++// FUNCTION: BEACHLIFE 0x004a38c0
++void ScreenComboBox::ApplyPosition(int dx, int dy)
++{
++    ScreenItem::ApplyPosition(dx, dy);
++    if (list_64)
++        list_64->ApplyPosition(dx, dy);
++    if (list_60)
++        list_60->ApplyPosition(dx, dy);
++    button_84->ApplyPosition(dx, dy);
++    field_68->ApplyPosition(dx, dy);
++}
++
++// FUNCTION: BEACHLIFE 0x004a3910
++void ScreenComboBox::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    if (enabled)
++    {
++        flag_88 = 1;
++        MarkPrepared();
++    }
++    else
++    {
++        CloseComboList(this);
++        ClearEntries();
++        screen_manager->SetWord(7, 0);
++    }
++    button_84->Unresolved24(enabled);
++}
++
++// FUNCTION: BEACHLIFE 0x004a3d50
++bool ScreenComboBox::HandleInput38(int x, int y, int value)
++{
++    if (word_44 == 1)
++    {
++        if (list_60 && (list_60->TestRectangle(x, y) || list_64->TestRectangle(x, y)))
++            return list_60->HandleInput38(x, y, value);
++    }
++    else if (word_44 == 0 && field_68->TestRectangle(x, y))
++    {
++        unsigned int index = word_58;
++        if (value < 0)
++        {
++            if (index < static_cast<unsigned int>(range_78.end - range_78.begin) - 1)
++            {
++                ++index;
++                while (range_78.begin[index]->value == -1
++                       && index < static_cast<unsigned int>(range_78.end - range_78.begin) - 1)
++                    ++index;
++            }
++        }
++        else if (index)
++        {
++            --index;
++            while (range_78.begin[index]->value == -1 && index)
++                --index;
++        }
++        word_58 = index;
++        SelectEntry(range_78.begin[index]);
++        MarkPrepared();
++        return true;
++    }
++    return false;
++}
++
++// FUNCTION: BEACHLIFE 0x004a3e70
++bool ScreenComboBox::HandleTimedCoordinates(int x, int y, int value)
++{
++    bool handled = false;
++    ScreenItem::HandleTimedCoordinates(x, y, value);
++    button_84->HandleTimedCoordinates(x, y, value);
++    state_40 = TestRectangle(x, y);
++    if (word_44 == 1)
++    {
++        list_64->HandleTimedCoordinates(x, y, value);
++        if (value == 0 && (!list_60 || (!list_60->TestRectangle(x, y) && !list_60->state_54))
++            && list_64->ReadState40())
++        {
++            ScreenRectangle bounds = list_64->GetRectangle();
++            word_5c = static_cast<unsigned int>(y - bounds.top) / static_cast<unsigned int>(row_height_70) + word_6c;
++        }
++        if (list_60)
++        {
++            handled = list_60->HandleTimedCoordinates(x, y, value);
++            if (handled)
++                return handled;
++        }
++        if (ReadState40() && value == 1)
++        {
++            CloseComboList(this);
++            handled = true;
++        }
++        else if (list_64->ReadState42())
++        {
++            list_64->state_42 = 0;
++            ScreenRectangle bounds = list_64->GetRectangle();
++            unsigned int index = static_cast<unsigned int>(y - bounds.top)
++                                   / static_cast<unsigned int>(row_height_70)
++                               + word_6c;
++            if (index >= static_cast<unsigned int>(range_78.end - range_78.begin))
++                index = static_cast<unsigned int>(range_78.end - range_78.begin) - 1;
++            ScreenComboBoxEntry* entry = range_78.begin[index];
++            if (entry->value == -1)
++                return handled;
++            word_58 = index;
++            SelectEntry(entry);
++            CloseComboList(this);
++            handled = true;
++        }
++        else if (!ReadState40() && value == 1)
++            CloseComboList(this);
++    }
++    else if (word_44 == 0 && ReadState40() && value == 1)
++    {
++        if (word_44 != 1)
++            MarkPrepared();
++        word_44 = 1;
++        unsigned int rows = static_cast<unsigned int>(range_78.end - range_78.begin);
++        if (rows > static_cast<unsigned int>(value_c_74))
++        {
++            rows = value_c_74;
++            ScreenRectangle bounds;
++            bounds.left = field_68->GetRectangle().right - 15;
++            bounds.right = field_68->GetRectangle().right;
++            if (value_e_8c == 0)
++            {
++                bounds.top = rectangle.bottom;
++                bounds.bottom = bounds.top + row_height_70 * value_c_74;
++            }
++            else
++            {
++                bounds.bottom = rectangle.bottom - row_height_70;
++                bounds.top = bounds.bottom - row_height_70 * value_c_74;
++            }
++            word_6c = word_58;
++            list_60 = new (std::nothrow) ScreenScrollBarPrefix(bounds, word_6c, static_cast<unsigned int>(range_78.end - range_78.begin), value_c_74, 3);
++            word_6c = list_60->position_48;
++        }
++        ScreenRectangle bounds;
++        bounds.left = field_68->GetRectangle().left;
++        bounds.right = field_68->GetRectangle().right;
++        if (value_e_8c == 0)
++        {
++            bounds.top = rectangle.bottom;
++            bounds.bottom = bounds.top + row_height_70 * rows + 2;
++            list_64 = new (std::nothrow) ScreenFrameItem(bounds, 2);
++        }
++        else
++        {
++            bounds.bottom = rectangle.top;
++            bounds.top = bounds.bottom - row_height_70 * rows - 2;
++            list_64 = new (std::nothrow) ScreenFrameItem(bounds, 3);
++        }
++        word_5c = word_58;
++    }
++    return handled;
++}
++
++// FUNCTION: BEACHLIFE 0x004a45d0
++void ScreenComboBox::Unresolved0c()
++{
++    if (preparation_flag)
++    {
++        field_68->MarkPrepared();
++        field_68->Unresolved0c();
++        if (range_78.begin != range_78.end)
++        {
++            ScreenRectangle bounds = field_68->GetRectangle();
++            ScreenComboBoxEntry* entry = range_78.begin[word_58];
++            ScreenFontRenderer* font = screen_manager->fonts_2c[font_50];
++            font->SetWord18(0);
++            font->SetState14(0);
++            font->SetWord10(value_a_54);
++            font->SetRectangle(bounds.left + 6, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
++            font->DrawText(0, 1, entry->text);
++        }
++        preparation_flag = 0;
++    }
++    button_84->Unresolved0c();
++}
++
++// FUNCTION: BEACHLIFE 0x004a46a0
++void ScreenComboBox::MarkPrepared()
++{
++    ScreenItem::MarkPrepared();
++    button_84->MarkPrepared();
++    field_68->MarkPrepared();
++}
++
++// FUNCTION: BEACHLIFE 0x004a46c0
++void ScreenComboBox::Unresolved1c()
++{
++    if (list_64)
++    {
++        ScreenFontRenderer* font = screen_manager->fonts_2c[font_50];
++        ScreenRequestRenderer* renderer = screen_request_renderer;
++        int offset = 0;
++        font->SetWord18(0);
++        ScreenRectangle bounds = list_64->GetRectangle();
++        list_64->MarkPrepared();
++        list_64->Unresolved0c();
++        for (unsigned int index = 0; index < static_cast<unsigned int>(range_78.end - range_78.begin); ++index)
++        {
++            ScreenComboBoxEntry* entry = range_78.begin[index];
++            if (index < word_6c || index >= word_6c + value_c_74)
++                continue;
++            if (entry->value != -1)
++            {
++                if (index == word_5c)
++                {
++                    ScreenRectangle highlight;
++                    highlight.top = bounds.top + offset;
++                    highlight.left = field_68->GetRectangle().left + 2;
++                    highlight.right = field_68->GetRectangle().right - 2;
++                    highlight.bottom = bounds.top + row_height_70 + offset;
++                    unsigned int colour = renderer->ConvertColour(0x4a, 0x61, 0xc9);
++                    renderer->FillRectangle(highlight, colour);
++                    font->SetWord10(~value_a_54);
++                }
++                else
++                    font->SetWord10(value_a_54);
++                font->SetRectangle(field_68->GetRectangle().left, bounds.top + offset, bounds.right - bounds.left, row_height_70);
++                font->DrawText(4, 1, entry->text);
++            }
++            else
++                DrawSeparator(bounds.top + offset);
++            offset += row_height_70;
++        }
++    }
++    if (list_60)
++        list_60->Unresolved1c();
++    button_84->Unresolved1c();
++}
+diff --git a/src/startup_screen_combo_box_update.cpp b/src/startup_screen_combo_box_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b0dc5c64ab0b62899774a2571b4bf898ffca85b1
+--- /dev/null
++++ b/src/startup_screen_combo_box_update.cpp
+@@ -0,0 +1,191 @@
++#include "startup_screen_combo_box.h"
++#include "startup_screen_button.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_scroll_bar.h"
++#include "startup_screen_text.h"
++#include "startup_trivial_range_overflow.h"
++
++#include <cstring>
++#include <new>
++#include <stdio.h>
++#include <wchar.h>
++
++struct ComboChoice
++{
++    const char* key;
++    int value;
++};
++
++// GLOBAL: BEACHLIFE 0x0057e560
++static const ComboChoice guest_choices[] = {
++    { "OB_GF_HAPPY", 1 }, { "OB_GF_SUNBURN", 5 }, { "OB_GF_HEADACHE", 6 }, { "OB_GF_DRUNK", 7 }, { "OB_GF_BLADDER", 8 }, { "OB_GF_ILL", 9 }, { 0, -1 }, { "OB_GF_PRICE", 10 }, { "OB_GF_SAFETY", 11 }, { "OB_GF_QUEUING", 12 }, { "OB_GF_BEAUTY", 13 }, { "OB_GF_CLEANLINESS", 14 }, { "OB_GF_TOTTY", 15 }, { "OB_GF_VARIETY", 16 }, { 0, -1 }, { "OB_GF_CASH", 2 }, { 0, -1 }, { "OB_GF_MALE", 3 }, { "OB_GF_FEMALE", 4 }
++};
++// GLOBAL: BEACHLIFE 0x0057e5f8
++static const ComboChoice building_choices[] = {
++    { "OB_BF_ALL", 17 }, { 0, -1 }, { "OB_BF_REPAIR", 18 }, { "OB_BF_FAULTS", 28 }, { "OB_BF_AGE", 26 }, { "OB_BF_POWER", 23 }, { 0, -1 }, { "OB_BF_INCOME", 19 }, { "OB_BF_COSTS", 20 }, { "OB_BF_PROFIT", 21 }, { "OB_BF_AVPROFIT", 22 }, { 0, -1 }, { "OB_BF_CUSTOMERS_TODAY", 27 }, { 0, -1 }, { "OB_BF_OPEN", 24 }, { "OB_BF_CLOSED", 25 }
++};
++// GLOBAL: BEACHLIFE 0x0057e678
++static const ComboChoice cell_choices[] = {
++    { "CELL_LAND_TEXT", static_cast<int>(0x80000001u) }, { "CELL_SHALLOW_SEA_TEXT", 0x40000004 }, { "CELL_DEEP_SEA_TEXT", 0x20000008 }, { "CELL_STRUCTURE_TEXT", 0x10 }, { "CELL_ROCK_TEXT", 0x20 }, { "CELL_PLANT_TEXT", 0x8040 }, { "CELL_PATH_TEXT", 0x80 }, { "CELL_BEACH_TEXT", static_cast<int>(0x80000002u) }, { "SEA_EDGE_TEXT", 0x100 }
++};
++// GLOBAL: BEACHLIFE 0x0057e6c0
++static const ComboChoice staff_choices[] = {
++    { "STAFFB_FILTER_ALL", 6 }, { "STAFFB_FILTER_BUILDERS", 1 }, { "STAFFB_FILTER_CLEANERS", 0 }, { "STAFFB_FILTER_LIFEGUARD", 4 }, { "STAFFB_FILTER_MECHANICS", 2 }, { "STAFFB_FILTER_REP", 3 }, { "STAFFB_FILTER_SECURITY", 5 }
++};
++
++// FUNCTION: BEACHLIFE 0x004e3d40
++unsigned int ScreenRequestGamePrefix::ScenarioNameCount()
++{
++    return static_cast<unsigned int>(scenario_names.end - scenario_names.begin);
++}
++
++// FUNCTION: BEACHLIFE 0x004e3d50
++const unsigned short* ScreenRequestGamePrefix::ScenarioName(unsigned int index)
++{
++    return scenario_names.begin[index];
++}
++
++static ScreenComboBoxEntry* CreateComboEntry(const unsigned short* text, int value)
++{
++    ScreenComboBoxEntry* entry = new (std::nothrow) ScreenComboBoxEntry;
++    if (entry)
++    {
++        entry->text = 0;
++        if (text)
++        {
++            unsigned int length = 0;
++            while (text[length])
++                ++length;
++            entry->text = static_cast<unsigned short*>(::operator new((length + 1) * sizeof(unsigned short), std::nothrow));
++            std::memcpy(entry->text, text, (length + 1) * sizeof(unsigned short));
++        }
++        entry->value = value;
++    }
++    return entry;
++}
++
++static void AppendComboEntry(ScreenComboBoxRange& range, ScreenComboBoxEntry* entry)
++{
++    if (range.end != range.capacity.data)
++        ::new (range.end++) ScreenComboBoxEntry*(entry);
++    else
++        InsertTrivialRangeOverflow(range.begin, range.end, range.capacity.data, range.end, entry, 1, true);
++}
++
++// FUNCTION: BEACHLIFE 0x004a39f0
++void ScreenComboBox::AddKey(const char* key, int value)
++{
++    const unsigned short* text = value == -1 ? 0 : screen_text_lookup->LookupText(key);
++    AppendComboEntry(range_78, CreateComboEntry(text, value));
++}
++
++// FUNCTION: BEACHLIFE 0x004a3ba0
++void ScreenComboBox::AddText(const unsigned short* text, int value)
++{
++    AppendComboEntry(range_78, CreateComboEntry(text, value));
++}
++
++// FUNCTION: BEACHLIFE 0x004a42b0
++void ScreenComboBox::Unresolved04(float elapsed)
++{
++    ScreenItem::Unresolved04(elapsed);
++    if (list_60)
++        word_6c = list_60->position_48;
++    if (flag_88)
++    {
++        switch (list_type_48)
++        {
++        case 0:
++            MarkPrepared();
++            ClearEntries();
++            flag_88 = 0;
++            for (const ComboChoice& choice : guest_choices)
++                AddKey(choice.key, choice.value);
++            screen_manager->SetWord(7, 1);
++            break;
++        case 1:
++        {
++            unsigned int height = screen_request_renderer->height;
++            flag_88 = 0;
++            MarkPrepared();
++            const char* names[] = { "640_480", "800_600", "1024_768", "1280_960" };
++            int heights[] = { 480, 600, 768, 960 };
++            for (unsigned int index = 0; index != 4; ++index)
++            {
++                if (screen_request_renderer->display_mode_flags_48[index])
++                {
++                    AddKey(names[index], heights[index]);
++                    if (height == static_cast<unsigned int>(heights[index]))
++                        word_58 = index;
++                }
++            }
++            break;
++        }
++        case 2:
++            MarkPrepared();
++            flag_88 = 0;
++            for (const ComboChoice& choice : cell_choices)
++                AddKey(choice.key, choice.value);
++            break;
++        case 3:
++            ClearEntries();
++            flag_88 = 0;
++            for (unsigned int index = 0; index < screen_request_game->ScenarioNameCount(); ++index)
++                AddText(screen_request_game->ScenarioName(index), index);
++            break;
++        case 4:
++            PopulateBeer();
++            break;
++        case 5:
++        {
++            ClearEntries();
++            unsigned short text[128];
++            for (unsigned int index = 0; index != 100; ++index)
++            {
++                swprintf(text, L"%d", index);
++                AddText(text, index);
++            }
++            break;
++        }
++        case 6:
++            MarkPrepared();
++            ClearEntries();
++            flag_88 = 0;
++            for (const ComboChoice& choice : building_choices)
++                AddKey(choice.key, choice.value);
++            break;
++        case 7:
++            MarkPrepared();
++            ClearEntries();
++            for (unsigned int index = 0; index != 7; ++index)
++            {
++                AddKey(staff_choices[index].key, staff_choices[index].value);
++                if (static_cast<unsigned int>(staff_choices[index].value) == screen_manager->word_7c)
++                    word_58 = index;
++            }
++            break;
++        case 8:
++            PopulateStaffHire();
++            break;
++        case 9:
++            PopulateEvents(0);
++            break;
++        case 10:
++            PopulateEvents(1);
++            break;
++        case 11:
++            PopulateEvents(2);
++            break;
++        case 12:
++            PopulateCocktails();
++            break;
++        }
++    }
++    button_84->Unresolved04(elapsed);
++    if (list_60)
++    {
++        list_60->Unresolved04(elapsed);
++        word_6c = list_60->position_48;
++    }
++}
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 4674427181b7e9a0ef143d27f21e4bcc951dfd81..f48114f48d4f7351eddd5f57240dafa0f9f76efe 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -137,8 +137,9 @@ struct ScreenDialogResource
+     int CurrentFrameValue();                                                               // 0x00412b00.
+     float SetAnimation(const char* name, float time, const ScreenWorldPosition* position); // 0x004168e0.
+     void UpdateBuildingRectangle(const ScreenRectangle* rectangle, const ScreenWorldPosition* position,
+-        unsigned int width, unsigned int height);                    // 0x00414240.
+-    void DrawWorld(const ScreenWorldPosition* position, float time); // 0x00413f10.
++        unsigned int width, unsigned int height);                                                   // 0x00414240.
++    void DrawTerrain(const ScreenWorldPosition* position, unsigned int width, unsigned int height); // 0x00416060.
++    void DrawWorld(const ScreenWorldPosition* position, float time);                                // 0x00413f10.
+     void DrawBuilding(const ScreenWorldPosition* position, unsigned int width,
+         unsigned int height, unsigned char invalid);                        // 0x00413250.
+     void UpdateWorldFrame(float time, const ScreenWorldPosition* position); // 0x00416a90.
+diff --git a/src/startup_screen_feature_count.cpp b/src/startup_screen_feature_count.cpp
+index 8a1f7eb9fb9b3e4a13a20c4b4f0c544bb1b2fc85..e8a44d5469beb21fc600c6b360e47cad3df90b4e 100644
+--- a/src/startup_screen_feature_count.cpp
++++ b/src/startup_screen_feature_count.cpp
+@@ -63,3 +63,27 @@ unsigned int VariableWorldPrefix::CountType(unsigned char key)
+     CountMatches(count, &key, FeatureCodeMatches);
+     return count;
+ }
++
++// FUNCTION: BEACHLIFE 0x0042efe0
++VariableEntity** VariableWorldPrefix::FindNamed(const char* name, unsigned int* count)
++{
++    return FindMatches(count, name, [](VariableEntity* entity, const void* key)
++        { return FeatureNameMatches(entity, key); });
++}
++
++// FUNCTION: BEACHLIFE 0x0042f020
++VariableEntity** VariableWorldPrefix::ByType(unsigned char type, unsigned int* count)
++{
++    if (type == 2)
++    {
++        *count = buildings_04;
++        return buildings_12120;
++    }
++    if (type == 3)
++    {
++        *count = guests_08;
++        return guests_128f0;
++    }
++    return FindMatches(count, &type, [](VariableEntity* entity, const void* key)
++        { return FeatureCodeMatches(entity, key); });
++}
+diff --git a/src/startup_screen_image_list.h b/src/startup_screen_image_list.h
+index eadc63b710aa4d2f51fbaae7cc308217a7bb0fdf..8ecdc5d092b5b271515fab78d13be9746390c0f8 100644
+--- a/src/startup_screen_image_list.h
++++ b/src/startup_screen_image_list.h
+@@ -8,6 +8,9 @@
+ 
+ struct ScreenImageItem;
+ 
++// Shared allocator body 0x004b4eb0; count is in native pointer slots.
++void DeallocateImageListPointerSlots(void* storage, unsigned int count);
++
+ // Element of vector_60, a 0x98-byte entry built by PopulateBuildings 0x004b3ec0:
+ // owns the text at +0x08 (inline destructor, deleted through its scalar
+ // deleting destructor 0x004b4cb0).
+diff --git a/src/startup_screen_image_list_capacity.cpp b/src/startup_screen_image_list_capacity.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8c20362341c08e39f676fa03b8dda6b211cb7001
+--- /dev/null
++++ b/src/startup_screen_image_list_capacity.cpp
+@@ -0,0 +1,28 @@
++#include "startup_screen_image_list.h"
++#include "startup_pointer_list_operations.h"
++#include "node_storage.h"
++
++// Typed use of the folded constructor retained by GamePointSoundListBase.
++ScreenImageListCapacity60::ScreenImageListCapacity60(
++    const ScreenImageListAllocator&, ScreenImageListFrame** value)
++{
++    InitializePointerHolder(data, value);
++}
++
++// FUNCTION: BEACHLIFE 0x004b4eb0
++void DeallocateImageListPointerSlots(void* storage, unsigned int count)
++{
++    if (storage)
++        ReleaseNodeStorage(storage, count * sizeof(void*));
++}
++
++// Both allocator specializations use the same physical retail body above.
++void ScreenImageListCapacity60::Deallocate(ScreenImageListFrame** storage, unsigned int count)
++{
++    DeallocateImageListPointerSlots(storage, count);
++}
++
++void ScreenImageListCapacity78::Deallocate(ScreenImageListMarker** storage, unsigned int count)
++{
++    DeallocateImageListPointerSlots(storage, count);
++}
+diff --git a/src/startup_screen_image_list_methods.cpp b/src/startup_screen_image_list_methods.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..051fa309d18567e120bd03086c00b1742e517821
+--- /dev/null
++++ b/src/startup_screen_image_list_methods.cpp
+@@ -0,0 +1,222 @@
++#include "startup_screen_image_list.h"
++#include "startup_screen_image_item.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++#include "startup_variable_state.h"
++#include "window_audio.h"
++#include "window_activation.h"
++
++// The same category dispatch is expanded by update, enable and selection.
++static void SetImageListMode(int category)
++{
++    if (category == 4)
++    {
++        VariableScenery* scenery = variable_catalog->Scenery(screen_manager->word_68);
++        screen_manager->SetMode(scenery->flag_30c ? 8 : 7);
++    }
++    else if (static_cast<unsigned int>(category - 3) <= 6)
++        screen_manager->SetMode(1);
++}
++
++static void PublishImageListSelection(ScreenImageList* list)
++{
++    if (list->vector_6c.begin == list->vector_6c.end)
++        return;
++    if (list->selected_54 == -1)
++        screen_manager->PrepareActiveScreens(0);
++    else if (static_cast<unsigned int>(list->category_44) <= 9)
++        screen_manager->SetWord(list->category_44 <= 2 ? 0 : 5,
++            list->vector_60.begin[list->selected_54]->feature_0c);
++}
++
++static void ClearImageListFrames(ScreenImageList* list)
++{
++    ScreenImageListFrame** last = list->vector_60.end;
++    for (ScreenImageListFrame** frame = list->vector_60.begin; frame != last; ++frame)
++        delete *frame;
++    list->vector_60.Clear();
++    ScreenImageListMarker** last_marker = list->range_78.end;
++    for (ScreenImageListMarker** marker = list->range_78.begin; marker != last_marker; ++marker)
++        DeleteImageListMarker(*marker);
++    list->range_78.Clear();
++}
++
++static void ClearImageListItems(ScreenImageList* list)
++{
++    ScreenItem** last = list->vector_6c.end;
++    for (ScreenItem** item = list->vector_6c.begin; item != last; ++item)
++        delete *item;
++    list->vector_6c.Clear();
++}
++
++// FUNCTION: BEACHLIFE 0x004d2d50
++void DeleteImageListMarker(ScreenImageListMarker* marker)
++{
++    delete marker;
++}
++
++// FUNCTION: BEACHLIFE 0x004b3540
++ScreenImageList::~ScreenImageList()
++{
++    ClearImageListFrames(this);
++    ClearImageListItems(this);
++    delete image_50;
++}
++
++// FUNCTION: BEACHLIFE 0x004b36a0
++void ScreenImageList::Unresolved04(float elapsed)
++{
++    if (screen_manager->mode == 10 && vector_6c.begin != vector_6c.end)
++    {
++        selected_54 = -1;
++        screen_manager->PrepareActiveScreens(0);
++    }
++    if (flag_5c)
++    {
++        long double timer = static_cast<long double>(elapsed) + timer_58;
++        timer_58 = static_cast<float>(timer);
++        if (timer >= image_list_refresh_interval)
++        {
++            ClearImageListFrames(this);
++            timer_58 = 0;
++            switch (category_44)
++            {
++            case 0:
++            case 1:
++            case 2:
++                PopulateBuildings(category_44, image_list_thumbnails[0], image_list_thumbnails[1]);
++                break;
++            case 3:
++                PopulateScenery(0, image_list_thumbnails[2]);
++                break;
++            case 4:
++                PopulatePaths();
++                break;
++            case 5:
++            case 6:
++            case 7:
++            case 8:
++            case 9:
++                PopulateScenery(category_44 - 3, image_list_thumbnails[category_44]);
++                break;
++            }
++            LayoutItems();
++            MarkPrepared();
++            SetImageListMode(category_44);
++        }
++    }
++    for (ScreenItem** item = vector_6c.begin; item != vector_6c.end; ++item)
++        (*item)->Unresolved04(elapsed);
++}
++
++// FUNCTION: BEACHLIFE 0x004b38b0
++bool ScreenImageList::HandleTimedCoordinates(int x, int y, int value)
++{
++    ScreenItem::HandleTimedCoordinates(x, y, value);
++    bool handled = false;
++    int selected = -1;
++    for (ScreenItem** item = vector_6c.begin; item != vector_6c.end && !handled; ++item)
++    {
++        (*item)->HandleTimedCoordinates(x, y, value);
++        ++selected;
++        if ((*item)->ReadState42())
++        {
++            (*item)->state_42 = 0;
++            handled = true;
++        }
++    }
++    if (handled && selected != selected_54)
++    {
++        window_audio_state->PlaySound("ButtonClick", 1, 0);
++        if (vector_6c.begin != vector_6c.end)
++        {
++            selected_54 = selected;
++            PublishImageListSelection(this);
++        }
++        SetImageListMode(category_44);
++    }
++    return handled;
++}
++
++// FUNCTION: BEACHLIFE 0x004b3a40
++void ScreenImageList::Unresolved0c()
++{
++    if (!preparation_flag)
++        return;
++    ScreenItem** last = vector_6c.end;
++    for (ScreenItem** item = vector_6c.begin; item != last; ++item)
++        (*item)->Unresolved0c();
++    if (vector_6c.begin != vector_6c.end && selected_54 != -1)
++    {
++        ScreenRectangle bounds = vector_6c.begin[selected_54]->GetRectangle();
++        image_50->SetRectanglePosition(bounds.left - 2, bounds.top - 2);
++        image_50->Unresolved0c();
++    }
++    ScreenImageListMarker** last_marker = range_78.end;
++    for (ScreenImageListMarker** marker = range_78.begin; marker != last_marker; ++marker)
++    {
++        ScreenImageListMarker* text = *marker;
++        ScreenFontRenderer* font = screen_manager->fonts_2c[text->font_80];
++        font->SetWord18(0);
++        font->SetState14(0);
++        font->SetWord10(text->colour_84);
++        font->SetRectangle(text->x_88, text->y_8c, text->width_90, 15);
++        font->DrawText(0, 0, text->text_00);
++    }
++    preparation_flag = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004b3b40
++void ScreenImageList::MarkPrepared()
++{
++    ScreenItem::MarkPrepared();
++    ScreenItem** last = vector_6c.end;
++    for (ScreenItem** item = vector_6c.begin; item != last; ++item)
++        (*item)->MarkPrepared();
++    image_50->MarkPrepared();
++}
++
++// FUNCTION: BEACHLIFE 0x004b3b70
++void ScreenImageList::MoveRectangle(int dx, int dy)
++{
++    ScreenItem::MoveRectangle(dx, dy);
++    for (ScreenItem** item = vector_6c.begin; item != vector_6c.end; ++item)
++        (*item)->MoveRectangle(dx, dy);
++    for (ScreenImageListMarker** marker = range_78.begin; marker != range_78.end; ++marker)
++    {
++        (*marker)->x_88 += dx;
++        (*marker)->y_8c += dy;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004b3be0
++void ScreenImageList::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    if (state_30)
++    {
++        flag_5c = 1;
++        Unresolved04(image_list_refresh_interval);
++        BuildItems();
++        if (vector_6c.begin != vector_6c.end)
++        {
++            selected_54 = 0;
++            PublishImageListSelection(this);
++        }
++        SetImageListMode(category_44);
++    }
++    else
++    {
++        ClearImageListFrames(this);
++        ClearImageListItems(this);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004b3db0
++void ScreenImageList::Unresolved28()
++{
++    if (selected_54 == -1)
++        selected_54 = 0;
++    PublishImageListSelection(this);
++    SetImageListMode(category_44);
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 28e14fdfc85eb5ee91715ee5e39821bd754751ac..f688ad52a79ccfac55360fd6506202ba35d1f6fe 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -168,20 +168,22 @@ struct ScreenRequestGamePrefix : ScreenGameRegistration
+     ~ScreenRequestGamePrefix() noexcept(false); // Actual 0x004e2e00.
+     // Actual 0x004e3dd0; real filesystem/name-range body remains separate.
+     void LoadScenarioNames();
+-    const unsigned short* ScenarioDirectory(); // 0x004e3d60.
+-    void ShowLoadingScreen(const char* path);  // 0x004e3c00.
+-    int SelectedSaveScenario();                // 0x004e4eb0.
+-    int TimeHours(float value);                // 0x004e5360.
+-    int TimeMinutes(float value);              // 0x004e5380.
+-    void RefreshSaveRecords();                 // 0x004e4740.
+-    void PopulateLoadGameMenu();               // 0x004e4ed0.
+-    void PopulateSaveGameMenu();               // 0x004e4f00.
+-    void ClearSaveRecords();                   // 0x004e4c80.
+-    void SelectSaveForLoad();                  // 0x004e44b0.
+-    bool SelectedSaveExists();                 // 0x004e4f60.
+-    void SaveGame();                           // 0x004e4250.
+-    void DeleteSaveGame();                     // 0x004e4d00.
+-    void DeleteLoadGame();                     // 0x004e4dd0.
++    unsigned int ScenarioNameCount();                       // 0x004e3d40.
++    const unsigned short* ScenarioName(unsigned int index); // 0x004e3d50.
++    const unsigned short* ScenarioDirectory();              // 0x004e3d60.
++    void ShowLoadingScreen(const char* path);               // 0x004e3c00.
++    int SelectedSaveScenario();                             // 0x004e4eb0.
++    int TimeHours(float value);                             // 0x004e5360.
++    int TimeMinutes(float value);                           // 0x004e5380.
++    void RefreshSaveRecords();                              // 0x004e4740.
++    void PopulateLoadGameMenu();                            // 0x004e4ed0.
++    void PopulateSaveGameMenu();                            // 0x004e4f00.
++    void ClearSaveRecords();                                // 0x004e4c80.
++    void SelectSaveForLoad();                               // 0x004e44b0.
++    bool SelectedSaveExists();                              // 0x004e4f60.
++    void SaveGame();                                        // 0x004e4250.
++    void DeleteSaveGame();                                  // 0x004e4d00.
++    void DeleteLoadGame();                                  // 0x004e4dd0.
+     void PopulateSaveList(ScreenListBoxPrefix* list, unsigned int row_word, unsigned char clear);
+     bool HasScenarioFlag04(unsigned int index); // 0x004e41a0.
+     bool HasScenarioFlag08(unsigned int index); // 0x004e41c0.
+@@ -218,6 +220,9 @@ struct ScreenRequestGamePrefix : ScreenGameRegistration
+ // Observed 408-byte x86 manager; host pointers determine native offsets.
+ struct ScreenManager
+ {
++    unsigned char CanShowTickerMessage();                         // 0x004af490.
++    void ShowTickerMessage(const unsigned short* text, int mode); // 0x004af380.
++
+     ScreenRequestRenderer* renderer;
+     ScreenFontData* fonts_04[10];
+     ScreenFontRenderer* fonts_2c[10];
+@@ -323,7 +328,8 @@ struct ScreenManager
+     // The original unchecked copy does not establish a safe string capacity.
+     char layout_name_16d[0x23];
+     ScreenManagerOwner190* word_190;
+-    unsigned char unknown_194[4];
++    unsigned char saved_pause_194;
++    unsigned char unknown_195[3];
+ 
+     // Actual 0x004aedb0 and 0x004aedc0; unchecked ten-slot publications.
+     void SetInputEnabled(unsigned char enabled); // 0x004aedd0.
+diff --git a/src/startup_screen_manager_pause.cpp b/src/startup_screen_manager_pause.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b3e1138af2aa5ae9e8123ded3a55c06754b3d84
+--- /dev/null
++++ b/src/startup_screen_manager_pause.cpp
+@@ -0,0 +1,27 @@
++#include "startup_screen_manager.h"
++#include "startup_input_motion.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004aedd0
++void ScreenManager::SetInputEnabled(unsigned char enabled)
++{
++    byte_c0 = enabled;
++    startup_input_motion_state->SetSoftwareCursor(enabled == 0);
++}
++
++// FUNCTION: BEACHLIFE 0x004b1200
++void ScreenManager::SavePauseState()
++{
++    if (window_deactivation_state)
++    {
++        saved_pause_194 = window_deactivation_state->deactivation_requested;
++        window_deactivation_state->deactivation_requested = 1;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004b1230
++void ScreenManager::RestorePauseState()
++{
++    if (window_deactivation_state)
++        window_deactivation_state->deactivation_requested = saved_pause_194 != 0;
++}
+diff --git a/src/startup_screen_mode_list_insert.cpp b/src/startup_screen_mode_list_insert.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7b80a4806c711a553694d07facfc13b22b17e970
+--- /dev/null
++++ b/src/startup_screen_mode_list_insert.cpp
+@@ -0,0 +1,23 @@
++#include "startup_screen_mode_list.h"
++#include "node_storage.h"
++
++// FUNCTION: BEACHLIFE 0x004a6dd0
++static ScreenModeSurfaceNode* CreateSurfaceNode(const int& surface)
++{
++    ScreenModeSurfaceNode* node = ::new (AllocateNodeStorage(screen_mode_surface_slot_bytes)) ScreenModeSurfaceNode;
++    node->surface = surface;
++    return node;
++}
++
++// FUNCTION: BEACHLIFE 0x004a6da0
++CircularListIterator ScreenModeNodeList::Insert(CircularListIterator position, const int& surface)
++{
++    ScreenModeSurfaceNode* node = CreateSurfaceNode(surface);
++    node->next = position.node;
++    node->previous = position.node->previous;
++    node->previous->next = node;
++    position.node->previous = node;
++    CircularListIterator result;
++    result.node = node;
++    return result;
++}
+diff --git a/src/startup_screen_mode_pointer_entities.cpp b/src/startup_screen_mode_pointer_entities.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..42d887658a75da072b118f4de90bee98f54ef558
+--- /dev/null
++++ b/src/startup_screen_mode_pointer_entities.cpp
+@@ -0,0 +1,82 @@
++#include "startup_screen_modes.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x004452d0
++CircularList* ScreenTerrainCell::Objects()
++{
++    return &objects_4c;
++}
++
++static bool MatchesSelectionState(VariableEntity* entity, unsigned char flag, int previous)
++{
++    if (flag)
++        return entity->selection_state_54 == 1 || entity->selection_state_54 == 2;
++    return entity->selection_state_54 == 0 && (previous == -1 || entity->MatchesPointerGroup(previous));
++}
++
++static ScreenPoint PointerTile(const ScreenPoint* point)
++{
++    ScreenPoint scrolled = { point->x + overlay_map->scroll_x_c4, point->y + overlay_map->scroll_y_c8 };
++    ScreenWorldPosition position = overlay_map->ScreenToWorld(scrolled);
++    return CurrentScreenTerrain()->WorldToTile(position);
++}
++
++// FUNCTION: BEACHLIFE 0x004a8b00
++unsigned char ScreenMode4Controller::SelectBuildingAtPointer(unsigned char flag, const ScreenPoint* point, int previous)
++{
++    ScreenPoint tile = PointerTile(point);
++    unsigned char selected = 0;
++    CircularList* objects = screen_terrain_grid->ObjectsAt(tile.x, tile.y);
++    for (CircularListNode* node = objects->head->next; node != objects->head && !flag; node = node->next)
++    {
++        VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++        if (entity->kind_2c == 3 && MatchesSelectionState(entity, 0, previous))
++            selected = entity->SelectGuestPointer(point);
++    }
++    if (selected)
++        return selected;
++    ScreenTerrainCell* neighbours[8];
++    screen_terrain_grid->Neighbours(tile.x, tile.y, neighbours);
++    for (int index = 0; index < 8 && !selected; ++index)
++    {
++        objects = neighbours[index]->Objects();
++        for (CircularListNode* node = objects->head->next; node != objects->head && !selected; node = node->next)
++        {
++            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++            if (entity->kind_2c == 3 && MatchesSelectionState(entity, flag, previous))
++                selected = entity->SelectGuestPointer(point);
++        }
++    }
++    return selected;
++}
++
++// FUNCTION: BEACHLIFE 0x004a8ca0
++unsigned char ScreenMode4Controller::SelectGuestAtPointer(unsigned char flag, const ScreenPoint* point, int previous)
++{
++    ScreenPoint tile = PointerTile(point);
++    unsigned char selected = 0;
++    CircularList* objects = screen_terrain_grid->ObjectsAt(tile.x, tile.y);
++    for (CircularListNode* node = objects->head->next; node != objects->head && !selected; node = node->next)
++    {
++        VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++        if (entity->kind_2c >= 7 && entity->kind_2c <= 12 && MatchesSelectionState(entity, flag, previous))
++            selected = entity->SelectStaffPointer(point);
++    }
++    if (selected)
++        return selected;
++    ScreenTerrainCell* neighbours[8];
++    screen_terrain_grid->Neighbours(tile.x, tile.y, neighbours);
++    for (int index = 0; index < 8 && !selected; ++index)
++    {
++        objects = neighbours[index]->Objects();
++        for (CircularListNode* node = objects->head->next; node != objects->head && !selected; node = node->next)
++        {
++            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++            if (entity->kind_2c >= 7 && entity->kind_2c <= 12 && MatchesSelectionState(entity, flag, previous))
++                selected = entity->SelectStaffPointer(point);
++        }
++    }
++    return selected;
++}
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index b7286a5152eb89ea3c008da5451232dcf7feea12..74007cb5e7200ee3385a06277f358496d9c136ea 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -18,6 +18,7 @@ struct ScreenTerrainEntityNode : CircularListNode
+ // Observed 84-byte terrain cell; mode controllers read and update its flags.
+ struct ScreenTerrainCell
+ {
++    CircularList* Objects(); // 0x004452d0.
+     unsigned char unknown_00[0x48];
+     unsigned int flags_48;
+     CircularList objects_4c;
+@@ -74,6 +75,7 @@ struct ScreenTerrainGrid
+     void Neighbours(int x, int y, ScreenTerrainCell** output);                              // 0x00445e40.
+     unsigned int TileIndex(int x, int y);                                                   // 0x0041f850.
+     ScreenPoint WorldToTile(ScreenWorldPosition position);                                  // 0x00446170.
++    int CountWaterTiles(int left, int top, int right, int bottom);                          // 0x004468a0.
+     void Step(int x, int y, int direction, ScreenPoint* result);                            // 0x00446080, RET16.
+     ScreenWorldPosition TileOrigin(int x, int y);                                           // 0x00446200.
+     ScreenWorldPosition TilePosition(int x, int y, int direction);                          // 0x00446260.
+@@ -134,6 +136,7 @@ struct ScreenModeCommandIterator
+ 
+ struct ScreenModeCommandQueue
+ {
++    void Update(); // 0x0042df50.
+     ScreenModeCommandNode* head;
+     ScreenModeCommandNode* pending_head_04;
+     ScreenModeCommandNode* CreateNode(const ScreenModeCommand& command);                                    // 0x0042e5e0.
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index c160a1e537276bd5165dc495a9d22f4f33f7feab..407a882a997ec3d8ee63e06c316e874597e70b8e 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -3,6 +3,8 @@
+ 
+ #include "startup_screen_point.h"
+ #include "startup_screen_item.h"
++#include <deque>
++#include <stdio.h>
+ 
+ struct VariableEntity;
+ struct ScreenRequestRenderer;
+@@ -15,7 +17,8 @@ struct OverlayMappedFile
+ struct OverlayCachedTile
+ {
+     unsigned char ready;
+-    unsigned char unknown_01[3];
++    unsigned char water_01;
++    unsigned char unknown_02[2];
+     void* view;
+ };
+ 
+@@ -25,20 +28,33 @@ struct OverlayCachedTile
+ struct GameFileReader;
+ struct ScreenRequestRenderer;
+ 
++struct OverlayArchive
++{
++    ~OverlayArchive() noexcept(false); // 0x00409050.
++};
++
+ struct OverlayMapPrefix
+ {
+-    ~OverlayMapPrefix() noexcept(false);  // 0x00418820.
+-    void LoadState(GameFileReader* file); // 0x0041b900.
+-    void SetViewScale(float scale);       // 0x00419a10.
+-    unsigned char unknown_00[0xac];
++    void Unload();                                                 // 0x0041a6e0.
++    void DrawTerrainMask(int x, int y, const unsigned char* data); // 0x0041a0f0.
++    void RefreshState();                                           // 0x00419790.
++    ~OverlayMapPrefix() noexcept(false);                           // 0x00418820.
++    void LoadState(GameFileReader* file);                          // 0x0041b900.
++    void SetViewScale(float scale);                                // 0x00419a10.
++    unsigned char unknown_00[0xa0];
++    FILE* file_a0;
++    unsigned char unknown_a4[8];
+     ScreenRectangle view_ac;
+-    unsigned char unknown_bc[8];
++    unsigned char unknown_bc[4];
++    unsigned char loaded_c0;
++    unsigned char unknown_c1[3];
+     int scroll_x_c4;
+     int scroll_y_c8;
+     int map_width_cc;
+     int map_height_d0;
+     unsigned int cache_width_d4;
+-    unsigned char unknown_d8[8];
++    unsigned int cache_height_d8;
++    int tile_size_dc;
+     OverlayCachedTile* cached_tiles_e0;
+     float view_x_e4;
+     float view_y_e8;
+@@ -47,8 +63,25 @@ struct OverlayMapPrefix
+     OverlayMappedFile* mapped_file_f4;
+     unsigned char unknown_f8[4];
+     ScreenRequestRenderer* renderer_fc;
+-    unsigned char unknown_100[0x58];
+-    unsigned int visible_count_158;
++    unsigned char unknown_100[4];
++    std::deque<unsigned int> pending_104; // Retail deque occupies 0x28 bytes.
++    float value_12c;
++    unsigned char flag_130;
++    unsigned char flag_131;
++    unsigned char unknown_132[2];
++    float value_134;
++    float value_138;
++    unsigned int word_13c;
++    unsigned int word_140;
++    unsigned int word_144;
++    unsigned int word_148;
++    unsigned char unknown_14c[8];
++    OverlayArchive* archive_154;
++    union
++    {
++        int rendered_guests_158;
++        unsigned int visible_count_158;
++    };
+     unsigned int depth_bias_15c;
+     int depth_scale_160;
+ 
+diff --git a/src/startup_screen_panel13c_controls.cpp b/src/startup_screen_panel13c_controls.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3361e536fa923319d146202388011c54961d55b2
+--- /dev/null
++++ b/src/startup_screen_panel13c_controls.cpp
+@@ -0,0 +1,121 @@
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_panel13c_owner.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mp3_names.h"
++#include "startup_screen_placement.h"
++
++// FUNCTION: BEACHLIFE 0x004ce4b0
++void ScreenLoadPanel13cOwner::StartPlayback()
++{
++    index_10 = 0;
++    if (entries_begin_04 == entries_end_08)
++        return;
++    if (word_1c != 2)
++    {
++        while (entries_begin_04[index_10]->word_10 != word_1c)
++        {
++            ++index_10;
++            if (index_10 == entries_end_08 - entries_begin_04)
++            {
++                index_10 = 0;
++                return;
++            }
++        }
++    }
++    SetCurrentEntry(index_10);
++    Play(0);
++}
++
++// FUNCTION: BEACHLIFE 0x004c2470
++void ScreenLoadPanel13c::StartPlayback()
++{
++    owner_00->StartPlayback();
++}
++
++// FUNCTION: BEACHLIFE 0x004c26c0
++void ScreenLoadPanel13c::EnableControls()
++{
++    if (owner_00->EntryCount() == 0)
++        return;
++    screen_manager->EnableNamedItems(mp3_button_move_up);
++    screen_manager->EnableNamedItems(mp3_button_move_down);
++    screen_manager->EnableNamedItems(mp3_button_repeat);
++    screen_manager->EnableNamedItems(mp3_button_sun);
++    screen_manager->EnableNamedItems(mp3_button_moon);
++    screen_manager->EnableNamedItems(mp3_button_delete);
++    screen_manager->EnableNamedItems(mp3_button_shuffle);
++    screen_manager->EnableNamedItems(mp3_button_play);
++}
++
++// FUNCTION: BEACHLIFE 0x004c3330
++void ScreenLoadPanel13c::SetPlaylistMode(int mode)
++{
++    mode_10 = mode;
++    if (mode == 1)
++    {
++        screen_manager->DisableNamedItems(mp3_button_sun);
++        screen_manager->DisableNamedItems(mp3_button_moon);
++        owner_00->word_1c = 2;
++    }
++    else if (mode == 0)
++    {
++        screen_manager->EnableNamedItems(mp3_button_sun);
++        screen_manager->EnableNamedItems(mp3_button_moon);
++        owner_00->word_1c = playlist_mode_14 == 0 ? 0 : 1;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c3940
++void ScreenLoadPanel13c::ReloadFromStore()
++{
++    ScreenPlacementStore* store = screen_request_game->placement;
++    store->ClearMusicEntries();
++    for (int i = 0; i < owner_00->EntryCount(); ++i)
++    {
++        unsigned int duration = owner_00->ReadEntryWord18(i);
++        unsigned int kind = owner_00->ReadEntryWord10(i);
++        const char* name = owner_00->ReadEntryName(i);
++        const char* directory = owner_00->ReadEntryDirectory(i);
++        store->AddMusicEntry(directory, name, kind, duration);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c2850
++void ScreenLoadPanel13c::SetTimeOfDay(int night)
++{
++    playlist_mode_14 = night;
++    if (owner_00->EntryCount() == 0 || owner_00->ReadRepeat(owner_00->index_10) || mode_10 != 0)
++        return;
++    owner_00->word_1c = playlist_mode_14 == 0 ? 0 : 1;
++    if (word_18 != 1 || !owner_00->IsPlaying())
++        return;
++    bool other = false;
++    for (ScreenLoadPanel13cEntry** row = owner_00->entries_begin_04; row != owner_00->entries_end_08 && !other; ++row)
++        if ((*row)->word_10 != owner_00->word_1c)
++            other = true;
++    if (!other)
++        return;
++    bool matching = false;
++    for (ScreenLoadPanel13cEntry** row = owner_00->entries_begin_04; row != owner_00->entries_end_08 && !matching; ++row)
++        if ((*row)->word_10 == owner_00->word_1c)
++            matching = true;
++    if (!matching)
++        return;
++    owner_00->StopPlayback();
++    int previous = owner_00->index_10;
++    if (word_20 != -1)
++        owner_00->SetCurrentEntry(word_20);
++    word_20 = previous;
++    owner_00->NextTrack();
++    owner_00->Play(0);
++    if (state_0c)
++    {
++        int top = list_04->word_64;
++        list_04->word_84 = 0;
++        int row = list_04->selection.begin[0];
++        RefreshList(0);
++        list_04->SetFirstVisibleRow(top);
++        list_04->EnsureRowVisible(row);
++    }
++}
+diff --git a/src/startup_screen_panel13c_owner.h b/src/startup_screen_panel13c_owner.h
+index 7b50612a85dbd3aad5720dfb84ad61e3992d121c..fddfb1ec5e4d0d895732693a025fa411eb101e4c 100644
+--- a/src/startup_screen_panel13c_owner.h
++++ b/src/startup_screen_panel13c_owner.h
+@@ -81,6 +81,7 @@ struct ScreenLoadPanel13cOwner
+     void ClearEntries();                                 // 0x004ce410.
+     void NextTrack();                                    // 0x004ce560.
+     void AdvanceTrack();                                 // 0x004ce6b0.
++    void StartPlayback();                                // 0x004ce4b0.
+     void PreviousTrack();                                // 0x004ce570.
+     bool IsPlaying();                                    // 0x004cdb50.
+     void SetRepeat(int index, unsigned char enabled);    // 0x004cdbf0.
+diff --git a/src/startup_screen_rating_stars.cpp b/src/startup_screen_rating_stars.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..31f7051fcb6884a97d1ff726f3732e2e20cff6eb
+--- /dev/null
++++ b/src/startup_screen_rating_stars.cpp
+@@ -0,0 +1,21 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_variable_image.h"
++
++// FUNCTION: BEACHLIFE 0x004cd630
++void DrawRatingStars(const char* resource, ScreenRectangle bounds, int count)
++{
++    ScreenDialogResource* image = screen_dialog_resources->Find(resource);
++    int width = image->SelectedFrame()->width_0e;
++    int x = bounds.left;
++    for (unsigned int threshold = 10; threshold < 110; threshold += 20)
++    {
++        image->SelectVariant(0);
++        if (static_cast<unsigned int>(count) >= threshold)
++            image->SelectVariant(1);
++        if (static_cast<unsigned int>(count) >= threshold + 10)
++            image->SelectVariant(2);
++        image->Draw(x, bounds.top, 0, 999999.0f);
++        x += width;
++    }
++    screen_dialog_resources->Release(image);
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index b6bdb3da8286e6e248ee937c3e534ac412514099..2b38f8966f106e513191b9b82e61cdbf56a136b2 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -206,7 +206,12 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+     // Full real 0x00410e70 remains a separate native dependency.
+     void CaptureFrame(const ScreenRectangle& bounds);
+ 
+-    void SetRectangle(const RenderRectangle& value); // 0x0040c0d0.
++    void SetRectangle(const RenderRectangle& value);                                       // 0x0040c0d0.
++    void SetViewScale(float scale);                                                        // 0x0040c2b0.
++    bool ClipWorldRectangle(int& x, int& y, int& left, int& top, int& right, int& bottom); // 0x0040ca50.
++    void DrawWaterTile(int column, int row, const ScreenPoint& position, const ScreenRectangle& bounds,
++        TgaImage* image, int mode, unsigned int flags, unsigned int extra); // 0x0040c420.
++    bool TakeDirtyRectangle(ScreenRectangle& bounds);                       // 0x0040ccb0.
+     int CreateSurface(int width, int height, int mode);
+     // Actual 0x0040e230, RET4; changes only the selected index.
+     void SelectSurface(int surface);
+diff --git a/src/startup_screen_scroll_bar_position.cpp b/src/startup_screen_scroll_bar_position.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3321525c8347aae95bb1c60d0593ad343ed1f604
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_position.cpp
+@@ -0,0 +1,17 @@
++#include "startup_screen_scroll_bar.h"
++#include "startup_screen_frame_item.h"
++
++// FUNCTION: BEACHLIFE 0x004b59d0
++void ScreenScrollBarPrefix::SetPosition(unsigned int position)
++{
++    position_48 = position;
++    if (position_48 > count_4c - visible_50)
++        position_48 = count_4c - visible_50;
++    int x = thumb_60->GetRectangle().left;
++    long double offset = (static_cast<long double>(track_length_68) - offset_70)
++                       / static_cast<int>(count_4c) * static_cast<int>(position_48);
++    if (!(offset >= 0))
++        offset = 0;
++    int y = static_cast<int>(static_cast<long double>(rectangle.top + arrow_height_6c) + offset);
++    thumb_60->SetRectanglePosition(x, y);
++}
+diff --git a/src/startup_screen_table_scrollbar.cpp b/src/startup_screen_table_scrollbar.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..be7496d08e8eaeb722bb5f79ac6e5afe851c8936
+--- /dev/null
++++ b/src/startup_screen_table_scrollbar.cpp
+@@ -0,0 +1,38 @@
++#include "startup_screen_table.h"
++#include "startup_screen_scroll_bar.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004b83c0
++void ScreenTable::RefreshScrollBar()
++{
++    if (row_count_54 > maximum_rows_5c)
++    {
++        if (scrollbar_58)
++        {
++            static_cast<ScreenScrollBarPrefix*>(scrollbar_58)->SetItemCount(row_count_54);
++            first_row_48 = static_cast<ScreenScrollBarPrefix*>(scrollbar_58)->position_48;
++        }
++        else
++        {
++            first_row_48 = 0;
++            scrollbar_58 = new (std::nothrow) ScreenScrollBarPrefix(
++                content_74, first_row_48, row_count_54, maximum_rows_5c, 3);
++        }
++    }
++    else if (scrollbar_58)
++    {
++        delete scrollbar_58;
++        scrollbar_58 = 0;
++        first_row_48 = 0;
++        visible_rows_94 = row_count_54;
++        if (row_count_54 > maximum_rows_5c)
++            visible_rows_94 = maximum_rows_5c;
++    }
++    if (selectable_a0 && selected_row_a4 == -1)
++        selected_row_a4 = 0;
++    if (selected_row_a4 > static_cast<int>(row_count_54 - 1))
++        selected_row_a4 = row_count_54 - 1;
++    if (row_count_54 == 0)
++        selected_row_a4 = -1;
++}
+diff --git a/src/startup_screen_table_sort.h b/src/startup_screen_table_sort.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7058e9142956b18eed929fb0ce57cf585e5b7a17
+--- /dev/null
++++ b/src/startup_screen_table_sort.h
+@@ -0,0 +1,32 @@
++#ifndef STARTUP_SCREEN_TABLE_SORT_H
++#define STARTUP_SCREEN_TABLE_SORT_H
++
++#include "startup_screen_request_context.h"
++
++struct ScreenTableOrder
++{
++    unsigned int kind;
++    unsigned char reversed;
++
++    bool GuestBefore(ScreenRequestContext* left, ScreenRequestContext* right);    // 0x004ba1f0.
++    bool BuildingBefore(ScreenRequestContext* left, ScreenRequestContext* right); // 0x004baba0.
++};
++
++struct ScreenTableStaffOrder
++{
++};
++
++void StableSortGuestRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenRequestContext**, int*, ScreenTableOrder order); // 0x004b96e0.
++void StableSortBuildingRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenRequestContext**, int*, ScreenTableOrder order); // 0x004b9960.
++void StableSortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenRequestContext**, int*, ScreenTableStaffOrder order); // 0x004b9be0.
++void IntrosortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenRequestContext**, int depth, ScreenTableStaffOrder order); // 0x004b9e10.
++void InsertionSortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenTableStaffOrder order); // 0x004bb740.
++void UnguardedInsertionSortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenRequestContext**, ScreenTableStaffOrder order); // 0x004bd6a0.
++
++#endif
+diff --git a/src/startup_screen_table_sources.cpp b/src/startup_screen_table_sources.cpp
+index e44c317176596b646180b14e5c7ab9fc84d65a9e..0ca21fabda17179426755fca84020647a0d357b7 100644
+--- a/src/startup_screen_table_sources.cpp
++++ b/src/startup_screen_table_sources.cpp
+@@ -5,29 +5,123 @@
+ #include "startup_variable_state.h"
+ 
+ #include <cstring>
++#include <algorithm>
+ 
+-struct ScreenTableOrder
++#include "startup_screen_table_sort.h"
++
++// FUNCTION: BEACHLIFE 0x004b9e10
++void IntrosortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenRequestContext**, int depth, ScreenTableStaffOrder order)
+ {
+-    unsigned int kind;
+-    unsigned char reversed;
+-};
++    while (last - first > 16)
++    {
++        if (depth == 0)
++        {
++            // Native library boundary for the retail make_heap/sort_heap fallback.
++            auto before = [](ScreenRequestContext* a, ScreenRequestContext* b)
++            { return a->id_28 < b->id_28; };
++            std::make_heap(first, last, before);
++            std::sort_heap(first, last, before);
++            return;
++        }
++        --depth;
++        ScreenRequestContext* a = *first;
++        ScreenRequestContext* b = first[(last - first) / 2];
++        ScreenRequestContext* c = last[-1];
++        ScreenRequestContext* pivot;
++        if (a->id_28 < b->id_28)
++            pivot = b->id_28 < c->id_28 ? b : (a->id_28 < c->id_28 ? c : a);
++        else
++            pivot = a->id_28 < c->id_28 ? a : (b->id_28 < c->id_28 ? c : b);
++        ScreenRequestContext** left = first;
++        ScreenRequestContext** right = last;
++        for (;;)
++        {
++            while ((*left)->id_28 < pivot->id_28)
++                ++left;
++            do
++                --right;
++            while (pivot->id_28 < (*right)->id_28);
++            if (left >= right)
++                break;
++            std::swap(*left, *right);
++            ++left;
++        }
++        IntrosortStaffRows(left, last, 0, depth, order);
++        last = left;
++    }
++}
+ 
+-struct ScreenTableStaffOrder
++// FUNCTION: BEACHLIFE 0x004bb740
++void InsertionSortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenTableStaffOrder order)
+ {
+-};
++    if (first == last)
++        return;
++    for (ScreenRequestContext** row = first + 1; row != last; ++row)
++    {
++        ScreenRequestContext* value = *row;
++        if (value->id_28 < (*first)->id_28)
++        {
++            std::memmove(first + 1, first, (row - first) * sizeof(*first));
++            *first = value;
++        }
++        else
++            UnguardedInsertionSortStaffRows(row, row + 1, 0, order);
++    }
++}
+ 
++// FUNCTION: BEACHLIFE 0x004bd6a0
++void UnguardedInsertionSortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
++    ScreenRequestContext**, ScreenTableStaffOrder)
++{
++    for (; first != last; ++first)
++    {
++        ScreenRequestContext* value = *first;
++        ScreenRequestContext** hole = first;
++        while (value->id_28 < hole[-1]->id_28)
++        {
++            *hole = hole[-1];
++            --hole;
++        }
++        *hole = value;
++    }
++}
++
++// The retail stable_sort instances allocate temporary pointer storage, use
++// insertion-sorted runs and merge without reordering equivalent elements.
++// The host library owns that temporary storage in the native build.
++
++// FUNCTION: BEACHLIFE 0x004b96e0
+ void StableSortGuestRows(ScreenRequestContext** first, ScreenRequestContext** last,
+-    ScreenRequestContext**, int*, ScreenTableOrder order); // 0x004b96e0.
++    ScreenRequestContext**, int*, ScreenTableOrder order)
++{
++    std::stable_sort(first, last, [order](ScreenRequestContext* a, ScreenRequestContext* b) mutable
++        { return order.GuestBefore(a, b); });
++}
++
++// FUNCTION: BEACHLIFE 0x004b9960
+ void StableSortBuildingRows(ScreenRequestContext** first, ScreenRequestContext** last,
+-    ScreenRequestContext**, int*, ScreenTableOrder order); // 0x004b9960.
++    ScreenRequestContext**, int*, ScreenTableOrder order)
++{
++    std::stable_sort(first, last, [order](ScreenRequestContext* a, ScreenRequestContext* b) mutable
++        { return order.BuildingBefore(a, b); });
++}
++
++// FUNCTION: BEACHLIFE 0x004b9be0
+ void StableSortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
+-    ScreenRequestContext**, int*, ScreenTableStaffOrder order); // 0x004b9be0.
+-void IntrosortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
+-    ScreenRequestContext**, int depth, ScreenTableStaffOrder order); // 0x004b9e10.
+-void InsertionSortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
+-    ScreenTableStaffOrder order); // 0x004bb740.
+-void UnguardedInsertionSortStaffRows(ScreenRequestContext** first, ScreenRequestContext** last,
+-    ScreenRequestContext**, ScreenTableStaffOrder order); // 0x004bd6a0.
++    ScreenRequestContext**, int*, ScreenTableStaffOrder)
++{
++    std::stable_sort(first, last, [](ScreenRequestContext* a, ScreenRequestContext* b)
++        {
++        unsigned short left[256], right[256];
++        a->ReadText("STAFF_JOB_TITLE", left);
++        b->ReadText("STAFF_JOB_TITLE", right);
++        unsigned int i = 0;
++        while (left[i] && left[i] == right[i])
++            ++i;
++        return left[i] < right[i]; });
++}
+ 
+ static void AppendTableRow(ScreenTableStorage<ScreenRequestContext*>& rows, ScreenRequestContext* context)
+ {
+diff --git a/src/startup_screen_variable_filter_draw.cpp b/src/startup_screen_variable_filter_draw.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d537075847e59bcf7fb33f1da59d26e3d945d66a
+--- /dev/null
++++ b/src/startup_screen_variable_filter_draw.cpp
+@@ -0,0 +1,39 @@
++#include "startup_screen_variable_filter.h"
++#include "startup_screen_bar.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++
++// FUNCTION: BEACHLIFE 0x004c2200
++void ScreenVariableFilter::DrawRowOverlay(int y, ScreenRequestContext* context, int font_index)
++{
++    if (kind_24 == 1)
++    {
++        ScreenFontRenderer* font = screen_manager->fonts_2c[font_index];
++        unsigned short text[256];
++        context->ReadText(variable_28, text);
++        font->SetWord18(0);
++        font->SetState14(0);
++        font->SetWord10(0);
++        font->SetRectangle(bounds_04.left, y, bounds_04.right - bounds_04.left, 15);
++        font->DrawText(0, 0, text);
++    }
++    else if (kind_24 == 0 && bar_00)
++    {
++        bar_00->SetRectanglePosition(bar_00->GetRectangle().left, y);
++        bar_00->context_7c = context;
++        bar_00->MarkPrepared();
++        bar_00->Unresolved1c();
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c22e0
++void ScreenVariableFilter::DrawRow(int y, ScreenRequestContext* context, int)
++{
++    if (kind_24 == 0 && bar_00)
++    {
++        bar_00->SetRectanglePosition(bar_00->GetRectangle().left, y);
++        bar_00->context_7c = context;
++        bar_00->MarkPrepared();
++        bar_00->Unresolved0c();
++    }
++}
+diff --git a/src/startup_screen_variable_filter_title.cpp b/src/startup_screen_variable_filter_title.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c50daecf929752da6c0b8fc4bd7b4e6ec5e0577
+--- /dev/null
++++ b/src/startup_screen_variable_filter_title.cpp
+@@ -0,0 +1,19 @@
++#include "startup_screen_variable_filter.h"
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x004c2390
++const char* ReadVariableFilterTitle()
++{
++    // Retail lookup table at 0x00581428, independent of the bar definitions.
++    static const struct
++    {
++        const char* title;
++        int key;
++    } titles[] = {
++        { "OB_GF_HAPPY", 1 }, { "OB_GF_SUNBURN", 5 }, { "OB_GF_HEADACHE", 6 }, { "OB_GF_DRUNK", 7 }, { "OB_GF_BLADDER", 8 }, { "OB_GF_ILL", 9 }, { "OB_GF_CASH", 2 }, { "OB_GF_HAPPY", 3 }, { "OB_GF_HAPPY", 4 }, { "OB_GF_PRICE", 10 }, { "OB_GF_SAFETY", 11 }, { "OB_GF_QUEUING", 12 }, { "OB_GF_BEAUTY", 13 }, { "OB_GF_CLEANLINESS", 14 }, { "OB_GF_TOTTY", 15 }, { "OB_GF_VARIETY", 16 }, { "OB_BF_REPAIR", 18 }, { "OB_BF_INCOME", 19 }, { "OB_BF_COSTS", 20 }, { "OB_BF_PROFIT", 21 }, { "OB_BF_AVPROFIT", 22 }, { "OB_BF_POWER", 23 }, { "OB_BH_HOURS", 24 }, { "OB_BH_HOURS", 25 }, { "OB_BF_AGE", 26 }, { "OB_BF_CUSTOMERS_TODAY", 27 }, { "OB_BF_FAULTS", 28 }
++    };
++    for (unsigned int i = 0; i < 27; ++i)
++        if (titles[i].key == variable_filter_key)
++            return titles[i].title;
++    return 0;
++}
+diff --git a/src/startup_ticker_methods.cpp b/src/startup_ticker_methods.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b7ef708f06cd9bf80291a17937f56fcec5424f40
+--- /dev/null
++++ b/src/startup_ticker_methods.cpp
+@@ -0,0 +1,198 @@
++#include "startup_variable_state.h"
++#include "startup_game_file.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0042b7f0
++static void DeleteQueuedMessage(TickerQueuedMessage* message)
++{
++    if (message)
++    {
++        if (message->text_04)
++            ::operator delete(message->text_04);
++        if (message->key_08)
++            ::operator delete(message->key_08);
++        ::operator delete(message);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0042b830
++static void DeleteHistoryMessage(TickerHistoryMessage* message)
++{
++    if (message)
++    {
++        if (message->text_0c)
++            ::operator delete(message->text_0c);
++        if (message->key_10)
++            ::operator delete(message->key_10);
++        ::operator delete(message);
++    }
++}
++
++static unsigned short* CopyTickerText(const unsigned short* text)
++{
++    unsigned int length = 0;
++    while (text[length])
++        ++length;
++    unsigned short* result = static_cast<unsigned short*>(::operator new((length + 1) * 2, std::nothrow));
++    memcpy(result, text, (length + 1) * 2);
++    return result;
++}
++
++static char* CopyTickerKey(const char* key)
++{
++    char* result = static_cast<char*>(::operator new(strlen(key) + 1, std::nothrow));
++    strcpy(result, key);
++    return result;
++}
++
++static void ClearTickerMessages(VariableTicker* ticker)
++{
++    for (TickerQueuedMessage* message : ticker->pending_00)
++        DeleteQueuedMessage(message);
++    ticker->pending_00.clear();
++    for (TickerHistoryMessage* message : ticker->history_28)
++        DeleteHistoryMessage(message);
++    ticker->history_28.clear();
++}
++
++// FUNCTION: BEACHLIFE 0x00429a40
++VariableTicker::~VariableTicker() noexcept(false)
++{
++    ClearTickerMessages(this);
++}
++
++static const unsigned short* CurrentTickerMessage(VariableTicker* ticker, float* time, unsigned int* day, unsigned int* id)
++{
++    if (ticker->current_50 == ticker->history_28.end())
++        return 0;
++    TickerHistoryMessage* message = *ticker->current_50;
++    *time = message->time_08;
++    *day = message->day_04;
++    *id = message->id_00;
++    return message->key_10 ? screen_text_lookup->LookupText(message->key_10) : message->text_0c;
++}
++
++// FUNCTION: BEACHLIFE 0x00429e50
++const unsigned short* VariableTicker::FirstMessage(float* time, unsigned int* day, unsigned int* id)
++{
++    *time = 0.0f;
++    *day = 0;
++    current_50 = history_28.begin();
++    return CurrentTickerMessage(this, time, day, id);
++}
++
++// FUNCTION: BEACHLIFE 0x00429f00
++const unsigned short* VariableTicker::NextMessage(float* time, unsigned int* day, unsigned int* id)
++{
++    *time = 0.0f;
++    *day = 0;
++    ++current_50;
++    return CurrentTickerMessage(this, time, day, id);
++}
++
++// FUNCTION: BEACHLIFE 0x0042a4d0
++void VariableTicker::AddMessage(const unsigned short* text, unsigned int id, unsigned char flag)
++{
++    for (unsigned int index = 0; index < suppressed_count_7c; ++index)
++        if (suppressed_84[index] == flag)
++            return;
++    if (screen_manager->CanShowTickerMessage())
++    {
++        screen_manager->ShowTickerMessage(text, 2);
++        AddHistory(text, id);
++        return;
++    }
++    if (pending_00.size() > 15)
++    {
++        TickerQueuedMessage* message = pending_00.front();
++        pending_00.pop_front();
++        DeleteQueuedMessage(message);
++    }
++    TickerQueuedMessage* message = new (std::nothrow) TickerQueuedMessage;
++    if (message)
++    {
++        message->text_04 = 0;
++        message->key_08 = 0;
++    }
++    message->id_00 = id;
++    message->text_04 = CopyTickerText(text);
++    pending_00.push_back(message);
++}
++
++// FUNCTION: BEACHLIFE 0x0042b0d0
++void VariableTicker::LoadState(GameFileReader* file)
++{
++    char label[128];
++    unsigned int version;
++    file->Unknown40();
++    file->ReadString(label, 128);
++    file->Unknown68(&version);
++    ClearTickerMessages(this);
++    unsigned int count;
++    unsigned char has_text;
++    unsigned short text[512];
++    char key[128];
++    file->Unknown68(&count);
++    for (int index = 0; index < static_cast<int>(count); ++index)
++    {
++        TickerQueuedMessage* message = new (std::nothrow) TickerQueuedMessage;
++        if (message)
++        {
++            message->text_04 = 0;
++            message->key_08 = 0;
++        }
++        file->ReadInt(reinterpret_cast<int*>(&message->id_00));
++        file->ReadByte(&has_text);
++        if (has_text)
++        {
++            file->Unknown5c(text, 512);
++            message->text_04 = CopyTickerText(text);
++        }
++        else
++        {
++            file->ReadText(key, 128);
++            message->key_08 = CopyTickerKey(key);
++        }
++        pending_00.push_back(message);
++    }
++    file->Unknown68(&count);
++    for (int index = 0; index < static_cast<int>(count); ++index)
++    {
++        TickerHistoryMessage* message = new (std::nothrow) TickerHistoryMessage;
++        if (message)
++        {
++            message->text_0c = 0;
++            message->key_10 = 0;
++        }
++        file->ReadInt(reinterpret_cast<int*>(&message->id_00));
++        file->ReadInt(reinterpret_cast<int*>(&message->day_04));
++        file->ReadFloat(&message->time_08);
++        file->ReadByte(&has_text);
++        if (has_text)
++        {
++            file->Unknown5c(text, 512);
++            message->text_0c = CopyTickerText(text);
++        }
++        else
++        {
++            file->ReadText(key, 128);
++            message->key_10 = CopyTickerKey(key);
++        }
++        history_28.push_back(message);
++    }
++    file->ReadInt(&word_64);
++    file->ReadInt(&word_60);
++    file->ReadInt(&word_68);
++    file->ReadInt(&word_6c);
++    file->ReadInt(&word_70);
++    file->ReadInt(&word_74);
++    file->ReadInt(&word_78);
++    file->ReadInt(reinterpret_cast<int*>(&suppressed_count_7c));
++    file->ReadByte(&flag_80);
++    file->ReadByte(&flag_81);
++    file->Unknown60(suppressed_84, 100);
++    file->ReadFloat(&value_214);
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 2ebbfdc5557d870dca3f3388ac42235b8a82b2b8..7aa882a526ef91d0fe78b3866a26aa89781c1706 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -1,6 +1,8 @@
+ #ifndef STARTUP_VARIABLE_STATE_H
+ #define STARTUP_VARIABLE_STATE_H
+ 
++#include <deque>
++
+ struct ScreenDialogResource;
+ struct ScreenPoint;
+ #include "startup_screen_dialog_resource.h"
+@@ -26,8 +28,43 @@ struct VariableEconomy
+     float value_80;
+ };
+ 
++struct TickerQueuedMessage
++{
++    unsigned int id_00;
++    unsigned short* text_04;
++    char* key_08;
++};
++struct TickerHistoryMessage
++{
++    unsigned int id_00;
++    unsigned int day_04;
++    float time_08;
++    unsigned short* text_0c;
++    char* key_10;
++};
++
+ struct VariableTicker
+ {
++    std::deque<TickerQueuedMessage*> pending_00;
++    std::deque<TickerHistoryMessage*> history_28;
++    std::deque<TickerHistoryMessage*>::iterator current_50;
++    int word_60;
++    int word_64;
++    int word_68;
++    int word_6c;
++    int word_70;
++    int word_74;
++    int word_78;
++    unsigned int suppressed_count_7c;
++    unsigned char flag_80;
++    unsigned char flag_81;
++    unsigned char unknown_82[2];
++    unsigned int suppressed_84[100];
++    float value_214;
++
++    void AddHistory(const unsigned short* text, unsigned int id); // 0x0042a160.
++
++    void Update();                        // 0x00429c40.
+     ~VariableTicker() noexcept(false);    // 0x00429a40.
+     void LoadState(GameFileReader* file); // 0x0042b0d0.
+ 
+@@ -190,7 +227,7 @@ struct ScreenContextRowIterator
+ // presence here does not establish a complete concrete owner layout.
+ struct VariableEntity
+ {
+-    virtual void Unknown00() = 0;
++    virtual void Destroy(unsigned int flags) = 0; // Slot 0x00, scalar deleting destructor.
+     virtual void Unknown04() = 0;
+     virtual void Unknown08() = 0;
+     virtual void Unknown0c() = 0;
+@@ -222,6 +259,10 @@ struct VariableEntity
+     virtual void Unknown60() = 0;
+     virtual void SetPosition(ScreenWorldPosition position) = 0; // Slot 0x64.
+ 
++    unsigned char MatchesPointerGroup(int previous);            // 0x0047c3d0.
++    unsigned char SelectGuestPointer(const ScreenPoint* point); // 0x0047b0b0.
++    unsigned char SelectStaffPointer(const ScreenPoint* point); // 0x00490a80.
++
+     unsigned char inactive_04;
+     unsigned char unknown_05;
+     // The prior name span covered opaque bytes now proved to contain these fields.
+@@ -238,7 +279,9 @@ struct VariableEntity
+     VariableKeylineState* keyline_state_44;
+     unsigned char unknown_48[8];
+     unsigned char broken_50;
+-    unsigned char unknown_51[0xf];
++    unsigned char unknown_51[3];
++    unsigned int selection_state_54;
++    unsigned char unknown_58[8];
+     VariableBuilding* building_60;
+     unsigned char unknown_64[0x28];
+     unsigned int staff_count_8c;
+@@ -437,6 +480,7 @@ struct WorldWeatherEvent
+ 
+ struct VariableWeather
+ {
++    void Update();                        // 0x004385a0.
+     ~VariableWeather() noexcept(false);   // 0x00438350.
+     void LoadState(GameFileReader* file); // 0x0043a4c0.
+ 
+@@ -492,7 +536,7 @@ struct VariableWeather
+ // the arrays together; no complete owner lifetime is supplied here.
+ struct VariableWorldPrefix
+ {
+-    unsigned char unknown_00[4];
++    unsigned int total_00;
+     unsigned int buildings_04;
+     unsigned int guests_08;
+     unsigned int entities_0c;
+@@ -515,6 +559,7 @@ struct VariableWorldPrefix
+     unsigned int HasNamed(const char* name);                                                                                                // 0x0042f000, RET4, EAX test.
+     VariableEntity** ByType(unsigned char type, unsigned int* count);                                                                       // 0x0042f020, RET8.
+     VariableEntity** AllStaff(unsigned int* count);                                                                                         // 0x0042f0e0, RET4.
++    VariableEntity** CollectStaff(unsigned int* count);                                                                                     // 0x0042f990.
+     VariableEntity** SelectedBuildings(unsigned int* count);                                                                                // 0x0042f230.
+     VariableEntity** Selected(unsigned int* count);                                                                                         // 0x0042f360.
+     unsigned int FindIndex(unsigned int id);                                                                                                // 0x0042f820.
+diff --git a/src/startup_world_cursor_names.cpp b/src/startup_world_cursor_names.cpp
+index b7778d8b63c4888127f59b3749278629921b662a..fb329b980ac6bbfdc7eccb75e6a54cc8fed36243 100644
+--- a/src/startup_world_cursor_names.cpp
++++ b/src/startup_world_cursor_names.cpp
+@@ -1,23 +1,24 @@
+ #include "startup_world_cursor_names.h"
++#include "startup_screen_dialog_resource.h"
+ #include <cstdlib>
+ 
+ // FUNCTION: BEACHLIFE 0x00432260
+ int WorldCursorNames::FirstNameNumber()
+ {
+-    char number[3] = { (*names_00)[9], (*names_00)[10], 0 };
++    char number[3] = { names_00->name[9], names_00->name[10], 0 };
+     return std::atoi(number);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00432dd0
+ const char* WorldCursorNames::SecondName()
+ {
+-    return *names_04;
++    return names_04->name;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00432de0
+ const char* WorldCursorNames::FirstName()
+ {
+-    return *names_00;
++    return names_00->name;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00432df0
+diff --git a/src/startup_world_cursor_names.h b/src/startup_world_cursor_names.h
+index 786b079380a9fb82820fcf9ade6cf11b8ec96c78..852a1d019aa61153bef8481f51a901ce75785e54 100644
+--- a/src/startup_world_cursor_names.h
++++ b/src/startup_world_cursor_names.h
+@@ -1,16 +1,22 @@
+ #ifndef STARTUP_WORLD_CURSOR_NAMES_H
+ #define STARTUP_WORLD_CURSOR_NAMES_H
+ 
++struct ScreenDialogResource;
+ struct ScreenRectangle;
+ 
+-// Observed prefix of the object reached through the pointer at 0x005ab154:
+-// two pointers to name lists whose first entries name placement-cursor dialog
+-// resources. The owner type and remaining contents are not established.
+ struct WorldCursorNames
+ {
+-    const char** names_00;
+-    const char** names_04;
++    ScreenDialogResource* names_00;
++    ScreenDialogResource* names_04;
++    ScreenDialogResource* variants_08[10];
++    ScreenDialogResource* alternate_30;
++    unsigned char frames_34[256];
++    int selected_134;
++    int count_138;
+ 
++    void UpdateAt00432b50(int x, int y);                     // 0x00432b50.
++    void UpdateAt00432c70(int x, int y);                     // 0x00432c70.
++    void UpdateAt00432900(int x, int y);                     // 0x00432900.
+     ~WorldCursorNames() noexcept(false);                     // 0x004321b0.
+     void RefreshRectangle(const ScreenRectangle* rectangle); // 0x00432d40.
+     void RefreshTerrain();                                   // 0x00432840.
+diff --git a/src/startup_world_cursor_terrain.cpp b/src/startup_world_cursor_terrain.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..61b0aef37eac14d9a14e9e9b95a3aea7124ccb6b
+--- /dev/null
++++ b/src/startup_world_cursor_terrain.cpp
+@@ -0,0 +1,91 @@
++#include "startup_world_cursor_names.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x004321b0
++WorldCursorNames::~WorldCursorNames() noexcept(false)
++{
++    screen_dialog_resources->Release(names_00);
++    screen_dialog_resources->Release(names_04);
++    screen_dialog_resources->Release(alternate_30);
++    for (int index = 0; index < count_138; ++index)
++        screen_dialog_resources->Release(variants_08[index]);
++    world_cursor_names = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004323d0
++void WorldCursorNames::UpdateTile(int x, int y, unsigned char remove)
++{
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(x, y)].flags_48;
++    if (x > 128 || y < 1 || x > 127 || y > 127)
++        return;
++    const unsigned char* data = names_00->record->frames[0]->SelectData(67, 0);
++    ScreenWorldPosition position = screen_terrain_grid->TilePosition(x, y, 1);
++    ScreenPoint point = overlay_map->WorldToScreen(position);
++    int left = overlay_map->scroll_x_c4 + point.x - 31;
++    int top = overlay_map->scroll_y_c8 + point.y - 32;
++    if (left < 0 || top < 0)
++        return;
++    overlay_map->DrawTerrainMask(left, top, data);
++    if (flags & 0x7000)
++    {
++        position = screen_terrain_grid->TilePosition(x, y, 1);
++        names_04->word_14 = 0;
++        names_04->DrawTerrain(&position, 1, 1);
++    }
++    if (flags & 0x0f000000)
++    {
++        grid = screen_terrain_grid;
++        unsigned int current = grid->cells_0c[grid->TileIndex(x, y)].flags_48;
++        position = screen_terrain_grid->TilePosition(x, y, 1);
++        selected_134 = ((current >> 24) & 15) - 1;
++        variants_08[selected_134]->word_14 = 0;
++        variants_08[selected_134]->DrawTerrain(&position, 1, 1);
++    }
++    if (flags & 0x10000000)
++    {
++        position = screen_terrain_grid->TilePosition(x, y, 1);
++        names_00->word_14 = 67;
++        names_00->DrawTerrain(&position, 1, 1);
++        UpdateAt00432b50(x, y);
++    }
++    else if (flags & 0xff0000)
++    {
++        int frame = frames_34[(flags >> 16) & 255];
++        if (frame != -1)
++        {
++            ScreenDialogResource* resource = flags & 2 ? alternate_30 : names_00;
++            resource->word_14 = frame;
++            position = screen_terrain_grid->TilePosition(x, y, 1);
++            resource->DrawTerrain(&position, 1, 1);
++        }
++    }
++    if (remove)
++        UpdateAt00432c70(x, y);
++    UpdateAt00432900(x, y);
++}
++
++// FUNCTION: BEACHLIFE 0x00432840
++void WorldCursorNames::RefreshTerrain()
++{
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    for (unsigned int x = 1; x < 128; ++x)
++    {
++        for (unsigned int y = 1; y < 128; ++y)
++        {
++            unsigned int index = (y % grid->height_08) * grid->width_04 + x % grid->width_04;
++            if (grid->cells_0c[index].flags_48)
++            {
++                UpdateTile(x, y, 0);
++                grid = screen_terrain_grid;
++            }
++        }
++        if ((x % 4) == 0)
++        {
++            overlay_map->SetViewScale(static_cast<float>(static_cast<long double>(x) * 0.00390625L + 0.5L));
++            grid = screen_terrain_grid;
++        }
++    }
++}
+diff --git a/src/startup_world_queries.cpp b/src/startup_world_queries.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1cef4b15698b20e621a725b2800cfc3b8f9be5b3
+--- /dev/null
++++ b/src/startup_world_queries.cpp
+@@ -0,0 +1,128 @@
++#include "startup_variable_state.h"
++#include "startup_input_motion.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0042f990
++VariableEntity** VariableWorldPrefix::CollectStaff(unsigned int* count)
++{
++    unsigned int found = 0;
++    for (unsigned int index = 0; index < entities_0c; ++index)
++    {
++        VariableEntity* entity = entities_14060[index];
++        unsigned char kind = entity->kind_2c;
++        if (kind == 7 || kind == 11 || kind == 12 || kind == 10 || kind == 8 || kind == 9)
++            matches_24234[found++] = entity;
++    }
++    *count = found;
++    return matches_24234;
++}
++
++// FUNCTION: BEACHLIFE 0x0042f0e0
++VariableEntity** VariableWorldPrefix::AllStaff(unsigned int* count)
++{
++    return CollectStaff(count);
++}
++
++// FUNCTION: BEACHLIFE 0x0042f250
++static bool IsPointerOverVisibleEntity(VariableEntity* entity, const void*)
++{
++    if (!overlay_map->ContainsEntity(entity) || !entity->visible_40)
++        return false;
++    ScreenWorldPosition position = { entity->x_30, entity->y_34, entity->z_38 };
++    ScreenPoint point = overlay_map->WorldToScreen(position);
++    point.x += entity->keyline_state_44->CurrentFrameValue();
++    ScreenDialogResource* resource = entity->keyline_state_44;
++    point.y += resource->SelectedFrame()->word_14;
++    float scale;
++    std::memcpy(&scale, &screen_request_renderer->word_58, sizeof(scale));
++    int x = static_cast<int>(static_cast<long double>(startup_input_motion_state->value_134) / scale);
++    std::memcpy(&scale, &screen_request_renderer->word_58, sizeof(scale));
++    int y = static_cast<int>(static_cast<long double>(startup_input_motion_state->value_138) / scale);
++    x -= point.x;
++    y -= point.y;
++    if (x < 0 || x >= resource->SelectedFrame()->width_0e || y < 0 || y >= resource->SelectedFrame()->height_10)
++        return false;
++    return resource->TestPixel(x, y);
++}
++
++// FUNCTION: BEACHLIFE 0x0042f230
++VariableEntity** VariableWorldPrefix::SelectedBuildings(unsigned int* count)
++{
++    return FindMatches(count, &count, IsPointerOverVisibleEntity);
++}
++
++// FUNCTION: BEACHLIFE 0x0042f510
++VariableEntity** VariableWorldPrefix::InRectangle(unsigned char type, unsigned int* count,
++    const ScreenWorldPosition* low, const ScreenWorldPosition* high)
++{
++    float left = low->x;
++    float top = low->y;
++    float right = static_cast<float>((static_cast<long double>(high->x) - low->x) + left);
++    float bottom = static_cast<float>((static_cast<long double>(high->y) - low->y) + top);
++    unsigned int found = 0;
++    VariableEntity** entries = type == 2 ? buildings_12120 : type == 3 ? guests_128f0
++                                                                       : entities_14060;
++    unsigned int* size = type == 2 ? &buildings_04 : type == 3 ? &guests_08
++                                                               : &entities_0c;
++    for (unsigned int index = 0; index < *size; ++index)
++    {
++        VariableEntity* entity = entries[index];
++        if (type != 2 && type != 3 && entity->kind_2c != type)
++            continue;
++        float x = entity->x_30;
++        float y = entity->y_34;
++        if (x >= left && !(x > right) && y >= top && !(y > bottom))
++            matches_24234[found++] = entity;
++    }
++    *count = found;
++    return matches_24234;
++}
++
++// FUNCTION: BEACHLIFE 0x0042f6d0
++void VariableWorldPrefix::ClearSelectionForType(unsigned char type)
++{
++    if (type == 2)
++    {
++        for (unsigned int index = 0; index < buildings_04; ++index)
++            buildings_12120[index]->ClearSelection();
++    }
++    else if (type == 3)
++    {
++        for (unsigned int index = 0; index < guests_08; ++index)
++            guests_128f0[index]->ClearSelection();
++    }
++    else
++    {
++        for (unsigned int index = 0; index < entities_0c; ++index)
++            if (entities_14060[index]->kind_2c == type)
++                entities_14060[index]->ClearSelection();
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0042e780
++VariableWorldPrefix::~VariableWorldPrefix() noexcept(false)
++{
++    for (unsigned int index = 0; index < buildings_04; ++index)
++    {
++        if (buildings_12120[index])
++            buildings_12120[index]->Destroy(1);
++        buildings_12120[index] = 0;
++    }
++    for (unsigned int index = 0; index < guests_08; ++index)
++    {
++        if (guests_128f0[index])
++            guests_128f0[index]->Destroy(1);
++        guests_128f0[index] = 0;
++    }
++    for (unsigned int index = 0; index < entities_0c; ++index)
++    {
++        if (entities_14060[index])
++            entities_14060[index]->Destroy(1);
++        entities_14060[index] = 0;
++    }
++    total_00 = buildings_04 = guests_08 = entities_0c = 0;
++    variable_world = 0;
++}
+diff --git a/src/startup_world_repairs.cpp b/src/startup_world_repairs.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..989381848eeda5fb1b437eb0b65354e1f9084b3e
+--- /dev/null
++++ b/src/startup_world_repairs.cpp
+@@ -0,0 +1,88 @@
++#include "startup_world_repairs.h"
++#include "startup_game_file.h"
++#include "node_storage.h"
++
++template <class Entry>
++static void ClearRepairList(CircularListNode* head)
++{
++    for (CircularListNode* node = head->next; node != head; node = node->next)
++        ::operator delete(static_cast<WorldRepairNode<Entry>*>(node)->entry);
++    CircularListNode* node = head->next;
++    while (node != head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released)
++            ReleaseNodeStorage(released, sizeof(WorldRepairNode<Entry>));
++    }
++    head->next = head;
++    head->previous = head;
++}
++
++// FUNCTION: BEACHLIFE 0x00437230
++void WorldRepairManager::Clear()
++{
++    ClearRepairList<WorldRepairEntry>(repairs_00.head);
++    ClearRepairList<WorldRepairEntry>(pending_08.head);
++    ClearRepairList<WorldRepairAssignment>(assignments_10.head);
++}
++
++// FUNCTION: BEACHLIFE 0x00436010
++WorldRepairManager::~WorldRepairManager() noexcept(false)
++{
++    Clear();
++    if (assignments_10.head)
++        ReleaseNodeStorage(assignments_10.head, sizeof(WorldRepairNode<WorldRepairAssignment>));
++    if (pending_08.head)
++        ReleaseNodeStorage(pending_08.head, sizeof(WorldRepairNode<WorldRepairEntry>));
++    if (repairs_00.head)
++        ReleaseNodeStorage(repairs_00.head, sizeof(WorldRepairNode<WorldRepairEntry>));
++}
++
++static void ReadRepairList(GameFileReader* file, WorldRepairList* list)
++{
++    unsigned int count;
++    file->Unknown68(&count);
++    for (int index = 0; index < static_cast<int>(count); ++index)
++    {
++        WorldRepairEntry* entry = new (std::nothrow) WorldRepairEntry;
++        file->ReadInt(&entry->id_00);
++        file->Unknown68(&entry->word_04);
++        file->ReadFloat(&entry->value_08);
++        file->ReadFloat(&entry->value_0c);
++        file->ReadByte(&entry->flag_10);
++        file->ReadInt(&entry->word_14);
++        CircularListIterator end;
++        end.node = list->head;
++        list->Insert(end, entry);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004375a0
++void WorldRepairManager::LoadState(GameFileReader* file)
++{
++    char label[128];
++    unsigned int version;
++    file->Unknown40();
++    file->ReadString(label, 128);
++    file->Unknown68(&version);
++    Clear();
++    ReadRepairList(file, &repairs_00);
++    ReadRepairList(file, &pending_08);
++    unsigned int count;
++    file->Unknown68(&count);
++    for (int index = 0; index < static_cast<int>(count); ++index)
++    {
++        WorldRepairAssignment* entry = new (std::nothrow) WorldRepairAssignment;
++        file->ReadInt(&entry->id_00);
++        file->ReadByte(&entry->flag_04);
++        file->ReadByte(&entry->flag_05);
++        file->ReadInt(&entry->word_08);
++        CircularListIterator end;
++        end.node = assignments_10.head;
++        assignments_10.Insert(end, entry);
++    }
++    file->ReadInt(&word_04);
++    file->ReadInt(&word_0c);
++    file->ReadInt(&word_14);
++}
+diff --git a/src/startup_world_repairs.h b/src/startup_world_repairs.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..b88972cfe7864214fa93bee125b5280b63dacb0c
+--- /dev/null
++++ b/src/startup_world_repairs.h
+@@ -0,0 +1,59 @@
++#ifndef STARTUP_WORLD_REPAIRS_H
++#define STARTUP_WORLD_REPAIRS_H
++
++#include "startup_list.h"
++
++struct GameFileReader;
++struct WorldRepairEntry
++{
++    int id_00;
++    unsigned int word_04;
++    float value_08;
++    float value_0c;
++    unsigned char flag_10;
++    unsigned char unknown_11[3];
++    int word_14;
++};
++
++struct WorldRepairAssignment
++{
++    int id_00;
++    unsigned char flag_04;
++    unsigned char flag_05;
++    unsigned char unknown_06[2];
++    int word_08;
++};
++
++template <class Entry>
++struct WorldRepairNode : CircularListNode
++{
++    Entry* entry;
++};
++
++struct WorldRepairList
++{
++    CircularListNode* head;
++    CircularListIterator Insert(CircularListIterator position, WorldRepairEntry* const& entry); // 0x00437b00.
++};
++struct WorldRepairAssignmentList
++{
++    CircularListNode* head;
++    CircularListIterator Insert(CircularListIterator position, WorldRepairAssignment* const& entry); // 0x00437ce0.
++};
++
++struct WorldRepairManager
++{
++    WorldRepairList repairs_00;
++    int word_04;
++    WorldRepairList pending_08;
++    int word_0c;
++    WorldRepairAssignmentList assignments_10;
++    int word_14;
++
++    ~WorldRepairManager() noexcept(false); // 0x00436010.
++    void LoadState(GameFileReader* file);  // 0x004375a0.
++    void Clear();                          // 0x00437230.
++    void RequestRepair(unsigned int id);   // 0x00436230.
++};
++
++#endif
+diff --git a/src/startup_world_subsystem3c_destructor.cpp b/src/startup_world_subsystem3c_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..07e003c5d00822d245bd858fdb9c280a64ad5783
+--- /dev/null
++++ b/src/startup_world_subsystem3c_destructor.cpp
+@@ -0,0 +1,19 @@
++#include "startup_world_subsystems.h"
++#include <new>
++
++// GLOBAL: BEACHLIFE 0x005bb000
++WorldSubsystem3c* world_subsystem_3c = 0;
++
++// FUNCTION: BEACHLIFE 0x004daca0
++WorldSubsystem3c::~WorldSubsystem3c() noexcept(false)
++{
++    for (unsigned int index = 0; index < count_50; ++index)
++    {
++        ::operator delete(names_28[index]);
++        delete scripts_00[index];
++    }
++    delete controller_54;
++    count_50 = 0;
++    controller_54 = 0;
++    world_subsystem_3c = 0;
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 577f96d8b9c5fc6e0aa3bdf4770a3e27cfa9b208..5b9aa94afd05256b002c03ddd2721f5a861338d7 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -46,14 +46,11 @@ struct WorldSubsystem20
+ {
+     unsigned char unknown_00[0x35c];
+     unsigned int index_35c;
+-    void SetIndex(unsigned int index); // 0x004dcb50.
+-};
+-struct WorldRepairManager
+-{
+-    ~WorldRepairManager() noexcept(false); // 0x00436010.
+-    void LoadState(GameFileReader* file);  // 0x004375a0.
+-    void RequestRepair(unsigned int id);   // 0x00436230.
++    ~WorldSubsystem20() noexcept(false); // 0x004dcae0.
++    void Update();                       // 0x004dcb20.
++    void SetIndex(unsigned int index);   // 0x004dcb50.
+ };
++#include "startup_world_repairs.h"
+ struct WorldCleaningManager
+ {
+     CircularList requests_00;
+@@ -64,8 +61,17 @@ struct WorldCleaningManager
+     void LoadState(GameFileReader* file);    // 0x004207f0.
+     void RequestCleaning(unsigned int id);   // 0x0041fb90.
+ };
++struct WorldSubsystemScript
++{
++    ~WorldSubsystemScript() noexcept(false); // 0x004d5500.
++};
+ struct WorldSubsystem3c
+ {
++    WorldSubsystemScript* scripts_00[10];
++    char* names_28[10];
++    unsigned int count_50;
++    WorldSubsystem20* controller_54;
++
+     ~WorldSubsystem3c() noexcept(false); // 0x004daca0.
+ };
+ struct WorldSubsystem44
+@@ -78,6 +84,7 @@ struct WorldSubsystem44
+     int word_5c;
+     int offset_60;
+     void AppendIndex(const int& index);   // 0x00427240.
++    void Update();                        // 0x00425630.
+     ~WorldSubsystem44() noexcept(false);  // 0x00425260.
+     void LoadState(GameFileReader* file); // 0x004265f0.
+ };
+@@ -85,10 +92,12 @@ struct WorldSubsystem4c
+ {
+     unsigned int word_00;
+     void* data_04[26];
++    void Update();                       // 0x00424710.
+     ~WorldSubsystem4c() noexcept(false); // 0x004246c0.
+ };
+ 
+ extern WorldSubsystem18* world_subsystem_18; // 0x005ab150.
++extern WorldSubsystem3c* world_subsystem_3c; // 0x005bb000.
+ extern WorldSubsystem44* world_subsystem_44; // 0x005ab144.
+ extern WorldSubsystem4c* world_subsystem_4c; // 0x005ab078.
+ 
+diff --git a/src/startup_world_update.cpp b/src/startup_world_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4980b1431382eb27cf60d62e0ea3b2643e10789e
+--- /dev/null
++++ b/src/startup_world_update.cpp
+@@ -0,0 +1,68 @@
++#include "window_activation.h"
++#include "startup_config_owner.h"
++#include "startup_frame_clock.h"
++#include "startup_input_state.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_shared_methods.h"
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x0043c740
++void WindowDeactivationState::Start()
++{
++    UpdateAt0043f3c0();
++    map_34->RenderTerrain();
++    value_164 = render_value_160;
++    value_16c = deactivation_requested ? 0.0f : startup_frame_clock->delta_seconds * speed_factor_170;
++    if (value_16c > 4.0f)
++        value_16c = 4.0f;
++    clock_158 += value_16c;
++    int day_length;
++    startup_config_owner->GetInteger(&day_length, "iDAY_LENGTH_IN_SECONDS");
++    day_15c = 0;
++    long double remaining = clock_158;
++    while (remaining > day_length)
++    {
++        remaining -= day_length;
++        ++day_15c;
++    }
++    render_value_160 = static_cast<float>(24.0L / day_length * remaining);
++    UpdateAt0043f0d0();
++    weather_40->Update();
++    subsystem_44->Update();
++    subsystem_4c->Update();
++    if (!deactivation_requested)
++        UpdateAt0043d280();
++    UpdateAt0043ef30();
++    ticker_30->Update();
++    UpdateAt0043dda0();
++    commands_0c->Update();
++    UpdateAt0043d310();
++    IgnoreScreenWord(world_10);
++    UpdateAt0043d540();
++    if (!flag_6f0)
++        UpdateAt0043f4a0();
++    if (input_08->IsStateTwo(0x2a) && input_08->IsStateOne(5) && input_08->IsStateTwo(0x38))
++        economy_1c->value_80 += 5000.0f;
++    if (input_08->IsStateTwo(0x2a) && input_08->IsStateOne(0x14) && input_08->IsStateTwo(0x38))
++        flag_44c = !flag_44c;
++    map_34->RefreshState();
++    if (subsystem_20)
++        subsystem_20->Update();
++    RenderRectangle rectangle = { 0, 0, static_cast<int>(screen_request_renderer->width), static_cast<int>(screen_request_renderer->height) };
++    screen_request_renderer->SetRectangle(rectangle);
++}
++
++// FUNCTION: BEACHLIFE 0x0043ca60
++unsigned int WindowDeactivationState::AverageGuestHappiness()
++{
++    unsigned int count = world_10->guests_08;
++    if (count == 0)
++        return 0;
++    long double happiness = 0.0L;
++    for (unsigned int index = 0; index < count; ++index)
++        happiness += world_10->guests_128f0[index]->happiness_264;
++    unsigned int result = static_cast<int>(happiness / count * 100.0L);
++    return result >= 96 ? 100 : result;
++}
+diff --git a/src/window_activation.h b/src/window_activation.h
+index 530c15fc1a4c97b50226338d70fa76679e51fd80..e209b8166f440daedb3b541438feb6dc776406c4 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -28,13 +28,7 @@ struct WorldSubsystem20;
+ struct WorldSubsystem3c;
+ struct WorldSubsystem44;
+ struct WorldSubsystem4c;
+-struct VariableBuildingStatus
+-{
+-    ~VariableBuildingStatus() noexcept(false); // 0x00420fb0.
+-    void LoadState(GameFileReader* file);      // 0x00424120.
+-    float ValueAt004224a0(unsigned int id);    // 0x004224a0.
+-    float ValueAt00422430(unsigned int id);    // 0x00422430.
+-};
++#include "startup_building_status.h"
+ 
+ #include "startup_world_subsystems.h"
+ struct WorldRepairManager;
+@@ -105,9 +99,12 @@ struct WindowDeactivationState
+     unsigned int litter_440;
+     unsigned int word_444;
+     float value_448;
+-    unsigned char unknown_44c[0x294];
++    unsigned char flag_44c;
++    unsigned char unknown_44d[0x293];
+     unsigned char render_flag_6e0;
+-    unsigned char unknown_6e1[0x13];
++    unsigned char unknown_6e1[0xf];
++    unsigned char flag_6f0;
++    unsigned char unknown_6f1[3];
+     float value_6f4;
+     unsigned char unknown_6f8[4];
+     const char* island_6fc;
+@@ -162,6 +159,14 @@ struct WindowDeactivationState
+     unsigned char unknown_de1[3];
+ 
+     WindowDeactivationState(InputMotionState* motion, InputState* input, const char* path, unsigned char loading); // 0x0043b520.
++    void UpdateAt0043f3c0();                                                                                       // 0x0043f3c0.
++    void UpdateAt0043f0d0();                                                                                       // 0x0043f0d0.
++    void UpdateAt0043d280();                                                                                       // 0x0043d280.
++    void UpdateAt0043ef30();                                                                                       // 0x0043ef30.
++    void UpdateAt0043dda0();                                                                                       // 0x0043dda0.
++    void UpdateAt0043d310();                                                                                       // 0x0043d310.
++    void UpdateAt0043d540();                                                                                       // 0x0043d540.
++    void UpdateAt0043f4a0();                                                                                       // 0x0043f4a0.
+     void Start();                                                                                                  // 0x0043c740.
+ 
+     // Actual 0x0043cc30, RET4: listed build index (+0x180 count, +0x184 indices)

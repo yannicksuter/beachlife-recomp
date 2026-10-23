@@ -1,0 +1,1987 @@
+diff --git a/src/startup_controller.h b/src/startup_controller.h
+index 92cfaeae667d179d649b246b59a7d457b2b89c83..e08f3f637e2456486d6bd89f13ae2ff59f9eb5f7 100644
+--- a/src/startup_controller.h
++++ b/src/startup_controller.h
+@@ -8,7 +8,7 @@
+ struct ControllerState
+ {
+     explicit ControllerState(const char* name);
+-    virtual ~ControllerState();
++    virtual ~ControllerState(); // 0x0049ee50; deleting wrapper 0x0049ee30.
+     virtual int Update() = 0;
+     virtual void RenderBeforeScreens() = 0;
+     virtual void RenderAfterScreens() = 0;
+diff --git a/src/startup_controller_destructor.cpp b/src/startup_controller_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f227850936f364355110d1a7da98ab521ee0461a
+--- /dev/null
++++ b/src/startup_controller_destructor.cpp
+@@ -0,0 +1,6 @@
++#include "startup_controller.h"
++
++// FUNCTION: BEACHLIFE 0x0049ee50
++ControllerState::~ControllerState()
++{
++}
+diff --git a/src/startup_input_motion.h b/src/startup_input_motion.h
+index dfcbafe9141a794e31cca0d869a76802d2f1419b..046cdef36d66de00377675192fd35592314bf54a 100644
+--- a/src/startup_input_motion.h
++++ b/src/startup_input_motion.h
+@@ -1,6 +1,7 @@
+ #ifndef STARTUP_INPUT_MOTION_H
+ #define STARTUP_INPUT_MOTION_H
+ 
++struct ScreenPoint;
+ struct InputState;
+ struct FrameClock;
+ struct TgaImage;
+@@ -40,6 +41,9 @@ struct InputMotionState : InputMotionRegistration
+     // destructor then clears the slot (its out-of-line copy serves unwinds).
+     ~InputMotionState();
+ 
++    void SetCursor(unsigned int cursor); // 0x00409700.
++    ScreenPoint Position();              // 0x004097c0.
++
+     unsigned char Update();
+     // Actual 0x004095f0, no stack arguments, AL1 on normal return.
+     unsigned char Render();
+diff --git a/src/startup_screen_button_constants.h b/src/startup_screen_button_constants.h
+index 1a0a6e9df56369f37bee8c77cb21d14dc3280580..12e673041a8f170763ea78ad4def0e6334a38981 100644
+--- a/src/startup_screen_button_constants.h
++++ b/src/startup_screen_button_constants.h
+@@ -10,6 +10,6 @@ extern char screen_button_state_variable_prefix[];       // 0x0057e1e8, initiall
+ 
+ // Additional actual writable strings read by Button update; definitions remain separate.
+ extern char screen_button_state_key_format[]; // 0x0057e21c, initially "%s_STATE".
+-extern char screen_button_click_sound[];      // 0x0057e210, initially "ButtonClick".
++extern char screen_button_click_sound[12];    // 0x0057e210, initially "ButtonClick".
+ 
+ #endif
+diff --git a/src/startup_screen_button_globals.cpp b/src/startup_screen_button_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6848359f82116f0e9dc658578eaac60298875501
+--- /dev/null
++++ b/src/startup_screen_button_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_button_constants.h"
++
++// GLOBAL: BEACHLIFE 0x0057e210
++char screen_button_click_sound[12] = "ButtonClick";
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 69947255c00bf905b9b9ca8db3fa220b95d2283a..66a180d7ff81ba266a4eac6815a5cd08144be4a3 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -2,6 +2,8 @@
+ #define STARTUP_SCREEN_DIALOG_RESOURCE_H
+ 
+ #include <stdio.h>
++
++struct ScreenWorldPosition;
+ #include "runtime/resource_files.h"
+ 
+ // Observed nonpolymorphic resource frame, separate from the screen FrameItem.
+@@ -17,7 +19,11 @@ struct ScreenDialogResourceFrame
+     unsigned char unknown_0d;
+     unsigned short width_0e;
+     unsigned short height_10;
+-    unsigned char unknown_12[2];
++    union
++    {
++        short word_12;
++        unsigned char unknown_12[2];
++    };
+     short word_14;
+     unsigned char index_ready_16;
+     unsigned char unknown_17;
+@@ -102,6 +108,11 @@ struct ScreenDialogResource
+     // Actual 0x00412ae0 ownership body is a separate source dependency.
+     ~ScreenDialogResource();
+ 
++    int CurrentFrameValue();                                                       // 0x00412b00.
++    float SetAnimation(const char* name, unsigned int first, unsigned int second); // 0x004168e0.
++    void DrawWorld(const ScreenWorldPosition* position, float time);               // 0x00413f10.
++    void DrawBuilding(const ScreenWorldPosition* position, unsigned int width,
++        unsigned int height, unsigned char invalid); // 0x00413250.
+     void UpdateFrame(float time);
+     bool TestPixel(int x, int y);
+     void Draw(int x, int y, unsigned int flags, float time);
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 5d49e290b09526f1ac6daf76e48a0110f77a4dab..a3d4a56f3ee817b7447a1146570f0c176ac0a875 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -302,6 +302,19 @@ struct ScreenManager
+     // Update's children. UpdateActiveScreens has separate existing source.
+     void ApplyPendingMode();
+     void UpdateActiveScreens(float elapsed);
++    void UpdateTrackedEntity();                                                        // 0x004b2080.
++    void ShowCameraControls();                                                         // 0x004b0fe0.
++    void HideCameraControls();                                                         // 0x004b0ff0.
++    unsigned int ActiveScreenCount();                                                  // 0x004b1b70.
++    void CloseAllScreens();                                                            // 0x004b1910.
++    unsigned char HasActiveScreen();                                                   // 0x004b1950.
++    unsigned char SelectionInputEnabled();                                             // 0x004b2190.
++    unsigned char IsPointerOverCurrentScreen();                                        // 0x004b21a0.
++    void DrawPlacementTile(int x, int y, unsigned short colour);                       // 0x004b2ae0.
++    void UpdateModeScreens(float elapsed);                                             // 0x004af4a0.
++    unsigned char IsPointerOverScreen(unsigned char flag);                             // 0x004b21c0.
++    void SetFeatureState(const char* name, unsigned char enabled);                     // 0x004b1e90.
++    void SetScreenState(const char* name, int state, float speed, unsigned char flag); // 0x004b1980.
+     void UpdatePointerInput();
+     // Actual 0x004b0270 (overlay, byte +f8) and 0x004b10e0 (panel, byte +15c), RET12.
+     void HandleOverlayInput(int x, int y, unsigned int buttons);
+diff --git a/src/startup_screen_mode0_virtuals.cpp b/src/startup_screen_mode0_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b3c8ad3609551a5ac132e06c9b1210f2dfbda125
+--- /dev/null
++++ b/src/startup_screen_mode0_virtuals.cpp
+@@ -0,0 +1,87 @@
++#include <bit>
++#include "startup_screen_modes.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004a6ed0
++ScreenMode0Controller::~ScreenMode0Controller()
++{
++}
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode0Controller::Enter()
++{
++}
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode0Controller::Exit()
++{
++}
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode0Controller::RenderScreens()
++{
++}
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode0Controller::RenderPointer()
++{
++}
++
++// Folded with ScreenItem::HandleInput38 at 0x004a70a0.
++unsigned char ScreenMode0Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// Folded with ScreenMode6Controller::HandleFourWords at 0x004a70b0.
++unsigned char ScreenMode0Controller::HandleFourWords(unsigned int, unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a6ee0
++void ScreenMode0Controller::Update(float elapsed)
++{
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    OverlayMapPrefix* map = overlay_map;
++    manager->UpdateModeScreens(elapsed);
++    if (startup_input_state->ReadFirstButtonTransition() == 1)
++    {
++        if (!manager->IsPointerOverScreen(1))
++        {
++            ScreenPoint point = startup_input_motion_state->Position();
++            float scale = std::bit_cast<float>(screen_request_renderer->word_58);
++            point.x = static_cast<int>(static_cast<double>(point.x) * scale);
++            point.y = static_cast<int>(static_cast<double>(point.y) * std::bit_cast<float>(screen_request_renderer->word_58));
++            point.x += map->scroll_x_c4;
++            point.y += map->scroll_y_c8;
++            ScreenWorldPosition position = map->ScreenToWorld(point);
++            ScreenPoint tile = grid->WorldToTile(position);
++            unsigned int index = (static_cast<unsigned int>(tile.y) % grid->height_08) * grid->width_04
++                               + static_cast<unsigned int>(tile.x) % grid->width_04;
++            grid->cells_0c[index].flags_48 = manager->word_60;
++        }
++    }
++    else if (startup_input_state->ReadFirstButtonTransition() == 2)
++    {
++        if (!manager->IsPointerOverScreen(1))
++        {
++            ScreenPoint point = startup_input_motion_state->Position();
++            float scale = std::bit_cast<float>(screen_request_renderer->word_58);
++            point.x = static_cast<int>(static_cast<double>(point.x) * scale);
++            point.y = static_cast<int>(static_cast<double>(point.y) * std::bit_cast<float>(screen_request_renderer->word_58));
++            point.x += map->scroll_x_c4;
++            point.y += map->scroll_y_c8;
++            ScreenWorldPosition position = map->ScreenToWorld(point);
++            ScreenPoint tile = grid->WorldToTile(position);
++            unsigned int index = (static_cast<unsigned int>(tile.y) % grid->height_08) * grid->width_04
++                               + static_cast<unsigned int>(tile.x) % grid->width_04;
++            grid->cells_0c[index].flags_48 = manager->word_60;
++        }
++    }
++}
+diff --git a/src/startup_screen_mode10_virtuals.cpp b/src/startup_screen_mode10_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..542d1045ba9019191d248f96d0581664351e3e45
+--- /dev/null
++++ b/src/startup_screen_mode10_virtuals.cpp
+@@ -0,0 +1,95 @@
++#include <bit>
++#include "startup_screen_modes.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004a7100
++ScreenMode10Controller::~ScreenMode10Controller()
++{
++}
++
++// Shared retail body 0x004a9e60.
++void ScreenMode10Controller::Update(float elapsed)
++{
++    ScreenModeController::Update(elapsed);
++}
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode10Controller::RenderPointer()
++{
++}
++
++// Folded with ScreenItem::HandleInput38 at 0x004a70a0.
++unsigned char ScreenMode10Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a7110
++void ScreenMode10Controller::Enter()
++{
++    valid_10 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a7120
++void ScreenMode10Controller::Exit()
++{
++    manager->SetFeatureState("SceneryDozer", 0);
++}
++
++// FUNCTION: BEACHLIFE 0x004a7130
++void ScreenMode10Controller::RenderScreens()
++{
++    if (byte_11)
++    {
++        unsigned int colour = valid_10 ? screen_request_renderer->ConvertColour(0, 255, 0)
++                                       : screen_request_renderer->ConvertColour(255, 0, 0);
++        overlay_map->DrawTile(tile_08.x, tile_08.y, colour);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004a7180
++unsigned char ScreenMode10Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    OverlayMapPrefix* map = overlay_map;
++    ScreenPoint point;
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / std::bit_cast<float>(renderer->word_58));
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / std::bit_cast<float>(renderer->word_58));
++    point.x += map->scroll_x_c4;
++    point.y += map->scroll_y_c8;
++    ScreenWorldPosition position = map->ScreenToWorld(point);
++    tile_08 = CurrentScreenTerrain()->WorldToTile(position);
++    valid_10 = CanRemove(&tile_08);
++    if (manager->IsPointerOverScreen(1))
++    {
++        startup_input_motion_state->SetCursor(0);
++        byte_11 = 0;
++    }
++    else
++    {
++        startup_input_motion_state->SetCursor(2);
++        byte_11 = 1;
++    }
++    if (buttons == 1)
++    {
++        if (byte_11 && valid_10)
++        {
++            Remove(&tile_08);
++            window_audio_state->PlaySound("Cash", 1, 0.0f);
++        }
++        else
++            window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
++    }
++    if (startup_input_state->IsStateOne(1))
++    {
++        manager->SetScreenState("SceneryPanel", 2, 1.0f, 0);
++        manager->SetMode(4);
++    }
++    return 0;
++}
+diff --git a/src/startup_screen_mode1_virtuals.cpp b/src/startup_screen_mode1_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f189481b2eb037947d9ed0d32f168649c0ab12fb
+--- /dev/null
++++ b/src/startup_screen_mode1_virtuals.cpp
+@@ -0,0 +1,206 @@
++#include "startup_screen_modes.h"
++#include <bit>
++#include <cstdio>
++#include <cstring>
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004a93e0
++ScreenMode1Controller::~ScreenMode1Controller()
++{
++}
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode1Controller::RenderPointer()
++{
++}
++
++// FUNCTION: BEACHLIFE 0x004a93f0
++void ScreenMode1Controller::Enter()
++{
++    scenery_index_10 = manager->word_68;
++    scenery_08 = variable_catalog->Scenery(scenery_index_10);
++    word_0c = screen_dialog_resources->Find(scenery_08->resource_c4);
++    if (scenery_08->animation_1c4[0])
++        word_0c->SetAnimation(scenery_08->animation_1c4, 0, 0);
++    valid_colour_14 = screen_request_renderer->ConvertColour(0, 250, 0);
++    invalid_colour_16 = screen_request_renderer->ConvertColour(250, 0, 0);
++}
++
++// Folded with ScreenMode8Controller::Exit at 0x004a7770.
++void ScreenMode1Controller::Exit()
++{
++    screen_dialog_resources->Release(word_0c);
++}
++
++// FUNCTION: BEACHLIFE 0x004a9470
++void ScreenMode1Controller::Update(float elapsed)
++{
++    manager->UpdateModeScreens(elapsed);
++    if (manager->word_68 != scenery_index_10)
++    {
++        scenery_index_10 = manager->word_68;
++        scenery_08 = variable_catalog->Scenery(scenery_index_10);
++        if (word_0c)
++            screen_dialog_resources->Release(word_0c);
++        word_0c = screen_dialog_resources->Find(scenery_08->resource_c4);
++        if (scenery_08->animation_1c4[0])
++            word_0c->SetAnimation(scenery_08->animation_1c4, 0, 0);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004a9590
++void ScreenMode1Controller::RenderScreens()
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    OverlayMapPrefix* map = overlay_map;
++    if (manager->IsPointerOverScreen(1))
++    {
++        startup_input_motion_state->SetCursor(0);
++        return;
++    }
++    ScreenPoint point = startup_input_motion_state->Position();
++    point.x += map->scroll_x_c4;
++    point.y += map->scroll_y_c8;
++    ScreenWorldPosition position = map->ScreenToWorld(point);
++    ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(position);
++    AdjustTile(&tile);
++    ScreenPoint preview_tile = tile;
++    grid->TilePosition(tile.x, tile.y, 4);
++    unsigned char valid = CanPlace(&tile);
++    unsigned short colour;
++    if (!(static_cast<double>(window_deactivation_state->economy_1c->value_80) - scenery_08->cost_2d0 >= 0.0) || !valid)
++    {
++        startup_input_motion_state->SetCursor(5);
++        colour = invalid_colour_16;
++    }
++    else
++    {
++        startup_input_motion_state->SetCursor(0);
++        colour = valid_colour_14;
++    }
++    int width = scenery_08->footprint_x_2c8;
++    int height = scenery_08->footprint_y_2cc;
++    if (word_0c->word_18 & 1)
++    {
++        int temporary = width;
++        width = height;
++        height = temporary;
++    }
++    ScreenPoint current = tile;
++    for (int row = 0; row < width; ++row)
++    {
++        for (int column = 0; column < height; ++column)
++        {
++            manager->DrawPlacementTile(current.x, current.y, colour);
++            current = grid->Step(current.x, current.y, 0);
++        }
++        tile = grid->Step(tile.x, tile.y, 6);
++        current = tile;
++    }
++    renderer->SetUnscaledClip(0);
++    float time = window_deactivation_state->time_158;
++    position = grid->TilePosition(preview_tile.x, preview_tile.y, 4);
++    word_0c->DrawWorld(&position, time);
++    renderer->SetUnscaledClip(1);
++}
++
++// FUNCTION: BEACHLIFE 0x004a97f0
++unsigned char ScreenMode1Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int wheel)
++{
++    ScreenDialogResource* resource = word_0c;
++    int rotation;
++    if (static_cast<int>(wheel) > 0)
++        rotation = (static_cast<int>(resource->word_18) + 1)
++                 % resource->record->frames[resource->word_10]->plane_count_0c;
++    else
++    {
++        rotation = static_cast<int>(resource->word_18) - 1;
++        if (rotation < 0)
++            rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
++    }
++    if (rotation >= resource->record->frames[resource->word_10]->plane_count_0c)
++    {
++        rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
++        char message[80];
++        std::sprintf(message, "%s %d", resource->name, rotation);
++    }
++    resource->word_18 = rotation;
++    return 1;
++}
++
++// FUNCTION: BEACHLIFE 0x004a98e0
++unsigned char ScreenMode1Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    OverlayMapPrefix* map = overlay_map;
++    bool done = false;
++    ScreenPoint point;
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / std::bit_cast<float>(renderer->word_58));
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / std::bit_cast<float>(renderer->word_58));
++    point.x += map->scroll_x_c4;
++    point.y += map->scroll_y_c8;
++    ScreenWorldPosition position = map->ScreenToWorld(point);
++    tile_18 = CurrentScreenTerrain()->WorldToTile(position);
++    if (buttons == 1 && !manager->IsPointerOverScreen(1))
++    {
++        AdjustTile(&tile_18);
++        if (CanPlace(&tile_18)
++            && static_cast<double>(window_deactivation_state->economy_1c->value_80) - scenery_08->cost_2d0 >= 0.0)
++        {
++            ScreenModeCommand command;
++            command.words[0] = -2;
++            command.words[1] = -2;
++            command.words[2] = 0;
++            command.words[3] = 0;
++            command.words[4] = 1;
++            ScreenSceneryPlacement placement;
++            placement.word_4c = -2;
++            placement.tile = tile_18;
++            placement.enabled = 1;
++            std::strcpy(placement.name, scenery_08->name_04);
++            std::strcpy(placement.model, scenery_08->model_44);
++            placement.rotation = static_cast<unsigned char>(word_0c->word_18);
++            screen_mode_commands->QueuePlacement(&command, &placement);
++            VariableEconomy* economy = window_deactivation_state->economy_1c;
++            economy->value_80 = static_cast<double>(economy->value_80) - scenery_08->cost_2d0;
++            unsigned int cost = static_cast<unsigned int>(scenery_08->cost_2d0);
++            window_deactivation_state->spent_78c = static_cast<double>(window_deactivation_state->spent_78c) + cost;
++            window_deactivation_state->scenery_spent_794 = static_cast<double>(window_deactivation_state->scenery_spent_794) + cost;
++            window_audio_state->PlaySound("cash", 1, 0.0f);
++            word_20 = tile_18.x;
++            word_24 = tile_18.y;
++        }
++        else
++            window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
++    }
++    if (startup_input_state->IsStateOne(1))
++        done = true;
++    if (startup_input_state->IsStateOne(0x39))
++    {
++        ScreenDialogResource* resource = word_0c;
++        int rotation = (static_cast<int>(resource->word_18) + 1)
++                     % resource->record->frames[resource->word_10]->plane_count_0c;
++        if (rotation >= resource->record->frames[resource->word_10]->plane_count_0c)
++        {
++            rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
++            char message[80];
++            std::sprintf(message, "%s %d", resource->name, rotation);
++        }
++        resource->word_18 = rotation;
++    }
++    if (done)
++    {
++        manager->SetScreenState("SceneryPanel", 2, 1.0f, 0);
++        manager->SetMode(4);
++    }
++    return 0;
++}
+diff --git a/src/startup_screen_mode2_virtuals.cpp b/src/startup_screen_mode2_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa0b954f0fd08ffaeea446fb10659f9c2a89f560
+--- /dev/null
++++ b/src/startup_screen_mode2_virtuals.cpp
+@@ -0,0 +1,164 @@
++#include "startup_screen_modes.h"
++#include "pool_return.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode2Controller::RenderScreens()
++{
++}
++
++// Folded with ScreenItem::HandleInput38 at 0x004a70a0.
++unsigned char ScreenMode2Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a62e0
++ScreenMode2Controller::~ScreenMode2Controller()
++{
++}
++
++// FUNCTION: BEACHLIFE 0x004a63b0
++void ScreenMode2Controller::Enter()
++{
++    CircularListNode* node = list_0c.head->next;
++    while (node != list_0c.head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released)
++            ReturnPool(released, sizeof(ScreenModeSurfaceNode));
++    }
++    list_0c.head->next = list_0c.head;
++    list_0c.head->previous = list_0c.head;
++    manager->byte_f8 = 0;
++    manager->ShowCameraControls();
++}
++
++// FUNCTION: BEACHLIFE 0x004a6400
++void ScreenMode2Controller::Exit()
++{
++    CircularListNode* node = list_0c.head->next;
++    while (node != list_0c.head)
++    {
++        screen_request_renderer->CleanupSurface(static_cast<ScreenModeSurfaceNode*>(node)->surface);
++        node = node->next;
++    }
++    node = list_0c.head->next;
++    while (node != list_0c.head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released)
++            ReturnPool(released, sizeof(ScreenModeSurfaceNode));
++    }
++    list_0c.head->next = list_0c.head;
++    list_0c.head->previous = list_0c.head;
++}
++
++// FUNCTION: BEACHLIFE 0x004a6460
++void ScreenMode2Controller::Update(float elapsed)
++{
++    elapsed_08 = elapsed;
++    manager->UpdateTrackedEntity();
++    if (manager->word_148 != -1)
++        Capture(manager->word_148);
++}
++
++// FUNCTION: BEACHLIFE 0x004a6490
++unsigned char ScreenMode2Controller::HandleFourWords(unsigned int, unsigned int, unsigned int, unsigned int)
++{
++    if (startup_input_state->IsStateOne(1))
++    {
++        manager->SetMode(4);
++        manager->CloseScreen("CameraControls");
++        manager->byte_f8 = 1;
++        manager->HideCameraControls();
++    }
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a6870
++void ScreenMode2Controller::RenderPointer()
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    int width = renderer->width;
++    int height = renderer->height;
++    ScreenDialogResourceLookup* resources = screen_dialog_resources;
++    ScreenDialogResource* resource = resources->Find("ui3_cam_upper_left");
++    int upper_height = resource->record->frames[resource->word_10]->height_10;
++    int left_width = resource->record->frames[resource->word_10]->width_0e;
++    resource->Draw(0, 0, 65535, elapsed_08);
++    resources->Release(resource);
++    resource = resources->Find("ui3_cam_upper_right");
++    resource->Draw(width - resource->record->frames[resource->word_10]->width_0e, 0, 65535, elapsed_08);
++    int right_height = resource->record->frames[resource->word_10]->height_10;
++    resources->Release(resource);
++    resource = resources->Find("ui3_cam_lowleft");
++    resource->Draw(0, height - resource->record->frames[resource->word_10]->height_10, 65535, elapsed_08);
++    int lower_width = resource->record->frames[resource->word_10]->width_0e;
++    resources->Release(resource);
++    resource = resources->Find("ui3_cam_lowright");
++    resource->Draw(width - resource->record->frames[resource->word_10]->width_0e,
++        height - resource->record->frames[resource->word_10]->height_10,
++        65535,
++        elapsed_08);
++    resources->Release(resource);
++    if (width != 640)
++    {
++        ScreenDialogResource* left;
++        ScreenDialogResource* right;
++        ScreenDialogResource* top;
++        ScreenDialogResource* bottom;
++        ScreenDialogResource* strip;
++        if (width == 800)
++        {
++            left = resources->Find("ui3_cam_a_left");
++            right = resources->Find("ui3_cam_a_right");
++            top = resources->Find("ui3_cam_a_top");
++            bottom = resources->Find("ui3_cam_a_bottom");
++            strip = resources->Find("ui3_cam_a_filmstrip");
++        }
++        else if (width == 1024)
++        {
++            left = resources->Find("ui3_cam_b_left");
++            right = resources->Find("ui3_cam_b_right");
++            top = resources->Find("ui3_cam_b_top");
++            bottom = resources->Find("ui3_cam_b_bottom");
++            strip = resources->Find("ui3_cam_b_filmstrip");
++        }
++        else if (width == 1280)
++        {
++            left = resources->Find("ui3_cam_c_left");
++            right = resources->Find("ui3_cam_c_right");
++            top = resources->Find("ui3_cam_c_top");
++            bottom = resources->Find("ui3_cam_c_bottom");
++            strip = resources->Find("ui3_cam_c_filmstrip");
++        }
++        else
++            right = reinterpret_cast<ScreenDialogResource*>(renderer);
++        left->Draw(0, upper_height, 65535, elapsed_08);
++        right->Draw(width - right->record->frames[right->word_10]->width_0e, right_height, 65535, elapsed_08);
++        top->Draw(left_width, 0, 65535, elapsed_08);
++        bottom->Draw(lower_width, height - bottom->record->frames[bottom->word_10]->height_10, 65535, elapsed_08);
++        strip->Draw(463, height - 70, 65535, elapsed_08);
++        resources->Release(left);
++        resources->Release(right);
++        resources->Release(top);
++        resources->Release(bottom);
++        resources->Release(strip);
++    }
++    int x = 50;
++    int y = height - 59;
++    CircularListNode* node = list_0c.head->next;
++    while (node != list_0c.head)
++    {
++        renderer->BlitSurface(x, y, static_cast<ScreenModeSurfaceNode*>(node)->surface);
++        node = node->next;
++        x += 69;
++    }
++}
+diff --git a/src/startup_screen_mode4_virtuals.cpp b/src/startup_screen_mode4_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa4df42968957c11ea8da7fefbcc0fdd5d0bf79b
+--- /dev/null
++++ b/src/startup_screen_mode4_virtuals.cpp
+@@ -0,0 +1,150 @@
++#include "startup_screen_modes.h"
++#include <bit>
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x004a8650
++ScreenMode4Controller::~ScreenMode4Controller()
++{
++}
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode4Controller::RenderScreens()
++{
++}
++
++// Folded with ScreenItem::HandleInput38 at 0x004a70a0.
++unsigned char ScreenMode4Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a8660
++void ScreenMode4Controller::Enter()
++{
++    dragging_20 = 0;
++    armed_21 = 0;
++    word_24 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a8670
++void ScreenMode4Controller::Exit()
++{
++    manager->byte_123 = 1;
++}
++
++// FUNCTION: BEACHLIFE 0x004a8680
++void ScreenMode4Controller::Update(float elapsed)
++{
++    manager->UpdateModeScreens(elapsed);
++    manager->UpdateTrackedEntity();
++    if (startup_input_state->IsStateOne(1))
++    {
++        manager->word_98 = -1;
++        if (manager->ActiveScreenCount() == 0)
++            manager->RequestScreen("InGameOptions", 0, 0);
++        else
++            manager->CloseAllScreens();
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004a86f0
++void ScreenMode4Controller::RenderPointer()
++{
++    if (dragging_20)
++    {
++        ScreenRequestRenderer* renderer = screen_request_renderer;
++        float scale = std::bit_cast<float>(renderer->word_58);
++        unsigned int colour = renderer->ConvertColour(255, 255, 255);
++        ScreenPoint point = overlay_map->WorldToScreen(drag_start_08);
++        int x = static_cast<int>(static_cast<double>(point.x) * scale);
++        int y = static_cast<int>(static_cast<double>(point.y) * scale);
++        int dx = startup_input_motion_state->value_134 - x;
++        int dy = startup_input_motion_state->value_138 - y;
++        rectangle_22 = 0;
++        if (((dx < 0 ? -dx : dx) > 5 || (dy < 0 ? -dy : dy) > 5)
++            && x > 0 && x < static_cast<int>(screen_request_renderer->width)
++            && y > 0 && y < static_cast<int>(screen_request_renderer->height))
++        {
++            rectangle_22 = 1;
++            int end_x = x + dx;
++            renderer->DrawLine(x, y, end_x, y, colour);
++            int end_y = y + dy;
++            renderer->DrawLine(end_x, y, end_x, end_y, colour);
++            renderer->DrawLine(end_x, end_y, x, end_y, colour);
++            renderer->DrawLine(x, end_y, x, y, colour);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004a8820
++unsigned char ScreenMode4Controller::HandleFourWords(unsigned int x, unsigned int y,
++    unsigned int buttons, unsigned int second_buttons)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    ScreenPoint point;
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / std::bit_cast<float>(renderer->word_58));
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / std::bit_cast<float>(renderer->word_58));
++    point.x += overlay_map->scroll_x_c4;
++    point.y += overlay_map->scroll_y_c8;
++    if (second_buttons == 1 && !manager->IsPointerOverCurrentScreen())
++        manager->word_98 = -1;
++    if (buttons == 1)
++    {
++        if (!manager->IsPointerOverScreen(1) && !SelectAtPointer())
++        {
++            drag_start_08 = overlay_map->ScreenToWorld(point);
++            armed_21 = 1;
++            variable_world->ClearSelection();
++            word_24 = 0;
++        }
++    }
++    else if (buttons == 2)
++    {
++        if (!manager->IsPointerOverScreen(0))
++        {
++            if (manager->SelectionInputEnabled() && !dragging_20)
++                armed_21 = 0;
++            if (armed_21)
++            {
++                dragging_20 = 1;
++                manager->byte_123 = 0;
++            }
++        }
++        else
++        {
++            dragging_20 = 0;
++            manager->byte_123 = 1;
++        }
++    }
++    else if (dragging_20)
++    {
++        drag_end_14 = overlay_map->ScreenToWorld(point);
++        dragging_20 = 0;
++        armed_21 = 0;
++        if (rectangle_22)
++            FinishSelection();
++        manager->byte_123 = 1;
++    }
++    else if (second_buttons != 2)
++    {
++        if (!manager->IsPointerOverScreen(1) && !manager->HasActiveScreen())
++        {
++            unsigned int count;
++            variable_world->Selected(&count);
++            startup_input_motion_state->SetCursor(count ? 1 : 0);
++        }
++        else
++            startup_input_motion_state->SetCursor(0);
++    }
++    if (manager->ActiveScreenCount())
++    {
++        dragging_20 = 0;
++        manager->byte_123 = 1;
++    }
++    return 0;
++}
+diff --git a/src/startup_screen_mode5_virtuals.cpp b/src/startup_screen_mode5_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..84b6fa1832c4d5cb56a0e3bbe8fa1ced3b94c4cd
+--- /dev/null
++++ b/src/startup_screen_mode5_virtuals.cpp
+@@ -0,0 +1,202 @@
++#include "startup_screen_modes.h"
++#include <cstdio>
++#include <cstring>
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004a7b90
++ScreenMode5Controller::~ScreenMode5Controller()
++{
++}
++
++// Folded with ScreenItem::Unresolved08 at 0x00437d10.
++void ScreenMode5Controller::RenderPointer()
++{
++}
++
++// Folded with ScreenMode6Controller::HandleFourWords at 0x004a70b0.
++unsigned char ScreenMode5Controller::HandleFourWords(unsigned int, unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a7ba0
++void ScreenMode5Controller::Enter()
++{
++    building_0c = variable_catalog->Building(manager->word_54);
++    preview_08 = screen_dialog_resources->Find(building_0c->resource_c4);
++    frame_value_20 = preview_08->CurrentFrameValue();
++    byte_16 = 0;
++    colour_10 = screen_request_renderer->ConvertColour(255, 0, 0);
++    colour_12 = screen_request_renderer->ConvertColour(255, 255, 255);
++    colour_14 = screen_request_renderer->ConvertColour(0, 255, 0);
++    valid_24 = 1;
++}
++
++// FUNCTION: BEACHLIFE 0x004a7c30
++void ScreenMode5Controller::Exit()
++{
++    preview_08->record->frames[preview_08->word_10]->word_12 = static_cast<short>(frame_value_20);
++    screen_dialog_resources->Release(preview_08);
++    manager->CloseScreen("CancelBuildMode");
++}
++
++// FUNCTION: BEACHLIFE 0x004a8000
++void ScreenMode5Controller::Update(float elapsed)
++{
++    OverlayMapPrefix* map = overlay_map;
++    bool done = false;
++    manager->UpdateModeScreens(elapsed);
++    if (startup_input_state->ReadFirstButtonTransition() == 1)
++    {
++        startup_input_state->ReadValue134();
++        startup_input_state->ReadValue138();
++        if (!manager->IsPointerOverScreen(1))
++        {
++            ScreenPoint point = startup_input_motion_state->Position();
++            point.x += map->scroll_x_c4;
++            point.y += map->scroll_y_c8;
++            ScreenWorldPosition position = map->ScreenToWorld(point);
++            ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(position);
++            tile = AdjustTile(tile.x, tile.y);
++            valid_24 = CanPlace(tile.x, tile.y, 0);
++            if (valid_24)
++            {
++                ScreenBuildingPlacement placement;
++                placement.tile.x = -1;
++                placement.tile.y = -1;
++                placement.rotation = 0;
++                for (int index = 0; index < 5; ++index)
++                    placement.values_4c[index] = -1.0f;
++                placement.word_60 = -1;
++                placement.value_64 = 0.5f;
++                placement.word_68 = 0;
++                placement.byte_6c = 0;
++                VariableEconomy* economy = window_deactivation_state->economy_1c;
++                double balance = static_cast<double>(economy->value_80) - building_0c->cost_1cc;
++                if (balance > 0.0)
++                {
++                    economy->value_80 = balance;
++                    unsigned int cost = static_cast<unsigned int>(building_0c->cost_1cc);
++                    window_deactivation_state->spent_78c = static_cast<double>(window_deactivation_state->spent_78c) + cost;
++                    window_deactivation_state->building_spent_790 = static_cast<double>(window_deactivation_state->building_spent_790) + cost;
++                    ++window_deactivation_state->buildings_bought_dac;
++                    ScreenModeCommand command;
++                    command.words[0] = -2;
++                    command.words[1] = -2;
++                    command.words[2] = 0;
++                    command.words[3] = 0;
++                    command.words[4] = 2;
++                    std::strcpy(placement.name, building_0c->name_04);
++                    placement.tile = tile;
++                    placement.rotation = preview_08->word_18;
++                    screen_mode_commands->QueuePlacement(&command, &placement);
++                    window_audio_state->PlaySound("cash", 1, 0.0f);
++                }
++                else
++                    window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
++                if (!startup_input_state->IsStateTwo(0x2a) && !startup_input_state->IsStateTwo(0x36))
++                    done = true;
++            }
++            else
++                window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
++        }
++    }
++    if (startup_input_state->IsStateOne(1))
++        done = true;
++    if (startup_input_state->IsStateOne(0x39))
++    {
++        ScreenDialogResource* resource = preview_08;
++        int rotation = (static_cast<int>(resource->word_18) + 1)
++                     % resource->record->frames[0]->plane_count_0c;
++        if (rotation >= resource->record->frames[resource->word_10]->plane_count_0c)
++        {
++            rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
++            char message[80];
++            std::sprintf(message, "%s %d", resource->name, rotation);
++        }
++        resource->word_18 = rotation;
++    }
++    if (done)
++        manager->SetMode(4);
++}
++
++// FUNCTION: BEACHLIFE 0x004a8380
++void ScreenMode5Controller::RenderScreens()
++{
++    ScreenPoint point = startup_input_motion_state->Position();
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    OverlayMapPrefix* map = overlay_map;
++    if (!manager->IsPointerOverScreen(1))
++    {
++        point.x += map->scroll_x_c4;
++        point.y += map->scroll_y_c8;
++        ScreenWorldPosition position = map->ScreenToWorld(point);
++        ScreenPoint tile = grid->WorldToTile(position);
++        unsigned int width = building_0c->footprint_x_1d4;
++        unsigned int height = building_0c->footprint_y_1d8;
++        tile = AdjustTile(tile.x, tile.y);
++        valid_24 = CanPlace(tile.x, tile.y, 1);
++        ScreenPoint bounds_point = tile;
++        unsigned int draw_width = width;
++        unsigned int draw_height = height;
++        width += 2;
++        height += 2;
++        unsigned int rotation = preview_08->word_18;
++        if (rotation & 1)
++        {
++            unsigned int temporary = width;
++            width = height;
++            height = temporary;
++            temporary = draw_width;
++            draw_width = draw_height;
++            draw_height = temporary;
++        }
++        ScreenPoint first;
++        ScreenPoint last;
++        grid->BuildingBounds(bounds_point, height, width, &first, &last, rotation);
++        renderer->SetUnscaledClip(0);
++        unsigned char invalid = !valid_24;
++        position = grid->TilePosition(tile.x, tile.y, 1);
++        preview_08->DrawBuilding(&position, draw_width, draw_height, invalid);
++        renderer->SetUnscaledClip(1);
++        if (!valid_24)
++        {
++            startup_input_motion_state->SetCursor(5);
++            return;
++        }
++    }
++    startup_input_motion_state->SetCursor(0);
++}
++
++// FUNCTION: BEACHLIFE 0x004a8530
++unsigned char ScreenMode5Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int wheel)
++{
++    ScreenDialogResource* resource = preview_08;
++    int rotation;
++    if (static_cast<int>(wheel) > 0)
++        rotation = (static_cast<int>(resource->word_18) + 1)
++                 % resource->record->frames[0]->plane_count_0c;
++    else
++    {
++        rotation = static_cast<int>(resource->word_18) - 1;
++        if (rotation < 0)
++            rotation = resource->record->frames[0]->plane_count_0c - 1;
++    }
++    if (rotation >= resource->record->frames[resource->word_10]->plane_count_0c)
++    {
++        rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
++        char message[80];
++        std::sprintf(message, "%s %d", resource->name, rotation);
++    }
++    resource->word_18 = rotation;
++    return 1;
++}
+diff --git a/src/startup_screen_mode7_virtuals.cpp b/src/startup_screen_mode7_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f13e53c79b1619d8b816bf7a64be1ae1085ddbe4
+--- /dev/null
++++ b/src/startup_screen_mode7_virtuals.cpp
+@@ -0,0 +1,106 @@
++#include "startup_screen_modes.h"
++#include <bit>
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004a8f90
++ScreenMode7Controller::~ScreenMode7Controller()
++{
++}
++
++// Shared retail body 0x004a9e60.
++void ScreenMode7Controller::Update(float elapsed)
++{
++    ScreenModeController::Update(elapsed);
++}
++
++// Folded with ScreenItem::Unresolved08 at 0x00437d10.
++void ScreenMode7Controller::RenderPointer()
++{
++}
++
++// Folded with ScreenItem::HandleInput38 at 0x004a70a0.
++unsigned char ScreenMode7Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a8fa0
++void ScreenMode7Controller::Enter()
++{
++    scenery_index_08 = manager->word_68;
++    scenery_0c = variable_catalog->Scenery(scenery_index_08);
++    ScreenDialogResourceLookup* resources = screen_dialog_resources;
++    preview_10 = resources->Find(screen_scenery_placement->PathPreviewName());
++    preview_10->word_08 = 3;
++    preview_10->word_14 = screen_scenery_placement->PathPreviewFrame();
++}
++
++// FUNCTION: BEACHLIFE 0x004a9000
++void ScreenMode7Controller::Exit()
++{
++    screen_dialog_resources->Release(preview_10);
++}
++
++// FUNCTION: BEACHLIFE 0x004a9130
++void ScreenMode7Controller::RenderScreens()
++{
++    if (byte_14)
++    {
++        ScreenRequestRenderer* renderer = screen_request_renderer;
++        ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile_20.x, tile_20.y, 1);
++        renderer->SetUnscaledClip(0);
++        preview_10->DrawWorld(&position, window_deactivation_state->time_158);
++        renderer->SetUnscaledClip(1);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004a91b0
++unsigned char ScreenMode7Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    OverlayMapPrefix* map = overlay_map;
++    bool done = false;
++    ScreenPoint point;
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / std::bit_cast<float>(renderer->word_58));
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / std::bit_cast<float>(renderer->word_58));
++    point.x += map->scroll_x_c4;
++    point.y += map->scroll_y_c8;
++    ScreenWorldPosition position = map->ScreenToWorld(point);
++    tile_20 = CurrentScreenTerrain()->WorldToTile(position);
++    if (word_18 != tile_20.x || word_1c != tile_20.y)
++        word_18 = word_1c = -1;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(tile_20.x, tile_20.y)].flags_48;
++    unsigned char valid = 1;
++    if (!(flags & 1) || !(flags & 0x80000000))
++        valid = 0;
++    if (flags & 0x10000000)
++        valid = 0;
++    if (!(static_cast<double>(window_deactivation_state->economy_1c->value_80) - scenery_0c->cost_2d0 >= 0.0))
++        valid = 0;
++    byte_14 = valid;
++    if (manager->IsPointerOverScreen(1))
++        byte_14 = 0;
++    else if (buttons == 1 || buttons == 2)
++        Place(&tile_20, 0);
++    if (startup_input_state->IsStateOne(1))
++        done = true;
++    if (!byte_14 && (tile_20.x != word_18 || tile_20.y != word_1c) && !manager->IsPointerOverScreen(1))
++        startup_input_motion_state->SetCursor(5);
++    else
++        startup_input_motion_state->SetCursor(0);
++    if (done)
++    {
++        manager->SetScreenState("SceneryPanel", 2, 1.0f, 0);
++        manager->SetMode(4);
++    }
++    return 0;
++}
+diff --git a/src/startup_screen_mode8_virtuals.cpp b/src/startup_screen_mode8_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..01a0c41e16b91dd30e0011fb8654307c066284ba
+--- /dev/null
++++ b/src/startup_screen_mode8_virtuals.cpp
+@@ -0,0 +1,116 @@
++#include "startup_screen_modes.h"
++#include <bit>
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004a76e0
++ScreenMode8Controller::~ScreenMode8Controller()
++{
++}
++
++// Shared retail body 0x004a9e60.
++void ScreenMode8Controller::Update(float elapsed)
++{
++    ScreenModeController::Update(elapsed);
++}
++
++// Folded with ScreenItem::Unresolved08 at 0x00437d10.
++void ScreenMode8Controller::RenderPointer()
++{
++}
++
++// Folded with ScreenItem::HandleInput38 at 0x004a70a0.
++unsigned char ScreenMode8Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a76f0
++void ScreenMode8Controller::Enter()
++{
++    scenery_index_10 = manager->word_68;
++    scenery_08 = variable_catalog->Scenery(scenery_index_10);
++    ScreenDialogResourceLookup* resources = screen_dialog_resources;
++    word_0c = resources->Find(screen_scenery_placement->PreviewName());
++    word_0c->record->format_18 = 12;
++    if (scenery_08->animation_1c4[0])
++        word_0c->SetAnimation(scenery_08->animation_1c4, 0, 0);
++    word_0c->word_08 = 3;
++}
++
++// FUNCTION: BEACHLIFE 0x004a7770
++void ScreenMode8Controller::Exit()
++{
++    screen_dialog_resources->Release(word_0c);
++}
++
++// FUNCTION: BEACHLIFE 0x004a7780
++void ScreenMode8Controller::RenderScreens()
++{
++    if (byte_14)
++    {
++        ScreenRequestRenderer* renderer = screen_request_renderer;
++        ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile_20.x, tile_20.y, 4);
++        renderer->SetUnscaledClip(0);
++        word_0c->DrawWorld(&position, window_deactivation_state->time_158);
++        renderer->SetUnscaledClip(1);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004a7800
++unsigned char ScreenMode8Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    OverlayMapPrefix* map = overlay_map;
++    bool done = false;
++    ScreenPoint point;
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / std::bit_cast<float>(renderer->word_58));
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / std::bit_cast<float>(renderer->word_58));
++    point.x += map->scroll_x_c4;
++    point.y += map->scroll_y_c8;
++    ScreenWorldPosition position = map->ScreenToWorld(point);
++    tile_20 = CurrentScreenTerrain()->WorldToTile(position);
++    if (word_18 != tile_20.x || word_1c != tile_20.y)
++        word_18 = word_1c = -1;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(tile_20.x, tile_20.y)].flags_48;
++    unsigned char valid = 1;
++    if (!((flags & 1) && (flags & 0x80000000)) && !(flags & 0x40))
++        valid = 0;
++    if (flags & 0x10007000)
++        valid = 0;
++    if (!(static_cast<double>(window_deactivation_state->economy_1c->value_80) - scenery_08->cost_2d0 >= 0.0))
++        valid = 0;
++    byte_14 = valid;
++    if (manager->word_68 != scenery_index_10)
++    {
++        scenery_index_10 = manager->word_68;
++        scenery_08 = variable_catalog->Scenery(scenery_index_10);
++        if (scenery_08->animation_1c4[0])
++            word_0c->SetAnimation(scenery_08->animation_1c4, 0, 0);
++        word_0c->word_08 = 3;
++    }
++    if (manager->IsPointerOverScreen(1))
++        byte_14 = 0;
++    else if (buttons == 1 || buttons == 2)
++        Place(&tile_20, 0);
++    if (startup_input_state->IsStateOne(1))
++        done = true;
++    if (!byte_14 && (tile_20.x != word_18 || tile_20.y != word_1c) && !manager->IsPointerOverScreen(1))
++        startup_input_motion_state->SetCursor(5);
++    else
++        startup_input_motion_state->SetCursor(0);
++    if (done)
++    {
++        manager->SetScreenState("SceneryPanel", 2, 1.0f, 0);
++        manager->SetMode(4);
++    }
++    return 0;
++}
+diff --git a/src/startup_screen_mode9_virtuals.cpp b/src/startup_screen_mode9_virtuals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e811c9b7cbaf7758384b19fb0b029471a58033fe
+--- /dev/null
++++ b/src/startup_screen_mode9_virtuals.cpp
+@@ -0,0 +1,91 @@
++#include <bit>
++#include "startup_screen_modes.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x004a9e30
++ScreenMode9Controller::~ScreenMode9Controller()
++{
++}
++
++// Shared retail body 0x004a9e60.
++void ScreenMode9Controller::Update(float elapsed)
++{
++    ScreenModeController::Update(elapsed);
++}
++
++// Folded with ScreenItem::Unresolved0c at 0x004d3890.
++void ScreenMode9Controller::Exit()
++{
++}
++
++// Folded with ScreenItem::Unresolved08 at 0x00437d10.
++void ScreenMode9Controller::RenderPointer()
++{
++}
++
++// Folded with ScreenItem::HandleInput38 at 0x004a70a0.
++unsigned char ScreenMode9Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int)
++{
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004a9e40
++void ScreenMode9Controller::Enter()
++{
++    word_08 = variable_world->FindObject(manager->word_78);
++}
++
++// FUNCTION: BEACHLIFE 0x004a9e70
++void ScreenMode9Controller::RenderScreens()
++{
++    if (byte_15)
++    {
++        unsigned int colour = valid_14 ? screen_request_renderer->ConvertColour(0, 255, 0)
++                                       : screen_request_renderer->ConvertColour(255, 0, 0);
++        overlay_map->DrawTile(tile_0c.x, tile_0c.y, colour);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004a9ec0
++unsigned char ScreenMode9Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    OverlayMapPrefix* map = overlay_map;
++    bool done = false;
++    ScreenPoint point;
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / std::bit_cast<float>(renderer->word_58));
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / std::bit_cast<float>(renderer->word_58));
++    point.x += map->scroll_x_c4;
++    point.y += map->scroll_y_c8;
++    ScreenWorldPosition position = map->ScreenToWorld(point);
++    tile_0c = CurrentScreenTerrain()->WorldToTile(position);
++    int target;
++    valid_14 = CanMove(&tile_0c, &target);
++    if (manager->IsPointerOverScreen(1))
++    {
++        startup_input_motion_state->SetCursor(0);
++        byte_15 = 0;
++    }
++    else
++    {
++        startup_input_motion_state->SetCursor(special_16 ? 6 : (valid_14 ? 4 : 5));
++        byte_15 = 1;
++    }
++    if (buttons == 1 && byte_15 && valid_14)
++    {
++        done = true;
++        if (target == -1)
++            word_08->MoveTo(&position);
++        else
++            word_08->MoveToTarget(target);
++    }
++    if (startup_input_state->IsStateOne(1) || done)
++        manager->SetMode(4);
++    return 0;
++}
+diff --git a/src/startup_screen_mode_list.h b/src/startup_screen_mode_list.h
+index 0b11a1efa651f2712b1f5bcea2a09f15352ec643..3f6baf8d68eb8d92f9b13ebece40e35977efdfeb 100644
+--- a/src/startup_screen_mode_list.h
++++ b/src/startup_screen_mode_list.h
+@@ -5,6 +5,14 @@
+ #include "pool_lock_acquire.h"
+ #include "pool_lock_guard.h"
+ #include "startup_list.h"
++#include "pool_return.h"
++
++struct ScreenModeSurfaceNode : CircularListNode
++{
++    int surface; // Original +08.
++};
++
++inline constexpr unsigned int screen_mode_surface_slot_bytes = (sizeof(ScreenModeSurfaceNode) + 7u) & ~7u;
+ 
+ // Empty pool allocator with a real (empty) destructor; its out-of-line copy is
+ // the folded empty function 0x00437d10 used by the constructor's unwind map.
+@@ -15,14 +23,16 @@ struct ScreenModePoolAllocator
+ };
+ 
+ // Observed head-only list member of ScreenMode2Controller (+0x0c): the
+-// allocator is an empty base, and construction buys the self-linked sentinel
+-// from the 16-byte pool bucket under the pool lock.
++// allocator is an empty base. The retail surface nodes use the 16-byte pool
++// bucket; native nodes select the bucket that fits their wider links.
+ struct ScreenModeNodeList : ScreenModePoolAllocator
+ {
+     CircularListNode* head;
+ 
+     // The default allocator argument is a real temporary; the empty base is
+     // default-constructed rather than copied from it.
++    ~ScreenModeNodeList();
++
+     explicit ScreenModeNodeList(const ScreenModePoolAllocator& = ScreenModePoolAllocator())
+         : head(0)
+     {
+@@ -30,24 +40,24 @@ struct ScreenModeNodeList : ScreenModePoolAllocator
+         {
+             AcquirePoolLock(&pool_lock_word);
+             PoolLockGuard guard;
+-            block = pool_chunk_buckets[1];
++            block = pool_chunk_buckets[screen_mode_surface_slot_bytes / 8 - 1];
+             if (block)
+             {
+-                pool_chunk_buckets[1] = block->next;
++                pool_chunk_buckets[screen_mode_surface_slot_bytes / 8 - 1] = block->next;
+             }
+             else
+             {
+                 int count = 20;
+-                char* chunk = AcquirePoolChunk(16, count);
++                char* chunk = AcquirePoolChunk(screen_mode_surface_slot_bytes, count);
+                 block = reinterpret_cast<PoolChunkLink*>(chunk);
+                 if (count != 1)
+                 {
+-                    PoolChunkLink* next = reinterpret_cast<PoolChunkLink*>(chunk + 16);
+-                    pool_chunk_buckets[1] = next;
++                    PoolChunkLink* next = reinterpret_cast<PoolChunkLink*>(chunk + screen_mode_surface_slot_bytes);
++                    pool_chunk_buckets[screen_mode_surface_slot_bytes / 8 - 1] = next;
+                     for (int index = 1;; ++index)
+                     {
+                         PoolChunkLink* current = next;
+-                        next = reinterpret_cast<PoolChunkLink*>(reinterpret_cast<char*>(next) + 16);
++                        next = reinterpret_cast<PoolChunkLink*>(reinterpret_cast<char*>(next) + screen_mode_surface_slot_bytes);
+                         if (count - 1 == index)
+                         {
+                             current->next = 0;
+diff --git a/src/startup_screen_mode_list_destructor.cpp b/src/startup_screen_mode_list_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1818ad658b2eeba8db8dc95c4ffe485e482db7d6
+--- /dev/null
++++ b/src/startup_screen_mode_list_destructor.cpp
+@@ -0,0 +1,18 @@
++#include "startup_screen_mode_list.h"
++
++// Inlined member cleanup of ScreenMode2Controller::~ScreenMode2Controller.
++ScreenModeNodeList::~ScreenModeNodeList()
++{
++    CircularListNode* node = head->next;
++    while (node != head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released)
++            ReturnPool(released, sizeof(ScreenModeSurfaceNode));
++    }
++    head->next = head;
++    head->previous = head;
++    if (head)
++        ReturnPool(head, sizeof(ScreenModeSurfaceNode));
++}
+diff --git a/src/startup_screen_mode_shared.cpp b/src/startup_screen_mode_shared.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dd0974a9098ba5307b20da236d099dfa58afddb
+--- /dev/null
++++ b/src/startup_screen_mode_shared.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_modes.h"
++
++// FUNCTION: BEACHLIFE 0x004a9e60
++void ScreenModeController::Update(float elapsed)
++{
++    manager->UpdateModeScreens(elapsed);
++}
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..babe2aed1f809b2d85968a7ce7340308fb6350c9
+--- /dev/null
++++ b/src/startup_screen_mode_world.h
+@@ -0,0 +1,80 @@
++#ifndef STARTUP_SCREEN_MODE_WORLD_H
++#define STARTUP_SCREEN_MODE_WORLD_H
++
++#include "startup_screen_point.h"
++
++// Observed 84-byte terrain cell; mode controllers read and update its flags.
++struct ScreenTerrainCell
++{
++    unsigned char unknown_00[0x48];
++    unsigned int flags_48;
++    unsigned char unknown_4c[8];
++};
++
++static_assert(sizeof(ScreenTerrainCell) == 0x54);
++
++struct ScreenTerrainGrid
++{
++    int tile_size_00;
++    unsigned int width_04;
++    unsigned int height_08;
++    ScreenTerrainCell* cells_0c;
++
++    unsigned int TileIndex(int x, int y);                          // 0x0041f850.
++    ScreenPoint WorldToTile(ScreenWorldPosition position);         // 0x00446170.
++    ScreenPoint Step(int x, int y, int direction);                 // 0x00446080.
++    ScreenWorldPosition TilePosition(int x, int y, int direction); // 0x00446260.
++    void BuildingBounds(const ScreenPoint& point, unsigned int width, unsigned int height,
++        ScreenPoint* first, ScreenPoint* last, unsigned int rotation); // 0x004464f0.
++};
++
++// Actual cdecl singleton accessor and the writable singleton slot.
++ScreenTerrainGrid* CurrentScreenTerrain();     // 0x00416cd0.
++extern ScreenTerrainGrid* screen_terrain_grid; // 0x005bac34.
++
++struct ScreenSceneryPlacementState
++{
++    const char* PreviewName();     // 0x00432dd0.
++    const char* PathPreviewName(); // 0x00432de0.
++    int PathPreviewFrame();        // 0x00432df0.
++};
++extern ScreenSceneryPlacementState* screen_scenery_placement; // 0x005ab154.
++
++// Eight words copied by the retail command construction paths. Unwritten
++// words retain their original indeterminate state.
++struct ScreenModeCommand
++{
++    int words[8];
++};
++
++struct ScreenSceneryPlacement
++{
++    char name[32];
++    char model[32];
++    ScreenPoint tile;
++    unsigned char enabled;
++    unsigned char rotation;
++    unsigned char unknown_4a[2];
++    int word_4c;
++};
++
++struct ScreenBuildingPlacement
++{
++    char name[32];
++    char unknown_20[32];
++    ScreenPoint tile;
++    unsigned int rotation;
++    float values_4c[5];
++    int word_60;
++    float value_64;
++    int word_68;
++    unsigned char byte_6c;
++};
++
++struct ScreenModeCommandQueue
++{
++    void QueuePlacement(const ScreenModeCommand* command, const void* placement); // 0x0042df20.
++};
++extern ScreenModeCommandQueue* screen_mode_commands; // 0x005ab148.
++
++#endif
+diff --git a/src/startup_screen_mode_world_globals.cpp b/src/startup_screen_mode_world_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..10fb49a82d73391c45f96f557cbef8199e476797
+--- /dev/null
++++ b/src/startup_screen_mode_world_globals.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_mode_world.h"
++
++// GLOBAL: BEACHLIFE 0x005bac34
++ScreenTerrainGrid* screen_terrain_grid;
++
++// GLOBAL: BEACHLIFE 0x005ab154
++ScreenSceneryPlacementState* screen_scenery_placement;
++
++// GLOBAL: BEACHLIFE 0x005ab148
++ScreenModeCommandQueue* screen_mode_commands;
+diff --git a/src/startup_screen_modes.h b/src/startup_screen_modes.h
+index 423a00dc4f09c7877e29ec8a01ee523ad1e1f75c..b2ce0b25addbb917b74a01d3e2d844a3b5421f52 100644
+--- a/src/startup_screen_modes.h
++++ b/src/startup_screen_modes.h
+@@ -3,8 +3,15 @@
+ 
+ #include "startup_screen_mode_controller.h"
+ #include "startup_screen_mode_list.h"
++#include "startup_screen_point.h"
+ 
+-// Complete idle Mode6 declaration only. Other mode owners remain separate.
++struct ScreenDialogResource;
++struct VariableBuilding;
++struct VariableScenery;
++struct VariableEntity;
++
++// The installed retail vtables each contain the destructor and seven mode slots.
++// VTABLE: BEACHLIFE 0x004f4548
+ struct ScreenMode6Controller : ScreenModeController
+ {
+     explicit ScreenMode6Controller(ScreenManager* owner); // 0x004a7640, 8 bytes.
+@@ -19,6 +26,7 @@ struct ScreenMode6Controller : ScreenModeController
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f4500
+ struct ScreenMode0Controller : ScreenModeController
+ {
+     ~ScreenMode0Controller() override;
+@@ -33,6 +41,7 @@ struct ScreenMode0Controller : ScreenModeController
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f45e8
+ struct ScreenMode1Controller : ScreenModeController
+ {
+     ~ScreenMode1Controller() override;
+@@ -46,13 +55,20 @@ struct ScreenMode1Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    unsigned char unknown_08[4];
+-    int word_0c;
+-    unsigned char unknown_10[0x10];
++    void AdjustTile(ScreenPoint* point);              // 0x004a94f0.
++    unsigned char CanPlace(const ScreenPoint* point); // 0x004a9c10.
++
++    VariableScenery* scenery_08;   // +08.
++    ScreenDialogResource* word_0c; // +0c.
++    unsigned int scenery_index_10;
++    unsigned short valid_colour_14;
++    unsigned short invalid_colour_16;
++    ScreenPoint tile_18;
+     int word_20;
+     int word_24;
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f44e0
+ struct ScreenMode2Controller : ScreenModeController
+ {
+     ~ScreenMode2Controller() override;
+@@ -66,10 +82,13 @@ struct ScreenMode2Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    unsigned char unknown_08[4];
++    void Capture(int surface); // 0x004a64e0.
++
++    float elapsed_08;
+     ScreenModeNodeList list_0c;
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f45a8
+ struct ScreenMode4Controller : ScreenModeController
+ {
+     ~ScreenMode4Controller() override;
+@@ -83,9 +102,19 @@ struct ScreenMode4Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    unsigned char unknown_08[0x20];
++    unsigned char SelectAtPointer(); // 0x004a8a00.
++    void FinishSelection();          // 0x004a8e70.
++
++    ScreenWorldPosition drag_start_08;
++    ScreenWorldPosition drag_end_14;
++    unsigned char dragging_20;
++    unsigned char armed_21;
++    unsigned char rectangle_22;
++    unsigned char unknown_23;
++    unsigned int word_24;
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f4588
+ struct ScreenMode5Controller : ScreenModeController
+ {
+     ~ScreenMode5Controller() override;
+@@ -99,9 +128,23 @@ struct ScreenMode5Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    unsigned char unknown_08[0x20];
++    ScreenPoint AdjustTile(int x, int y);                     // 0x004a7c70.
++    unsigned char CanPlace(int x, int y, unsigned char draw); // 0x004a7d10.
++
++    ScreenDialogResource* preview_08;
++    VariableBuilding* building_0c;
++    unsigned short colour_10;
++    unsigned short colour_12;
++    unsigned short colour_14;
++    unsigned char byte_16;
++    unsigned char unknown_17;
++    unsigned char unknown_18[8];
++    int frame_value_20;
++    unsigned char valid_24;
++    unsigned char unknown_25[3];
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f45c8
+ struct ScreenMode7Controller : ScreenModeController
+ {
+     ~ScreenMode7Controller() override;
+@@ -115,14 +158,19 @@ struct ScreenMode7Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    unsigned char unknown_08[0xc];
++    void Place(const ScreenPoint* point, unsigned char sound); // 0x004a9010.
++
++    unsigned int scenery_index_08;
++    VariableScenery* scenery_0c;
++    ScreenDialogResource* preview_10;
+     unsigned char byte_14;
+     unsigned char unknown_15[3];
+     int word_18;
+     int word_1c;
+-    unsigned char unknown_20[8];
++    ScreenPoint tile_20;
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f4568
+ struct ScreenMode8Controller : ScreenModeController
+ {
+     ~ScreenMode8Controller() override;
+@@ -136,16 +184,19 @@ struct ScreenMode8Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    unsigned char unknown_08[4];
+-    int word_0c;
+-    unsigned char unknown_10[4];
++    void Place(const ScreenPoint* point, unsigned char sound); // 0x004a7a30.
++
++    VariableScenery* scenery_08;
++    ScreenDialogResource* word_0c;
++    unsigned int scenery_index_10;
+     unsigned char byte_14;
+     unsigned char unknown_15[3];
+     int word_18;
+     int word_1c;
+-    unsigned char unknown_20[8];
++    ScreenPoint tile_20;
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f4608
+ struct ScreenMode9Controller : ScreenModeController
+ {
+     ~ScreenMode9Controller() override;
+@@ -159,12 +210,17 @@ struct ScreenMode9Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    int word_08;
+-    unsigned char unknown_0c[9];
++    unsigned char CanMove(const ScreenPoint* point, int* target); // 0x004aa030.
++
++    VariableEntity* word_08; // +08.
++    ScreenPoint tile_0c;     // +0c.
++    unsigned char valid_14;  // +14.
+     unsigned char byte_15;
+-    unsigned char unknown_16[2];
++    unsigned char special_16; // +16.
++    unsigned char unknown_17;
+ };
+ 
++// VTABLE: BEACHLIFE 0x004f4528
+ struct ScreenMode10Controller : ScreenModeController
+ {
+     ~ScreenMode10Controller() override;
+@@ -178,7 +234,11 @@ struct ScreenMode10Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    unsigned char unknown_08[9];
++    unsigned char CanRemove(const ScreenPoint* point); // 0x004a72e0.
++    unsigned char Remove(const ScreenPoint* point);    // 0x004a73e0.
++
++    ScreenPoint tile_08;    // +08.
++    unsigned char valid_10; // +10.
+     unsigned char byte_11;
+     unsigned char unknown_12[2];
+ };
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index fb6647f3b9dd9fba52a3f621604090e2b6c1be5e..c11ea6b102b7784a30994f56231269205b818b0d 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -1,17 +1,25 @@
+ #ifndef STARTUP_SCREEN_OVERLAY_LAYOUT_H
+ #define STARTUP_SCREEN_OVERLAY_LAYOUT_H
+ 
++#include "startup_screen_point.h"
++
+ // Observed prefix of the central object at 0x005a8958 (about 217 code
+ // references): only the two map-extent words the overlay layout reads.
+ // Its real class, owner and lifetime are unresolved.
+ struct OverlayMapPrefix
+ {
+-    unsigned char unknown_00[0xcc];
++    unsigned char unknown_00[0xc4];
++    int scroll_x_c4;
++    int scroll_y_c8;
+     int map_width_cc;
+     int map_height_d0;
+     unsigned char unknown_d4[0x10];
+     float view_x_e4;
+     float view_y_e8;
++
++    ScreenWorldPosition ScreenToWorld(const ScreenPoint& point); // 0x0041b360.
++    ScreenPoint WorldToScreen(const ScreenWorldPosition& point); // 0x00418960.
++    void DrawTile(int x, int y, unsigned int colour);            // 0x00418fe0.
+ };
+ 
+ extern OverlayMapPrefix* overlay_map; // 0x005a8958.
+diff --git a/src/startup_screen_point.h b/src/startup_screen_point.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..be970c0f5682c063c6b96cf69e1c6f6d6b1c9c06
+--- /dev/null
++++ b/src/startup_screen_point.h
+@@ -0,0 +1,17 @@
++#ifndef STARTUP_SCREEN_POINT_H
++#define STARTUP_SCREEN_POINT_H
++
++struct ScreenPoint
++{
++    int x;
++    int y;
++};
++
++struct ScreenWorldPosition
++{
++    float x;
++    float y;
++    float z;
++};
++
++#endif
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index cccd0a42e9c2b806140675e426eaddf7eff70982..0b27bbe3152a43395a936e165d3752d09c3119e6 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -8,6 +8,7 @@
+ #define BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE  1
+ 
+ #include "startup_directdraw_surface.h"
++#include "startup_screen_point.h"
+ #include "startup_render_rectangle.h"
+ #include "startup_renderer_rectangle_queue.h"
+ 
+@@ -54,12 +55,6 @@ struct RendererWindowRectangle
+ };
+ 
+ // Observed two-word value and prefixes; original names and declarations unknown.
+-struct ScreenPoint
+-{
+-    int x;
+-    int y;
+-};
+-
+ struct ScreenSurfacePosition
+ {
+     unsigned char active;
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index e4ea298c20621b7e8c7bb02a08603b436853a49c..ff95ffcf2c1eb0432e8ada2472dcf9be7a27ff9b 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -1,6 +1,8 @@
+ #ifndef STARTUP_VARIABLE_STATE_H
+ #define STARTUP_VARIABLE_STATE_H
+ 
++struct ScreenWorldPosition;
++
+ // Descriptive read views for actual receivers in 0x004c8a30. No constructors,
+ // destructors, concrete owner sizes or native lifetime substitutes are supplied.
+ struct VariableEconomy
+@@ -19,7 +21,8 @@ struct VariableTransport
+ struct VariableBuilding
+ {
+     unsigned char unknown_00[4];
+-    char name_04[0x1c0];
++    char name_04[0xc0];
++    char resource_c4[0x100];
+     int preview_frame_1c4; // Frame of the build-panel preview.
+     int list_kind_1c8;     // Build-panel list the building appears in.
+     int cost_1cc;
+@@ -40,9 +43,13 @@ struct VariableBuilding
+ struct VariableScenery
+ {
+     unsigned char unknown_00[4];
+-    char name_04[0x2c0];
++    char name_04[0x40];
++    char model_44[0x80];
++    char resource_c4[0x100];
++    char animation_1c4[0x100];
+     int list_kind_2c4; // Build-panel list; 1 = paths.
+-    unsigned char unknown_2c8[8];
++    int footprint_x_2c8;
++    int footprint_y_2cc;
+     int cost_2d0;
+     unsigned char unknown_2d4[0x2c];
+     int preview_frame_300; // Frame of the build-panel preview.
+@@ -154,6 +161,8 @@ struct VariableEntity
+     // Actual 0x004607f0: the generator's current output, 0 when idle; body
+     // separate. Descriptive name.
+     int PowerOutput();
++    void MoveTo(const ScreenWorldPosition* point); // 0x00490340.
++    void MoveToTarget(int target);                 // 0x004903a0.
+ };
+ 
+ struct VariableCatalog
+@@ -202,6 +211,8 @@ struct VariableWorldPrefix
+     unsigned int HasNamed(const char* name);                           // 0x0042f000, RET4, EAX test.
+     VariableEntity** ByType(unsigned char type, unsigned int* count);  // 0x0042f020, RET8.
+     VariableEntity** AllStaff(unsigned int* count);                    // 0x0042f0e0, RET4.
++    VariableEntity** Selected(unsigned int* count);                    // 0x0042f360.
++    void ClearSelection();                                             // 0x0042f770.
+     unsigned int CountType(unsigned char type);                        // 0x0042f0f0, RET4.
+ 
+ private:
+diff --git a/src/window_activation.h b/src/window_activation.h
+index a74fb374ef2035e3afa66f1853182f9f42321e6d..740c14f8648661fd7f165b099a0671ec0bb9e3b7 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -4,6 +4,7 @@
+ #include "window_audio.h"
+ 
+ struct VariableWorldPrefix;
++struct VariableEconomy;
+ 
+ // Descriptive observed prefixes, not recovered complete class layouts.
+ struct WindowActivationTarget
+@@ -19,7 +20,9 @@ struct WindowDeactivationState
+ {
+     unsigned char unknown_00[0x10];
+     VariableWorldPrefix* world_10;
+-    unsigned char unknown_14[0x144];
++    unsigned char unknown_14[8];
++    VariableEconomy* economy_1c;
++    unsigned char unknown_20[0x138];
+     union
+     {
+         float clock_158;
+@@ -43,7 +46,13 @@ struct WindowDeactivationState
+     unsigned int objective_count_718;
+     unsigned char unknown_71c[0x10];
+     int objective_state_72c[16]; // 0 open, 1, 2; capacity not proved.
+-    unsigned char unknown_76c[0x650];
++    unsigned char unknown_76c[0x20];
++    float spent_78c;
++    float building_spent_790;
++    float scenery_spent_794;
++    unsigned char unknown_798[0x614];
++    unsigned int buildings_bought_dac;
++    unsigned char unknown_db0[0xc];
+     float totty_rating_dbc; // Island ratings 0..1 (drawn x100).
+     float beauty_rating_dc0;
+     float safety_rating_dc4;

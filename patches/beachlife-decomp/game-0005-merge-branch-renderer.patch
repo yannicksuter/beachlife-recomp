@@ -1,0 +1,500 @@
+diff --git a/src/startup_debug_font.h b/src/startup_debug_font.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf7e1500dbdb9d049cc3425cd760c0ee5c4037cc
+--- /dev/null
++++ b/src/startup_debug_font.h
+@@ -0,0 +1,33 @@
++#ifndef STARTUP_DEBUG_FONT_H
++#define STARTUP_DEBUG_FONT_H
++
++#include <cstddef>
++
++struct TgaImage;
++
++void StartupFatal(const char* format, ...);
++
++// The 0x440c-byte x86 GDI font owner is distinct from ScreenFontData's
++// 0x1080c-byte file font: their glyph and kerning tables have different extents.
++// Both image-only destructors share the retail implementation at 0x004183f0.
++struct DebugFont
++{
++    TgaImage* image;               // Original +0x0000: owned 8-bit atlas.
++    unsigned short glyphs[128][4]; // Original +0x0004: left, top, right, bottom.
++    signed char kerning[128][128]; // Original +0x0404: GDI delta minus one.
++    unsigned int size;             // Original +0x4404: requested point size.
++    unsigned int flags;            // Original +0x4408: bit 0 bold, bit 1 italic.
++
++    DebugFont(const char* face, unsigned int point_size, unsigned int style);
++    ~DebugFont();
++};
++
++#if defined(_M_IX86) || defined(__i386__)
++static_assert(offsetof(DebugFont, glyphs) == 0x0004);
++static_assert(offsetof(DebugFont, kerning) == 0x0404);
++static_assert(offsetof(DebugFont, size) == 0x4404);
++static_assert(offsetof(DebugFont, flags) == 0x4408);
++static_assert(sizeof(DebugFont) == 0x440c);
++#endif
++
++#endif
+diff --git a/src/startup_debug_font_constructor.cpp b/src/startup_debug_font_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f17c007a1312d19fe1c7bd8dc417b9923c0850a
+--- /dev/null
++++ b/src/startup_debug_font_constructor.cpp
+@@ -0,0 +1,193 @@
++#include <windows.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "startup_debug_font.h"
++#include "startup_screen_renderer.h"
++#include "tga_image.h"
++
++// FUNCTION: BEACHLIFE 0x00417df0
++DebugFont::DebugFont(const char* face, unsigned int point_size, unsigned int style)
++{
++    size = point_size;
++    flags = style;
++
++    // The middle size class leaves the atlas height unset, as in the original.
++    unsigned int width;
++    unsigned int height;
++    if (point_size > 40)
++    {
++        width = 1024;
++        height = 1024;
++    }
++    else if (point_size > 20)
++    {
++        width = 512;
++    }
++    else
++    {
++        width = 256;
++        height = 256;
++    }
++    image = new TgaImage(width, height, 8, 1);
++
++    BITMAPINFOHEADER header;
++    memset(&header, 0, sizeof(header));
++    header.biSize = sizeof(header);
++    header.biWidth = width;
++    header.biHeight = height;
++    header.biPlanes = 1;
++    header.biCompression = BI_RGB;
++    header.biBitCount = 32;
++
++    HDC dc = CreateCompatibleDC(0);
++    void* bits;
++    HBITMAP bitmap =
++        CreateDIBSection(dc, reinterpret_cast<BITMAPINFO*>(&header), DIB_RGB_COLORS, &bits, 0, 0);
++    SetMapMode(dc, MM_TEXT);
++    int logical_height = MulDiv(size, GetDeviceCaps(dc, LOGPIXELSY), 72);
++    unsigned char style_bits = static_cast<unsigned char>(style);
++    HFONT font = CreateFont(-logical_height,
++        0,
++        0,
++        0,
++        (style_bits & 1) ? FW_BOLD : FW_NORMAL,
++        (style_bits >> 1) & 1,
++        FALSE,
++        FALSE,
++        DEFAULT_CHARSET,
++        OUT_DEFAULT_PRECIS,
++        CLIP_DEFAULT_PRECIS,
++        DEFAULT_QUALITY,
++        VARIABLE_PITCH,
++        face);
++    if (font == 0)
++    {
++        StartupFatal("Font::Font - error calling CreateFont");
++    }
++    SelectObject(dc, bitmap);
++    SelectObject(dc, font);
++    SetTextColor(dc, 0xffffff);
++    SetBkColor(dc, 0);
++    SetTextAlign(dc, TA_LEFT | TA_TOP);
++
++    // Draw each printable character into the DIB, recording its cell.
++    char text[] = "x";
++    memset(glyphs, 0, sizeof(glyphs));
++    int x = 0;
++    int y = 0;
++    for (char character = ' '; character < 127; ++character)
++    {
++        text[0] = character;
++        SIZE extent;
++        GetTextExtentPoint32(dc, text, 1, &extent);
++        if (static_cast<unsigned int>(x + extent.cx + 1) > width)
++        {
++            y += extent.cy + 1;
++            x = 0;
++        }
++        ExtTextOut(dc, x, y, ETO_OPAQUE, 0, text, 1, 0);
++        glyphs[character][0] = static_cast<unsigned short>(x);
++        glyphs[character][1] = static_cast<unsigned short>(y);
++        glyphs[character][2] = static_cast<unsigned short>(x + extent.cx);
++        glyphs[character][3] = static_cast<unsigned short>(y + extent.cy + 1);
++        x += extent.cx + 2;
++    }
++
++    memset(kerning, 0, sizeof(kerning));
++    KERNINGPAIR* pairs = new KERNINGPAIR[0x4000];
++    int count = GetKerningPairs(dc, 0x4000, pairs);
++    for (int index = 0; index < count; ++index)
++    {
++        KERNINGPAIR& pair = pairs[index];
++        if (pair.wFirst > 31 && pair.wFirst < 127 && pair.wSecond > 31 && pair.wSecond < 127)
++        {
++            if (abs(pair.iKernAmount) < 127)
++            {
++                kerning[pair.wFirst][pair.wSecond] = static_cast<signed char>(pair.iKernAmount - 1);
++            }
++            else
++            {
++                StartupFatal("Font::Font - a kerning delta over 127?!?!?! - craaaazy");
++            }
++        }
++    }
++
++    // Any pixel with a lit green/blue nibble is glyph coverage.
++    unsigned int bytes = height * width;
++    unsigned char* coverage = new unsigned char[bytes];
++    memset(coverage, 0, bytes);
++    for (unsigned int row = 0; row < height; ++row)
++    {
++        for (unsigned int column = 0; column < width; ++column)
++        {
++            unsigned char level =
++                (static_cast<unsigned int*>(bits)[row * width + column] >> 4) & 0xf;
++            if (level > 0)
++            {
++                coverage[row * width + column] = 0xff;
++            }
++        }
++    }
++    memcpy(image->pixels, coverage, bytes);
++
++    // Coverage becomes 0xff; uncovered pixels touching coverage (wrapping at
++    // the atlas edges) become the 0xfe outline.
++    unsigned char* out = image->pixels;
++    for (unsigned int y_index = 0; y_index < height; ++y_index)
++    {
++        for (unsigned int x_index = 0; x_index < width; ++x_index, ++out)
++        {
++            unsigned int middle = (y_index % height) * width;
++            unsigned int centre = x_index % width;
++            if (coverage[middle + centre])
++            {
++                *out = 0xff;
++            }
++            else
++            {
++                unsigned int above = ((y_index - 1) % height) * width;
++                unsigned int left = (x_index - 1) % width;
++                unsigned int right = (x_index + 1) % width;
++                unsigned int below = ((y_index + 1) % height) * width;
++                if (coverage[above + left] || coverage[above + centre] || coverage[above + right] ||
++                    coverage[middle + left] || coverage[middle + right] || coverage[below + left] ||
++                    coverage[below + centre] || coverage[below + right])
++                {
++                    *out = 0xfe;
++                }
++            }
++        }
++    }
++    delete[] coverage;
++
++    unsigned char* white = image->palette + 255 * 3;
++    white[0] = 0xff;
++    white[1] = 0xff;
++    white[2] = 0xff;
++    unsigned char rgb555 = 0;
++    if (screen_request_renderer->format_44 == 1)
++    {
++        rgb555 = 1;
++    }
++    image->ConvertPalette(rgb555);
++    delete[] pairs;
++
++    DeleteObject(bitmap);
++    DeleteDC(dc);
++    DeleteObject(font);
++
++    // Flip the atlas vertically (the DIB is bottom-up).
++    unsigned char* line = static_cast<unsigned char*>(malloc(width));
++    unsigned char* top = image->pixels;
++    unsigned char* bottom = image->pixels + (height - 1) * width;
++    do
++    {
++        memcpy(line, top, width);
++        memcpy(top, bottom, width);
++        memcpy(bottom, line, width);
++        top += width;
++        bottom -= width;
++    } while (top < bottom);
++    free(line);
++}
+diff --git a/src/startup_debug_font_destructor.cpp b/src/startup_debug_font_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..aed8f4f48535e627627448c652ac59c3d23b3343
+--- /dev/null
++++ b/src/startup_debug_font_destructor.cpp
+@@ -0,0 +1,15 @@
++#include "startup_debug_font.h"
++#include "tga_image.h"
++
++#include <new>
++
++// Shared retail body at 0x004183f0, also used by ScreenFontData's destructor.
++DebugFont::~DebugFont()
++{
++    TgaImage* released = image;
++    if (released)
++    {
++        released->~TgaImage();
++        ::operator delete(released);
++    }
++}
+diff --git a/src/startup_renderer_constructor_native.cpp b/src/startup_renderer_constructor_native.cpp
+index a0b6d838bb1c851a52872baabbc058dcd23a2dbb..b20d2e260a2b3fa2a172e5f22ab8314ce2408b00 100644
+--- a/src/startup_renderer_constructor_native.cpp
++++ b/src/startup_renderer_constructor_native.cpp
+@@ -1,12 +1,12 @@
+-#include "startup_screen_renderer.h"
+-#include "startup_renderer_sea_state.h"
+ #include "render_mask_setup.h"
++#include "startup_renderer_sea_state.h"
++#include "startup_screen_renderer.h"
+ #include "tiff_image_loader.h"
+ 
++#include "runtime/renderer_software_display.h"
+ #include <new>
+ #include <stdio.h>
+ #include <string.h>
+-#include "runtime/renderer_software_display.h"
+ 
+ #include <limits>
+ #include <stdexcept>
+@@ -15,21 +15,27 @@ namespace
+ {
+ // Validate host allocation bounds before registration or member construction.
+ // This does not initialize a game member or substitute a retail constructor.
+-ScreenRequestRenderer* require_native_owner(ScreenRequestRenderer* owner,
+-    unsigned int image_width, unsigned int image_height)
++ScreenRequestRenderer* require_native_owner(
++    ScreenRequestRenderer* owner, unsigned int image_width, unsigned int image_height)
+ {
+     const unsigned int max_int = static_cast<unsigned int>(std::numeric_limits<int>::max());
+     const unsigned int max_pixels = std::numeric_limits<unsigned int>::max() / 4u;
+-    if (image_width == 0 || image_height == 0 || image_width > max_int / 2u
+-        || image_height > max_pixels / image_width)
+-        throw std::invalid_argument("Native renderer dimensions are outside the defined allocation domain");
++    if (image_width == 0 || image_height == 0 || image_width > max_int / 2u ||
++        image_height > max_pixels / image_width)
++    {
++        throw std::invalid_argument(
++            "Native renderer dimensions are outside the defined allocation domain");
++    }
+     return owner;
+ }
+ } // namespace
+ 
+ // Native SDK/container adaptation of the complete 0x0040bab0 owner.
+-ScreenRequestRenderer::ScreenRequestRenderer(beachlife::platform::Video& window, unsigned int requested_width,
+-    unsigned int requested_height, unsigned char mode)
++// FUNCTION: BEACHLIFE 0x0040bab0
++ScreenRequestRenderer::ScreenRequestRenderer(beachlife::platform::Video& window,
++    unsigned int requested_width,
++    unsigned int requested_height,
++    unsigned char mode)
+     : ScreenRendererRegistration(require_native_owner(this, requested_width, requested_height))
+     , software_mode(mode)
+     , width(requested_width)
+@@ -73,8 +79,8 @@ ScreenRequestRenderer::ScreenRequestRenderer(beachlife::platform::Video& window,
+     clip_rectangle.y = 0;
+     clip_rectangle.width = static_cast<int>(initialized_width);
+     clip_rectangle.height = static_cast<int>(initialized_height);
+-    unsigned short* pixels = static_cast<unsigned short*>(
+-        ::operator new(initialized_width * initialized_height * 4u));
++    unsigned short* pixels =
++        static_cast<unsigned short*>(::operator new(initialized_width * initialized_height * 4u));
+     unsigned int selected_format = format_44;
+     unsigned int selected_width = width;
+     pixels_1c = pixels;
+diff --git a/src/startup_renderer_display_initialize_native.cpp b/src/startup_renderer_display_initialize_native.cpp
+index 18695838e3c64c081f8cc82e2884c1cdd0d9b3f6..a7a8807c5b5cb8992e6823281d276e78af18f62e 100644
+--- a/src/startup_renderer_display_initialize_native.cpp
++++ b/src/startup_renderer_display_initialize_native.cpp
+@@ -1,8 +1,8 @@
+-#include "startup_screen_renderer.h"
+-#include "startup_renderer_display.h"
+ #include "runtime/renderer_bitmap.h"
+-#include "runtime/renderer_software_display.h"
+ #include "runtime/renderer_fullscreen_display.h"
++#include "runtime/renderer_software_display.h"
++#include "startup_renderer_display.h"
++#include "startup_screen_renderer.h"
+ 
+ #include <limits>
+ #include <new>
+@@ -13,15 +13,19 @@
+ // remains separate, including its char* catch followed by unconditional primary
+ // format access. The new mode0 domain requires successful real host operations;
+ // their exceptions propagate, without fabricated HRESULTs or rollback.
++// FUNCTION: BEACHLIFE 0x0040d9c0
+ unsigned char ScreenRequestRenderer::InitializeDisplay(beachlife::platform::Video& window,
+-    unsigned char mode, unsigned int requested_width, unsigned int requested_height,
++    unsigned char mode,
++    unsigned int requested_width,
++    unsigned int requested_height,
+     unsigned int bits)
+ {
+     const unsigned int maximum = static_cast<unsigned int>(std::numeric_limits<int>::max());
+-    if (requested_width == 0 || requested_height == 0 || requested_width > maximum / 2
+-        || requested_height > maximum / requested_width || window_34 == 0)
++    if (requested_width == 0 || requested_height == 0 || requested_width > maximum / 2 ||
++        requested_height > maximum / requested_width || window_34 == 0)
+     {
+-        throw std::invalid_argument("Native software renderer dimensions or stored window are invalid");
++        throw std::invalid_argument(
++            "Native software renderer dimensions or stored window are invalid");
+     }
+ 
+     unsigned char successful = 1;
+@@ -33,7 +37,7 @@ unsigned char ScreenRequestRenderer::InitializeDisplay(beachlife::platform::Vide
+     {
+         // The unchanged real callback reads only width/height and the four
+         // flags. Unused descriptor words do not claim extra SDL/COM facts.
+-        SurfaceDescription description = { };
++        SurfaceDescription description = {};
+         description.size = sizeof(description);
+         description.width = static_cast<unsigned int>(actual.width);
+         description.height = static_cast<unsigned int>(actual.height);
+@@ -47,9 +51,8 @@ unsigned char ScreenRequestRenderer::InitializeDisplay(beachlife::platform::Vide
+         FullscreenDisplay* fullscreen = native_fullscreen;
+         fullscreen->enter_fullscreen();
+         fullscreen = native_fullscreen;
+-        fullscreen->set_display_mode(static_cast<int>(requested_width),
+-            static_cast<int>(requested_height),
+-            bits);
++        fullscreen->set_display_mode(
++            static_cast<int>(requested_width), static_cast<int>(requested_height), bits);
+ 
+         // Initial native mode0 policy: logical RGB565. This is actual CPU word
+         // storage, not a statement about SDL's physical swapchain pixel format.
+@@ -116,9 +119,13 @@ unsigned char ScreenRequestRenderer::InitializeDisplay(beachlife::platform::Vide
+     const auto work_area = device->work_area();
+     auto rectangle = device->outer_rectangle();
+     if (rectangle.left < work_area.left)
++    {
+         rectangle.left = work_area.left;
++    }
+     if (rectangle.top < work_area.top)
++    {
+         rectangle.top = work_area.top;
++    }
+     device->move_outer(rectangle.left, rectangle.top);
+ 
+     // The original reloads the owner's stored window here, not the incoming
+diff --git a/src/startup_renderer_present_native.cpp b/src/startup_renderer_present_native.cpp
+index c406099ad6ba620880a7641c56857d34eb2879dd..2ff28a51dadc684a29eb1a4df9917c552ef417eb 100644
+--- a/src/startup_renderer_present_native.cpp
++++ b/src/startup_renderer_present_native.cpp
+@@ -1,10 +1,10 @@
+-#include "startup_screen_renderer.h"
+-#include "startup_screen_item.h"
+ #include "startup_renderer_present_effect.h"
++#include "startup_screen_item.h"
++#include "startup_screen_renderer.h"
+ 
+ #include "runtime/renderer_bitmap.h"
+-#include "runtime/renderer_software_display.h"
+ #include "runtime/renderer_fullscreen_display.h"
++#include "runtime/renderer_software_display.h"
+ 
+ #include <limits>
+ #include <span>
+@@ -12,11 +12,12 @@
+ 
+ // Native SDK adaptation of the complete 0x0040f5f0 algorithm.
+ // CaptureFrame remains a separate real native dependency; no provider is supplied.
++// FUNCTION: BEACHLIFE 0x0040f5f0
+ void ScreenRequestRenderer::Present()
+ {
+     if (capture_pending_ac)
+     {
+-        ScreenRectangle bounds = { 0, 0, static_cast<int>(width), static_cast<int>(height) };
++        ScreenRectangle bounds = {0, 0, static_cast<int>(width), static_cast<int>(height)};
+         CaptureFrame(bounds);
+     }
+ 
+@@ -24,9 +25,9 @@ void ScreenRequestRenderer::Present()
+     {
+         // These are the actual R900-owned service/chain and their stable roles,
+         // never a fabricated DirectDraw object. Capture remains before Flip.
+-        if (!native_fullscreen || !native_chain
+-            || native_primary != &native_chain->front_surface()
+-            || native_back != &native_chain->back_surface())
++        if (!native_fullscreen || !native_chain ||
++            native_primary != &native_chain->front_surface() ||
++            native_back != &native_chain->back_surface())
+         {
+             throw std::logic_error("Native mode0 renderer presentation capability is incomplete");
+         }
+@@ -42,13 +43,17 @@ void ScreenRequestRenderer::Present()
+     {
+         unsigned int mode = render_effect_mode;
+         if (mode == 0 && render_effect_countdown != 0)
++        {
+             --render_effect_countdown;
++        }
+ 
+         if (render_effect_hold)
+         {
+             ApplyPresentEffect(pixels, width, height, 4);
+             if (--render_effect_countdown == 0)
++            {
+                 render_effect_hold = 0;
++            }
+         }
+         else
+         {
+@@ -91,7 +96,9 @@ void ScreenRequestRenderer::Present()
+     }
+ 
+     if (!pixels)
++    {
+         return;
++    }
+ 
+     // Pass the actual owned surface extent, not an invented complete DIB.
+     // Odd-width storage is not padded/repaired here; the host boundary rejects
+@@ -99,16 +106,21 @@ void ScreenRequestRenderer::Present()
+     try
+     {
+         ScreenSurfacePosition* selected = surface_storage[0];
+-        const std::size_t allocated_words = static_cast<std::size_t>(selected->width) * selected->height;
++        const std::size_t allocated_words =
++            static_cast<std::size_t>(selected->width) * selected->height;
+         const std::size_t row_bytes = static_cast<std::size_t>(width) * 2;
+         if (row_bytes > std::numeric_limits<std::size_t>::max() - 3)
++        {
+             throw std::overflow_error("Native renderer DIB stride overflows");
++        }
+         const std::size_t row_stride = (row_bytes + 3) & ~std::size_t(3);
+-        if (bitmap_info->bmiHeader.biSize != 40 || bitmap_info->bmiHeader.biPlanes != 1
+-            || bitmap_info->bmiHeader.biBitCount != 16 || bitmap_info->bmiHeader.biCompression != 0
+-            || bitmap_info->bmiHeader.biWidth != static_cast<int>(width)
+-            || bitmap_info->bmiHeader.biHeight != -static_cast<int>(height))
++        if (bitmap_info->bmiHeader.biSize != 40 || bitmap_info->bmiHeader.biPlanes != 1 ||
++            bitmap_info->bmiHeader.biBitCount != 16 || bitmap_info->bmiHeader.biCompression != 0 ||
++            bitmap_info->bmiHeader.biWidth != static_cast<int>(width) ||
++            bitmap_info->bmiHeader.biHeight != -static_cast<int>(height))
++        {
+             throw std::invalid_argument("Native renderer bitmap description is unsupported");
++        }
+         device_context_64->present_rgb555(std::as_bytes(std::span(pixels, allocated_words)),
+             static_cast<int>(width),
+             static_cast<int>(height),
