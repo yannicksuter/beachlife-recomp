@@ -1,0 +1,3320 @@
+diff --git a/src/startup_building_status.h b/src/startup_building_status.h
+index c2a625b57ab5cb4d24ae1b92753401ba0352f0e8..d42a558a5c728ac042989678e318a38c7c494c8c 100644
+--- a/src/startup_building_status.h
++++ b/src/startup_building_status.h
+@@ -3,6 +3,7 @@
+ 
+ #include "startup_list.h"
+ 
++struct ScreenWorldPosition;
+ struct GameFileReader;
+ struct BuildingStatusEntry
+ {
+@@ -44,17 +45,28 @@ struct BuildingStatusWorker
+ 
+ struct VariableBuildingStatus
+ {
+-    float ConstructionProgress(unsigned int id);                      // 0x00422330.
+-    float DemolitionProgress(unsigned int id);                        // 0x004223b0.
+-    void UpdateBuilding(unsigned int id);                             // 0x004222d0.
+-    void CompleteConstruction(unsigned int id);                       // 0x004222e0.
+-    void SetReadyForDemolition(unsigned int id, unsigned char ready); // 0x00422510.
+-    bool ReadyForDemolition(unsigned int id);                         // 0x00422560.
+-    unsigned int AvailableBuilders();                                 // 0x00421730.
+-    void StartConstruction(unsigned int id);                          // 0x00421e00.
+-    void StartDemolition(unsigned int id);                            // 0x00421f50.
+-    void RemoveBuilding(unsigned int id);                             // 0x004225a0.
+-    VariableBuildingStatus();                                         // 0x00420ee0.
++    float ConstructionProgress(unsigned int id);                                                                           // 0x00422330.
++    float DemolitionProgress(unsigned int id);                                                                             // 0x004223b0.
++    void UpdateBuilding(unsigned int id);                                                                                  // 0x004222d0.
++    void CompleteConstruction(unsigned int id);                                                                            // 0x004222e0.
++    void SetReadyForDemolition(unsigned int id, unsigned char ready);                                                      // 0x00422510.
++    bool ReadyForDemolition(unsigned int id);                                                                              // 0x00422560.
++    unsigned int AvailableBuilders();                                                                                      // 0x00421730.
++    void StartConstruction(unsigned int id);                                                                               // 0x00421e00.
++    void StartDemolition(unsigned int id);                                                                                 // 0x00421f50.
++    void RemoveBuilding(unsigned int id);                                                                                  // 0x004225a0.
++    VariableBuildingStatus();                                                                                              // 0x00420ee0.
++    int CountBuilderTasks(unsigned int kind);                                                                              // 0x00421500.
++    unsigned int AssignBuilderTask(unsigned int id, ScreenWorldPosition* position, unsigned int kind, unsigned int* task); // 0x004212b0.
++    unsigned int BuilderDirection(unsigned int building, unsigned int builder);                                            // 0x004229c0.
++    unsigned int BuilderLocation(unsigned int id);                                                                         // 0x00422660.
++    void SetBuilderLocation(unsigned int id, unsigned int location);                                                       // 0x004226b0.
++    void FinishBuilderTask(unsigned int id);                                                                               // 0x00421540.
++    void UpdateBuildingTask(unsigned int id);                                                                              // 0x004220d0.
++    void ActivateBuilder(unsigned int id);                                                                                 // 0x004210d0.
++    void RemoveBuilder(unsigned int id);                                                                                   // 0x00421130.
++    void CancelBuilderTask(unsigned int id);                                                                               // 0x00421590.
++    void ReassignBuilders();                                                                                               // 0x004217b0.
+     CircularListNode* head_00;
+     int word_04;
+     BuildingStatusWorker workers_08[50];
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 546059291d471398a9ef75392c6ce74842db7768..228b50963d7b34d40d0dbfd3bfc900b45c3f0dca 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -153,9 +153,12 @@ struct ScreenDialogResource
+     void DrawTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y,
+         float depth_step, unsigned int depth); // 0x004161f0.
+     void UpdateBuildingTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y,
+-        int offset_x, int offset_y, float depth_step, unsigned int depth);                            // 0x00414470.
+-    void DrawWorldModified(const ScreenWorldPosition* position, float time, float fade, float value); // 0x004140f0.
+-    void DrawWorld(const ScreenWorldPosition* position, float time);                                  // 0x00413f10.
++        int offset_x, int offset_y, float depth_step, unsigned int depth);                                                   // 0x00414470.
++    void WorldCoordinates(const ScreenWorldPosition* position, float time, int* x, int* y, unsigned short* depth);           // 0x00414160.
++    void DrawWorldModified(const ScreenWorldPosition* position, float time, float first, float second);                      // 0x004140f0.
++    void DrawWorldEffects(const ScreenWorldPosition* position, float time, float first, float second, unsigned char effect); // 0x00414070.
++    void DrawValues(int x, int y, unsigned int depth, float time, float first, float second);                                // 0x00412ce0.
++    void DrawWorld(const ScreenWorldPosition* position, float time);                                                         // 0x00413f10.
+     void DrawBuilding(const ScreenWorldPosition* position, unsigned int width,
+         unsigned int height, unsigned char invalid);                        // 0x00413250.
+     void UpdateWorldFrame(float time, const ScreenWorldPosition* position); // 0x00416a90.
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index dfbeeccc8c444259f5d37eb9c19b6d328eeb8663..5009979c2ae256e36807d6ad11dff0f25e0e6930 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -407,10 +407,11 @@ struct ScreenManager
+     float ReadItemThreshold();
+     void ShowItemText(ScreenItem* item, int x, int y, const char* text);
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+-    void SavePauseState();                    // 0x004b1200.
+-    void RestorePauseState();                 // 0x004b1230.
+-    void DisableNamedItems(const char* name); // 0x004b1db0.
+-    void EnableNamedItems(const char* name);  // 0x004b1de0.
++    void SavePauseState();                                        // 0x004b1200.
++    void RestorePauseState();                                     // 0x004b1230.
++    void DisableNamedItems(const char* name);                     // 0x004b1db0.
++    void SetNamedItemState(const char* name, unsigned int value); // 0x004b1e10.
++    void EnableNamedItems(const char* name);                      // 0x004b1de0.
+     // Actual 0x004b17e0; existing complete named-entry source is separate.
+     bool CloseScreen(const char* name);
+     bool CloseScreenById(unsigned int id);                                                  // 0x004b1650.
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 17348de0eef13752f7991afe1f669b789a27ad57..1c466eb6242aab09366669b576d5239b28bcd59c 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -235,8 +235,9 @@ struct ScreenModeCommandIterator
+ 
+ struct ScreenModeCommandQueue
+ {
+-    ScreenModeCommandQueue(); // 0x0042dc90.
+-    void Update();            // 0x0042df50.
++    void RemoveCommands(unsigned int id); // 0x0042e020.
++    ScreenModeCommandQueue();             // 0x0042dc90.
++    void Update();                        // 0x0042df50.
+     ScreenModeCommandNode* head;
+     ScreenModeCommandNode* pending_head_04;
+     ScreenModeCommandNode* CreateNode(const ScreenModeCommand& command);                                    // 0x0042e5e0.
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index 4691df8bd7d2e4807804324f8e1772c142f35253..41c98dcfa9434db2c0139ee61e95ad700a3577e3 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -143,6 +143,7 @@ struct ScreenTextLookup : ScreenTextLookupRegistration, ScreenTextTable
+     // Actual 0x0049f290..0049f362, RET0; complete ordinary destructor source.
+     ~ScreenTextLookup();
+ 
++    const unsigned short* LookupText(unsigned int index); // 0x0049f470.
+     const unsigned short* LookupText(const char* key);
+     const unsigned short* LookupText(const unsigned short* key); // 0x0049f420.
+     ScreenTextIterator FindText(const ScreenTextKey& key);
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 0c8f980b88757f0b69e3518da4c8fd8410eff579..85949221c9c7eafb959836f9644144ddd3e1c8ed 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -239,12 +239,15 @@ struct VariableGuestState
+     unsigned char unknown_1e0[9];
+     unsigned char min_days_1e9;
+     unsigned char max_days_1ea;
+-    unsigned char unknown_1eb[0x15];
++    unsigned char unknown_1eb;
++    float value_1ec;
++    unsigned char unknown_1f0[0x10];
+     float ranges_200[34][2];
+     float hours_310[2];
+     float hours_318[2];
+     unsigned char unknown_320[0x68];
+     float value_388;
++    float value_38c;
+ };
+ 
+ // Observed nested keyline state only; no owner size or lifetime is inferred.
+@@ -556,7 +559,9 @@ struct VariableCatalogObjectDefinition
+     void* data_408;
+     void* data_40c;
+     void* data_410;
+-    unsigned char unknown_414[0x10];
++    unsigned char unknown_414[8];
++    int draw_offset_x_41c;
++    int draw_offset_y_420;
+     unsigned char flag_424;
+ };
+ 
+@@ -629,6 +634,8 @@ struct VariableCatalog
+     VariableBuilding* Building(unsigned int index);          // 0x004493a0, RET4.
+     unsigned int FindBuilding(const char* name);             // 0x004490d0, RET4.
+     const char* HoursName(unsigned int index);               // 0x004493e0, RET4.
++    const char* FeatureKey(unsigned int index);              // 0x00449070.
++    const char* FeatureTypeName(unsigned int index);         // 0x00448fc0.
+     const char* FeatureName(unsigned int index);             // 0x00449090.
+     unsigned int FindFeatureType(const char* name);          // 0x00448f30.
+     unsigned int FeatureType(unsigned int feature);          // 0x004490b0.
+diff --git a/src/startup_world_builder_callbacks.cpp b/src/startup_world_builder_callbacks.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e32345c5c9bb271843f2f81f69e4bdc9c72f432d
+--- /dev/null
++++ b/src/startup_world_builder_callbacks.cpp
+@@ -0,0 +1,135 @@
++#include "startup_world_entities.h"
++#include "startup_screen_request_context.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++#include <cstdlib>
++#include <cstring>
++#include <wchar.h>
++
++// GLOBAL: BEACHLIFE 0x00576a90
++const char* world_builder_dialog_name = "BuilderDialog";
++
++// FUNCTION: BEACHLIFE 0x004554d0
++bool WorldBuilderEntity::Unknown04(unsigned int state)
++{
++    return state <= 1 || state == 6 || state == 76 || (state >= 95 && state <= 103) || state == 131 || state == 132;
++}
++
++// FUNCTION: BEACHLIFE 0x00455ac0
++void WorldBuilderEntity::WriteValue(const char* key, const void* value)
++{
++    WorldStaffEntity::WriteValue(key, value);
++}
++
++// FUNCTION: BEACHLIFE 0x00455830
++void WorldBuilderEntity::ReadText(const char* key, unsigned short* output)
++{
++    if (std::strcmp(key, "STAFF_ACTIVITY") == 0)
++    {
++        const char* activity;
++        switch (state_3c)
++        {
++        case 95:
++        case 101:
++        case 102:
++            activity = "BUILDER_RESTING";
++            break;
++        case 96:
++            activity = "BUILDER_HEADING_HOME";
++            break;
++        case 97:
++            activity = "BUILDER_GOING_TO_BUILD";
++            break;
++        case 98:
++            activity = "BUILDER_GOING_TO_DEMOLISH";
++            break;
++        case 99:
++            activity = "BUILDER_BUILDING";
++            break;
++        case 100:
++            activity = "BUILDER_DEMOLISHING";
++            break;
++        case 103:
++            activity = "BUILDER_IDLE";
++            break;
++        default:
++            WorldStaffEntity::ReadText(key, output);
++            return;
++        }
++        wcscpy(output, screen_text_lookup->LookupText(activity));
++    }
++    else if (std::strcmp(key, "BUILDER_CURRENT_BUILD") == 0)
++        variable_world->FindObject(word_98)->ReadText("BUILDING_NAME", output);
++    else if (std::strcmp(key, "STAFF_NAME") == 0)
++        swprintf(output, personal_name_f8);
++    else if (std::strcmp(key, "STAFF_JOB_TITLE") == 0)
++        swprintf(output, screen_text_lookup->LookupText("STAFFB_TITLE_BUILDER"));
++    else
++        WorldStaffEntity::ReadText(key, output);
++}
++
++// FUNCTION: BEACHLIFE 0x004546b0
++void WorldBuilderEntity::Unknown50(int first, int second)
++{
++    if (static_cast<unsigned char>(first) == 0)
++    {
++        if (selection_state_54 == 0)
++            selection_state_54 = 1;
++    }
++    else if (selection_state_54 <= 1)
++    {
++        variable_world->ClearStaffSelection();
++        selection_state_54 = 2;
++        screen_manager->RequestScreen(world_builder_dialog_name, this, 0);
++    }
++    else if (selection_state_54 == 2)
++    {
++        screen_manager->CloseContextScreens(this);
++        selection_state_54 = 0;
++    }
++    WorldStaffEntity::Unknown50(first, second);
++}
++
++// FUNCTION: BEACHLIFE 0x00456310
++const char* WorldBuilderEntity::Notification(unsigned int flags)
++{
++    const char* result = WorldStaffEntity::Notification(flags);
++    if (flags & 2)
++        return "FEEDBACK_BUILDER_WOKEN_UP";
++    if (flags & 0x100000)
++        return "FEEDBACK_BUILDER_UNHAPPY";
++    if (flags & 4)
++        return "FEEDBACK_BUILDER_FULL_QUOTA";
++    const char* const* choices = 0;
++    static const char* const idle[] = {
++        "FEEDBACK_BUILDER_INNERTOUGHT_STANDIDLE_01",
++        "FEEDBACK_BUILDER_INNERTOUGHT_STANDIDLE_02",
++        "FEEDBACK_BUILDER_INNERTOUGHT_STANDIDLE_03"
++    };
++    static const char* const construct[] = {
++        "FEEDBACK_BUILDER_INNERTOUGHT_CONSTRUCT_01",
++        "FEEDBACK_BUILDER_INNERTOUGHT_CONSTRUCT_02",
++        "FEEDBACK_BUILDER_INNERTOUGHT_CONSTRUCT_03"
++    };
++    static const char* const demolish[] = {
++        "FEEDBACK_BUILDER_INNERTOUGHT_DEMOLISH_01",
++        "FEEDBACK_BUILDER_INNERTOUGHT_DEMOLISH_02",
++        "FEEDBACK_BUILDER_INNERTOUGHT_DEMOLISH_03"
++    };
++    static const char* const whistling[] = {
++        "FEEDBACK_BUILDER_INNERTOUGHT_WHISTLING_01",
++        "FEEDBACK_BUILDER_INNERTOUGHT_WHISTLING_02",
++        "FEEDBACK_BUILDER_INNERTOUGHT_WHISTLING_03"
++    };
++    if (flags & 0x20000000)
++        choices = idle;
++    else if (flags & 8)
++        choices = construct;
++    else if (flags & 0x10)
++        choices = demolish;
++    else if (flags & 0x20)
++        choices = whistling;
++    if (choices)
++        result = choices[std::rand() % 3];
++    return result;
++}
+diff --git a/src/startup_world_builder_save.cpp b/src/startup_world_builder_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..aeacf4dddcab27f15fbb89a43103a4749a61ca4b
+--- /dev/null
++++ b/src/startup_world_builder_save.cpp
+@@ -0,0 +1,62 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++#include <bit>
++
++extern unsigned int world_builder_count;
++
++// GLOBAL: BEACHLIFE 0x005bac40
++unsigned int world_builders_whistling = 0;
++
++// FUNCTION: BEACHLIFE 0x00455ae0
++void WorldBuilderEntity::Unknown48(GameFileReader* file)
++{
++    file->Unknown28("m_sBuilderCount", world_builder_count);
++    file->Unknown28("m_NearestValidTileX", word_77c);
++    file->Unknown28("m_NearestValidTileY", word_780);
++    file->Unknown28("m_NumBuildersWhistling", world_builders_whistling);
++    file->Unknown28("m_NumTimesPlayedAnimInRow", word_784);
++    file->Unknown30("m_fLastTaskTime", std::bit_cast<unsigned int>(time_78c));
++    file->Unknown28("m_BuilderNumber", builder_index_7f0);
++    file->Unknown30("m_HomePoint.x", std::bit_cast<unsigned int>(placement_position_7f4.x));
++    file->Unknown30("m_HomePoint.y", std::bit_cast<unsigned int>(placement_position_7f4.y));
++    file->Unknown30("m_HomePoint.z", std::bit_cast<unsigned int>(placement_position_7f4.z));
++    file->Unknown28("m_ActionState", words_794[0]);
++    file->Unknown28("m_Night", words_794[1]);
++    file->Unknown28("m_InHut", words_794[2]);
++    file->Unknown28("m_CurrentFeedback", word_80c);
++    file->Unknown28("m_FeedbackStatus", word_810);
++    file->Unknown28("m_RequiredFeedback", word_814);
++    file->Unknown28("m_BuilderLocation", word_800);
++    file->Unknown28("m_JobType", word_804);
++    file->Unknown28("m_LastStartTime", word_808);
++    file->Unknown34("m_bCheckForJobs", flag_790);
++    file->Unknown28("m_WaitTillMorning", word_788);
++    WorldStaffEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x00455c90
++void WorldBuilderEntity::Unknown4c(GameFileReader* file)
++{
++    file->ReadInt(reinterpret_cast<int*>(&world_builder_count));
++    file->ReadInt(reinterpret_cast<int*>(&word_77c));
++    file->ReadInt(reinterpret_cast<int*>(&word_780));
++    file->ReadInt(reinterpret_cast<int*>(&world_builders_whistling));
++    file->ReadInt(reinterpret_cast<int*>(&word_784));
++    file->ReadFloat(&time_78c);
++    file->ReadInt(reinterpret_cast<int*>(&builder_index_7f0));
++    file->ReadFloat(&placement_position_7f4.x);
++    file->ReadFloat(&placement_position_7f4.y);
++    file->ReadFloat(&placement_position_7f4.z);
++    file->ReadInt(reinterpret_cast<int*>(&words_794[0]));
++    file->ReadInt(reinterpret_cast<int*>(&words_794[1]));
++    file->ReadInt(reinterpret_cast<int*>(&words_794[2]));
++    file->ReadInt(reinterpret_cast<int*>(&word_80c));
++    file->ReadInt(reinterpret_cast<int*>(&word_810));
++    file->ReadInt(reinterpret_cast<int*>(&word_814));
++    file->ReadInt(reinterpret_cast<int*>(&word_800));
++    file->ReadInt(reinterpret_cast<int*>(&word_804));
++    file->ReadInt(reinterpret_cast<int*>(&word_808));
++    file->ReadByte(&flag_790);
++    file->ReadInt(reinterpret_cast<int*>(&word_788));
++    WorldStaffEntity::Unknown4c(file);
++}
+diff --git a/src/startup_world_builder_script.cpp b/src/startup_world_builder_script.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..46143fff64d3f6614e5f838a9f8db2c751ce1941
+--- /dev/null
++++ b/src/startup_world_builder_script.cpp
+@@ -0,0 +1,220 @@
++#include "startup_world_entities.h"
++#include "startup_world_subsystems.h"
++#include "startup_building_status.h"
++#include "startup_config_owner.h"
++#include "window_activation.h"
++#include <bit>
++#include <cstdlib>
++
++extern unsigned int world_builders_whistling;
++ScreenWorldPosition BuilderTaskPosition(unsigned int building, unsigned int builder, ScreenWorldPosition position); // 0x004564b0.
++
++// FUNCTION: BEACHLIFE 0x00454ff0
++WorldScriptValue WorldBuilderEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    switch (kind)
++    {
++    case 0x40:
++        return { 2, words_794[0] };
++    case 0x6f:
++        return { 3, std::bit_cast<unsigned int>(window_deactivation_state->render_value_160 - time_78c) };
++    case 0x70:
++        return { 2, home_id_100 };
++    case 0xb0:
++    {
++        if (!window_deactivation_state->building_status_48->CountBuilderTasks(2))
++            return { 0, 0 };
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        unsigned int task;
++        word_98 = window_deactivation_state->building_status_48->AssignBuilderTask(id_28, &position, 2, &task);
++        if (word_98 == static_cast<unsigned int>(-1))
++            return { 0, 0 };
++        word_804 = task;
++        return { 0, 1 };
++    }
++    case 0xb1:
++        return { 2, word_804 };
++    case 0xb2:
++    case 0xb3:
++    {
++        ScreenWorldPosition position = BuilderTaskPosition(word_98, builder_index_7f0, { x_30, y_34, z_38 });
++        return { 2, static_cast<unsigned int>(static_cast<int>(kind == 0xb2 ? position.x : position.y)) };
++    }
++    case 0xb4:
++    {
++        unsigned int direction = window_deactivation_state->building_status_48->BuilderDirection(word_98, builder_index_7f0);
++        if (!direction)
++        {
++            const unsigned int directions[] = { 2, 6, 7, 3, 0, 1, 2, 4, 3, 1 };
++            direction = directions[builder_index_7f0];
++        }
++        return { 2, direction };
++    }
++    case 0xb5:
++    {
++        const unsigned int directions[] = { 4, 6, 0, 2, 7, 3, 4, 1, 7, 3 };
++        return { 2, directions[builder_index_7f0] };
++    }
++    case 0xb6:
++        return { 2, builder_index_7f0 };
++    case 0xf9:
++        return { 2, static_cast<unsigned int>(static_cast<int>(placement_position_7f4.x)) };
++    case 0xfa:
++        return { 2, static_cast<unsigned int>(static_cast<int>(placement_position_7f4.y)) };
++    case 0xfd:
++        return { 2, word_77c };
++    case 0xfe:
++        return { 2, word_780 };
++    case 0xff:
++        return { 2, word_784 };
++    case 0x100:
++        return { 2, word_788 };
++    case 0x101:
++        return { 2, world_builders_whistling };
++    case 0x102:
++    {
++        VariableEntity* building = variable_world->FindObject(word_98);
++        return { 0, building && building->FlagAt00460340() };
++    }
++    case 0x103:
++    {
++        VariableEntity* building = variable_world->FindObject(word_98);
++        return { 0, building && (building->FlagAt00460340() || building->FlagAt00460310()) };
++    }
++    case 0x104:
++        return { 2, window_deactivation_state->building_status_48->BuilderLocation(id_28) };
++    case 0x106:
++        return { 2, words_794[1] };
++    case 0x107:
++        return { 2, words_794[2] };
++    default:
++        return WorldStaffEntity::Unknown2c(kind, data);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00454cc0
++void WorldBuilderEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++{
++    switch (kind)
++    {
++    case 0x38:
++        keyline_state_44->SelectVariant(ConvertWorldScriptInteger({ value_kind, value }));
++        break;
++    case 0x40:
++        words_794[0] = ConvertWorldScriptInteger({ value_kind, value });
++        break;
++    case 0xff:
++        word_784 = ConvertWorldScriptInteger({ value_kind, value });
++        break;
++    case 0x100:
++        word_788 = ConvertWorldScriptInteger({ value_kind, value });
++        break;
++    case 0x101:
++        world_builders_whistling = ConvertWorldScriptInteger({ value_kind, value });
++        break;
++    case 0x104:
++        word_800 = ConvertWorldScriptInteger({ value_kind, value });
++        if (word_800 == 0)
++            window_deactivation_state->building_status_48->SetBuilderLocation(id_28, 0);
++        if (word_800 == 1)
++            window_deactivation_state->building_status_48->SetBuilderLocation(id_28, 1);
++        if (word_800 == 3)
++            window_deactivation_state->building_status_48->SetBuilderLocation(id_28, 3);
++        if (word_800 == 2)
++            window_deactivation_state->building_status_48->SetBuilderLocation(id_28, 2);
++        if (word_800 == 4)
++        {
++            window_deactivation_state->building_status_48->SetBuilderLocation(id_28, 4);
++            AddThought(word_804 == 0 ? 8 : 16);
++        }
++        if (word_800 == 5)
++            window_deactivation_state->building_status_48->SetBuilderLocation(id_28, 5);
++        break;
++    case 0x106:
++        words_794[1] = ConvertWorldScriptInteger({ value_kind, value });
++        break;
++    case 0x107:
++        words_794[2] = ConvertWorldScriptInteger({ value_kind, value });
++        break;
++    default:
++        WorldStaffEntity::Unknown30(kind, data, value_kind, value);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00454920
++void WorldBuilderEntity::Unknown34(unsigned int value)
++{
++    switch (value)
++    {
++    case 0xb:
++        visible_40 = 0;
++        break;
++    case 0xc:
++        visible_40 = 1;
++        break;
++    case 0x5c:
++        time_78c = window_deactivation_state->render_value_160;
++        break;
++    case 0x5d:
++        FindValidTile();
++        break;
++    case 0x5e:
++    case 0x5f:
++        break;
++    case 0x60:
++        FindHomePoint();
++        break;
++    case 0x61:
++        world_builders_whistling = 0;
++        break;
++    case 0x62:
++        AddThought(0x20);
++        break;
++    case 0x64:
++        window_deactivation_state->building_status_48->UpdateBuildingTask(word_98);
++        break;
++    case 0x65:
++        window_deactivation_state->building_status_48->CancelBuilderTask(id_28);
++        break;
++    case 0x66:
++        window_deactivation_state->building_status_48->FinishBuilderTask(id_28);
++        break;
++    case 0x67:
++    case 0x6a:
++        window_deactivation_state->building_status_48->ReassignBuilders();
++        break;
++    case 0x68:
++    {
++        int day_length;
++        startup_config_owner->GetInteger(&day_length, "iDAY_LENGTH_IN_SECONDS");
++        float duration = static_cast<float>(static_cast<int>(static_cast<unsigned int>(day_length / 24) - word_14c));
++        if (!(duration >= 0.0f))
++            duration = 0.0f;
++        VariableEntity* building = variable_world->FindObject(word_98);
++        if (building)
++        {
++            bool demolishing = building->FlagAt00460340();
++            ScreenModeCommand command;
++            command.words[0] = command.words[1] = id_28;
++            command.words[2] = 0x39;
++            command.words[3] = command.words[4] = command.words[6] = 0;
++            command.words[5] = demolishing ? 0x64 : 0x63;
++            float delay = static_cast<float>(duration - static_cast<double>(std::rand()) * 3.0518509447574615e-05f * static_cast<double>(duration));
++            screen_mode_commands->QueueDelayed(&command, delay);
++        }
++        break;
++    }
++    case 0x69:
++        word_810 &= ~2;
++        word_814 = 0;
++        break;
++    case 0xae:
++        inactive_04 = 1;
++        break;
++    case 0xb2:
++        screen_mode_commands->RemoveCommands(id_28);
++        break;
++    default:
++        WorldStaffEntity::Unknown34(value);
++    }
++}
+diff --git a/src/startup_world_builder_update.cpp b/src/startup_world_builder_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..baebedf7d5e666f28ae9df5b7900ba20014560e0
+--- /dev/null
++++ b/src/startup_world_builder_update.cpp
+@@ -0,0 +1,102 @@
++#include "startup_world_entities.h"
++#include "startup_world_subsystems.h"
++#include "startup_building_status.h"
++#include "startup_screen_manager.h"
++#include "startup_game_file.h"
++#include "window_activation.h"
++#include <new>
++
++extern unsigned int world_builder_count;
++
++// FUNCTION: BEACHLIFE 0x004544d0
++void WorldBuilderEntity::Destroy(unsigned int flags)
++{
++    this->~WorldBuilderEntity();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x004544f0
++WorldBuilderEntity::~WorldBuilderEntity() noexcept(false)
++{
++    window_deactivation_state->building_status_48->RemoveBuilder(id_28);
++    if (--world_builder_count == 0)
++        screen_manager->SetFeatureAvailability(10, false);
++    ::operator delete(personal_name_f8);
++    queue_7c8.ReleaseStorage();
++    queue_7a0.ReleaseStorage();
++}
++
++// FUNCTION: BEACHLIFE 0x00455590
++bool WorldBuilderEntity::Unknown08(unsigned int state)
++{
++    if (state == 1)
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = home_id_100;
++        command.words[2] = 0x25;
++        command.words[3] = command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++        window_deactivation_state->building_status_48->ActivateBuilder(id_28);
++    }
++    else if (state == 0x60)
++        word_98 = home_id_100;
++    script_f4->EnterState(this, state);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x00454760
++bool WorldBuilderEntity::Unknown0c()
++{
++    if (!WorldStaffEntity::Unknown0c())
++        StartupFatal("BuilderObject::Update - error calling HumanObject::update - %s", name_06);
++    UpdateConditions();
++    script_f4->UpdateState(this, state_3c);
++    if (shift_start_114 != word_808)
++        window_deactivation_state->building_status_48->ReassignBuilders();
++    word_808 = shift_start_114;
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x004547c0
++bool WorldBuilderEntity::Unknown14(ScreenModeCommand* command)
++{
++    switch (command->words[2])
++    {
++    case 0x28:
++    case 0x2e:
++        word_98 = command->words[4];
++        break;
++    case 0x26:
++        window_deactivation_state->ticker_30->ClearFeedback(10);
++        break;
++    case 0x55:
++        if (static_cast<int>(window_deactivation_state->render_value_160) % 4 == 0 && !(morale_10c >= 0.6f))
++        {
++            word_810 &= ~0x800000;
++            word_814 = 0;
++        }
++        break;
++    case 0x2c:
++        if (static_cast<unsigned int>(command->words[0]) == home_id_100)
++        {
++            if ((state_3c >= 0x61 && state_3c <= 0x64) || state_3c == 0x67)
++                window_deactivation_state->building_status_48->CancelBuilderTask(id_28);
++            SetMovementMode(0x4c);
++            Unknown08(0x4c);
++        }
++        break;
++    }
++    return WorldStaffEntity::Unknown14(command);
++}
++
++// FUNCTION: BEACHLIFE 0x00456470
++void WorldBuilderEntity::Dismiss()
++{
++    WorldStaffEntity::Dismiss();
++    if ((state_3c >= 0x61 && state_3c <= 0x64) || state_3c == 0x67)
++        window_deactivation_state->building_status_48->CancelBuilderTask(id_28);
++    SetMovementMode(0x4c);
++    Unknown08(0x4c);
++}
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 985635922e97ba47141885d4777db62cb7071c80..fcce1ef04ddbfb40503906c32d2fbda33958ff6a 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -2,6 +2,7 @@
+ #define STARTUP_WORLD_ENTITIES_H
+ 
+ #include "startup_variable_state.h"
++#include "startup_world_shared_methods.h"
+ 
+ struct ScreenTerrainRouteNode;
+ 
+@@ -11,7 +12,8 @@ struct WorldObjectSlot
+     int id_04;
+     unsigned char flag_08;
+     unsigned char flag_09;
+-    unsigned char unknown_0a[6];
++    unsigned char unknown_0a[2];
++    unsigned int position_0c;
+ };
+ 
+ // Member spans and 32-bit sizes come from the retail constructors and their
+@@ -185,7 +187,7 @@ struct WorldSceneryEntity : WorldStaticEntity
+     bool Unknown04(unsigned int state) override;                     // 0x0041c9c0.
+     bool Unknown08(unsigned int state) override;                     // 0x0041c9f0.
+     bool Unknown0c() override;                                       // 0x0041d6e0.
+-    bool Unknown10() override;                                       // 0x0048e880.
++    bool Unknown10() override { return AcceptWorldStateExit(); }     // Folded 0x0048e880.
+     bool Unknown14(ScreenModeCommand* command) override;             // 0x0041d850.
+     void ReadText(const char* key, unsigned short* output) override; // 0x0041e4c0.
+     void Unknown3c() override;                                       // 0x0041dd50.
+@@ -240,6 +242,8 @@ struct WorldBuildingEntity : WorldStaticEntity
+     void InitializeStaff();                                          // 0x0045bab0.
+     void InitializeVehicles();                                       // 0x0045c2a0.
+     void InitializeContents();                                       // 0x0045c630.
++    float FeatureValue(unsigned int feature);                        // 0x004605e0.
++    float FeatureDuration(unsigned int feature);                     // 0x00461e20.
+     void SetRotation(unsigned int rotation);                         // 0x00460710.
+     void SetEntrancePosition(ScreenWorldPosition position);          // 0x004416a0.
+     void SetStaffPosition(ScreenWorldPosition position);             // 0x004604d0.
+@@ -362,6 +366,10 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldBuildingEntity) == 0x45c);
+ 
+ struct WorldGuestEntity : WorldPedestrianEntity
+ {
++    bool HasSatDown();                                                                                                                            // 0x00478b80.
++    float IllnessTint() { return GuestValue467d70(); }                                                                                            // 0x00467d70.
++    void DrawDesire(ScreenPoint* position);                                                                                                       // 0x0047bd00.
++    ~WorldGuestEntity() noexcept(false);                                                                                                          // 0x00469f40.
+     explicit WorldGuestEntity(const char* name);                                                                                                  // 0x00466f00.
+     void Destroy(unsigned int flags) override;                                                                                                    // 0x00467b00.
+     bool Unknown04(unsigned int state) override;                                                                                                  // 0x0046e330.
+@@ -385,7 +393,7 @@ struct WorldGuestEntity : WorldPedestrianEntity
+     void ClearSelection() override;                                                                                                               // 0x0047b090.
+     VariableGuestState* guest_f4;
+     WorldSubsystemScript* script_f8;
+-    unsigned int word_fc;
++    ScreenModeCommand* word_fc;
+     float ranges_100[7][2];
+     float traits_138[13];
+     float weather_values_16c[26];
+@@ -393,7 +401,9 @@ struct WorldGuestEntity : WorldPedestrianEntity
+     unsigned int words_1f0[13];
+     unsigned int transport_224;
+     unsigned char flag_228;
+-    unsigned char unknown_229[0x27];
++    unsigned char flag_229;
++    unsigned char unknown_22a[2];
++    ScreenWorldPosition walkpoints_22c[3];
+     unsigned int word_250;
+     float guest_value_254;
+     unsigned int word_258;
+@@ -403,20 +413,21 @@ struct WorldGuestEntity : WorldPedestrianEntity
+     char walk_animation_268[40];
+     char text_290[40];
+     unsigned char flag_2b8;
+-    unsigned char unknown_2b9[0x28];
+-    unsigned char flag_2e1;
+-    unsigned char unknown_2e2[0x2e];
+-    unsigned int word_310;
+-    unsigned char unknown_314[4];
++    char current_animation_2b9[40];
++    char return_animation_2e1[40];
++    unsigned char unknown_309[3];
++    unsigned int leave_state_30c;
++    ScreenDialogResource* word_310;
++    unsigned int word_314;
+     unsigned int lightning_state_318;
+-    unsigned char unknown_31c[0x4];
++    unsigned int word_31c;
+     unsigned int word_320;
+     unsigned int word_324;
+     unsigned int word_328;
+-    unsigned char unknown_32c[0x4];
++    unsigned int word_32c;
+     unsigned char flag_330;
+     unsigned char unknown_331[0x3];
+-    unsigned int word_334;
++    float word_334;
+     unsigned int word_338;
+     float hour_33c;
+     float hour_340;
+@@ -443,22 +454,28 @@ struct WorldGuestEntity : WorldPedestrianEntity
+     unsigned int word_388;
+     unsigned char flag_38c;
+     unsigned char flag_38d;
+-    unsigned char unknown_38e[0xa];
++    unsigned char unknown_38e[2];
++    unsigned int word_390;
++    unsigned int word_394;
+     unsigned int words_398[5];
+     unsigned char flag_3ac;
+-    unsigned char unknown_3ad[0xf];
++    unsigned char unknown_3ad[3];
++    unsigned int last_ids_3b0[2];
++    unsigned char last_activities_3b8[2];
++    unsigned char unknown_3ba[2];
+     unsigned int word_3bc;
+-    unsigned char unknown_3c0[0x4];
++    unsigned char flag_3c0;
++    unsigned char unknown_3c1[3];
+     ScreenDialogResource* resource_3c4;
+     ScreenDialogResource* resource_3c8;
+-    unsigned int word_3cc;
++    float word_3cc;
+     unsigned char unhappy_departure_3d0;
+     unsigned char flag_3d1;
+     unsigned char flags_3d2[3];
+     unsigned char unknown_3d5[3];
+     unsigned int word_3d8;
+     unsigned int word_3dc;
+-    unsigned int word_3e0;
++    float word_3e0;
+     float time_3e4;
+     unsigned int words_3e8[3];
+ };
+@@ -529,12 +546,13 @@ struct WorldObjectEntity : WorldStaticEntity
+     void SetPlacementType(unsigned int type);                                                                       // 0x00491990.
+     void SetRotation(unsigned int rotation);                                                                        // 0x00494060.
+     void CopyPosition(ScreenWorldPosition position);                                                                // 0x00441f60.
++    ~WorldObjectEntity() noexcept(false);                                                                           // 0x00491600.
+     explicit WorldObjectEntity(const char* name);                                                                   // 0x00491260.
+     void Destroy(unsigned int flags) override;                                                                      // 0x004915e0.
+-    bool Unknown04(unsigned int state) override;                                                                    // 0x00491ef0.
++    bool Unknown04(unsigned int state) override { return AcceptInitialWorldState(state); }                          // Folded 0x00491ef0.
+     bool Unknown08(unsigned int state) override;                                                                    // 0x00491f10.
+     bool Unknown0c() override;                                                                                      // 0x00491fc0.
+-    bool Unknown10() override;                                                                                      // 0x0048e880.
++    bool Unknown10() override { return AcceptWorldStateExit(); }                                                    // Folded 0x0048e880.
+     bool Unknown14(ScreenModeCommand* command) override;                                                            // 0x004920e0.
+     void ReadText(const char* key, unsigned short* output) override;                                                // 0x00492060.
+     void WriteValue(const char* key, const void* value) override;                                                   // 0x00491ff0.
+@@ -544,20 +562,21 @@ struct WorldObjectEntity : WorldStaticEntity
+     void Unknown48(GameFileReader* file) override;                                                                  // 0x00494360.
+     void Unknown4c(GameFileReader* file) override;                                                                  // 0x00494530.
+     VariableCatalogObjectDefinition* definition_60;
+-    unsigned char unknown_64[0x8];
++    int word_64;
++    unsigned char unknown_68[4];
+     ScreenDialogResource** resources_6c;
+     ScreenDialogResource** resources_70;
+     unsigned char flag_74;
+     unsigned char unknown_75[0x3];
+     unsigned char* flags_78;
+     int word_7c;
+-    unsigned char unknown_80[0x4];
++    unsigned int word_80;
+     unsigned int contained_id_84;
+     unsigned char flag_88;
+     unsigned char unknown_89[0x3];
+     WorldObjectSlot* slots_8c;
+     unsigned int word_90;
+-    unsigned char unknown_94[0x4];
++    unsigned int owner_94;
+     unsigned char flag_98;
+     unsigned char unknown_99[0x3];
+     unsigned int word_9c;
+@@ -572,7 +591,7 @@ struct WorldServiceStaffEntity : WorldStaffEntity
+     bool Unknown04(unsigned int state) override;                             // 0x0048e1a0.
+     bool Unknown08(unsigned int state) override;                             // 0x0048e200.
+     bool Unknown0c() override;                                               // 0x0049add0.
+-    bool Unknown10() override;                                               // 0x0048e880.
++    bool Unknown10() override { return AcceptWorldStateExit(); }             // Folded 0x0048e880.
+     bool Unknown14(ScreenModeCommand* command) override;                     // 0x0048d3e0.
+     void Unknown20(ScreenModeCommand command) override;                      // 0x0048e1c0.
+     void Unknown24(ScreenModeCommand command, float delay) override;         // 0x0048e1e0.
+@@ -749,6 +768,10 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldRepresentativeEntity) == 0x8ac);
+ 
+ struct WorldBuilderEntity : WorldStaffEntity
+ {
++    void FindValidTile();                                                                                                                         // 0x00455dd0.
++    void FindHomePoint();                                                                                                                         // 0x004556d0.
++    ~WorldBuilderEntity() noexcept(false);                                                                                                        // 0x004544f0.
++    void UpdateConditions();                                                                                                                      // 0x004561b0.
+     void SetBuilderIndex(unsigned int index);                                                                                                     // 0x00454750.
+     explicit WorldBuilderEntity(const char* name);                                                                                                // 0x00454260.
+     void Destroy(unsigned int flags) override;                                                                                                    // 0x004544d0.
+@@ -771,7 +794,9 @@ struct WorldBuilderEntity : WorldStaffEntity
+     const char* Notification(unsigned int flags) override;                                                                                        // 0x00456310.
+     void Dismiss() override;                                                                                                                      // 0x00456470.
+     void DirectTo(unsigned int id) override;                                                                                                      // 0x004560a0.
+-    unsigned char unknown_778[0xc];
++    unsigned char unknown_778[4];
++    unsigned int word_77c;
++    unsigned int word_780;
+     unsigned int word_784;
+     unsigned int word_788;
+     float time_78c;
+@@ -782,7 +807,7 @@ struct WorldBuilderEntity : WorldStaffEntity
+     WorldDequeStorage<int> queue_7c8;
+     unsigned int builder_index_7f0;
+     ScreenWorldPosition placement_position_7f4;
+-    unsigned char unknown_800[4];
++    unsigned int word_800;
+     unsigned int word_804;
+     unsigned int word_808;
+     unsigned int word_80c;
+@@ -833,6 +858,10 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldCleanerEntity) == 0x7c8);
+ 
+ struct WorldSecurityEntity : WorldStaffEntity
+ {
++    ~WorldSecurityEntity() noexcept(false);                                                                                                       // 0x00489400.
++    void UpdateConditions();                                                                                                                      // 0x0048a550.
++    void ChooseCrimeAction();                                                                                                                     // 0x0048ae60.
++    bool FindCrime(ScreenWorldPosition* position);                                                                                                // 0x0048abd0.
+     explicit WorldSecurityEntity(const char* name);                                                                                               // 0x00489140.
+     void Destroy(unsigned int flags) override;                                                                                                    // 0x004893e0.
+     bool Unknown04(unsigned int state) override;                                                                                                  // 0x00489520.
+@@ -859,9 +888,13 @@ struct WorldSecurityEntity : WorldStaffEntity
+     unsigned int word_780;
+     float value_784;
+     unsigned int word_788;
+-    unsigned char unknown_78c[0x9];
++    unsigned int word_78c;
++    unsigned int word_790;
++    unsigned char flag_794;
+     unsigned char flags_795[3];
+-    unsigned char unknown_798[0x10];
++    unsigned char flag_798;
++    unsigned char unknown_799[3];
++    ScreenWorldPosition patrol_position_79c;
+     unsigned int words_7a8[5];
+     unsigned int word_7bc;
+     unsigned int words_7c0[3];
+@@ -871,7 +904,7 @@ struct WorldSecurityEntity : WorldStaffEntity
+     unsigned int word_7dc;
+     unsigned int word_7e0;
+     unsigned int word_7e4;
+-    unsigned char unknown_7e8[0xc];
++    ScreenWorldPosition fine_offset_7e8;
+ };
+ static_assert(sizeof(void*) != 4 || sizeof(WorldSecurityEntity) == 0x7f4);
+ 
+@@ -918,7 +951,7 @@ struct WorldEntity14 : WorldPedestrianEntity
+     void SetVariant(unsigned int variant);                                                                                                        // 0x004637c0.
+     explicit WorldEntity14(const char* name);                                                                                                     // 0x00462c00.
+     void Destroy(unsigned int flags) override;                                                                                                    // 0x00462c40.
+-    bool Unknown04(unsigned int state) override;                                                                                                  // 0x00491ef0.
++    bool Unknown04(unsigned int state) override { return AcceptInitialWorldState(state); }                                                        // Folded 0x00491ef0.
+     bool Unknown08(unsigned int state) override;                                                                                                  // 0x004638d0.
+     bool Unknown0c() override;                                                                                                                    // 0x00462de0.
+     bool Unknown10() override;                                                                                                                    // 0x0048d080.
+@@ -1030,16 +1063,16 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldEntity18) == 0x11c);
+ 
+ struct WorldEntity19 : WorldStaffEntity
+ {
+-    explicit WorldEntity19(const char* name);            // 0x0049ad10.
+-    void Destroy(unsigned int flags) override;           // 0x0049ada0.
+-    bool Unknown04(unsigned int state) override;         // 0x00491ef0.
+-    bool Unknown08(unsigned int state) override;         // 0x0049aef0.
+-    bool Unknown0c() override;                           // 0x0049add0.
+-    bool Unknown10() override;                           // 0x0048e880.
+-    bool Unknown14(ScreenModeCommand* command) override; // 0x0049ae00.
+-    void Unknown48(GameFileReader* file) override;       // 0x0049af40.
+-    void Unknown4c(GameFileReader* file) override;       // 0x0049af70.
+-    void SetHome(unsigned int id) override;              // 0x0049af00.
++    explicit WorldEntity19(const char* name);                                              // 0x0049ad10.
++    void Destroy(unsigned int flags) override;                                             // 0x0049ada0.
++    bool Unknown04(unsigned int state) override { return AcceptInitialWorldState(state); } // Folded 0x00491ef0.
++    bool Unknown08(unsigned int state) override;                                           // 0x0049aef0.
++    bool Unknown0c() override;                                                             // 0x0049add0.
++    bool Unknown10() override { return AcceptWorldStateExit(); }                           // Folded 0x0048e880.
++    bool Unknown14(ScreenModeCommand* command) override;                                   // 0x0049ae00.
++    void Unknown48(GameFileReader* file) override;                                         // 0x0049af40.
++    void Unknown4c(GameFileReader* file) override;                                         // 0x0049af70.
++    void SetHome(unsigned int id) override;                                                // 0x0049af00.
+     unsigned char unknown_778[0x4];
+ };
+ static_assert(sizeof(void*) != 4 || sizeof(WorldEntity19) == 0x77c);
+diff --git a/src/startup_world_guest_animation.cpp b/src/startup_world_guest_animation.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7272ddf170e481b679364905a1e45042c281da66
+--- /dev/null
++++ b/src/startup_world_guest_animation.cpp
+@@ -0,0 +1,73 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <cmath>
++#include <cstring>
++
++// GLOBAL: BEACHLIFE 0x005bac8c
++char world_guest_animation_buffer[40];
++
++// FUNCTION: BEACHLIFE 0x0046fdb0
++float WorldGuestEntity::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
++{
++    if (std::strcmp(animation, "MessData") == 0)
++        animation = reinterpret_cast<const char*>(word_fc->words[4].data);
++    if (std::strcmp(animation, "WalkAnimation") == 0)
++        animation = walk_animation_268;
++    else if (std::strcmp(animation, "StandAnimation") == 0)
++        animation = text_290;
++    else if (std::strcmp(animation, "ReturnAnimation") == 0)
++        animation = return_animation_2e1;
++    else if (_stricmp(animation, "FidgetAnimation1") == 0)
++    {
++        std::strcpy(world_guest_animation_buffer, _stricmp(text_290, "D_STAND_NORMAL") == 0 ? "D_STAND" : text_290);
++        std::strcat(world_guest_animation_buffer, "_FIDGET1");
++        animation = world_guest_animation_buffer;
++    }
++    else if (_stricmp(animation, "FidgetAnimation2") == 0)
++    {
++        std::strcpy(world_guest_animation_buffer, _stricmp(text_290, "D_STAND_NORMAL") == 0 ? "D_STAND" : text_290);
++        std::strcat(world_guest_animation_buffer, "_FIDGET2");
++        animation = world_guest_animation_buffer;
++    }
++    keyline_state_44->word_08 = once ? 1 : hold ? 0
++                                                : 2;
++    if (!hold)
++    {
++        const char* return_animation = next_animation ? next_animation : animation;
++        if (next_animation)
++        {
++            if (std::strcmp(next_animation, "WalkAnimation") == 0)
++                return_animation = walk_animation_268;
++            else if (std::strcmp(next_animation, "StandAnimation") == 0)
++                return_animation = text_290;
++        }
++        std::strcpy(return_animation_2e1, return_animation);
++        leave_state_30c = next_state == static_cast<unsigned int>(-1) ? state_3c : next_state;
++        if (std::strcmp(return_animation_2e1, animation) && state_3c != 0x15)
++        {
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0x15;
++            Unknown20(command);
++        }
++    }
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++    if (duration == 0.0f || std::isnan(duration))
++        duration = 1.0f;
++    std::strcpy(current_animation_2b9, animation);
++    if (!hold && (leave_state_30c != state_3c || std::strcmp(return_animation_2e1, animation)))
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 1;
++        command.words[4] = leave_state_30c;
++        Unknown24(command, duration);
++    }
++    return duration;
++}
+diff --git a/src/startup_world_guest_callbacks.cpp b/src/startup_world_guest_callbacks.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e76f5b2236848dee72fadba93f5bb949a6a8d59
+--- /dev/null
++++ b/src/startup_world_guest_callbacks.cpp
+@@ -0,0 +1,167 @@
++#include "startup_world_entities.h"
++#include "startup_world_subsystems.h"
++#include "window_activation.h"
++#include "startup_config_owner.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00467b00
++void WorldGuestEntity::Destroy(unsigned int flags)
++{
++    this->~WorldGuestEntity();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x0046a040
++bool WorldGuestEntity::Unknown0c()
++{
++    float delta = window_deactivation_state->value_16c;
++    if (!(guest_value_34c >= 0.0f) || state_3c != 0x1d)
++    {
++        int day_length;
++        startup_config_owner->GetInteger(&day_length, "iDAY_LENGTH_IN_SECONDS");
++        if (!(guest_value_34c >= 0.0f))
++        {
++            guest_value_34c += static_cast<double>(delta) * 2.0 / day_length;
++            if (guest_value_34c > 0.0f)
++                guest_value_34c = 0.0f;
++        }
++    }
++    float time = window_deactivation_state->time_158;
++    if (!flag_5c && time - time_3e4 > 100.0f && state_3c == 0x23)
++    {
++        if (word_310)
++        {
++            screen_dialog_resources->Release(word_310);
++            word_310 = 0;
++        }
++        variable_world->FindObject(word_32c);
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 12;
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else if (flag_5c || time - time_3e4 > 100.0f)
++        time_3e4 = time;
++    if (word_3cc > 0.0f)
++    {
++        word_3cc -= delta;
++        if (!(word_3cc >= 0.0f))
++            word_3cc = 0.0f;
++    }
++    if (broken_50)
++        broken_50 = 0;
++    if (!WorldPedestrianEntity::Unknown0c())
++        StartupFatal("GuestObject::Update - error calling Guestobject::update - %s", name_06);
++    if (state_3c == 0x0d && guest_value_254 > 0.75f)
++    {
++        guest_value_254 = 0.7f;
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 0x37;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        float delay = static_cast<double>(std::rand()) * 3.0518509447574615e-05f * 10.0f + 10.0f;
++        screen_mode_commands->QueueDelayed(&command, delay);
++    }
++    if (flag_330 && window_deactivation_state->time_158 > static_cast<double>(word_334) + 10.0f)
++        flag_330 = 0;
++    if (word_3dc && window_deactivation_state->time_158 > static_cast<double>(word_3e0) + 20.0f)
++        word_3dc = 0;
++    script_f8->UpdateState(this, state_3c);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x0046e330
++bool WorldGuestEntity::Unknown04(unsigned int state)
++{
++    return state <= 1 || state == 5 || (state >= 12 && state <= 19) || (state >= 21 && state <= 64);
++}
++
++// FUNCTION: BEACHLIFE 0x0046e3a0
++bool WorldGuestEntity::Unknown08(unsigned int state)
++{
++    script_f8->EnterState(this, state);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x0046e3c0
++bool WorldGuestEntity::Unknown10()
++{
++    script_f8->ExitState(this, state_3c);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x0046e210
++bool WorldGuestEntity::Unknown14(ScreenModeCommand* command)
++{
++    ScreenModeCommand* previous = word_fc;
++    ScreenModeCommand* current = new (std::nothrow) ScreenModeCommand;
++    if (current)
++        std::memcpy(current->words, command->words, 7 * sizeof(current->words[0]));
++    word_fc = current;
++    if (command->words[2] != 0x3f && command->words[2] != 0x49 && command->words[2] != 0x2d)
++        time_3e4 = window_deactivation_state->time_158;
++    if (command->words[2] == 0x26)
++    {
++        flag_36c = 0;
++        flag_37c = 0;
++        word_370 = -2;
++        word_380 = -2;
++        word_378 = 0;
++        word_388 = 0;
++    }
++    bool handled = script_f8->HandleCommand(this, *command);
++    if (!handled)
++        handled = WorldPedestrianEntity::Unknown14(command);
++    ::operator delete(word_fc);
++    word_fc = previous;
++    return handled;
++}
++
++// FUNCTION: BEACHLIFE 0x0046fd50
++void WorldGuestEntity::Unknown20(ScreenModeCommand command)
++{
++    if (script_f8)
++        script_f8->DispatchCommand(this, command);
++}
++
++// FUNCTION: BEACHLIFE 0x0046fd80
++void WorldGuestEntity::Unknown24(ScreenModeCommand command, float delay)
++{
++    if (script_f8)
++        script_f8->DispatchDelayedCommand(this, command, delay);
++}
++
++// FUNCTION: BEACHLIFE 0x0047b080
++void WorldGuestEntity::Replaced()
++{
++    if (selection_state_54 == 2)
++        selection_state_54 = 1;
++}
++
++// FUNCTION: BEACHLIFE 0x0047b090
++void WorldGuestEntity::ClearSelection()
++{
++    selection_state_54 = 0;
++    if (!variable_world->keylines_34404)
++        keyline_state_44->flag_29 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0047c390
++WorldPedestrianEntity::~WorldPedestrianEntity() noexcept(false) = default;
++
++// FUNCTION: BEACHLIFE 0x0047c370
++void WorldPedestrianEntity::Destroy(unsigned int flags)
++{
++    this->~WorldPedestrianEntity();
++    if (flags & 1)
++        ::operator delete(this);
++}
+diff --git a/src/startup_world_guest_constructor.cpp b/src/startup_world_guest_constructor.cpp
+index 5be7c99d48e8a76cbf0b0acd3b4d8feed4b7f1dc..9816b20d66519ed83cde5ee0110617640a5a8c69 100644
+--- a/src/startup_world_guest_constructor.cpp
++++ b/src/startup_world_guest_constructor.cpp
+@@ -112,7 +112,7 @@ WorldGuestEntity::WorldGuestEntity(const char* name)
+     word_258 = 100;
+     guest_value_25c = variable_guest_constructor_template->value_1c8;
+     word_310 = 0;
+-    flag_2e1 = 0;
++    return_animation_2e1[0] = 0;
+     word_348 = 0;
+     flag_3d1 = 0;
+     bool female = guest_f4->word_1c4 != 0;
+@@ -132,7 +132,8 @@ WorldGuestEntity::WorldGuestEntity(const char* name)
+     strcpy(walk_animation_268, "D_WALK_NORMAL");
+     strcpy(text_290, "D_STAND_NORMAL");
+     flag_2b8 = 0;
+-    word_fc = word_250 = word_320 = word_324 = 0;
++    word_fc = 0;
++    word_250 = word_320 = word_324 = 0;
+     word_98 = -1;
+     flag_330 = 0;
+     word_334 = word_3e0 = 0;
+diff --git a/src/startup_world_guest_draw.cpp b/src/startup_world_guest_draw.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..36a6b523054efc5b12156d07b1ec123ee6c93e46
+--- /dev/null
++++ b/src/startup_world_guest_draw.cpp
+@@ -0,0 +1,121 @@
++#include "startup_world_entities.h"
++#include "startup_screen_request_context.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_overlay_layout.h"
++#include "window_activation.h"
++#include <bit>
++
++void DrawGuestHappiness(ScreenPoint* position, float happiness, ScreenDialogResource* resource); // 0x0047c0a0.
++
++// FUNCTION: BEACHLIFE 0x00467ce0
++float VariableEntity::GuestFade()
++{
++    WorldGuestEntity* guest = AsGuest();
++    if (!(guest->guest_value_34c >= 0.0f))
++    {
++        double tint = 1.0 - guest->guest_value_34c;
++        return static_cast<float>(tint > 2.0 ? 2.0 : tint);
++    }
++    int days = static_cast<int>(window_deactivation_state->day_15c - guest->arrival_day_354);
++    double tint = (days * 24.0 + window_deactivation_state->render_value_160 - guest->time_358) * 0.013888888992369175f;
++    return static_cast<float>(tint > 1.0 ? 1.0 : tint);
++}
++
++// FUNCTION: BEACHLIFE 0x00467b20
++void WorldGuestEntity::Unknown3c()
++{
++    if (flags_d0[1])
++        return;
++    if (word_310)
++    {
++        ScreenWorldPosition position = { static_cast<float>(static_cast<double>(x_30) - word_320), static_cast<float>(static_cast<double>(y_34) - word_324), z_38 };
++        word_310->SelectVariant(keyline_state_44->rotation_18);
++        word_310->DrawWorld(&position, window_deactivation_state->time_158);
++    }
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    float tint = GuestFade();
++    unsigned char effect = window_deactivation_state->flag_44c ? 1 : flag_3d1;
++    keyline_state_44->DrawWorldEffects(&position, window_deactivation_state->time_158, tint, guest_value_360, effect);
++}
++
++static ScreenPoint GuestOverlayPosition(WorldGuestEntity* guest)
++{
++    ScreenWorldPosition position = { guest->x_30, guest->y_34, guest->z_38 };
++    ScreenPoint point = overlay_map->WorldToScreen(position);
++    point.x += guest->keyline_state_44->CurrentFrameValue();
++    point.y += guest->keyline_state_44->SelectedFrame()->word_14;
++    int x, y;
++    guest->keyline_state_44->SelectionOffset(&x, &y);
++    point.x += x;
++    point.y += y;
++    return point;
++}
++
++// FUNCTION: BEACHLIFE 0x00467d80
++void WorldGuestEntity::Unknown40()
++{
++    if (state_3c == 0x2b || (state_3c == 0x29 && lightning_state_318 == 14))
++        return;
++    if (selection_state_54 == 1 || selection_state_54 == 2)
++    {
++        ScreenPoint position = GuestOverlayPosition(this);
++        DrawGuestHappiness(&position, happiness_264, resource_3c4);
++    }
++    if (screen_manager->word_70)
++    {
++        ScreenPoint position = GuestOverlayPosition(this);
++        DrawDesire(&position);
++    }
++    if (word_3cc > 0.0f)
++    {
++        ScreenPoint position = GuestOverlayPosition(this);
++        double scale = std::bit_cast<float>(screen_request_renderer->word_58);
++        int x = static_cast<int>(position.x * scale) + static_cast<int>(scale * -25.0f);
++        int y = static_cast<int>(position.y * scale) - resource_3c8->SelectedFrame()->height_10 - 2;
++        resource_3c8->Draw(x, y, 0xffff, 999999.0f);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0047aec0
++void WorldGuestEntity::Unknown50(int first, int second)
++{
++    if (static_cast<unsigned char>(first) == 0)
++    {
++        if (selection_state_54 == 0)
++        {
++            selection_state_54 = 1;
++            if (!variable_world->keylines_34404)
++                keyline_state_44->flag_29 = 1;
++        }
++        return;
++    }
++    if (selection_state_54 == 2)
++    {
++        screen_manager->CloseContextScreens(this);
++        selection_state_54 = 0;
++        if (!variable_world->keylines_34404)
++            keyline_state_44->flag_29 = 0;
++    }
++    else if (selection_state_54 <= 1)
++    {
++        bool was_unselected = selection_state_54 == 0;
++        variable_world->ClearSelectionForType(3);
++        screen_manager->RequestScreen("GuestPanel", this, 0);
++        selection_state_54 = 2;
++        if (!variable_world->keylines_34404)
++            keyline_state_44->flag_29 = 1;
++        if (was_unselected && static_cast<unsigned char>(second))
++        {
++            screen_manager->word_98 = -1;
++            ScreenWorldPosition position = { x_30, y_34, z_38 };
++            int x, y;
++            overlay_map->ProjectWorldPosition(&position, &x, &y);
++            double scale = std::bit_cast<float>(screen_request_renderer->word_58);
++            x -= static_cast<int>(screen_request_renderer->width / (2.0 * scale));
++            y -= static_cast<int>(screen_request_renderer->height / (2.0 * scale));
++            overlay_map->SetViewPosition(x, y);
++            overlay_map->UpdateView();
++        }
++    }
++}
+diff --git a/src/startup_world_guest_save.cpp b/src/startup_world_guest_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..40cf0c62a2f300a812b8df52a9d0e1546a14af47
+--- /dev/null
++++ b/src/startup_world_guest_save.cpp
+@@ -0,0 +1,204 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++#include <bit>
++#include <new>
++#include <wchar.h>
++
++static void ReadGuestFloatWord(GameFileReader* file, unsigned int* word)
++{
++    float value;
++    file->ReadFloat(&value);
++    *word = std::bit_cast<unsigned int>(value);
++}
++
++// FUNCTION: BEACHLIFE 0x0047b1e0
++void WorldGuestEntity::Unknown48(GameFileReader* file)
++{
++    file->Unknown10("m_Tolerance", reinterpret_cast<const unsigned int*>(ranges_100), 14);
++    file->Unknown10("m_person", reinterpret_cast<const unsigned int*>(traits_138), 13);
++    file->Unknown10("m_desires", reinterpret_cast<const unsigned int*>(weather_values_16c), 26);
++    file->Unknown10("m_opinion", reinterpret_cast<const unsigned int*>(happiness_values_1d4), 7);
++    file->Unknown20("m_rides.last", words_1f0, 5);
++    file->Unknown28("m_rides.start", words_1f0[5]);
++    file->Unknown28("m_rides.end", words_1f0[6]);
++    file->Unknown20("m_invent.slot", words_1f0 + 7, 5);
++    file->Unknown28("m_desired_commod", words_1f0[12]);
++    file->Unknown28("m_VehicleID", transport_224);
++    file->Unknown34("m_activity", flag_228);
++    file->Unknown34("m_StopAction", flag_229);
++    for (unsigned int i = 0; i < 3; ++i)
++    {
++        file->Unknown30("m_walkpoints.x", std::bit_cast<unsigned int>(walkpoints_22c[i].x));
++        file->Unknown30("m_walkpoints.y", std::bit_cast<unsigned int>(walkpoints_22c[i].y));
++        file->Unknown30("m_walkpoints.z", std::bit_cast<unsigned int>(walkpoints_22c[i].z));
++    }
++    file->Unknown28("m_walkpoint", word_250);
++    file->Unknown30("m_drunk", std::bit_cast<unsigned int>(guest_value_254));
++    file->Unknown28("m_oxygen", word_258);
++    file->Unknown30("m_cash", std::bit_cast<unsigned int>(guest_value_25c));
++    file->Unknown1c("m_name", personal_name_260);
++    file->Unknown30("m_happiness", std::bit_cast<unsigned int>(happiness_264));
++    file->Unknown38("m_WalkAnimation", walk_animation_268);
++    file->Unknown38("m_StandAnimation", text_290);
++    file->Unknown34("m_Fidget", flag_2b8);
++    file->Unknown38("m_CurrAnimation", current_animation_2b9);
++    file->Unknown38("m_ReturnAnimation", return_animation_2e1);
++    file->Unknown28("m_LeaveState", leave_state_30c);
++    if (word_310)
++    {
++        file->Unknown24("attached sprite", 1);
++        file->Unknown38("Sprite name", word_310->name);
++        word_310->SaveState(file);
++    }
++    else
++        file->Unknown24("attached sprite", 0);
++    file->Unknown28("m_EventID", word_314);
++    file->Unknown28("m_ActionState", lightning_state_318);
++    file->Unknown28("m_RepeatAction", word_31c);
++    file->Unknown28("m_AttachedOffsetX", word_320);
++    file->Unknown28("m_AttachedOffsetY", word_324);
++    file->Unknown28("m_FightPerson", word_328);
++    file->Unknown28("m_ActivityPerson", word_32c);
++    file->Unknown34("m_bJustLittered", flag_330);
++    file->Unknown30("m_fTimeLittered", std::bit_cast<unsigned int>(word_334));
++    file->Unknown28("m_StayingAt", word_338);
++    file->Unknown30("m_WakeTime", std::bit_cast<unsigned int>(hour_33c));
++    file->Unknown30("m_BedTime", std::bit_cast<unsigned int>(hour_340));
++    file->Unknown28("m_NightsToStay", days_344);
++    file->Unknown28("m_DayArrived", arrival_day_354);
++    file->Unknown30("m_fTimeArrived", std::bit_cast<unsigned int>(time_358));
++    file->Unknown30("m_TimeToLeave", word_348);
++    file->Unknown20("m_LastID", last_ids_3b0, 2);
++    file->Unknown14("m_bLastActivity", last_activities_3b8, 2);
++    file->Unknown28("m_ArrayPos", word_3bc);
++    file->Unknown30("m_fSunBurnLevel", std::bit_cast<unsigned int>(guest_value_34c));
++    file->Unknown28("m_AmountLoition", word_350);
++    file->Unknown28("m_DayArrived", arrival_day_354);
++    file->Unknown34("m_AppliedLotion", flag_35c);
++    file->Unknown34("m_BestSpotOpinion", flag_36c);
++    file->Unknown28("m_Best", word_370);
++    file->Unknown28("m_BestType", word_374);
++    file->Unknown30("m_fBestScore", word_378);
++    file->Unknown34("m_WorstSpotOpinion", flag_37c);
++    file->Unknown28("m_WorstType", word_384);
++    file->Unknown30("m_fWorstScore", word_388);
++    file->Unknown28("m_CurID", word_390);
++    file->Unknown28("m_CurTypeID", word_394);
++    file->Unknown30("m_fCurScore", words_398[0]);
++    file->Unknown30("m_fPriceScore", words_398[1]);
++    file->Unknown30("m_fQueueScore", words_398[2]);
++    file->Unknown30("m_fSafetyScore", words_398[3]);
++    file->Unknown30("m_fCleanScore", words_398[4]);
++    file->Unknown34("m_bMissedPurchase", flag_3ac);
++    file->Unknown30("m_fFoodIll", std::bit_cast<unsigned int>(guest_value_360));
++    file->Unknown34("m_bImIll", flag_364);
++    file->Unknown34("m_bLastGood", flag_38c);
++    file->Unknown34("m_bLastBad", flag_38d);
++    file->Unknown34("m_HasSatDown", flag_3c0);
++    file->Unknown34("m_bLeavingEarly", unhappy_departure_3d0);
++    file->Unknown20("m_Thoughts", words_3e8, 3);
++    file->Unknown24("m_OffenceState", word_3dc);
++    file->Unknown30("m_fTimeOfOffence", std::bit_cast<unsigned int>(word_3e0));
++    file->Unknown30("m_fLastUpdateHappened", std::bit_cast<unsigned int>(time_3e4));
++    WorldPedestrianEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x0047b810
++void WorldGuestEntity::Unknown4c(GameFileReader* file)
++{
++    file->Unknown50(reinterpret_cast<unsigned int*>(ranges_100), 14);
++    file->Unknown50(reinterpret_cast<unsigned int*>(traits_138), 13);
++    file->Unknown50(reinterpret_cast<unsigned int*>(weather_values_16c), 26);
++    file->Unknown50(reinterpret_cast<unsigned int*>(happiness_values_1d4), 7);
++    file->Unknown60(words_1f0, 5);
++    file->ReadInt(reinterpret_cast<int*>(&words_1f0[5]));
++    file->ReadInt(reinterpret_cast<int*>(&words_1f0[6]));
++    file->Unknown60(words_1f0 + 7, 5);
++    file->ReadInt(reinterpret_cast<int*>(&words_1f0[12]));
++    file->ReadInt(reinterpret_cast<int*>(&transport_224));
++    file->ReadByte(&flag_228);
++    file->ReadByte(&flag_229);
++    for (unsigned int i = 0; i < 3; ++i)
++    {
++        file->ReadFloat(&walkpoints_22c[i].x);
++        file->ReadFloat(&walkpoints_22c[i].y);
++        file->ReadFloat(&walkpoints_22c[i].z);
++    }
++    file->ReadInt(reinterpret_cast<int*>(&word_250));
++    file->ReadFloat(&guest_value_254);
++    file->ReadInt(reinterpret_cast<int*>(&word_258));
++    file->ReadFloat(&guest_value_25c);
++    if (personal_name_260)
++        ::operator delete(personal_name_260);
++    unsigned short name[128];
++    file->Unknown5c(name, 128);
++    personal_name_260 = static_cast<unsigned short*>(::operator new((wcslen(name) + 1) * sizeof(unsigned short)));
++    wcscpy(personal_name_260, name);
++    file->ReadFloat(&happiness_264);
++    file->ReadText(walk_animation_268, 40);
++    file->ReadText(text_290, 40);
++    file->ReadByte(&flag_2b8);
++    file->ReadText(current_animation_2b9, 40);
++    file->ReadText(return_animation_2e1, 40);
++    file->ReadInt(reinterpret_cast<int*>(&leave_state_30c));
++    unsigned int attached;
++    file->Unknown68(&attached);
++    if (attached)
++    {
++        char resource[128];
++        file->ReadText(resource, 128);
++        word_310 = screen_dialog_resources->Find(resource);
++        word_310->LoadState(file);
++    }
++    file->ReadInt(reinterpret_cast<int*>(&word_314));
++    file->ReadInt(reinterpret_cast<int*>(&lightning_state_318));
++    file->ReadInt(reinterpret_cast<int*>(&word_31c));
++    file->ReadInt(reinterpret_cast<int*>(&word_320));
++    file->ReadInt(reinterpret_cast<int*>(&word_324));
++    file->ReadInt(reinterpret_cast<int*>(&word_328));
++    file->ReadInt(reinterpret_cast<int*>(&word_32c));
++    file->ReadByte(&flag_330);
++    file->ReadFloat(&word_334);
++    file->ReadInt(reinterpret_cast<int*>(&word_338));
++    file->ReadFloat(&hour_33c);
++    file->ReadFloat(&hour_340);
++    file->ReadInt(reinterpret_cast<int*>(&days_344));
++    file->ReadInt(reinterpret_cast<int*>(&arrival_day_354));
++    file->ReadFloat(&time_358);
++    ReadGuestFloatWord(file, &word_348);
++    file->Unknown60(last_ids_3b0, 2);
++    file->Unknown54(last_activities_3b8, 2);
++    file->ReadInt(reinterpret_cast<int*>(&word_3bc));
++    file->ReadFloat(&guest_value_34c);
++    file->ReadInt(reinterpret_cast<int*>(&word_350));
++    file->ReadInt(reinterpret_cast<int*>(&arrival_day_354));
++    file->ReadByte(&flag_35c);
++    file->ReadByte(&flag_36c);
++    file->ReadInt(reinterpret_cast<int*>(&word_370));
++    file->ReadInt(reinterpret_cast<int*>(&word_374));
++    ReadGuestFloatWord(file, &word_378);
++    file->ReadByte(&flag_37c);
++    file->ReadInt(reinterpret_cast<int*>(&word_384));
++    ReadGuestFloatWord(file, &word_388);
++    file->ReadInt(reinterpret_cast<int*>(&word_390));
++    file->ReadInt(reinterpret_cast<int*>(&word_394));
++    ReadGuestFloatWord(file, &words_398[0]);
++    ReadGuestFloatWord(file, &words_398[1]);
++    ReadGuestFloatWord(file, &words_398[2]);
++    ReadGuestFloatWord(file, &words_398[3]);
++    ReadGuestFloatWord(file, &words_398[4]);
++    file->ReadByte(&flag_3ac);
++    file->ReadFloat(&guest_value_360);
++    file->ReadByte(&flag_364);
++    file->ReadByte(&flag_38c);
++    file->ReadByte(&flag_38d);
++    file->ReadByte(&flag_3c0);
++    file->ReadByte(&unhappy_departure_3d0);
++    file->Unknown60(words_3e8, 3);
++    unsigned int offence;
++    file->Unknown68(&offence);
++    word_3dc = offence;
++    file->ReadFloat(&word_3e0);
++    file->ReadFloat(&time_3e4);
++    WorldPedestrianEntity::Unknown4c(file);
++}
+diff --git a/src/startup_world_guest_script_values.cpp b/src/startup_world_guest_script_values.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..140c1f7f7b00f64d40bdd2250088bc4797076288
+--- /dev/null
++++ b/src/startup_world_guest_script_values.cpp
+@@ -0,0 +1,475 @@
++#include "startup_world_entities.h"
++#include "startup_world_subsystems.h"
++#include "window_activation.h"
++#include <bit>
++#include <cstring>
++#include <cstdlib>
++
++static WorldScriptValue GuestFloat(float value)
++{
++    return { 3, std::bit_cast<unsigned int>(value) };
++}
++static WorldScriptValue GuestInteger(unsigned int value)
++{
++    return { 2, value };
++}
++static WorldScriptValue GuestString(const char* value)
++{
++    return { 1, reinterpret_cast<std::uintptr_t>(value) };
++}
++static WorldScriptValue GuestBoolean(unsigned char value)
++{
++    return { 0, value };
++}
++
++// FUNCTION: BEACHLIFE 0x00470280
++WorldScriptValue WorldGuestEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    switch (kind)
++    {
++    case 0:
++        return GuestInteger(word_fc->words[0]);
++    case 1:
++        return GuestInteger(transport_224);
++    case 2:
++        return GuestFloat(happiness_values_1d4[0]);
++    case 3:
++        return GuestInteger(word_250);
++    case 4:
++        return GuestString(walk_animation_268);
++    case 5:
++        return GuestInteger(word_fc->words[4]);
++    case 6:
++        return { 3, static_cast<unsigned int>(word_fc->words[6]) };
++    case 7:
++        return GuestBoolean(flag_2b8);
++    case 8:
++    {
++        WorldBuildingEntity* building = static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_98));
++        return GuestString(variable_catalog->FeatureTypeName(variable_catalog->FeatureType(building->building_60->features_1fc[words_1f0[12]])));
++    }
++    case 9:
++        return GuestFloat(guest_value_254);
++    case 0xa:
++        return GuestFloat(guest_value_25c);
++    case 0xb:
++        return GuestFloat(weather_values_16c[16]);
++    case 0xc:
++        return GuestFloat(weather_values_16c[12]);
++    case 0xd:
++        return GuestFloat(weather_values_16c[13]);
++    case 0xe:
++        return GuestFloat(weather_values_16c[0]);
++    case 0xf:
++        return GuestFloat(weather_values_16c[1]);
++    case 0x10:
++        return GuestFloat(weather_values_16c[2]);
++    case 0x11:
++        return GuestFloat(weather_values_16c[3]);
++    case 0x12:
++        return GuestFloat(weather_values_16c[4]);
++    case 0x13:
++        return GuestFloat(weather_values_16c[5]);
++    case 0x14:
++        return GuestFloat(weather_values_16c[6]);
++    case 0x15:
++        return GuestFloat(weather_values_16c[7]);
++    case 0x16:
++        return GuestFloat(weather_values_16c[8]);
++    case 0x17:
++        return GuestFloat(weather_values_16c[9]);
++    case 0x18:
++        return GuestFloat(weather_values_16c[10]);
++    case 0x19:
++        return GuestFloat(weather_values_16c[11]);
++    case 0x1a:
++        return GuestFloat(weather_values_16c[14]);
++    case 0x1b:
++        return GuestFloat(weather_values_16c[15]);
++    case 0x1c:
++        return GuestFloat(weather_values_16c[17]);
++    case 0x1d:
++        return GuestFloat(weather_values_16c[18]);
++    case 0x1e:
++        return GuestFloat(weather_values_16c[19]);
++    case 0x1f:
++        return GuestFloat(weather_values_16c[20]);
++    case 0x20:
++        return GuestFloat(weather_values_16c[21]);
++    case 0x21:
++        return GuestFloat(weather_values_16c[22]);
++    case 0x22:
++        return GuestFloat(weather_values_16c[23]);
++    case 0x23:
++        return GuestFloat(weather_values_16c[24]);
++    case 0x24:
++        return GuestFloat(weather_values_16c[25]);
++    case 0x25:
++        return GuestFloat(static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_98))->FeatureValue(words_1f0[12]));
++    case 0x26:
++        return GuestFloat(static_cast<float>(static_cast<double>(word_258)));
++    case 0x27:
++    {
++        WorldBuildingEntity* building = static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_98));
++        return GuestString(variable_catalog->FeatureKey(building->building_60->features_1fc[words_1f0[12]]));
++    }
++    case 0x28:
++        return GuestInteger(words_1f0[12]);
++    case 0x29:
++        return GuestFloat(happiness_values_1d4[3]);
++    case 0x2b:
++        return GuestInteger(word_fc->words[3]);
++    case 0x2c:
++        return GuestFloat(happiness_264);
++    case 0x2d:
++        return GuestFloat(static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_98))->FeatureDuration(words_1f0[12]) * static_cast<double>(ranges_100[3][1]));
++    case 0x2e:
++        return GuestBoolean(flag_228);
++    case 0x32:
++        return GuestBoolean(flag_229);
++    case 0x33:
++        return GuestFloat(walkpoints_22c[word_250].x);
++    case 0x34:
++        return GuestFloat(walkpoints_22c[word_250].y);
++    case 0x35:
++        return GuestInteger(word_314);
++    case 0x38:
++        return GuestInteger(keyline_state_44->rotation_18);
++    case 0x39:
++        return GuestString(word_310 ? word_310->name : "NONE");
++    case 0x3c:
++        return GuestInteger(word_31c);
++    case 0x3d:
++        return GuestString(current_animation_2b9);
++    case 0x40:
++        return GuestInteger(lightning_state_318);
++    case 0x41:
++        return GuestInteger(word_328);
++    case 0x42:
++    case 0x43:
++    case 0x44:
++    case 0x45:
++    {
++        bool lowest = kind == 0x42 || kind == 0x43;
++        float opinion = lowest ? 2.0f : -1.0f;
++        unsigned int index = 7;
++        for (unsigned int i = 0; i < 7; ++i)
++        {
++            if (lowest ? opinion > happiness_values_1d4[i] : !(opinion >= happiness_values_1d4[i]))
++            {
++                opinion = happiness_values_1d4[i];
++                index = i;
++            }
++        }
++        if (kind == 0x42 || kind == 0x44)
++            return GuestInteger(index);
++        if (opinion > 0.5f)
++            return GuestInteger(3);
++        if (opinion >= 0.9f)
++            return GuestInteger(4);
++        if (opinion > 0.1f)
++            return GuestInteger(!(opinion >= 0.5f) ? 1 : 2);
++        return GuestInteger(0);
++    }
++    case 0x46:
++        return GuestInteger(word_32c);
++    case 0x48:
++        return GuestBoolean(flag_330);
++    case 0x49:
++        if (_stricmp(variable_world->FindObject(word_32c)->keyline_state_44->name, "SHAZ") == 0)
++            return GuestBoolean(1);
++        return GuestBoolean(_stricmp(variable_world->FindObject(word_32c)->keyline_state_44->name, "FAT_BLOKE") == 0);
++    case 0x4b:
++    {
++        unsigned int count;
++        VariableEntity** objects = variable_world->FindNamed("WHARF", &count);
++        if (!count)
++            objects = variable_world->FindNamed("BUSSTOP", &count);
++        return GuestInteger((*objects)->id_28);
++    }
++    case 0x4c:
++        return GuestInteger(static_cast<int>(guest_f4->value_1ec * 10.0));
++    case 0x4d:
++    case 0x5b:
++    {
++        unsigned int count;
++        VariableEntity** objects = variable_world->FindNamed(kind == 0x4d ? "HOTEL" : "COMPLAINTHUT", &count);
++        return GuestInteger((*objects)->id_28);
++    }
++    case 0x4e:
++        return GuestInteger(word_338);
++    case 0x4f:
++        return { 1, word_fc->words[4].data };
++    case 0x50:
++        return GuestBoolean(guest_f4->word_1c4 == 0);
++    case 0x51:
++        if (variable_world->FindObject(word_32c))
++            return GuestInteger(static_cast<WorldSceneryEntity*>(variable_world->FindObject(word_32c))->word_90);
++        return GuestInteger(0);
++    case 0x52:
++        if (word_350 > 0 && !flag_35c)
++        {
++            --word_350;
++            flag_35c = 1;
++            if (!word_350)
++                weather_values_16c[22] = 1.0f;
++            return GuestBoolean(1);
++        }
++        weather_values_16c[22] = 1.0f;
++        return GuestBoolean(0);
++    case 0x53:
++        return GuestBoolean(flag_35c);
++    case 0x55:
++        return GuestFloat(guest_value_360);
++    case 0x56:
++        return GuestBoolean(flag_364);
++    case 0x57:
++        return GuestFloat(window_deactivation_state->value_16c * static_cast<double>(guest_f4->value_38c));
++    case 0x5a:
++        return GuestBoolean(unhappy_departure_3d0);
++    case 0x5c:
++        return GuestBoolean(flag_3d1);
++    case 0x5d:
++        return GuestInteger(word_fc->words[5]);
++    case 0x5e:
++        return GuestInteger(word_350);
++    case 0x5f:
++        return GuestInteger(word_3d8);
++    case 0x60:
++    {
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        if (CurrentScreenTerrain()->CellAt(position)->flags_48 & 0x10000080)
++            return GuestBoolean(0);
++        if ((CurrentScreenTerrain()->CellAt(position)->flags_48 & 2) && !(CurrentScreenTerrain()->CellAt(position)->flags_48 & 0x10))
++            return GuestBoolean(0);
++        return GuestBoolean(1);
++    }
++    case 0x61:
++        return GuestInteger(static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_98))->events_170->ActiveEvent());
++    case 0x62:
++        return GuestInteger(7 - variable_world->FindObject(word_98)->keyline_state_44->rotation_18 * 2);
++    case 0x63:
++    {
++        ScreenWorldPosition position = state_3c == 0xd ? walkpoints_22c[1] : ScreenWorldPosition { x_30, y_34, z_38 };
++        return GuestInteger(CurrentScreenTerrain()->InfluenceAreaAt(position));
++    }
++    case 0x64:
++        return GuestBoolean(flag_3ac);
++    case 0x65:
++        return GuestInteger(word_3dc);
++    case 0x66:
++        return GuestInteger(0);
++    case 0x67:
++        return GuestBoolean(!world_subsystem_4c->FeatureUnavailable(word_390, words_1f0[12]));
++    case 0x68:
++        return GuestBoolean(HasSatDown());
++    default:
++        return WorldPedestrianEntity::Unknown2c(kind, data);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00470f80
++void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++{
++    WorldScriptValue operand = { value_kind, value };
++    switch (kind)
++    {
++    case 1:
++        transport_224 = ConvertWorldScriptInteger(operand);
++        break;
++    case 2:
++        happiness_values_1d4[0] = ConvertWorldScriptNumber(operand);
++        break;
++    case 3:
++        word_250 = ConvertWorldScriptInteger(operand);
++        break;
++    case 4:
++        std::strcpy(walk_animation_268, reinterpret_cast<const char*>(value));
++        break;
++    case 7:
++        flag_2b8 = value;
++        break;
++    case 9:
++        guest_value_254 = ConvertWorldScriptNumber(operand);
++        break;
++    case 0xa:
++        guest_value_25c = ConvertWorldScriptNumber(operand);
++        break;
++    case 0xb:
++        weather_values_16c[16] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0xc:
++        weather_values_16c[12] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0xd:
++        weather_values_16c[13] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x12:
++        weather_values_16c[4] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x14:
++        weather_values_16c[6] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x15:
++        weather_values_16c[7] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x1a:
++    {
++        double number = ConvertWorldScriptNumber(operand);
++        weather_values_16c[14] = number;
++        if (number > 1.0)
++            weather_values_16c[14] = 1.0f;
++        break;
++    }
++    case 0x1d:
++        weather_values_16c[18] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x1e:
++        weather_values_16c[19] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x1f:
++        weather_values_16c[20] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x22:
++        weather_values_16c[23] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x23:
++        weather_values_16c[24] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x26:
++        word_258 = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x28:
++        words_1f0[12] = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x29:
++        happiness_values_1d4[3] = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x2c:
++        happiness_264 = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x2e:
++        flag_228 = value;
++        break;
++    case 0x32:
++        flag_229 = value;
++        break;
++    case 0x33:
++        walkpoints_22c[word_250].x = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x34:
++        walkpoints_22c[word_250].y = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x35:
++        word_314 = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x37:
++        std::strcpy(text_290, reinterpret_cast<const char*>(value));
++        break;
++    case 0x38:
++        keyline_state_44->SelectVariant((ConvertWorldScriptInteger(operand) + 8) % 8);
++        break;
++    case 0x39:
++    {
++        const char* name = reinterpret_cast<const char*>(value);
++        bool none = _stricmp(name, "NONE") == 0;
++        if (word_310)
++        {
++            screen_dialog_resources->Release(word_310);
++            word_310 = 0;
++        }
++        if (!none)
++            word_310 = screen_dialog_resources->Find(name);
++        break;
++    }
++    case 0x3a:
++        if (word_310)
++        {
++            const char* animation = reinterpret_cast<const char*>(value);
++            if (std::strstr(animation, "Reverse_"))
++            {
++                word_310->word_08 = 1;
++                animation += 8;
++            }
++            else if (std::strstr(animation, "Clamp_"))
++            {
++                word_310->word_08 = 2;
++                animation += 6;
++            }
++            else
++                word_310->word_08 = 0;
++            ScreenWorldPosition position = { x_30, y_34, z_38 };
++            word_310->SetAnimation(animation, window_deactivation_state->time_158, &position);
++        }
++        break;
++    case 0x3b:
++        if (_stricmp(reinterpret_cast<const char*>(value), "MyDir") == 0 && word_310)
++            word_310->SelectVariant(keyline_state_44->rotation_18);
++        break;
++    case 0x3c:
++        word_31c = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x3e:
++        word_320 = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x3f:
++        word_324 = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x40:
++        lightning_state_318 = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x41:
++        word_328 = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x46:
++        word_32c = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x47:
++    {
++        int spread = ConvertWorldScriptInteger(operand) / 4;
++        float adjustment = static_cast<float>(std::rand() % spread - spread / 2);
++        speed_80 = ConvertWorldScriptNumber(operand) + adjustment;
++        acceleration_7c = (ConvertWorldScriptNumber(operand) + adjustment) * 0.3333333432674408f;
++        break;
++    }
++    case 0x48:
++        flag_330 = value;
++        break;
++    case 0x51:
++        if (variable_world->FindObject(word_32c))
++        {
++            int state = ConvertWorldScriptInteger(operand);
++            static_cast<WorldSceneryEntity*>(variable_world->FindObject(word_32c))->SetSceneryContents(state);
++        }
++        break;
++    case 0x53:
++        flag_35c = value;
++        break;
++    case 0x55:
++        guest_value_360 = ConvertWorldScriptNumber(operand);
++        break;
++    case 0x56:
++        flag_364 = value;
++        break;
++    case 0x5a:
++        unhappy_departure_3d0 = value;
++        break;
++    case 0x5c:
++        flag_3d1 = value;
++        break;
++    case 0x5e:
++        word_350 = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x5f:
++        word_3d8 = ConvertWorldScriptInteger(operand);
++        break;
++    case 0x64:
++        flag_3ac = value;
++        break;
++    case 0x69:
++        guest_value_34c = ConvertWorldScriptNumber(operand);
++        break;
++    default:
++        WorldPedestrianEntity::Unknown30(kind, data, value_kind, value);
++    }
++}
+diff --git a/src/startup_world_guest_text.cpp b/src/startup_world_guest_text.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..97eb5b2dc5cc27111883fd40cf07421514ef8a9b
+--- /dev/null
++++ b/src/startup_world_guest_text.cpp
+@@ -0,0 +1,190 @@
++#include "startup_world_entities.h"
++#include "startup_screen_text.h"
++#include "startup_game_file.h"
++#include "window_activation.h"
++#include <cstring>
++#include <wchar.h>
++
++// GLOBAL: BEACHLIFE 0x00578738
++const char* world_guest_desire_names[26] = {
++    "ACCOMDTN", "ALCOHOL", "AMUSEMNT", "FIRSTAID", "PILLS", "MEALS", "PARTYFUN", "SHOWER", "SNACKS", "SOFTDRNK", "SOUVENIR", "SPORTFUN", "SUNBATHE", "SWIMFUN", "RELIEF", "WATERFUN", "STROLL", "LEAVE", "VANDAL", "FIGHT", "FLIRT", "UMBRELS", "LOTION", "HARDSEX", "SLEEP", "SCARED"
++};
++
++// FUNCTION: BEACHLIFE 0x0046e510
++void WorldGuestEntity::ReadText(const char* key, unsigned short* output)
++{
++    static const unsigned short number[] = { '%', '.', '2', 'f', 0 };
++    static const unsigned short integer[] = { '%', 'd', 0 };
++    static const unsigned short percent[] = { '%', 'd', '%', '%', 0 };
++    static const unsigned short currency[] = { '$', '%', 'd', 0 };
++    static const unsigned short empty[] = { 0 };
++    char lookup[52];
++    if (std::strcmp(key, "GUEST_NAME") == 0)
++        wcscpy(output, personal_name_260);
++    else if (std::strcmp(key, "GUEST_CURRENTACTIVITY") == 0)
++    {
++        const char* activity;
++        if (state_3c == 0x29)
++            activity = "ACTIVITY_LEAVING";
++        else if (state_3c == 0x28)
++            activity = "ACTIVITY_ENTERING";
++        else if (!flag_228)
++        {
++            activity = "ACTIVITY_STROLLING";
++            if (state_3c != 0xc && state_3c != 0x3a)
++            {
++                WorldBuildingEntity* building = static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_390));
++                if (building)
++                {
++                    std::strcpy(lookup, "ACTIVITY_");
++                    std::strcat(lookup, variable_catalog->FeatureKey(building->building_60->features_1fc[words_1f0[12]]));
++                    activity = lookup;
++                }
++            }
++        }
++        else
++        {
++            switch (words_1f0[12])
++            {
++            case 0:
++                activity = "ACTIVITY_STROLLING";
++                break;
++            case 1:
++                activity = "ACTIVITY_SUNBATHING";
++                break;
++            case 2:
++                activity = "ACTIVITY_SWIMMING";
++                break;
++            case 3:
++                activity = "ACTIVITY_FIGHTING";
++                break;
++            case 4:
++                activity = "ACTIVITY_FLIRTING";
++                break;
++            case 6:
++                activity = "ACTIVITY_PEEING";
++                break;
++            default:
++                activity = "ACTIVITY_UNKNOWN";
++            }
++        }
++        wcscpy(output, screen_text_lookup->LookupText(activity));
++    }
++    else if (std::strcmp(key, "GUEST_DESIRE") == 0 || std::strcmp(key, "GUEST_DESIRE_0") == 0)
++    {
++        float greatest = 0.0f;
++        unsigned int desire = 0;
++        for (unsigned int i = 0; i < 26; ++i)
++        {
++            if (!(greatest >= weather_values_16c[i]))
++            {
++                greatest = weather_values_16c[i];
++                desire = i;
++            }
++        }
++        std::strcpy(lookup, "GUEST_DESIRE_");
++        std::strcat(lookup, world_guest_desire_names[desire]);
++        wcscpy(output, screen_text_lookup->LookupText(lookup));
++    }
++    else if (std::strcmp(key, "GUEST_ILL") == 0)
++        swprintf(output, number, guest_value_360);
++    else if (std::strcmp(key, "GUEST_THOUGHT_0") == 0 || std::strcmp(key, "GUEST_THOUGHT_1") == 0 || std::strcmp(key, "GUEST_THOUGHT_2") == 0)
++    {
++        unsigned int thought = words_3e8[key[14] - '0'];
++        wcscpy(output, thought == static_cast<unsigned int>(-1) ? empty : screen_text_lookup->LookupText(thought));
++    }
++    else if (std::strcmp(key, "GUEST_BEST_TODAY") == 0)
++    {
++        if (word_370 == static_cast<unsigned int>(-2))
++            swprintf(output, screen_text_lookup->LookupText("GUEST_THOUGHT_BEST_NOTHING"));
++        else if (flag_36c)
++        {
++            const char* thought = "GUEST_THOUGHT_BEST_NOTHING";
++            if (word_370 == 4)
++                thought = "GUEST_THOUGHT_BEST_TOPLESS";
++            else if (word_370 == 5)
++                thought = "GUEST_THOUGHT_BEST_WETTSHIRT";
++            swprintf(output, screen_text_lookup->LookupText(thought));
++        }
++        else
++        {
++            std::strcpy(lookup, "BUILDING_NAME_");
++            std::strcat(lookup, variable_catalog->BuildingName(word_374));
++            wcscpy(output, screen_text_lookup->LookupText(lookup));
++        }
++    }
++    else if (std::strcmp(key, "GUEST_WORST_TODAY") == 0)
++    {
++        if (word_380 == static_cast<unsigned int>(-2))
++            swprintf(output, screen_text_lookup->LookupText("GUEST_THOUGHT_WORST_NOTHING"));
++        else if (flag_37c)
++        {
++            static const char* const thoughts[] = {
++                "GUEST_THOUGHT_WORST_STINKY_TOILET", "GUEST_THOUGHT_WORST_VOMIT", "GUEST_THOUGHT_WORST_VANDALISM", "GUEST_THOUGHT_WORST_FIGHTING", "GUEST_THOUGHT_BEST_NOTHING", "GUEST_THOUGHT_BEST_NOTHING", "GUEST_THOUGHT_WORST_QUEUE_CLOSED", "GUEST_THOUGHT_WORST_QUEUE_BROKEN", "GUEST_THOUGHT_WORST_EATEN", "GUEST_THOUGHT_WORST_SHARK", "GUEST_THOUGHT_WORST_DROWNED"
++            };
++            swprintf(output, screen_text_lookup->LookupText(word_380 <= 10 ? thoughts[word_380] : "GUEST_THOUGHT_BEST_NOTHING"));
++        }
++        else
++        {
++            std::strcpy(lookup, "BUILDING_NAME_");
++            std::strcat(lookup, variable_catalog->BuildingName(word_384));
++            wcscpy(output, screen_text_lookup->LookupText(lookup));
++        }
++    }
++    else
++    {
++        static const char* const desires[] = {
++            "GUEST_DESIRE_ACCOMDTN", "GUEST_DESIRE_ALCOHOL", "GUEST_DESIRE_AMUSEMENT", "GUEST_DESIRE_FIRSTAID", "GUEST_DESIRE_HEADACHE", "GUEST_DESIRE_MEALS", "GUEST_DESIRE_PARTYFUN", "GUEST_DESIRE_SHOWER", "GUEST_DESIRE_SNACKS", "GUEST_DESIRE_SOFTDRNK", "GUEST_DESIRE_SOUVENIR", "GUEST_DESIRE_SPORTFUN", "GUEST_DESIRE_SUNBATHE", "GUEST_DESIRE_SWIMFUN", "GUEST_DESIRE_RELEIF", "GUEST_DESIRE_WATERFUN", "GUEST_DESIRE_STROLL", "GUEST_DESIRE_LEAVE", "GUEST_DESIRE_VANDAL", "GUEST_DESIRE_FIGHT", "GUEST_DESIRE_FLIRT", "GUEST_DESIRE_UMBRELS", "GUEST_DESIRE_SUNTAN", "GUEST_DESIRE_HARDSEX", "GUEST_DESIRE_SLEEP", "GUEST_DESIRE_SCARED"
++        };
++        for (unsigned int i = 0; i < 26; ++i)
++        {
++            if (std::strcmp(key, desires[i]) == 0)
++            {
++                float value = weather_values_16c[i];
++                if (i == 4 && value > 1.0f)
++                    value = 1.0f;
++                swprintf(output, number, value);
++                return;
++            }
++        }
++        static const char* const opinions[] = { "GUEST_OPINION_BEAUTY", "GUEST_OPINION_CROWDING", "GUEST_OPINION_TOTTY", "GUEST_OPINION_PRICE", "GUEST_OPINION_VARIETY", "GUEST_OPINION_CLEANLINESS", "GUEST_OPINION_SAFETY" };
++        for (unsigned int i = 0; i < 7; ++i)
++        {
++            if (std::strcmp(key, opinions[i]) == 0)
++            {
++                swprintf(output, number, happiness_values_1d4[i]);
++                return;
++            }
++        }
++        if (std::strcmp(key, "GUEST_OPINION_OVERALL") == 0)
++        {
++            double total = 0.0;
++            for (float opinion : happiness_values_1d4)
++                total += opinion;
++            swprintf(output, number, total * 0.1428571492433548f);
++        }
++        else if (std::strcmp(key, "GUEST_DRUNK") == 0 || std::strcmp(key, "GUEST_DRUNK_LEVEL") == 0)
++            swprintf(output, number, guest_value_254);
++        else if (std::strcmp(key, "GUEST_SUNBURNT_LEVEL") == 0)
++        {
++            float level = !(guest_value_34c >= 0.0f) ? -guest_value_34c : 0.0f;
++            if (level > 1.0f)
++                level = 1.0f;
++            swprintf(output, number, level);
++        }
++        else if (std::strcmp(key, "GUEST_OXYGEN_LEVEL") == 0)
++            swprintf(output, integer, word_258);
++        else if (std::strcmp(key, "GUEST_HAPPY_PERCENT") == 0)
++            swprintf(output, percent, static_cast<int>(static_cast<double>(happiness_264) * 100.0f));
++        else if (std::strcmp(key, "GUEST_HAPPY_VALUE") == 0)
++            swprintf(output, number, happiness_264);
++        else if (std::strcmp(key, "GUEST_CASH") == 0)
++            swprintf(output, currency, static_cast<int>(guest_value_25c));
++        else if (std::strcmp(key, "GUEST_ARRIVED") == 0)
++            swprintf(output, screen_text_lookup->LookupText("STAFF_DAY_TEXT"), arrival_day_354 + 1);
++        else if (std::strcmp(key, "GUEST_DEPART") == 0)
++            swprintf(output, screen_text_lookup->LookupText("STAFF_DAY_TEXT"), window_deactivation_state->day_15c + days_344 + 1);
++        else
++            StartupFatal("GuestObject::GetVariable - data keyword not recognised - %s", key);
++    }
++}
+diff --git a/src/startup_world_object_callbacks.cpp b/src/startup_world_object_callbacks.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b21ef35c9f707a31500fa794e6469b93b01eed0
+--- /dev/null
++++ b/src/startup_world_object_callbacks.cpp
+@@ -0,0 +1,99 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++#include "startup_screen_mode_world.h"
++#include <cstring>
++#include <new>
++#include <wchar.h>
++
++// FUNCTION: BEACHLIFE 0x00491ef0
++bool AcceptInitialWorldState(unsigned int state)
++{
++    return state <= 1;
++}
++
++// FUNCTION: BEACHLIFE 0x0048e880
++bool AcceptWorldStateExit()
++{
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x004915e0
++void WorldObjectEntity::Destroy(unsigned int flags)
++{
++    this->~WorldObjectEntity();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x00491600
++WorldObjectEntity::~WorldObjectEntity() noexcept(false)
++{
++    if (resources_6c)
++    {
++        for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++            screen_dialog_resources->Release(resources_6c[i]);
++        ::operator delete(resources_6c);
++    }
++    if (slots_8c)
++        ::operator delete(slots_8c);
++    if (definition_60->flag_3f8)
++    {
++        for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++            screen_dialog_resources->Release(resources_70[i]);
++        ::operator delete(resources_70);
++        VariableEntity* waiter = variable_world->FindObject(contained_id_84);
++        if (waiter)
++        {
++            waiter->visible_40 = 0;
++            waiter->inactive_04 = 1;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00491f10
++bool WorldObjectEntity::Unknown08(unsigned int state)
++{
++    if (state == 1)
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = owner_94;
++        command.words[2] = 0x50;
++        command.words[3] = command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++        command.words[0] = command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++    }
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x00491fc0
++bool WorldObjectEntity::Unknown0c()
++{
++    if (!WorldStaticEntity::Unknown0c())
++        StartupFatal("TableObject::Update - error calling StaticObject::update - %s", name_06);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x00491ff0
++void WorldObjectEntity::WriteValue(const char* key, const void* value)
++{
++    if (std::strcmp(key, "TABLE_TEST_VAR") == 0)
++        word_64 = *static_cast<const int*>(value);
++    else
++        StartupFatal("TableObject::SetVariable - keyword not recognised - %s", key);
++}
++
++// FUNCTION: BEACHLIFE 0x00492060
++void WorldObjectEntity::ReadText(const char* key, unsigned short* output)
++{
++    if (std::strcmp(key, "TABLE_TEST_VAR") == 0)
++    {
++        static const unsigned short format[] = { '%', 'd', 0 };
++        swprintf(output, format, word_64);
++    }
++    else
++        StartupFatal("TableObject::GetVariable - data keyword not recognised - %s", key);
++}
+diff --git a/src/startup_world_object_draw.cpp b/src/startup_world_object_draw.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..748b62c624ed30c9860dde1b60cd9cf9b948bdda
+--- /dev/null
++++ b/src/startup_world_object_draw.cpp
+@@ -0,0 +1,74 @@
++#include "startup_world_entities.h"
++#include "startup_screen_mode_world.h"
++#include "window_activation.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x00491aa0
++void WorldObjectEntity::Unknown3c()
++{
++    float time = window_deactivation_state->time_158;
++    int x, y;
++    unsigned short depth;
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    if (std::strcmp(definition_60->resource_c4, "NONE") != 0)
++        keyline_state_44->WorldCoordinates(&position, time, &x, &y, &depth);
++    if (std::strcmp(definition_60->resource_c4, "NONE") != 0)
++    {
++        position = { x_30, y_34, z_38 };
++        if (std::strcmp(definition_60->resource_c4, "Jacuzzi_bubble") == 0)
++        {
++            VariableEntity* owner = variable_world->FindObject(owner_94);
++            position = { owner->x_30, owner->y_34, owner->z_38 };
++        }
++        position.x = static_cast<float>(static_cast<double>(position.x) + definition_60->draw_offset_x_41c);
++        position.y = static_cast<float>(static_cast<double>(position.y) + definition_60->draw_offset_y_420);
++        keyline_state_44->DrawWorld(&position, time);
++    }
++    if (flag_98)
++        return;
++    if (definition_60->flag_3f8 && flag_74)
++    {
++        VariableEntity* waiter = variable_world->FindObject(contained_id_84);
++        position = { waiter->x_30, waiter->y_34, waiter->z_38 };
++        unsigned short waiter_depth;
++        waiter->keyline_state_44->WorldCoordinates(&position, time, &x, &y, &waiter_depth);
++        waiter->keyline_state_44->Draw(x, y, depth + 0x80, time);
++    }
++    for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++    {
++        if (resources_6c)
++        {
++            position = { x_30, y_34, z_38 };
++            if (std::strcmp(resources_6c[i]->name, "Beach_shower_water") == 0)
++            {
++                VariableEntity* owner = variable_world->FindObject(owner_94);
++                position = { owner->x_30, owner->y_34, owner->z_38 };
++            }
++            resources_6c[i]->DrawWorld(&position, time);
++        }
++        if (definition_60->flag_3f8 && flags_78[i])
++        {
++            position = { x_30, y_34, z_38 };
++            resources_70[i]->DrawWorld(&position, time);
++        }
++        if (slots_8c[i].id_04 != -1 && slots_8c[i].flag_08)
++        {
++            WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(variable_world->FindObject(slots_8c[i].id_04));
++            position = { guest->x_30, guest->y_34, guest->z_38 };
++            if (std::strcmp(definition_60->resource_c4, "NONE") != 0)
++            {
++                unsigned short guest_depth;
++                guest->keyline_state_44->WorldCoordinates(&position, time, &x, &y, &guest_depth);
++                float illness = guest->IllnessTint();
++                float tint = guest->GuestFade();
++                guest->keyline_state_44->DrawValues(x, y, depth, time, tint, illness);
++            }
++            else
++            {
++                float illness = guest->IllnessTint();
++                float tint = guest->GuestFade();
++                guest->keyline_state_44->DrawWorldModified(&position, time, tint, illness);
++            }
++        }
++    }
++}
+diff --git a/src/startup_world_object_save.cpp b/src/startup_world_object_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4757d309062c8e17a13d30ff85b4796d15a709cd
+--- /dev/null
++++ b/src/startup_world_object_save.cpp
+@@ -0,0 +1,70 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++
++// FUNCTION: BEACHLIFE 0x00494360
++void WorldObjectEntity::Unknown48(GameFileReader* file)
++{
++    for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++    {
++        file->Unknown34("ChairSeated", slots_8c[i].flag_08);
++        file->Unknown28("ChairOccupier", slots_8c[i].id_04);
++        file->Unknown24("ChairDir", slots_8c[i].variant_00);
++        file->Unknown24("iPosition", slots_8c[i].position_0c);
++        file->Unknown34("bWaitingForWaiter", slots_8c[i].flag_09);
++        if (resources_6c)
++            resources_6c[i]->SaveState(file);
++    }
++    file->Unknown34("m_bDrawWaiter", flag_74);
++    file->Unknown28("m_WaiterServing", word_7c);
++    file->Unknown24("m_WaiterPos", word_80);
++    file->Unknown28("m_WaiterID", contained_id_84);
++    file->Unknown34("m_bWaiterReady", flag_88);
++    file->Unknown24("m_iRotation", word_90);
++    file->Unknown28("m_dwOwner", owner_94);
++    file->Unknown34("m_bServeTable", flag_98);
++    file->Unknown24("m_GuestsRemoved", word_9c);
++    file->Unknown24("m_GuestsAdded", word_a0);
++    if (definition_60->flag_3f8)
++    {
++        for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++        {
++            resources_70[i]->SaveState(file);
++            file->Unknown34("m_bDrawPlate[index]", flags_78[i]);
++        }
++    }
++    WorldStaticEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x00494530
++void WorldObjectEntity::Unknown4c(GameFileReader* file)
++{
++    for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++    {
++        file->ReadByte(&slots_8c[i].flag_08);
++        file->ReadInt(&slots_8c[i].id_04);
++        file->Unknown68(reinterpret_cast<unsigned int*>(&slots_8c[i].variant_00));
++        file->Unknown68(&slots_8c[i].position_0c);
++        file->ReadByte(&slots_8c[i].flag_09);
++        if (resources_6c)
++            resources_6c[i]->LoadState(file);
++    }
++    file->ReadByte(&flag_74);
++    file->ReadInt(&word_7c);
++    file->Unknown68(&word_80);
++    file->ReadInt(reinterpret_cast<int*>(&contained_id_84));
++    file->ReadByte(&flag_88);
++    file->Unknown68(&word_90);
++    file->ReadInt(reinterpret_cast<int*>(&owner_94));
++    file->ReadByte(&flag_98);
++    file->Unknown68(&word_9c);
++    file->Unknown68(&word_a0);
++    if (definition_60->flag_3f8)
++    {
++        for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++        {
++            resources_70[i]->LoadState(file);
++            file->ReadByte(&flags_78[i]);
++        }
++    }
++    WorldStaticEntity::Unknown4c(file);
++}
+diff --git a/src/startup_world_object_script.cpp b/src/startup_world_object_script.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb500e889b0e8fb520899e5f33d445279d624349
+--- /dev/null
++++ b/src/startup_world_object_script.cpp
+@@ -0,0 +1,13 @@
++#include "startup_world_entities.h"
++
++// FUNCTION: BEACHLIFE 0x00494010
++WorldScriptValue WorldObjectEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    return VariableEntity::Unknown2c(kind, data);
++}
++
++// FUNCTION: BEACHLIFE 0x00494040
++void WorldObjectEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++{
++    VariableEntity::Unknown30(kind, data, value_kind, value);
++}
+diff --git a/src/startup_world_script_load.cpp b/src/startup_world_script_load.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..dea58dce6472f9272ab9a874f71412ce9c56b681
+--- /dev/null
++++ b/src/startup_world_script_load.cpp
+@@ -0,0 +1,124 @@
++#include "startup_world_subsystems.h"
++#include "startup_ble_file.h"
++#include "startup_game_file.h"
++#include <cstring>
++#include <new>
++
++// GLOBAL: BEACHLIFE 0x005bb004
++unsigned int world_script_state_words[10];
++
++// FUNCTION: BEACHLIFE 0x004db1d0
++WorldSubsystem20::Group::Command::Command()
++{
++    id_00 = 0x0fffffff;
++    actions_04 = 0;
++    actions_08 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004daf20
++WorldSubsystem20::Group::Group()
++{
++    start_44 = 0;
++    reset_48 = 0;
++    actions_4c = 0;
++    count_40 = 0;
++    word_00 = 0x0fffffff;
++}
++
++// FUNCTION: BEACHLIFE 0x004dca90
++WorldSubsystem20::WorldSubsystem20()
++{
++    word_04 = 0;
++    word_08 = 0;
++    count_32c = 0;
++    std::memset(world_script_state_words, 0, sizeof(world_script_state_words));
++    std::memset(names_330, 0, sizeof(names_330));
++    index_35c = 0;
++}
++
++static int SkipWorldScriptWhitespace(char*& cursor)
++{
++    int count = 0;
++    while (*cursor == ' ' || *cursor == '\r' || *cursor == '\n' || *cursor == '\t')
++    {
++        ++count;
++        ++cursor;
++    }
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004dd0c0
++int WorldSubsystem20::SkipComments()
++{
++    if (*cursor_00 != '/')
++        return 0;
++    int count = 0;
++    do
++    {
++        ++count;
++        ++cursor_00;
++    } while (*cursor_00 != '\n');
++    count += SkipWorldScriptWhitespace(cursor_00);
++    count += SkipComments();
++    count += SkipWorldScriptWhitespace(cursor_00);
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004e1d10
++int WorldSubsystem20::ReadToken(char* token)
++{
++    int count = SkipWorldScriptWhitespace(cursor_00);
++    count += SkipComments();
++    if (*cursor_00 == ';')
++    {
++        token[0] = ';';
++        ++cursor_00;
++        token[1] = 0;
++        return count + 1;
++    }
++    while (*cursor_00 != ' ' && *cursor_00 != '\n' && *cursor_00 != '\t' && *cursor_00 != '\r')
++    {
++        *token++ = *cursor_00++;
++        ++count;
++        if (*cursor_00 == ';')
++            break;
++    }
++    *token = 0;
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004dce70
++int WorldSubsystem20::LoadScript(const char* path)
++{
++    unsigned int length = std::strlen(path);
++    char* filename = static_cast<char*>(::operator new(length + 1, std::nothrow));
++    std::strcpy(filename, path);
++    filename[length - 4] = '.';
++    filename[length - 3] = 'b';
++    filename[length - 2] = 'l';
++    filename[length - 1] = 'e';
++    int size = GetFileSize(filename);
++    cursor_00 = LoadBleFile(filename);
++    ::operator delete(filename);
++    char* buffer = cursor_00;
++    int consumed = 0;
++    while (consumed < size)
++    {
++        consumed += SkipWorldScriptWhitespace(cursor_00);
++        if (consumed >= size)
++            break;
++        consumed += SkipComments();
++        if (consumed >= size)
++            break;
++        char token[64];
++        consumed += ReadToken(token);
++        if (std::strcmp(token, "State") == 0)
++            consumed += ParseState();
++        else if (token[0] == '/')
++            consumed += SkipComments();
++        else
++            StartupFatal("Invalid Command Recieved in WorldScript");
++    }
++    ::operator delete(buffer);
++    return size;
++}
+diff --git a/src/startup_world_security_callbacks.cpp b/src/startup_world_security_callbacks.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c986ff40b5b95a2b6faf785e1fb7618256fda93
+--- /dev/null
++++ b/src/startup_world_security_callbacks.cpp
+@@ -0,0 +1,167 @@
++#include "startup_world_entities.h"
++#include "startup_screen_request_context.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_text.h"
++#include <cstdlib>
++#include <cstring>
++#include <wchar.h>
++
++// GLOBAL: BEACHLIFE 0x0057afa4
++const char* world_security_dialog_name = "SecurityDialog";
++
++static float SecurityFloatWord(unsigned int bits)
++{
++    float value;
++    std::memcpy(&value, &bits, sizeof(value));
++    return value;
++}
++
++// FUNCTION: BEACHLIFE 0x00489520
++bool WorldSecurityEntity::Unknown04(unsigned int state)
++{
++    return state <= 1 || state == 6 || state == 76 || state == 77 || (state >= 118 && state <= 131);
++}
++
++// FUNCTION: BEACHLIFE 0x00489df0
++void WorldSecurityEntity::WriteValue(const char* key, const void* value)
++{
++    if (std::strcmp(key, "SECURITY_HARSHNESS") == 0)
++    {
++        value_784 = *static_cast<const float*>(value);
++        switch (static_cast<int>(static_cast<double>(value_784) * 5.0f))
++        {
++        case 0:
++        case 1:
++            word_788 = 0;
++            break;
++        case 2:
++            word_788 = 1;
++            break;
++        default:
++            word_788 = 2;
++            break;
++        }
++    }
++    else
++        WorldStaffEntity::WriteValue(key, value);
++}
++
++// FUNCTION: BEACHLIFE 0x00489ab0
++void WorldSecurityEntity::ReadText(const char* key, unsigned short* output)
++{
++    static const unsigned short empty[] = { 0 };
++    static const unsigned short integer[] = { '%', 'd', 0 };
++    static const unsigned short currency[] = { '$', '%', 'd', 0 };
++    static const unsigned short number[] = { '%', 'f', 0 };
++    swprintf(output, empty);
++    Notification(words_7c0[2]);
++    if (std::strcmp(key, "STAFF_ACTIVITY") == 0)
++    {
++        static const char* const activities[] = {
++            "SECURITYGUARD_WAVE_HELLO", "SECURITYGUARD_CHOOSE_TASK", "SECURITYGUARD_PATROL", "SECURITYGUARD_GO_REST", "SECURITYGUARD_CHOOSE_ACTION", "SECURITYGUARD_RESTING", "SECURITYGUARD_SUSPICIOUS", "SECURITYGUARD_REPRIMAND", "SECURITYGUARD_DETAIN", "SECURITYGUARD_ESCORT", "SECURITYGUARD_GO_REST", "SECURITYGUARD_PATROL", "SECURITYGUARD_IDLE"
++        };
++        if (state_3c >= 118 && state_3c <= 130)
++            swprintf(output, screen_text_lookup->LookupText(activities[state_3c - 118]));
++        else
++            WorldStaffEntity::ReadText(key, output);
++    }
++    else if (std::strcmp(key, "STAFF_NAME") == 0)
++        swprintf(output, personal_name_f8);
++    else if (std::strcmp(key, "GUARD_CAUTIONED_TODAY") == 0)
++        swprintf(output, integer, word_7bc);
++    else if (std::strcmp(key, "GUARD_DETAINED_TODAY") == 0)
++        swprintf(output, integer, words_7a8[4]);
++    else if (std::strcmp(key, "GUARD_FINES_TODAY_$") == 0)
++        swprintf(output, currency, static_cast<int>(SecurityFloatWord(word_7e0)));
++    else if (std::strcmp(key, "SECURITY_HARSHNESS") == 0)
++        swprintf(output, number, value_784);
++    else if (std::strncmp(key, "GUARD_FINE_MINOR_$", 16) == 0)
++        swprintf(output, currency, static_cast<int>(SecurityFloatWord(word_7d8)));
++    else if (std::strncmp(key, "GUARD_FINE_SERIOUS_$", 18) == 0)
++        swprintf(output, currency, static_cast<int>(SecurityFloatWord(word_7dc)));
++    else if (std::strcmp(key, "STAFF_JOB_TITLE") == 0)
++        swprintf(output, screen_text_lookup->LookupText("STAFFB_TITLE_SECURITY"));
++    else
++        WorldStaffEntity::ReadText(key, output);
++}
++
++// FUNCTION: BEACHLIFE 0x00489480
++void WorldSecurityEntity::Unknown50(int first, int second)
++{
++    if (static_cast<unsigned char>(first) == 0)
++    {
++        if (selection_state_54 == 0)
++            selection_state_54 = 1;
++    }
++    else if (selection_state_54 <= 1)
++    {
++        variable_world->ClearStaffSelection();
++        selection_state_54 = 2;
++        screen_manager->RequestScreen(world_security_dialog_name, this, 0);
++    }
++    else if (selection_state_54 == 2)
++    {
++        screen_manager->CloseContextScreens(this);
++        selection_state_54 = 0;
++    }
++    WorldStaffEntity::Unknown50(first, second);
++}
++
++// FUNCTION: BEACHLIFE 0x0048a860
++const char* WorldSecurityEntity::Notification(unsigned int flags)
++{
++    const char* result = WorldStaffEntity::Notification(flags);
++    if (flags & 2)
++        return "FEEDBACK_SECURITYGUARD_NO_BINS";
++    if (flags & 4)
++        return "FEEDBACK_SECURITYGUARD_VANDALS";
++    if (flags & 8)
++        return "FEEDBACK_SECURITYGUARD_FIGHTS";
++    if (flags & 0x10)
++        return "FEEDBACK_SECURITYGUARD_JAILFULL";
++    if (flags & 0x100000)
++        return "FEEDBACK_SECURITY_UNHAPPY";
++    if (flags & 0x20)
++        return "FEEDBACK_SECURITY_SUSPICIOUS";
++    if (flags & 0x40)
++        return "FEEDBACK_SECURITY_FINE_LITTER";
++    if (flags & 0x80)
++        return "FEEDBACK_SECURITY_FINE_VANDALISM";
++    if (flags & 0x100)
++        return "FEEDBACK_SECURITY_FINE_FIGHTING";
++    if (flags & 0x200)
++        return "FEEDBACK_SECURITY_DETAIN_LITTER";
++    if (flags & 0x400)
++        return "FEEDBACK_SECURITY_DETAIN_VANDAL";
++    if (flags & 0x800)
++        return "FEEDBACK_SECURITY_DETAIN_FIGHTER";
++    if (flags & 0x20000000)
++    {
++        static const char* const idle[] = {
++            "FEEDBACK_SECURITY_INNERTOUGHT_STANDIDLE_01",
++            "FEEDBACK_SECURITY_INNERTOUGHT_STANDIDLE_02",
++            "FEEDBACK_SECURITY_INNERTOUGHT_STANDIDLE_03"
++        };
++        result = idle[std::rand() % 3];
++    }
++    return result;
++}
++
++// FUNCTION: BEACHLIFE 0x0048b530
++void WorldSecurityEntity::Dismiss()
++{
++    WorldStaffEntity::Dismiss();
++    if (((state_3c >= 0x7d && state_3c <= 0x7f) || (state_3c == 0x83 && !flag_766)) && word_77c)
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = word_77c;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 12;
++        screen_mode_commands->QueueCommand(&command);
++    }
++    SetMovementMode(0x4c);
++    Unknown08(0x4c);
++}
+diff --git a/src/startup_world_security_save.cpp b/src/startup_world_security_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..08d03fd27ab2151d03e369eeddacc1074bb43df8
+--- /dev/null
++++ b/src/startup_world_security_save.cpp
+@@ -0,0 +1,88 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++#include <bit>
++
++extern unsigned int world_security_count;
++
++static void ReadFloatWord(GameFileReader* file, unsigned int* word)
++{
++    float value;
++    file->ReadFloat(&value);
++    *word = std::bit_cast<unsigned int>(value);
++}
++
++// FUNCTION: BEACHLIFE 0x0048b0c0
++void WorldSecurityEntity::Unknown48(GameFileReader* file)
++{
++    file->Unknown28("m_sGuardCount", world_security_count);
++    file->Unknown28("m_dwOffenderID", word_77c);
++    file->Unknown28("m_dwFightWithID", word_780);
++    file->Unknown30("m_fTolerance", std::bit_cast<unsigned int>(value_784));
++    file->Unknown24("m_eTolerance", word_788);
++    file->Unknown24("m_eSeverity", word_78c);
++    file->Unknown24("m_eAction", word_790);
++    file->Unknown34("m_bDoubleFine", flag_794);
++    file->Unknown34("m_bMisdemeanourFound", flags_795[0]);
++    file->Unknown34("m_bShouldReprimand", flags_795[1]);
++    file->Unknown34("m_bShouldDetain", flags_795[2]);
++    file->Unknown34("m_NotEnoughBins", flag_798);
++    file->Unknown30("m_MisdemeanourPos.x", std::bit_cast<unsigned int>(patrol_position_79c.x));
++    file->Unknown30("m_MisdemeanourPos.y", std::bit_cast<unsigned int>(patrol_position_79c.y));
++    file->Unknown30("m_MisdemeanourPos.z", std::bit_cast<unsigned int>(patrol_position_79c.z));
++    file->Unknown24("m_iNumMinorFinesToday", words_7a8[0]);
++    file->Unknown24("m_iNumSeriousFinesToday", words_7a8[1]);
++    file->Unknown24("m_iNumVandals", words_7a8[2]);
++    file->Unknown24("m_iNumFights", words_7a8[3]);
++    file->Unknown24("m_iNumJailed", words_7a8[4]);
++    file->Unknown28("m_FeedbackStatus", words_7c0[0]);
++    file->Unknown28("m_RequiredFeedback", words_7c0[1]);
++    file->Unknown28("m_CurrentFeedback", words_7c0[2]);
++    file->Unknown28("m_ActionState", word_7d4);
++    file->Unknown30("m_fMinorFineAmount", word_7d8);
++    file->Unknown30("m_fSeriousFineAmount", word_7dc);
++    file->Unknown30("m_fFineTotalToday", word_7e0);
++    file->Unknown30("m_FineOffsetX", std::bit_cast<unsigned int>(fine_offset_7e8.x));
++    file->Unknown30("m_FineOffsetY", std::bit_cast<unsigned int>(fine_offset_7e8.y));
++    file->Unknown30("m_FineOffsetY", std::bit_cast<unsigned int>(fine_offset_7e8.z));
++    file->Unknown28("m_FineLevel", word_7e4);
++    file->Unknown24("m_iNumCautioned", word_7bc);
++    WorldStaffEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x0048b340
++void WorldSecurityEntity::Unknown4c(GameFileReader* file)
++{
++    file->ReadInt(reinterpret_cast<int*>(&world_security_count));
++    file->ReadInt(reinterpret_cast<int*>(&word_77c));
++    file->ReadInt(reinterpret_cast<int*>(&word_780));
++    file->ReadFloat(&value_784);
++    file->Unknown68(&word_788);
++    file->Unknown68(&word_78c);
++    file->Unknown68(&word_790);
++    file->ReadByte(&flag_794);
++    file->ReadByte(&flags_795[0]);
++    file->ReadByte(&flags_795[1]);
++    file->ReadByte(&flags_795[2]);
++    file->ReadByte(&flag_798);
++    file->ReadFloat(&patrol_position_79c.x);
++    file->ReadFloat(&patrol_position_79c.y);
++    file->ReadFloat(&patrol_position_79c.z);
++    file->Unknown68(&words_7a8[0]);
++    file->Unknown68(&words_7a8[1]);
++    file->Unknown68(&words_7a8[2]);
++    file->Unknown68(&words_7a8[3]);
++    file->Unknown68(&words_7a8[4]);
++    file->ReadInt(reinterpret_cast<int*>(&words_7c0[0]));
++    file->ReadInt(reinterpret_cast<int*>(&words_7c0[1]));
++    file->ReadInt(reinterpret_cast<int*>(&words_7c0[2]));
++    file->ReadInt(reinterpret_cast<int*>(&word_7d4));
++    ReadFloatWord(file, &word_7d8);
++    ReadFloatWord(file, &word_7dc);
++    ReadFloatWord(file, &word_7e0);
++    file->ReadFloat(&fine_offset_7e8.x);
++    file->ReadFloat(&fine_offset_7e8.y);
++    file->ReadFloat(&fine_offset_7e8.z);
++    file->ReadInt(reinterpret_cast<int*>(&word_7e4));
++    file->Unknown68(&word_7bc);
++    WorldStaffEntity::Unknown4c(file);
++}
+diff --git a/src/startup_world_security_script.cpp b/src/startup_world_security_script.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f636f68620df4dd6db3273992996a0a85782068
+--- /dev/null
++++ b/src/startup_world_security_script.cpp
+@@ -0,0 +1,177 @@
++#include "startup_world_entities.h"
++#include "startup_screen_request_context.h"
++#include "startup_screen_manager.h"
++#include "window_activation.h"
++#include <bit>
++
++extern const char* world_security_dialog_name;
++
++// FUNCTION: BEACHLIFE 0x004895d0
++WorldScriptValue WorldSecurityEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    switch (kind)
++    {
++    case 0x40:
++        return { 2, word_7d4 };
++    case 0x85:
++    {
++        unsigned char found = flags_795[0];
++        if (found)
++            AddThought(0x20);
++        return { 0, found };
++    }
++    case 0x86:
++        return { 3, std::bit_cast<unsigned int>(patrol_position_79c.x) };
++    case 0x87:
++        return { 3, std::bit_cast<unsigned int>(patrol_position_79c.y) };
++    case 0x88:
++        return { 0, flags_795[1] };
++    case 0x89:
++        return { 0, flags_795[2] };
++    case 0x8a:
++        return { 2, word_788 };
++    case 0x8b:
++        return { 2, word_790 };
++    case 0x8c:
++        return { 2, word_77c };
++    case 0x8d:
++        return { 2, word_780 };
++    case 0x8e:
++        return { 2, words_7a8[0] };
++    case 0x8f:
++        return { 2, words_7a8[1] };
++    case 0x90:
++        return { 3, word_7d8 };
++    case 0x91:
++        return { 3, word_7dc };
++    case 0x93:
++        return { 0, flag_794 };
++    case 0x94:
++        return { 2, static_cast<unsigned int>(static_cast<int>(fine_offset_7e8.x)) };
++    case 0x95:
++        return { 2, static_cast<unsigned int>(static_cast<int>(fine_offset_7e8.y)) };
++    case 0x96:
++        return { 2, word_7e4 };
++    case 0xf9:
++    case 0xfa:
++    {
++        WorldBuildingEntity* home = static_cast<WorldBuildingEntity*>(variable_world->FindObject(home_id_100));
++        return { 2, static_cast<unsigned int>(static_cast<int>(kind == 0xf9 ? home->entrance_position_e4.x : home->entrance_position_e4.y)) };
++    }
++    case 0xfb:
++        return { 2, home_id_100 };
++    case 0xfc:
++        return { 0, !variable_world->FindObject(home_id_100)->FlagAt00460370() };
++    default:
++        return WorldStaffEntity::Unknown2c(kind, data);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004899c0
++void WorldSecurityEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++{
++    switch (kind)
++    {
++    case 0x38:
++        keyline_state_44->SelectVariant(ConvertWorldScriptInteger({ value_kind, value }));
++        break;
++    case 0x40:
++        word_7d4 = ConvertWorldScriptInteger({ value_kind, value });
++        break;
++    case 0x92:
++        speed_80 = static_cast<float>(static_cast<unsigned int>(ConvertWorldScriptInteger({ value_kind, value })));
++        break;
++    default:
++        WorldStaffEntity::Unknown30(kind, data, value_kind, value);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00489ef0
++void WorldSecurityEntity::Unknown34(unsigned int value)
++{
++    switch (value)
++    {
++    case 0xb:
++        visible_40 = 0;
++        break;
++    case 0xc:
++        visible_40 = 1;
++        break;
++    case 0x7b:
++        AddThought(0x20000000);
++        break;
++    case 0x7e:
++        flags_795[0] = FindCrime(&patrol_position_79c);
++        break;
++    case 0x7f:
++    case 0x80:
++    {
++        bool serious = value == 0x7f;
++        float fine = std::bit_cast<float>(serious ? word_7dc : word_7d8);
++        word_7e0 = std::bit_cast<unsigned int>(fine + std::bit_cast<float>(word_7e0));
++        ++words_7a8[serious ? 1 : 0];
++        VariableCatalog* catalog = variable_catalog;
++        float income = std::bit_cast<float>(catalog->Crime(catalog->FindCrime(serious ? "SERIOUS" : "MINOR"))->value_44);
++        window_deactivation_state->economy_1c->value_80 += income;
++        window_deactivation_state->income_770 += income;
++        window_deactivation_state->income_778 += income;
++        window_deactivation_state->income_788 += income;
++        break;
++    }
++    case 0x81:
++        ++words_7a8[4];
++        break;
++    case 0x82:
++        ++word_7bc;
++        break;
++    case 0x83:
++    {
++        WorldBuildingEntity* home = static_cast<WorldBuildingEntity*>(variable_world->FindObject(home_id_100));
++        ScreenWorldPosition position = home->StaffPosition();
++        fine_offset_7e8.x = position.x + 22.0f;
++        fine_offset_7e8.y = position.y;
++        break;
++    }
++    case 0x85:
++    {
++        VariableEntity* offender = variable_world->FindObject(word_77c);
++        ScreenWorldPosition origin = { x_30, y_34, z_38 };
++        ScreenWorldPosition target = { offender->x_30, offender->y_34, offender->z_38 };
++        keyline_state_44->FacePositions(target, origin);
++        break;
++    }
++    case 0x86:
++        ChooseCrimeAction();
++        break;
++    case 0x87:
++        window_deactivation_state->ticker_30->AddMessage("SECURITY_GUARD_HAS_DETAINED", id_28, 8);
++        break;
++    case 0xae:
++        inactive_04 = 1;
++        break;
++    case 0xaf:
++        screen_manager->SetNamedItemState("SecurityIcon", 1);
++        break;
++    case 0xb0:
++        words_7c0[2] = words_7c0[1];
++        words_7c0[1] = 0;
++        Unknown50(1, 1);
++        screen_manager->ApplyScreenWord(world_security_dialog_name, 2);
++        AddThought(words_7c0[2]);
++        screen_manager->SetNamedItemState("SecurityGuardIcon", 0);
++        break;
++    case 0xb1:
++    {
++        words_7c0[2] = words_7c0[1];
++        words_7c0[1] = 0;
++        const char* message = Notification(words_7c0[2]);
++        if (message)
++            window_deactivation_state->ticker_30->AddMessage(message, id_28, 13);
++        AddThought(words_7c0[2]);
++        screen_manager->SetNamedItemState("SecurityGuardIcon", 0);
++        break;
++    }
++    default:
++        WorldStaffEntity::Unknown34(value);
++    }
++}
+diff --git a/src/startup_world_security_update.cpp b/src/startup_world_security_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1e4c29a427dfd5bf1eee10c14e212e0cbe91a74
+--- /dev/null
++++ b/src/startup_world_security_update.cpp
+@@ -0,0 +1,96 @@
++#include "startup_world_entities.h"
++#include "startup_world_subsystems.h"
++#include "startup_screen_manager.h"
++#include "startup_game_file.h"
++#include "window_activation.h"
++#include <new>
++
++extern unsigned int world_security_count;
++
++// FUNCTION: BEACHLIFE 0x004893e0
++void WorldSecurityEntity::Destroy(unsigned int flags)
++{
++    this->~WorldSecurityEntity();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x00489400
++WorldSecurityEntity::~WorldSecurityEntity() noexcept(false)
++{
++    if (--world_security_count == 0)
++        screen_manager->SetFeatureAvailability(12, false);
++    ::operator delete(personal_name_f8);
++}
++
++// FUNCTION: BEACHLIFE 0x00489eb0
++bool WorldSecurityEntity::Unknown0c()
++{
++    if (!WorldStaffEntity::Unknown0c())
++        StartupFatal("SecurityGuardObject::Update - error calling HumanObject::update - %s", name_06);
++    UpdateConditions();
++    script_f4->UpdateState(this, state_3c);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x0048a2b0
++bool WorldSecurityEntity::Unknown14(ScreenModeCommand* command)
++{
++    switch (command->words[2])
++    {
++    case 0x26:
++        words_7a8[0] = words_7a8[1] = word_7e0 = word_7bc = words_7a8[2] = words_7a8[3] = 0;
++        window_deactivation_state->ticker_30->ClearFeedback(12);
++        words_7a8[4] = 0;
++        break;
++    case 0x55:
++        if (static_cast<int>(window_deactivation_state->render_value_160) % 4 == 0 && !(morale_10c >= 0.6f))
++        {
++            words_7c0[0] &= ~0x800000;
++            words_7c0[1] = 0;
++        }
++        break;
++    case 0x2c:
++        if (static_cast<unsigned int>(command->words[0]) == home_id_100)
++        {
++            if (((state_3c >= 0x7d && state_3c <= 0x7f) || (state_3c == 0x83 && !flag_766)) && word_77c)
++            {
++                ScreenModeCommand release;
++                release.words[0] = id_28;
++                release.words[1] = word_77c;
++                release.words[2] = 3;
++                release.words[3] = 0;
++                release.words[4] = 12;
++                screen_mode_commands->QueueCommand(&release);
++            }
++            SetMovementMode(0x4c);
++            Unknown08(0x4c);
++        }
++        else if (state_3c == 0x78 && static_cast<unsigned int>(command->words[0]) == word_98)
++        {
++            ScreenModeCommand next;
++            next.words[0] = next.words[1] = id_28;
++            next.words[2] = 0x15;
++            next.words[3] = next.words[4] = 0;
++            screen_mode_commands->QueueCommand(&next);
++            FindCrime(&patrol_position_79c);
++        }
++        break;
++    case 0x56:
++        if (state_3c == 0x78)
++        {
++            ScreenModeCommand next;
++            next.words[0] = next.words[1] = id_28;
++            next.words[2] = 0x15;
++            next.words[3] = next.words[4] = 0;
++            screen_mode_commands->QueueCommand(&next);
++            next.words[0] = next.words[1] = id_28;
++            next.words[2] = 3;
++            next.words[3] = 0;
++            next.words[4] = 0x77;
++            screen_mode_commands->QueueCommand(&next);
++        }
++        break;
++    }
++    return WorldStaffEntity::Unknown14(command);
++}
+diff --git a/src/startup_world_shared_methods.h b/src/startup_world_shared_methods.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..408cfd42ba26739a1490d0a55cfecde8a4588ff0
+--- /dev/null
++++ b/src/startup_world_shared_methods.h
+@@ -0,0 +1,7 @@
++#ifndef STARTUP_WORLD_SHARED_METHODS_H
++#define STARTUP_WORLD_SHARED_METHODS_H
++
++bool AcceptInitialWorldState(unsigned int state); // 0x00491ef0.
++bool AcceptWorldStateExit();                      // 0x0048e880.
++
++#endif
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 7e511585f9a87ca108c74bef8cd967263033a264..e5424dc27771b043b184319390f8c5f4b57a5895 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -72,6 +72,9 @@ struct WorldSubsystem20
+ {
+     WorldSubsystem20();                       // 0x004dca90.
+     int LoadScript(const char* path);         // 0x004dce70.
++    int SkipComments();                       // 0x004dd0c0.
++    int ReadToken(char* token);               // 0x004e1d10.
++    int ParseState();                         // 0x004dd140.
+     unsigned int FindState(const char* name); // 0x004dcdf0.
+     void PrepareLoad();                       // 0x004dcbc0.
+     void Start(float progress);               // 0x004dcc70.
+@@ -90,11 +93,13 @@ struct WorldSubsystem20
+     {
+         struct Command
+         {
++            Command(); // 0x004db1d0.
+             unsigned int id_00;
+             Action* actions_04;
+             Action* actions_08;
+             ~Command() noexcept(false); // 0x004db1f0.
+         };
++        Group(); // 0x004daf20.
+         unsigned int word_00;
+         Command commands_04[5];
+         unsigned int count_40;
+@@ -103,7 +108,9 @@ struct WorldSubsystem20
+         Action* actions_4c;
+         ~Group() noexcept(false); // 0x004daf60.
+     };
+-    unsigned char unknown_00[0xc];
++    char* cursor_00;
++    unsigned int word_04;
++    unsigned int word_08;
+     Group groups_0c[10];
+     unsigned int count_32c;
+     char* names_330[10];
+@@ -219,7 +226,8 @@ struct WorldFeatureEntry
+ 
+ struct WorldSubsystem4c
+ {
+-    WorldSubsystem4c(); // 0x00424690.
++    bool FeatureUnavailable(unsigned int id, unsigned int feature); // 0x00424f10.
++    WorldSubsystem4c();                                             // 0x00424690.
+     unsigned int word_00;
+     WorldFeatureEntry* data_04[26];
+     unsigned int counts_6c[26];
+@@ -229,9 +237,10 @@ struct WorldSubsystem4c
+     ~WorldSubsystem4c() noexcept(false); // 0x004246c0.
+ };
+ 
+-extern WorldSubsystem18* world_subsystem_18; // 0x005ab150.
+-extern WorldSubsystem3c* world_subsystem_3c; // 0x005bb000.
+-extern WorldSubsystem44* world_subsystem_44; // 0x005ab144.
+-extern WorldSubsystem4c* world_subsystem_4c; // 0x005ab078.
++extern WorldSubsystem18* world_subsystem_18;      // 0x005ab150.
++extern unsigned int world_script_state_words[10]; // 0x005bb004.
++extern WorldSubsystem3c* world_subsystem_3c;      // 0x005bb000.
++extern WorldSubsystem44* world_subsystem_44;      // 0x005ab144.
++extern WorldSubsystem4c* world_subsystem_4c;      // 0x005ab078.
+ 
+ #endif
