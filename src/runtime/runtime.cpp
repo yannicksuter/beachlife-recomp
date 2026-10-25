@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <random>
 #include <stdexcept>
@@ -515,11 +516,65 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
 {
     const auto& settings = options.settings;
     Session session;
+    // A headless run without an explicit profile plays in a fresh temporary
+    // one, removed afterwards: reproducible, and the player's stays untouched.
+    std::filesystem::path temporary_profile;
+    struct ProfileCleanup
+    {
+        std::filesystem::path* path;
+        ~ProfileCleanup()
+        {
+            std::error_code error;
+            if (!path->empty())
+            {
+                std::filesystem::remove_all(*path, error);
+            }
+        }
+    } profile_cleanup{&temporary_profile};
     if (options.headless)
     {
         // Nothing on screen and no sound: tests and automation.
         SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "offscreen");
         SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+        if (!SDL_getenv("BEACHLIFE_BOOT_USER_DIR"))
+        {
+            // Runs ending in a trap or the game's exit() skip the cleanup, so
+            // remove such leftovers (each holds a 64 MB map cache) first.
+            const auto parent = std::filesystem::temp_directory_path() / "beachlife-headless";
+            std::error_code error;
+            const auto stale =
+                std::filesystem::file_time_type::clock::now() - std::chrono::hours(1);
+            for (const auto& entry : std::filesystem::directory_iterator(parent, error))
+            {
+                if (entry.last_write_time(error) < stale)
+                {
+                    std::filesystem::remove_all(entry.path(), error);
+                }
+            }
+            temporary_profile = parent / std::to_string(SDL_GetCurrentThreadID());
+            SDL_setenv_unsafe("BEACHLIFE_BOOT_USER_DIR", temporary_profile.c_str(), 1);
+        }
+        // BEACHLIFE_BOOT_PROGRESS=all starts the test profile with every
+        // scenario available, as a player's progress file would: the game's
+        // sp.bin holds 12 little-endian states (4 training, 2 available).
+        const char* progress = SDL_getenv("BEACHLIFE_BOOT_PROGRESS");
+        if (progress && SDL_strcmp(progress, "all") == 0)
+        {
+            const std::filesystem::path profile = SDL_getenv("BEACHLIFE_BOOT_USER_DIR");
+            std::filesystem::create_directories(profile);
+            std::FILE* file = std::fopen((profile / "sp.bin").c_str(), "wb");
+            if (!file)
+            {
+                throw std::runtime_error("Cannot write the test progress file");
+            }
+            for (int index = 0; index < 12; ++index)
+            {
+                const unsigned char state[4] = {
+                    static_cast<unsigned char>(index < 2 ? 4 : 2), 0, 0, 0};
+                std::fwrite(state, 1, sizeof(state), file);
+            }
+            std::fclose(file);
+        }
     }
     if (!SDL_Init(SDL_INIT_VIDEO))
     {

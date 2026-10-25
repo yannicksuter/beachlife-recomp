@@ -483,7 +483,10 @@ there but not implemented yet becomes a trap like missing game code.
 
 Boot checks run headless: `--headless` opens the game window on SDL's offscreen
 driver with silent audio, so nothing appears on screen and no input focus is
-needed; screenshots are saved at the game's own resolution. Development
+needed; screenshots are saved at the game's own resolution. A headless run plays
+in a fresh temporary profile that is removed afterwards, so it is reproducible and
+never changes the player's options, progress or saves; `BEACHLIFE_BOOT_USER_DIR`
+selects a profile folder explicitly. Development
 switches drive the game without a player:
 
 - `BEACHLIFE_BOOT_ROUTE=scenario1` clicks past the intro screens, then the main

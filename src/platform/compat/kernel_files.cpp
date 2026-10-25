@@ -200,6 +200,13 @@ DWORD file_error(int error)
 
 fs::path user_root()
 {
+    // Checks and automation use their own profile so they never change the
+    // player's options, progress or saves.
+    if (const char* override = SDL_getenv("BEACHLIFE_BOOT_USER_DIR"))
+    {
+        fs::create_directories(override);
+        return fs::weakly_canonical(fs::path(override));
+    }
     std::unique_ptr<char, decltype(&SDL_free)> path(
         SDL_GetPrefPath("BeachLife", "BeachLife"), SDL_free);
     if (!path)
