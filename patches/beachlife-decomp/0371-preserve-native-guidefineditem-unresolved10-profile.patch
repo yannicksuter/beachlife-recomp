@@ -1,0 +1,233 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 32b33cb..5657aaf 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -2618,10 +2618,3 @@ extern "C" __declspec(dllexport) void FixtureMatch3_34(ScreenTextItem* item)
+ {
+     item->ScreenTextItem::~ScreenTextItem();
+ }
+-
+-#include "startup_gui_defined_item.h"
+-// Borrowed typed receiver; compile/link retention only, never executed.
+-extern "C" __declspec(dllexport) void FixtureMatch3_35(GuiDefinedItem* receiver, ScreenItem* item)
+-{
+-    receiver->GuiDefinedItem::Unresolved10(item);
+-}
+diff --git b/metadata.csv a/metadata.csv
+index 0c4edf3..3d18976 100644
+--- b/metadata.csv
++++ a/metadata.csv
+@@ -260,4 +260,3 @@ address,type,size,symbol
+ 0x004c8400,function,71,?Unresolved0c@ScreenTextItem@@UAEXXZ
+ 0x004c8450,function,75,?Unresolved1c@ScreenTextItem@@UAEXXZ
+ 0x004c83d0,function,34,??1ScreenTextItem@@UAE@XZ
+-0x004a5480,function,36,?Unresolved10@GuiDefinedItem@@UAEXPAUScreenItem@@@Z
+diff --git b/src/startup_gui_defined_item_virtuals.cpp a/src/startup_gui_defined_item_virtuals.cpp
+index d55c24c..db16def 100644
+--- b/src/startup_gui_defined_item_virtuals.cpp
++++ a/src/startup_gui_defined_item_virtuals.cpp
+@@ -33,9 +33,3 @@ void GuiDefinedItem::MarkPrepared()
+         node = node->next;
+     }
+ }
+-
+-// FUNCTION: BEACHLIFE 0x004a5480
+-void GuiDefinedItem::Unresolved10(ScreenItem* item)
+-{
+-    children.Insert(children.End(), item);
+-}
+diff --git b/src/startup_screen_child_end.cpp a/src/startup_screen_child_end.cpp
+deleted file mode 100644
+index f3e5063..0000000
+--- b/src/startup_screen_child_end.cpp
++++ /dev/null
+@@ -1,9 +0,0 @@
+-#include "startup_screen_children.h"
+-
+-// Descriptive typed specialization of the already-qualified shared End body.
+-ScreenChildIterator ScreenChildRing::End() const
+-{
+-    ScreenChildIterator result;
+-    result.node = head;
+-    return result;
+-}
+diff --git b/src/startup_screen_child_insert.cpp a/src/startup_screen_child_insert.cpp
+deleted file mode 100644
+index 27ca1fa..0000000
+--- b/src/startup_screen_child_insert.cpp
++++ /dev/null
+@@ -1,15 +0,0 @@
+-#include "startup_screen_children.h"
+-
+-// FUNCTION: BEACHLIFE 0x004a55c0
+-ScreenChildIterator ScreenChildRing::Insert(ScreenChildIterator position, ScreenItem* const& item)
+-{
+-    ScreenChildNode* node = CreateNode(item);
+-    ScreenChildNode* previous = position.node->previous;
+-    node->next = position.node;
+-    node->previous = previous;
+-    previous->next = node;
+-    position.node->previous = node;
+-    ScreenChildIterator result;
+-    result.node = node;
+-    return result;
+-}
+diff --git b/src/startup_screen_child_node.cpp a/src/startup_screen_child_node.cpp
+deleted file mode 100644
+index c93be68..0000000
+--- b/src/startup_screen_child_node.cpp
++++ /dev/null
+@@ -1,59 +0,0 @@
+-#include "startup_screen_children.h"
+-#include "pool_chunk_acquire.h"
+-#include "pool_lock_acquire.h"
+-#include "pool_lock_guard.h"
+-#include "pool_return.h"
+-
+-#include <new>
+-
+-// FUNCTION: BEACHLIFE 0x004a55f0
+-ScreenChildNode* ScreenChildRing::CreateNode(ScreenItem* const& item)
+-{
+-    const unsigned int block_size = screen_child_node_slot_bytes;
+-    const unsigned int bucket_index = (block_size - 1u) / 8u;
+-    PoolChunkLink* block;
+-    {
+-        AcquirePoolLock(&pool_lock_word);
+-        PoolLockGuard guard;
+-        block = pool_chunk_buckets[bucket_index];
+-        if (block)
+-        {
+-            pool_chunk_buckets[bucket_index] = block->next;
+-        }
+-        else
+-        {
+-            int count = 20;
+-            // Restore the actual storage-provider array type before arithmetic.
+-            unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
+-            block = reinterpret_cast<PoolChunkLink*>(chunk);
+-            if (count != 1)
+-            {
+-                PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
+-                pool_chunk_buckets[bucket_index] = next;
+-                for (int index = 1;; ++index)
+-                {
+-                    PoolChunkLink* current = next;
+-                    if (count - 1 == index)
+-                    {
+-                        current->next = 0;
+-                        break;
+-                    }
+-                    next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
+-                    current->next = next;
+-                }
+-            }
+-        }
+-    }
+-    // Begin the complete node lifetime before constructing its pointer payload.
+-    ScreenChildNode* result = ::new (static_cast<void*>(block)) ScreenChildNode;
+-    try
+-    {
+-        new (&result->item) ScreenItem*(item);
+-    }
+-    catch (...)
+-    {
+-        ReturnPool(result, block_size);
+-        throw;
+-    }
+-    return result;
+-}
+diff --git b/src/startup_screen_children.h a/src/startup_screen_children.h
+index 4e340b5..78df44c 100644
+--- b/src/startup_screen_children.h
++++ a/src/startup_screen_children.h
+@@ -11,26 +11,9 @@ struct ScreenChildNode
+     ScreenItem* item;
+ };
+ 
+-// The real hidden-result iterator ABI requires its user-declared copy constructor.
+-struct ScreenChildIterator
+-{
+-    ScreenChildNode* node;
+-    ScreenChildIterator() { }
+-    ScreenChildIterator(const ScreenChildIterator& other)
+-        : node(other.node)
+-    {
+-    }
+-};
+-
+-// Original x86 node allocation is rounded to the eight-byte pool quantum.
+-static const unsigned int screen_child_node_slot_bytes = (sizeof(ScreenChildNode) + 7u) & ~7u;
+-
+ struct ScreenChildRing
+ {
+     ScreenChildNode* head;
+-    ScreenChildIterator End() const;
+-    ScreenChildIterator Insert(ScreenChildIterator position, ScreenItem* const& item);
+-    ScreenChildNode* CreateNode(ScreenItem* const& item);
+ };
+ 
+ #endif
+diff --git b/src/startup_screen_image_item_virtuals.cpp a/src/startup_screen_image_item_virtuals.cpp
+index 4cabad9..e8df797 100644
+--- b/src/startup_screen_image_item_virtuals.cpp
++++ a/src/startup_screen_image_item_virtuals.cpp
+@@ -8,7 +8,7 @@ void ScreenImageItem::Unresolved04(float elapsed)
+     ScreenItem::Unresolved04(elapsed);
+ }
+ 
+-// FUNCTION: BEACHLIFE 0x004c8510 FOLDED
++// FUNCTION: BEACHLIFE 0x004c8510
+ void ScreenImageItem::Unresolved24(unsigned char enabled)
+ {
+     ActivatePreparedScreenItem(*this, enabled);
+diff --git b/src/startup_screen_text_item_activation.cpp a/src/startup_screen_text_item_activation.cpp
+index bb08344..fa800b0 100644
+--- b/src/startup_screen_text_item_activation.cpp
++++ a/src/startup_screen_text_item_activation.cpp
+@@ -1,7 +1,7 @@
+ #include "startup_screen_shared_methods.h"
+ #include "startup_screen_text_item.h"
+ 
+-// FUNCTION: BEACHLIFE 0x004c8510 FOLDED
++// Receiver adapter for the shared retail body at 0x004c8510.
+ void ScreenTextItem::Unresolved24(unsigned char enabled)
+ {
+     ActivatePreparedScreenItem(*this, enabled);
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 2c53c61..d755394 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -1268,12 +1268,6 @@
+       "size": 34,
+       "name": "ScreenTextItem::~ScreenTextItem",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+-    },
+-    {
+-      "address": "0x004a5480",
+-      "size": 36,
+-      "name": "GuiDefinedItem::Unresolved10",
+-      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1394,19 +1388,6 @@
+     ],
+     "startup_screen_text_item_activation.cpp": [
+       "/Ob1"
+-    ],
+-    "startup_screen_child_end.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_screen_child_insert.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_screen_child_node.cpp": [
+-      "/GX",
+-      "/Ob1"
+-    ],
+-    "startup_gui_defined_item_virtuals.cpp": [
+-      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

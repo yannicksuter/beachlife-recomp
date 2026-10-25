@@ -2140,3 +2140,25 @@ executed.
 | `ScreenRequestRenderer::PositionSurface` | `0x0040e350` | 29 | yes | 66.67% |
 | `VariableCatalog::Building` | `0x004493a0` | 29 | yes | 94.12% |
 | `ScreenMode10Controller::ScreenMode10Controller` | `0x004a70c0` | 29 | no (relocations) | 95.24% |
+| `ScreenLinearContainer::MarkPrepared` | `0x004c0fc0` | 29 | no (relocations) | 96.30% |
+| `ScreenImageItem::Unresolved24` | `0x004c8510` | 30 | no (relocations) | 89.66% |
+| `GuiDefinedItem::Unresolved08` | `0x004a5400` | 31 | yes | 96.97% |
+| `GuiDefinedItem::Unresolved0c` | `0x004a54b0` | 31 | yes | 96.97% |
+| `GuiDefinedItem::MarkPrepared` | `0x004a54d0` | 31 | yes | 96.97% |
+| `ScreenDialog::Unresolved08` | `0x004a5cb0` | 31 | yes | 96.97% |
+| `ScreenRadioGroup::Unresolved1c` | `0x004c7140` | 31 | yes | 96.97% |
+| `ScreenFrameItem::Unresolved1c` | `0x004c7940` | 31 | yes | 96.97% |
+| `ScreenDialogResourceRecord::ScreenDialogResourceRecord` | `0x004171c0` | 32 | yes | 83.33% |
+| `MenuShowMain` | `0x004a1c20` | 32 | no (relocations) | 94.12% |
+| `ScreenLinearContainer::HandleInput38` | `0x004c0dd0` | 32 | yes | 96.30% |
+| `ScreenManagerOwner190::IsFinished` | `0x004c1d50` | 32 | no (relocations) | 96.00% |
+| `DestroyManagerOwner190Entry` | `0x004c1ee0` | 32 | no (relocations) | 96.77% |
+| `ScreenFrameItem::SetRectangle` | `0x004c7840` | 32 | yes | 95.65% |
+| `RendererSeaStatePrefix::RendererSeaStatePrefix` | `0x00418410` | 33 | yes | 71.43% |
+| `ScreenMode9Controller::ScreenMode9Controller` | `0x004a9de0` | 33 | no (relocations) | 96.00% |
+| `ScreenManager::ReadItemThreshold` | `0x004af6f0` | 33 | no (relocations) | 94.74% |
+| `ScreenLinearContainer::Unresolved04` | `0x004c0ea0` | 33 | yes | 96.97% |
+| `ScreenManagerOwner190::RenderChildren` | `0x004c1d70` | 33 | yes | 97.14% |
+| `ScreenTextItem::~ScreenTextItem` | `0x004c83d0` | 34 | no (relocations) | 88.89% |
+| `GuiDefinedItem::Unresolved10` | `0x004a5480` | 36 | no (relocations) | 96.97% |
+| `ScreenDialog::Unresolved10` | `0x004a5ef0` | 36 | no (relocations) | 96.97% |
