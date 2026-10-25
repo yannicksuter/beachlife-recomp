@@ -2029,3 +2029,25 @@ first defined value. Native copying is disabled until a real list-copy body
 is selected. Existing GUI dependencies currently require the optional
 reconstructed-test configuration. This headless lifetime proof does not select
 the credits producer, scrolling/rendering loop, or complete Game/GUI startup.
+
+
+The matching profile includes the music and playlist accessors below. Each
+uses the boot source file name and method body and passes 100% normalized
+comparison with identical raw code bytes. Alignment is excluded from the
+audited extents. Changed-body controls read a different field while retaining
+the complete original extent. All 129 earlier scores and raw-byte results
+remain unchanged, including the existing `AccessPixels` result of 98.18%.
+Native inverse patches retain the existing native source selections; the
+comparison images are never executed.
+
+| Method | Address | Code bytes | Changed-body control |
+| --- | --- | ---: | ---: |
+| `ScreenPlacementStore::ReadMusicName` | `0x004e6bf0` | 15 | 80% |
+| `ScreenPlacementStore::ReadMusicDirectory` | `0x004e6c00` | 16 | 80% |
+| `ScreenPlacementStore::ReadMusicWord08` | `0x004e6c10` | 16 | 80% |
+| `ScreenPlacementStore::ReadMusicWord0c` | `0x004e6c20` | 16 | 80% |
+| `ScreenPlacementStore::MusicCount` | `0x004e6c30` | 10 | 75% |
+| `ScreenLoadPanel13cOwner::ReadEntryWord10` | `0x004cdb90` | 16 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryName` | `0x004cdba0` | 15 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryDirectory` | `0x004cdbb0` | 16 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryWord18` | `0x004cdbc0` | 16 | 80% |
