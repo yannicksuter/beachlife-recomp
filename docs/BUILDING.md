@@ -2125,3 +2125,18 @@ executed.
 | `ScreenMode5Controller::ScreenMode5Controller` | `0x004a7b50` | 25 | no (relocations) | 82.35% |
 | `ScreenMode4Controller::ScreenMode4Controller` | `0x004a8610` | 25 | no (relocations) | 82.35% |
 | `ScreenLoadPanel13c::~ScreenLoadPanel13c` | `0x004c2450` | 25 | no (relocations) | 95.65% |
+| `ExitGameController::ExitGameController` | `0x004e8230` | 25 | no (relocations) | 94.74% |
+| `IntroController::IntroController` | `0x004e8b40` | 25 | no (relocations) | 94.74% |
+| `LoadGameController::LoadGameController` | `0x004e8d20` | 25 | no (relocations) | 94.74% |
+| `ResetGameController::ResetGameController` | `0x004e8fb0` | 25 | no (relocations) | 94.74% |
+| `InputState::HideSystemCursor` | `0x004eb0b0` | 25 | no (relocations) | 96.00% |
+| `WindowDeactivationState::SetGameSpeed` | `0x0043f480` | 26 | no (relocations) | 90.91% |
+| `VariableWorldPrefix::HasNamed` | `0x0042f000` | 27 | no (relocations) | 94.12% |
+| `GameUpdatePair::Update` | `0x004d2760` | 27 | no (relocations) | 88.00% |
+| `ScreenImageItem::ConfigureIcon` | `0x004c3e10` | 28 | yes | 94.12% |
+| `IntroController::~IntroController` | `0x004e8b80` | 28 | no (relocations) | 76.92% |
+| `MainMenuController::~MainMenuController` | `0x004e8e30` | 28 | no (relocations) | 76.92% |
+| `InputState::Poll` | `0x004eaab0` | 28 | no (relocations) | 96.30% |
+| `ScreenRequestRenderer::PositionSurface` | `0x0040e350` | 29 | yes | 66.67% |
+| `VariableCatalog::Building` | `0x004493a0` | 29 | yes | 94.12% |
+| `ScreenMode10Controller::ScreenMode10Controller` | `0x004a70c0` | 29 | no (relocations) | 95.24% |
