@@ -2051,3 +2051,47 @@ comparison images are never executed.
 | `ScreenLoadPanel13cOwner::ReadEntryName` | `0x004cdba0` | 15 | 80% |
 | `ScreenLoadPanel13cOwner::ReadEntryDirectory` | `0x004cdbb0` | 16 | 80% |
 | `ScreenLoadPanel13cOwner::ReadEntryWord18` | `0x004cdbc0` | 16 | 80% |
+
+
+The matching profile also promotes these existing startup methods.
+Each complete code extent passes 100% normalized comparison. Raw equality
+is listed separately; changed-body controls retain the audited original
+extent and are rejected. All other existing comparison results remain
+unchanged. `ScreenRequestRenderer::AccessPixels` (M001) remains outside this
+matching credit; its normalized display varies with the linked layout. Paired
+inverse patches preserve the native game export. Comparison images are never
+executed.
+
+| Method | Address | Code bytes | Raw equality | Changed-body control |
+| --- | --- | ---: | --- | ---: |
+| `ScreenItem::Unresolved4c` | `0x004a1160` | 3 | yes | 66.67% |
+| `ControllerState::ScreenSizeChanged` | `0x004e8fa0` | 3 | yes | 66.67% |
+| `ScreenItem::Unresolved20` | `0x004a1150` | 4 | yes | 50.00% |
+| `GuiParserState::ReadRegistryHead` | `0x004aa890` | 4 | yes | 40.00% |
+| `GuiParserState::ReadItemsHead` | `0x004aa8a0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState40` | `0x004adac0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState41` | `0x004adcc0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState42` | `0x004adcd0` | 4 | yes | 40.00% |
+| `ScreenItem::HandleInput38` | `0x004a70a0` | 5 | yes | 50.00% |
+| `ScreenMode6Controller::HandleFourWords` | `0x004a70b0` | 5 | yes | 50.00% |
+| `ScreenManagerAuxiliaryState::ClearState` | `0x004c1330` | 5 | yes | 50.00% |
+| `CurrentScreenTerrain` | `0x00416cd0` | 6 | no (relocations) | 40.00% |
+| `IntroController::ScriptPath` | `0x004e8d10` | 6 | no (relocations) | 50.00% |
+| `ControllerState::~ControllerState` | `0x0049ee50` | 7 | no (relocations) | 80.00% |
+| `ScreenModeController::~ScreenModeController` | `0x004a61c0` | 7 | no (relocations) | 80.00% |
+| `ScreenManager::CurrentContext` | `0x004b1b90` | 7 | yes | 40.00% |
+| `ScreenRequestGamePrefix::ReadMenuReturnFlag` | `0x004e3bd0` | 7 | yes | 50.00% |
+| `InputState::ReadDeltaY` | `0x004eab20` | 7 | yes | 40.00% |
+| `ScreenRequestGamePrefix::ClearMenuReturnFlag` | `0x004e3be0` | 8 | yes | 50.00% |
+| `ScreenRequestRenderer::SetUnscaledClip` | `0x00483590` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetWord10` | `0x0049fa00` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetState14` | `0x0049fa10` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetWord18` | `0x0049fa20` | 10 | yes | 40.00% |
+| `SetFatalWindow` | `0x004ea1f0` | 10 | no (relocations) | 40.00% |
+| `ScreenRendererRegistration::~ScreenRendererRegistration` | `0x00411ee0` | 11 | no (relocations) | 50.00% |
+| `ScreenMode6Controller::~ScreenMode6Controller` | `0x004a7680` | 11 | no (relocations) | 80.00% |
+| `ScreenVariableItem::~ScreenVariableItem` | `0x004c8a20` | 11 | no (relocations) | 80.00% |
+| `GameUpdatePairRegistration::~GameUpdatePairRegistration` | `0x004d3080` | 11 | no (relocations) | 50.00% |
+| `ScreenGameRegistration::~ScreenGameRegistration` | `0x004e5520` | 11 | no (relocations) | 50.00% |
+| `FrameClock::~FrameClock` | `0x004eb3b0` | 11 | no (relocations) | 50.00% |
+| `StartupProfilerRegistration::~StartupProfilerRegistration` | `0x004ecfa0` | 11 | no (relocations) | 50.00% |
