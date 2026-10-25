@@ -15,8 +15,9 @@ struct Options
     std::filesystem::path resources;  // assets/launcher: the overlay's font
     std::filesystem::path screenshot; // saves the last frame of a `frames` run as PNG
     std::string preview_screen;       // optional logical TGA path; an asset preview, not gameplay
-    int frames = 0;      // stops after this many frames (checks); 0 runs until the player leaves
-    bool hidden = false; // checks: no visible window, so nothing is presented
+    int frames = 0;        // stops after this many frames (checks); 0 runs until the player leaves
+    bool hidden = false;   // checks: no visible window, so nothing is presented
+    bool headless = false; // tests: offscreen window, no GPU, silent audio
     bool prepare_only = false; // explicit prepare/repair: return after the loading screen
 };
 

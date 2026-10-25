@@ -481,6 +481,26 @@ Windows, DirectInput and Miles APIs the retail executable imports, implemented
 on SDL3, so decompiled code keeps its original API calls. An API that is declared
 there but not implemented yet becomes a trap like missing game code.
 
+Boot checks run headless: `--headless` opens the game window on SDL's offscreen
+driver with silent audio, so nothing appears on screen and no input focus is
+needed; screenshots are saved at the game's own resolution. Development
+switches drive the game without a player:
+
+- `BEACHLIFE_BOOT_ROUTE=scenario1` clicks past the intro screens, then the main
+  menu's "start" and "play" on the first scenario. Each step clicks one point
+  until the game opens the file that marks the next screen, so it does not
+  depend on timing. Custom routes are `x,y>file;...` in game coordinates.
+- `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames.
+- `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
+- `BEACHLIFE_BOOT_TRACE_FILES=1` prints each file the game opens.
+- `BEACHLIFE_BOOT_ASSUME_FOCUS=1` accepts input without window focus; a route
+  implies it.
+
+```sh
+BEACHLIFE_BOOT_ROUTE=scenario1 ./build/boot/beachlife --play --headless \
+  --frames 4000 --screenshot world.png
+```
+
 `game-series` is written from a local merge tree. `tools/game_tree.py init`
 creates it under `build/game-tree/work` from the current series. Commit merged
 source there, check that every file compiles with `tools/game_tree.py check`,

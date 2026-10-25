@@ -44,7 +44,8 @@ struct VideoSettings
     bool vsync = true;
     bool stretch = false; // fill the window instead of keeping the frame's proportions
     GraphicsApi api = GraphicsApi::Automatic;
-    bool hidden = false; // checks and screenshots
+    bool hidden = false;   // checks and screenshots
+    bool headless = false; // tests and automation: offscreen window, no GPU
 };
 
 // What the video layer actually got.
@@ -157,5 +158,6 @@ class Video
 // Opens the window and the GPU device on the requested API. An API that is not
 // available here is an error naming it; there is no silent fallback to another one.
 std::unique_ptr<Video> create_video(const VideoSettings& settings);
+std::unique_ptr<Video> create_headless_video(const VideoSettings& settings);
 
 } // namespace beachlife::platform

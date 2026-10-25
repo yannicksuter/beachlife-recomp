@@ -8,6 +8,7 @@
 #include "runtime/fps_overlay.h"
 #include "runtime/game_host.h"
 #include "runtime/loading_view.h"
+#include "runtime/retail_files.h"
 #include "runtime/startup.h"
 
 #include "imgui.h"
@@ -17,9 +18,11 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <stdexcept>
 #include <string>
@@ -36,7 +39,8 @@ constexpr int frame_width = 800, frame_height = 600;
 // The simulation's fixed step; the original's rate is not known yet either.
 constexpr double tick = 1.0 / 60;
 
-platform::VideoSettings video_settings(const launcher::Settings& settings, bool hidden)
+platform::VideoSettings video_settings(
+    const launcher::Settings& settings, bool hidden, bool headless)
 {
     const auto& display = settings.display;
     platform::VideoSettings video;
@@ -51,6 +55,7 @@ platform::VideoSettings video_settings(const launcher::Settings& settings, bool 
                 : display.api == launcher::GraphicsApi::Metal    ? platform::GraphicsApi::Metal
                                                                  : platform::GraphicsApi::Automatic;
     video.hidden = hidden;
+    video.headless = headless;
     return video;
 }
 
@@ -91,7 +96,119 @@ struct GamePumpState
     std::vector<Click> clicks;
     // BEACHLIFE_BOOT_SHOTS="frame,..." also saves <screenshot>-<frame>.png.
     std::vector<std::uint64_t> shots;
+    // BEACHLIFE_BOOT_ROUTE drives the menus without anyone at the mouse. Each
+    // step clicks x,y every few frames until the game opens a file whose name
+    // contains the step's text, so it does not depend on timing. Either a
+    // preset name or "x,y>text;...".
+    struct Route
+    {
+        struct Step
+        {
+            double x, y;
+            std::string until;
+        };
+        std::vector<Step> steps;
+        std::size_t current = 0;
+        std::uint64_t next_click = 1;
+        bool reached = false;
+    } route;
+    // BEACHLIFE_BOOT_TRACE_FILES=1 prints each file the game opens.
+    bool trace_files = false;
 };
+
+std::string lowercase(std::string text)
+{
+    std::transform(text.begin(),
+        text.end(),
+        text.begin(),
+        [](unsigned char c)
+        {
+            return static_cast<char>(std::tolower(c));
+        });
+    return text;
+}
+
+constexpr std::pair<const char*, const char*> route_presets[] = {
+    // Past the intro screens, main menu "start", then "play" on the first scenario.
+    {"scenario1", "425,335>mainmenu.ble;425,335>scenarioscreen.tga;694,556>scenario1.pis"},
+};
+
+GamePumpState::Route scripted_route()
+{
+    GamePumpState::Route route;
+    const char* text = SDL_getenv("BEACHLIFE_BOOT_ROUTE");
+    for (const auto& [name, steps] : route_presets)
+    {
+        if (text && SDL_strcasecmp(text, name) == 0)
+        {
+            text = steps;
+        }
+    }
+    for (const char* cursor = text; cursor && *cursor;)
+    {
+        double x = 0, y = 0;
+        int used = 0;
+        if (std::sscanf(cursor, "%lf,%lf>%n", &x, &y, &used) != 2 || !used)
+        {
+            break;
+        }
+        cursor += used;
+        const char* end = std::strchr(cursor, ';');
+        const std::string until(cursor, end ? end : cursor + std::strlen(cursor));
+        route.steps.push_back({x, y, lowercase(until)});
+        cursor = end ? end + 1 : cursor + until.size();
+    }
+    if (!route.steps.empty())
+    {
+        // Scripted input: some compositors never focus a window a script opened.
+        SDL_setenv_unsafe("BEACHLIFE_BOOT_ASSUME_FOCUS", "1", 1);
+    }
+    return route;
+}
+
+void game_file_opened(const char* filename, void* context)
+{
+    auto& state = *static_cast<GamePumpState*>(context);
+    if (state.trace_files)
+    {
+        std::fprintf(stderr,
+            "Frame %llu: opened %s\n",
+            static_cast<unsigned long long>(state.frames),
+            filename);
+    }
+    auto& route = state.route;
+    if (route.current < route.steps.size() &&
+        lowercase(filename).find(route.steps[route.current].until) != std::string::npos)
+    {
+        route.reached = true;
+    }
+}
+
+void advance_route(GamePumpState& state)
+{
+    auto& route = state.route;
+    if (route.current >= route.steps.size())
+    {
+        return;
+    }
+    if (route.reached)
+    {
+        std::fprintf(stderr,
+            "Route: step %zu of %zu reached at frame %llu\n",
+            route.current + 1,
+            route.steps.size(),
+            static_cast<unsigned long long>(state.frames));
+        ++route.current;
+        route.reached = false;
+        route.next_click = state.frames + 60; // let the new screen appear
+    }
+    else if (state.frames >= route.next_click)
+    {
+        const auto& step = route.steps[route.current];
+        state.clicks.push_back({state.frames + 1, step.x, step.y});
+        route.next_click = state.frames + 45;
+    }
+}
 
 std::vector<std::uint64_t> scripted_shots()
 {
@@ -155,6 +272,7 @@ bool game_pump(void* context)
 {
     auto& state = *static_cast<GamePumpState*>(context);
     ++state.frames;
+    advance_route(state);
     for (const auto& scripted : state.clicks)
     {
         if (scripted.frame == state.frames || scripted.frame + 2 == state.frames)
@@ -310,6 +428,12 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
 {
     const auto& settings = options.settings;
     Session session;
+    if (options.headless)
+    {
+        // Nothing on screen and no sound: tests and automation.
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "offscreen");
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    }
     if (!SDL_Init(SDL_INIT_VIDEO))
     {
         throw std::runtime_error(std::string("Cannot start the game: ") + SDL_GetError());
@@ -321,7 +445,8 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
     io.IniFilename = nullptr;
     io.Fonts->FontBuilderIO =
         ImGuiFreeType::GetBuilderForFreeType(); // the game window's text, as in Recharged
-    session.video = platform::create_video(video_settings(settings, options.hidden));
+    session.video =
+        platform::create_video(video_settings(settings, options.hidden, options.headless));
     auto& video = *session.video;
     platform::set_app_icon(video.window(), options.resources.parent_path() / "app" / "icon.png");
     if (!ImGui_ImplSDL3_InitForSDLGPU(video.window()))
@@ -398,8 +523,18 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             static_cast<std::uint64_t>(options.frames),
             options.screenshot,
             scripted_clicks(),
-            scripted_shots()};
+            scripted_shots(),
+            scripted_route(),
+            SDL_getenv("BEACHLIFE_BOOT_TRACE_FILES") != nullptr};
         GameHost host{video, game_pump, &pump, game_source};
+        retail_files::set_open_observer(game_file_opened, &pump);
+        struct ObserverReset
+        {
+            ~ObserverReset()
+            {
+                retail_files::set_open_observer(nullptr, nullptr);
+            }
+        } observer_reset;
         return game_entry(host);
     }
     if (!options.preview_screen.empty())

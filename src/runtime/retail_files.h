@@ -56,6 +56,9 @@ class Session
 // a throwing read may have modified its destination before reporting failure.
 // Handles and live buffers remain caller-owned.
 File* open(const char* filename, const char* mode) noexcept;
+// Development checks: called with each successfully opened name, on the
+// opening thread. Null clears it.
+void set_open_observer(void (*observer)(const char* filename, void* context), void* context);
 std::size_t read(void* buffer, std::size_t size, std::size_t count, File* file) noexcept;
 int seek(File* file, std::int32_t offset, SeekOrigin origin) noexcept;
 int position(File* file, Position* result) noexcept;
