@@ -1,0 +1,173 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index e47af5e..386ac89 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1535,8 +1535,8 @@ typedef char Panel13cContainsOwnerOpaque19[offsetof(ScreenLoadPanel13cOwner, unk
+ typedef char Panel13cContainsOwnerWord1c[offsetof(ScreenLoadPanel13cOwner, word_1c) == 28 ? 1 : -1];
+ typedef char Panel13cContainsOwnerState20[offsetof(ScreenLoadPanel13cOwner, state_20) == 32 ? 1 : -1];
+ typedef char Panel13cContainsOwnerOpaque21[offsetof(ScreenLoadPanel13cOwner, unknown_21) == 33 ? 1 : -1];
+-typedef char Panel13cContainsEntryWord08[offsetof(ScreenLoadPanel13cEntry, word_08) == 8 ? 1 : -1];
+-typedef char Panel13cContainsEntryWord0c[offsetof(ScreenLoadPanel13cEntry, word_0c) == 12 ? 1 : -1];
++typedef char Panel13cContainsEntryWord08[offsetof(ScreenLoadPanel13cEntry, owned_08) == 8 ? 1 : -1];
++typedef char Panel13cContainsEntryWord0c[offsetof(ScreenLoadPanel13cEntry, owned_0c) == 12 ? 1 : -1];
+ typedef char Panel13cContainsEntryWord10[offsetof(ScreenLoadPanel13cEntry, word_10) == 16 ? 1 : -1];
+ typedef char Panel13cContainsEntryState14[offsetof(ScreenLoadPanel13cEntry, state_14) == 20 ? 1 : -1];
+ typedef char Panel13cContainsEntryState15[offsetof(ScreenLoadPanel13cEntry, state_15) == 21 ? 1 : -1];
+@@ -1833,3 +1833,18 @@ extern "C" __declspec(dllexport) int FixtureMusicCount(ScreenPlacementStore* own
+ {
+     return owner->MusicCount();
+ }
++
++#include "startup_screen_panel13c_entry.h"
++
++typedef char PlaylistOwnerSize[(sizeof(ScreenLoadPanel13cOwner) == 0x24) ? 1 : -1];
++typedef char PlaylistEntrySize[(sizeof(ScreenLoadPanel13cEntry) == 0x1c) ? 1 : -1];
++typedef char PlaylistEntryname_00[(offsetof(ScreenLoadPanel13cEntry, name_00) == 0) ? 1 : -1];
++typedef char PlaylistEntrydirectory_04[(offsetof(ScreenLoadPanel13cEntry, directory_04) == 4) ? 1 : -1];
++typedef char PlaylistEntryword_10[(offsetof(ScreenLoadPanel13cEntry, word_10) == 16) ? 1 : -1];
++typedef char PlaylistEntryword_18[(offsetof(ScreenLoadPanel13cEntry, word_18) == 24) ? 1 : -1];
++
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) unsigned int FixtureReadEntryWord10(ScreenLoadPanel13cOwner* owner, int index)
++{
++    return owner->ReadEntryWord10(index);
++}
+diff --git a/metadata.csv b/metadata.csv
+index e9d2e97..1bcebc6 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -129,3 +129,4 @@ address,type,size,symbol
+ 0x004e6c10,function,16,?ReadMusicWord08@ScreenPlacementStore@@QAEIH@Z
+ 0x004e6c20,function,16,?ReadMusicWord0c@ScreenPlacementStore@@QAEIH@Z
+ 0x004e6c30,function,10,?MusicCount@ScreenPlacementStore@@QAEHXZ
++0x004cdb90,function,16,?ReadEntryWord10@ScreenLoadPanel13cOwner@@QAEIH@Z
+diff --git a/src/startup_screen_panel13c_entry.h b/src/startup_screen_panel13c_entry.h
+new file mode 100644
+index 0000000..7fed7d4
+--- /dev/null
++++ b/src/startup_screen_panel13c_entry.h
+@@ -0,0 +1,32 @@
++#ifndef STARTUP_SCREEN_PANEL13C_ENTRY_H
++#define STARTUP_SCREEN_PANEL13C_ENTRY_H
++
++// Actual 0x1c-byte x86 allocation at 0x004ce165. Four owned strings carry
++// the file name, directory, ID3v1 artist and title. The tag parser 0x004ce850
++// establishes the final two pointer types; no additional lifetime is supplied.
++struct ScreenLoadPanel13cEntry
++{
++    char* name_00;
++    char* directory_04;
++    char* owned_08; // ID3v1 artist; copied by 0x004ce850.
++    char* owned_0c; // ID3v1 title; copied by 0x004ce850.
++    unsigned int word_10;
++    unsigned char state_14;
++    unsigned char state_15;
++    unsigned char unknown_16[2];
++    unsigned int word_18;
++    // Inline construction in AddEntry at 0x004ce173, in original store order.
++    ScreenLoadPanel13cEntry()
++    {
++        name_00 = 0;
++        directory_04 = 0;
++        owned_08 = 0;
++        owned_0c = 0;
++        state_14 = 0;
++        word_10 = 0;
++        state_15 = 0;
++        word_18 = 0;
++    }
++};
++
++#endif
+diff --git a/src/startup_screen_panel13c_entry_tag.cpp b/src/startup_screen_panel13c_entry_tag.cpp
+index 31b6721..3e9f892 100644
+--- a/src/startup_screen_panel13c_entry_tag.cpp
++++ b/src/startup_screen_panel13c_entry_tag.cpp
+@@ -21,13 +21,13 @@ void ReadPanel13cEntryTag(ScreenLoadPanel13cEntry* entry)
+         {
+             memset(text, 0, sizeof(text));
+             strncpy(text, tag + 33, 30);
+-            entry->word_08 = new char[strlen(text) + 1];
+-            strcpy(entry->word_08, text);
++            entry->owned_08 = new char[strlen(text) + 1];
++            strcpy(entry->owned_08, text);
+ 
+             memset(text, 0, sizeof(text));
+             strncpy(text, tag + 3, 30);
+-            entry->word_0c = new char[strlen(text) + 1];
+-            strcpy(entry->word_0c, text);
++            entry->owned_0c = new char[strlen(text) + 1];
++            strcpy(entry->owned_0c, text);
+         }
+     }
+ }
+diff --git a/src/startup_screen_panel13c_owner.h b/src/startup_screen_panel13c_owner.h
+index c3213dc..9cb8628 100644
+--- a/src/startup_screen_panel13c_owner.h
++++ b/src/startup_screen_panel13c_owner.h
+@@ -2,33 +2,7 @@
+ #define STARTUP_SCREEN_PANEL13C_OWNER_H
+ 
+ struct WindowAudioState;
+-// Observed 0x1c-byte entry that AddEntry 0x004ce0a0 allocates and fills. Names
+-// are descriptive; the remaining words are written elsewhere.
+-struct ScreenLoadPanel13cEntry
+-{
+-    char* name_00;      // Owned copy of the file name.
+-    char* directory_04; // Owned copy of the directory.
+-    char* word_08;      // Owned ID3 artist copied from tag offset33.
+-    char* word_0c;      // Owned ID3 title copied from tag offset3.
+-    unsigned int word_10;
+-    unsigned char state_14;
+-    unsigned char state_15;
+-    unsigned char unknown_16[2];
+-    unsigned int word_18;
+-
+-    // Inline constructor expanded in AddEntry 0x004ce0a0 (store order kept).
+-    ScreenLoadPanel13cEntry()
+-    {
+-        name_00 = 0;
+-        directory_04 = 0;
+-        word_08 = 0;
+-        word_0c = 0;
+-        state_14 = 0;
+-        word_10 = 0;
+-        state_15 = 0;
+-        word_18 = 0;
+-    }
+-};
++#include "startup_screen_panel13c_entry.h"
+ 
+ // Observed 0x38-byte MP3 stream scanner that AddEntry allocates. Names are
+ // descriptive; bodies are separate dependencies.
+diff --git a/src/startup_screen_panel13c_owner_access.cpp b/src/startup_screen_panel13c_owner_access.cpp
+new file mode 100644
+index 0000000..a65df15
+--- /dev/null
++++ b/src/startup_screen_panel13c_owner_access.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_panel13c_entry.h"
++#include "startup_screen_panel13c_owner.h"
++
++// FUNCTION: BEACHLIFE 0x004cdb90
++unsigned int ScreenLoadPanel13cOwner::ReadEntryWord10(int index)
++{
++    return entries_begin_04[index]->word_10;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index a39ec0d..83f29e6 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -674,6 +674,12 @@
+       "size": 10,
+       "name": "ScreenPlacementStore::MusicCount",
+       "name_status": "Descriptive; complete original thiscall extent, excluding following alignment."
++    },
++    {
++      "address": "0x004cdb90",
++      "size": 16,
++      "name": "ScreenLoadPanel13cOwner::ReadEntryWord10",
++      "name_status": "Descriptive; complete original thiscall extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

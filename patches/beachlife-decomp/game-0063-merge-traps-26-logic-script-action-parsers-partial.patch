@@ -1,0 +1,514 @@
+diff --git a/src/startup_world_script_load.cpp b/src/startup_world_script_load.cpp
+index 2de8e3870503bc61c58a365d16bdaf9accfcb080..81d9066ea889632dedbebc29e7f3453a61ba4a7c 100644
+--- a/src/startup_world_script_load.cpp
++++ b/src/startup_world_script_load.cpp
+@@ -6,7 +6,7 @@
+ #include <new>
+ 
+ // GLOBAL: BEACHLIFE 0x005bb004
+-unsigned int world_script_state_words[10];
++WorldActionBranchData* world_script_state_words[10];
+ 
+ // FUNCTION: BEACHLIFE 0x004db1d0
+ WorldSubsystem20::Group::Command::Command()
+diff --git a/src/startup_world_script_parse_arithmetic.cpp b/src/startup_world_script_parse_arithmetic.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f9b26e69838860e340d506d8a9e35644eea021bb
+--- /dev/null
++++ b/src/startup_world_script_parse_arithmetic.cpp
+@@ -0,0 +1,72 @@
++#include "startup_world_script_actions.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004dde60
++int WorldSubsystem20::ParseAddAction()
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = ParseOperand(token);
++    count += ReadToken(token);
++    data->right_08 = ParseOperand(token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 6, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004ddf50
++int WorldSubsystem20::ParseMinusAction()
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = ParseOperand(token);
++    count += ReadToken(token);
++    data->right_08 = ParseOperand(token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 7, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004de040
++int WorldSubsystem20::ParseDivideAction()
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = ParseOperand(token);
++    count += ReadToken(token);
++    data->right_08 = ParseOperand(token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 8, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004de130
++int WorldSubsystem20::ParseMultiplyAction()
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = ParseOperand(token);
++    count += ReadToken(token);
++    data->right_08 = ParseOperand(token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 9, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004de220
++int WorldSubsystem20::ParseSetAction()
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = ParseOperand(token);
++    count += ReadToken(token);
++    data->right_08 = ParseOperand(token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 10, data });
++    return count;
++}
+diff --git a/src/startup_world_script_parse_if.cpp b/src/startup_world_script_parse_if.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b8e0fc81617decd1eefc0da8fa0314bdef54315a
+--- /dev/null
++++ b/src/startup_world_script_parse_if.cpp
+@@ -0,0 +1,119 @@
++#include "startup_world_script_actions.h"
++#include "startup_game_file.h"
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004de490
++int WorldSubsystem20::ParseIfAction()
++{
++    int count = 0;
++    while (*cursor_00 != '(')
++    {
++        ++cursor_00;
++        ++count;
++    }
++    char condition[100];
++    char* destination = condition;
++    while (*cursor_00 != ')')
++    {
++        *destination++ = *cursor_00++;
++        ++count;
++    }
++    *destination = *cursor_00++;
++    destination[1] = 0;
++    ++count;
++
++    WorldActionBranchData* data = new (std::nothrow) WorldActionBranchData;
++    if (data)
++    {
++        data->second_04 = 0;
++        data->first_00 = 0;
++        data->parsing_else_1c = 0;
++    }
++    if (condition[0] == '(')
++    {
++        unsigned int index = 1;
++        while (condition[index] == ' ')
++            ++index;
++        char left[40];
++        unsigned int length = 0;
++        while (condition[index] != ' ' && condition[index] != ')')
++            left[length++] = condition[index++];
++        left[length] = 0;
++        data->left_08 = ParseOperand(left);
++        while (condition[index] == ' ')
++            ++index;
++        if (condition[index] == ')')
++            data->right_10.kind = 0x110;
++        else
++        {
++            while (condition[index] == ' ')
++                ++index;
++            char operation[12];
++            length = 0;
++            while (condition[index] != ' ')
++                operation[length++] = condition[index++];
++            operation[length] = 0;
++            if (std::strcmp(operation, "&&") == 0)
++                data->comparison_18 = 0;
++            else if (std::strcmp(operation, "||") == 0)
++                data->comparison_18 = 1;
++            else if (std::strcmp(operation, ">") == 0)
++                data->comparison_18 = 2;
++            else if (std::strcmp(operation, "<") == 0)
++                data->comparison_18 = 3;
++            else if (std::strcmp(operation, "==") == 0)
++                data->comparison_18 = 4;
++            else if (std::strcmp(operation, "<=") == 0)
++                data->comparison_18 = 5;
++            else if (std::strcmp(operation, "=<") == 0)
++                data->comparison_18 = 5;
++            else if (std::strcmp(operation, "=>") == 0)
++                data->comparison_18 = 6;
++            else if (std::strcmp(operation, ">=") == 0)
++                data->comparison_18 = 6;
++            else if (std::strcmp(operation, "!=") == 0)
++                data->comparison_18 = 6;
++            else
++                StartupFatal("WorldScript::IfCommand - Invalid Operator in if statement %s", operation);
++            while (condition[index] == ' ')
++                ++index;
++            char right[40];
++            length = 0;
++            while (condition[index] != ' ' && condition[index] != ')')
++                right[length++] = condition[index++];
++            right[length] = 0;
++            if (right[0] == '"')
++            {
++                data->right_10.kind = 0x36;
++                char* text = static_cast<char*>(::operator new(std::strlen(right) - 1, std::nothrow));
++                data->right_10.data = reinterpret_cast<std::uintptr_t>(text);
++                right[length - 1] = 0;
++                std::strcpy(text, right + 1);
++            }
++            else
++                data->right_10 = ParseOperand(right);
++        }
++    }
++    AppendAction(new (std::nothrow) Action { 0, 4, data });
++    if (word_04)
++    {
++        unsigned int index = 0;
++        while (world_script_state_words[index])
++            ++index;
++        world_script_state_words[index] = word_04;
++    }
++    word_04 = data;
++    count += ParseStateActions(word_358);
++    if (world_script_state_words[0])
++    {
++        unsigned int index = 0;
++        while (world_script_state_words[index + 1])
++            ++index;
++        word_04 = world_script_state_words[index];
++        world_script_state_words[index] = 0;
++    }
++    else
++        word_04 = 0;
++    return count;
++}
+diff --git a/src/startup_world_script_parse_load_script.cpp b/src/startup_world_script_parse_load_script.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..be7fdd07efb0cc7035a3898f26f2b6e82f3b5235
+--- /dev/null
++++ b/src/startup_world_script_parse_load_script.cpp
+@@ -0,0 +1,22 @@
++#include "startup_world_script_actions.h"
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004dfbd0
++int WorldSubsystem20::ParseLoadScriptAction()
++{
++    WorldActionNamedData* data = new (std::nothrow) WorldActionNamedData { 0, 0 };
++    char token[52];
++    int count = ReadToken(token);
++    char* name = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
++    data->name_00 = name;
++    std::strcpy(name, token);
++    count += ReadToken(token);
++    char* text = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
++    data->text_04 = text;
++    std::strcpy(text, token);
++    count += ReadToken(token);
++    Action* action = new (std::nothrow) Action { 0, 15, data };
++    AppendAction(action);
++    return count;
++}
+diff --git a/src/startup_world_script_parse_messages.cpp b/src/startup_world_script_parse_messages.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f61390542f929cf03f324d48a9cc4d14a09a3ddb
+--- /dev/null
++++ b/src/startup_world_script_parse_messages.cpp
+@@ -0,0 +1,110 @@
++#include "startup_world_script_actions.h"
++#include "startup_world_script_message_names.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004dea00
++int WorldSubsystem20::ParseFunctionAction()
++{
++    char token[64];
++    int count = ReadToken(token);
++    unsigned int* data = new (std::nothrow) unsigned int(9);
++    if (_stricmp(token, "PauseGame") == 0)
++        *data = 0;
++    else if (_stricmp(token, "ResumeGame") == 0)
++        *data = 1;
++    else if (_stricmp(token, "LockMap") == 0)
++        *data = 2;
++    else if (_stricmp(token, "UnlockMap") == 0)
++        *data = 3;
++    else if (_stricmp(token, "NoBreakDowns") == 0)
++        *data = 4;
++    else if (_stricmp(token, "AllowBreakDowns") == 0)
++        *data = 5;
++    else if (_stricmp(token, "UnlockNextScenario") == 0)
++        *data = 6;
++    else if (_stricmp(token, "Debug") == 0)
++        *data = 7;
++    else if (_stricmp(token, "NoLitter") == 0)
++        *data = 8;
++    else
++        StartupFatal("WorldScript::FunctionCommand - Invalid Function %s", token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 0, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004deba0
++int WorldSubsystem20::ParseMessageAction()
++{
++    WorldActionCommandData* data = new (std::nothrow) WorldActionCommandData;
++    if (data)
++    {
++        data->operands_04[3].kind = 0x110;
++        data->operands_04[4].kind = 0x110;
++        data->operands_04[5].kind = 0x110;
++        data->maximum_38 = 0.0f;
++        data->minimum_34 = 0.0f;
++        data->word_00 = 0;
++    }
++    char token[64];
++    int count = ReadToken(token);
++    for (unsigned int index = 0; index < 108; ++index)
++    {
++        if (std::strcmp(token, world_script_message_names[index].name) == 0)
++        {
++            data->word_00 = world_script_message_names[index].id;
++            break;
++        }
++    }
++    count += ReadToken(token);
++    data->operands_04[0] = ParseOperand(token);
++    count += ReadToken(token);
++    data->operands_04[1] = ParseOperand(token);
++    count += ReadToken(token);
++    data->operands_04[2] = ParseOperand(token);
++    count += ReadToken(token);
++    while (std::strcmp(token, ";") != 0)
++    {
++        if (std::strcmp(token, "Time") == 0)
++        {
++            count += ReadToken(token);
++            data->minimum_34 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "MaxTime") == 0)
++        {
++            count += ReadToken(token);
++            data->maximum_38 = static_cast<float>(std::atof(token));
++        }
++        count += ReadToken(token);
++    }
++    AppendAction(new (std::nothrow) Action { 0, 1, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004de310
++int WorldSubsystem20::ParseChangeStateAction()
++{
++    WorldActionStateData* data = new (std::nothrow) WorldActionStateData { 0, 0.0f };
++    char token[64];
++    int count = ReadToken(token);
++    char* name = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
++    data->name_00 = name;
++    std::strcpy(name, token);
++    count += ReadToken(token);
++    if (std::strcmp(token, ";") != 0)
++    {
++        if (std::strcmp(token, "Time") == 0)
++        {
++            count += ReadToken(token);
++            data->delay_04 = static_cast<float>(std::atof(token));
++        }
++        else
++            StartupFatal("WorldScript::ChangeStateCommand - Invalid command");
++        count += ReadToken(token);
++    }
++    AppendAction(new (std::nothrow) Action { 0, 2, data });
++    return count;
++}
+diff --git a/src/startup_world_script_parse_terrain.cpp b/src/startup_world_script_parse_terrain.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8f4c9f9e3c13291f9249e614b99ad4cd4134da6
+--- /dev/null
++++ b/src/startup_world_script_parse_terrain.cpp
+@@ -0,0 +1,115 @@
++#include "startup_world_script_actions.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004df7d0
++int WorldSubsystem20::ParsePathAction()
++{
++    WorldActionStripData* data = new (std::nothrow) WorldActionStripData;
++    data->count_0c = 1;
++    char token[52];
++    int count = ReadToken(token);
++    data->point_00.x = std::atoi(token);
++    count += ReadToken(token);
++    data->point_00.y = std::atoi(token);
++    count += ReadToken(token);
++    data->count_0c = std::atoi(token);
++    count += ReadToken(token);
++    if (_stricmp("S", token) == 0)
++        data->direction_08 = 4;
++    else if (_stricmp("N", token) == 0)
++        data->direction_08 = 0;
++    else if (_stricmp("E", token) == 0)
++        data->direction_08 = 2;
++    else if (_stricmp("W", token) == 0)
++        data->direction_08 = 6;
++    else if (_stricmp("NW", token) == 0)
++        data->direction_08 = 7;
++    else if (_stricmp("NE", token) == 0)
++        data->direction_08 = 1;
++    else if (_stricmp("SW", token) == 0)
++        data->direction_08 = 5;
++    else if (_stricmp("SE", token) == 0)
++        data->direction_08 = 3;
++    else
++        StartupFatal("Invalid Direction Specified %s", token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 13, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004df9d0
++int WorldSubsystem20::ParseGrassAction()
++{
++    WorldActionStripData* data = new (std::nothrow) WorldActionStripData;
++    data->count_0c = 1;
++    char token[52];
++    int count = ReadToken(token);
++    data->point_00.x = std::atoi(token);
++    count += ReadToken(token);
++    data->point_00.y = std::atoi(token);
++    count += ReadToken(token);
++    data->count_0c = std::atoi(token);
++    count += ReadToken(token);
++    if (_stricmp("S", token) == 0)
++        data->direction_08 = 4;
++    else if (_stricmp("N", token) == 0)
++        data->direction_08 = 0;
++    else if (_stricmp("E", token) == 0)
++        data->direction_08 = 2;
++    else if (_stricmp("W", token) == 0)
++        data->direction_08 = 6;
++    else if (_stricmp("NW", token) == 0)
++        data->direction_08 = 7;
++    else if (_stricmp("NE", token) == 0)
++        data->direction_08 = 1;
++    else if (_stricmp("SW", token) == 0)
++        data->direction_08 = 5;
++    else if (_stricmp("SE", token) == 0)
++        data->direction_08 = 3;
++    else
++        StartupFatal("Invalid Direction Specified %s", token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 14, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004dfd10
++int WorldSubsystem20::ParseAreaAction()
++{
++    WorldActionRouteData* data = new (std::nothrow) WorldActionRouteData;
++    char token[52];
++    int count = ReadToken(token);
++    if (_stricmp(token, "Beach") == 0)
++        data->kind_00 = 1;
++    else if (_stricmp(token, "Sea") == 0)
++        data->kind_00 = 2;
++    else
++        StartupFatal("Undefined Type in Area Command");
++    count += ReadToken(token);
++    int pointCount = std::atoi(token);
++    ScreenPoint* points = static_cast<ScreenPoint*>(::operator new(
++        static_cast<unsigned int>(pointCount) * 8u, std::nothrow));
++    data->points_08 = points;
++    data->count_04 = 0;
++    for (int index = 0; index < pointCount; ++index)
++    {
++        count += ReadToken(token);
++        points[data->count_04].x = std::atoi(token);
++        count += ReadToken(token);
++        points[data->count_04].y = std::atoi(token);
++        ++data->count_04;
++    }
++    for (unsigned int index = 0; index < 4; ++index)
++    {
++        count += ReadToken(token);
++        data->words_0c[index * 2] = std::atoi(token);
++        count += ReadToken(token);
++        data->words_0c[index * 2 + 1] = std::atoi(token);
++    }
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 16, data });
++    return count;
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 46b0f8e7585713d0851ed98629553f95fada9572..62c133b06ecf99275ee6c42560e17e64ddd17944 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -198,6 +198,10 @@ struct WorldSubsystem20
+         Action* actions_4c;
+         ~Group() noexcept(false); // 0x004daf60.
+     };
++    void AppendAction(Action* action); // 0x004e2490.
++
++    WorldScriptOperand ParseOperand(const char* token); // 0x004e1e00.
++
+     char* cursor_00;
+     WorldActionBranchData* word_04;
+     unsigned int word_08;
+@@ -365,11 +369,11 @@ struct WorldSubsystem4c
+     ~WorldSubsystem4c() noexcept(false); // 0x004246c0.
+ };
+ 
+-extern char world_object_script_token[50];        // 0x005bafcc.
+-extern WorldSubsystem18* world_subsystem_18;      // 0x005ab150.
+-extern unsigned int world_script_state_words[10]; // 0x005bb004.
+-extern WorldSubsystem3c* world_subsystem_3c;      // 0x005bb000.
+-extern WorldSubsystem44* world_subsystem_44;      // 0x005ab144.
+-extern WorldSubsystem4c* world_subsystem_4c;      // 0x005ab078.
++extern char world_object_script_token[50];                  // 0x005bafcc.
++extern WorldSubsystem18* world_subsystem_18;                // 0x005ab150.
++extern WorldActionBranchData* world_script_state_words[10]; // 0x005bb004.
++extern WorldSubsystem3c* world_subsystem_3c;                // 0x005bb000.
++extern WorldSubsystem44* world_subsystem_44;                // 0x005ab144.
++extern WorldSubsystem4c* world_subsystem_4c;                // 0x005ab078.
+ 
+ #endif

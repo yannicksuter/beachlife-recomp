@@ -1,0 +1,365 @@
+diff --git a/src/startup_screen_dialog_terrain_tiles.cpp b/src/startup_screen_dialog_terrain_tiles.cpp
+index 7e56b47b53eacc49167f764be7cd29d5c0cc549e..5a03d5eeb5edbe599962683c5a7f890a4c6efd38 100644
+--- a/src/startup_screen_dialog_terrain_tiles.cpp
++++ b/src/startup_screen_dialog_terrain_tiles.cpp
+@@ -35,6 +35,126 @@ static unsigned int* TerrainTileView(OverlayMapPrefix* map, int x, int y)
+     return static_cast<unsigned int*>(map->cached_tiles_e0[y * map->cache_width_d4 + x].view);
+ }
+ 
++static void BurnTerrainPixel(unsigned int* pixel, const unsigned char* data, const unsigned short* palette,
++    unsigned int depth, unsigned int half, unsigned int quarter)
++{
++    unsigned int old_depth = *pixel & 0xffff0000u;
++    if (old_depth > depth)
++        return;
++    unsigned int mode = *data & 0xc0u;
++    unsigned int colour = palette[*data - mode];
++    unsigned int old_colour = *pixel & 0xffffu;
++    switch (mode)
++    {
++    case 0:
++        old_depth = depth;
++        break;
++    case 0x40:
++        colour = ((colour >> 1) & half) + ((old_colour >> 2) & quarter) + ((colour >> 2) & quarter);
++        break;
++    case 0x80:
++        colour = ((old_colour >> 1) & half) + ((colour >> 1) & half);
++        break;
++    case 0xc0:
++        colour = ((old_colour >> 1) & half) + ((old_colour >> 2) & quarter) + ((colour >> 2) & quarter);
++        break;
++    }
++    *pixel = old_depth + (colour & 0xffffu);
++}
++
++// FUNCTION: BEACHLIFE 0x00415210
++void ScreenDialogResource::BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y,
++    unsigned int depth)
++{
++    const unsigned char* data = SelectedFrame()->SelectData(word_14, word_18);
++    OverlayMapPrefix* map = overlay_map;
++    const unsigned short* palette = record->palettes[0];
++    int width = SelectedFrame()->width_0e;
++    int height = SelectedFrame()->height_10;
++    int size = map->tile_size_dc;
++    unsigned int half = render_half_mask >> 1;
++    unsigned int quarter = render_quarter_mask >> 2;
++    int frame_y = SelectedFrame()->word_14;
++    unsigned int row_depth = ((depth & 0xffffu) - static_cast<unsigned int>(frame_y) * 8) << 16;
++    for (int row = 0; row < height; ++row)
++    {
++        row_depth += frame_y++ < 0 ? -0x80000u : 0x100000u;
++        int column = 0;
++        while (column < width)
++        {
++            int run = static_cast<signed char>(*data++);
++            if (run > 0)
++            {
++                int y = offset_y + row;
++                int active_y = tile_y + y / size;
++                int row_offset = (y % 128) * 128;
++                for (int i = 0; i < run; ++i, ++column, ++data)
++                {
++                    int x = offset_x + column;
++                    unsigned int* view = TerrainTileView(map, tile_x + x / size, active_y);
++                    BurnTerrainPixel(view + row_offset + x % 128, data, palette, row_depth, half, quarter);
++                }
++            }
++            else
++                column -= run;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004146f0
++void ScreenDialogResource::BurnTerrainClippedTiles(const ScreenRectangle* rectangle,
++    int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth)
++{
++    const unsigned char* data = SelectedFrame()->SelectData(word_14, word_18);
++    OverlayMapPrefix* map = overlay_map;
++    const unsigned short* palette = record->palettes[0];
++    int size = map->tile_size_dc;
++    int width = SelectedFrame()->width_0e;
++    unsigned int half = render_half_mask >> 1;
++    unsigned int quarter = render_quarter_mask >> 2;
++    int frame_y = SelectedFrame()->word_14;
++    unsigned int row_depth = ((depth & 0xffffu) - static_cast<unsigned int>(frame_y) * 8) << 16;
++    for (int row = 0; row < rectangle->top; ++row)
++    {
++        row_depth += frame_y++ < 0 ? -0x80000u : 0x100000u;
++        int column = 0;
++        while (column < width)
++        {
++            int run = static_cast<signed char>(*data++);
++            if (run > 0)
++            {
++                data += run;
++                column += run;
++            }
++            else
++                column -= run;
++        }
++    }
++    for (int row = rectangle->top; row < rectangle->bottom; ++row)
++    {
++        row_depth += frame_y++ < 0 ? -0x80000u : 0x100000u;
++        int column = 0;
++        while (column < width)
++        {
++            int run = static_cast<signed char>(*data++);
++            if (run > 0)
++            {
++                for (int i = 0; i < run; ++i, ++column, ++data)
++                {
++                    if (column < rectangle->left || column >= rectangle->right)
++                        continue;
++                    int x = column - rectangle->left + offset_x;
++                    int y = row - rectangle->top + offset_y;
++                    unsigned int* view = TerrainTileView(map, tile_x + x / size, tile_y + y / size);
++                    BurnTerrainPixel(view + (y % 128) * 128 + x % 128, data, palette, row_depth, half, quarter);
++                }
++            }
++            else
++                column -= run;
++        }
++    }
++}
++
+ // FUNCTION: BEACHLIFE 0x00414c10
+ void ScreenDialogResource::UpdateTerrainIntersectionTiles(const ScreenRectangle* rectangle,
+     int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth, int x, int y)
+diff --git a/src/startup_screen_text_lookup_overloads.cpp b/src/startup_screen_text_lookup_overloads.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..33f93e44b3b3d513498e680f002912ed8b459cb2
+--- /dev/null
++++ b/src/startup_screen_text_lookup_overloads.cpp
+@@ -0,0 +1,18 @@
++#include "startup_screen_text.h"
++#include <windows.h>
++
++// FUNCTION: BEACHLIFE 0x0049f420
++const unsigned short* ScreenTextLookup::LookupText(const unsigned short* key)
++{
++    char text[256];
++    WideCharToMultiByte(0, 0, reinterpret_cast<LPCWSTR>(key), -1, text, sizeof(text), 0, 0);
++    return LookupText(text);
++}
++
++// FUNCTION: BEACHLIFE 0x0049f470
++const unsigned short* ScreenTextLookup::LookupText(unsigned int index)
++{
++    if (index != static_cast<unsigned int>(-1))
++        return values[index].text;
++    return screen_text_empty;
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index e9521910d951c87644c5ec9a3c929fdd4688a5e5..e689dd0700e3d75f2da49bdd657076de6cabf001 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -312,6 +312,8 @@ struct VariableEventSchedule
+     // Actual 0x00429300 and 0x00429320, RET4 (x87 results).
+     float MaleAppeal(int index);
+     float FemaleAppeal(int index);
++    float MaleAppeal();   // 0x00429340.
++    float FemaleAppeal(); // 0x00429360.
+ };
+ 
+ // Observed staff state; +0xc4 selects the female photo. Size not proved.
+diff --git a/src/startup_world_building_feature_values.cpp b/src/startup_world_building_feature_values.cpp
+index c9a94ac27cbbe8e18a35dcc1af3e847a953483f8..23b3791af827a3150a01076663e716ed48f8ea68 100644
+--- a/src/startup_world_building_feature_values.cpp
++++ b/src/startup_world_building_feature_values.cpp
+@@ -1,6 +1,19 @@
+ #include "startup_world_entities.h"
+ #include <string.h>
+ 
++// FUNCTION: BEACHLIFE 0x00460550
++float WorldBuildingEntity::FeatureRating(unsigned int feature, unsigned int gender)
++{
++    // Retail selects the event key with the gender argument.
++    if (strcmp("LIVEVENT", variable_catalog->FeatureKey(building_60->features_1fc[gender])) == 0)
++    {
++        if (gender == 0)
++            return events_170->MaleAppeal();
++        return events_170->FemaleAppeal();
++    }
++    return appeal_1a8[feature][gender];
++}
++
+ // FUNCTION: BEACHLIFE 0x004605e0
+ float WorldBuildingEntity::FeatureValue(unsigned int feature)
+ {
+diff --git a/src/startup_world_route_finder.cpp b/src/startup_world_route_finder.cpp
+index 40f91f16f18fe06e97cf0e19e50f5058cd7ad2ab..83ecfdbdd77c7a53eb078aabb0cc173e7243ba49 100644
+--- a/src/startup_world_route_finder.cpp
++++ b/src/startup_world_route_finder.cpp
+@@ -89,3 +89,44 @@ unsigned int WorldRouteFinder::FindVehicleRoute(int x1, int y1, int x2, int y2,
+     flags_04[1] = 0;
+     return count;
+ }
++
++// FUNCTION: BEACHLIFE 0x00430d50
++unsigned int WorldRouteFinder::FindGroundRoute(int x1, int y1, int x2, int y2, ScreenPoint** points)
++{
++    ++generation_08;
++    flags_04[2] = 1;
++    flags_04[0] = 0;
++    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
++    { return finder->CanUseGroundCell(point); };
++    start_0c = { x1, y1 };
++    ScreenPoint start = { x1, y1 };
++    ScreenPoint end = { x2, y2 };
++    bool start_allowed = callback_90(this, &start);
++    bool end_allowed = callback_90(this, &end);
++    if (!start_allowed || !end_allowed || (x1 == x2 && y1 == y2) || !SearchRoute(x1, y1, x2, y2))
++        return 0;
++
++    ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
++    int count = 0;
++    while (cell && cell->visited_generation_08 == generation_08)
++    {
++        cell = cell->parent_00;
++        ++count;
++    }
++    count -= 2;
++    if (count > 0)
++    {
++        *points = static_cast<ScreenPoint*>(::operator new(count * sizeof(ScreenPoint), std::nothrow));
++        cell = static_cast<ScreenTerrainCell*>(data_88)->parent_00;
++        unsigned int index = 0;
++        while (cell->parent_00 && cell->visited_generation_08 == generation_08)
++        {
++            (*points)[index].x = cell->x_40;
++            (*points)[index].y = cell->y_44;
++            cell = cell->parent_00;
++            ++index;
++        }
++    }
++    Clear();
++    return count;
++}
+diff --git a/src/startup_world_route_search.cpp b/src/startup_world_route_search.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a00d176f90893798c4ca4c5970e3203d62c4b04c
+--- /dev/null
++++ b/src/startup_world_route_search.cpp
+@@ -0,0 +1,51 @@
++#include "startup_world_subsystems.h"
++
++// FUNCTION: BEACHLIFE 0x00430f00
++bool WorldRouteFinder::SearchRoute(int x1, int y1, int x2, int y2)
++{
++    start_0c = { x1, y1 };
++    end_position_28 = terrain_00->TilePosition(x2, y2, 4);
++    start_position_1c = terrain_00->TilePosition(start_0c.x, start_0c.y, 4);
++    unsigned int y = static_cast<unsigned int>(y2) % terrain_00->height_08;
++    unsigned int x = static_cast<unsigned int>(x2) % terrain_00->width_04;
++    ScreenTerrainCell* cell = &terrain_00->cells_0c[y * terrain_00->width_04 + x];
++    cell->cost_3c = 0;
++    ScreenWorldPosition position = terrain_00->TilePosition(x1, y1, 4);
++    int dx = static_cast<int>(static_cast<long double>(position.x) - start_position_1c.x);
++    int dy = static_cast<int>(static_cast<long double>(position.y) - start_position_1c.y);
++    cell->distance_38 = static_cast<int>(static_cast<unsigned int>(dx) * dx + static_cast<unsigned int>(dy) * dy);
++    cell->score_34 = static_cast<int>(static_cast<unsigned int>(cell->cost_3c) + cell->distance_38);
++    cell->x_40 = x2;
++    cell->y_44 = y2;
++    cell->visited_generation_08 = generation_08;
++    cell->open_31 = 1;
++    cell->closed_30 = 0;
++    cell->next_04 = 0;
++    cell->linked_generation_0c = generation_08;
++    cell->parent_00 = 0;
++    data_88 = 0;
++    cell_34.next_04 = cell;
++    cell_34.linked_generation_0c = generation_08;
++
++    for (;;)
++    {
++        cell = cell_34.next_04;
++        if (!cell || cell_34.linked_generation_0c != generation_08)
++            return false;
++        ScreenTerrainCell* next = cell->next_04;
++        if (!next || cell->linked_generation_0c != generation_08)
++            next = 0;
++        cell_34.next_04 = next;
++        cell_34.linked_generation_0c = generation_08;
++        cell->closed_30 = 1;
++        cell->visited_generation_08 = generation_08;
++        y = static_cast<unsigned int>(y1) % terrain_00->height_08;
++        x = static_cast<unsigned int>(x1) % terrain_00->width_04;
++        if (cell == &terrain_00->cells_0c[y * terrain_00->width_04 + x])
++        {
++            data_88 = cell;
++            return true;
++        }
++        ExpandRouteCell(cell, x2, y2);
++    }
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index e37060ebb6e1b0a2a68bc1355b43cde0960ca29b..4756dcd38e5bfb410aa5cdd5936ec874393418d3 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -20,6 +20,7 @@ struct WorldRouteFinder
+     unsigned int FindVehicleRoute(int x1, int y1, int x2, int y2, ScreenPoint** points);                       // 0x00430c20.
+     unsigned int FindGroundRoute(int x1, int y1, int x2, int y2, ScreenPoint** points);                        // 0x00430d50.
+     bool SearchRoute(int x1, int y1, int x2, int y2);                                                          // 0x00430f00.
++    void ExpandRouteCell(ScreenTerrainCell* cell, int x, int y);                                               // 0x004310b0.
+     bool CanUseVehicleCell(const ScreenPoint* point);                                                          // 0x00431650.
+     bool CanUsePathCell(const ScreenPoint* point);                                                             // 0x004316a0.
+     bool CanUseGroundCell(const ScreenPoint* point);                                                           // 0x004316f0.
+@@ -36,7 +37,9 @@ struct WorldRouteFinder
+     unsigned char unknown_07;
+     unsigned int generation_08;
+     ScreenPoint start_0c;
+-    unsigned char unknown_14[0x20];
++    unsigned char unknown_14[8];
++    ScreenWorldPosition start_position_1c;
++    ScreenWorldPosition end_position_28;
+     ScreenTerrainCell cell_34;
+     void* data_88;
+     AllocationNode* data_8c;
+diff --git a/src/window_audio_controls.cpp b/src/window_audio_controls.cpp
+index be1b47254460ced603e5c0f5484be2d876c07791..c1908e7756afef229e58f21d623184efe496d3d4 100644
+--- a/src/window_audio_controls.cpp
++++ b/src/window_audio_controls.cpp
+@@ -26,6 +26,39 @@ int WindowAudioState::PlaySoundAtLevel(const char* name, float level, unsigned i
+     return PlaySoundWithParameters(name, volume, flags, fade, level);
+ }
+ 
++// FUNCTION: BEACHLIFE 0x004cf7b0
++int WindowAudioState::PlaySoundAtPosition(const char* name,
++    const WindowAudioVector* position, unsigned int flags, int voice)
++{
++    if (enabled_3d)
++        return Play3DSoundWithParameters(name, volume_d4, position, flags, voice);
++
++    float far_distance = value_f0;
++    long double level = scale_d8;
++    float near_distance = value_ec;
++    long double dx = static_cast<long double>(position_e0.x) - position->x;
++    long double dy = static_cast<long double>(position_e0.y) - position->y;
++    long double distance = sqrtl(dx * dx + dy * dy);
++    float stored_distance = static_cast<float>(distance);
++    long double attenuation;
++    bool audible = true;
++    if (distance > far_distance)
++    {
++        attenuation = 0.0L;
++        audible = false;
++    }
++    else if (!(stored_distance >= near_distance))
++        attenuation = 1.0L;
++    else
++        attenuation = 1.0L - (static_cast<long double>(stored_distance) - near_distance) / (static_cast<long double>(far_distance) - near_distance);
++
++    float attenuated = static_cast<float>(attenuation * level);
++    if (!audible)
++        return -1;
++    int volume = SoundVolume(attenuated);
++    return PlaySoundWithParameters(name, volume, flags, 0.0f, attenuated);
++}
++
+ // FUNCTION: BEACHLIFE 0x004cf8f0
+ int WindowAudioState::PlaySoundAtPosition(const char* name, float level,
+     const WindowAudioVector* position, unsigned int flags, int voice)

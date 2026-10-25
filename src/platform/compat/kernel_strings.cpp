@@ -137,6 +137,12 @@ extern "C"
             [&]() -> int
             {
                 code_page(page, "WideCharToMultiByte");
+                // The game's Western releases ran on Windows whose ANSI code
+                // page is 1252, so that is the ACP the retail text expects.
+                if (page == CP_ACP)
+                {
+                    page = CP_WINDOWS_1252;
+                }
                 if (!wide || length == 0 || length < -1 || capacity < 0 || (capacity && !narrow) ||
                     (page == CP_UTF8 && (fallback || used_fallback)))
                 {
@@ -181,13 +187,6 @@ extern "C"
                     {
                         append_utf8(result, code);
                         continue;
-                    }
-                    // The current retail key callers use ASCII. An ACP for other
-                    // characters needs an explicit Windows locale decision.
-                    if (page == CP_ACP && code > 0x7f)
-                    {
-                        unsupported(
-                            "WideCharToMultiByte", "non-ASCII ACP requires a Windows code page");
                     }
                     if (code < 0x80 || (code >= 0xa0 && code <= 0xff))
                     {
@@ -242,6 +241,12 @@ extern "C"
             [&]() -> int
             {
                 code_page(page, "MultiByteToWideChar");
+                // The game's Western releases ran on Windows whose ANSI code
+                // page is 1252, so that is the ACP the retail text expects.
+                if (page == CP_ACP)
+                {
+                    page = CP_WINDOWS_1252;
+                }
                 if (!narrow || length == 0 || length < -1 || capacity < 0 || (capacity && !wide))
                 {
                     last_error = ERROR_INVALID_PARAMETER;
@@ -267,11 +272,6 @@ extern "C"
                 {
                     const auto lead = static_cast<unsigned char>(narrow[index++]);
                     uint32_t code = lead;
-                    if (page == CP_ACP && lead > 0x7f)
-                    {
-                        unsupported(
-                            "MultiByteToWideChar", "non-ASCII ACP requires a Windows code page");
-                    }
                     if (page == CP_WINDOWS_1252 && lead >= 0x80 && lead <= 0x9f)
                     {
                         code = cp1252[lead - 0x80];

@@ -1,0 +1,3209 @@
+diff --git a/src/startup_animation_sound.h b/src/startup_animation_sound.h
+index 8944bd514972f0ad6f89d4b28acdcff8b1e6c150..2f92b84b39f067efc5f2372860c5827a572f14d7 100644
+--- a/src/startup_animation_sound.h
++++ b/src/startup_animation_sound.h
+@@ -53,6 +53,8 @@ struct AnimationSoundLookup
+     float crowd_divisor_570;
+     float crowd_fade_574;
+ 
++    void PlayOpinion(unsigned int group, const ScreenWorldPosition* position); // 0x004d1b20.
++
+     ~AnimationSoundLookup() noexcept(false);                                                  // 0x004d05b0.
+     unsigned char Play(const char* name, int animation, const ScreenWorldPosition* position); // 0x004d1990.
+ };
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index 41c98dcfa9434db2c0139ee61e95ad700a3577e3..bc33f0d80f8e6f487bda1f6ecc1229d5e9a920f6 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -144,6 +144,7 @@ struct ScreenTextLookup : ScreenTextLookupRegistration, ScreenTextTable
+     ~ScreenTextLookup();
+ 
+     const unsigned short* LookupText(unsigned int index); // 0x0049f470.
++    unsigned int LookupTextIndex(const char* key);        // 0x0049f490.
+     const unsigned short* LookupText(const char* key);
+     const unsigned short* LookupText(const unsigned short* key); // 0x0049f420.
+     ScreenTextIterator FindText(const ScreenTextKey& key);
+diff --git a/src/startup_screen_text_lookup_index.cpp b/src/startup_screen_text_lookup_index.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8dc5c8093aa27dc188306b705a3626c5df7137d3
+--- /dev/null
++++ b/src/startup_screen_text_lookup_index.cpp
+@@ -0,0 +1,11 @@
++#include "startup_screen_text.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0049f490
++unsigned int ScreenTextLookup::LookupTextIndex(const char* key)
++{
++    for (unsigned int i = 0; i < static_cast<unsigned int>(index_1c); ++i)
++        if (_stricmp(values[i].key, key) == 0)
++            return i;
++    return -1;
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index a164be3b33daed640c7ac44b511a6b26221c136a..e9521910d951c87644c5ec9a3c929fdd4688a5e5 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -252,6 +252,13 @@ struct VariableGuestState
+     unsigned char unknown_320[0x68];
+     float value_388;
+     float value_38c;
++    float start_bladder_390;
++    float start_fight_394;
++    float start_flirt_398;
++    float start_drunk_39c;
++    float start_ill_3a0;
++    float start_sunburn_3a4;
++    float start_vandalise_3a8;
+ };
+ 
+ // Observed nested keyline state only; no owner size or lifetime is inferred.
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index f6a87c51cb6332418b77a78db4ea82bebc729fbd..79dc047d832e61a4250c9dce6459b38e8fca2f71 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -212,6 +212,8 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldStaffEntity) == 0x778);
+ 
+ struct WorldSceneryEntity : WorldStaticEntity
+ {
++    unsigned int AvailableSeats();                                   // 0x0041f220.
++    void SetVandalized(unsigned char value);                         // 0x0041ecc0.
+     ScreenWorldPosition ApproachPosition();                          // 0x0041e820.
+     void SetPlacementName(const char* name);                         // 0x0041c8a0.
+     explicit WorldSceneryEntity(const char* name);                   // 0x0041c0d0.
+@@ -263,6 +265,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldSceneryEntity) == 0xf8);
+ 
+ struct WorldBuildingEntity : WorldStaticEntity
+ {
++    void AddThought(const unsigned short* text, unsigned int guest); // 0x0045c810.
+     ScreenMapPosition ContentPosition(unsigned int index);           // 0x0045c790.
+     ScreenWorldPosition EntrancePosition();                          // 0x004571d0.
+     unsigned int AvailableRooms();                                   // 0x00460500.
+@@ -401,7 +404,7 @@ struct WorldGuestEntity : WorldPedestrianEntity
+     void PerformAction0();                                                 // 0x0046ab00.
+     void PerformAction1();                                                 // 0x0046a470.
+     void PerformAction2();                                                 // 0x0046a2b0.
+-    void PerformAction3();                                                 // 0x0046beb0.
++    bool PerformAction3();                                                 // 0x0046beb0.
+     void PerformAction4();                                                 // 0x0046f9d0.
+     void PerformAction5();                                                 // 0x00474520.
+     void PerformAction6();                                                 // 0x00476fa0.
+@@ -459,7 +462,13 @@ struct WorldGuestEntity : WorldPedestrianEntity
+     ScreenWorldPosition* FindWaterWalkpoints();                            // 0x00468000.
+     ScreenWorldPosition RandomWalkPosition();                              // 0x00468990.
+     ScreenWorldPosition* FindLandWalkpoints(ScreenWorldPosition position); // 0x00469520.
+-    void ShowThought(const unsigned short* text);                          // 0x0047b180.
++    void ShowThought(unsigned int text);                                   // 0x0047b180.
++
++    bool CheckIllness();                                                    // 0x0046ae10.
++    bool CheckDeparture();                                                  // 0x0046af30.
++    bool CheckBedtime();                                                    // 0x0046b1e0.
++    void SetActivityDuration(unsigned int desire, float strength);          // 0x0046b590.
++    ScreenWorldPosition* FindBeachWalkpoints(ScreenWorldPosition position); // 0x00468ac0.
+ 
+     void AddContamination(float amount);                                                                                                          // 0x0047b1b0.
+     bool CanBeFined();                                                                                                                            // 0x0046be90.
+diff --git a/src/startup_world_guest_action_helpers.h b/src/startup_world_guest_action_helpers.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..2122b136b6dfa7d8e3f726876c76cb5c6691bcad
+--- /dev/null
++++ b/src/startup_world_guest_action_helpers.h
+@@ -0,0 +1,36 @@
++#ifndef STARTUP_WORLD_GUEST_ACTION_HELPERS_H
++#define STARTUP_WORLD_GUEST_ACTION_HELPERS_H
++
++#include "startup_world_motion_helpers.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_text.h"
++#include "window_activation.h"
++#include <cstdio>
++#include <cstdlib>
++
++inline ScreenModeCommand MakeGuestCommand(unsigned int sender, unsigned int recipient,
++    unsigned int kind, unsigned int first = 0, unsigned int second = 0)
++{
++    ScreenModeCommand command;
++    command.words[0] = sender;
++    command.words[1] = recipient;
++    command.words[2] = kind;
++    command.words[3] = first;
++    command.words[4] = second;
++    return command;
++}
++
++inline void SendGuestWalk(unsigned int id, unsigned int kind, ScreenWorldPosition position)
++{
++    ScreenModeCommand command = MakeGuestCommand(id, id, kind, static_cast<int>(position.x), static_cast<int>(position.y));
++    screen_mode_commands->QueueCommand(&command);
++}
++
++inline unsigned int RandomGuestThought(const char* prefix)
++{
++    char key[256];
++    std::sprintf(key, "%s%d", prefix, std::rand() % 3 + 1);
++    return screen_text_lookup->LookupTextIndex(key);
++}
++
++#endif
+diff --git a/src/startup_world_guest_actions.cpp b/src/startup_world_guest_actions.cpp
+index 3bd174283a837dd0f039c177a33911337bdcc011..f38228c4dfb9a3366a4365c8e50a1eb03262549a 100644
+--- a/src/startup_world_guest_actions.cpp
++++ b/src/startup_world_guest_actions.cpp
+@@ -40,7 +40,7 @@ void WorldGuestEntity::Unknown34(unsigned int value)
+     {
+         char key[256];
+         std::sprintf(key, "%s%d", prefix, std::rand() % 3 + 1);
+-        ShowThought(screen_text_lookup->LookupText(key));
++        ShowThought(screen_text_lookup->LookupTextIndex(key));
+     };
+     auto raise_happiness = [this](long double amount)
+     {
+diff --git a/src/startup_world_guest_activity_action.cpp b/src/startup_world_guest_activity_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a46872ccf48de911d0dcd50f5524b696bf25d7b2
+--- /dev/null
++++ b/src/startup_world_guest_activity_action.cpp
+@@ -0,0 +1,467 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_animation_sound.h"
++#include "startup_game_file.h"
++
++extern const char* world_guest_desire_names[26];
++// GLOBAL: BEACHLIFE 0x005bacb8
++unsigned int world_guest_selected_building;
++// GLOBAL: BEACHLIFE 0x005bacbc
++unsigned int world_guest_selected_feature;
++
++static unsigned int GuestTemplateWord(VariableGuestState* guest, unsigned int offset)
++{
++    unsigned int value;
++    std::memcpy(&value, guest->unknown_320 + offset - 0x320, sizeof(value));
++    return value;
++}
++
++// FUNCTION: BEACHLIFE 0x0046beb0
++bool WorldGuestEntity::PerformAction3()
++{
++    unsigned char found = 0;
++    unsigned char unavailable = 0;
++    unsigned int broken = 0;
++    unsigned int closed = 0;
++    unsigned int beach_closed = 0;
++    flag_3c0 = 0;
++    bool state_sent = false;
++    bool failed = false;
++    int weather = variable_weather->lighting_2c38;
++    flags_3d2[1] = flags_3d2[2] ? 1 : 0;
++    if (!(window_deactivation_state->value_16c > 0.0f))
++        return false;
++    if (CheckIllness() || CheckDeparture())
++        return true;
++    float desires[26];
++    std::memcpy(desires, weather_values_16c, sizeof(desires));
++    if (CheckBedtime())
++        return true;
++    if (variable_weather->lighting_2c38 != 1)
++    {
++        char prefix[256];
++        switch (variable_weather->lighting_2c38)
++        {
++        case 0:
++            std::strcpy(prefix, "GUEST_THOUGHT_WEATHER_HEAT_WAVE");
++            break;
++        case 2:
++            std::strcpy(prefix, "GUEST_THOUGHT_WEATHER_OVERCAST");
++            break;
++        case 3:
++            std::strcpy(prefix, "GUEST_THOUGHT_WEATHER_LIGHTRAIN");
++            break;
++        case 4:
++            std::strcpy(prefix, "GUEST_THOUGHT_WEATHER_HEAVYRAIN");
++            break;
++        case 5:
++            std::strcpy(prefix, "GUEST_THOUGHT_WEATHER_THUNDERSTORM");
++            break;
++        }
++        ShowThought(RandomGuestThought(prefix));
++    }
++    unsigned int desire;
++    float strength;
++    auto state = [&](unsigned int next)
++    {
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, next);
++        screen_mode_commands->QueueCommand(&command);
++    };
++    auto set_duration = [&](unsigned int offset)
++    {
++        word_31c = static_cast<int>(static_cast<long double>(GuestTemplateWord(guest_f4, offset)) * strength);
++        if (word_31c < 1)
++            word_31c = 1;
++    };
++    auto find_feature = [&]()
++    {
++        ScreenPoint tile = TilePosition();
++        world_guest_selected_building = world_subsystem_4c->FindGuestFeature(&world_guest_selected_feature,
++            &found,
++            &broken,
++            &closed,
++            &beach_closed,
++            &unavailable,
++            guest_f4->word_1c4,
++            desire,
++            &tile,
++            word_390,
++            id_28);
++    };
++    auto variety_penalty = [&](unsigned int count)
++    {
++        long double value = static_cast<long double>(happiness_values_1d4[4]) - static_cast<long double>(count) * guest_f4->ranges_200[24][1];
++        happiness_values_1d4[4] = static_cast<float>(value);
++        if (!(value >= 0.0f))
++            happiness_values_1d4[4] = 0.0f;
++    };
++    auto failure_thought = [&]()
++    {
++        char prefix[256];
++        if (closed || broken)
++        {
++            std::strcpy(prefix, closed ? "GUEST_THOUGHT_CLOSED_" : "GUEST_THOUGHT_BROKEN_");
++            std::strcat(prefix, variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60->name_04);
++        }
++        else if (beach_closed)
++        {
++            std::strcpy(prefix, "GUEST_THOUGHT_BEACH_CLOSED_");
++            WorldBuildingEntity* building = variable_world->FindObject(world_guest_selected_building)->AsBuilding();
++            std::strcat(prefix, variable_catalog->FeatureKey(building->building_60->features_1fc[world_guest_selected_feature]));
++        }
++        else
++        {
++            std::strcpy(prefix, "GUEST_THOUGHT_MISSED_");
++            std::strcat(prefix, world_guest_desire_names[desire]);
++        }
++        ShowThought(RandomGuestThought(prefix));
++    };
++    auto failed_activity = [&]()
++    {
++        failed = true;
++        PerformAction50();
++        found = 1;
++        flag_3ac = 1;
++        flag_38d = 1;
++        Unknown28("WalkAnimation", 0, -1, 1, 0);
++        if (flag_38c)
++        {
++            flag_38c = 0;
++            if (!(word_3cc > 0.0f))
++            {
++                resource_3c8->word_14 = 0;
++                word_3cc = 2.0f;
++            }
++        }
++        else if (flag_38d)
++        {
++            flag_38d = 0;
++            if (!(word_3cc > 0.0f))
++            {
++                resource_3c8->word_14 = 1;
++                word_3cc = 2.0f;
++            }
++        }
++        ScreenWorldPosition position = Position();
++        animation_sounds->PlayOpinion(guest_f4->word_1c4 == 0 ? 8 : 15, &position);
++    };
++    auto go_home = [&]()
++    {
++        ShowThought(RandomGuestThought("GUEST_THOUGHT_GO_HOME"));
++        state(41);
++    };
++    while (!found)
++    {
++        strength = 0.0f;
++        broken = closed = beach_closed = 0;
++        desire = 26;
++        bool select_largest = true;
++        if (flags_3d2[2] && !flag_228 && word_390 != word_338)
++        {
++            VariableBuilding* building = variable_catalog->Building(word_394);
++            const char* type = variable_catalog->FeatureTypeName(variable_catalog->FeatureType(building->features_1fc[words_1f0[12]]));
++            for (unsigned int i = 0; i < 26; ++i)
++                if (std::strcmp(type, world_guest_desire_names[i]) == 0)
++                {
++                    desire = i;
++                    break;
++                }
++            select_largest = desire == 0;
++            flags_3d2[2] = 0;
++        }
++        else
++            flag_228 = 0;
++        if (select_largest)
++        {
++            long double largest = strength;
++            for (unsigned int i = 0; i < 26; ++i)
++                if (!(largest >= desires[i]) && (i != 14 || desires[14] > 0.6f))
++                {
++                    desire = i;
++                    largest = desires[i];
++                }
++            strength = static_cast<float>(largest);
++        }
++        if (desire == 26)
++        {
++            if (traits_138[11] > 0.0f)
++                state(57);
++            else
++                StartupFatal("Please Give Me A Desire To Walk!!!!! %s", name_06);
++            return true;
++        }
++        desires[desire] = 0.0f;
++        if (desire == 16)
++        {
++            if (weather < 4)
++            {
++                ScreenWorldPosition position = RandomWalkPosition();
++                walkpoints_22c[0].x = position.x;
++                walkpoints_22c[0].y = position.y;
++                words_1f0[12] = 0;
++                word_250 = 0;
++                flag_228 = 1;
++                found = 1;
++                set_duration(0x360);
++                word_98 = -1;
++            }
++            continue;
++        }
++        if (desire == 12)
++        {
++            if (!(window_deactivation_state->render_value_160 < 18.0f) || !(window_deactivation_state->render_value_160 > 9.0f) || (weather != 0 && weather != 1))
++                continue;
++            find_feature();
++            unsigned int count = broken + closed + beach_closed;
++            if (count)
++                variety_penalty(count);
++            if (!found || (std::rand() % 4 == 0 && window_deactivation_state->render_value_160 < 18.0f && window_deactivation_state->render_value_160 > 9.0f))
++            {
++                ScreenWorldPosition* points = FindWaterWalkpoints();
++                walkpoints_22c[0].x = points[1].x;
++                walkpoints_22c[0].y = points[1].y;
++                found = 1;
++                flag_228 = 1;
++                walkpoints_22c[1].x = walkpoints_22c[1].y = 0.0f;
++                walkpoints_22c[2].x = walkpoints_22c[2].y = 0.0f;
++                words_1f0[12] = 1;
++                word_250 = 0;
++                word_98 = -1;
++            }
++            set_duration(0x350);
++            continue;
++        }
++        if (desire == 13)
++        {
++            if (weather >= 4)
++                continue;
++            find_feature();
++            unsigned int count = broken + closed + beach_closed;
++            if (!found && count)
++            {
++                variety_penalty(count);
++                if (!unavailable)
++                {
++                    failure_thought();
++                    failed_activity();
++                    long double value = static_cast<long double>(happiness_values_1d4[4]) - guest_f4->ranges_200[24][1];
++                    happiness_values_1d4[4] = static_cast<float>(value);
++                    if (!(value >= 0.0f))
++                        happiness_values_1d4[4] = 0.0f;
++                    else if (value > 1.0f)
++                        happiness_values_1d4[4] = 1.0f;
++                    weather_values_16c[13] = 0.0f;
++                    continue;
++                }
++            }
++            if (!failed && (!found || (std::rand() % 4 == 0 && window_deactivation_state->render_value_160 < 18.0f && window_deactivation_state->render_value_160 > 9.0f))
++                && window_deactivation_state->render_value_160 < 18.0f && window_deactivation_state->render_value_160 > 9.0f)
++            {
++                found = 0;
++                ScreenWorldPosition* points = FindBeachWalkpoints(Position());
++                if (points)
++                {
++                    walkpoints_22c[0].x = points[0].x;
++                    walkpoints_22c[0].y = points[0].y;
++                    walkpoints_22c[1].x = points[1].x;
++                    walkpoints_22c[1].y = points[1].y;
++                    walkpoints_22c[2].x = walkpoints_22c[2].y = 0.0f;
++                    word_250 = 0;
++                    word_98 = -1;
++                    flag_228 = 1;
++                    words_1f0[12] = 2;
++                    found = 1;
++                    set_duration(0x354);
++                }
++                else
++                {
++                    char prefix[256];
++                    std::sprintf(prefix, "GUEST_THOUGHT_MISSED_%s", world_guest_desire_names[13]);
++                    ShowThought(RandomGuestThought(prefix));
++                    failed_activity();
++                    happiness_values_1d4[4] -= guest_f4->ranges_200[24][1];
++                    static const unsigned int opinions[] = { 0, 1, 2, 3, 5, 6 };
++                    for (unsigned int index : opinions)
++                        happiness_values_1d4[index] -= guest_f4->ranges_200[20 + index][1];
++                    weather_values_16c[13] = 0.0f;
++                    for (float& value : happiness_values_1d4)
++                        if (!(value >= 0.0f))
++                            value = 0.0f;
++                }
++            }
++            continue;
++        }
++        if (desire == 19)
++        {
++            words_1f0[12] = 3;
++            flag_228 = 1;
++            word_98 = -1;
++            state_sent = true;
++            found = 1;
++            state(31);
++            continue;
++        }
++        if (desire == 18)
++        {
++            words_1f0[12] = 8;
++            flag_228 = 1;
++            word_98 = -1;
++            found = 1;
++            state(51);
++            ShowThought(RandomGuestThought("GUEST_THOUGHT_HEAD_ACT_VANDALISING"));
++            return true;
++        }
++        if (desire == 25 || desire == 23)
++        {
++            weather_values_16c[desire] = 0.0f;
++            continue;
++        }
++        if (desire == 20)
++        {
++            flag_228 = 1;
++            words_1f0[12] = 4;
++            found = 1;
++            state(34);
++            ShowThought(RandomGuestThought("GUEST_THOUGHT_HEAD_ACT_FLIRTING"));
++            return found;
++        }
++        if ((desire == 15 && weather > 2) || (desire == 6 && weather > 3))
++        {
++            broken = closed = beach_closed = 0;
++            found = 0;
++            unavailable = 1;
++        }
++        else
++        {
++            find_feature();
++            if (closed + beach_closed * 2 + broken)
++                variety_penalty(beach_closed + closed + broken);
++            if (found)
++            {
++                SetActivityDuration(desire, strength);
++                continue;
++            }
++        }
++        if (desire == 14)
++        {
++            found = 1;
++            flag_228 = 1;
++            words_1f0[12] = 6;
++            for (unsigned int i = 0; i < 4; ++i)
++                TilePosition();
++            word_250 = 0;
++            walkpoints_22c[0] = Position();
++            walkpoints_22c[1] = Position();
++            word_98 = -1;
++            continue;
++        }
++        if (desire == 10 && !window_deactivation_state->CanBuild(variable_catalog->FindBuilding("SOUVSHOP")))
++        {
++            go_home();
++            return true;
++        }
++        if (!unavailable)
++        {
++            failure_thought();
++            failed_activity();
++            if (desire < 26)
++                happiness_values_1d4[4] -= guest_f4->ranges_200[24][1];
++            if (!(happiness_values_1d4[4] >= 0.0f))
++                happiness_values_1d4[4] = 0.0f;
++            else if (happiness_values_1d4[4] > 1.0f)
++                happiness_values_1d4[4] = 1.0f;
++            if (desire == 4)
++                weather_values_16c[4] = 0.0f;
++        }
++        else
++        {
++            if (desire == 4)
++                ShowThought(RandomGuestThought("GUEST_THOUGHT_HEADACHE_LATER"));
++            unavailable = 0;
++        }
++        if (desire == 10)
++        {
++            go_home();
++            return true;
++        }
++        if (desire != 4)
++            weather_values_16c[desire] = 0.0f;
++    }
++    if (failed)
++        return true;
++    if (!state_sent)
++        state(13);
++    if (flag_228)
++    {
++        char prefix[256];
++        int variant = std::rand() % 3 + 1;
++        switch (words_1f0[12])
++        {
++        case 0:
++            std::strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_STROLL");
++            break;
++        case 1:
++            std::strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_SUNBATHE");
++            break;
++        case 2:
++            std::strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_SWIMMING");
++            break;
++        case 3:
++            std::strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_FIGHTING");
++            break;
++        case 4:
++            std::strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_FLIRTING");
++            break;
++        case 6:
++            std::strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_PEEING");
++            break;
++        case 8:
++            std::strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_VANDALISING");
++            break;
++        }
++        char key[256];
++        std::sprintf(key, "%s%d", prefix, variant);
++        ShowThought(screen_text_lookup->LookupTextIndex(key));
++        last_activities_3b8[word_3bc] = 1;
++        last_ids_3b0[word_3bc] = words_1f0[12];
++        word_3bc = (word_3bc - 1) & 1;
++        if (words_1f0[12] == 2 || words_1f0[12] == 6 || !state_sent)
++            SendGuestWalk(id_28, 8, walkpoints_22c[0]);
++        if (desire != 20 && desire != 19 && desire != 14 && desire != 16 && desire != 13 && desire != 12)
++            happiness_values_1d4[4] += guest_f4->ranges_200[24][0];
++    }
++    else
++    {
++        last_activities_3b8[word_3bc] = 0;
++        last_ids_3b0[word_3bc] = world_guest_selected_building;
++        word_3bc = (word_3bc - 1) & 1;
++        word_390 = world_guest_selected_building;
++        word_394 = variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60->id_00;
++        words_1f0[12] = world_guest_selected_feature;
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 9, 1, world_guest_selected_building);
++        screen_mode_commands->QueueCommand(&command);
++        WorldBuildingEntity* building = variable_world->FindObject(word_390)->AsBuilding();
++        char prefix[256];
++        std::sprintf(prefix, "GUEST_THOUGHT_HEAD_%s", variable_catalog->FeatureKey(building->building_60->features_1fc[words_1f0[12]]));
++        ShowThought(RandomGuestThought(prefix));
++        if (desire != 20 && desire != 19)
++            happiness_values_1d4[4] += guest_f4->ranges_200[24][0];
++    }
++    if (desire == 14 && strength > 0.8f)
++    {
++        std::strcpy(walk_animation_268, "D_WALK_DESPERATE");
++        std::strcpy(text_290, std::rand() % 2 ? "D_STAND_DESPERATE1" : "D_STAND_DESPERATE2");
++    }
++    else if (std::strcmp(walk_animation_268, "D_WALK_DESPERATE") == 0)
++    {
++        std::strcpy(walk_animation_268, "D_WALK_NORMAL");
++        std::strcpy(text_290, "D_STAND_NORMAL");
++    }
++    ScreenWorldPosition position = Position();
++    keyline_state_44->SetAnimation(walk_animation_268, window_deactivation_state->time_158, &position);
++    std::strcpy(current_animation_2b9, walk_animation_268);
++    if (!(happiness_values_1d4[4] >= 0.0f))
++        happiness_values_1d4[4] = 0.0f;
++    else if (happiness_values_1d4[4] > 1.0f)
++        happiness_values_1d4[4] = 1.0f;
++    return found;
++}
+diff --git a/src/startup_world_guest_building_walk_actions.cpp b/src/startup_world_guest_building_walk_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e39141fa7fe1c0205239b7fcfb4d17fe642a7062
+--- /dev/null
++++ b/src/startup_world_guest_building_walk_actions.cpp
+@@ -0,0 +1,66 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_game_file.h"
++
++static ScreenWorldPosition GuestBuildingWalkPosition(ScreenWorldPosition origin, float span,
++    float half_span, unsigned int allowed, unsigned int blocked)
++{
++    int attempts = 0;
++    ScreenWorldPosition position;
++    for (;;)
++    {
++        float x = static_cast<float>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * span - half_span);
++        long double y = static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * span - half_span;
++        position = { static_cast<float>(static_cast<long double>(origin.x) + x),
++            static_cast<float>(y + origin.y),
++            origin.z };
++        bool accepted = false;
++        if (CurrentScreenTerrain()->CellAt(position)->flags_48 & allowed)
++            accepted = !(CurrentScreenTerrain()->CellAt(position)->flags_48 & blocked);
++        if ((accepted || attempts >= 1000) && position.x < 4096.0f && position.x >= 0.0f
++            && position.y < 8192.0f && position.y >= 0.0f)
++            break;
++        ++attempts;
++    }
++    if (attempts == 1000)
++    {
++        position.x = origin.x;
++        position.y = origin.y;
++    }
++    return position;
++}
++
++// FUNCTION: BEACHLIFE 0x00474e60
++void WorldGuestEntity::PerformAction53()
++{
++    unsigned int count;
++    VariableEntity** offices = variable_world->FindNamed("COMPLAINTHUT", &count);
++    if (count)
++    {
++        ScreenWorldPosition position = GuestBuildingWalkPosition(offices[0]->AsBuilding()->StaffPosition(), 100.0f, 50.0f, 0x10000080, 0x8010);
++        walkpoints_22c[0].x = position.x;
++        walkpoints_22c[0].y = position.y;
++        word_250 = 0;
++        SendGuestWalk(id_28, 8, position);
++    }
++    else
++        StartupFatal("No Complaints office Found");
++}
++
++// FUNCTION: BEACHLIFE 0x00475090
++void WorldGuestEntity::PerformAction78()
++{
++    unsigned int count;
++    VariableEntity** buildings = variable_world->FindNamed("WHARF", &count);
++    if (!count)
++        buildings = variable_world->FindNamed("BUSSTOP", &count);
++    if (count)
++    {
++        ScreenWorldPosition position = GuestBuildingWalkPosition(buildings[0]->AsBuilding()->StaffPosition(), 200.0f, 100.0f, 0x10000082, 0x8000);
++        walkpoints_22c[0].x = position.x;
++        walkpoints_22c[0].y = position.y;
++        word_250 = 0;
++        SendGuestWalk(id_28, 8, position);
++    }
++    else
++        StartupFatal("No Wharf or Bustop Found");
++}
+diff --git a/src/startup_world_guest_complaints.cpp b/src/startup_world_guest_complaints.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..63b011ed131a743fa8810ea2b1b6c6068e96593a
+--- /dev/null
++++ b/src/startup_world_guest_complaints.cpp
+@@ -0,0 +1,52 @@
++#include "startup_world_guest_action_helpers.h"
++
++// GLOBAL: BEACHLIFE 0x005badf4
++static float guest_no_accommodation_path_time;
++
++// FUNCTION: BEACHLIFE 0x00472e40
++void WorldGuestEntity::PerformAction85()
++{
++    ShowThought(RandomGuestThought("GUEST_THOUGHT_DETAINED_FOR_NOTHING"));
++    for (float& happiness : happiness_values_1d4)
++    {
++        long double value = static_cast<long double>(happiness) - 0.4f;
++        happiness = static_cast<float>(value);
++        if (!(value >= 0.0f))
++            happiness = 0.0f;
++    }
++    resource_3c8->word_14 = 1;
++    word_3cc = 2.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x00472f50
++void WorldGuestEntity::PerformAction86()
++{
++    ShowThought(RandomGuestThought("GUEST_THOUGHT_DETAINED"));
++}
++
++// FUNCTION: BEACHLIFE 0x00473010
++void WorldGuestEntity::PerformAction80()
++{
++    ShowThought(RandomGuestThought("GUEST_THOUGHT_NO_PATH_ACCOM"));
++    if (static_cast<long double>(window_deactivation_state->time_158) - guest_no_accommodation_path_time > 20.0f)
++    {
++        const unsigned short* text = screen_text_lookup->LookupText("TICKER_MSG_GUEST_NO_PATH_TO_ACCOM");
++        window_deactivation_state->ticker_30->AddMessage(text, id_28, 5);
++    }
++    resource_3c8->word_14 = 1;
++    word_3cc = 2.0f;
++    guest_no_accommodation_path_time = window_deactivation_state->time_158;
++}
++
++// FUNCTION: BEACHLIFE 0x00473a80
++void WorldGuestEntity::PerformAction61()
++{
++    int variant = std::rand() % 3 + 1;
++    char key[100];
++    if (!flag_228)
++        std::sprintf(key, "TICKER_MSG_NO_PATH_%s%d", variable_catalog->Building(word_394)->name_04, variant);
++    else
++        std::sprintf(key, "%s%d", words_1f0[12] == 2 ? "TICKER_MSG_NO_PATH_SEA" : "TICKER_MSG_NO_PATH_BEACH", variant);
++    const unsigned short* text = screen_text_lookup->LookupText(key);
++    window_deactivation_state->ticker_30->AddMessage(text, id_28, 5);
++}
+diff --git a/src/startup_world_guest_destination_actions.cpp b/src/startup_world_guest_destination_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c985066ba6ad0f53495e038f6f17cdd53afa1f09
+--- /dev/null
++++ b/src/startup_world_guest_destination_actions.cpp
+@@ -0,0 +1,114 @@
++#include "startup_world_guest_action_helpers.h"
++
++// FUNCTION: BEACHLIFE 0x00479970
++void WorldGuestEntity::PerformAction27()
++{
++    word_338 = -1;
++    if (days_344)
++    {
++        unsigned int count;
++        VariableEntity** buildings = variable_world->FindNamed("HOTEL", &count);
++        WorldBuildingEntity* hotel = buildings[0]->AsBuilding();
++        if (hotel->AvailableRooms())
++        {
++            word_338 = hotel->id_28;
++            ++hotel->word_1a0;
++        }
++        else
++        {
++            buildings = variable_world->FindNamed("ACCOMBLK", &count);
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                WorldBuildingEntity* building = buildings[i]->AsBuilding();
++                if (building->AvailableRooms() && !building->FlagAt00460310()
++                    && !building->FlagAt00460340() && building->FlagAt00460370())
++                {
++                    word_338 = building->id_28;
++                    ++building->word_1a0;
++                    break;
++                }
++            }
++        }
++    }
++    if (word_338 == static_cast<unsigned int>(-1))
++    {
++        days_344 = 0;
++        word_348 = MotionWord(21.0f);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0047ab40
++void WorldGuestEntity::PerformAction49()
++{
++    unsigned int count;
++    VariableEntity** buildings = variable_world->FindNamed("FIRSTAID", &count);
++    if (count)
++    {
++        unsigned int index = static_cast<unsigned int>(std::rand()) % count;
++        if (buildings[index]->FlagAt00460370())
++        {
++            ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 9, 1, buildings[index]->id_28);
++            screen_mode_commands->QueueCommand(&command);
++            return;
++        }
++    }
++    if (word_338 != static_cast<unsigned int>(-1))
++    {
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 9, 1, word_338);
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else
++    {
++        unhappy_departure_3d0 = 1;
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 41);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00478d70
++void WorldGuestEntity::PerformAction69()
++{
++    WorldBuildingEntity* building = variable_world->FindObject(word_32c)->AsBuilding();
++    unsigned int rotation = building->keyline_state_44->word_18;
++    unsigned int height = building->building_60->footprint_y_1d8;
++    unsigned int width = building->building_60->footprint_x_1d4;
++    ScreenPoint tile = building->TilePosition();
++    ScreenMapPosition position = CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, width, height, { -95.0f, -63.0f }, rotation);
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 8, static_cast<int>(position.x), static_cast<int>(position.y));
++    screen_mode_commands->QueueCommand(&command);
++}
++
++// FUNCTION: BEACHLIFE 0x00479620
++void WorldGuestEntity::PerformAction83()
++{
++    ScreenPoint offset;
++    switch (keyline_state_44->word_18)
++    {
++    case 0:
++        offset = { 0, -14 };
++        break;
++    case 1:
++        offset = { 11, -12 };
++        break;
++    case 2:
++        offset = { 15, 0 };
++        break;
++    case 3:
++        offset = { 11, 10 };
++        break;
++    case 4:
++        offset = { 0, 16 };
++        break;
++    case 5:
++        offset = { -10, 10 };
++        break;
++    case 6:
++        offset = { -15, 0 };
++        break;
++    case 7:
++        offset = { -10, -10 };
++        break;
++    }
++    ScreenWorldPosition position = { x_30 + offset.x, y_34 + offset.y, z_38 };
++    variable_world->FindObject(word_32c)->SetWorldPosition(&position);
++}
+diff --git a/src/startup_world_guest_experience_action.cpp b/src/startup_world_guest_experience_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a87b8a4623825c75d37a84208a1ed61fc8ef0265
+--- /dev/null
++++ b/src/startup_world_guest_experience_action.cpp
+@@ -0,0 +1,96 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_animation_sound.h"
++
++// FUNCTION: BEACHLIFE 0x0046b850
++void WorldGuestEntity::PerformAction66()
++{
++    if (!flag_3ac)
++    {
++        WorldBuildingEntity* building;
++        if (!flag_228)
++            building = variable_world->FindObject(word_390)->AsBuilding();
++        words_398[0] = MotionWord(static_cast<float>(static_cast<long double>(MotionFloat(words_398[4])) + MotionFloat(words_398[2]) + MotionFloat(words_398[1]) + MotionFloat(words_398[3])));
++        auto thought = [&](const char* prefix, bool feature)
++        {
++            char text[256];
++            std::strcpy(text, prefix);
++            if (feature)
++                std::strcat(text, variable_catalog->FeatureKey(variable_catalog->Building(word_394)->features_1fc[words_1f0[12]]));
++            unsigned int index = RandomGuestThought(text);
++            ShowThought(index);
++            if (building)
++                building->AddThought(screen_text_lookup->LookupText(index), id_28);
++        };
++        if (!(MotionFloat(words_398[4]) >= 0.0f))
++        {
++            if (!flag_228)
++                thought("GUEST_THOUGHT_TOILET_STENCH", false);
++            flag_38d = 1;
++            if (flag_38c)
++            {
++                flag_38c = 0;
++                if (!(word_3cc > 0.0f))
++                {
++                    resource_3c8->word_14 = 0;
++                    word_3cc = 2.0f;
++                }
++            }
++            else
++            {
++                flag_38d = 0;
++                if (!(word_3cc > 0.0f))
++                {
++                    resource_3c8->word_14 = 1;
++                    word_3cc = 2.0f;
++                }
++            }
++        }
++        else if (!(MotionFloat(words_398[2]) > 0.0f) && !(MotionFloat(words_398[3]) > 0.0f))
++        {
++            if (!flag_228)
++                thought("GUEST_THOUGHT_NICE_", true);
++        }
++        else
++        {
++            if (!flag_228)
++                thought("GUEST_THOUGHT_EXCELLENT_", true);
++            flag_38c = 0;
++            if (!(word_3cc > 0.0f))
++            {
++                resource_3c8->word_14 = 0;
++                word_3cc = 2.0f;
++            }
++            ScreenWorldPosition position = Position();
++            animation_sounds->PlayOpinion(guest_f4->word_1c4 == 0 ? 7 : 14, &position);
++        }
++        happiness_values_1d4[1] += MotionFloat(words_398[2]);
++        long double safety = static_cast<long double>(happiness_values_1d4[6]) + MotionFloat(words_398[3]);
++        happiness_values_1d4[6] = static_cast<float>(safety);
++        if (happiness_values_1d4[1] > 1.0f)
++            happiness_values_1d4[1] = 1.0f;
++        if (safety > 1.0f)
++            happiness_values_1d4[6] = 1.0f;
++    }
++    else
++        flag_3ac = 0;
++    for (unsigned int i = 1; i < 5; ++i)
++        words_398[i] = 0;
++    if (!flag_228)
++    {
++        if (MotionFloat(words_398[0]) > MotionFloat(word_378))
++        {
++            word_370 = word_390;
++            flag_36c = 0;
++            word_374 = word_394;
++            word_378 = words_398[0];
++        }
++        else if (!(MotionFloat(words_398[0]) >= MotionFloat(word_388)))
++        {
++            word_380 = word_390;
++            flag_37c = 0;
++            word_384 = word_394;
++            word_388 = words_398[0];
++        }
++    }
++    words_398[0] = 0;
++}
+diff --git a/src/startup_world_guest_feature_reactions.cpp b/src/startup_world_guest_feature_reactions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b8eb156457bf3c813d79bb8520387c9d8b16a8a
+--- /dev/null
++++ b/src/startup_world_guest_feature_reactions.cpp
+@@ -0,0 +1,318 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_animation_sound.h"
++#include <cstring>
++
++extern const char* world_guest_desire_names[26];
++
++static const char* GuestFeatureName(WorldGuestEntity* guest, WorldBuildingEntity* building)
++{
++    return variable_catalog->FeatureTypeName(variable_catalog->FeatureType(building->building_60->features_1fc[guest->words_1f0[12]]));
++}
++
++static unsigned int GuestFeatureThought(WorldGuestEntity* guest, WorldBuildingEntity* building, const char* prefix)
++{
++    char key[256];
++    const char* feature = variable_catalog->FeatureKey(building->building_60->features_1fc[guest->words_1f0[12]]);
++    std::sprintf(key, "%s%s%d", prefix, feature, std::rand() % 3 + 1);
++    unsigned int thought = screen_text_lookup->LookupTextIndex(key);
++    guest->ShowThought(thought);
++    return thought;
++}
++
++static void GuestNegativeBubble(WorldGuestEntity* guest)
++{
++    guest->flag_38d = 1;
++    if (guest->flag_38c)
++    {
++        guest->flag_38c = 0;
++        if (!(guest->word_3cc > 0.0f))
++        {
++            guest->resource_3c8->word_14 = 0;
++            guest->word_3cc = 2.0f;
++        }
++    }
++    else
++    {
++        guest->flag_38d = 0;
++        if (!(guest->word_3cc > 0.0f))
++        {
++            guest->resource_3c8->word_14 = 1;
++            guest->word_3cc = 2.0f;
++        }
++    }
++}
++
++static void GuestNegativeOpinion(WorldGuestEntity* guest)
++{
++    ScreenWorldPosition position = guest->Position();
++    animation_sounds->PlayOpinion(guest->guest_f4->word_1c4 == 0 ? 8 : 15, &position);
++}
++
++static void GuestQueuePenalty(WorldGuestEntity* guest)
++{
++    float penalty = guest->guest_f4->ranges_200[21][1];
++    guest->words_398[0] = MotionWord(static_cast<float>(static_cast<long double>(MotionFloat(guest->words_398[0])) - penalty));
++    guest->happiness_values_1d4[1] -= penalty;
++    penalty = guest->guest_f4->ranges_200[24][1];
++    guest->words_398[0] = MotionWord(static_cast<float>(static_cast<long double>(MotionFloat(guest->words_398[0])) - penalty));
++    long double happiness = static_cast<long double>(guest->happiness_values_1d4[4]) - penalty;
++    guest->happiness_values_1d4[4] = static_cast<float>(happiness);
++    if (!(happiness >= 0.0f))
++        guest->happiness_values_1d4[4] = 0.0f;
++    if (!(guest->happiness_values_1d4[1] >= 0.0f))
++        guest->happiness_values_1d4[4] = 0.0f;
++    guest->lightning_state_318 = 0;
++    guest->PerformAction31();
++    ScreenModeCommand command = MakeGuestCommand(guest->id_28, guest->id_28, 3, 0, 12);
++    screen_mode_commands->QueueCommand(&command);
++}
++
++// FUNCTION: BEACHLIFE 0x004733f0
++void WorldGuestEntity::PerformAction76()
++{
++    guest_value_254 = guest_f4->start_drunk_39c;
++    weather_values_16c[14] = guest_f4->start_bladder_390;
++    guest_value_360 = guest_f4->start_ill_3a0;
++    guest_value_34c = guest_f4->start_sunburn_3a4;
++    weather_values_16c[18] = guest_f4->start_vandalise_3a8;
++    weather_values_16c[19] = guest_f4->start_fight_394;
++    weather_values_16c[20] = guest_f4->start_flirt_398;
++}
++
++// FUNCTION: BEACHLIFE 0x00474520
++void WorldGuestEntity::PerformAction5()
++{
++    VariableEntity* entity = word_98 != static_cast<unsigned int>(-1) ? variable_world->FindObject(word_98) : 0;
++    if (word_98 != static_cast<unsigned int>(-1) && entity->kind_2c == 2)
++    {
++        const char* feature = GuestFeatureName(this, entity->AsBuilding());
++        for (unsigned int i = 0; i < 26; ++i)
++        {
++            if (std::strcmp(feature, world_guest_desire_names[i]) != 0)
++                continue;
++            weather_values_16c[i] = 0.0f;
++            if (i == 14)
++            {
++                std::strcpy(walk_animation_268, "D_WALK_NORMAL");
++                std::strcpy(text_290, "D_STAND_NORMAL");
++            }
++            else if ((i == 1 || i == 5 || i == 8 || i == 9) && state_3c != 14)
++            {
++                long double value = static_cast<long double>(weather_values_16c[14]) + 0.1f;
++                weather_values_16c[14] = static_cast<float>(value);
++                if (value > 1.0f)
++                    weather_values_16c[14] = 1.0f;
++            }
++            if (i == 12 || i == 13 || i == 16)
++                flag_228 = 0;
++        }
++    }
++    word_3d8 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00476e70
++void WorldGuestEntity::PerformAction31()
++{
++    if (word_98 == static_cast<unsigned int>(-1))
++        return;
++    VariableEntity* entity = variable_world->FindObject(word_98);
++    if (entity->kind_2c != 2)
++        return;
++    const char* feature = GuestFeatureName(this, entity->AsBuilding());
++    for (unsigned int i = 0; i < 26; ++i)
++    {
++        if (std::strcmp(feature, world_guest_desire_names[i]) != 0)
++            continue;
++        if (flags_3d2[1])
++        {
++            weather_values_16c[i] = 0.0f;
++            if (i == 12 || i == 13 || i == 16)
++                flag_228 = 0;
++            else if (i != 14)
++            {
++                long double value = static_cast<long double>(happiness_values_1d4[4]) - guest_f4->ranges_200[24][1];
++                happiness_values_1d4[4] = static_cast<float>(value);
++                if (!(value >= 0.0f))
++                    happiness_values_1d4[4] = 0.0f;
++            }
++        }
++        else
++            flags_3d2[2] = 1;
++        break;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00472cf0
++void WorldGuestEntity::PerformAction87()
++{
++    GuestFeatureThought(this, variable_world->FindObject(word_98)->AsBuilding(), "GUEST_THOUGHT_BEACH_CLOSED_");
++    resource_3c8->word_14 = 1;
++    word_3cc = 2.0f;
++    happiness_values_1d4[4] -= guest_f4->ranges_200[24][1];
++}
++
++// FUNCTION: BEACHLIFE 0x0046e3e0
++void WorldGuestEntity::PerformAction91()
++{
++    WorldBuildingEntity* building = variable_world->FindObject(word_98)->AsBuilding();
++    unsigned int thought = GuestFeatureThought(this, building, "GUEST_THOUGHT_NICE_");
++    if (building)
++        building->AddThought(screen_text_lookup->LookupText(thought), id_28);
++}
++
++// FUNCTION: BEACHLIFE 0x00476820
++void WorldGuestEntity::PerformAction67()
++{
++    WorldBuildingEntity* building = variable_world->FindObject(word_98)->AsBuilding();
++    float cost = building->FeatureValue(words_1f0[12]);
++    long double duration = building->FeatureDuration(words_1f0[12]);
++    long double ratio = duration > 0.0f ? cost / duration : static_cast<long double>(cost) + 1.0f;
++    if (!(ratio >= ranges_100[3][0]))
++    {
++        building = variable_world->FindObject(word_98)->AsBuilding();
++        float change = guest_f4->ranges_200[23][0];
++        words_398[1] = MotionWord(change);
++        long double value = static_cast<long double>(happiness_values_1d4[3]) + change;
++        happiness_values_1d4[3] = static_cast<float>(value);
++        if (value > 1.0f)
++            happiness_values_1d4[3] = 1.0f;
++        flag_38c = 0;
++        if (!(word_3cc > 0.0f))
++        {
++            resource_3c8->word_14 = 0;
++            word_3cc = 2.0f;
++        }
++        unsigned int thought = GuestFeatureThought(this, building, "GUEST_THOUGHT_CHEAP_");
++        building->AddThought(screen_text_lookup->LookupText(thought), id_28);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00476be0
++void WorldGuestEntity::PerformAction34()
++{
++    WorldBuildingEntity* building = variable_world->FindObject(word_98)->AsBuilding();
++    long double duration = building->FeatureDuration(words_1f0[12]);
++    float cost = MotionFloat(word_fc->words[6]);
++    long double ratio = duration > 0.0f ? cost / duration : static_cast<long double>(cost) + 1.0f;
++    if (ratio > ranges_100[3][1])
++    {
++        float penalty = guest_f4->ranges_200[23][1];
++        happiness_values_1d4[3] -= penalty;
++        words_398[0] = MotionWord(static_cast<float>(static_cast<long double>(MotionFloat(words_398[0])) - penalty));
++        flag_3ac = 1;
++        GuestNegativeBubble(this);
++        GuestNegativeOpinion(this);
++        unsigned int thought = GuestFeatureThought(this, building, "GUEST_THOUGHT_EXSPENSIVE_");
++        building->AddThought(screen_text_lookup->LookupText(thought), id_28);
++    }
++    if (!(happiness_values_1d4[3] >= 0.0f))
++        happiness_values_1d4[3] = 0.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x00476a10
++void WorldGuestEntity::PerformAction77()
++{
++    words_398[0] = MotionWord(static_cast<float>(static_cast<long double>(MotionFloat(words_398[0])) - 1.4f));
++    flag_3ac = 1;
++    GuestNegativeBubble(this);
++    GuestNegativeOpinion(this);
++    ShowThought(RandomGuestThought("GUEST_THOUGHT_DEMOLISHED_ASLEEP"));
++    for (float& happiness : happiness_values_1d4)
++    {
++        long double value = static_cast<long double>(happiness) - 0.2f;
++        happiness = static_cast<float>(value);
++        if (!(value >= 0.0f))
++            happiness = 0.0f;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00473140
++void WorldGuestEntity::PerformAction82()
++{
++    WorldBuildingEntity* building = variable_world->FindObject(word_390)->AsBuilding();
++    char key[256];
++    std::sprintf(key, "GUEST_THOUGHT_FULL_%s%d", building->building_60->name_04, std::rand() % 3 + 1);
++    unsigned int thought = screen_text_lookup->LookupTextIndex(key);
++    ShowThought(thought);
++    flag_3ac = 1;
++    GuestNegativeBubble(this);
++    GuestNegativeOpinion(this);
++    building->AddThought(screen_text_lookup->LookupText(thought), id_28);
++    GuestQueuePenalty(this);
++}
++
++// FUNCTION: BEACHLIFE 0x004746c0
++void WorldGuestEntity::PerformAction35()
++{
++    if (word_98 == static_cast<unsigned int>(-1))
++        return;
++    VariableEntity* entity = variable_world->FindObject(word_98);
++    if (entity->kind_2c != 2)
++        return;
++    WorldBuildingEntity* building = entity->AsBuilding();
++    unsigned int count = building->building_60->word_1f8 ? building->building_queue_16c->Count() : static_cast<unsigned int>(static_cast<int>(ranges_100[1][0]));
++    if (!(static_cast<long double>(count) >= ranges_100[1][0]))
++    {
++        words_398[2] = MotionWord(static_cast<float>(static_cast<long double>(MotionFloat(words_398[2])) + guest_f4->ranges_200[21][0]));
++        lightning_state_318 = 1;
++    }
++    else if (static_cast<long double>(count) > ranges_100[1][1])
++    {
++        unsigned int thought = GuestFeatureThought(this, building, "GUEST_THOUGHT_LONG_");
++        flag_3ac = 1;
++        GuestNegativeBubble(this);
++        GuestNegativeOpinion(this);
++        building->AddThought(screen_text_lookup->LookupText(thought), id_28);
++        GuestQueuePenalty(this);
++    }
++    else
++        lightning_state_318 = 1;
++    if (!(happiness_values_1d4[1] >= 0.0f))
++        happiness_values_1d4[1] = 0.0f;
++    else if (happiness_values_1d4[1] > 1.0f)
++        happiness_values_1d4[1] = 1.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x00474a50
++void WorldGuestEntity::PerformAction36()
++{
++    if (word_98 == static_cast<unsigned int>(-1))
++        return;
++    VariableEntity* entity = variable_world->FindObject(word_98);
++    if (entity->kind_2c != 2)
++        return;
++    WorldBuildingEntity* building = entity->AsBuilding();
++    long double safety = static_cast<long double>(3 - building->power_state_33c) * 0.33f;
++    if (!(safety >= ranges_100[6][0]))
++    {
++        unsigned int thought = GuestFeatureThought(this, building, "GUEST_THOUGHT_UNSAFE_");
++        building->AddThought(screen_text_lookup->LookupText(thought), id_28);
++        GuestNegativeBubble(this);
++        GuestNegativeOpinion(this);
++        float penalty = guest_f4->ranges_200[26][1];
++        words_398[0] = MotionWord(static_cast<float>(static_cast<long double>(MotionFloat(words_398[0])) - penalty));
++        happiness_values_1d4[6] -= penalty;
++        flag_3ac = 1;
++        lightning_state_318 = 0;
++        PerformAction31();
++        unsigned int state = 12;
++        if (word_338 == word_98)
++        {
++            unhappy_departure_3d0 = 1;
++            ShowThought(RandomGuestThought("GUEST_THOUGHT_THIS_IS_CRAP"));
++            state = 41;
++        }
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, state);
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else
++    {
++        lightning_state_318 = 1;
++        if (safety > ranges_100[6][1])
++            words_398[3] = MotionWord(guest_f4->ranges_200[26][0]);
++    }
++    if (!(happiness_values_1d4[6] >= 0.0f))
++        happiness_values_1d4[6] = 0.0f;
++    else if (happiness_values_1d4[6] > 1.0f)
++        happiness_values_1d4[6] = 1.0f;
++}
+diff --git a/src/startup_world_guest_land_walkpoints.cpp b/src/startup_world_guest_land_walkpoints.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..edc69fd289f49d629956f07aeb11feb520caa724
+--- /dev/null
++++ b/src/startup_world_guest_land_walkpoints.cpp
+@@ -0,0 +1,125 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_game_file.h"
++#include <cmath>
++
++// FUNCTION: BEACHLIFE 0x00469520
++ScreenWorldPosition* WorldGuestEntity::FindLandWalkpoints(ScreenWorldPosition position)
++{
++    static ScreenWorldPosition result[2];
++    ScreenTerrainGrid* terrain = screen_terrain_grid;
++    ScreenTerrainRouteNode* selected = terrain->routes_20;
++    unsigned int count;
++    ScreenPoint* points = selected->Points(&count);
++    auto neighbours_of = [&](ScreenPoint tile, ScreenPoint* neighbours)
++    {
++        for (int i = 0; i < 4; ++i)
++            terrain->Step(tile.x, tile.y, i * 2, &neighbours[i]);
++    };
++    auto unblocked = [&](ScreenPoint tile, const ScreenPoint* neighbours)
++    {
++        if (terrain->cells_0c[terrain->TileIndex(tile.x, tile.y)].flags_48 & 0x10)
++            return false;
++        for (int i = 0; i < 4; ++i)
++            if (terrain->cells_0c[terrain->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48 & 0x10)
++                return false;
++        return true;
++    };
++    unsigned int index = 0;
++    for (;;)
++    {
++        ScreenPoint neighbours[4];
++        neighbours_of(points[index], neighbours);
++        if (unblocked(points[index], neighbours))
++            break;
++        if (++index == count)
++        {
++            selected = selected->Next();
++            if (!selected)
++                StartupFatal("I hope This Never Happens ( Cant Get Sea Entry Point)");
++            points = selected->Points(&count);
++            index = 0;
++        }
++    }
++    ScreenPoint nearest = points[index++];
++    auto nearer = [&](ScreenPoint candidate, bool first_route)
++    {
++        ScreenPoint neighbours[4];
++        neighbours_of(candidate, neighbours);
++        ScreenWorldPosition candidate_position = terrain->TileOrigin(candidate.x, candidate.y);
++        float x = static_cast<float>(static_cast<long double>(candidate_position.x) - position.x);
++        float y = static_cast<float>(static_cast<long double>(candidate_position.y) - position.y);
++        float z = candidate_position.z;
++        ScreenWorldPosition nearest_position = terrain->TileOrigin(nearest.x, nearest.y);
++        long double nearest_x = static_cast<long double>(nearest_position.x) - position.x;
++        long double nearest_y = static_cast<long double>(nearest_position.y) - position.y;
++        long double nearest_z = nearest_position.z;
++        long double distance;
++        long double nearest_distance;
++        if (first_route)
++        {
++            distance = std::sqrt(static_cast<long double>(x) * x + static_cast<long double>(z) * z + static_cast<long double>(y) * y);
++            nearest_distance = std::sqrt(nearest_x * nearest_x + nearest_z * nearest_z + nearest_y * nearest_y);
++        }
++        else
++        {
++            distance = std::sqrt(static_cast<long double>(z) * z + static_cast<long double>(y) * y + static_cast<long double>(x) * x);
++            nearest_distance = std::sqrt(nearest_z * nearest_z + nearest_y * nearest_y + nearest_x * nearest_x);
++        }
++        return nearest_distance > distance && unblocked(candidate, neighbours);
++    };
++    for (; index < count; ++index)
++        if (nearer(points[index], true))
++            nearest = points[index];
++    for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
++    {
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (nearer(points[i], false))
++            {
++                nearest = points[i];
++                selected = route;
++            }
++        }
++    }
++    if (selected)
++    {
++        ScreenPoint lower = selected->Bounds()[0];
++        ScreenPoint upper = selected->Bounds()[3];
++        float width = static_cast<float>(upper.x - lower.x);
++        float height = static_cast<float>(upper.y - lower.y);
++        ScreenPoint tile;
++        bool first_attempt = true;
++        for (;;)
++        {
++            tile.x = lower.x + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * width);
++            tile.y = lower.y + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * height);
++            ScreenPoint neighbours[4];
++            for (int i = 0; i < 4; ++i)
++            {
++                terrain->Step(tile.x, tile.y, i * 2, &neighbours[i]);
++                // Retail retries check only one step in direction six.
++                if (first_attempt || i != 3)
++                    terrain->Step(neighbours[i].x, neighbours[i].y, i * 2, &neighbours[i]);
++            }
++            first_attempt = false;
++            unsigned int flags = terrain->cells_0c[terrain->TileIndex(tile.x, tile.y)].flags_48;
++            if (!(flags & 4) || (flags & 0x10))
++                continue;
++            bool valid = true;
++            for (int i = 0; i < 4; ++i)
++            {
++                if (!(terrain->cells_0c[terrain->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48 & 0xc))
++                {
++                    valid = false;
++                    break;
++                }
++            }
++            if (valid)
++                break;
++        }
++        result[0] = terrain->TilePosition(nearest.x, nearest.y, 4);
++        result[1] = terrain->TileOrigin(tile.x, tile.y);
++    }
++    return result;
++}
+diff --git a/src/startup_world_guest_litter_action.cpp b/src/startup_world_guest_litter_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2af3361ccfe4cba0e27c949312c29e18c69d1578
+--- /dev/null
++++ b/src/startup_world_guest_litter_action.cpp
+@@ -0,0 +1,33 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x00477fb0
++void WorldGuestEntity::PerformAction17()
++{
++    const char* litter;
++    if (std::strcmp(current_animation_2b9, "D_STAND_DROPDRINK") == 0 || std::strcmp(current_animation_2b9, "D_WALK_DRINK") == 0)
++        litter = std::rand() % 2 ? "Littercancrush" : "Littercanstand";
++    else if (std::strcmp(current_animation_2b9, "D_STAND_DROPICE") == 0)
++        litter = "Littericesplat";
++    else if (std::strcmp(current_animation_2b9, "D_STAND_DROPBURGER") == 0 || std::strcmp(current_animation_2b9, "D_WALK_BURGER") == 0)
++        litter = "Litterburger";
++    else if (std::strcmp(current_animation_2b9, "D_STAND_VOMIT") == 0)
++        litter = "LitterPuke";
++    else
++        return;
++    ScreenSceneryPlacement placement;
++    placement.word_4c = -2;
++    std::strcpy(placement.name, litter);
++    if (!window_deactivation_state->flag_385)
++        return;
++    std::strcpy(placement.model, "Litter");
++    placement.tile = TilePosition();
++    placement.enabled = 1;
++    placement.rotation = std::rand() % 8;
++    flag_330 = 1;
++    word_334 = window_deactivation_state->time_158;
++    word_3dc = 1;
++    word_3e0 = window_deactivation_state->time_158;
++    ScreenModeCommand command = MakeGuestCommand(-2, -2, 0, 0, 1);
++    screen_mode_commands->QueuePlacement(&command, &placement);
++}
+diff --git a/src/startup_world_guest_nearby_actions.cpp b/src/startup_world_guest_nearby_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..319db98463df316e5e9bde0166b4ddd914d8686f
+--- /dev/null
++++ b/src/startup_world_guest_nearby_actions.cpp
+@@ -0,0 +1,55 @@
++#include "startup_world_guest_action_helpers.h"
++
++// FUNCTION: BEACHLIFE 0x00473760
++void WorldGuestEntity::PerformAction60()
++{
++    unsigned int count;
++    ScreenPoint tile = TilePosition();
++    VariableEntity** nearby = variable_world->Nearby(tile.x, tile.y, 1, &count);
++    for (unsigned int i = 0; i < count; ++i)
++    {
++        if (nearby[i]->kind_2c == 3)
++        {
++            ScreenModeCommand command = MakeGuestCommand(id_28, nearby[i]->id_28, 73, 0, 3);
++            screen_mode_commands->QueueCommand(&command);
++        }
++    }
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 84);
++    screen_mode_commands->QueueDelayed(&command, 2.0f);
++}
++
++// FUNCTION: BEACHLIFE 0x004739e0
++void WorldGuestEntity::PerformAction63()
++{
++    unsigned int count;
++    ScreenPoint tile = TilePosition();
++    VariableEntity** nearby = variable_world->Nearby(tile.x, tile.y, 1, &count);
++    for (unsigned int i = 0; i < count; ++i)
++    {
++        if (nearby[i]->kind_2c == 3 && static_cast<WorldGuestEntity*>(nearby[i])->guest_f4->word_1c4 == 0)
++        {
++            ScreenModeCommand command = MakeGuestCommand(id_28, nearby[i]->id_28, 73, 0, 4);
++            screen_mode_commands->QueueCommand(&command);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00478d10
++void WorldGuestEntity::PerformAction88()
++{
++    SendGuestWalk(id_28, 11, walkpoints_22c[0]);
++}
++
++// FUNCTION: BEACHLIFE 0x0046fcb0
++void WorldGuestEntity::PerformAction62()
++{
++    ScreenWorldPosition* positions = FindLandWalkpoints({ x_30, y_34, z_38 });
++    walkpoints_22c[0].x = positions[0].x;
++    walkpoints_22c[0].y = positions[0].y;
++    walkpoints_22c[1].x = positions[1].x;
++    walkpoints_22c[1].y = positions[1].y;
++    walkpoints_22c[2].x = 0.0f;
++    walkpoints_22c[2].y = 0.0f;
++    word_250 = 0;
++    SendGuestWalk(id_28, 8, walkpoints_22c[0]);
++}
+diff --git a/src/startup_world_guest_needs_update.cpp b/src/startup_world_guest_needs_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a38da53cbab3a1460d22ba4424cbc3f49155fc0a
+--- /dev/null
++++ b/src/startup_world_guest_needs_update.cpp
+@@ -0,0 +1,36 @@
++#include "startup_world_guest_action_helpers.h"
++
++// FUNCTION: BEACHLIFE 0x0046ab00
++void WorldGuestEntity::PerformAction0()
++{
++    float decay[4];
++    std::memcpy(decay, guest_f4->unknown_1f0, sizeof(decay));
++    guest_value_254 = static_cast<float>(static_cast<long double>(guest_value_254) - static_cast<long double>(window_deactivation_state->value_16c) * decay[0]);
++    weather_values_16c[20] = static_cast<float>(static_cast<long double>(weather_values_16c[20]) - static_cast<long double>(window_deactivation_state->value_16c) * decay[2]);
++    weather_values_16c[19] = static_cast<float>(static_cast<long double>(weather_values_16c[19]) - static_cast<long double>(window_deactivation_state->value_16c) * decay[1]);
++    weather_values_16c[18] = static_cast<float>(static_cast<long double>(weather_values_16c[18]) - static_cast<long double>(window_deactivation_state->value_16c) * decay[3]);
++    if (!(guest_value_254 >= 0.0f))
++        guest_value_254 = 0.0f;
++    for (unsigned int index : { 20u, 19u, 18u })
++        if (!(weather_values_16c[index] >= 0.0f))
++            weather_values_16c[index] = 0.0f;
++    static const unsigned int desires[] = { 1, 2, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16 };
++    for (unsigned int i = 0; i < 12; ++i)
++        weather_values_16c[desires[i]] = static_cast<float>(static_cast<long double>(window_deactivation_state->value_16c) * traits_138[i] + weather_values_16c[desires[i]]);
++    for (float& desire : weather_values_16c)
++        if (desire > 1.0f)
++            desire = 1.0f;
++    if (!flag_364)
++    {
++        if (guest_value_360 > 0.99f)
++        {
++            flag_364 = 1;
++            guest_value_360 = 1.0f;
++            return;
++        }
++        long double illness = static_cast<long double>(guest_value_360) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->value_38c;
++        guest_value_360 = static_cast<float>(illness);
++        if (!(illness >= 0.0f))
++            guest_value_360 = 0.0f;
++    }
++}
+diff --git a/src/startup_world_guest_observation_action.cpp b/src/startup_world_guest_observation_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..34857364de93698c297a79d019cb6eaec8bdcb54
+--- /dev/null
++++ b/src/startup_world_guest_observation_action.cpp
+@@ -0,0 +1,120 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_animation_sound.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x00473bb0
++void WorldGuestEntity::PerformAction59()
++{
++    unsigned int event = word_fc->words[4];
++    if (event == 5 && guest_f4->word_1c4)
++        return;
++    if ((state_3c == 22 || state_3c == 54 || state_3c == 55 || state_3c == 23) && event < 8)
++        return;
++    char prefix[256];
++    float cleanliness = guest_f4->ranges_200[25][1];
++    float appearance = guest_f4->ranges_200[20][1];
++    float safety = guest_f4->ranges_200[26][1];
++    float queues = guest_f4->ranges_200[21][1];
++    float entertainment = guest_f4->ranges_200[22][0];
++    auto negative_memory = [&](long double comparison, long double stored)
++    {
++        if (!(comparison >= MotionFloat(word_388)))
++        {
++            flag_37c = 1;
++            word_380 = word_fc->words[4];
++            word_388 = MotionWord(static_cast<float>(stored));
++        }
++    };
++    auto negative_bubble = [&]()
++    {
++        resource_3c8->word_14 = 1;
++        word_3cc = 2.0f;
++    };
++    switch (event)
++    {
++    case 0:
++        happiness_values_1d4[5] -= cleanliness;
++        negative_bubble();
++        std::strcpy(prefix, "GUEST_THOUGHT_TOILET_STENCH");
++        negative_memory(-static_cast<long double>(cleanliness), -static_cast<long double>(cleanliness));
++        break;
++    case 1:
++        happiness_values_1d4[5] -= cleanliness;
++        negative_bubble();
++        std::strcpy(prefix, "GUEST_THOUGHT_VOMIT");
++        negative_memory(-static_cast<long double>(cleanliness), cleanliness);
++        break;
++    case 2:
++        happiness_values_1d4[5] -= cleanliness;
++        happiness_values_1d4[0] -= appearance;
++        happiness_values_1d4[6] -= safety;
++        negative_bubble();
++        std::strcpy(prefix, "GUEST_THOUGHT_VANDALISM");
++        negative_memory(-static_cast<long double>(cleanliness) - appearance - safety,
++            -static_cast<long double>(cleanliness) - appearance - safety);
++        break;
++    case 3:
++        happiness_values_1d4[6] -= safety;
++        negative_bubble();
++        std::strcpy(prefix, "GUEST_THOUGHT_FIGHT");
++        negative_memory(-static_cast<long double>(safety), -static_cast<long double>(safety));
++        break;
++    case 4:
++    case 5:
++        happiness_values_1d4[2] += entertainment;
++        resource_3c8->word_14 = 0;
++        word_3cc = 2.0f;
++        std::strcpy(prefix, event == 4 ? "GUEST_THOUGHT_TOPLESS" : "GUEST_THOUGHT_WET_T_SHIRT");
++        if (entertainment > MotionFloat(word_378))
++        {
++            flag_36c = 1;
++            word_370 = word_fc->words[4];
++            word_378 = MotionWord(entertainment);
++        }
++        break;
++    case 6:
++    case 7:
++    {
++        happiness_values_1d4[1] -= queues;
++        negative_bubble();
++        std::strcpy(prefix, event == 6 ? "GUEST_THOUGHT_QUEUE_CLOSED_" : "GUEST_THOUGHT_QUEUE_BROKEN_");
++        WorldBuildingEntity* building = variable_world->FindObject(word_32c)->AsBuilding();
++        std::strcat(prefix, variable_catalog->FeatureKey(building->building_60->features_1fc[words_1f0[12]]));
++        negative_memory(-static_cast<long double>(queues), -static_cast<long double>(queues));
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 12);
++        screen_mode_commands->QueueCommand(&command);
++        break;
++    }
++    case 8:
++    case 9:
++    case 10:
++        happiness_values_1d4[6] = static_cast<float>(static_cast<long double>(happiness_values_1d4[6]) - static_cast<long double>(safety) * 2);
++        negative_bubble();
++        std::strcpy(prefix, event == 8 ? "GUEST_THOUGHT_EATEN" : event == 9 ? "GUEST_THOUGHT_RUN_FROM_SHARK"
++                                                                            : "GUEST_THOUGHT_DROWNED");
++        negative_memory(-static_cast<long double>(safety) * 2, -static_cast<long double>(queues) * 2);
++        break;
++    }
++    ShowThought(RandomGuestThought(prefix));
++    for (float& happiness : happiness_values_1d4)
++    {
++        if (happiness > 1.0f)
++            happiness = 1.0f;
++        else if (!(happiness >= 0.0f))
++            happiness = 0.0f;
++    }
++    event = word_fc->words[4];
++    if (!guest_f4->word_1c4)
++    {
++        if (event <= 6)
++        {
++            ScreenWorldPosition position = Position();
++            animation_sounds->PlayOpinion(event, &position);
++        }
++    }
++    else if (event <= 3 || event == 6)
++    {
++        ScreenWorldPosition position = Position();
++        animation_sounds->PlayOpinion(event == 6 ? 13 : event + 9, &position);
++    }
++}
+diff --git a/src/startup_world_guest_opinion_update.cpp b/src/startup_world_guest_opinion_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0bea8fcbae6dd130c047d8c87638dd553c8c660
+--- /dev/null
++++ b/src/startup_world_guest_opinion_update.cpp
+@@ -0,0 +1,95 @@
++#include "startup_world_guest_action_helpers.h"
++
++extern unsigned int world_guest_group_counts[2][3];
++extern unsigned int world_guest_count;
++
++static void StoreGuestOpinion(float& destination, long double value, bool upper)
++{
++    destination = static_cast<float>(value);
++    if (upper)
++    {
++        if (value > 1.0f)
++            destination = 1.0f;
++    }
++    else if (!(value >= 0.0f))
++        destination = 0.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x0046a470
++void WorldGuestEntity::PerformAction1()
++{
++    if (state_3c != 40 && state_3c != 41 && state_3c != 38 && state_3c != 37)
++    {
++        if (!(happiness_values_1d4[4] >= 1.0e-6f))
++        {
++            static const unsigned int opinions[] = { 0, 2, 5, 1, 6, 3 };
++            static const unsigned int penalties[] = { 20, 22, 25, 21, 26, 23 };
++            for (unsigned int i = 0; i < 6; ++i)
++                StoreGuestOpinion(happiness_values_1d4[opinions[i]],
++                    static_cast<long double>(happiness_values_1d4[opinions[i]]) - static_cast<long double>(guest_f4->ranges_200[penalties[i]][1]) * (i < 3 ? 0.0833333358168602f : 0.04f),
++                    false);
++        }
++        else
++        {
++            float appearance = window_deactivation_state->value_448;
++            if (appearance > ranges_100[0][1])
++                StoreGuestOpinion(happiness_values_1d4[0], static_cast<long double>(guest_f4->ranges_200[20][0]) + happiness_values_1d4[0], true);
++            else if (!(appearance >= ranges_100[0][0]))
++                StoreGuestOpinion(happiness_values_1d4[0], static_cast<long double>(happiness_values_1d4[0]) - guest_f4->ranges_200[20][1], false);
++            float preferred;
++            std::memcpy(&preferred, guest_f4->unknown_1e0 + 4, sizeof(preferred));
++            int group = !(static_cast<long double>(preferred) >= 0.26) ? 0 : static_cast<long double>(preferred) > 0.74 ? 2
++                                                                                                                        : 1;
++            long double proportion = static_cast<long double>(world_guest_group_counts[1 - static_cast<int>(guest_f4->word_1c4)][group]) / static_cast<int>(world_guest_count);
++            if (!(proportion >= ranges_100[2][0]))
++                StoreGuestOpinion(happiness_values_1d4[2], static_cast<long double>(happiness_values_1d4[2]) - guest_f4->ranges_200[22][1], false);
++            else if (proportion > ranges_100[2][1])
++                StoreGuestOpinion(happiness_values_1d4[2], static_cast<long double>(guest_f4->ranges_200[22][0]) + happiness_values_1d4[2], true);
++            long double litter = window_deactivation_state->litter_440;
++            if (litter > ranges_100[5][1])
++                StoreGuestOpinion(happiness_values_1d4[5], static_cast<long double>(happiness_values_1d4[5]) - guest_f4->ranges_200[25][1], false);
++            else if (!(litter >= ranges_100[5][0]))
++                StoreGuestOpinion(happiness_values_1d4[5], static_cast<long double>(guest_f4->ranges_200[25][0]) + happiness_values_1d4[5], true);
++        }
++        long double total = 0.0f;
++        for (float opinion : happiness_values_1d4)
++            total += opinion;
++        happiness_264 = static_cast<float>(total * 0.1428571492433548f);
++        char diagnostic[512];
++        std::sprintf(diagnostic, "A guest has got tooooo happy for the code to be happy you must be a master at this game, Opinions are Beauty %f Crowding %f Totty %f Price %f Variety %f Cleanliness %f Safety %f", happiness_values_1d4[0], happiness_values_1d4[1], happiness_values_1d4[2], happiness_values_1d4[3], happiness_values_1d4[4], happiness_values_1d4[5], happiness_values_1d4[6]);
++        if (std::strcmp(walk_animation_268, "D_WALK_DESPERATE") != 0)
++        {
++            const char* walk;
++            const char* stand;
++            bool slow;
++            if (!(happiness_264 >= 0.4f) && !(guest_value_254 >= 0.5f))
++            {
++                walk = "d_walk_sad";
++                stand = "d_stand_sad";
++                slow = true;
++            }
++            else if (guest_value_254 >= 0.5f)
++            {
++                walk = "d_walk_drunk";
++                stand = "d_stand_drunk";
++                slow = true;
++            }
++            else
++            {
++                walk = "d_walk_normal";
++                stand = "d_stand_normal";
++                slow = false;
++            }
++            if (std::strcmp(walk_animation_268, walk) != 0)
++            {
++                std::strcpy(walk_animation_268, walk);
++                std::strcpy(text_290, stand);
++                long double speed = slow ? std::rand() % 7 - 3 + 30.0L : std::rand() % 15 - 7 + 60.0L;
++                speed_80 = static_cast<float>(speed);
++                acceleration_7c = static_cast<float>(speed * 0.3333333432674408f);
++            }
++        }
++    }
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 63);
++    screen_mode_commands->QueueDelayed(&command, 2.0f);
++}
+diff --git a/src/startup_world_guest_palette_actions.cpp b/src/startup_world_guest_palette_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a79ebce864f402fdf9998a64927355bdda644896
+--- /dev/null
++++ b/src/startup_world_guest_palette_actions.cpp
+@@ -0,0 +1,47 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x004775e0
++void WorldGuestEntity::PerformAction7()
++{
++    bool fixed_palette = guest_f4->unknown_1e0[8] != 0;
++    int count;
++    if (guest_f4->word_1c4 == 1)
++        count = 4;
++    else
++        count = _stricmp(keyline_state_44->name, "FAT_BLOKE") == 0 ? 3 : 6;
++    int palette = (std::rand() % count) * 10;
++    palette += fixed_palette ? 1 : std::rand() % 7 + 2;
++    if (palette >= keyline_state_44->record->palette_count)
++        palette = keyline_state_44->record->palette_count - 1;
++    keyline_state_44->word_1c = palette;
++}
++
++// FUNCTION: BEACHLIFE 0x00478570
++void WorldGuestEntity::PerformAction20()
++{
++    if (!word_310)
++        return;
++    int palette;
++    if (std::strcmp(word_310->name, "LUGGAGE") == 0)
++    {
++        if (keyline_state_44->word_1c == keyline_state_44->record->palette_count - 1)
++            palette = word_310->record->palette_count - 1;
++        else
++            palette = std::rand() % (word_310->record->palette_count - 1);
++    }
++    else
++        palette = std::rand() % word_310->record->palette_count;
++    if (palette >= word_310->record->palette_count)
++        palette = word_310->record->palette_count - 1;
++    word_310->word_1c = palette;
++}
++
++// FUNCTION: BEACHLIFE 0x00479730
++void WorldGuestEntity::PerformAction25()
++{
++    ScreenWorldPosition other = variable_world->FindObject(word_32c)->Position();
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    variable_world->FindObject(word_32c)->keyline_state_44->FacePositions(position, other);
++    keyline_state_44->FacePositions(other, position);
++}
+diff --git a/src/startup_world_guest_path_failure_action.cpp b/src/startup_world_guest_path_failure_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..07713636b7bcbf74b96d2cf563fcee654336a2ca
+--- /dev/null
++++ b/src/startup_world_guest_path_failure_action.cpp
+@@ -0,0 +1,85 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cstring>
++
++static bool GuestPathLand(unsigned int flags)
++{
++    return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
++}
++
++// FUNCTION: BEACHLIFE 0x00476090
++void WorldGuestEntity::PerformAction50()
++{
++    ScreenPoint tile = TilePosition();
++    lightning_state_318 = 0;
++    if (state_3c == 58 && std::strcmp(walk_animation_268, "D_WALK_DESPERATE") == 0)
++        lightning_state_318 = 1;
++    ScreenPoint neighbors[8];
++    bool available[8];
++    unsigned int count = 0;
++    for (unsigned int i = 0; i < 8; ++i)
++    {
++        screen_terrain_grid->Step(tile.x, tile.y, i, &neighbors[i]);
++        available[i] = GuestPathLand(screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(neighbors[i].x, neighbors[i].y)].flags_48);
++        if (available[i])
++            ++count;
++    }
++    bool found = false;
++    if (count)
++    {
++        unsigned int choice = static_cast<unsigned int>(std::rand()) % count + 1;
++        unsigned int direction = 0;
++        for (unsigned int i = 0; choice; ++i)
++        {
++            if (available[i])
++            {
++                --choice;
++                direction = i;
++            }
++        }
++        ScreenPoint& target = neighbors[direction];
++        while (GuestPathLand(screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(target.x, target.y)].flags_48))
++        {
++            walkpoints_22c[0] = screen_terrain_grid->TileCenter(target.x, target.y);
++            found = true;
++            screen_terrain_grid->Step(target.x, target.y, direction, &target);
++        }
++        word_250 = 0;
++    }
++    if (found)
++    {
++        if (state_3c == 58)
++        {
++            flag_3ac = 1;
++            if (!flag_228)
++            {
++                char prefix[256];
++                std::sprintf(prefix, "GUEST_THOUGHT_NO_PATH_%s", variable_catalog->Building(word_394)->name_04);
++                unsigned int thought = RandomGuestThought(prefix);
++                ShowThought(thought);
++                VariableEntity* building = variable_world->FindObject(word_390);
++                if (building)
++                    building->AsBuilding()->AddThought(screen_text_lookup->LookupText(thought), id_28);
++            }
++            else
++                ShowThought(RandomGuestThought(words_1f0[12] == 2 ? "GUEST_THOUGHT_NO_PATH_SEA" : "GUEST_THOUGHT_NO_PATH_BEACH"));
++        }
++        SendGuestWalk(id_28, 8, walkpoints_22c[0]);
++    }
++    else
++    {
++        flag_3ac = 1;
++        ShowThought(RandomGuestThought("GUEST_THOUGHT_NO_PATH_ATALL"));
++        Unknown28("StandAnimation", 0, -1, 1, 0);
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 22);
++        command.words[5] = state_3c;
++        command.words[6] = 0;
++        screen_mode_commands->QueueDelayed(&command, 2.0f);
++    }
++    if (state_3c == 58)
++    {
++        long double happiness = static_cast<long double>(happiness_values_1d4[4]) - guest_f4->ranges_200[24][1];
++        happiness_values_1d4[4] = static_cast<float>(happiness);
++        if (!(happiness >= 0.0f))
++            happiness_values_1d4[4] = 0.0f;
++    }
++}
+diff --git a/src/startup_world_guest_pool_actions.cpp b/src/startup_world_guest_pool_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7187e4c6887ad2e4c10ce6982a2b85bec2fd15bd
+--- /dev/null
++++ b/src/startup_world_guest_pool_actions.cpp
+@@ -0,0 +1,121 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x004752e0
++void WorldGuestEntity::PerformAction54()
++{
++    int entry = std::rand() % 4;
++    WorldBuildingEntity* building = variable_world->FindObject(word_98)->AsBuilding();
++    int palette = keyline_state_44->word_1c;
++    unsigned int model;
++    if (_stricmp(keyline_state_44->name, "Gail") == 0)
++        model = 0;
++    else if (_stricmp(keyline_state_44->name, "Shaz") == 0)
++        model = 1;
++    else
++        model = _stricmp(keyline_state_44->name, "Fat_Bloke") == 0 ? 2 : 3;
++    screen_dialog_resources->Release(keyline_state_44);
++    static const char* const models[] = { "Gail_funpool", "Shaz_funpool", "Bob_funpool", "Chip_funpool" };
++    keyline_state_44 = screen_dialog_resources->Lookup(models[model]);
++    keyline_state_44->flag_29 = variable_world->keylines_34404;
++    if (palette >= keyline_state_44->record->palette_count)
++        palette = keyline_state_44->record->palette_count - 1;
++    keyline_state_44->word_1c = palette;
++    visible_40 = 0;
++    static const ScreenMapPosition offsets[4][4] = {
++        { { -43.0f, -526.0f }, { -104.0f, -368.0f }, { 173.0f, -434.0f }, { -26.0f, -584.0f } },
++        { { -25.0f, -506.0f }, { -89.0f, -388.0f }, { 157.0f, -452.0f }, { -36.0f, -564.0f } },
++        { { -49.0f, -484.0f }, { -53.0f, -466.0f }, { 35.0f, -464.0f }, { -59.0f, -518.0f } },
++        { { 108.0f, -414.0f }, { 18.0f, -528.0f }, { 9.0f, -564.0f }, { -141.0f, -444.0f } }
++    };
++    ScreenMapPosition offset;
++    unsigned int rotation = building->keyline_state_44->word_18;
++    if (rotation < 4)
++        offset = offsets[entry][rotation];
++    int direction = entry == 3 ? 6 : 5;
++    SetMovementPosition({ building->x_30 + offset.x, building->y_34 + offset.y, 0.0f });
++    keyline_state_44->SelectVariant((direction + (4 - static_cast<int>(rotation)) * 2) % 8);
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 57);
++    command.words[5] = 59;
++    command.words[6] = 0;
++    screen_mode_commands->QueueDelayed(&command, entry <= 1 ? 2.0f : 4.0f);
++    lightning_state_318 = entry + 1;
++}
++
++// FUNCTION: BEACHLIFE 0x00475750
++void WorldGuestEntity::PerformAction55()
++{
++    WorldBuildingEntity* building = variable_world->FindObject(word_98)->AsBuilding();
++    ScreenWorldPosition position = building->Position();
++    ScreenMapPosition offset;
++    if (lightning_state_318 <= 4)
++    {
++        int palette = keyline_state_44->word_1c;
++        unsigned int model;
++        if (_stricmp(keyline_state_44->name, "Gail_funpool") == 0)
++            model = 0;
++        else if (_stricmp(keyline_state_44->name, "Shaz_funpool") == 0)
++            model = 1;
++        else
++            model = _stricmp(keyline_state_44->name, "Bob_funpool") == 0 ? 2 : 3;
++        screen_dialog_resources->Release(keyline_state_44);
++        static const char* const models[] = { "Gail", "Shaz", "Fat_bloke", "Fit_Bloke" };
++        keyline_state_44 = screen_dialog_resources->Lookup(models[model]);
++        keyline_state_44->flag_29 = variable_world->keylines_34404;
++        if (palette >= keyline_state_44->record->palette_count)
++            palette = keyline_state_44->record->palette_count - 1;
++        keyline_state_44->word_1c = palette;
++        static const ScreenMapPosition offsets[4][4] = {
++            { { -63.0f, -532.0f }, { -106.0f, -360.0f }, { 190.0f, -444.0f }, { -20.0f, -626.0f } },
++            { { -55.0f, -516.0f }, { -90.0f, -382.0f }, { 174.0f, -464.0f }, { -38.0f, -594.0f } },
++            { { 8.0f, -446.0f }, { -21.0f, -428.0f }, { 73.0f, -504.0f }, { -100.0f, -560.0f } },
++            { { 52.0f, -412.0f }, { 17.0f, -474.0f }, { 63.0f, -568.0f }, { -141.0f, -502.0f } }
++        };
++        unsigned int rotation = building->keyline_state_44->word_18;
++        int direction;
++        if (lightning_state_318 >= 1 && lightning_state_318 <= 4)
++        {
++            if (rotation < 4)
++                offset = offsets[lightning_state_318 - 1][rotation];
++            direction = lightning_state_318 == 4 ? 6 : 5;
++        }
++        else
++            std::memcpy(&direction, &offset.x, sizeof(direction));
++        position = { building->x_30 + offset.x, building->y_34 + offset.y, 0.0f };
++        SetMovementPosition(position);
++        keyline_state_44->SelectVariant((direction + (4 - static_cast<int>(rotation)) * 2) % 8);
++    }
++    static const ScreenMapPosition walk_offsets[4] = {
++        { -132.0f, -476.0f }, { -73.0f, -278.0f }, { 251.0f, -458.0f }, { -52.0f, -654.0f }
++    };
++    static const ScreenMapPosition exit_offsets[4] = {
++        { -171.0f, -532.0f }, { -119.0f, -258.0f }, { 300.0f, -424.0f }, { -2.0f, -728.0f }
++    };
++    unsigned int rotation = building->keyline_state_44->word_18;
++    if (lightning_state_318 >= 1 && lightning_state_318 <= 4)
++    {
++        if (rotation < 4)
++            offset = walk_offsets[rotation];
++        long double x = static_cast<long double>(building->x_30) + offset.x;
++        float y = static_cast<float>(static_cast<long double>(building->y_34) + offset.y);
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 5, static_cast<int>(x), static_cast<int>(y));
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else if (lightning_state_318 == 5)
++    {
++        keyline_state_44->SelectVariant((15 - static_cast<int>(rotation) * 2) % 8);
++        if (rotation < 4)
++            offset = walk_offsets[rotation];
++        SetMovementPosition({ building->x_30 + offset.x, building->y_34 + offset.y, 0.0f });
++    }
++    else if (lightning_state_318 == 6)
++    {
++        if (rotation < 4)
++            offset = exit_offsets[rotation];
++        SetMovementPosition({ building->x_30 + offset.x, building->y_34 + offset.y, 0.0f });
++        ScreenPoint tile = building->TilePosition();
++        ScreenMapPosition destination = CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, building->building_60->footprint_x_1d4, building->building_60->footprint_y_1d8, { -222.0f, -576.0f }, building->keyline_state_44->word_18);
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 5, static_cast<int>(destination.x), static_cast<int>(destination.y));
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
+diff --git a/src/startup_world_guest_pool_walk_action.cpp b/src/startup_world_guest_pool_walk_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b2252beb56101d74fb873aa5ee81833f45da8a8c
+--- /dev/null
++++ b/src/startup_world_guest_pool_walk_action.cpp
+@@ -0,0 +1,69 @@
++#include "startup_world_guest_action_helpers.h"
++
++// FUNCTION: BEACHLIFE 0x00479a60
++void WorldGuestEntity::PerformAction41()
++{
++    VariableEntity* building = variable_world->FindObject(word_98);
++    building->TilePosition();
++    ScreenPoint tile = TilePosition();
++    unsigned int rotation = building->keyline_state_44->word_18;
++    if (lightning_state_318 == 0 || lightning_state_318 == 41)
++        keyline_state_44->SelectVariant((9 - static_cast<int>(rotation) * 2) % 8);
++    if (lightning_state_318 == 41)
++        return;
++    if (lightning_state_318 == 0 || lightning_state_318 == 40 || lightning_state_318 == 42 || lightning_state_318 == 100)
++    {
++        static const ScreenMapPosition offsets[2][4] = {
++            { { -33.0f, -440.0f }, { 25.0f, -420.0f }, { -96.0f, -354.0f }, { 102.0f, -362.0f } },
++            { { 15.0f, -502.0f }, { -18.0f, -486.0f }, { -144.0f, -328.0f }, { 147.0f, -332.0f } }
++        };
++        bool outside = lightning_state_318 == 42 || lightning_state_318 == 100;
++        long double x = building->x_30;
++        float y = building->y_34;
++        if (rotation < 4)
++        {
++            x += offsets[outside][rotation].x;
++            y = static_cast<float>(static_cast<long double>(y) + offsets[outside][rotation].y);
++        }
++        if (lightning_state_318 == 0 || lightning_state_318 == 42)
++        {
++            if (rotation < 4)
++                SetMovementPosition({ static_cast<float>(x), y, building->z_38 });
++        }
++        else
++        {
++            ScreenModeCommand command = MakeGuestCommand(id_28, id_28, outside ? 5 : 11, static_cast<int>(x), static_cast<int>(y));
++            screen_mode_commands->QueueCommand(&command);
++        }
++        return;
++    }
++    ScreenPoint neighbors[8];
++    bool available[8];
++    unsigned int count = 0;
++    for (unsigned int i = 0; i < 8; ++i)
++    {
++        screen_terrain_grid->Step(tile.x, tile.y, i, &neighbors[i]);
++        available[i] = (screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(neighbors[i].x, neighbors[i].y)].flags_48 & 0x40000000) != 0;
++        if (available[i])
++            ++count;
++    }
++    if (!count)
++        return;
++    unsigned int choice = static_cast<unsigned int>(std::rand()) % count + 1;
++    unsigned int direction = 0;
++    for (unsigned int i = 0; choice; ++i)
++    {
++        if (available[i])
++        {
++            --choice;
++            direction = i;
++        }
++    }
++    ScreenPoint& target = neighbors[direction];
++    while (screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(target.x, target.y)].flags_48 & 0x40000000)
++    {
++        walkpoints_22c[0] = screen_terrain_grid->TileCenter(target.x, target.y);
++        screen_terrain_grid->Step(target.x, target.y, direction, &target);
++    }
++    SendGuestWalk(id_28, 11, walkpoints_22c[0]);
++}
+diff --git a/src/startup_world_guest_random_actions.cpp b/src/startup_world_guest_random_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1469897e8878a77593dcf42f141c79edecc6056a
+--- /dev/null
++++ b/src/startup_world_guest_random_actions.cpp
+@@ -0,0 +1,113 @@
++#include "startup_world_guest_action_helpers.h"
++
++static ScreenWorldPosition RandomGuestWaterPosition(WorldGuestEntity* guest, bool round_y_offset)
++{
++    float radius;
++    std::memcpy(&radius, guest->guest_f4->unknown_1cc + 8, sizeof(radius));
++    float x = static_cast<float>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f
++                                     * (static_cast<long double>(radius) - -radius)
++                                 - radius);
++    std::memcpy(&radius, guest->guest_f4->unknown_1cc + 8, sizeof(radius));
++    long double y = static_cast<long double>(std::rand()) * 3.0518509447574615e-5f
++                      * (static_cast<long double>(radius) - -radius)
++                  - radius;
++    if (round_y_offset)
++        y = static_cast<float>(y);
++    ScreenWorldPosition position = {
++        static_cast<float>(static_cast<long double>(guest->x_30) + x),
++        static_cast<float>(static_cast<long double>(guest->y_34) + y),
++        guest->z_38
++    };
++    if (!(position.x >= 10.0f))
++        position.x = 10.0f;
++    else if (position.x > 4000.0f)
++        position.x = 4000.0f;
++    if (!(position.y >= 10.0f))
++        position.y = 10.0f;
++    else if (position.y > 8000.0f)
++        position.y = 8000.0f;
++    return position;
++}
++
++// FUNCTION: BEACHLIFE 0x0046f9d0
++void WorldGuestEntity::PerformAction4()
++{
++    ScreenWorldPosition position;
++    for (;;)
++    {
++        position = RandomGuestWaterPosition(this, true);
++        ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(position);
++        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
++        if ((flags & 4) && !(flags & 0x10))
++            break;
++    }
++    SendGuestWalk(id_28, 11, position);
++}
++
++// FUNCTION: BEACHLIFE 0x00478270
++void WorldGuestEntity::PerformAction18()
++{
++    ScreenWorldPosition position;
++    for (;;)
++    {
++        position = RandomGuestWaterPosition(this, false);
++        ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(position);
++        if (screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48 & 4)
++            break;
++    }
++    SetMovementPosition(position);
++}
++
++// FUNCTION: BEACHLIFE 0x00477720
++void WorldGuestEntity::PerformAction14()
++{
++    ScreenPoint tile = TilePosition();
++    WorldBuildingEntity* building = variable_world->FindObject(word_98)->AsBuilding();
++    ScreenPoint origin = building->TilePosition();
++    int width;
++    int height;
++    if (building->keyline_state_44->rotation_18 % 2)
++    {
++        width = building->building_60->footprint_y_1d8;
++        height = building->building_60->footprint_x_1d4;
++    }
++    else
++    {
++        width = building->building_60->footprint_x_1d4;
++        height = building->building_60->footprint_y_1d8;
++    }
++    tile.x += -8 - static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * -16.0f);
++    tile.y += -8 - static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * -16.0f);
++    bool outside = true;
++    for (;;)
++    {
++        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
++        if (flags & 0x800)
++        {
++            ScreenPoint current = TilePosition();
++            if ((tile.x != current.x || tile.y != current.y) && !outside && tile.x < 128 && tile.x >= 0 && tile.y >= 0)
++                break;
++        }
++        tile = TilePosition();
++        tile.x += -8 - static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * -16.0f);
++        tile.y += -8 - static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * -16.0f);
++        outside = true;
++        ScreenPoint row = origin;
++        for (int x = 0; x < width; ++x)
++        {
++            ScreenPoint point = row;
++            for (int y = 0; y < height; ++y)
++            {
++                if (tile.x == point.x && tile.y == point.y)
++                    outside = false;
++                screen_terrain_grid->Step(point.x, point.y, 0, &point);
++            }
++            screen_terrain_grid->Step(row.x, row.y, 6, &row);
++        }
++    }
++    ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile.x, tile.y, 4);
++    float x = static_cast<float>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * 20.0f + position.x - 10.0f);
++    long double y = static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * 20.0f + position.y - 10.0f;
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 8, static_cast<int>(x), static_cast<int>(y));
++    screen_mode_commands->QueueCommand(&command);
++}
+diff --git a/src/startup_world_guest_random_walk_position.cpp b/src/startup_world_guest_random_walk_position.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb645c760075269ad8b8399e22e301f8e133bf16
+--- /dev/null
++++ b/src/startup_world_guest_random_walk_position.cpp
+@@ -0,0 +1,18 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x00468990
++ScreenWorldPosition WorldGuestEntity::RandomWalkPosition()
++{
++    ScreenWorldPosition position;
++    for (;;)
++    {
++        position.x = static_cast<float>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * 3998.0f + 1.0f);
++        position.y = static_cast<float>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * 7998.0f + 1.0f);
++        position.z = 0.0f;
++        ScreenPoint tile = overlay_map->WorldToTile(&position);
++        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
++        if ((flags & 0x10000082) && !(flags & 0x8010))
++            return position;
++    }
++}
+diff --git a/src/startup_world_guest_rescue_action.cpp b/src/startup_world_guest_rescue_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f93e7360b35dd52115d4a1567480de2209a613c1
+--- /dev/null
++++ b/src/startup_world_guest_rescue_action.cpp
+@@ -0,0 +1,43 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cmath>
++
++// FUNCTION: BEACHLIFE 0x0046a2b0
++void WorldGuestEntity::PerformAction2()
++{
++    --word_258;
++    unsigned int count;
++    VariableEntity** lifeguards = variable_world->ByType(7, &count);
++    float nearest_distance = 100000000.0f;
++    unsigned int nearest = -2;
++    for (unsigned int i = 0; i < count; ++i)
++    {
++        VariableEntity* lifeguard = lifeguards[i];
++        if (word_258 == 0)
++        {
++            ScreenModeCommand command = MakeGuestCommand(id_28, lifeguard->id_28, 62);
++            screen_mode_commands->QueueCommand(&command);
++        }
++        long double x = static_cast<long double>(lifeguard->x_30) - x_30;
++        long double y = static_cast<long double>(lifeguard->y_34) - y_34;
++        long double z = static_cast<long double>(lifeguard->z_38) - z_38;
++        long double distance = std::sqrt(z * z + y * y + x * x);
++        if (!(distance >= nearest_distance))
++        {
++            nearest_distance = static_cast<float>(distance);
++            nearest = lifeguard->id_28;
++        }
++    }
++    if (word_258 == 0)
++    {
++        inactive_04 = 1;
++        PerformAction71();
++        if (word_338 != static_cast<unsigned int>(-1))
++            --variable_world->FindObject(word_338)->AsBuilding()->word_1a0;
++    }
++    if (nearest != static_cast<unsigned int>(-2) && !inactive_04)
++    {
++        unsigned int area = CurrentScreenTerrain()->InfluenceAreaAt({ x_30, y_34, z_38 });
++        ScreenModeCommand command = MakeGuestCommand(id_28, nearest, 53, 0, area);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
+diff --git a/src/startup_world_guest_route_actions.cpp b/src/startup_world_guest_route_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3afcf761441ae3a063502e1d4c4a1c6d063594f6
+--- /dev/null
++++ b/src/startup_world_guest_route_actions.cpp
+@@ -0,0 +1,107 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cmath>
++
++// FUNCTION: BEACHLIFE 0x00475e80
++void WorldGuestEntity::PerformAction38()
++{
++    unsigned char blocked[8] = { };
++    ScreenPoint points[8];
++    bool found = false;
++    for (ScreenPoint& point : points)
++        point = TilePosition();
++    for (;;)
++    {
++        bool stepped = false;
++        for (int i = 0; i < 8; ++i)
++        {
++            if (blocked[i])
++                continue;
++            ScreenPoint previous = points[i];
++            if (previous.x == 0 || previous.x == 127 || previous.y == 0)
++            {
++                blocked[i] = 1;
++                continue;
++            }
++            stepped = true;
++            screen_terrain_grid->Step(previous.x, previous.y, i, &points[i]);
++            ScreenPoint point = points[i];
++            unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(point.x, point.y)].flags_48;
++            if (flags & 0x8030)
++                blocked[i] = 1;
++            if (flags & 0x100)
++            {
++                found = true;
++                int y = static_cast<int>(screen_terrain_grid->TileCenter(previous.x, previous.y).y);
++                int x = static_cast<int>(screen_terrain_grid->TileCenter(previous.x, previous.y).x);
++                ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 11, x, y);
++                screen_mode_commands->QueueCommand(&command);
++                // Retail resumes at direction five after finding a shore tile.
++                i = 4;
++            }
++        }
++        if (!stepped)
++        {
++            SendGuestWalk(id_28, 11, *FindLandWalkpoints({ x_30, y_34, z_38 }));
++            return;
++        }
++        if (found)
++            return;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00478f80
++void WorldGuestEntity::PerformAction51()
++{
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    ScreenTerrainRouteNode* selected = screen_terrain_grid->routes_1c;
++    unsigned int count;
++    ScreenPoint* points = selected->Points(&count);
++    ScreenPoint nearest = points[0];
++    auto nearer = [&](ScreenPoint candidate)
++    {
++        ScreenWorldPosition candidate_position = screen_terrain_grid->TileOrigin(candidate.x, candidate.y);
++        float x = static_cast<float>(static_cast<long double>(candidate_position.x) - position.x);
++        float y = static_cast<float>(static_cast<long double>(candidate_position.y) - position.y);
++        float z = static_cast<float>(static_cast<long double>(candidate_position.z) - position.z);
++        ScreenWorldPosition nearest_position = screen_terrain_grid->TileOrigin(nearest.x, nearest.y);
++        long double nearest_x = static_cast<long double>(nearest_position.x) - position.x;
++        long double nearest_y = static_cast<long double>(nearest_position.y) - position.y;
++        long double nearest_z = static_cast<long double>(nearest_position.z) - position.z;
++        long double distance = std::sqrt(static_cast<long double>(z) * z + static_cast<long double>(y) * y + static_cast<long double>(x) * x);
++        return std::sqrt(nearest_z * nearest_z + nearest_y * nearest_y + nearest_x * nearest_x) > distance;
++    };
++    for (unsigned int i = 1; i < count; ++i)
++        if (nearer(points[i]))
++            nearest = points[i];
++    for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
++    {
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (nearer(points[i]))
++            {
++                nearest = points[i];
++                selected = route;
++            }
++        }
++    }
++    if (selected)
++    {
++        ScreenPoint lower = selected->Bounds()[0];
++        ScreenPoint upper = selected->Bounds()[3];
++        float width = static_cast<float>(upper.x - lower.x);
++        float height = static_cast<float>(upper.y - lower.y);
++        ScreenPoint tile;
++        for (;;)
++        {
++            tile.x = lower.x + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * width);
++            tile.y = lower.y + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * height);
++            unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
++            if ((flags & 2) && !(flags & 0x10) && tile.x < 128 && tile.x >= 0 && tile.y < 128 && tile.y >= 0)
++                break;
++        }
++        walkpoints_22c[0] = screen_terrain_grid->TileCenter(tile.x, tile.y);
++    }
++    word_250 = 0;
++    SendGuestWalk(id_28, 8, walkpoints_22c[0]);
++}
+diff --git a/src/startup_world_guest_scenery_actions.cpp b/src/startup_world_guest_scenery_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5411474812c8c9e99f68e5da2cf8dd8ea07fc341
+--- /dev/null
++++ b/src/startup_world_guest_scenery_actions.cpp
+@@ -0,0 +1,169 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cmath>
++
++static long double GuestSceneryDistance(WorldGuestEntity* guest, VariableEntity* scenery)
++{
++    ScreenPoint tile = guest->TilePosition();
++    int x = tile.x - scenery->TilePosition().x;
++    int y = tile.y - scenery->TilePosition().y;
++    int squared = static_cast<int>(static_cast<unsigned int>(x) * x + static_cast<unsigned int>(y) * y);
++    return std::sqrt(static_cast<long double>(squared));
++}
++
++// FUNCTION: BEACHLIFE 0x004797f0
++void WorldGuestEntity::PerformAction26()
++{
++    unsigned int count;
++    VariableEntity** bins = variable_world->FindNamed("Bin", &count);
++    float nearest = 160.0f;
++    unsigned int selected = count;
++    for (unsigned int i = 0; i < count; ++i)
++    {
++        WorldSceneryEntity* bin = static_cast<WorldSceneryEntity*>(bins[i]);
++        if (bin->byte_a0 || bin->scenery_f4->capacity_2dc <= bin->word_90)
++            continue;
++        long double x = static_cast<long double>(x_30) - bin->x_30;
++        float y = static_cast<float>(static_cast<long double>(y_34) - bin->y_34);
++        long double distance = std::sqrt(x * x + static_cast<long double>(y) * y);
++        if (!(distance >= nearest))
++        {
++            nearest = static_cast<float>(distance);
++            selected = i;
++        }
++    }
++    if (selected < count)
++    {
++        WorldSceneryEntity* bin = static_cast<WorldSceneryEntity*>(bins[selected]);
++        if (bin->scenery_f4->capacity_2dc > bin->word_90
++            && !(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f >= guest_f4->value_1ec))
++        {
++            word_32c = bin->id_28;
++            SendGuestWalk(id_28, 5, bin->Position());
++            lightning_state_318 = 2;
++            return;
++        }
++    }
++    lightning_state_318 = 1;
++}
++
++// FUNCTION: BEACHLIFE 0x0047acd0
++void WorldGuestEntity::PerformAction46()
++{
++    if (flag_3c0)
++        return;
++    unsigned int count;
++    VariableEntity** benches = variable_world->FindNamed("BENCH", &count);
++    float nearest = 5.0f;
++    unsigned int selected = count;
++    for (unsigned int i = 0; i < count; ++i)
++    {
++        WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(benches[i]);
++        if (bench->byte_a0 || !bench->AvailableSeats() || (bench->state_3c == 4 && !bench->AvailableSeats()))
++            continue;
++        long double distance = GuestSceneryDistance(this, bench);
++        if (!(distance > nearest))
++        {
++            nearest = static_cast<float>(distance);
++            selected = i;
++        }
++    }
++    if (selected < count)
++    {
++        WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(benches[selected]);
++        if (bench->scenery_f4->capacity_2dc > bench->word_90)
++        {
++            ScreenModeCommand command = MakeGuestCommand(id_28, bench->id_28, 3, 0, 4);
++            screen_mode_commands->QueueCommand(&command);
++            word_32c = word_98;
++            word_328 = bench->id_28;
++            command = MakeGuestCommand(id_28, id_28, 3, 0, 53);
++            screen_mode_commands->QueueCommand(&command);
++            command = MakeGuestCommand(id_28, id_28, 9, 0, bench->id_28);
++            screen_mode_commands->QueueCommand(&command);
++            flag_3c0 = 1;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0047a130
++void WorldGuestEntity::PerformAction42()
++{
++    float nearest = 10.0f;
++    WorldSceneryEntity* selected = 0;
++    unsigned int kind = 4;
++    static const char* const names[] = { "Bin", "Bench", "STREET_LAMP" };
++    for (unsigned int type = 0; type < 3; ++type)
++    {
++        unsigned int count;
++        VariableEntity** objects = variable_world->FindNamed(names[type], &count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            WorldSceneryEntity* object = static_cast<WorldSceneryEntity*>(objects[i]);
++            ScreenPoint tile = TilePosition();
++            int x = std::abs(tile.x - object->TilePosition().x);
++            int y = std::abs(tile.y - object->TilePosition().y);
++            int squared_x = static_cast<int>(static_cast<unsigned int>(x) * x);
++            int distance = static_cast<int>(std::sqrt(static_cast<long double>(squared_x)));
++            distance = static_cast<int>(static_cast<unsigned int>(distance) + static_cast<unsigned int>(y) * y);
++            if (!(static_cast<long double>(distance) > nearest) && object->state_3c != 4
++                && !object->byte_a0 && !object->NeedsCleaning() && !object->NeedsRepair())
++            {
++                nearest = static_cast<float>(distance);
++                selected = object;
++                kind = type;
++            }
++        }
++    }
++    if (kind == 4)
++    {
++        weather_values_16c[19] += weather_values_16c[18];
++        weather_values_16c[18] = 0.0f;
++        if (weather_values_16c[19] > 1.0f)
++            weather_values_16c[19] = 1.0f;
++        lightning_state_318 = 1;
++        word_32c = -1;
++        return;
++    }
++    ScreenModeCommand command = MakeGuestCommand(id_28, selected->id_28, 3, 0, 4);
++    screen_mode_commands->QueueCommand(&command);
++    static const ScreenMapPosition offsets[] = {
++        { 0.0f, 20.0f }, { -15.0f, 15.0f }, { -20.0f, 0.0f }, { -15.0f, -15.0f }, { 0.0f, -20.0f }, { 15.0f, -15.0f }, { 20.0f, 0.0f }, { 15.0f, 15.0f }
++    };
++    ScreenMapPosition offset;
++    unsigned int direction = selected->keyline_state_44->word_18;
++    if (direction < 8)
++    {
++        offset = offsets[direction];
++        if (kind == 0 && (direction == 2 || direction == 6))
++            offset.x = direction == 2 ? -30.0f : 30.0f;
++    }
++    command = MakeGuestCommand(id_28, id_28, 5, static_cast<int>(static_cast<long double>(selected->x_30) + offset.x), static_cast<int>(static_cast<long double>(selected->y_34) + offset.y));
++    screen_mode_commands->QueueCommand(&command);
++    word_32c = selected->id_28;
++    if (kind == 0)
++        lightning_state_318 = selected->word_90 == selected->scenery_f4->capacity_2dc ? 2 : 3;
++    else
++        lightning_state_318 = kind == 1 ? 4 : 5;
++}
++
++// FUNCTION: BEACHLIFE 0x0047a8f0
++void WorldGuestEntity::PerformAction43()
++{
++    if (!variable_world->FindObject(word_32c))
++        return;
++    WorldSceneryEntity* scenery = static_cast<WorldSceneryEntity*>(variable_world->FindObject(word_32c));
++    keyline_state_44->FacePositions(scenery->Position(), Position());
++    scenery->SetVandalized(1);
++    ScreenModeCommand command = MakeGuestCommand(0, 0, 0);
++    if (lightning_state_318 >= 2 && lightning_state_318 <= 6)
++    {
++        static const char* const animations[] = {
++            "FULLBIN_VANDALISE", "EMPTYBIN_VANDALISE", "BENCH_VANDALISE", "STREETLAMP_VANDALISE_1", "STREETLAMP_VANDALISE_2"
++        };
++        command = MakeGuestCommand(id_28, word_32c, 60);
++        command.words[4] = ScreenModeCommandWord::FromData(reinterpret_cast<std::uintptr_t>(animations[lightning_state_318 - 2]));
++    }
++    screen_mode_commands->QueueCommand(&command);
++    word_3dc = 3;
++    word_3e0 = window_deactivation_state->time_158;
++}
+diff --git a/src/startup_world_guest_social_actions.cpp b/src/startup_world_guest_social_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..97b20c86368742e48ac3fe19da96de56b7db6197
+--- /dev/null
++++ b/src/startup_world_guest_social_actions.cpp
+@@ -0,0 +1,209 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_screen_overlay_layout.h"
++#include <cmath>
++#include <cstring>
++
++static bool GuestLandFlags(unsigned int flags)
++{
++    return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
++}
++
++static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
++{
++    unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
++    unsigned int count;
++    VariableEntity** buildings = variable_world->ByType(2, &count);
++    float nearest = 50000.0f;
++    unsigned int selected = 0;
++    for (unsigned int i = 0; i < count; ++i)
++    {
++        if (!buildings[i]->FlagAt00460370())
++            continue;
++        VariableBuilding* definition = buildings[i]->AsBuilding()->building_60;
++        for (unsigned int j = 0; j < definition->rows_1f4; ++j)
++        {
++            if (variable_catalog->FeatureType(definition->features_1fc[j]) == alcohol)
++            {
++                ScreenPoint building_tile = buildings[i]->TilePosition();
++                unsigned int x = static_cast<unsigned int>(guest->TilePosition().x) - building_tile.x;
++                ScreenPoint guest_tile = guest->TilePosition();
++                unsigned int y = static_cast<unsigned int>(guest_tile.y) - buildings[i]->TilePosition().y;
++                unsigned int squared = y * y + x * x;
++                long double distance = std::sqrt(static_cast<long double>(squared));
++                if (!(distance >= nearest))
++                {
++                    nearest = static_cast<float>(distance);
++                    selected = i;
++                }
++            }
++        }
++    }
++    ScreenPoint tile;
++    for (;;)
++    {
++        int x = buildings[selected]->TilePosition().x;
++        tile.x = x + std::rand() % 15 - 7;
++        int y = buildings[selected]->TilePosition().y;
++        tile.y = y + std::rand() % 15 - 7;
++        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
++        if (GuestLandFlags(flags) && tile.x < 128 && tile.x >= 0 && tile.y < 128 && tile.y >= 0)
++            return tile;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00477ca0
++void WorldGuestEntity::PerformAction15()
++{
++    if (weather_values_16c[19] > 0.0f)
++    {
++        ScreenPoint tile = GuestAlcoholWalkTile(this);
++        int y = static_cast<int>(screen_terrain_grid->TileOrigin(tile.x, tile.y).y);
++        int x = static_cast<int>(screen_terrain_grid->TileOrigin(tile.x, tile.y).x);
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 8, x, y);
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else
++    {
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 12);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00477a40
++void WorldGuestEntity::PerformAction16()
++{
++    unsigned int count;
++    ScreenPoint tile = TilePosition();
++    VariableEntity** nearby = variable_world->Nearby(tile.x, tile.y, 2, &count);
++    for (unsigned int i = 0; i < count; ++i)
++    {
++        if (nearby[i]->id_28 == id_28 || nearby[i]->kind_2c != 3)
++            continue;
++        WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(nearby[i]);
++        if (guest->guest_f4->word_1c4 != guest_f4->word_1c4 || (guest->state_3c != 13 && guest->state_3c != 31))
++            continue;
++        ScreenWorldPosition position = guest->Position();
++        position.x -= 20.0f;
++        ScreenPoint target = overlay_map->WorldToTile(&position);
++        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(target.x, target.y)].flags_48;
++        if (!GuestLandFlags(flags))
++            continue;
++        lightning_state_318 = 1;
++        word_328 = guest->id_28;
++        ScreenModeCommand command = MakeGuestCommand(id_28, word_328, 21);
++        screen_mode_commands->QueueCommand(&command);
++        command = MakeGuestCommand(id_28, word_328, 3, 0, 32);
++        screen_mode_commands->QueueCommand(&command);
++        guest->keyline_state_44->FacePositions(guest->Position(), { x_30, y_34, z_38 });
++        SendGuestWalk(id_28, 5, position);
++        break;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00478640
++void WorldGuestEntity::PerformAction21()
++{
++    unsigned int count;
++    ScreenPoint tile = TilePosition();
++    VariableEntity** nearby = variable_world->Nearby(tile.x, tile.y, 2, &count);
++    if (count)
++    {
++        unsigned int index = static_cast<unsigned int>(std::rand()) % count;
++        VariableEntity* entity = nearby[index];
++        if (entity->id_28 != id_28 && entity->kind_2c == 3)
++        {
++            WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(entity);
++            float preferred_group;
++            std::memcpy(&preferred_group, guest_f4->unknown_1e0 + 4, sizeof(preferred_group));
++            float group = guest->guest_f4->group_value_1d8;
++            if (guest->guest_f4->word_1c4 == 1 && guest_f4->word_1c4 == 0
++                && (guest->state_3c == 13 || guest->state_3c == 34)
++                && !(group < preferred_group || group > preferred_group))
++            {
++                ScreenWorldPosition position = guest->Position();
++                position.x -= 20.0f;
++                if (GuestLandFlags(CurrentScreenTerrain()->CellAt(position)->flags_48))
++                {
++                    lightning_state_318 = 1;
++                    word_32c = guest->id_28;
++                    ScreenModeCommand command = MakeGuestCommand(id_28, word_32c, 21);
++                    screen_mode_commands->QueueCommand(&command);
++                    guest->keyline_state_44->FacePositions(guest->Position(), { x_30, y_34, z_38 });
++                    if (guest->route_b8)
++                    {
++                        world_subsystem_18->ReleaseRoute(guest->route_b8);
++                        guest->route_b8 = 0;
++                    }
++                    command = MakeGuestCommand(id_28, word_32c, 3, 0, 35);
++                    screen_mode_commands->QueueCommand(&command);
++                    SendGuestWalk(id_28, 8, position);
++                    return;
++                }
++            }
++        }
++    }
++    if (weather_values_16c[20] > 0.0f)
++    {
++        ScreenPoint target = GuestAlcoholWalkTile(this);
++        SendGuestWalk(id_28, 8, screen_terrain_grid->TilePosition(target.x, target.y, 4));
++    }
++    else
++    {
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 12);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00479360
++void WorldGuestEntity::PerformAction24()
++{
++    ScreenPoint offset;
++    int direction = keyline_state_44->rotation_18;
++    variable_world->FindObject(word_32c)->keyline_state_44->SelectVariant(direction);
++    if (state_3c == 39)
++        offset = { 0, 0 };
++    else
++    {
++        bool switch_left = false;
++        switch (keyline_state_44->word_18)
++        {
++        case 0:
++            offset = { 18, 0 };
++            switch_left = true;
++            break;
++        case 1:
++            offset = { 12, 10 };
++            switch_left = true;
++            break;
++        case 2:
++            offset = { 0, 18 };
++            break;
++        case 3:
++            offset = { 12, -12 };
++            break;
++        case 4:
++            offset = { 18, 0 };
++            break;
++        case 5:
++            offset = { 12, 10 };
++            break;
++        case 6:
++            offset = { 0, 18 };
++            switch_left = true;
++            break;
++        case 7:
++            offset = { 12, -12 };
++            switch_left = true;
++            break;
++        }
++        const char* from = switch_left ? "D_WALK_HOLDHAND_LEFT" : "D_WALK_HOLDHAND_RIGHT";
++        const char* to = switch_left ? "D_WALK_HOLDHAND_RIGHT" : "D_WALK_HOLDHAND_LEFT";
++        if (std::strcmp(current_animation_2b9, from) == 0)
++        {
++            Unknown28(to, 0, -1, 1, 0);
++            variable_world->FindObject(word_32c)->Unknown28(from, 0, -1, 1, 0);
++        }
++    }
++    ScreenWorldPosition position = { x_30 + offset.x, y_34 + offset.y, z_38 };
++    variable_world->FindObject(word_32c)->SetWorldPosition(&position);
++}
+diff --git a/src/startup_world_guest_thoughts.cpp b/src/startup_world_guest_thoughts.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6da3a826e52ffb5e2b61d1f1eb0eda03168347a3
+--- /dev/null
++++ b/src/startup_world_guest_thoughts.cpp
+@@ -0,0 +1,32 @@
++#include "startup_world_entities.h"
++#include "startup_screen_text.h"
++#include <cstdio>
++#include <cstdlib>
++
++// FUNCTION: BEACHLIFE 0x0047b180
++void WorldGuestEntity::ShowThought(unsigned int text)
++{
++    if (text != static_cast<unsigned int>(-1))
++    {
++        for (unsigned int i = 2; i != 0; --i)
++            words_3e8[i] = words_3e8[i - 1];
++        words_3e8[0] = text;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0047b1b0
++void WorldGuestEntity::AddContamination(float amount)
++{
++    long double contamination = static_cast<long double>(amount) + guest_value_360;
++    guest_value_360 = static_cast<float>(contamination);
++    if (contamination > 1.0f)
++        guest_value_360 = 1.0f;
++}
++
++// FUNCTION: BEACHLIFE 0x00473450
++void WorldGuestEntity::PerformAction79()
++{
++    char key[256];
++    std::sprintf(key, "%s%d", guest_f4->word_1c4 ? "GUEST_THOUGHT_FEMALE_DROWNING" : "GUEST_THOUGHT_MALE_DROWNING", std::rand() % 3 + 1);
++    ShowThought(screen_text_lookup->LookupTextIndex(key));
++}
+diff --git a/src/startup_world_guest_wander_action.cpp b/src/startup_world_guest_wander_action.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5251df0dd4d0a078e27a206375b2db6345a4ea74
+--- /dev/null
++++ b/src/startup_world_guest_wander_action.cpp
+@@ -0,0 +1,86 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_screen_overlay_layout.h"
++#include <cmath>
++
++static bool GuestWanderLand(unsigned int flags)
++{
++    return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
++}
++
++// FUNCTION: BEACHLIFE 0x00476fa0
++void WorldGuestEntity::PerformAction6()
++{
++    ScreenWorldPosition position = Position();
++    unsigned int count;
++    if (state_3c == 45)
++    {
++        ScreenPoint tile = TilePosition();
++        VariableEntity** nearby = variable_world->Nearby(tile.x, tile.y, 5, &count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (nearby[i]->id_28 == id_28 || nearby[i]->kind_2c != 3 || nearby[i]->state_3c != 45)
++                continue;
++            WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(nearby[i]);
++            if (guest->lightning_state_318 != 2)
++                continue;
++            lightning_state_318 = 1;
++            word_32c = guest->id_28;
++            position = guest->Position();
++            position.x -= 20.0f;
++            ScreenPoint target = overlay_map->WorldToTile(&position);
++            if (GuestWanderLand(screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(target.x, target.y)].flags_48))
++            {
++                SendGuestWalk(id_28, 8, position);
++                return;
++            }
++        }
++    }
++    else
++    {
++        VariableEntity** benches = variable_world->FindNamed("BENCH", &count);
++        float nearest = 5.0f;
++        unsigned int selected = count;
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(benches[i]);
++            if (bench->byte_a0 || !bench->AvailableSeats() || bench->state_3c == 4)
++                continue;
++            ScreenPoint tile = TilePosition();
++            int x = tile.x - bench->TilePosition().x;
++            int y = tile.y - bench->TilePosition().y;
++            int squared = static_cast<int>(static_cast<unsigned int>(x) * x + static_cast<unsigned int>(y) * y);
++            long double distance = std::sqrt(static_cast<long double>(squared));
++            if (!(distance > nearest))
++            {
++                nearest = static_cast<float>(distance);
++                selected = i;
++            }
++        }
++        if (selected < count && std::rand() % 10 == 0)
++        {
++            WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(benches[selected]);
++            if (bench->scenery_f4->capacity_2dc > bench->word_90)
++            {
++                lightning_state_318 = 20;
++                ScreenModeCommand command = MakeGuestCommand(id_28, bench->id_28, 3, 0, 4);
++                screen_mode_commands->QueueCommand(&command);
++                command = MakeGuestCommand(id_28, id_28, 9, 0, bench->id_28);
++                screen_mode_commands->QueueCommand(&command);
++                return;
++            }
++        }
++    }
++    for (;;)
++    {
++        position.x += std::rand() % 500 - 250;
++        position.y += std::rand() % 500 - 250;
++        ScreenPoint tile = overlay_map->WorldToTile(&position);
++        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
++        if (GuestWanderLand(flags) && position.y < 8192.0f && position.x >= 0.0f && position.y >= 0.0f && !(position.x > 4096.0f))
++            break;
++        position = Position();
++    }
++    if (state_3c == 45)
++        lightning_state_318 = 0;
++    SendGuestWalk(id_28, 8, position);
++}
+diff --git a/src/startup_world_guest_water_actions.cpp b/src/startup_world_guest_water_actions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b9706b65b8d6d77bada8bc2e034d8fd3fab55625
+--- /dev/null
++++ b/src/startup_world_guest_water_actions.cpp
+@@ -0,0 +1,124 @@
++#include "startup_world_guest_action_helpers.h"
++
++// FUNCTION: BEACHLIFE 0x00473830
++void WorldGuestEntity::PerformAction64()
++{
++    ScreenPoint points[4];
++    for (ScreenPoint& point : points)
++        point = TilePosition();
++    bool found = false;
++    while (!found)
++    {
++        for (int i = 0; i < 4; ++i)
++        {
++            ScreenPoint& point = points[i];
++            screen_terrain_grid->Step(point.x, point.y, i * 2, &point);
++            unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(point.x, point.y)].flags_48;
++            if ((flags & 0x10000080) || ((flags & 2) && !(flags & 0x8010)))
++            {
++                walkpoints_22c[0] = screen_terrain_grid->TileCenter(point.x, point.y);
++                SendGuestWalk(id_28, 5, walkpoints_22c[0]);
++                found = true;
++                break;
++            }
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00473520
++void WorldGuestEntity::PerformAction65()
++{
++    int direction = keyline_state_44->rotation_18;
++    int distance = 0;
++    ScreenPoint point = TilePosition();
++    screen_terrain_grid->Step(point.x, point.y, direction, &point);
++    while (distance < 5)
++    {
++        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(point.x, point.y)].flags_48;
++        if (!(flags & 4) || (flags & 0x10))
++            break;
++        screen_terrain_grid->Step(point.x, point.y, direction, &point);
++        ++distance;
++    }
++    if (distance)
++    {
++        int steps = std::rand() % distance + 1;
++        point = TilePosition();
++        for (int i = 0; i < steps; ++i)
++            screen_terrain_grid->Step(point.x, point.y, direction, &point);
++        SendGuestWalk(id_28, 11, screen_terrain_grid->TileCenter(point.x, point.y));
++        return;
++    }
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 67, 1, lightning_state_318);
++    screen_mode_commands->QueueCommand(&command);
++    lightning_state_318 = 5;
++    float delay = Unknown28("D_WINDSURF_TURNL", 0, -1, 0, 0);
++    command = MakeGuestCommand(id_28, id_28, 57);
++    command.words[5] = 61;
++    command.words[6] = 0;
++    screen_mode_commands->QueueDelayed(&command, delay);
++    word_310->word_08 = 2;
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    word_310->SetAnimation("WINDSURF_TURNL", window_deactivation_state->time_158, &position);
++}
++
++// FUNCTION: BEACHLIFE 0x00478e40
++void WorldGuestEntity::PerformAction71()
++{
++    unsigned int count;
++    ScreenPoint point = TilePosition();
++    VariableEntity** nearby = variable_world->Nearby(point.x, point.y, 5, &count);
++    const unsigned short* text;
++    ScreenModeCommand command;
++    if (state_3c == 54)
++    {
++        text = screen_text_lookup->LookupText("GUEST_EATEN");
++        command = MakeGuestCommand(id_28, id_28, 73, 0, 8);
++        ++window_deactivation_state->eaten_dd8;
++    }
++    else
++    {
++        text = screen_text_lookup->LookupText("GUEST_DROWNED");
++        command = MakeGuestCommand(id_28, id_28, 73, 0, 10);
++        ++window_deactivation_state->drowned_dd4;
++    }
++    window_deactivation_state->ticker_30->AddMessage(text, id_28, 5);
++    for (unsigned int i = 0; i < count; ++i)
++    {
++        if (nearby[i]->kind_2c == 3)
++        {
++            command.words[1] = nearby[i]->id_28;
++            screen_mode_commands->QueueCommand(&command);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00477500
++void WorldGuestEntity::PerformAction89()
++{
++    WorldVehicleEntity* vehicle = static_cast<WorldVehicleEntity*>(variable_world->FindObject(word_32c));
++    if (vehicle->vehicle_type_f8 == 5)
++    {
++        long double x = vehicle->x_30;
++        float y = vehicle->y_34;
++        if (vehicle->keyline_state_44->word_18 == 7)
++        {
++            x -= 63.0f;
++            y += 14.0f;
++        }
++        else if (vehicle->keyline_state_44->word_18 == 5)
++        {
++            x += 22.0f;
++            y += 72.0f;
++        }
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 5, static_cast<int>(x), static_cast<int>(y));
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else
++    {
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 22);
++        command.words[5] = 41;
++        command.words[6] = 0;
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
+diff --git a/src/startup_world_guest_water_walkpoints.cpp b/src/startup_world_guest_water_walkpoints.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..41df2a306ddf3bb9593e735c305d3ac51cc60cf4
+--- /dev/null
++++ b/src/startup_world_guest_water_walkpoints.cpp
+@@ -0,0 +1,77 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cmath>
++
++// FUNCTION: BEACHLIFE 0x00468000
++ScreenWorldPosition* WorldGuestEntity::FindWaterWalkpoints()
++{
++    static ScreenWorldPosition result[2];
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    ScreenTerrainRouteNode* selected = screen_terrain_grid->routes_1c;
++    unsigned int count;
++    ScreenPoint* points = selected->Points(&count);
++    ScreenPoint nearest = points[0];
++    auto nearer = [&](ScreenPoint candidate)
++    {
++        ScreenWorldPosition candidate_position = screen_terrain_grid->TileOrigin(candidate.x, candidate.y);
++        float x = static_cast<float>(static_cast<long double>(candidate_position.x) - position.x);
++        float y = static_cast<float>(static_cast<long double>(candidate_position.y) - position.y);
++        float z = static_cast<float>(static_cast<long double>(candidate_position.z) - position.z);
++        ScreenWorldPosition nearest_position = screen_terrain_grid->TileOrigin(nearest.x, nearest.y);
++        long double nearest_x = static_cast<long double>(nearest_position.x) - position.x;
++        long double nearest_y = static_cast<long double>(nearest_position.y) - position.y;
++        long double nearest_z = static_cast<long double>(nearest_position.z) - position.z;
++        long double distance = std::sqrt(static_cast<long double>(x) * x + static_cast<long double>(z) * z + static_cast<long double>(y) * y);
++        return std::sqrt(nearest_x * nearest_x + nearest_z * nearest_z + nearest_y * nearest_y) > distance;
++    };
++    for (unsigned int i = 1; i < count; ++i)
++        if (nearer(points[i]))
++            nearest = points[i];
++    for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
++    {
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (nearer(points[i]))
++            {
++                nearest = points[i];
++                selected = route;
++            }
++        }
++    }
++    if (selected)
++    {
++        ScreenPoint lower = selected->Bounds()[0];
++        ScreenPoint upper = selected->Bounds()[3];
++        float width = static_cast<float>(upper.x - lower.x);
++        float height = static_cast<float>(upper.y - lower.y);
++        ScreenPoint tile;
++        auto choose_tile = [&]
++        {
++            tile.x = lower.x + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * width);
++            tile.y = lower.y + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * height);
++            ScreenPoint neighbours[8];
++            for (int i = 0; i < 8; ++i)
++                screen_terrain_grid->Step(tile.x, tile.y, i, &neighbours[i]);
++            unsigned int flags[9];
++            flags[0] = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
++            for (int i = 0; i < 8; ++i)
++                flags[i + 1] = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48;
++            for (unsigned int flag : flags)
++                if (!(flag & 2) || (flag & 0x8110))
++                    return false;
++            return true;
++        };
++        bool valid = choose_tile();
++        unsigned int attempts = 0;
++        while (!valid && attempts < 1000)
++        {
++            valid = choose_tile();
++            ++attempts;
++        }
++        result[0] = screen_terrain_grid->TilePosition(nearest.x, nearest.y, 4);
++        result[1] = attempts == 1000
++                      ? screen_terrain_grid->TilePosition(nearest.x, nearest.y, 4)
++                      : screen_terrain_grid->TilePosition(tile.x, tile.y, 4);
++    }
++    return result;
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 45fe5085e7c70233529c07dad2fc45fed4b2bbce..46b0f8e7585713d0851ed98629553f95fada9572 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -349,6 +349,11 @@ struct WorldFeatureEntry
+ 
+ struct WorldSubsystem4c
+ {
++    unsigned int FindGuestFeature(unsigned int* feature, unsigned char* found, unsigned int* broken,
++        unsigned int* closed, unsigned int* beach_closed, unsigned char* unavailable,
++        unsigned int gender, unsigned int desire, const ScreenPoint* tile,
++        unsigned int previous, unsigned int guest); // 0x00424900.
++
+     bool FeatureUnavailable(unsigned int id, unsigned int feature); // 0x00424f10.
+     WorldSubsystem4c();                                             // 0x00424690.
+     unsigned int word_00;

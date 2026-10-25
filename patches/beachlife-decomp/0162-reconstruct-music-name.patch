@@ -1,0 +1,120 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index db59ae4..ef5c09e 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1789,3 +1789,23 @@ extern "C" __declspec(dllexport) void FixtureSetClipMode(
+     fixture_clip_mode_word60_after = renderer->word_60;
+     fixture_clip_mode_completed = 1;
+ }
++
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_music_entry.h"
++
++typedef char MusicOwnerSize[(sizeof(ScreenPlacementStore) == 0x40) ? 1 : -1];
++typedef char MusicEntrySize[(sizeof(ScreenPlacementMusicEntry) == 0x10) ? 1 : -1];
++typedef char Musicmusic_begin_18[(offsetof(ScreenPlacementStore, music_begin_18) == 24) ? 1 : -1];
++typedef char Musicmusic_end_1c[(offsetof(ScreenPlacementStore, music_end_1c) == 28) ? 1 : -1];
++typedef char Musicmusic_limit_20[(offsetof(ScreenPlacementStore, music_limit_20) == 32) ? 1 : -1];
++typedef char Musicsaved[(offsetof(ScreenPlacementStore, saved) == 40) ? 1 : -1];
++typedef char MusicEntryname_00[(offsetof(ScreenPlacementMusicEntry, name_00) == 0) ? 1 : -1];
++typedef char MusicEntrydirectory_04[(offsetof(ScreenPlacementMusicEntry, directory_04) == 4) ? 1 : -1];
++typedef char MusicEntryword_08[(offsetof(ScreenPlacementMusicEntry, word_08) == 8) ? 1 : -1];
++typedef char MusicEntryword_0c[(offsetof(ScreenPlacementMusicEntry, word_0c) == 12) ? 1 : -1];
++
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) const char* FixtureReadMusicName(ScreenPlacementStore* owner, int index)
++{
++    return owner->ReadMusicName(index);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 876cde1..4a56114 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -124,3 +124,4 @@ address,type,size,symbol
+ 0x0057feec,string,17,
+ 0x004fd420,widechar,6,
+ 0x0040f7e0,function,59,?SetClipMode@ScreenRequestRenderer@@QAEXI@Z
++0x004e6bf0,function,15,?ReadMusicName@ScreenPlacementStore@@QAEPBDH@Z
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index e4e184d..a729af9 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -3,6 +3,8 @@
+ 
+ #include "startup_list.h"
+ 
++struct ScreenPlacementMusicEntry;
++
+ struct SavedScreenPlacement
+ {
+     int x;
+@@ -18,11 +20,17 @@ struct SavedScreenPlacementNode : CircularListNode
+ // Observed prefix only. Original complete class and field names are unknown.
+ struct ScreenPlacementStore
+ {
+-    unsigned char unknown_00[0x28];
++    unsigned char unknown_00[0x18];
++    ScreenPlacementMusicEntry** music_begin_18;
++    ScreenPlacementMusicEntry** music_end_1c;
++    ScreenPlacementMusicEntry** music_limit_20;
++    unsigned char unknown_24[4];
+     CircularList saved;
+     unsigned char unknown_2c[0x10];
+     unsigned int menu_script_variant_3c;
+ 
++    const char* ReadMusicName(int index);
++
+     bool FindPlacement(int group, int* x, int* y);
+     void WritePlacement(int x, int y, int group);
+ };
+diff --git a/src/startup_screen_placement_music_access.cpp b/src/startup_screen_placement_music_access.cpp
+new file mode 100644
+index 0000000..8646248
+--- /dev/null
++++ b/src/startup_screen_placement_music_access.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_music_entry.h"
++
++// FUNCTION: BEACHLIFE 0x004e6bf0
++const char* ScreenPlacementStore::ReadMusicName(int index)
++{
++    return music_begin_18[index]->name_00;
++}
+diff --git a/src/startup_screen_placement_music_entry.h b/src/startup_screen_placement_music_entry.h
+new file mode 100644
+index 0000000..c810a1b
+--- /dev/null
++++ b/src/startup_screen_placement_music_entry.h
+@@ -0,0 +1,14 @@
++#ifndef STARTUP_SCREEN_PLACEMENT_MUSIC_ENTRY_H
++#define STARTUP_SCREEN_PLACEMENT_MUSIC_ENTRY_H
++
++// Actual 16-byte x86 record allocated by AddMusicEntry at 0x004e6a19.
++// The two strings and record have separate scalar allocations.
++struct ScreenPlacementMusicEntry
++{
++    char* name_00;
++    char* directory_04;
++    unsigned int word_08;
++    unsigned int word_0c;
++};
++
++#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 461fe31..c11afd1 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -644,6 +644,12 @@
+       "size": 59,
+       "name": "ScreenRequestRenderer::SetClipMode",
+       "name_status": "Descriptive; full unsigned32 mode, three actual word58 cases, unchanged default. R975 whole source/CFG/field proof and genuine WorldTest caller."
++    },
++    {
++      "address": "0x004e6bf0",
++      "size": 15,
++      "name": "ScreenPlacementStore::ReadMusicName",
++      "name_status": "Descriptive; complete original thiscall extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

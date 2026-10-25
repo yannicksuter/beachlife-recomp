@@ -77,8 +77,25 @@ int close_stream(void* cookie)
 }
 } // namespace
 
+namespace
+{
+// MSVCRT keeps the generator state per thread, starting at 1.
+thread_local uint32_t random_state = 1;
+} // namespace
+
 extern "C"
 {
+    int beachlife_crt_rand(void) noexcept
+    {
+        random_state = random_state * 214013u + 2531011u;
+        return static_cast<int>((random_state >> 16) & 0x7fff);
+    }
+
+    void beachlife_crt_srand(unsigned int seed) noexcept
+    {
+        random_state = seed;
+    }
+
     FILE* beachlife_crt_fopen(const char* path, const char* mode)
     {
         return guard(

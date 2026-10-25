@@ -1,0 +1,716 @@
+diff --git a/src/startup_entity_script_values.cpp b/src/startup_entity_script_values.cpp
+index 18c38382464ca28a4899d0bd88646d188949764a..a8a5b93c1a2431515598b6fb16ba11459d6c3d9e 100644
+--- a/src/startup_entity_script_values.cpp
++++ b/src/startup_entity_script_values.cpp
+@@ -1,5 +1,6 @@
+ #include "startup_world_entities.h"
+ #include "window_activation.h"
++#include "startup_float_to_integer.h"
+ #include <cstring>
+ #include <cstdlib>
+ 
+@@ -84,12 +85,12 @@ void VariableEntity::Unknown30(unsigned int kind, std::uintptr_t, unsigned int,
+         std::memcpy(&number, &bits, sizeof(number));
+         if (word_48)
+         {
+-            int offset = keyline_state_44->CurrentFrameValue() + word_48;
++            unsigned int offset = static_cast<unsigned int>(keyline_state_44->CurrentFrameValue()) + static_cast<unsigned int>(word_48);
+             keyline_state_44->SelectedFrame()->word_12 = static_cast<short>(offset);
+-            word_48 = static_cast<int>(number);
++            word_48 = TruncateFloatToWord(number);
+         }
+-        word_48 = static_cast<int>(number);
+-        int offset = keyline_state_44->CurrentFrameValue() - word_48;
++        word_48 = TruncateFloatToWord(number);
++        unsigned int offset = static_cast<unsigned int>(keyline_state_44->CurrentFrameValue()) - static_cast<unsigned int>(word_48);
+         keyline_state_44->SelectedFrame()->word_12 = static_cast<short>(offset);
+         break;
+     }
+@@ -100,9 +101,9 @@ void VariableEntity::Unknown30(unsigned int kind, std::uintptr_t, unsigned int,
+         if (word_4c)
+         {
+             keyline_state_44->SelectedFrame()->word_14 += static_cast<short>(word_4c);
+-            word_4c = static_cast<int>(number);
++            word_4c = TruncateFloatToWord(number);
+         }
+-        word_4c = static_cast<int>(number);
++        word_4c = TruncateFloatToWord(number);
+         keyline_state_44->SelectedFrame()->word_14 -= static_cast<short>(word_4c);
+         break;
+     }
+@@ -126,7 +127,7 @@ WorldScriptValue WorldMovingEntity::Unknown2c(unsigned int kind, std::uintptr_t
+             return { kind, data };
+         WorldBuildingEntity* building = entity->AsBuilding();
+         ScreenWorldPosition position = building->flag_cb ? building->entrance_position_e4 : building->StaffPosition();
+-        int coordinate = static_cast<int>(kind == 0xf1 ? position.x : position.y);
++        int coordinate = TruncateFloatToWord(kind == 0xf1 ? position.x : position.y);
+         return { 2, static_cast<unsigned int>(coordinate) };
+     }
+     case 0x54:
+diff --git a/src/startup_float_to_integer.h b/src/startup_float_to_integer.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d00b8a4d6977e3fabbdb8f6ebda996048f78495d
+--- /dev/null
++++ b/src/startup_float_to_integer.h
+@@ -0,0 +1,15 @@
++#ifndef STARTUP_FLOAT_TO_INTEGER_H
++#define STARTUP_FLOAT_TO_INTEGER_H
++
++#include <cstdint>
++
++// Retail _ftol truncates to a signed 64-bit integer, then these callers use
++// only EAX. The x87 integer-indefinite result also has a zero low word.
++inline std::int32_t TruncateFloatToWord(long double value)
++{
++    if (!(value >= -9223372036854775808.0L && value < 9223372036854775808.0L))
++        return 0;
++    return static_cast<std::int32_t>(static_cast<std::uint32_t>(static_cast<std::int64_t>(value)));
++}
++
++#endif
+diff --git a/src/startup_frame_clock.cpp b/src/startup_frame_clock.cpp
+index 46bad4619dfd9549bb7c0c24c3fdd9d8d0ec7018..9392cd96b0baa2aa5c909faccf7bb8cda37d01f5 100644
+--- a/src/startup_frame_clock.cpp
++++ b/src/startup_frame_clock.cpp
+@@ -1,11 +1,13 @@
+ #include "startup_frame_clock.h"
++#include <cstdint>
+ 
+ // FUNCTION: BEACHLIFE 0x004eb3c0
+ void FrameClock::Update(int ticks)
+ {
+     ++frames;
+     previous_seconds = seconds;
+-    seconds = (ticks - start_ticks) * 0.001f;
++    std::uint32_t elapsed = static_cast<std::uint32_t>(ticks) - static_cast<std::uint32_t>(start_ticks);
++    seconds = static_cast<std::int32_t>(elapsed) * 0.001f;
+     delta_seconds = seconds - previous_seconds;
+     if (seconds - sample_seconds > 1.0f)
+     {
+diff --git a/src/startup_gui_integer.cpp b/src/startup_gui_integer.cpp
+index 4490555a2d3abd11e3b259fcc8fae7a8387404c3..2482d9b8927de1f5cf1eda2664ddf0cbc162e9dc 100644
+--- a/src/startup_gui_integer.cpp
++++ b/src/startup_gui_integer.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_gui_parser.h"
++#include <cstdint>
+ 
+ // FUNCTION: BEACHLIFE 0x004ab270
+ void GuiParserState::ReadInteger(int& value, bool consume_delimiter)
+@@ -11,7 +12,8 @@ void GuiParserState::ReadInteger(int& value, bool consume_delimiter)
+ 
+     while (buffer[cursor] != ' ' && buffer[cursor] != ',' && buffer[cursor] != ')')
+     {
+-        value = value * 10 + static_cast<signed char>(buffer[cursor]) - '0';
++        std::uint32_t digit = static_cast<signed char>(buffer[cursor]);
++        value = static_cast<std::int32_t>(static_cast<std::uint32_t>(value) * 10u + digit - '0');
+         ++cursor;
+     }
+ 
+diff --git a/src/startup_input_mouse_events.cpp b/src/startup_input_mouse_events.cpp
+index 27fad239d273a0bd814cafab29a5da5964ad30e6..a949a8dfbb71246ca7d4df18887f3abd5aed27d3 100644
+--- a/src/startup_input_mouse_events.cpp
++++ b/src/startup_input_mouse_events.cpp
+@@ -97,7 +97,7 @@ unsigned char InputState::ReadMouseEvents()
+         return 1;
+     }
+ 
+-    for (unsigned long index = 0; index < mouse_event_count; ++index)
++    for (DWORD index = 0; index < mouse_event_count; ++index)
+     {
+         InputMouseEvent& event = mouse_events[index];
+         switch (event.offset)
+diff --git a/src/startup_input_state.h b/src/startup_input_state.h
+index 2c89f1774944f558b8f2b7987a257f07497c4be1..8ebf2c0fe56e327703643be4361d0e0325f36d07 100644
+--- a/src/startup_input_state.h
++++ b/src/startup_input_state.h
+@@ -1,6 +1,8 @@
+ #ifndef STARTUP_INPUT_STATE_H
+ #define STARTUP_INPUT_STATE_H
+ 
++#include <windows.h>
++
+ struct IDirectInput8A;
+ struct IDirectInputDeviceA;
+ 
+@@ -47,7 +49,7 @@ struct InputState
+     unsigned char unknown_149[3];
+     int clip_rectangle_14c[4];
+     InputMouseEvent mouse_events[60];
+-    unsigned long mouse_event_count;
++    DWORD mouse_event_count;
+     unsigned char unknown_610;
+     unsigned char unknown_611;
+ 
+diff --git a/src/startup_renderer_blend_colour.cpp b/src/startup_renderer_blend_colour.cpp
+index 924ec2ec518b4706480d5ecb212236dcbc06f397..7c2e7a28020c3a81fd07384a92a1803fd2633f36 100644
+--- a/src/startup_renderer_blend_colour.cpp
++++ b/src/startup_renderer_blend_colour.cpp
+@@ -1,17 +1,18 @@
+ #include "startup_screen_renderer.h"
+ #include "render_mask_setup.h"
++#include "startup_float_to_integer.h"
+ 
+ // FUNCTION: BEACHLIFE 0x0040bf90
+ unsigned short ScreenRequestRenderer::BlendColour(unsigned short first, unsigned short second, float factor)
+ {
+     long double inverse = 1.0L - factor;
+-    unsigned char blue = static_cast<unsigned char>(static_cast<long long>(
++    unsigned char blue = static_cast<unsigned char>(TruncateFloatToWord(
+         (second & render_blue_mask & 0xff) * inverse
+         + static_cast<long double>(first & render_blue_mask & 0xff) * factor));
+-    unsigned char green = static_cast<unsigned char>(static_cast<long long>(
++    unsigned char green = static_cast<unsigned char>(TruncateFloatToWord(
+         (((second & render_green_mask) >> render_green_bits) & 0xff) * inverse
+         + static_cast<long double>(((first & render_green_mask) >> render_green_bits) & 0xff) * factor));
+-    unsigned char red = static_cast<unsigned char>(static_cast<long long>(
++    unsigned char red = static_cast<unsigned char>(TruncateFloatToWord(
+         (((second & render_red_mask) >> render_red_shift) & 0xff) * inverse
+         + static_cast<long double>(((first & render_red_mask) >> render_red_shift) & 0xff) * factor));
+     if (red > 31)
+diff --git a/src/startup_resource_building_raster.h b/src/startup_resource_building_raster.h
+index 7cb4de5aa122817ba9dab75b22b8a85f56eb33ba..1ceb03804029bb39c7be8206cdc17cf785d3478d 100644
+--- a/src/startup_resource_building_raster.h
++++ b/src/startup_resource_building_raster.h
+@@ -2,6 +2,7 @@
+ #define STARTUP_RESOURCE_BUILDING_RASTER_H
+ 
+ #include "render_mask_setup.h"
++#include "startup_float_to_integer.h"
+ #include <cstring>
+ 
+ template <bool Blend>
+@@ -13,7 +14,7 @@ static void DrawBuildingPixel(unsigned char* output, unsigned char index, unsign
+     long double value = depth;
+     if (clipped)
+         value += 1.0L;
+-    unsigned int z = ((static_cast<unsigned int>(static_cast<long long>(value * depth_step)) & 0xffffu)
++    unsigned int z = ((static_cast<unsigned int>(TruncateFloatToWord(value * depth_step)) & 0xffffu)
+                          + (static_cast<unsigned int>(base_depth) & 0xffffu))
+                   << 16;
+     if (z >= (stored & 0xffff0000u))
+diff --git a/src/startup_screen_number_adjust_methods.cpp b/src/startup_screen_number_adjust_methods.cpp
+index 470cfb5594d7151078114ff20aa397468baab7e6..d31f470f71cda01d7b8d97f2a4ee045495102cb1 100644
+--- a/src/startup_screen_number_adjust_methods.cpp
++++ b/src/startup_screen_number_adjust_methods.cpp
+@@ -3,6 +3,7 @@
+ #include "startup_screen_image_item.h"
+ #include "startup_screen_manager.h"
+ #include "startup_screen_text.h"
++#include "startup_float_to_integer.h"
+ 
+ #include <math.h>
+ #include <new>
+@@ -68,7 +69,7 @@ void ScreenNumberAdjust::Unresolved04(float elapsed)
+             context = screen_manager->CurrentContext();
+         if (mode_50 == 0)
+         {
+-            int integer = static_cast<int>(result);
++            int integer = TruncateFloatToWord(result);
+             context->WriteValue(name_68, &integer);
+         }
+         else if (mode_50 == 1)
+@@ -92,7 +93,7 @@ void ScreenNumberAdjust::Unresolved04(float elapsed)
+             context = screen_manager->CurrentContext();
+         if (mode_50 == 0)
+         {
+-            int integer = static_cast<int>(result);
++            int integer = TruncateFloatToWord(result);
+             context->WriteValue(name_68, &integer);
+         }
+         else if (mode_50 == 1)
+@@ -162,7 +163,7 @@ void ScreenNumberAdjust::Unresolved1c()
+     ScreenRectangle bounds = field_left_58->GetRectangle();
+     font->SetRectangle(bounds.left, bounds.top, 23, 13);
+     wchar_t text[24];
+-    swprintf(text, L"%d", static_cast<int>(whole));
++    swprintf(text, L"%d", TruncateFloatToWord(whole));
+     font->DrawText(0, 0, reinterpret_cast<unsigned short*>(text));
+     if (field_right_5c)
+     {
+diff --git a/src/startup_weather_colour.cpp b/src/startup_weather_colour.cpp
+index 583fbd17f7ba9749492f280b0d698d244d089e1f..efb489bb8b3b94ca47bd17e39ff497a153ae3c2f 100644
+--- a/src/startup_weather_colour.cpp
++++ b/src/startup_weather_colour.cpp
+@@ -1,23 +1,24 @@
+ #include "startup_variable_state.h"
++#include "startup_float_to_integer.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004389a0
+ void VariableWeather::SetRed(float value)
+ {
+-    unsigned int channel = static_cast<unsigned int>(static_cast<long long>(static_cast<long double>(value) * 255.0L));
++    unsigned int channel = TruncateFloatToWord(static_cast<long double>(value) * 255.0L);
+     colour_2bb4 = ((channel & 255) << 16) + (colour_2bb4 & 0xffff);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004389e0
+ void VariableWeather::SetGreen(float value)
+ {
+-    unsigned int channel = static_cast<unsigned int>(static_cast<long long>(static_cast<long double>(value) * 255.0L));
++    unsigned int channel = TruncateFloatToWord(static_cast<long double>(value) * 255.0L);
+     colour_2bb4 = ((channel & 255) << 8) + (colour_2bb4 & 0xff00ff);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00438a20
+ void VariableWeather::SetBlue(float value)
+ {
+-    unsigned int channel = static_cast<unsigned int>(static_cast<long long>(static_cast<long double>(value) * 255.0L));
++    unsigned int channel = TruncateFloatToWord(static_cast<long double>(value) * 255.0L);
+     colour_2bb4 = (channel & 255) + (colour_2bb4 & 0xffff00);
+ }
+ 
+diff --git a/src/startup_world_builder_script.cpp b/src/startup_world_builder_script.cpp
+index 46143fff64d3f6614e5f838a9f8db2c751ce1941..85ef1f963cfe4aa89a08fb7cad68f68aabdfc646 100644
+--- a/src/startup_world_builder_script.cpp
++++ b/src/startup_world_builder_script.cpp
+@@ -3,6 +3,7 @@
+ #include "startup_building_status.h"
+ #include "startup_config_owner.h"
+ #include "window_activation.h"
++#include "startup_float_to_integer.h"
+ #include <bit>
+ #include <cstdlib>
+ 
+@@ -38,7 +39,7 @@ WorldScriptValue WorldBuilderEntity::Unknown2c(unsigned int kind, std::uintptr_t
+     case 0xb3:
+     {
+         ScreenWorldPosition position = BuilderTaskPosition(word_98, builder_index_7f0, { x_30, y_34, z_38 });
+-        return { 2, static_cast<unsigned int>(static_cast<int>(kind == 0xb2 ? position.x : position.y)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(kind == 0xb2 ? position.x : position.y)) };
+     }
+     case 0xb4:
+     {
+@@ -58,9 +59,9 @@ WorldScriptValue WorldBuilderEntity::Unknown2c(unsigned int kind, std::uintptr_t
+     case 0xb6:
+         return { 2, builder_index_7f0 };
+     case 0xf9:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(placement_position_7f4.x)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(placement_position_7f4.x)) };
+     case 0xfa:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(placement_position_7f4.y)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(placement_position_7f4.y)) };
+     case 0xfd:
+         return { 2, word_77c };
+     case 0xfe:
+diff --git a/src/startup_world_guest_activity_duration.cpp b/src/startup_world_guest_activity_duration.cpp
+index 8c4b439f751de565fef2531b8d13db5a537c1113..5005a4261010b7b9cedcf5b295e096304c36a689 100644
+--- a/src/startup_world_guest_activity_duration.cpp
++++ b/src/startup_world_guest_activity_duration.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_world_entities.h"
++#include "startup_float_to_integer.h"
+ #include <cstring>
+ 
+ // FUNCTION: BEACHLIFE 0x0046b590
+@@ -26,7 +27,7 @@ void WorldGuestEntity::SetActivityDuration(unsigned int desire, float strength)
+     {
+         unsigned int duration;
+         std::memcpy(&duration, guest_f4->unknown_320 + desire * sizeof(duration), sizeof(duration));
+-        word_31c = static_cast<unsigned int>(static_cast<long long>(static_cast<long double>(duration) * strength));
++        word_31c = TruncateFloatToWord(static_cast<long double>(duration) * strength);
+         break;
+     }
+     }
+diff --git a/src/startup_world_guest_script_values.cpp b/src/startup_world_guest_script_values.cpp
+index 140c1f7f7b00f64d40bdd2250088bc4797076288..7b211064e731e9ee2d79a461e545f2ad8898cc4d 100644
+--- a/src/startup_world_guest_script_values.cpp
++++ b/src/startup_world_guest_script_values.cpp
+@@ -1,6 +1,7 @@
+ #include "startup_world_entities.h"
+ #include "startup_world_subsystems.h"
+ #include "window_activation.h"
++#include "startup_float_to_integer.h"
+ #include <bit>
+ #include <cstring>
+ #include <cstdlib>
+@@ -188,7 +189,7 @@ WorldScriptValue WorldGuestEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+         return GuestInteger((*objects)->id_28);
+     }
+     case 0x4c:
+-        return GuestInteger(static_cast<int>(guest_f4->value_1ec * 10.0));
++        return GuestInteger(TruncateFloatToWord(guest_f4->value_1ec * 10.0));
+     case 0x4d:
+     case 0x5b:
+     {
+diff --git a/src/startup_world_motion_direction.cpp b/src/startup_world_motion_direction.cpp
+index ee2c64cc77daf69529b517ae7b1977696916a329..50486bd6e1751ee56590dfabcb0bdc72699cce41 100644
+--- a/src/startup_world_motion_direction.cpp
++++ b/src/startup_world_motion_direction.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_screen_point.h"
++#include "startup_float_to_integer.h"
+ #include <cmath>
+ 
+ // FUNCTION: BEACHLIFE 0x00430890
+@@ -14,7 +15,7 @@ int MotionDirection(ScreenMapPosition direction, unsigned int count)
+         angle = static_cast<long double>(6.2831854820251465f) - angle;
+     int sectors = static_cast<int>(count * 2u);
+     long double width = static_cast<long double>(6.2831854820251465f) / sectors;
+-    int index = static_cast<int>(static_cast<long long>(angle / width));
++    int index = TruncateFloatToWord(angle / width);
+     if (index % 2)
+         index = static_cast<int>(static_cast<unsigned int>(index) + 1u);
+     return index / 2 % static_cast<int>(count);
+diff --git a/src/startup_world_motion_progress.cpp b/src/startup_world_motion_progress.cpp
+index 88829598c563c4e644acce72a4396d4b60a011ce..a1837563c97b7c51652d23c69d2823df668ce5c8 100644
+--- a/src/startup_world_motion_progress.cpp
++++ b/src/startup_world_motion_progress.cpp
+@@ -1,5 +1,6 @@
+ #include "startup_world_motion_helpers.h"
+ #include "startup_screen_overlay_layout.h"
++#include "startup_float_to_integer.h"
+ #include <cmath>
+ #include <cstdlib>
+ 
+@@ -32,7 +33,7 @@ void WorldMovingEntity::PrepareMove(ScreenModeCommand* command)
+     }
+     word_8c = MotionWord(static_cast<float>(static_cast<unsigned int>(command->words[3])));
+     word_90 = MotionWord(static_cast<float>(static_cast<unsigned int>(command->words[4])));
+-    word_94 = MotionWord(overlay_map->WorldHeightAt(static_cast<int>(static_cast<long long>(MotionFloat(word_8c))),
++    word_94 = MotionWord(overlay_map->WorldHeightAt(TruncateFloatToWord(MotionFloat(word_8c)),
+         static_cast<int>(command->words[4])));
+ }
+ 
+diff --git a/src/startup_world_script_actions.cpp b/src/startup_world_script_actions.cpp
+index 8be389310ff05efc02c679b5d7866b3d93f90644..2c5143a3edd8b20bfdf4fd5300d00f8e4f521b0d 100644
+--- a/src/startup_world_script_actions.cpp
++++ b/src/startup_world_script_actions.cpp
+@@ -128,7 +128,7 @@ void WorldSubsystem20::Action::Update()
+         if (left.kind == 2)
+         {
+             unsigned int a = static_cast<unsigned int>(left.data);
+-            unsigned int b = right.kind == 3 ? static_cast<unsigned int>(static_cast<long long>(ScriptFloat(right.data)))
++            unsigned int b = right.kind == 3 ? static_cast<unsigned int>(ConvertWorldScriptInteger(right))
+                                              : static_cast<unsigned int>(right.data);
+             if (kind_04 == 6)
+                 result = a + b;
+diff --git a/src/startup_world_script_conversions.cpp b/src/startup_world_script_conversions.cpp
+index 6754a7dd0000083ffca3fac5c9826dc2561c55ce..1051cc5651a116deb9008fc43a5fbf76377b3f35 100644
+--- a/src/startup_world_script_conversions.cpp
++++ b/src/startup_world_script_conversions.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_world_script_values.h"
++#include "startup_float_to_integer.h"
+ #include <bit>
+ #include <new>
+ 
+@@ -14,10 +15,7 @@ int ConvertWorldScriptInteger(WorldScriptValue value)
+     case 3:
+     {
+         float number = std::bit_cast<float>(static_cast<unsigned int>(value.data));
+-        // The x87 conversion returns a 64-bit integer; the caller uses its low word.
+-        if (!(number >= -9223372036854775808.0f && number < 9223372036854775808.0f))
+-            return 0;
+-        return static_cast<int>(static_cast<unsigned int>(static_cast<long long>(number)));
++        return TruncateFloatToWord(number);
+     }
+     default:
+         return 0;
+diff --git a/src/startup_world_script_evaluate.cpp b/src/startup_world_script_evaluate.cpp
+index 3583c8745fa7a07c863f6e4bb5baa4a21b27c257..3400a53d59a6af946d5b479cc313de3c290ee255 100644
+--- a/src/startup_world_script_evaluate.cpp
++++ b/src/startup_world_script_evaluate.cpp
+@@ -18,7 +18,7 @@ static ScreenModeCommandWord CommandOperand(const WorldScriptOperand& operand)
+         return static_cast<unsigned char>(value.data);
+     if (value.kind == 2)
+         return ScreenModeCommandWord::FromData(value.data);
+-    return static_cast<unsigned int>(static_cast<long long>(ScriptValueFloat(value.data)));
++    return static_cast<unsigned int>(ConvertWorldScriptInteger({ 3, value.data }));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004dc9a0
+diff --git a/src/startup_world_script_expression_evaluate.cpp b/src/startup_world_script_expression_evaluate.cpp
+index 43a58e06453d766695bb54a2f00d1e73870a4f2b..376baf40c65aebfb3092cf66de2a752e33bc497e 100644
+--- a/src/startup_world_script_expression_evaluate.cpp
++++ b/src/startup_world_script_expression_evaluate.cpp
+@@ -14,7 +14,7 @@ static ScreenModeCommandWord ExpressionCommandWord(WorldScriptValue value, bool
+     if (value.kind == 0)
+         return static_cast<unsigned char>(value.data);
+     if (value.kind == 3 || (numeric && value.kind != 2))
+-        return static_cast<unsigned int>(static_cast<long long>(ExpressionValueFloat(value)));
++        return static_cast<unsigned int>(ConvertWorldScriptInteger({ 3, value.data }));
+     return ScreenModeCommandWord::FromData(value.data);
+ }
+ 
+diff --git a/src/startup_world_script_expression_update.cpp b/src/startup_world_script_expression_update.cpp
+index 7edf5c0e785cec18a92712283d24946f1f2989c5..fdf283a984b03c4a9d96a7c5411f08712fa6b767 100644
+--- a/src/startup_world_script_expression_update.cpp
++++ b/src/startup_world_script_expression_update.cpp
+@@ -146,7 +146,7 @@ void WorldSubsystemScript::Expression::Update(VariableEntity* entity)
+             if (left.kind == 2)
+             {
+                 unsigned int a = static_cast<unsigned int>(left.data);
+-                unsigned int b = right.kind == 3 ? static_cast<unsigned int>(static_cast<long long>(ExpressionFloat(right.data))) : static_cast<unsigned int>(right.data);
++                unsigned int b = right.kind == 3 ? static_cast<unsigned int>(ConvertWorldScriptInteger(right)) : static_cast<unsigned int>(right.data);
+                 if (operation == 6)
+                     result = a + b;
+                 else if (operation == 7)
+diff --git a/src/startup_world_script_read_value.cpp b/src/startup_world_script_read_value.cpp
+index 4adbeadbd6dc6c1fbb355fcc8ef7f13df84a3408..33883a335c0a09b59a1001c05c2f7db0a68458e3 100644
+--- a/src/startup_world_script_read_value.cpp
++++ b/src/startup_world_script_read_value.cpp
+@@ -1,5 +1,6 @@
+ #include "window_activation.h"
+ #include "startup_world_entities.h"
++#include "startup_float_to_integer.h"
+ #include <cstring>
+ #include <set>
+ 
+@@ -185,7 +186,7 @@ WorldScriptValue WindowDeactivationState::ReadScriptValue(unsigned int kind, std
+         {
+             for (unsigned int i = 0; i < count; ++i)
+                 total += world_10->guests_128f0[i]->AsGuest()->happiness_264;
+-            result = static_cast<unsigned int>(static_cast<long long>(total / count * 100.0));
++            result = TruncateFloatToWord(total / count * 100.0);
+             if (result >= 96)
+                 result = 100;
+         }
+diff --git a/src/startup_world_services.cpp b/src/startup_world_services.cpp
+index eaecebc7dd7ae8109181eb4abe5a8922c150c3f1..c8c424b0b508868f8bae60caa2465fac135add34 100644
+--- a/src/startup_world_services.cpp
++++ b/src/startup_world_services.cpp
+@@ -1,11 +1,12 @@
+ #include "window_activation.h"
+ #include "startup_variable_state.h"
++#include "startup_float_to_integer.h"
+ #include <cmath>
+ 
+ // FUNCTION: BEACHLIFE 0x0043d260
+ unsigned int WindowDeactivationState::CurrentHour()
+ {
+-    return static_cast<unsigned int>(static_cast<long long>(std::floor(render_value_160)));
++    return TruncateFloatToWord(std::floor(render_value_160));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0043f0c0
+diff --git a/src/startup_world_staff_script_values.cpp b/src/startup_world_staff_script_values.cpp
+index 501853641950b91cb1bc0e2ac65ffd1a5a85df45..09cb6ccce7c59e43ea682e65f10f49d595ce2876 100644
+--- a/src/startup_world_staff_script_values.cpp
++++ b/src/startup_world_staff_script_values.cpp
+@@ -1,6 +1,7 @@
+ #include "startup_world_entities.h"
+ #include "startup_world_script_values.h"
+ #include "window_activation.h"
++#include "startup_float_to_integer.h"
+ #include <stdlib.h>
+ #include <string.h>
+ 
+@@ -16,6 +17,15 @@ static WorldScriptValue StaffScriptFloat(float value)
+     return { 3, bits };
+ }
+ 
++static int StaffScriptDistance(float first, float second)
++{
++    int distance = TruncateFloatToWord(static_cast<long double>(first) - second);
++    // The retail CDQ/XOR/SUB sequence leaves INT_MIN unchanged.
++    if (distance < 0)
++        distance = static_cast<int>(0u - static_cast<unsigned int>(distance));
++    return distance;
++}
++
+ // GLOBAL: BEACHLIFE 0x005bae20
+ char mechanic_script_animation[40];
+ 
+@@ -33,9 +43,9 @@ WorldScriptValue WorldStaffEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+     case 0x5d:
+         return { 2, current_command_fc->words[5].data };
+     case 0x74:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(directed_x_768)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(directed_x_768)) };
+     case 0x75:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(directed_y_76c)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(directed_y_76c)) };
+     case 0x7b:
+         return { 2, shift_start_114 };
+     case 0x7c:
+@@ -45,7 +55,7 @@ WorldScriptValue WorldStaffEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+         VariableEntity* home = variable_world->FindObject(home_id_100);
+         if (!home)
+             return { 2, 0 };
+-        unsigned int hour = static_cast<int>(window_deactivation_state->render_value_160);
++        unsigned int hour = TruncateFloatToWord(window_deactivation_state->render_value_160);
+         if (shift_start_114 <= shift_end_118)
+         {
+             if (hour < shift_start_114 || hour >= shift_end_118)
+@@ -62,9 +72,9 @@ WorldScriptValue WorldStaffEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+     case 0x80:
+         return StaffScriptBoolean(data, flag_124);
+     case 0x81:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(target_x_140)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(target_x_140)) };
+     case 0x82:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(target_y_144)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(target_y_144)) };
+     case 0x83:
+         return { 2, word_14c };
+     case 0x84:
+@@ -72,9 +82,9 @@ WorldScriptValue WorldStaffEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+     case 0xac:
+     {
+         ScreenWorldPosition home = variable_world->FindObject(home_id_100)->AsBuilding()->StaffPosition();
+-        bool near = static_cast<long double>(abs(static_cast<int>(static_cast<long double>(home.x) - x_30))) < 0.1f;
++        bool near = static_cast<long double>(StaffScriptDistance(home.x, x_30)) < 0.1f;
+         if (near)
+-            near = static_cast<long double>(abs(static_cast<int>(static_cast<long double>(home.y) - y_34))) < 0.1f;
++            near = static_cast<long double>(StaffScriptDistance(home.y, y_34)) < 0.1f;
+         return StaffScriptBoolean(data, near);
+     }
+     default:
+@@ -136,9 +146,9 @@ WorldScriptValue WorldMechanicEntity::Unknown2c(unsigned int kind, std::uintptr_
+     case 0xad:
+         return { 2, repair_type_7a0 };
+     case 0xae:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(watering_position_7b4.x)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(watering_position_7b4.x)) };
+     case 0xaf:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(watering_position_7b4.y)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(watering_position_7b4.y)) };
+     default:
+         return WorldStaffEntity::Unknown2c(kind, data);
+     }
+@@ -191,7 +201,7 @@ WorldScriptValue WorldRepresentativeEntity::Unknown2c(unsigned int kind, std::ui
+     case 0x108:
+         return { 2, word_778 };
+     case 0x109:
+-        return { 2, (word_88c - word_888) * static_cast<unsigned int>(static_cast<int>(value_894)) + word_888 };
++        return { 2, (word_88c - word_888) * static_cast<unsigned int>(TruncateFloatToWord(value_894)) + word_888 };
+     case 0x10a:
+         return StaffScriptFloat(value_894);
+     case 0x10b:
+@@ -204,9 +214,9 @@ WorldScriptValue WorldRepresentativeEntity::Unknown2c(unsigned int kind, std::ui
+     case 0x10c:
+         return { 2, flag_898 };
+     case 0x10d:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(guest_offset_x_89c)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(guest_offset_x_89c)) };
+     case 0x10e:
+-        return { 2, static_cast<unsigned int>(static_cast<int>(guest_offset_y_8a0)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(guest_offset_y_8a0)) };
+     case 0x10f:
+         return { 2, home_id_100 };
+     default:
+diff --git a/tests/float_to_integer.cpp b/tests/float_to_integer.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6374aff4c4ed17cad04725367b25535d3dcf606a
+--- /dev/null
++++ b/tests/float_to_integer.cpp
+@@ -0,0 +1,33 @@
++#include "startup_float_to_integer.h"
++#include <cassert>
++#include <limits>
++
++int main()
++{
++    struct Case
++    {
++        long double value;
++        std::uint32_t expected;
++    };
++    const Case cases[] = {
++        { 0.0L, 0 },
++        { -0.0L, 0 },
++        { 1.9L, 1 },
++        { -1.9L, 0xffffffffu },
++        { 2147483647.0L, 0x7fffffffu },
++        { 2147483648.0L, 0x80000000u },
++        { 4294967295.0L, 0xffffffffu },
++        { 4294967296.0L, 0 },
++        { 4294967297.0L, 1 },
++        { -4294967297.0L, 0xffffffffu },
++        { 9223372036854775808.0L, 0 },
++        { -9223372036854775808.0L, 0 },
++        { std::numeric_limits<long double>::infinity(), 0 },
++        { -std::numeric_limits<long double>::infinity(), 0 },
++        { std::numeric_limits<long double>::quiet_NaN(), 0 },
++        { std::numeric_limits<long double>::max(), 0 },
++        { -std::numeric_limits<long double>::max(), 0 },
++    };
++    for (const Case& item : cases)
++        assert(static_cast<std::uint32_t>(TruncateFloatToWord(item.value)) == item.expected);
++}
+diff --git a/tests/frame_clock.cpp b/tests/frame_clock.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b540683584bde6d627bc9a8651459b0fd4ae65dc
+--- /dev/null
++++ b/tests/frame_clock.cpp
+@@ -0,0 +1,37 @@
++#include "startup_frame_clock.h"
++#include <cassert>
++#include <cmath>
++#include <limits>
++
++FrameClock* startup_frame_clock = 0;
++
++static void CheckElapsed(int start, int end, float expected)
++{
++    FrameClock clock(start);
++    clock.Update(end);
++    assert(std::fabs(clock.seconds - expected) < 0.000001f);
++    assert(clock.delta_seconds == clock.seconds);
++    assert(clock.frames == 1);
++}
++
++int main()
++{
++    CheckElapsed(100, 132, 0.032f);
++    CheckElapsed(std::numeric_limits<int>::max() - 15,
++        std::numeric_limits<int>::min() + 16,
++        0.032f);
++    CheckElapsed(-16, 16, 0.032f);
++    CheckElapsed(std::numeric_limits<int>::min() + 16,
++        std::numeric_limits<int>::max() - 15,
++        -0.032f);
++    CheckElapsed(132, 100, -0.032f);
++
++    FrameClock clock(0);
++    clock.frames = std::numeric_limits<unsigned int>::max();
++    clock.previous_frames = clock.frames;
++    clock.Update(2000);
++    assert(clock.frames == 0);
++    assert(clock.sampled_frames == 1);
++    assert(clock.previous_frames == 0);
++    assert(clock.sample_seconds == 1.0f);
++}
+diff --git a/tests/gui_integer.cpp b/tests/gui_integer.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fca9ab0c9f6a19b758d09e2cb36dc4edf912bc5a
+--- /dev/null
++++ b/tests/gui_integer.cpp
+@@ -0,0 +1,36 @@
++#include "startup_gui_parser.h"
++#include <cassert>
++#include <limits>
++
++static void CheckInteger(const char* text, int expected)
++{
++    GuiParserState parser(0);
++    parser.buffer = text;
++    parser.cursor = 0;
++    int value;
++    parser.ReadInteger(value, false);
++    assert(value == expected);
++    assert(text[parser.cursor] == ')');
++}
++
++int main()
++{
++    CheckInteger(" 42)", 42);
++    CheckInteger("2147483647)", std::numeric_limits<int>::max());
++    CheckInteger("2147483648)", std::numeric_limits<int>::min());
++    CheckInteger("4294967295)", -1);
++    CheckInteger("4294967296)", 0);
++    CheckInteger("18446744073709551615)", -1);
++    CheckInteger("-1)", -29);
++    CheckInteger("\xff)", -49);
++
++    GuiParserState parser(0);
++    parser.buffer = "4294967295, \t42) next";
++    parser.cursor = 0;
++    int value;
++    parser.ReadInteger(value, true);
++    assert(value == -1);
++    parser.ReadInteger(value, true);
++    assert(value == 42);
++    assert(parser.buffer[parser.cursor] == 'n');
++}

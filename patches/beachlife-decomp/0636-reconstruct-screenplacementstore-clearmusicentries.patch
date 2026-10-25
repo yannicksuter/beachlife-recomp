@@ -1,0 +1,121 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 7b6966a..7952d1e 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3513,3 +3513,15 @@ extern "C" __declspec(dllexport) void FixtureMatch5_13(ScreenManager* receiver,
+ {
+     receiver->ScreenManager::HandlePanelInput(p0, p1, p2);
+ }
++
++#include "copy_trivial.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_music_entry.h"
++#include <new>
++#include <stddef.h>
++#include <string.h>
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch5_14(ScreenPlacementStore* receiver)
++{
++    receiver->ScreenPlacementStore::ClearMusicEntries();
++}
+diff --git a/metadata.csv b/metadata.csv
+index 24e37fd..71f5ff6 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -422,3 +422,4 @@ address,type,size,symbol
+ 0x0049e580,function,113,?Unknown20@GameFileReader@@UAEXPBDPBIH@Z
+ 0x0049e730,function,113,?Unknown10@GameFileReader@@UAEXPBDPBIH@Z
+ 0x004b10e0,function,113,?HandlePanelInput@ScreenManager@@QAEXHHI@Z
++0x004e6980,function,113,?ClearMusicEntries@ScreenPlacementStore@@QAEXXZ
+diff --git a/src/startup_screen_checkbox_activation.cpp b/src/startup_screen_checkbox_activation.cpp
+index 104d3a5..b8aaed5 100644
+--- a/src/startup_screen_checkbox_activation.cpp
++++ b/src/startup_screen_checkbox_activation.cpp
+@@ -1,7 +1,8 @@
+ #include "startup_screen_checkbox.h"
+ #include "startup_screen_shared_methods.h"
+ 
+-// Shared retail 0x004c8510, also used by ScreenImageItem.
++// Shared retail method, also used by ScreenImageItem.
++// FUNCTION: BEACHLIFE 0x004c8510 FOLDED
+ void ScreenCheckBox::Unresolved24(unsigned char enabled)
+ {
+     ActivatePreparedScreenItem(*this, enabled);
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index 2ee8e0b..3154703 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -46,6 +46,7 @@ struct ScreenPlacementStore
+     bool FindPlacement(int group, int* x, int* y);
+     void WritePlacement(int x, int y, int group);
+     void ClearPlacements();
++    void ClearMusicEntries();
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_placement_clear_music.cpp b/src/startup_screen_placement_clear_music.cpp
+new file mode 100644
+index 0000000..eda4ec6
+--- /dev/null
++++ b/src/startup_screen_placement_clear_music.cpp
+@@ -0,0 +1,33 @@
++#include "copy_trivial.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_music_entry.h"
++
++#include <new>
++#include <stddef.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004e6980
++void ScreenPlacementStore::ClearMusicEntries()
++{
++    ScreenPlacementMusicEntry** last = music_end_1c;
++    ScreenPlacementMusicEntry** position = music_begin_18;
++    while (position != last)
++    {
++        ScreenPlacementMusicEntry* entry = *position;
++        if (entry)
++        {
++            if (entry->name_00)
++            {
++                ::operator delete(entry->name_00);
++            }
++            if (entry->directory_04)
++            {
++                ::operator delete(entry->directory_04);
++            }
++            ::operator delete(entry);
++        }
++        ++position;
++    }
++
++    music_end_1c = static_cast<ScreenPlacementMusicEntry**>(CopyTrivial(music_end_1c, music_end_1c, music_begin_18));
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index ca8aab4..17ca842 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2012,6 +2012,12 @@
+       "size": 113,
+       "name": "ScreenManager::HandlePanelInput",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004e6980",
++      "size": 113,
++      "name": "ScreenPlacementStore::ClearMusicEntries",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2242,6 +2248,9 @@
+     ],
+     "window_audio_controls.cpp": [
+       "/Ob1"
++    ],
++    "startup_screen_placement_clear_music.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

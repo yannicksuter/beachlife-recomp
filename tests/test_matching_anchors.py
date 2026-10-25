@@ -137,6 +137,32 @@ class ComparisonAnchorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'declaration'):
                 matching.comparison_anchor_specs(self.metadata, rejected)
 
+    def test_unsigned_byte_return_keeps_its_abi_and_remains_unqualified(self):
+        (self.source / 'generated.h').write_text(
+            'struct GeneratedOwner { unsigned char Input(unsigned int, unsigned int, '
+            'unsigned int, unsigned int); };\n')
+        anchor = {'address': '0x00401200', 'size': 25, 'name': 'GeneratedOwner::Input',
+                  'symbol': '?Input@GeneratedOwner@@QAEEIIII@Z', 'header': 'generated.h',
+                  'kind': 'false-member', 'return_type': 'unsigned char',
+                  'parameters': ['unsigned int'] * 4}
+        target = {'functions': self.target['functions'], 'comparison_anchors': [anchor]}
+        (self.metadata / 'metadata.csv').write_text(
+            'address,type,size,symbol\n0x00401200,function,25,?Input@GeneratedOwner@@QAEEIIII@Z\n')
+        specs = matching.comparison_anchor_specs(self.metadata, target)
+        paths, records = matching.generate_comparison_anchors(
+            self.metadata, self.source, self.directory / 'output', specs)
+        self.assertIn('unsigned char GeneratedOwner::Input(unsigned int argument1, '
+                      'unsigned int argument2, unsigned int argument3, unsigned int argument4)',
+                      paths[0].read_text())
+        self.assertIn('comparison_anchor_marker = 0x00401200;', paths[0].read_text())
+        self.assertNotIn(paths[0], self.metadata.rglob('*'))
+        self.assertFalse(records[0]['qualified'])
+        self.assertFalse(records[0]['image_execution_permitted'])
+        self.assertEqual(target['functions'], self.target['functions'])
+        anchor['return_type'] = 'unsigned int'
+        with self.assertRaisesRegex(ValueError, 'declaration'):
+            matching.comparison_anchor_specs(self.metadata, target)
+
     def test_credited_address_name_and_duplicate_anchor_are_rejected(self):
         for changed in ({'address': '0x00401000'}, {'name': 'GeneratedOwner::Lookup'}):
             target = copy.deepcopy(self.target)

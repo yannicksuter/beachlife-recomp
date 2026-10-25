@@ -1,0 +1,104 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 6ca7c57..f2dc0c5 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -273,7 +273,7 @@ typedef char save_manager_registry_check[offsetof(ScreenManager, registry) == 0x
+ typedef char save_manager_active_check[offsetof(ScreenManager, active) == 0xbc ? 1 : -1];
+ typedef char save_manager_mode_check[offsetof(ScreenManager, mode) == 0x128 ? 1 : -1];
+ typedef char save_manager_previous_check[offsetof(ScreenManager, previous_mode) == 0x12c ? 1 : -1];
+-typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x130 ? 1 : -1];
++typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x13c ? 1 : -1];
+ typedef char save_game_placement_check[offsetof(ScreenRequestGamePrefix, placement) == 0x54 ? 1 : -1];
+ typedef char save_game_prefix_size_check[sizeof(ScreenRequestGamePrefix) == 0xc8 ? 1 : -1];
+ typedef char save_rectangle_size_check[sizeof(ScreenRectangle) == 16 ? 1 : -1];
+@@ -2588,3 +2588,12 @@ extern "C" __declspec(dllexport) ScreenMode9Controller* FixtureMatch3_30(void* m
+ {
+     return new (memory) ScreenMode9Controller(owner);
+ }
++
++#include "startup_screen_manager.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch3_31(ScreenManager* item)
++{
++    item->ScreenManager::ReadItemThreshold();
++}
++
++typedef char Match3ThresholdOffset[offsetof(ScreenManager, value_138) == 0x138 ? 1 : -1];
+diff --git a/metadata.csv b/metadata.csv
+index 01845a2..a74573d 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -254,3 +254,4 @@ address,type,size,symbol
+ 0x004a9e70,function,68,?RenderScreens@ScreenMode9Controller@@UAEXXZ
+ 0x004a9ec0,function,361,?HandleFourWords@ScreenMode9Controller@@UAEEIIII@Z
+ 0x004a9de0,function,33,??0ScreenMode9Controller@@QAE@PAUScreenManager@@@Z
++0x004af6f0,function,33,?ReadItemThreshold@ScreenManager@@QAEMXZ
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 16015e0..138f28a 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -58,6 +58,8 @@ struct ScreenManager
+     unsigned char unknown_c0[0x68];
+     int mode;
+     int previous_mode;
++    unsigned char unknown_130[8];
++    float value_138;
+ 
+     ScreenRequestContext* CurrentContext();
+ 
+@@ -75,6 +77,7 @@ struct ScreenManager
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+     void SavePlacement(const ScreenRectangle& rectangle, int group);
+     void UpdateModeScreens(float elapsed);
++    float ReadItemThreshold();
+ };
+ 
+ extern ScreenRequestGamePrefix* screen_request_game;
+@@ -85,4 +88,7 @@ struct ScreenGameRegistration
+     ~ScreenGameRegistration();
+ };
+ 
++extern const float screen_item_positive_threshold;
++extern const float screen_item_other_threshold;
++
+ #endif
+diff --git a/src/startup_screen_manager_threshold.cpp b/src/startup_screen_manager_threshold.cpp
+new file mode 100644
+index 0000000..f707bac
+--- /dev/null
++++ b/src/startup_screen_manager_threshold.cpp
+@@ -0,0 +1,17 @@
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x004f4688
++const float screen_item_positive_threshold = 0.05f;
++
++// GLOBAL: BEACHLIFE 0x004f4680
++const float screen_item_other_threshold = 1.5f;
++
++// FUNCTION: BEACHLIFE 0x004af6f0
++float ScreenManager::ReadItemThreshold()
++{
++    if (value_138 > 0.0f)
++    {
++        return screen_item_positive_threshold;
++    }
++    return screen_item_other_threshold;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 80ad850..414178c 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1244,6 +1244,12 @@
+       "size": 33,
+       "name": "ScreenMode9Controller::ScreenMode9Controller",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004af6f0",
++      "size": 33,
++      "name": "ScreenManager::ReadItemThreshold",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

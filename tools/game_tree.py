@@ -29,11 +29,13 @@ WORK = Path(os.environ['GAME_TREE_WORK']) if os.environ.get('GAME_TREE_WORK') el
 BASE_TAG = 'base'
 
 
-def git(*args, cwd=None, capture=True):
+def git(*args, cwd=None, capture=True, strip=True):
     result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', *args],
                             cwd=cwd or WORK, check=True, text=True,
                             stdout=subprocess.PIPE if capture else None)
-    return result.stdout.strip() if capture else ''
+    if not capture:
+        return ''
+    return result.stdout.strip() if strip else result.stdout
 
 
 def series_entries():
@@ -126,8 +128,9 @@ def patches(args):
     for index, commit in enumerate(commits, 1):
         subject = git('log', '-1', '--format=%s', commit)
         name = f'game-{index:04d}-{slug(subject)}.patch'
-        diff = git('diff', '--no-color', '--no-renames', '--full-index', f'{commit}^', commit)
-        (DECOMP / name).write_text(diff + '\n', encoding='utf-8')
+        # Exact text: a diff can end with a one-space context line.
+        diff = git('diff', '--no-color', '--no-renames', '--full-index', f'{commit}^', commit, strip=False)
+        (DECOMP / name).write_text(diff, encoding='utf-8')
         names.append(name)
     for stale in DECOMP.glob('game-[0-9][0-9][0-9][0-9]-*.patch'):
         if stale.name not in names:

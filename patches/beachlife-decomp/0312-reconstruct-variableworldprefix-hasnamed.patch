@@ -1,0 +1,126 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 897fd71..9a79cda 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2413,3 +2413,10 @@ extern "C" __declspec(dllexport) void FixtureMatch3_05(WindowDeactivationState*
+ {
+     item->WindowDeactivationState::SetGameSpeed(index);
+ }
++
++#include "startup_variable_state.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch3_06(VariableWorldPrefix* item, const char* name)
++{
++    item->VariableWorldPrefix::HasNamed(name);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 12c14a4..1304116 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -220,3 +220,4 @@ address,type,size,symbol
+ 0x004e9050,function,69,?Enter@ResetGameController@@UAEXXZ
+ 0x004e8fb0,function,25,??0ResetGameController@@QAE@PBD@Z
+ 0x0043f480,function,26,?SetGameSpeed@WindowDeactivationState@@QAEXI@Z
++0x0042f000,function,27,?HasNamed@VariableWorldPrefix@@QAEIPBD@Z
+diff --git a/src/startup_screen_feature_count.cpp b/src/startup_screen_feature_count.cpp
+new file mode 100644
+index 0000000..6cc6210
+--- /dev/null
++++ b/src/startup_screen_feature_count.cpp
+@@ -0,0 +1,46 @@
++#include "startup_variable_state.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0042efa0
++static bool FeatureNameMatches(const VariableEntity* feature, const void* name)
++{
++    return _stricmp(feature->name_06, static_cast<const char*>(name)) == 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0042f9f0
++void VariableWorldPrefix::CountMatches(
++    unsigned int& result, const void* key, bool (*predicate)(const VariableEntity*, const void*))
++{
++    unsigned int count = 0;
++    unsigned int index;
++    for (index = 0; index < buildings_04; ++index)
++    {
++        if (predicate(buildings_12120[index], key))
++        {
++            ++count;
++        }
++    }
++    for (index = 0; index < guests_08; ++index)
++    {
++        if (predicate(guests_128f0[index], key))
++        {
++            ++count;
++        }
++    }
++    for (index = 0; index < entities_0c; ++index)
++    {
++        if (predicate(entities_14060[index], key))
++        {
++            ++count;
++        }
++    }
++    result = count;
++}
++
++// FUNCTION: BEACHLIFE 0x0042f000
++unsigned int VariableWorldPrefix::HasNamed(const char* name)
++{
++    unsigned int count;
++    CountMatches(count, name, FeatureNameMatches);
++    return count;
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 444f924..34009bd 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -147,9 +147,8 @@ struct VariableWeather
+     void RefreshForScreenSize();
+ };
+ 
+-// The observed fixed prefix ends at the inline guest-pointer storage. Its
+-// allocation capacity is not recovered. The source's explicit x86 tail access
+-// is a source-composition gate, not a native array or complete world owner.
++// Observed inline building, guest and entity pointer tables. Complete world
++// ownership and lifetime remain separate from this borrowed matching view.
+ struct VariableWorldPrefix
+ {
+     unsigned char unknown_00[4];
+@@ -160,6 +159,8 @@ struct VariableWorldPrefix
+     // Inline building table; the guest (+0x128f0) and entity (+0x14060) tables
+     // follow this prefix.
+     VariableEntity* buildings_12120[500];
++    VariableEntity* guests_128f0[1500];
++    VariableEntity* entities_14060[0x4074];
+ 
+     // Actual 0x0042fab0, RET4; low-byte flag, real world owner required.
+     void SetKeylines(unsigned char enabled);
+@@ -169,6 +170,7 @@ struct VariableWorldPrefix
+     VariableEntity** ByType(unsigned char type, unsigned int* count);  // 0x0042f020, RET8.
+     VariableEntity** AllStaff(unsigned int* count);                    // 0x0042f0e0, RET4.
+     unsigned int CountType(unsigned char type);                        // 0x0042f0f0, RET4.
++    void CountMatches(unsigned int& result, const void* key, bool (*predicate)(const VariableEntity*, const void*));
+ };
+ 
+ // These declarations name the existing original roots; they define no storage.
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 6439e7f..8bb67df 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1094,6 +1094,12 @@
+       "size": 26,
+       "name": "WindowDeactivationState::SetGameSpeed",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x0042f000",
++      "size": 27,
++      "name": "VariableWorldPrefix::HasNamed",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

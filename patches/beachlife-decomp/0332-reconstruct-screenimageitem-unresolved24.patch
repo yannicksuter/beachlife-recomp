@@ -1,0 +1,129 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index c13d531..28bf639 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2483,3 +2483,10 @@ extern "C" __declspec(dllexport) void FixtureMatch3_15(ScreenLinearContainer* it
+ {
+     item->ScreenLinearContainer::MarkPrepared();
+ }
++
++#include "startup_screen_image_item.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch3_16(ScreenImageItem* item, unsigned char enabled)
++{
++    item->ScreenImageItem::Unresolved24(enabled);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 763748a..770faad 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -236,3 +236,4 @@ address,type,size,symbol
+ 0x004a7180,function,338,?HandleFourWords@ScreenMode10Controller@@UAEEIIII@Z
+ 0x004a70c0,function,29,??0ScreenMode10Controller@@QAE@PAUScreenManager@@@Z
+ 0x004c0fc0,function,29,?MarkPrepared@ScreenLinearContainer@@UAEXXZ
++0x004c8510,function,30,?Unresolved24@ScreenImageItem@@UAEXE@Z
+diff --git a/src/startup_screen_image_item_virtuals.cpp b/src/startup_screen_image_item_virtuals.cpp
+index 1be68a8..e8df797 100644
+--- a/src/startup_screen_image_item_virtuals.cpp
++++ b/src/startup_screen_image_item_virtuals.cpp
+@@ -1,3 +1,5 @@
++#include "startup_screen_shared_methods.h"
++#include "startup_screen_dialog_resource.h"
+ #include "startup_screen_image_item.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004c3d20
+@@ -5,3 +7,9 @@ void ScreenImageItem::Unresolved04(float elapsed)
+ {
+     ScreenItem::Unresolved04(elapsed);
+ }
++
++// FUNCTION: BEACHLIFE 0x004c8510
++void ScreenImageItem::Unresolved24(unsigned char enabled)
++{
++    ActivatePreparedScreenItem(*this, enabled);
++}
+diff --git a/src/startup_screen_item.h b/src/startup_screen_item.h
+index 4cc0268..8479609 100644
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -26,7 +26,7 @@ struct ScreenItem
+     virtual void MarkPrepared();
+     virtual void Unresolved1c() = 0;
+     virtual unsigned char Unresolved20();
+-    virtual void Unresolved24() = 0;
++    virtual void Unresolved24(unsigned char enabled);
+     virtual void Unresolved28() = 0;
+     virtual void MoveRectangle(int dx, int dy);
+     virtual unsigned char ReadState40();
+diff --git a/src/startup_screen_item_activation.cpp b/src/startup_screen_item_activation.cpp
+new file mode 100644
+index 0000000..1037490
+--- /dev/null
++++ b/src/startup_screen_item_activation.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004ada40
++void ScreenItem::Unresolved24(unsigned char enabled)
++{
++    state_30 = enabled;
++    if (!enabled)
++    {
++        screen_manager->ClearItemReference(this);
++        elapsed_24 = 0.0f;
++    }
++}
+diff --git a/src/startup_screen_shared_methods.h b/src/startup_screen_shared_methods.h
+index 6f6464d..a37f642 100644
+--- a/src/startup_screen_shared_methods.h
++++ b/src/startup_screen_shared_methods.h
+@@ -1,6 +1,9 @@
+ #ifndef STARTUP_SCREEN_SHARED_METHODS_H
+ #define STARTUP_SCREEN_SHARED_METHODS_H
+ 
++#include "startup_screen_children.h"
++#include "startup_screen_item.h"
++
+ inline void IgnoreScreenAction()
+ {
+ }
+@@ -16,4 +19,11 @@ inline void IgnoreScreenWord(Word)
+ {
+ }
+ 
++inline void ActivatePreparedScreenItem(ScreenItem& item, unsigned char enabled)
++{
++    item.ScreenItem::Unresolved24(enabled);
++    if (enabled)
++        item.MarkPrepared();
++}
++
+ #endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 59376a3..740c603 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1154,6 +1154,12 @@
+       "size": 29,
+       "name": "ScreenLinearContainer::MarkPrepared",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004c8510",
++      "size": 30,
++      "name": "ScreenImageItem::Unresolved24",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1265,6 +1271,9 @@
+     ],
+     "startup_variable_catalog_scenery.cpp": [
+       "/Ob1"
++    ],
++    "startup_screen_image_item_virtuals.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

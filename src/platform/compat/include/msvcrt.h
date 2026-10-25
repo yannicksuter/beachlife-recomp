@@ -34,8 +34,17 @@ extern "C"
     int beachlife_crt_fseek(FILE* stream, int32_t offset, int origin);
     int32_t beachlife_crt_ftell(FILE* stream);
     int beachlife_crt_fgetpos(FILE* stream, void* position);
+    // MSVCRT's generator: RAND_MAX 0x7fff and its own sequence, per thread.
+    int beachlife_crt_rand(void) noexcept;
+    void beachlife_crt_srand(unsigned int seed) noexcept;
 #ifdef __cplusplus
 }
+
+namespace std
+{
+using ::beachlife_crt_rand;
+using ::beachlife_crt_srand;
+} // namespace std
 
 // Overloads retain the retail CRT spellings without interposing on the host
 // libc's 32-bit wide functions or changing std::wstring's ABI.

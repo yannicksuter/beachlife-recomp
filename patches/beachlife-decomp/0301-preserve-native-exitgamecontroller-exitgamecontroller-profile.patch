@@ -1,0 +1,207 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index a94672f..277a234 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -2371,10 +2371,3 @@ extern "C" __declspec(dllexport) void FixtureMatch59(ScreenLoadPanel13c* item)
+ {
+     item->ScreenLoadPanel13c::~ScreenLoadPanel13c();
+ }
+-
+-#include "startup_exit_game.h"
+-// Borrowed typed receiver; compile/link retention only, never executed.
+-extern "C" __declspec(dllexport) ExitGameController* FixtureMatch3_00(void* memory, const char* name)
+-{
+-    return new (memory) ExitGameController(name);
+-}
+diff --git b/metadata.csv a/metadata.csv
+index 0a1b55c..7f9774c 100644
+--- b/metadata.csv
++++ a/metadata.csv
+@@ -211,5 +211,3 @@ address,type,size,symbol
+ 0x004a8610,function,25,??0ScreenMode4Controller@@QAE@PAUScreenManager@@@Z
+ 0x004cd9e0,function,282,??1ScreenLoadPanel13cOwner@@AAE@XZ
+ 0x004c2450,function,25,??1ScreenLoadPanel13c@@QAE@XZ
+-0x004e8230,function,25,??0ExitGameController@@QAE@PBD@Z
+-0x004e8300,function,99,?Enter@ExitGameController@@UAEXXZ
+diff --git b/src/startup_exit_game.h a/src/startup_exit_game.h
+deleted file mode 100644
+index 5ea2766..0000000
+--- b/src/startup_exit_game.h
++++ /dev/null
+@@ -1,27 +0,0 @@
+-#ifndef STARTUP_EXIT_GAME_H
+-#define STARTUP_EXIT_GAME_H
+-
+-#include "startup_controller.h"
+-
+-// Actual 140-byte x86 "ExitGame" controller at Game+0x1c. Shared cells are
+-// folded identical bodies; each slot remains this class's own override.
+-// VTABLE: BEACHLIFE 0x004f4d54
+-struct ExitGameController : ControllerState
+-{
+-    float elapsed; // 0x88.
+-
+-    // Actual 0x004e8230, RET4: Game passes "ExitGame".
+-    explicit ExitGameController(const char* name);
+-    virtual ~ExitGameController();                         // 0x004e8250, deleting wrapper, RET4.
+-    virtual int Update();                                  // 0x004e8290, RET0.
+-    virtual void RenderBeforeScreens();                    // 0x004d3890, RET0.
+-    virtual void RenderAfterScreens();                     // 0x00437d10, RET0.
+-    virtual void Enter();                                  // 0x004e8300, RET0.
+-    virtual void Exit();                                   // 0x004e8f30, RET0.
+-    virtual const char* ScriptPath();                      // 0x004e8370, RET0.
+-    virtual void ControllerSlot1c();                       // 0x00437d10, RET0.
+-    virtual void ScreenSizeChanged(int width, int height); // 0x004e8fa0, RET8.
+-    virtual void ControllerSlot24();                       // 0x00437d10, RET0.
+-};
+-
+-#endif
+diff --git b/src/startup_exit_game_constructor.cpp a/src/startup_exit_game_constructor.cpp
+deleted file mode 100644
+index 0cbfe8b..0000000
+--- b/src/startup_exit_game_constructor.cpp
++++ /dev/null
+@@ -1,7 +0,0 @@
+-#include "startup_exit_game.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e8230
+-ExitGameController::ExitGameController(const char* name)
+-    : ControllerState(name)
+-{
+-}
+diff --git b/src/startup_exit_game_dependencies.cpp a/src/startup_exit_game_dependencies.cpp
+deleted file mode 100644
+index 87dec35..0000000
+--- b/src/startup_exit_game_dependencies.cpp
++++ /dev/null
+@@ -1,74 +0,0 @@
+-#include "startup_exit_game.h"
+-#include "startup_frame_clock.h"
+-#include "startup_input_state.h"
+-#include "startup_input_motion.h"
+-#include "startup_screen_manager.h"
+-#include "startup_screen_shared_methods.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e8270
+-// Scalar deleting wrapper: 0x004e8250.
+-ExitGameController::~ExitGameController()
+-{
+-    if (active)
+-        ControllerState::Exit();
+-}
+-
+-// FUNCTION: BEACHLIFE 0x004e8290
+-int ExitGameController::Update()
+-{
+-    float delta = startup_frame_clock->delta_seconds;
+-    if (delta > 0.1f)
+-        delta = 0.1f;
+-    elapsed += delta;
+-    if (elapsed > 15.0f)
+-        screen_request_game->controller_selection.SelectPendingController(2);
+-    if (startup_input_state->ReadFirstButtonTransition() == 1)
+-        elapsed = 15.0f;
+-    return 0;
+-}
+-
+-// FUNCTION: BEACHLIFE 0x004e8370
+-const char* ExitGameController::ScriptPath()
+-{
+-    return "data/script/gui/exitgame.pis";
+-}
+-
+-// Folded retail RET0, shared with the screen-item defaults.
+-void ExitGameController::RenderBeforeScreens()
+-{
+-    IgnoreScreenAction();
+-}
+-
+-// Folded retail RET0, shared with the screen-item defaults.
+-void ExitGameController::ControllerSlot1c()
+-{
+-    IgnoreScreenAction();
+-}
+-
+-// Folded retail RET0, shared with the screen-item defaults.
+-void ExitGameController::ControllerSlot24()
+-{
+-    IgnoreScreenAction();
+-}
+-
+-// Folded retail RET0, shared with the screen-item defaults.
+-void ExitGameController::RenderAfterScreens()
+-{
+-    IgnoreScreenAction();
+-}
+-
+-void ExitGameController::Exit()
+-{
+-    ControllerState::Exit();
+-}
+-
+-void ExitGameController::ScreenSizeChanged(int width, int height)
+-{
+-    ControllerState::ScreenSizeChanged(width, height);
+-}
+-
+-// Shared original exit cell 0x004e8f30.
+-void ControllerState::Exit()
+-{
+-    active = 0;
+-}
+diff --git b/src/startup_screen_manager.h a/src/startup_screen_manager.h
+index ad5e7c2..b700fe8 100644
+--- b/src/startup_screen_manager.h
++++ a/src/startup_screen_manager.h
+@@ -2,7 +2,6 @@
+ #define STARTUP_SCREEN_MANAGER_H
+ 
+ #include "startup_list.h"
+-#include "startup_controller_selection.h"
+ 
+ struct ScreenItem;
+ struct ScreenFontData;
+@@ -18,8 +17,7 @@ struct ScreenManager;
+ // This does not recover the complete game class or its lifetime.
+ struct ScreenRequestGamePrefix
+ {
+-    ControllerSelectionState controller_selection;
+-    unsigned char unknown_2c[0x1c];
++    unsigned char unknown_00[0x48];
+     ScreenManager* screens;
+     unsigned char unknown_4c[8];
+     ScreenPlacementStore* placement;
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 457793b..36876bc 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -1058,12 +1058,6 @@
+       "size": 25,
+       "name": "ScreenLoadPanel13c::~ScreenLoadPanel13c",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+-    },
+-    {
+-      "address": "0x004e8230",
+-      "size": 25,
+-      "name": "ExitGameController::ExitGameController",
+-      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1608,16 +1602,6 @@
+         "unsigned int",
+         "unsigned int"
+       ]
+-    },
+-    {
+-      "address": "0x004e8300",
+-      "size": 99,
+-      "name": "ExitGameController::Enter",
+-      "symbol": "?Enter@ExitGameController@@UAEXXZ",
+-      "header": "startup_exit_game.h",
+-      "kind": "void-member",
+-      "return_type": "void",
+-      "parameters": []
+     }
+   ]
+ }

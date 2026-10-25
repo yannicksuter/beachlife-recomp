@@ -1,0 +1,461 @@
+diff --git a/src/startup_catalog_constructor.cpp b/src/startup_catalog_constructor.cpp
+index 04992fe5317cd23a48e98b9ac0d4ef523d9bce27..d2a78c7c05de66a35e0c06e94e060d656321dbc3 100644
+--- a/src/startup_catalog_constructor.cpp
++++ b/src/startup_catalog_constructor.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ #include "startup_ble_file.h"
+ #include <new>
+ #include <string.h>
+@@ -14,16 +15,16 @@ VariableCatalog::VariableCatalog(const char* buildings, const char* guests)
+         memset(storage + 0x38, 0, 0x498 * 4);
+         memset(storage + 0x1298, 0, 0x802 * 4);
+         memset(storage + 0x32a0, 0, 0x5f * 4);
+-        memset(storage + 0x341c, 0, 0xd01d * 4);
+-        memset(storage + 0x37490, 0, 0x40c * 4);
+-        memset(storage + 0x384c0, 0, 0xb3d * 4);
+-        memset(storage + 0x3b1b4, 0, 0x125c * 4);
+-        memset(storage + 0x3fb24, 0, 0x3ae * 4);
+-        memset(storage + 0x4f1a4, 0, 0x13be * 4);
+-        memset(storage + 0x4e5e8, 0, 0x1b8 * 4);
+-        memset(storage + 0x4f114, 0, 0x24 * 4);
+-        memset(storage + 0x5409c, 0, 0x4856 * 4);
+-        memset(storage + 0x409dc, 0, 0x3703 * 4);
++        memset(buildings_341c, 0, sizeof(buildings_341c));
++        memset(CatalogRecordAddress(this, 0x37490, 0, 0), 0, 0x40c * 4);
++        memset(CatalogRecordAddress(this, 0x384c0, 0, 0), 0, 0xb3d * 4);
++        memset(CatalogRecordAddress(this, 0x3b1b4, 0, 0), 0, 0x125c * 4);
++        memset(CatalogRecordAddress(this, 0x3fb24, 0, 0), 0, 0x3ae * 4);
++        memset(objects_4f1a4, 0, sizeof(objects_4f1a4));
++        memset(CatalogRecordAddress(this, 0x4e5e8, 0, 0), 0, 0x1b8 * 4);
++        memset(CatalogRecordAddress(this, 0x4f114, 0, 0), 0, 0x24 * 4);
++        memset(CatalogRecordAddress(this, 0x5409c, 0, 0), 0, 0x4856 * 4);
++        memset(CatalogRecordAddress(this, 0x409dc, 0, 0), 0, 0x3703 * 4);
+         const char* paths[2] = { buildings, guests };
+         for (int index = 0; index < 2; ++index)
+         {
+diff --git a/src/startup_variable_catalog_building.cpp b/src/startup_variable_catalog_building.cpp
+index 8c5a5a4ad7e5e02e6c26994e32264b5e33de74f9..cff66d8b1234d8fbb615788a547d8c587792d06f 100644
+--- a/src/startup_variable_catalog_building.cpp
++++ b/src/startup_variable_catalog_building.cpp
+@@ -3,8 +3,5 @@
+ // FUNCTION: BEACHLIFE 0x004493a0
+ VariableBuilding* VariableCatalog::Building(unsigned int index)
+ {
+-    // The observed record stride exceeds the currently named building prefix.
+-    // Keep the complete retail x86 address calculation without inventing fields.
+-    return reinterpret_cast<VariableBuilding*>(
+-        reinterpret_cast<unsigned char*>(this) + 0x341c + index * 0xe1c);
++    return &buildings_341c[index];
+ }
+diff --git a/src/startup_variable_catalog_destructor.cpp b/src/startup_variable_catalog_destructor.cpp
+index 4cbc1775a5cd17f4e945f30a5b0f2325ec321871..7168f1ee3599354f89f968a90595b6a84b46b02b 100644
+--- a/src/startup_variable_catalog_destructor.cpp
++++ b/src/startup_variable_catalog_destructor.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ 
+ #include <new>
+ 
+@@ -16,7 +17,7 @@ VariableCatalog::~VariableCatalog() noexcept(false)
+     for (unsigned int i = 0; i < object_count_30; ++i)
+     {
+         VariableCatalogObjectDefinition* object = reinterpret_cast<VariableCatalogObjectDefinition*>(
+-            reinterpret_cast<unsigned char*>(this) + 0x4f1a4 + i * 0x428);
++            CatalogRecordAddress(this, 0x4f1a4, 0x428, i));
+         if (object->data_3e0)
+             ::operator delete(object->data_3e0);
+         if (object->data_3e8)
+diff --git a/src/startup_variable_catalog_entries.cpp b/src/startup_variable_catalog_entries.cpp
+index 8786e0fe6db63b3fefee2113aed2fd6205b4c404..50c6d44eb91bd8af930031674021a318bd1c61a7 100644
+--- a/src/startup_variable_catalog_entries.cpp
++++ b/src/startup_variable_catalog_entries.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ #include "startup_game_file.h"
+ #include <string.h>
+ 
+@@ -25,17 +26,17 @@ unsigned int VariableCatalog::FeatureType(unsigned int feature)
+ // FUNCTION: BEACHLIFE 0x00449200
+ VariableEventDefinition* VariableCatalog::Event(unsigned int index)
+ {
+-    return reinterpret_cast<VariableEventDefinition*>(reinterpret_cast<unsigned char*>(this) + 0x4e5e8 + index * 0x58);
++    return reinterpret_cast<VariableEventDefinition*>(CatalogRecordAddress(this, 0x4e5e8, 0x58, index));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004493c0
+ const char* VariableCatalog::BuildingName(unsigned int index)
+ {
+-    return reinterpret_cast<const char*>(this) + 0x3420 + index * 0xe1c;
++    return buildings_341c[index].name_04;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004494d0
+ VariableStaffState* VariableCatalog::Staff(unsigned int index)
+ {
+-    return reinterpret_cast<VariableStaffState*>(reinterpret_cast<unsigned char*>(this) + 0x384c0 + index * 0x224);
++    return reinterpret_cast<VariableStaffState*>(CatalogRecordAddress(this, 0x384c0, 0x224, index));
+ }
+diff --git a/src/startup_variable_catalog_fields.h b/src/startup_variable_catalog_fields.h
+index f2acbcfe587bb968789e8ed3531119d34b112458..f6097009c8834922e1df4d7b97378a72d8fb7e2b 100644
+--- a/src/startup_variable_catalog_fields.h
++++ b/src/startup_variable_catalog_fields.h
+@@ -1,6 +1,23 @@
+ #ifndef STARTUP_VARIABLE_CATALOG_FIELDS_H
+ #define STARTUP_VARIABLE_CATALOG_FIELDS_H
+ 
++#include "startup_variable_state.h"
++
++// Pointer-bearing records use their declared native stride. The other records
++// retain their byte-only storage and retail offsets within each section.
++static unsigned char* CatalogRecordAddress(VariableCatalog* catalog, unsigned int offset, unsigned int stride, unsigned int index)
++{
++    if (offset == 0x341c)
++        return reinterpret_cast<unsigned char*>(&catalog->buildings_341c[index]);
++    if (offset == 0x4f1a4)
++        return reinterpret_cast<unsigned char*>(&catalog->objects_4f1a4[index]);
++    if (offset < 0x341c)
++        return reinterpret_cast<unsigned char*>(catalog) + offset + stride * index;
++    if (offset < 0x4f1a4)
++        return catalog->unknown_37490 + (offset - 0x37490) + stride * index;
++    return catalog->unknown_5409c + (offset - 0x5409c) + stride * index;
++}
++
+ template <class T>
+ static T& CatalogField(void* record, unsigned int offset)
+ {
+diff --git a/src/startup_variable_catalog_find_building.cpp b/src/startup_variable_catalog_find_building.cpp
+index 3520e142757cc8d42e76a3cfdaa8c1b861f549e0..c9cc878e703f7c2d37dd36408c78520ddf156662 100644
+--- a/src/startup_variable_catalog_find_building.cpp
++++ b/src/startup_variable_catalog_find_building.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ 
+ #include <string.h>
+ 
+@@ -11,7 +12,7 @@ unsigned int VariableCatalog::FindBuilding(const char* name)
+     for (unsigned int i = 0; i < count; ++i)
+     {
+         VariableBuilding* building = reinterpret_cast<VariableBuilding*>(
+-            reinterpret_cast<unsigned char*>(this) + 0x341c + i * 0xe1c);
++            CatalogRecordAddress(this, 0x341c, 0xe1c, i));
+         if (strcmp(building->name_04, name) == 0)
+             return building->id_00;
+     }
+diff --git a/src/startup_variable_catalog_lookup.cpp b/src/startup_variable_catalog_lookup.cpp
+index 2596471b30928d86534572a9e36cf78dffdd2630..c4c92d0eb859ba654b30ef9847bca44fd149a569 100644
+--- a/src/startup_variable_catalog_lookup.cpp
++++ b/src/startup_variable_catalog_lookup.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ #include "startup_game_file.h"
+ 
+ #include <string.h>
+@@ -18,13 +19,13 @@ const char* VariableCatalog::FeatureKey(unsigned int index)
+ // FUNCTION: BEACHLIFE 0x00449380
+ VariableCrimeDefinition* VariableCatalog::Crime(unsigned int index)
+ {
+-    return reinterpret_cast<VariableCrimeDefinition*>(reinterpret_cast<unsigned char*>(this) + 0x4f114 + index * 0x48);
++    return reinterpret_cast<VariableCrimeDefinition*>(CatalogRecordAddress(this, 0x4f114, 0x48, index));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004496e0
+ VariableCatalogObjectDefinition* VariableCatalog::Object(unsigned int index)
+ {
+-    return reinterpret_cast<VariableCatalogObjectDefinition*>(reinterpret_cast<unsigned char*>(this) + 0x4f1a4 + index * 0x428);
++    return reinterpret_cast<VariableCatalogObjectDefinition*>(CatalogRecordAddress(this, 0x4f1a4, 0x428, index));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00449170
+@@ -34,7 +35,7 @@ unsigned int VariableCatalog::FindEvent(const char* name)
+     unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x24);
+     for (unsigned int index = 0; index < count; ++index)
+     {
+-        unsigned char* record = storage + 0x4e5e8 + index * 0x58;
++        unsigned char* record = CatalogRecordAddress(this, 0x4e5e8, 0x58, index);
+         if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
+             return *reinterpret_cast<unsigned int*>(record);
+     }
+@@ -49,7 +50,7 @@ unsigned int VariableCatalog::FindUnlock(const char* name)
+     unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x28);
+     for (unsigned int index = 0; index < count; ++index)
+     {
+-        unsigned char* record = storage + 0x4ecc8 + index * 0xdc;
++        unsigned char* record = CatalogRecordAddress(this, 0x4ecc8, 0xdc, index);
+         if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
+             return *reinterpret_cast<unsigned int*>(record);
+     }
+@@ -64,7 +65,7 @@ unsigned int VariableCatalog::FindCrime(const char* name)
+     unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x2c);
+     for (unsigned int index = 0; index < count; ++index)
+     {
+-        unsigned char* record = storage + 0x4f114 + index * 0x48;
++        unsigned char* record = CatalogRecordAddress(this, 0x4f114, 0x48, index);
+         if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
+             return *reinterpret_cast<unsigned int*>(record);
+     }
+@@ -79,7 +80,7 @@ unsigned int VariableCatalog::FindStaff(const char* name)
+     unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x14);
+     for (unsigned int index = 0; index < count; ++index)
+     {
+-        unsigned char* record = storage + 0x384c0 + index * 0x224;
++        unsigned char* record = CatalogRecordAddress(this, 0x384c0, 0x224, index);
+         if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
+             return *reinterpret_cast<unsigned int*>(record);
+     }
+@@ -94,7 +95,7 @@ unsigned int VariableCatalog::FindObject(const char* name)
+     unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x30);
+     for (unsigned int index = 0; index < count; ++index)
+     {
+-        unsigned char* record = storage + 0x4f1a4 + index * 0x428;
++        unsigned char* record = CatalogRecordAddress(this, 0x4f1a4, 0x428, index);
+         if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
+             return *reinterpret_cast<unsigned int*>(record);
+     }
+@@ -109,7 +110,7 @@ unsigned int VariableCatalog::FindScenery(const char* name)
+     unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x34);
+     for (unsigned int index = 0; index < count; ++index)
+     {
+-        unsigned char* record = storage + 0x5409c + index * 0x314;
++        unsigned char* record = CatalogRecordAddress(this, 0x5409c, 0x314, index);
+         if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
+             return *reinterpret_cast<unsigned int*>(record);
+     }
+diff --git a/src/startup_variable_catalog_parse.cpp b/src/startup_variable_catalog_parse.cpp
+index ea6e192182b8dc300fa5a8619207a5128b828a32..8c6ca243e865e0aad87b4b669df3efee37c0b4f1 100644
+--- a/src/startup_variable_catalog_parse.cpp
++++ b/src/startup_variable_catalog_parse.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ #include "startup_game_file.h"
+ #include <cstdlib>
+ #include <cstring>
+@@ -10,7 +11,7 @@ static unsigned int& CatalogWord(void* base, unsigned int offset)
+ 
+ static unsigned char* CatalogRecord(VariableCatalog* catalog, unsigned int offset, unsigned int stride, unsigned int index)
+ {
+-    return reinterpret_cast<unsigned char*>(catalog) + offset + stride * index;
++    return CatalogRecordAddress(catalog, offset, stride, index);
+ }
+ 
+ static unsigned char* FindCatalogRecord(VariableCatalog* catalog, unsigned int count_offset, unsigned int offset, unsigned int stride, const char* name)
+diff --git a/src/startup_variable_catalog_parse_building.cpp b/src/startup_variable_catalog_parse_building.cpp
+index 3fc2e31dd78428ac8f0f8c6b6b057d8e6bf68489..615e01b3985fcfe3f2d015c56c441e8855b70826 100644
+--- a/src/startup_variable_catalog_parse_building.cpp
++++ b/src/startup_variable_catalog_parse_building.cpp
+@@ -10,7 +10,7 @@ static unsigned int FindCatalogField(VariableCatalog* catalog, unsigned int coun
+     unsigned int count = CatalogField<unsigned int>(catalog, count_offset);
+     for (unsigned int index = 0; index < count; ++index)
+     {
+-        unsigned char* entry = reinterpret_cast<unsigned char*>(catalog) + records_offset + index * stride;
++        unsigned char* entry = CatalogRecordAddress(catalog, records_offset, stride, index);
+         if (strcmp(reinterpret_cast<char*>(entry + 4), value) == 0)
+             return CatalogField<unsigned int>(entry, 0);
+     }
+diff --git a/src/startup_variable_catalog_parse_guests.cpp b/src/startup_variable_catalog_parse_guests.cpp
+index 9d8bc001e675771efc3f2ba5c2cbd0fbf77e744c..d114232953ebc2bcb1d6d86411e6d59e3a98dfdc 100644
+--- a/src/startup_variable_catalog_parse_guests.cpp
++++ b/src/startup_variable_catalog_parse_guests.cpp
+@@ -7,7 +7,7 @@
+ // FUNCTION: BEACHLIFE 0x0044bf30
+ void VariableCatalog::ParseGuestValue(unsigned int id, const char* key, const char* value)
+ {
+-    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x3b1b4 + id * 0x3ac;
++    unsigned char* record = CatalogRecordAddress(this, 0x3b1b4, 0x3ac, id);
+     if (strcmp(key, "NAME") == 0)
+         strcpy(reinterpret_cast<char*>(record + 0x44), value);
+     else if (strcmp(key, "GENDER") == 0)
+@@ -141,7 +141,7 @@ void VariableCatalog::ParseGuestRange(unsigned int id, const char* key, const ch
+ {
+     float minimum = static_cast<float>(atof(first));
+     double maximum = atof(second);
+-    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x3b1b4 + id * 0x3ac;
++    unsigned char* record = CatalogRecordAddress(this, 0x3b1b4, 0x3ac, id);
+     if (strcmp(key, "ALCOHOLPREF") == 0)
+     {
+         CatalogField<float>(record, 0x200) = minimum;
+diff --git a/src/startup_variable_catalog_parse_records.cpp b/src/startup_variable_catalog_parse_records.cpp
+index c9ee72621e95ae45a1268a68e3a278fcffed3d61..3d9559237ede6d140acd0cc579873051c577f6d1 100644
+--- a/src/startup_variable_catalog_parse_records.cpp
++++ b/src/startup_variable_catalog_parse_records.cpp
+@@ -7,7 +7,7 @@
+ // FUNCTION: BEACHLIFE 0x0044f260
+ void VariableCatalog::ParseVehicle(unsigned int id, const char* key, const char* value)
+ {
+-    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x3fb24 + id * 0x274;
++    unsigned char* record = CatalogRecordAddress(this, 0x3fb24, 0x274, id);
+     if (strcmp(key, "NAME") == 0)
+         strcpy(reinterpret_cast<char*>(record + 0x44), value);
+     else if (strcmp(key, "SPRITE") == 0)
+@@ -57,7 +57,7 @@ void VariableCatalog::ParseVehicle(unsigned int id, const char* key, const char*
+ // FUNCTION: BEACHLIFE 0x0044f830
+ void VariableCatalog::ParseName(const char* kind, const char* value)
+ {
+-    unsigned char* names = reinterpret_cast<unsigned char*>(this) + 0x409dc;
++    unsigned char* names = CatalogRecordAddress(this, 0x409dc, 0, 0);
+     if (strcmp(kind, "MALENAME") == 0)
+     {
+         unsigned int& count = CatalogField<unsigned int>(names, 0xdc00);
+@@ -83,7 +83,7 @@ void VariableCatalog::ParseName(const char* kind, const char* value)
+ // FUNCTION: BEACHLIFE 0x0044f9d0
+ void VariableCatalog::ParseEvent(unsigned int id, const char* key, const char* value)
+ {
+-    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x4e5e8 + id * 0x58;
++    unsigned char* record = CatalogRecordAddress(this, 0x4e5e8, 0x58, id);
+     if (strcmp(key, "COST") == 0)
+         CatalogField<float>(record, 0x4c) = static_cast<float>(atof(value));
+     else if (strcmp(key, "DEF_PRICE") == 0)
+@@ -99,7 +99,7 @@ void VariableCatalog::ParseEvent(unsigned int id, const char* key, const char* v
+ // FUNCTION: BEACHLIFE 0x0044fb40
+ void VariableCatalog::ParseUnlock(unsigned int id, const char* key, const char* value)
+ {
+-    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x4ecc8 + id * 0xdc;
++    unsigned char* record = CatalogRecordAddress(this, 0x4ecc8, 0xdc, id);
+     record[0xd8] = 1;
+     if (strcmp(key, "BRAND") == 0)
+         strcpy(reinterpret_cast<char*>(record + 0x44), value);
+diff --git a/src/startup_variable_catalog_parse_scenery.cpp b/src/startup_variable_catalog_parse_scenery.cpp
+index 8e0c054bc63b5aba1a49b978a273911a07db9765..fa67c2bca316720411484cabd4663cd830644bac 100644
+--- a/src/startup_variable_catalog_parse_scenery.cpp
++++ b/src/startup_variable_catalog_parse_scenery.cpp
+@@ -7,7 +7,7 @@
+ // FUNCTION: BEACHLIFE 0x0044b2d0
+ void VariableCatalog::ParseScenery(unsigned int id, const char* key, const char* value)
+ {
+-    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x5409c + id * 0x314;
++    unsigned char* record = CatalogRecordAddress(this, 0x5409c, 0x314, id);
+     if (strcmp(key, "NAME") == 0)
+         strcpy(reinterpret_cast<char*>(record + 0x44), value);
+     else if (strcmp(key, "SPRITE") == 0)
+diff --git a/src/startup_variable_catalog_queries.cpp b/src/startup_variable_catalog_queries.cpp
+index 5aecd72fb8376f39e04ca40db7fa8698ab9dce0c..58dc5c53d24430dbe18533e6168b0d4cea7abef8 100644
+--- a/src/startup_variable_catalog_queries.cpp
++++ b/src/startup_variable_catalog_queries.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ #include "startup_game_file.h"
+ 
+ #include <string.h>
+@@ -7,14 +8,14 @@
+ VariableGuestState* VariableCatalog::Guest(unsigned int index)
+ {
+     return reinterpret_cast<VariableGuestState*>(
+-        reinterpret_cast<unsigned char*>(this) + 0x3b1b4 + index * 0x3ac);
++        CatalogRecordAddress(this, 0x3b1b4, 0x3ac, index));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00449630
+ VariableVehicleDefinition* VariableCatalog::Vehicle(unsigned int index)
+ {
+     return reinterpret_cast<VariableVehicleDefinition*>(
+-        reinterpret_cast<unsigned char*>(this) + 0x3fb24 + index * 0x274);
++        CatalogRecordAddress(this, 0x3fb24, 0x274, index));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004495a0
+diff --git a/src/startup_variable_catalog_scenery.cpp b/src/startup_variable_catalog_scenery.cpp
+index ef20b9ce46e4cd7abec98e7f84c994cab97bdd8e..6cdae6b9e5a900e26018aa8c21ced6144a4e8af7 100644
+--- a/src/startup_variable_catalog_scenery.cpp
++++ b/src/startup_variable_catalog_scenery.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ 
+ // FUNCTION: BEACHLIFE 0x00449780
+ VariableScenery* VariableCatalog::Scenery(unsigned int index)
+@@ -6,5 +7,5 @@ VariableScenery* VariableCatalog::Scenery(unsigned int index)
+     // The observed record stride exceeds the currently named scenery prefix.
+     // Keep the retail x86 address calculation without inventing owner fields.
+     return reinterpret_cast<VariableScenery*>(
+-        reinterpret_cast<unsigned char*>(this) + 0x5409c + index * 0x314);
++        CatalogRecordAddress(this, 0x5409c, 0x314, index));
+ }
+diff --git a/src/startup_variable_catalog_unlock.cpp b/src/startup_variable_catalog_unlock.cpp
+index 83c19973c9b060ceeec91ac78264d733b091b8a8..9070c652579cdaada818c3a0f99474f210ed3285 100644
+--- a/src/startup_variable_catalog_unlock.cpp
++++ b/src/startup_variable_catalog_unlock.cpp
+@@ -1,11 +1,12 @@
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ #include "startup_game_file.h"
+ #include <string.h>
+ 
+ // FUNCTION: BEACHLIFE 0x004492c0
+ VariableCatalogUnlock* VariableCatalog::UnlockRecord(unsigned int index)
+ {
+-    return reinterpret_cast<VariableCatalogUnlock*>(reinterpret_cast<unsigned char*>(this) + 0x4ecc8 + index * 0xdc);
++    return reinterpret_cast<VariableCatalogUnlock*>(CatalogRecordAddress(this, 0x4ecc8, 0xdc, index));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004494f0
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index ede2fdff3a31f19531f6d483b80cc8f6368ec3b5..b3146c636c236c920925fa86232d77ba442fdfd4 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -202,6 +202,7 @@ struct VariableBuilding
+     unsigned int* footprint_e14;
+     unsigned int default_drink_e18;
+ };
++static_assert(sizeof(void*) != 4 || sizeof(VariableBuilding) == 0xe1c);
+ 
+ struct VariableScenery
+ {
+@@ -569,6 +570,7 @@ struct VariableCatalogObjectDefinition
+     int draw_offset_y_420;
+     unsigned char flag_424;
+ };
++static_assert(sizeof(void*) != 4 || sizeof(VariableCatalogObjectDefinition) == 0x428);
+ 
+ struct VariableCatalogUnlock
+ {
+@@ -634,7 +636,11 @@ struct VariableCatalog
+     unsigned char unknown_2c[4];
+     unsigned int object_count_30;
+     unsigned int scenery_count_34;
+-    unsigned char unknown_38[0x661bc]; // Remaining retail catalog storage.
++    unsigned char unknown_38[0x33e4];
++    VariableBuilding buildings_341c[59];
++    unsigned char unknown_37490[0x17d14];
++    VariableCatalogObjectDefinition objects_4f1a4[19];
++    unsigned char unknown_5409c[0x12158];
+ 
+     unsigned int FindUnlock(const char* name);               // 0x00449220.
+     unsigned int FindEvent(const char* name);                // 0x00449170.
+@@ -658,6 +664,7 @@ struct VariableCatalog
+     float MaleAppeal(unsigned int index);                    // 0x00452bd0, RET4.
+     float FemaleAppeal(unsigned int index);                  // 0x00452c20, RET4.
+ };
++static_assert(sizeof(void*) != 4 || sizeof(VariableCatalog) == 0x661f4);
+ 
+ struct WorldWeatherEvent
+ {
+diff --git a/src/startup_world_entity18_shared.cpp b/src/startup_world_entity18_shared.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3524815a0555ef3be8074bd4476fa5edb29534fd
+--- /dev/null
++++ b/src/startup_world_entity18_shared.cpp
+@@ -0,0 +1,17 @@
++#include "startup_world_entities.h"
++
++float WorldEntity18::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
++{
++    return PlayPerformerAnimation(animation, once, next_state, hold, next_animation);
++}
++
++WorldScriptValue WorldEntity18::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    return ReadPerformerValue(kind, data);
++}
++
++// Folded RET16 at 0x00464660, shared with the other performers.
++void WorldEntity18::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++{
++    IgnoreScreenAction();
++}

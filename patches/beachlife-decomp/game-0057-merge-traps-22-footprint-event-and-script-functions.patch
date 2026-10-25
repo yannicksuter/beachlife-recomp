@@ -1,0 +1,1391 @@
+diff --git a/src/startup_building_footprint.cpp b/src/startup_building_footprint.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..321c3c18891260a0a4ad197edbc52def9aa2023e
+--- /dev/null
++++ b/src/startup_building_footprint.cpp
+@@ -0,0 +1,257 @@
++#include "startup_building_status.h"
++#include "startup_world_entities.h"
++#include "startup_world_subsystems.h"
++#include "window_activation.h"
++#include <cstdlib>
++#include <cstring>
++#include <list>
++
++static ScreenTerrainCell* BuildingFootprintCell(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return &grid->cells_0c[grid->TileIndex(tile.x, tile.y)];
++}
++
++// FUNCTION: BEACHLIFE 0x00422c50
++void VariableBuildingStatus::SetFootprint(int x, int y, unsigned char enabled, unsigned int stage, unsigned int id)
++{
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    unsigned int rotation = entity->keyline_state_44->word_18;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    ScreenPoint row_start = { x, y };
++    unsigned int path;
++    if (building->count_d8c)
++        path = static_cast<unsigned int*>(building->data_d90)[static_cast<unsigned int>(std::rand()) % building->count_d8c];
++    unsigned int columns = building->footprint_x_1d4 + 2;
++    unsigned int rows = building->footprint_y_1d8 + 2;
++    bool odd = (rotation & 1) != 0;
++    if (odd)
++    {
++        unsigned int temporary = columns;
++        columns = rows;
++        rows = temporary;
++    }
++    int column_direction;
++    int row_direction;
++    grid->BuildingBounds(row_start, rows, columns, &column_direction, &row_direction, rotation);
++    ScreenPoint tile = row_start;
++    for (unsigned int row = 0; row < rows; ++row)
++    {
++        for (unsigned int column = 0; column < columns; ++column)
++        {
++            unsigned int flags = BuildingFootprintCell(grid, tile)->flags_48;
++            unsigned int index = odd ? column * 25 + row : row * 25 + column;
++            unsigned int construction = building->footprint_e14[0x9cc / 4 + index];
++            unsigned int footprint = building->footprint_e14[2 + index];
++            unsigned int surface = building->footprint_e14[0x1d54 / 4 + index];
++            if (!enabled)
++            {
++                if (stage == 2)
++                {
++                    unsigned int path_flags = surface & 0x0f000000;
++                    if (path_flags)
++                    {
++                        if (BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 & 0x10000000)
++                        {
++                            BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 &= 0xefffff7f;
++                            world_cursor_names->UpdateTile(tile.x, tile.y, 1);
++                        }
++                        BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 &= 0xf0ffffff;
++                        world_cursor_names->UpdateTile(tile.x, tile.y, 0);
++                        ScreenTerrainCell* cell = BuildingFootprintCell(screen_terrain_grid, tile);
++                        if (cell->ObjectCount())
++                        {
++                            CircularList* objects = BuildingFootprintCell(screen_terrain_grid, tile)->Objects();
++                            std::list<VariableEntity*> copied;
++                            for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
++                                copied.push_back(static_cast<ScreenTerrainEntityNode*>(node)->entity);
++                            for (VariableEntity* object : copied)
++                            {
++                                if (std::strcmp(object->name_06, "Litter") != 0
++                                    || window_deactivation_state->cleaning_2c->ObjectTask(object->id_28) == 5)
++                                    continue;
++                                ScreenModeCommand command;
++                                command.words[0] = object->id_28;
++                                command.words[1] = object->id_28;
++                                command.words[2] = 3;
++                                command.words[3] = 0;
++                                command.words[4] = 3;
++                                screen_mode_commands->QueueCommand(&command);
++                                object->inactive_04 = 1;
++                                ScreenModeCommand broadcast;
++                                broadcast.words[0] = object->id_28;
++                                broadcast.words[1] = -1;
++                                broadcast.words[2] = 0x2c;
++                                broadcast.words[3] = 0;
++                                broadcast.words[4] = 0;
++                                command = broadcast;
++                                window_deactivation_state->BroadcastToType(&command, 11);
++                            }
++                        }
++                    }
++                    if (footprint && footprint != 0x200)
++                    {
++                        BuildingFootprintCell(grid, tile)->flags_48 |= 0x10;
++                        if (!(footprint & 0x08000000))
++                        {
++                            BuildingFootprintCell(grid, tile)->flags_48 &= 0x7fffffff;
++                            BuildingFootprintCell(grid, tile)->flags_48 &= 0xbfffffff;
++                            BuildingFootprintCell(grid, tile)->flags_48 &= 0xdfffffff;
++                        }
++                    }
++                    unsigned int depth = building->footprint_e14[0x1390 / 4 + index];
++                    if (depth)
++                        BuildingFootprintCell(grid, tile)->depth_50 = static_cast<unsigned short>(depth);
++                    if (construction & 0x80000000)
++                        BuildingFootprintCell(grid, tile)->flags_48 |= 0x80000000;
++                    if (construction & 0x40000000)
++                        BuildingFootprintCell(grid, tile)->flags_48 |= 0x40000000;
++                    if ((footprint & 0x200) && (flags & 1))
++                    {
++                        BuildingFootprintCell(grid, tile)->flags_48 |= 0x80000000;
++                        BuildingFootprintCell(grid, tile)->flags_48 |= 0x10000080;
++                        world_cursor_names->UpdateTile(tile.x, tile.y, 0);
++                    }
++                    if (construction & 0x80000000)
++                    {
++                        if ((flags & 1) && surface != 1)
++                        {
++                            BuildingFootprintCell(grid, tile)->flags_48 |= 0x10000080;
++                            world_cursor_names->UpdateTile(tile.x, tile.y, 0);
++                        }
++                        else
++                            BuildingFootprintCell(grid, tile)->flags_48 |= 0x80;
++                    }
++                    if (path_flags && !(flags & 2))
++                    {
++                        world_cursor_names->SetTilePath(tile.x, tile.y, path);
++                        world_cursor_names->UpdateTile(tile.x, tile.y, 0);
++                    }
++                    if (surface == 1)
++                    {
++                        BuildingFootprintCell(grid, tile)->flags_48 |= 0x10;
++                        BuildingFootprintCell(grid, tile)->flags_48 &= 0x7fffffff;
++                    }
++                }
++            }
++            else if (stage == 2)
++            {
++                if (construction & 0x800)
++                    BuildingFootprintCell(grid, tile)->flags_48 |= 0x800;
++            }
++            else if (surface == 1)
++            {
++                BuildingFootprintCell(grid, tile)->flags_48 &= ~0x10u;
++                if (BuildingFootprintCell(grid, tile)->flags_48 & 3)
++                    BuildingFootprintCell(grid, tile)->flags_48 |= 0x80000000;
++            }
++            grid->Step(tile.x, tile.y, column_direction, &tile);
++        }
++        tile = row_start;
++        grid->Step(tile.x, tile.y, row_direction, &tile);
++        row_start = tile;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00422a50
++void VariableBuildingStatus::UpdateConstructionFootprint(unsigned int id)
++{
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    BuildingStatusEntry* task = FindTask(id);
++    if (!building->footprint_e14 || !task || !task->count_0c)
++        return;
++    if (!(static_cast<long double>(window_deactivation_state->time_158) - entity->placed_time_108 > 0.1f))
++        return;
++    --task->count_0c;
++    int* item = task->values_08 + task->count_0c * 4;
++    ScreenSceneryPlacement placement;
++    placement.tile = { item[1], item[2] };
++    placement.enabled = 1;
++    placement.word_4c = -2;
++    if (BuildingFootprintCell(screen_terrain_grid, placement.tile)->flags_48 & 3)
++        return;
++    char number[20];
++    _itoa(id, number, 20);
++    std::strcpy(placement.model, "HOARDING_");
++    std::strcat(placement.model, number);
++    std::strcpy(placement.name, "singlecell");
++    placement.rotation = static_cast<unsigned char>(task->values_08[task->count_0c * 4]);
++    ScreenModeCommand command;
++    command.words[0] = -2;
++    command.words[1] = -2;
++    command.words[2] = 0;
++    command.words[3] = 0;
++    command.words[4] = 1;
++    screen_mode_commands->QueuePlacement(&command, &placement);
++    entity->placed_time_108 = window_deactivation_state->time_158;
++}
++
++// FUNCTION: BEACHLIFE 0x004235f0
++void VariableBuildingStatus::PrepareConstruction(unsigned int id)
++{
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    ScreenPoint origin = entity->TilePosition();
++    ScreenPoint row_start = origin;
++    ScreenPoint tile = origin;
++    unsigned int width = building->footprint_x_1d4;
++    unsigned int height = building->footprint_y_1d8;
++    if (entity->keyline_state_44->word_18 & 1)
++    {
++        unsigned int temporary = width;
++        width = height;
++        height = temporary;
++    }
++    if (building->footprint_e14)
++        SetFootprint(origin.x, origin.y, 0, 2, id);
++    for (unsigned int row = 0; row < width; ++row)
++    {
++        for (unsigned int column = 0; column < height; ++column)
++        {
++            if (!building->footprint_e14)
++            {
++                BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 |= 0x10;
++                BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 &= 0x7fffffff;
++                if (BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 & 1)
++                    BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 |= 0x80;
++            }
++            screen_terrain_grid->Step(tile.x, tile.y, 0, &tile);
++        }
++        screen_terrain_grid->Step(row_start.x, row_start.y, 6, &row_start);
++        tile = row_start;
++    }
++    ScreenMapPosition offset = { static_cast<float>(building->staff_x_314), static_cast<float>(building->staff_y_316) };
++    unsigned int rotation = entity->keyline_state_44->word_18;
++    ScreenPoint position = entity->TilePosition();
++    ScreenMapPosition staff = CurrentScreenTerrain()->BuildingOffset(position.x, position.y, entity->building_60->footprint_x_1d4, entity->building_60->footprint_y_1d8, offset, rotation);
++    ScreenPoint staff_tile = CurrentScreenTerrain()->WorldToTile({ staff.x, staff.y, 0.0f });
++    BuildingFootprintCell(screen_terrain_grid, staff_tile)->flags_48 |= 0x80000080;
++    if (!building->footprint_e14)
++    {
++        ScreenPoint border;
++        screen_terrain_grid->Step(origin.x, origin.y, 2, &border);
++        screen_terrain_grid->Step(border.x, border.y, 4, &border);
++        const int directions[] = { 6, 0, 2, 4 };
++        for (int side = 0; side < 4; ++side)
++        {
++            unsigned int count = (side & 1) ? height + 1 : width + 1;
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                screen_terrain_grid->Step(border.x, border.y, directions[side], &border);
++                ScreenTerrainCell* cell = BuildingFootprintCell(screen_terrain_grid, border);
++                if (cell->flags_48 & 1)
++                {
++                    cell->flags_48 |= 0x10000080;
++                    world_cursor_names->UpdateTile(border.x, border.y, 0);
++                }
++            }
++        }
++    }
++    tile = entity->TilePosition();
++    for (unsigned char i = 0; i < static_cast<int>(entity->footprint_y_59) - 1; ++i)
++        screen_terrain_grid->Step(tile.x, tile.y, 0, &tile);
++    for (unsigned char i = 0; i < static_cast<int>(entity->footprint_x_58) - 1; ++i)
++        screen_terrain_grid->Step(tile.x, tile.y, 6, &tile);
++    entity->SetMarkerPosition(CurrentScreenTerrain()->TilePosition(tile.x, tile.y, 0));
++}
+diff --git a/src/startup_building_footprint_restore.cpp b/src/startup_building_footprint_restore.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e282ba2221c40ca4000e32478a1388554e054f24
+--- /dev/null
++++ b/src/startup_building_footprint_restore.cpp
+@@ -0,0 +1,108 @@
++#include "startup_building_status.h"
++#include "startup_world_entities.h"
++#include "startup_screen_mode_world.h"
++
++// FUNCTION: BEACHLIFE 0x00422700
++void VariableBuildingStatus::PrepareBuilderLocations(unsigned int id)
++{
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    BuildingStatusEntry* task = FindTask(id);
++    ScreenPoint row_start = entity->TilePosition();
++    unsigned int rotation = entity->keyline_state_44->word_18;
++    unsigned int columns = building->footprint_x_1d4 + 2;
++    unsigned int rows = building->footprint_y_1d8 + 2;
++    bool odd = (rotation & 1) != 0;
++    if (odd)
++    {
++        unsigned int temporary = columns;
++        columns = rows;
++        rows = temporary;
++    }
++    int column_direction;
++    int row_direction;
++    screen_terrain_grid->BuildingBounds(row_start, rows, columns, &column_direction, &row_direction, rotation);
++    ScreenPoint tile = row_start;
++    unsigned int count = 0;
++    for (unsigned int row = 0; row < rows; ++row)
++    {
++        for (unsigned int column = 0; column < columns; ++column)
++        {
++            unsigned int index = odd ? column * 25 + row : row * 25 + column;
++            unsigned int flags = building->footprint_e14[0x9cc / 4 + index];
++            if (flags != 0x80000000 && flags != 0 && !(flags & 0x40000800))
++            {
++                ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile.x, tile.y, 4);
++                task->details_2c[count]->word_00 = static_cast<int>(position.x);
++                task->details_2c[count]->word_04 = static_cast<int>(position.y);
++                unsigned int direction = building->footprint_e14[0x9cc / 4 + index];
++                if (flags & 0x80000000)
++                    direction &= 0x7fffffff;
++                task->details_2c[count]->word_08 = direction;
++                ++count;
++            }
++            screen_terrain_grid->Step(tile.x, tile.y, column_direction, &tile);
++        }
++        tile = row_start;
++        screen_terrain_grid->Step(tile.x, tile.y, row_direction, &tile);
++        row_start = tile;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00423c20
++void VariableBuildingStatus::RestoreFootprint(unsigned int id)
++{
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int rotation = entity->keyline_state_44->word_18;
++    ScreenPoint row_start = entity->TilePosition();
++    unsigned int columns = building->footprint_x_1d4 + 2;
++    unsigned int rows = building->footprint_y_1d8 + 2;
++    bool odd = (rotation & 1) != 0;
++    if (odd)
++    {
++        unsigned int temporary = columns;
++        columns = rows;
++        rows = temporary;
++    }
++    int column_direction;
++    int row_direction;
++    grid->BuildingBounds(row_start, rows, columns, &column_direction, &row_direction, rotation);
++    ScreenPoint tile = row_start;
++    for (unsigned int row = 0; row < rows; ++row)
++    {
++        for (unsigned int column = 0; column < columns; ++column)
++        {
++            unsigned int index = odd ? column * 25 + row : row * 25 + column;
++            unsigned int footprint = building->footprint_e14[2 + index];
++            ScreenTerrainCell* cell = &screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)];
++            unsigned int flags = cell->flags_48;
++            if (footprint && footprint != 0x200)
++            {
++                if (flags & 0x0f000000)
++                    cell->flags_48 &= 0xf0ffffff;
++                cell->flags_48 &= ~0x10u;
++                cell->depth_50 = 0;
++                if (flags & 0x80)
++                    cell->flags_48 &= ~0x80u;
++                if (flags & 0x40000000)
++                    cell->flags_48 &= ~0x40000000u;
++                if (flags & 0x800)
++                    cell->flags_48 &= ~0x800u;
++                cell->flags_48 &= ~0x80000000u;
++                world_cursor_names->UpdateTile(tile.x, tile.y, 0);
++                if (flags & 3)
++                    cell->flags_48 |= 0x80000000;
++                else if (flags & 4)
++                    cell->flags_48 |= 0x40000000;
++                else if (flags & 8)
++                    cell->flags_48 |= 0x20000000;
++            }
++            grid->Step(tile.x, tile.y, column_direction, &tile);
++        }
++        tile = row_start;
++        grid->Step(tile.x, tile.y, row_direction, &tile);
++        row_start = tile;
++    }
++}
+diff --git a/src/startup_event_schedule_guests.cpp b/src/startup_event_schedule_guests.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..333f6a0fc86e46fa2b0598128eb8c93a9cf483b3
+--- /dev/null
++++ b/src/startup_event_schedule_guests.cpp
+@@ -0,0 +1,30 @@
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++#include "startup_world_index_deque.h"
++#include <cstdlib>
++
++// FUNCTION: BEACHLIFE 0x00427ee0
++void VariableEventSchedule::BroadcastGuests(ScreenModeCommand* command, float delay)
++{
++    for (int i = 0; i < entries_00[current_168].guest_count_54; ++i)
++    {
++        command->words[1] = entries_00[current_168].guests_2c.At(i);
++        float time = static_cast<float>(static_cast<double>(std::rand()) * (1.0f / 32767.0f) * 0.6f + delay - 0.3f);
++        screen_mode_commands->QueueDelayed(command, time);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00427fb0
++void VariableEventSchedule::AddPerformer(unsigned int id)
++{
++    WorldDequeStorage<unsigned int>& staff = entries_00[current_168].staff_00;
++    if (staff.end.current != staff.end.last - 1)
++    {
++        if (staff.end.current)
++            *staff.end.current = id;
++        ++staff.end.current;
++    }
++    else
++        AppendWorldIndexBlock(staff, id);
++    ++entries_00[current_168].staff_count_28;
++}
+diff --git a/src/startup_screen_overlay_queue.cpp b/src/startup_screen_overlay_queue.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..620b73f442f76eaba7c2982b0e7bd80871c4a7ce
+--- /dev/null
++++ b/src/startup_screen_overlay_queue.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x004189b0
++void OverlayMapPrefix::QueueTileRectangle(int x, int y, int width, int height)
++{
++    for (int row = y; row < y + height; ++row)
++        for (int column = x; column < x + width; ++column)
++            pending_104.push_back(row * cache_width_d4 + column);
++}
++
++// FUNCTION: BEACHLIFE 0x00418c50
++int OverlayMapPrefix::PendingTileCount()
++{
++    return static_cast<int>(pending_104.size());
++}
+diff --git a/src/startup_world_cleaning_request.cpp b/src/startup_world_cleaning_request.cpp
+index a3ce6ed68d19a896f6053294c0cd473ede659664..7865c52ef2bbfbd56c4d757d7bdc6a54cf9cb69a 100644
+--- a/src/startup_world_cleaning_request.cpp
++++ b/src/startup_world_cleaning_request.cpp
+@@ -52,3 +52,20 @@ void WorldCleaningManager::RequestCleaning(unsigned int id)
+     request->flag_0c = 1;
+     requests_00.Insert(requests_00.End(), request);
+ }
++
++// FUNCTION: BEACHLIFE 0x00420580
++void WorldCleaningManager::RemoveObject(unsigned int id)
++{
++    for (CircularListNode* node = requests_00.head->next; node != requests_00.head; node = node->next)
++    {
++        WorldCleaningRequest* request = reinterpret_cast<WorldCleaningRequest*>(static_cast<CircularListValueNode*>(node)->entry);
++        if (static_cast<unsigned int>(request->id_00) == id)
++        {
++            ::operator delete(request);
++            CircularListIterator position;
++            position.node = node;
++            requests_00.Erase(position);
++            return;
++        }
++    }
++}
+diff --git a/src/startup_world_cursor_names.h b/src/startup_world_cursor_names.h
+index dff9505aafac6de69eff31ab9ab90f1da1ca2fbb..9b83b57046638a62d17bb9a61a81b14eda53010b 100644
+--- a/src/startup_world_cursor_names.h
++++ b/src/startup_world_cursor_names.h
+@@ -17,6 +17,7 @@ struct WorldCursorNames
+     unsigned int word_13c;
+     void LoadFrames(const char* path); // 0x00432630.
+ 
++    void SetTilePath(int x, int y, unsigned int path);       // 0x00432af0.
+     void UpdateAt00432b50(int x, int y);                     // 0x00432b50.
+     void UpdateAt00432c70(int x, int y);                     // 0x00432c70.
+     void UpdateAt00432900(int x, int y);                     // 0x00432900.
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 243223477f3774c9eff13c667e6821c2a14004eb..b8d26579eb0205777e724de6b59a49f1a58e770f 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -272,6 +272,7 @@ struct WorldBuildingEntity : WorldStaticEntity
+     float FeatureDuration(unsigned int feature);                     // 0x00461e20.
+     void SetRotation(unsigned int rotation);                         // 0x00460710.
+     void SetEntrancePosition(ScreenWorldPosition position);          // 0x004416a0.
++    void SetMarkerPosition(ScreenWorldPosition position);            // 0x00424660.
+     void SetStaffPosition(ScreenWorldPosition position);             // 0x004604d0.
+     ScreenWorldPosition StaffPosition();                             // 0x004571a0.
+     void BreakDown();                                                // 0x00457140.
+diff --git a/src/startup_world_event_storage.cpp b/src/startup_world_event_storage.cpp
+index 72178fde94ff30f7d5b3225ba0d7d2dd905627e0..84e93cc2b9a482895b3af7cef32780c0c56c997f 100644
+--- a/src/startup_world_event_storage.cpp
++++ b/src/startup_world_event_storage.cpp
+@@ -1,5 +1,6 @@
+ #include "startup_world_subsystems.h"
+ #include "pool_allocate.h"
++#include "startup_world_index_deque.h"
+ 
+ #include <cstring>
+ #include <new>
+@@ -61,30 +62,5 @@ void WorldSubsystem44::PopIndexBlock()
+ // FUNCTION: BEACHLIFE 0x0042c570
+ void WorldSubsystem44::ReserveIndexMap(unsigned int count, unsigned char front)
+ {
+-    WorldDequeStorage<int>& deque = indices_00;
+-    unsigned int old_nodes = static_cast<unsigned int>(deque.end.node - deque.begin.node) + 1;
+-    unsigned int new_nodes = old_nodes + count;
+-    int** begin;
+-    if (deque.map_count > new_nodes * 2)
+-    {
+-        begin = deque.map + (deque.map_count - new_nodes) / 2 + (front ? count : 0);
+-        std::memmove(begin, deque.begin.node, old_nodes * sizeof(int*));
+-    }
+-    else
+-    {
+-        unsigned int size = deque.map_count + (deque.map_count < count ? count : deque.map_count) + 2;
+-        int** map = static_cast<int**>(size == 0 ? 0 : size * sizeof(int*) > 128 ? ::operator new(size * sizeof(int*), std::nothrow)
+-                                                                                 : AllocatePoolBytes(size * sizeof(int*)));
+-        begin = map + (size - new_nodes) / 2 + (front ? count : 0);
+-        std::memmove(begin, deque.begin.node, old_nodes * sizeof(int*));
+-        WorldDequeStorage<int>::FreeSlots(deque.map, deque.map_count * sizeof(int*));
+-        deque.map = map;
+-        deque.map_count = size;
+-    }
+-    deque.begin.node = begin;
+-    deque.begin.first = *begin;
+-    deque.begin.last = deque.begin.first + 32;
+-    deque.end.node = begin + old_nodes - 1;
+-    deque.end.first = *deque.end.node;
+-    deque.end.last = deque.end.first + 32;
++    ReserveWorldIndexMap(indices_00, count, front);
+ }
+diff --git a/src/startup_world_event_update.cpp b/src/startup_world_event_update.cpp
+index 06dded99aa60db6c278aa7285076675c7587e9e2..d99d41b00636f3ef5daad737c8e540d55c8aecd2 100644
+--- a/src/startup_world_event_update.cpp
++++ b/src/startup_world_event_update.cpp
+@@ -4,6 +4,7 @@
+ #include "startup_screen_manager.h"
+ #include "window_activation.h"
+ #include "pool_allocate.h"
++#include "startup_world_index_deque.h"
+ #include <stdlib.h>
+ #include <string.h>
+ 
+@@ -15,16 +16,7 @@ static char shortage_beer_message[100];
+ // FUNCTION: BEACHLIFE 0x00427240
+ void WorldSubsystem44::AppendIndex(const int& index)
+ {
+-    int value = index;
+-    if (indices_00.map_count - static_cast<unsigned int>(indices_00.end.node - indices_00.map) < 2)
+-        ReserveIndexMap(1, 0);
+-    indices_00.end.node[1] = static_cast<int*>(AllocatePoolBytes(32 * sizeof(int)));
+-    if (indices_00.end.current)
+-        *indices_00.end.current = value;
+-    ++indices_00.end.node;
+-    indices_00.end.first = *indices_00.end.node;
+-    indices_00.end.last = indices_00.end.first + 32;
+-    indices_00.end.current = indices_00.end.first;
++    AppendWorldIndexBlock(indices_00, index);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00425630
+diff --git a/src/startup_world_guest_can_be_fined.cpp b/src/startup_world_guest_can_be_fined.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fda8af70482b63349ec57dd0c9b0921566c21141
+--- /dev/null
++++ b/src/startup_world_guest_can_be_fined.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// FUNCTION: BEACHLIFE 0x0046be90
++bool WorldGuestEntity::CanBeFined()
++{
++    return state_3c == 12 || state_3c == 13 || state_3c == 58;
++}
+diff --git a/src/startup_world_index_deque.h b/src/startup_world_index_deque.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa6c0a19899ef20ad331c99d11ea5578316e19e4
+--- /dev/null
++++ b/src/startup_world_index_deque.h
+@@ -0,0 +1,55 @@
++#ifndef STARTUP_WORLD_INDEX_DEQUE_H
++#define STARTUP_WORLD_INDEX_DEQUE_H
++
++#include "startup_world_deque.h"
++#include "pool_allocate.h"
++#include <cstring>
++#include <new>
++
++// Shared storage operations for the folded signed and unsigned index deques.
++template <class T>
++void ReserveWorldIndexMap(WorldDequeStorage<T>& deque, unsigned int count, unsigned char front)
++{
++    unsigned int old_nodes = static_cast<unsigned int>(deque.end.node - deque.begin.node) + 1;
++    unsigned int new_nodes = old_nodes + count;
++    T** begin;
++    if (deque.map_count > new_nodes * 2)
++    {
++        begin = deque.map + (deque.map_count - new_nodes) / 2 + (front ? count : 0);
++        std::memmove(begin, deque.begin.node, old_nodes * sizeof(T*));
++    }
++    else
++    {
++        unsigned int size = deque.map_count + (deque.map_count < count ? count : deque.map_count) + 2;
++        T** map = static_cast<T**>(size == 0 ? 0 : size * sizeof(T*) > 128 ? ::operator new(size * sizeof(T*), std::nothrow)
++                                                                           : AllocatePoolBytes(size * sizeof(T*)));
++        begin = map + (size - new_nodes) / 2 + (front ? count : 0);
++        std::memmove(begin, deque.begin.node, old_nodes * sizeof(T*));
++        WorldDequeStorage<T>::FreeSlots(deque.map, deque.map_count * sizeof(T*));
++        deque.map = map;
++        deque.map_count = size;
++    }
++    deque.begin.node = begin;
++    deque.begin.first = *begin;
++    deque.begin.last = deque.begin.first + 32;
++    deque.end.node = begin + old_nodes - 1;
++    deque.end.first = *deque.end.node;
++    deque.end.last = deque.end.first + 32;
++}
++
++template <class T>
++void AppendWorldIndexBlock(WorldDequeStorage<T>& deque, const T& index)
++{
++    T value = index;
++    if (deque.map_count - static_cast<unsigned int>(deque.end.node - deque.map) < 2)
++        ReserveWorldIndexMap(deque, 1, 0);
++    deque.end.node[1] = static_cast<T*>(AllocatePoolBytes(32 * sizeof(T)));
++    if (deque.end.current)
++        *deque.end.current = value;
++    ++deque.end.node;
++    deque.end.first = *deque.end.node;
++    deque.end.last = deque.end.first + 32;
++    deque.end.current = deque.end.first;
++}
++
++#endif
+diff --git a/src/startup_world_object_script_load.cpp b/src/startup_world_object_script_load.cpp
+index f8fa0c0e0eb39946ce19ac6534c5ed894e89bbcb..6540bc8922a0ccbb5b2f0e283c18caa550ead215 100644
+--- a/src/startup_world_object_script_load.cpp
++++ b/src/startup_world_object_script_load.cpp
+@@ -47,3 +47,43 @@ void WorldSubsystemScript::LoadScript(const char* path)
+     }
+     ::operator delete(buffer);
+ }
++
++// FUNCTION: BEACHLIFE 0x004d5a80
++int WorldSubsystemScript::SkipComments()
++{
++    if (*cursor_591c != '/')
++        return 0;
++    int count = 0;
++    do
++    {
++        ++count;
++        ++cursor_591c;
++    } while (*cursor_591c != '\n');
++    count += SkipObjectScriptWhitespace(cursor_591c);
++    count += SkipComments();
++    count += SkipObjectScriptWhitespace(cursor_591c);
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d8fd0
++int WorldSubsystemScript::ReadToken(char* token)
++{
++    int count = SkipObjectScriptWhitespace(cursor_591c);
++    count += SkipComments();
++    if (*cursor_591c == ';')
++    {
++        token[0] = ';';
++        ++cursor_591c;
++        token[1] = 0;
++        return count + 1;
++    }
++    while (*cursor_591c != ' ' && *cursor_591c != '\n' && *cursor_591c != '\t' && *cursor_591c != '\r')
++    {
++        *token++ = *cursor_591c++;
++        ++count;
++        if (*cursor_591c == ';')
++            break;
++    }
++    *token = 0;
++    return count;
++}
+diff --git a/src/startup_world_object_script_parse_state.cpp b/src/startup_world_object_script_parse_state.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..649eec24e81d179d7aa1a62cf4249c0f6e68170b
+--- /dev/null
++++ b/src/startup_world_object_script_parse_state.cpp
+@@ -0,0 +1,207 @@
++#include "startup_world_subsystems.h"
++#include "startup_game_file.h"
++#include <cstdio>
++#include <cstring>
++
++// GLOBAL: BEACHLIFE 0x00582a38
++static const struct
++{
++    unsigned int state;
++    const char* name;
++} object_script_states[137] = {
++    { 0, "STATE_NULL" },
++    { 1, "STATE_STARTUP" },
++    { 2, "STATE_DEMOLISHING" },
++    { 3, "STATE_DEMOLISHED" },
++    { 4, "STATE_OCCUPIED" },
++    { 5, "STATE_PART_OF_GROUP" },
++    { 6, "STATE_DEAD" },
++    { 7, "STATE_REPRESENTATIVE_RESTING" },
++    { 8, "STATE_REPRESENTATIVE_PATROL" },
++    { 9, "STATE_REPRESENTATIVE_TALKING" },
++    { 10, "STATE_REPRESENTATIVE_WAITING_ANIMATION" },
++    { 11, "STATE_REPRESENTATIVE_IDLE" },
++    { 12, "STATE_GUEST_SEARCH_DESIRE" },
++    { 13, "STATE_GUEST_HEADING_DESIRE" },
++    { 14, "STATE_GUEST_REACHED_DESIRE" },
++    { 15, "STATE_GUEST_WAITING_DESIRE" },
++    { 16, "STATE_GUEST_ENTERING_VEHICLE" },
++    { 17, "STATE_GUEST_RIDING_VEHICLE" },
++    { 18, "STATE_GUEST_LEAVING_VEHICLE" },
++    { 19, "STATE_GUEST_DROWNING" },
++    { 20, "STATE_GUEST_LEAVING" },
++    { 21, "STATE_GUEST_WAITING_ANIMATION" },
++    { 22, "STATE_GUEST_SWIMMING" },
++    { 23, "STATE_GUEST_LEAVING_WATER" },
++    { 24, "STATE_GUEST_EATING" },
++    { 25, "STATE_GUEST_SUNBATHE" },
++    { 26, "STATE_GUEST_TALKING" },
++    { 27, "STATE_GUEST_ENTER_BUILDING" },
++    { 28, "STATE_GUEST_EXIT_BUILDING" },
++    { 29, "STATE_GUEST_LOUNGER" },
++    { 30, "STATE_GUEST_DANCING" },
++    { 31, "STATE_GUEST_LOOK_FOR_FIGHT" },
++    { 32, "STATE_GUEST_FIGHTING" },
++    { 33, "STATE_GUEST_KNOCKED_OUT" },
++    { 34, "STATE_GUEST_LOOKING_FOR_LOVE" },
++    { 35, "STATE_GUEST_CHATUP" },
++    { 36, "STATE_GUEST_IN_LOVE" },
++    { 37, "STATE_GUEST_REPRIMAND" },
++    { 38, "STATE_GUEST_DETAIN" },
++    { 39, "STATE_GUEST_ROMP" },
++    { 40, "STATE_GUEST_ENTERING_WORLD" },
++    { 41, "STATE_GUEST_LEAVING_WORLD" },
++    { 42, "STATE_GUEST_LILO_WATER" },
++    { 43, "STATE_GUEST_ASLEEP" },
++    { 44, "STATE_GUEST_PEEING" },
++    { 45, "STATE_GUEST_BOOZING" },
++    { 46, "STATE_GUEST_AT_TABLE" },
++    { 47, "STATE_GUEST_BOARD_WATER" },
++    { 48, "STATE_GUEST_QUEUEING" },
++    { 49, "STATE_GUEST_SNORKEL" },
++    { 50, "STATE_GUEST_HAVING_MEAL" },
++    { 51, "STATE_GUEST_VANDALISING" },
++    { 52, "STATE_GUEST_IN_POOL" },
++    { 53, "STATE_GUEST_ON_BENCH" },
++    { 54, "STATE_GUEST_ATTACK_BY_SHARK" },
++    { 55, "STATE_GUEST_RUN_FROM_SHARK" },
++    { 56, "STATE_GUEST_BAD_GUTS" },
++    { 57, "STATE_GUEST_WAIT_FOR_WEATHER_CHANGE" },
++    { 58, "STATE_GUEST_PATH_BLOCKED" },
++    { 59, "STATE_GUEST_FUNPOOL" },
++    { 60, "STATE_GUEST_WEE_ON_PATH" },
++    { 61, "STATE_GUEST_WINDSURFING" },
++    { 62, "STATE_GUEST_STAND_AT_EVENT" },
++    { 63, "STATE_GUEST_DANCE_AT_EVENT" },
++    { 64, "STATE_GUEST_AEROBICS_AT_EVENT" },
++    { 65, "STATE_VEHICLE_WAITING_GUESTS" },
++    { 66, "STATE_VEHICLE_HEADING_STOP" },
++    { 67, "STATE_VEHICLE_UNLOADING_GUESTS" },
++    { 68, "STATE_VEHICLE_RIDE_IN_PROG" },
++    { 71, "STATE_VEHICLE_ENTER_WORLD" },
++    { 72, "STATE_VEHICLE_EXIT_WORLD" },
++    { 73, "STATE_VEHICLE_GUEST_FALLOFF" },
++    { 74, "STATE_VEHICLE_GUEST_REMOUNT" },
++    { 75, "STATE_STAFF_WORKING" },
++    { 76, "STATE_STAFF_FALLING_ON_SWORD" },
++    { 77, "STATE_STAFF_REQUIRES_ATTENTION" },
++    { 78, "STATE_LIFEGUARD_PATROL" },
++    { 79, "STATE_LIFEGUARD_RESTING" },
++    { 80, "STATE_LIFEGUARD_RESCUE" },
++    { 81, "STATE_LIFEGUARD_GOTO_TOWER" },
++    { 82, "STATE_LIFEGUARD_LEAVE_TOWER" },
++    { 83, "STATE_LIFEGUARD_SITON_TOWER" },
++    { 84, "STATE_LIFEGUARD_TALKING" },
++    { 85, "STATE_LIFEGUARD_WAITING_ANIMATION" },
++    { 86, "STATE_LIFEGUARD_TELLOFF" },
++    { 87, "STATE_LIFEGUARD_IDLE" },
++    { 88, "STATE_MECHANIC_REPAIR" },
++    { 89, "STATE_MECHANIC_RESTING" },
++    { 90, "STATE_MECHANIC_HEAD_HOME" },
++    { 91, "STATE_MECHANIC_CHOOSE_JOB" },
++    { 92, "STATE_MECHANIC_GO_REST" },
++    { 93, "STATE_MECHANIC_GO_REPAIR" },
++    { 94, "STATE_MECHANIC_IDLE" },
++    { 95, "STATE_BUILDER_RESTING" },
++    { 96, "STATE_BUILDER_HEAD_HOME" },
++    { 97, "STATE_BUILDER_GO_BUILD" },
++    { 98, "STATE_BUILDER_GO_DEMOLISH" },
++    { 99, "STATE_BUILDER_DO_BUILDING" },
++    { 100, "STATE_BUILDER_DO_DEMOLISH" },
++    { 101, "STATE_BUILDER_GO_INSIDE_HUT" },
++    { 102, "STATE_BUILDER_LEAVE_HUT" },
++    { 103, "STATE_BUILDER_IDLE_AT_WORK" },
++    { 104, "STATE_CLEANER_CHOOSE_TASK" },
++    { 105, "STATE_CLEANER_GO_REST" },
++    { 106, "STATE_CLEANER_GO_INSIDE_HUT" },
++    { 107, "STATE_CLEANER_LEAVE_HUT" },
++    { 108, "STATE_CLEANER_RESTING" },
++    { 109, "STATE_CLEANER_GO_LITTER" },
++    { 110, "STATE_CLEANER_CLEAN_LITTER" },
++    { 111, "STATE_CLEANER_GO_TOILET" },
++    { 112, "STATE_CLEANER_GO_BIN" },
++    { 113, "STATE_CLEANER_CLEAN_BIN" },
++    { 114, "STATE_CLEANER_ENTER_TOILET" },
++    { 115, "STATE_CLEANER_CLEAN_TOILET" },
++    { 116, "STATE_CLEANER_LEAVE_TOILET" },
++    { 117, "STATE_CLEANER_IDLE" },
++    { 118, "STATE_SECURITYGUARD_WAVE_HELLO" },
++    { 119, "STATE_SECURITYGUARD_CHOOSE_TASK" },
++    { 120, "STATE_SECURITYGUARD_PATROL" },
++    { 121, "STATE_SECURITYGUARD_GO_REST" },
++    { 123, "STATE_SECURITYGUARD_RESTING" },
++    { 122, "STATE_SECURITYGUARD_CHOOSE_ACTION" },
++    { 124, "STATE_SECURITYGUARD_SUSPICIOUS" },
++    { 125, "STATE_SECURITYGUARD_REPRIMAND" },
++    { 126, "STATE_SECURITYGUARD_DETAIN" },
++    { 127, "STATE_SECURITYGUARD_ESCORT" },
++    { 128, "STATE_SECURITYGUARD_GO_INSIDE_HUT" },
++    { 129, "STATE_SECURITYGUARD_LEAVE_HUT" },
++    { 130, "STATE_SECURITYGUARD_IDLE" },
++    { 131, "STATE_STAFF_BEING_DIRECTED" },
++    { 132, "STATE_STAFF_WAITING_TO_BE_DIRECTED" },
++    { 133, "STATE_SHARK_ARRIVE" },
++    { 134, "STATE_SHARK_SWIM" },
++    { 135, "STATE_SHARK_ATTACK" },
++    { 136, "STATE_SHARK_LEAVE" },
++    { 0, 0 },
++    { 0, 0 },
++};
++
++static int SkipStateWhitespace(char*& cursor)
++{
++    int count = 0;
++    while (*cursor == ' ' || *cursor == '\r' || *cursor == '\n' || *cursor == '\t')
++    {
++        ++cursor;
++        ++count;
++    }
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d5b10
++int WorldSubsystemScript::ParseState()
++{
++    int count = SkipStateWhitespace(cursor_591c);
++    char state[52];
++    int length = ReadToken(state);
++    unsigned int index;
++    for (index = 0; index < 137; ++index)
++    {
++        if (std::strcmp(state, object_script_states[index].name) == 0)
++        {
++            rules_00[count_5910].word_00 = object_script_states[index].state;
++            break;
++        }
++    }
++    if (index == 137)
++    {
++        StartupFatal("ObjectScript::DetermineState - State doesnt exist check state decode table");
++        length = 0;
++    }
++    count += length;
++    count += SkipStateWhitespace(cursor_591c);
++    count += SkipComments();
++    char token[52];
++    count += ReadToken(token);
++    while (std::strcmp(token, "End") != 0)
++    {
++        if (std::strcmp(token, "OnEntry") == 0)
++            count += ParseStateActions(0);
++        else if (std::strcmp(token, "OnExit") == 0)
++            count += ParseStateActions(1);
++        else if (std::strcmp(token, "OnUpdate") == 0)
++            count += ParseStateActions(2);
++        else if (std::strcmp(token, "Message") == 0)
++            count += ParseMessage();
++        else
++        {
++            char message[256];
++            std::sprintf(message, "ObjectScript::ProcessStateCommand - Unknown Command Found : %s", token);
++            StartupFatal(message);
++        }
++        count += ReadToken(token);
++    }
++    ++count_5910;
++    return count;
++}
+diff --git a/src/startup_world_repair_assignments.cpp b/src/startup_world_repair_assignments.cpp
+index 985d015be3389803f25033e509b73465a94c1233..8428c41fefdf1e31570f57d931247c776ce8ccd2 100644
+--- a/src/startup_world_repair_assignments.cpp
++++ b/src/startup_world_repair_assignments.cpp
+@@ -241,3 +241,17 @@ void WorldStaticEntity::SetRepairAssigned(unsigned char assigned)
+ {
+     flags_5a[1] = assigned;
+ }
++
++// FUNCTION: BEACHLIFE 0x00437190
++void WorldRepairManager::RemoveObject(unsigned int id)
++{
++    CircularListNode* node = FindRepairNode<WorldRepairEntry>(repairs_00.head, id);
++    if (node != repairs_00.head)
++    {
++        DeleteRepairNode<WorldRepairEntry>(node);
++        return;
++    }
++    node = FindRepairNode<WorldRepairEntry>(pending_08.head, id);
++    if (node != pending_08.head)
++        DeleteRepairNode<WorldRepairEntry>(node);
++}
+diff --git a/src/startup_world_repair_selection.cpp b/src/startup_world_repair_selection.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3aba013c6ded2ac9b4a659b0dd850a49996a706b
+--- /dev/null
++++ b/src/startup_world_repair_selection.cpp
+@@ -0,0 +1,103 @@
++#include "startup_world_repairs.h"
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <cmath>
++#include <cstdlib>
++
++static void SelectRepairEntry(WorldRepairSelection* selection, WorldRepairList* list,
++    CircularListNode* node, WorldStaticEntity* entity, const ScreenWorldPosition* position, int slot)
++{
++    WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++    long double x = static_cast<long double>(entity->x_30) - position->x;
++    long double y = static_cast<long double>(entity->y_34) - position->y;
++    long double z = static_cast<long double>(entity->z_38) - position->z;
++    long double distance = z * z + y * y + x * x;
++    entry->value_08 = static_cast<float>(distance);
++    if (selection->flags_00[slot])
++    {
++        float previous = static_cast<WorldRepairNode<WorldRepairEntry>*>(selection->nodes_04[slot])->entry->value_08;
++        if (!(distance < previous || std::isnan(distance) || std::isnan(previous)))
++            return;
++    }
++    selection->flags_00[slot] = 1;
++    selection->nodes_04[slot] = node;
++    selection->list_10 = list;
++}
++
++// FUNCTION: BEACHLIFE 0x00436370
++void WorldRepairManager::SelectJobs(WorldRepairSelection* selection, const ScreenWorldPosition* position, unsigned int type)
++{
++    for (CircularListNode* node = repairs_00.head->next; node != repairs_00.head; node = node->next)
++    {
++        WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++        if (entry->flag_10)
++        {
++            if (!(static_cast<long double>(window_deactivation_state->time_158) - entry->value_0c > 5.0))
++                continue;
++            WorldStaticEntity* entity = variable_world->FindObject(entry->id_00)->AsStatic();
++            if (!entity->NeedsRepair())
++                SelectRepairEntry(selection, &repairs_00, node, entity, position, 0);
++        }
++        else if ((entry->word_14 == 2 && type == 2) || (entry->word_14 == 0 && type == 0))
++        {
++            WorldStaticEntity* entity = variable_world->FindObject(entry->id_00)->AsStatic();
++            if (entity->NeedsCleaning())
++                continue;
++            if (static_cast<long double>(window_deactivation_state->time_158) - entry->value_0c > 5.0)
++                SelectRepairEntry(selection, &repairs_00, node, entity, position, type == 2 ? 1 : 2);
++        }
++    }
++    if (selection->flags_00[0])
++        return;
++    for (CircularListNode* node = pending_08.head->next; node != pending_08.head; node = node->next)
++    {
++        WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++        if (entry->flag_10)
++        {
++            if (!(static_cast<long double>(window_deactivation_state->time_158) - entry->value_0c > 5.0))
++                continue;
++            WorldStaticEntity* entity = variable_world->FindObject(entry->id_00)->AsStatic();
++            if (!entity->NeedsCleaning())
++                SelectRepairEntry(selection, &pending_08, node, entity, position, 0);
++        }
++        else if (entry->word_14 == 1 && type == 1)
++        {
++            WorldStaticEntity* entity = variable_world->FindObject(entry->id_00)->AsStatic();
++            if (entity->NeedsCleaning())
++                continue;
++            if (static_cast<long double>(window_deactivation_state->time_158) - entry->value_0c > 5.0)
++                SelectRepairEntry(selection, &pending_08, node, entity, position, 1);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004377e0
++unsigned int WorldRepairManager::SelectWateringJob(const ScreenWorldPosition* position, unsigned int range)
++{
++    unsigned int count = 0;
++    VariableEntity** scenery = variable_world->ByType(1, &count);
++    for (unsigned int attempt = 0; attempt < count; ++attempt)
++    {
++        unsigned int index = static_cast<unsigned int>(std::rand()) % count;
++        WorldSceneryEntity* entity = static_cast<WorldSceneryEntity*>(scenery[index]);
++        if (!entity->scenery_f4->serviceable_30a || entity->inactive_04)
++            continue;
++        float x = position->x - entity->x_30;
++        float y = position->y - entity->y_34;
++        float z = position->z - entity->z_38;
++        CircularListNode* node = assignments_10.head->next;
++        while (node != assignments_10.head)
++        {
++            if (static_cast<unsigned int>(static_cast<WorldRepairNode<WorldRepairAssignment>*>(node)->entry->id_00) == entity->id_28)
++                break;
++            node = node->next;
++        }
++        if (node != assignments_10.head)
++            continue;
++        int random = range ? 0 : std::rand() % 3;
++        long double distance = std::sqrt(static_cast<long double>(y) * y + static_cast<long double>(z) * z + static_cast<long double>(x) * x);
++        if (range ? static_cast<long double>(range) > distance : distance > (random ? 120.0f : 150.0f))
++            return scenery[index]->id_28;
++    }
++    return static_cast<unsigned int>(-1);
++}
+diff --git a/src/startup_world_script_actions.h b/src/startup_world_script_actions.h
+index 2ffbc389356e12656f3e02c855a9a79d7e43387d..22e6cefc7a7a09db5d1f8478a010d98a6100f6d5 100644
+--- a/src/startup_world_script_actions.h
++++ b/src/startup_world_script_actions.h
+@@ -112,6 +112,24 @@ struct WorldActionEntryData
+     unsigned int kind_08;
+ };
+ 
++struct WorldExpressionStateData
++{
++    unsigned int state_00;
++    float delay_04;
++};
++
++struct WorldExpressionAnimationData
++{
++    const char* name_00;
++    const char* next_animation_04;
++    unsigned int command_08;
++    unsigned int next_state_0c;
++    unsigned int word_10;
++    unsigned char once_14;
++    unsigned char release_15;
++    unsigned char unknown_16[2];
++};
++
+ struct WorldExpressionBranchData
+ {
+     WorldSubsystemScript::Expression* first_00;
+diff --git a/src/startup_world_script_expression_destructor.cpp b/src/startup_world_script_expression_destructor.cpp
+index 23a06f46139b3c49d54b4a419a4d3dd148532f26..0c931a643cba4f47f375cde65a7de5998896be58 100644
+--- a/src/startup_world_script_expression_destructor.cpp
++++ b/src/startup_world_script_expression_destructor.cpp
+@@ -48,9 +48,9 @@ WorldSubsystemScript::Expression::~Expression() noexcept(false)
+     }
+     case 3:
+     {
+-        WorldActionNamedData* data = static_cast<WorldActionNamedData*>(data_08);
++        WorldExpressionAnimationData* data = static_cast<WorldExpressionAnimationData*>(data_08);
+         ReleaseOwnedAllocation(data->name_00);
+-        ReleaseOwnedAllocation(data->text_04);
++        ReleaseOwnedAllocation(data->next_animation_04);
+         ::operator delete(data);
+         break;
+     }
+diff --git a/src/startup_world_script_expression_update.cpp b/src/startup_world_script_expression_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7edf5c0e785cec18a92712283d24946f1f2989c5
+--- /dev/null
++++ b/src/startup_world_script_expression_update.cpp
+@@ -0,0 +1,198 @@
++#include "startup_world_script_actions.h"
++#include "startup_variable_state.h"
++#include "startup_game_file.h"
++#include "window_activation.h"
++#include <bit>
++#include <cstdlib>
++
++static float ExpressionFloat(std::uintptr_t data)
++{
++    return std::bit_cast<float>(static_cast<unsigned int>(data));
++}
++
++// FUNCTION: BEACHLIFE 0x004d4080
++void WorldSubsystemScript::Expression::Update(VariableEntity* entity)
++{
++    Expression* expression = this;
++    float switch_number;
++    // The boolean switch path retains this payload from an earlier numeric switch.
++    std::uintptr_t switch_data;
++    do
++    {
++        switch (expression->kind_04)
++        {
++        case 0:
++        {
++            unsigned int state = *static_cast<unsigned int*>(expression->data_08);
++            if (state != 0xb4)
++                entity->Unknown34(state);
++            break;
++        }
++        case 1:
++        {
++            WorldActionCommandData* data = static_cast<WorldActionCommandData*>(expression->data_08);
++            ScreenModeCommand command = expression->MakeCommand(entity, data);
++            if (data->maximum_38 < 0.0f || data->maximum_38 > 0.0f)
++            {
++                float delay = static_cast<float>(static_cast<long double>(std::rand()) * (1.0f / 32767.0f)
++                                                     * (static_cast<long double>(data->maximum_38) - data->minimum_34)
++                                                 + data->minimum_34);
++                entity->Unknown24(command, delay);
++            }
++            else if (data->minimum_34 < 0.0f || data->minimum_34 > 0.0f)
++                entity->Unknown24(command, data->minimum_34);
++            else
++                entity->Unknown20(command);
++            break;
++        }
++        case 2:
++        {
++            WorldExpressionStateData* data = static_cast<WorldExpressionStateData*>(expression->data_08);
++            ScreenModeCommand command;
++            command.words[0] = entity->id_28;
++            command.words[1] = entity->id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = data->state_00;
++            if (data->delay_04 < 0.0f || data->delay_04 > 0.0f)
++                entity->Unknown24(command, data->delay_04);
++            else
++                entity->Unknown20(command);
++            break;
++        }
++        case 3:
++        {
++            WorldExpressionAnimationData* data = static_cast<WorldExpressionAnimationData*>(expression->data_08);
++            float delay;
++            if (data->next_animation_04)
++                delay = entity->Unknown28(data->name_00, data->once_14, data->next_state_0c ? data->next_state_0c : 0, 0, data->next_animation_04);
++            else if (data->next_state_0c)
++                delay = entity->Unknown28(data->name_00, data->once_14, data->next_state_0c, 0, 0);
++            else
++                delay = entity->Unknown28(data->name_00, data->once_14, -1, data->release_15 ? 0 : 1, 0);
++            if (data->command_08 != 0x6c)
++            {
++                ScreenModeCommand command;
++                command.words[0] = entity->id_28;
++                command.words[1] = entity->id_28;
++                command.words[2] = data->command_08;
++                command.words[3] = 0;
++                command.words[4] = 0;
++                command.words[5] = entity->state_3c;
++                entity->Unknown24(command, delay);
++            }
++            break;
++        }
++        case 4:
++        {
++            WorldExpressionBranchData* data = static_cast<WorldExpressionBranchData*>(expression->data_08);
++            Expression* branch = expression->Evaluate(entity, data->left_08.kind, data->left_08.data, data->right_10.kind, data->right_10.data, data->comparison_18) ? data->first_00 : data->second_04;
++            if (branch)
++                branch->Update(entity);
++            break;
++        }
++        case 5:
++        {
++            WorldExpressionSwitchData* data = static_cast<WorldExpressionSwitchData*>(expression->data_08);
++            WorldExpressionSwitchData::Case* item = data->cases_00;
++            if (data->value_04.kind == 0xe3 || data->value_04.kind == 0xe4)
++            {
++                WorldScriptValue value = entity->Unknown2c(data->value_04.kind, data->value_04.data);
++                unsigned int kind;
++                if (data->value_04.kind == 0xe4)
++                    kind = static_cast<unsigned char>(value.data) ? 0xe6 : 0xe7;
++                else
++                {
++                    kind = 0xe8;
++                    switch_number = value.kind == 3 ? ExpressionFloat(value.data) : static_cast<float>(static_cast<unsigned int>(value.data));
++                    switch_data = reinterpret_cast<std::uintptr_t>(&switch_number);
++                }
++                while (item)
++                {
++                    if (expression->Evaluate(entity, item->value_00.kind, item->value_00.data, kind, switch_data, 4))
++                    {
++                        item->expression_08->Update(entity);
++                        break;
++                    }
++                    item = item->next_0c;
++                }
++            }
++            else
++            {
++                while (item)
++                {
++                    if (expression->Evaluate(entity, data->value_04.kind, data->value_04.data, item->value_00.kind, item->value_00.data, 4))
++                    {
++                        if (item->expression_08)
++                            item->expression_08->Update(entity);
++                        break;
++                    }
++                    item = item->next_0c;
++                }
++            }
++            break;
++        }
++        case 6:
++        case 7:
++        case 8:
++        case 9:
++        {
++            unsigned int operation = expression->kind_04;
++            WorldActionArithmeticData* data = static_cast<WorldActionArithmeticData*>(expression->data_08);
++            WorldScriptValue left = entity->Unknown2c(data->left_00.kind, data->left_00.data);
++            WorldScriptValue right = entity->Unknown2c(data->right_08.kind, data->right_08.data);
++            unsigned int kind;
++            unsigned int result;
++            if (left.kind == 2)
++            {
++                unsigned int a = static_cast<unsigned int>(left.data);
++                unsigned int b = right.kind == 3 ? static_cast<unsigned int>(static_cast<long long>(ExpressionFloat(right.data))) : static_cast<unsigned int>(right.data);
++                if (operation == 6)
++                    result = a + b;
++                else if (operation == 7)
++                    result = a - b;
++                else if (operation == 8)
++                    result = a / b;
++                else
++                    result = a * b;
++                kind = 2;
++            }
++            else
++            {
++                long double a = ExpressionFloat(left.data);
++                long double b = right.kind == 3 ? static_cast<long double>(ExpressionFloat(right.data)) : static_cast<long double>(static_cast<unsigned int>(right.data));
++                float value;
++                if (operation == 6)
++                    value = static_cast<float>(a + b);
++                else if (operation == 7)
++                    value = static_cast<float>(a - b);
++                else if (operation == 8)
++                    value = static_cast<float>(a / b);
++                else
++                    value = static_cast<float>(a * b);
++                result = std::bit_cast<unsigned int>(value);
++                kind = 3;
++            }
++            entity->Unknown30(data->left_00.kind, data->left_00.data, kind, result);
++            break;
++        }
++        case 10:
++        {
++            WorldActionArithmeticData* data = static_cast<WorldActionArithmeticData*>(expression->data_08);
++            WorldScriptValue value = entity->Unknown2c(data->right_08.kind, data->right_08.data);
++            entity->Unknown30(data->left_00.kind, data->left_00.data, value.kind, value.data);
++            break;
++        }
++        case 11:
++        {
++            WindowAudioVector position = { entity->x_30, entity->y_34, entity->z_38 };
++            window_audio_state->PlaySoundAtPosition(*static_cast<const char**>(expression->data_08), &position, 1, -1);
++            break;
++        }
++        case 26:
++            StartupFatal("CommandList::PerformCommands - An Undefined command has been called");
++            break;
++        }
++        expression = expression->next_00;
++    } while (expression);
++}
+diff --git a/src/startup_world_staff_feedback.cpp b/src/startup_world_staff_feedback.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb85901560658b8d083aac0b20e2abd6cc6c6d6a
+--- /dev/null
++++ b/src/startup_world_staff_feedback.cpp
+@@ -0,0 +1,40 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x0048ec30
++void WorldStaffEntity::UpdateStaffFeedback()
++{
++    if (target_flag_765)
++    {
++        VariableTicker* ticker = window_deactivation_state->ticker_30;
++        ticker->AddMessage(Notification(0x200000), id_28, 7);
++        window_deactivation_state->ticker_30->AddFeedback(0x200000, 6);
++        AddThought(0x200000);
++        target_flag_765 = 0;
++    }
++    if (byte_758 && !(window_deactivation_state->ticker_30->Feedback(6) & 0x10000000))
++    {
++        VariableTicker* ticker = window_deactivation_state->ticker_30;
++        ticker->AddMessage(Notification(0x10000000), id_28, 7);
++        window_deactivation_state->ticker_30->AddFeedback(0x10000000, 6);
++        AddThought(0x10000000);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0048fff0
++bool WorldStaffEntity::FindInteractionOffset(ScreenWorldPosition* position, int x, int y)
++{
++    for (int i = 0; i < 4; ++i)
++    {
++        ScreenWorldPosition candidate = *position;
++        candidate.x = static_cast<float>(static_cast<double>(candidate.x) + ((i == 0 || i == 3) ? x : -static_cast<double>(x)));
++        candidate.y = static_cast<float>(static_cast<double>(candidate.y) + ((i == 0 || i == 2) ? -static_cast<double>(y) : y));
++        unsigned int flags = CurrentScreenTerrain()->CellAt(candidate)->flags_48;
++        if (((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010)))
++        {
++            *position = candidate;
++            return true;
++        }
++    }
++    return false;
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index ae093ece4a2a0251a075ebe55ded92a02f2a7a00..406e411411852f361c9c725f1dd1b005a7841d93 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -188,7 +188,10 @@ struct WorldSubsystemScript
+     void UpdateState(VariableEntity* entity, unsigned int state);          // 0x004d57a0.
+     struct Expression
+     {
+-        void Update(VariableEntity* entity); // 0x004d4080.
++        void Update(VariableEntity* entity);                                                       // 0x004d4080.
++        ScreenModeCommand MakeCommand(VariableEntity* entity, const WorldActionCommandData* data); // 0x004d4d80.
++        bool Evaluate(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
++            unsigned int right_kind, std::uintptr_t right_data, unsigned int comparison); // 0x004d4880.
+         Expression* next_00;
+         unsigned int kind_04;
+         void* data_08;
+@@ -221,6 +224,8 @@ struct WorldSubsystemScript
+     int SkipComments();                                                                          // 0x004d5a80.
+     int ReadToken(char* token);                                                                  // 0x004d8fd0.
+     int ParseState();                                                                            // 0x004d5b10.
++    int ParseStateActions(unsigned int phase);                                                   // 0x004d5e70.
++    int ParseMessage();                                                                          // 0x004d90f0.
+     Rule rules_00[60];
+     unsigned int count_5910;
+     unsigned int word_5914;
+diff --git a/src/window_audio.h b/src/window_audio.h
+index 7b7b2a0743fe7ed67cbcd36d3784a52fd1b2e252..4eec6f2b10e7899a2719e825a48ba0609348782e 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -70,12 +70,10 @@ struct WindowAudioState
+     bool IsStreamPlaying();
+     bool IsStreamPaused(); // 0x004cff10.
+     int VoiceStatus(int voice);
+-    int FindVoice(const char* name);                             // 0x004cfd00.
+-    void RestartVoice(int voice);                                // 0x004cfd80.
+-    void SetListenerPosition(const WindowAudioVector* position); // 0x004cfa70.
+-
++    int FindVoice(const char* name);                                                                             // 0x004cfd00.
++    void RestartVoice(int voice);                                                                                // 0x004cfd80.
++    void SetListenerPosition(const WindowAudioVector* position);                                                 // 0x004cfa70.
+     int PlaySoundAtPosition(const char* name, const WindowAudioVector* position, unsigned int flags, int voice); // 0x004cf7b0.
+-
+     int PlaySoundAtPosition(const char* name,
+         float level,
+         const WindowAudioVector* position,
+diff --git a/src/window_audio_has_sound.cpp b/src/window_audio_has_sound.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b0b69d5fa3cb49ac3e1f927ae2bfcc981781986
+--- /dev/null
++++ b/src/window_audio_has_sound.cpp
+@@ -0,0 +1,11 @@
++#include "window_audio.h"
++#include "window_sound_bank.h"
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004cf690
++bool WindowAudioState::HasSound(const char* name)
++{
++    char filename[64];
++    sprintf(filename, "%s%s", name, window_sound_wave_extension);
++    return bank_f4->HasSound(filename);
++}
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+index 91ee692d18f29925f6ca9d946a7b843fb5a74324..0e4bbd6b2dba3d6d3ce2d7ae953b4b259d6c613b 100644
+--- a/src/window_sound_bank.h
++++ b/src/window_sound_bank.h
+@@ -57,6 +57,7 @@ struct WindowSoundBank
+     WindowSoundBank(const char* header_path, const char* bank_path);
+     ~WindowSoundBank();
+     void* FindSample(const char* name, unsigned int* bytes);
++    bool HasSound(const char* name);                                // 0x004d1e50.
+     void ReleaseSample(const char* name);                           // 0x004d1fe0, RET4; separate real body.
+     void UpdateCache(float delta);                                  // 0x004d2070, RET4; separate real body.
+     void LoadIndex(const char* header_path, const char* bank_path); // 0x004d2140, RET8.

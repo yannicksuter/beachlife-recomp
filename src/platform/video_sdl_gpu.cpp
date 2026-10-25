@@ -448,6 +448,10 @@ class SdlGpuVideo : public Video
 
 std::unique_ptr<Video> create_video(const VideoSettings& settings)
 {
+    if (settings.headless)
+    {
+        return create_headless_video(settings);
+    }
     return std::make_unique<SdlGpuVideo>(settings);
 }
 

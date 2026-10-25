@@ -1,0 +1,632 @@
+diff --git a/src/startup_event_schedule.cpp b/src/startup_event_schedule.cpp
+index 888b6c51b66c3d83ef5955cee22a80a7d6a71418..292d82c7e56bcd22a8d49046411b028577debd14 100644
+--- a/src/startup_event_schedule.cpp
++++ b/src/startup_event_schedule.cpp
+@@ -23,3 +23,9 @@ int VariableEventSchedule::CurrentEvent(int index)
+ {
+     return entries_00[index].event_70;
+ }
++
++// FUNCTION: BEACHLIFE 0x004293a0
++int VariableEventSchedule::CurrentEvent()
++{
++    return entries_00[current_168].event_70;
++}
+diff --git a/src/startup_world_object_script_append_expression.cpp b/src/startup_world_object_script_append_expression.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1dcb46d00c69be7e13ffe3870b03571653a04032
+--- /dev/null
++++ b/src/startup_world_object_script_append_expression.cpp
+@@ -0,0 +1,74 @@
++#include "startup_world_subsystems.h"
++#include "startup_world_script_actions.h"
++#include "startup_game_file.h"
++
++extern unsigned char world_object_script_nested;
++
++namespace
++{
++inline void AppendToList(WorldSubsystemScript::Expression*& list, WorldSubsystemScript::Expression* expression)
++{
++    if (!list)
++    {
++        list = expression;
++        return;
++    }
++    WorldSubsystemScript::Expression* last = list;
++    while (last->next_00)
++        last = last->next_00;
++    last->next_00 = expression;
++}
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x004d5320
++void WorldSubsystemScript::Rule::AddCommand(Expression* expression, unsigned int phase)
++{
++    switch (phase)
++    {
++    case 0:
++        AppendToList(first_170, expression);
++        break;
++    case 1:
++        AppendToList(second_174, expression);
++        break;
++    case 2:
++        AppendToList(third_178, expression);
++        break;
++    case 3:
++        AppendToList(commands_04[count_16c].first_04, expression);
++        break;
++    case 4:
++        AppendToList(commands_04[count_16c].second_08, expression);
++        break;
++    default:
++        StartupFatal("State::AddCommand - Invalid Command List has been specified");
++        break;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004d6f70
++void WorldSubsystemScript::AppendExpression(Expression* expression, unsigned int phase)
++{
++    if (word_5918 && !world_object_script_nested)
++    {
++        WorldExpressionSwitchData::Case* last = word_5918->cases_00;
++        if (!last)
++        {
++            StartupFatal("No Case has been defined for this statement");
++            return;
++        }
++        while (last->next_0c)
++            last = last->next_0c;
++        AppendToList(last->expression_08, expression);
++        return;
++    }
++    if (word_5914)
++    {
++        if (!word_5914->parsing_else_1c)
++            AppendToList(word_5914->first_00, expression);
++        else
++            AppendToList(word_5914->second_04, expression);
++        return;
++    }
++    rules_00[count_5910].AddCommand(expression, phase);
++}
+diff --git a/src/startup_world_object_script_parse_state.cpp b/src/startup_world_object_script_parse_state.cpp
+index e1dd30f2ba16c0268f3bc53951cf8060cb3610ad..0ee2f72c37f0059cca1c1c4fd14c0517eac53171 100644
+--- a/src/startup_world_object_script_parse_state.cpp
++++ b/src/startup_world_object_script_parse_state.cpp
+@@ -312,3 +312,510 @@ int WorldSubsystemScript::ParsePlayAnimationAction(unsigned int phase)
+     AppendExpression(expression, phase);
+     return count;
+ }
++
++// FUNCTION: BEACHLIFE 0x004d9390
++WorldScriptOperand WorldSubsystemScript::DecodeOperand(char* token)
++{
++    WorldScriptOperand result;
++    result.kind = 0x110;
++    if (!_stricmp(token, "Sender"))
++        result.kind = 0x0;
++    else if (!_stricmp(token, "Vehicle"))
++        result.kind = 0x1;
++    else if (!_stricmp(token, "OpinionBeauty"))
++        result.kind = 0x2;
++    else if (!_stricmp(token, "Walkpoint"))
++        result.kind = 0x3;
++    else if (!_stricmp(token, "Walkanimation"))
++        result.kind = 0x4;
++    else if (!_stricmp(token, "MessData"))
++        result.kind = 0x5;
++    else if (!_stricmp(token, "MessFloatData"))
++        result.kind = 0x6;
++    else if (!_stricmp(token, "Fidget"))
++        result.kind = 0x7;
++    else if (!_stricmp(token, "DesireCommodFam"))
++        result.kind = 0x8;
++    else if (!_stricmp(token, "Drunk"))
++        result.kind = 0x9;
++    else if (!_stricmp(token, "Cash"))
++        result.kind = 0xa;
++    else if (!_stricmp(token, "DesireStroll"))
++        result.kind = 0xb;
++    else if (!_stricmp(token, "DesireSunbathing"))
++        result.kind = 0xc;
++    else if (!_stricmp(token, "DesireSwimming"))
++        result.kind = 0xd;
++    else if (!_stricmp(token, "DesireAccomodation"))
++        result.kind = 0xe;
++    else if (!_stricmp(token, "DesireAlcohol"))
++        result.kind = 0xf;
++    else if (!_stricmp(token, "DesireAmusement"))
++        result.kind = 0x10;
++    else if (!_stricmp(token, "DesireFirstAid"))
++        result.kind = 0x11;
++    else if (!_stricmp(token, "DesireHeadAche"))
++        result.kind = 0x12;
++    else if (!_stricmp(token, "DesireMeals"))
++        result.kind = 0x13;
++    else if (!_stricmp(token, "DesirePartyFun"))
++        result.kind = 0x14;
++    else if (!_stricmp(token, "DesireShower"))
++        result.kind = 0x15;
++    else if (!_stricmp(token, "DesireSnacks"))
++        result.kind = 0x16;
++    else if (!_stricmp(token, "DesireSoftDrinks"))
++        result.kind = 0x17;
++    else if (!_stricmp(token, "DesireSouvenirs"))
++        result.kind = 0x18;
++    else if (!_stricmp(token, "DesireSportsFun"))
++        result.kind = 0x19;
++    else if (!_stricmp(token, "DesireToilet"))
++        result.kind = 0x1a;
++    else if (!_stricmp(token, "DesireWaterSportsFun"))
++        result.kind = 0x1b;
++    else if (!_stricmp(token, "DesireLeaveResort"))
++        result.kind = 0x1c;
++    else if (!_stricmp(token, "DesireVandalise"))
++        result.kind = 0x1d;
++    else if (!_stricmp(token, "DesireFight"))
++        result.kind = 0x1e;
++    else if (!_stricmp(token, "DesireFlirt"))
++        result.kind = 0x1f;
++    else if (!_stricmp(token, "DesireUmbrellas"))
++        result.kind = 0x20;
++    else if (!_stricmp(token, "DesireSunTanLotion"))
++        result.kind = 0x21;
++    else if (!_stricmp(token, "DesireHardSex"))
++        result.kind = 0x22;
++    else if (!_stricmp(token, "DesireSleep"))
++        result.kind = 0x23;
++    else if (!_stricmp(token, "DesireScared"))
++        result.kind = 0x24;
++    else if (!_stricmp(token, "CommodPrice"))
++        result.kind = 0x25;
++    else if (!_stricmp(token, "Oxygen"))
++        result.kind = 0x26;
++    else if (!_stricmp(token, "DesiredCommodText"))
++        result.kind = 0x27;
++    else if (!_stricmp(token, "DesiredCommod"))
++        result.kind = 0x28;
++    else if (!_stricmp(token, "OpinionCost"))
++        result.kind = 0x29;
++    else if (!_stricmp(token, "MessFlags"))
++        result.kind = 0x2b;
++    else if (!_stricmp(token, "Happiness"))
++        result.kind = 0x2c;
++    else if (!_stricmp(token, "MaxPrice"))
++        result.kind = 0x2d;
++    else if (!_stricmp(token, "Activity"))
++        result.kind = 0x2e;
++    else if (!_stricmp(token, "OnBack"))
++        result.kind = 0x2f;
++    else if (!_stricmp(token, "OnFront"))
++        result.kind = 0x30;
++    else if (!_stricmp(token, "OnSide"))
++        result.kind = 0x31;
++    else if (!_stricmp(token, "StopAction"))
++        result.kind = 0x32;
++    else if (!_stricmp(token, "WalkpointX"))
++        result.kind = 0x33;
++    else if (!_stricmp(token, "WalkpointY"))
++        result.kind = 0x34;
++    else if (!_stricmp(token, "EventID"))
++        result.kind = 0x35;
++    else if (!_stricmp(token, "Me"))
++        result.kind = 0xe2;
++    else if (!_stricmp(token, "NO_OBJECT"))
++        result.kind = 0xe5;
++    else if (!_stricmp(token, "true"))
++        result.kind = 0xe6;
++    else if (!_stricmp(token, "false"))
++        result.kind = 0xe7;
++    else if (!_stricmp(token, "Moving"))
++        result.kind = 0xef;
++    else if (!_stricmp(token, "DestObject"))
++        result.kind = 0xf0;
++    else if (!_stricmp(token, "DestObjectEntranceX"))
++        result.kind = 0xf1;
++    else if (!_stricmp(token, "DestObjectEntranceY"))
++        result.kind = 0xf2;
++    else if (!_stricmp(token, "RepeatAction"))
++        result.kind = 0x3c;
++    else if (!_stricmp(token, "CurrentAnimation"))
++        result.kind = 0x3d;
++    else if (!_stricmp(token, "MyDir"))
++        result.kind = 0x38;
++    else if (!_stricmp(token, "AttachedSprite"))
++        result.kind = 0x39;
++    else if (!_stricmp(token, "AttachedAnimation"))
++        result.kind = 0x3a;
++    else if (!_stricmp(token, "AttachedDirection"))
++        result.kind = 0x3b;
++    else if (!_stricmp(token, "AttachedOffsetX"))
++        result.kind = 0x3e;
++    else if (!_stricmp(token, "AttachedOffsetY"))
++        result.kind = 0x3f;
++    else if (!_stricmp(token, "State"))
++        result.kind = 0xe9;
++    else if (!_stricmp(token, "ActionState"))
++        result.kind = 0x40;
++    else if (!_stricmp(token, "FightPerson"))
++        result.kind = 0x41;
++    else if (!_stricmp(token, "GameTime"))
++        result.kind = 0xea;
++
++    if (!_stricmp(token, "FoundLitter"))
++        result.kind = 0x6a;
++    else if (!_stricmp(token, "FoundBin"))
++        result.kind = 0x6b;
++    else if (!_stricmp(token, "BinFull"))
++        result.kind = 0x6c;
++    else if (!_stricmp(token, "ToiletDirty"))
++        result.kind = 0x6d;
++    else if (!_stricmp(token, "EmptyBinAnimation"))
++        result.kind = 0x72;
++    else if (!_stricmp(token, "Rescue"))
++        result.kind = 0xa1;
++    else if (!_stricmp(token, "RescueSwim"))
++        result.kind = 0xa2;
++    else if (!_stricmp(token, "InMyArea"))
++        result.kind = 0xa3;
++    else if (!_stricmp(token, "AtHotel"))
++        result.kind = 0xa4;
++    else if (!_stricmp(token, "DrawingGuest"))
++        result.kind = 0xa5;
++    else if (!_stricmp(token, "SavingDistance"))
++        result.kind = 0xa6;
++    else if (!_stricmp(token, "RescueThenDeath"))
++        result.kind = 0xa7;
++    else if (!_stricmp(token, "GuestAlreadyBeingSaved"))
++        result.kind = 0xa8;
++    else if (!_stricmp(token, "StaticBinAnimation"))
++        result.kind = 0x73;
++    else if (!_stricmp(token, "WanderPosX"))
++        result.kind = 0x74;
++    else if (!_stricmp(token, "WanderPosY"))
++        result.kind = 0x75;
++    else if (!_stricmp(token, "BinPosX"))
++        result.kind = 0x76;
++    else if (!_stricmp(token, "BinPosY"))
++        result.kind = 0x77;
++    else if (!_stricmp(token, "WateringPosX"))
++        result.kind = 0xae;
++    else if (!_stricmp(token, "WateringPosY"))
++        result.kind = 0xaf;
++    else if (!_stricmp(token, "UrgentClean"))
++        result.kind = 0x78;
++    else if (!_stricmp(token, "UrgentType"))
++        result.kind = 0x79;
++    else if (!_stricmp(token, "FoundToilet"))
++        result.kind = 0x6e;
++    else if (!_stricmp(token, "IdleTime"))
++        result.kind = 0x6f;
++    else if (!_stricmp(token, "IdleTimePerHour"))
++        result.kind = 0x83;
++    else if (!_stricmp(token, "FoundDirecting"))
++        result.kind = 0x80;
++    else if (!_stricmp(token, "DirectingStaff"))
++        result.kind = 0x7e;
++    else if (!_stricmp(token, "DirectToObject"))
++        result.kind = 0x7f;
++    else if (!_stricmp(token, "DirectingPosX"))
++        result.kind = 0x81;
++    else if (!_stricmp(token, "DirectingPosY"))
++        result.kind = 0x82;
++    else if (!_stricmp(token, "Home"))
++        result.kind = 0x70;
++    else if (!_stricmp(token, "LastAction"))
++        result.kind = 0x84;
++    else if (!_stricmp(token, "LitterDistance"))
++        result.kind = 0x71;
++    else if (!_stricmp(token, "HomeEntranceX"))
++        result.kind = 0xf9;
++    else if (!_stricmp(token, "HomeEntranceY"))
++        result.kind = 0xfa;
++    else if (!_stricmp(token, "SecurityOffice"))
++        result.kind = 0xfb;
++    else if (!_stricmp(token, "HomeClosed"))
++        result.kind = 0xfc;
++    else if (!_stricmp(token, "NearestValidTileX"))
++        result.kind = 0xfd;
++    else if (!_stricmp(token, "NearestValidTileY"))
++        result.kind = 0xfe;
++    else if (!_stricmp(token, "WaitTillMorning"))
++        result.kind = 0x100;
++    else if (!_stricmp(token, "NumTimesPlayedAnimInRow"))
++        result.kind = 0xff;
++    else if (!_stricmp(token, "NumBuildersWhistling"))
++        result.kind = 0x101;
++    else if (!_stricmp(token, "AmIDemolishing"))
++        result.kind = 0x102;
++    else if (!_stricmp(token, "IsJobStillValid"))
++        result.kind = 0x103;
++    else if (!_stricmp(token, "BuilderLocation"))
++        result.kind = 0x104;
++    else if (!_stricmp(token, "DebugInfo"))
++        result.kind = 0x105;
++    else if (!_stricmp(token, "Night"))
++        result.kind = 0x106;
++    else if (!_stricmp(token, "InHut"))
++        result.kind = 0x107;
++    else if (!_stricmp(token, "ExitPointX"))
++        result.kind = 0x97;
++    else if (!_stricmp(token, "ExitPointY"))
++        result.kind = 0x98;
++    else if (!_stricmp(token, "Saving"))
++        result.kind = 0x99;
++    else if (!_stricmp(token, "SavingID"))
++        result.kind = 0x9a;
++    else if (!_stricmp(token, "InSea"))
++        result.kind = 0x9b;
++    else if (!_stricmp(token, "EnteringSea"))
++        result.kind = 0x9c;
++    else if (!_stricmp(token, "TimesPathBlocked"))
++        result.kind = 0x9d;
++    else if (!_stricmp(token, "SavingX"))
++        result.kind = 0x9e;
++    else if (!_stricmp(token, "SavingY"))
++        result.kind = 0x9f;
++    else if (!_stricmp(token, "FoundMisdemeanour"))
++        result.kind = 0x85;
++    else if (!_stricmp(token, "Offender"))
++        result.kind = 0x8c;
++    else if (!_stricmp(token, "FightWithID"))
++        result.kind = 0x8d;
++    else if (!_stricmp(token, "Tolerance"))
++        result.kind = 0x8a;
++    else if (!_stricmp(token, "ActionToTake"))
++        result.kind = 0x8b;
++    else if (!_stricmp(token, "NumMinorFines"))
++        result.kind = 0x8e;
++    else if (!_stricmp(token, "NumSeriousFines"))
++        result.kind = 0x8f;
++    else if (!_stricmp(token, "MinorFineCost"))
++        result.kind = 0x90;
++    else if (!_stricmp(token, "SeriousFineCost"))
++        result.kind = 0x91;
++    else if (!_stricmp(token, "PatrolVelocity"))
++        result.kind = 0x92;
++    else if (!_stricmp(token, "DoubleFine"))
++        result.kind = 0x93;
++    else if (!_stricmp(token, "FineOffsetX"))
++        result.kind = 0x94;
++    else if (!_stricmp(token, "FineOffsetY"))
++        result.kind = 0x95;
++    else if (!_stricmp(token, "FineLevel"))
++        result.kind = 0x96;
++    else if (!_stricmp(token, "FoundRepair"))
++        result.kind = 0xa9;
++    else if (!_stricmp(token, "FoundBetterJob"))
++        result.kind = 0xaa;
++    else if (!_stricmp(token, "AtHome"))
++        result.kind = 0xac;
++    else if (!_stricmp(token, "IsBuilding"))
++        result.kind = 0xab;
++    else if (!_stricmp(token, "RepairType"))
++        result.kind = 0xad;
++
++    if (!_stricmp(token, "StaffWalkpoint"))
++        result.kind = 0x7a;
++    else if (!_stricmp(token, "LookForNearestJob"))
++        result.kind = 0xb0;
++    else if (!_stricmp(token, "JobType"))
++        result.kind = 0xb1;
++    else if (!_stricmp(token, "BuildEntPointX"))
++        result.kind = 0xb2;
++    else if (!_stricmp(token, "BuildEntPointY"))
++        result.kind = 0xb3;
++    else if (!_stricmp(token, "BuildFacing"))
++        result.kind = 0xb4;
++    else if (!_stricmp(token, "RestFacing"))
++        result.kind = 0xb5;
++    else if (!_stricmp(token, "BuilderNumber"))
++        result.kind = 0xb6;
++    else if (!_stricmp(token, "TalkingID"))
++        result.kind = 0x108;
++    else if (!_stricmp(token, "TimetalkingToGuest"))
++        result.kind = 0x109;
++    else if (!_stricmp(token, "TimetalkingToGuestFloat"))
++        result.kind = 0x10a;
++    else if (!_stricmp(token, "PerCentToBoostGuest"))
++        result.kind = 0x10b;
++    else if (!_stricmp(token, "SentToGuest"))
++        result.kind = 0x10c;
++    else if (!_stricmp(token, "GuestOffSetPosX"))
++        result.kind = 0x10d;
++    else if (!_stricmp(token, "GuestOffSetPosY"))
++        result.kind = 0x10e;
++    else if (!_stricmp(token, "Owner"))
++        result.kind = 0x10f;
++    else if (!_stricmp(token, "WorstOpinion"))
++        result.kind = 0x42;
++    else if (!_stricmp(token, "WorstOpinionVal"))
++        result.kind = 0x43;
++    else if (!_stricmp(token, "BestOpinion"))
++        result.kind = 0x44;
++    else if (!_stricmp(token, "BestOpinionVal"))
++        result.kind = 0x45;
++    else if (!_stricmp(token, "ActionPerson"))
++        result.kind = 0x46;
++    else if (!_stricmp(token, "WalkSpeed"))
++        result.kind = 0x47;
++    else if (!_stricmp(token, "JustLittered"))
++        result.kind = 0x48;
++    else if (!_stricmp(token, "ActionFat"))
++        result.kind = 0x49;
++    else if (!_stricmp(token, "StandAnimation"))
++        result.kind = 0x37;
++    else if (!_stricmp(token, "DistanceToSender"))
++        result.kind = 0xa0;
++    else if (!_stricmp(token, "StaffWage"))
++        result.kind = 0xb7;
++    else if (!_stricmp(token, "NeedsAttention"))
++        result.kind = 0xb8;
++    else if (!_stricmp(token, "WharfID"))
++        result.kind = 0x4b;
++    else if (!_stricmp(token, "WaitingForDeath"))
++        result.kind = 0x4a;
++    else if (!_stricmp(token, "IceDropScore"))
++        result.kind = 0x4c;
++    else if (!_stricmp(token, "HotelID"))
++        result.kind = 0x4d;
++    else if (!_stricmp(token, "StayingAt"))
++        result.kind = 0x4e;
++    else if (!_stricmp(token, "MsgChar"))
++        result.kind = 0x4f;
++    else if (!_stricmp(token, "Default"))
++        result.kind = 0xeb;
++    else if (!_stricmp(token, "ImMale"))
++        result.kind = 0x50;
++    else if (!_stricmp(token, "WorldStarted"))
++        result.kind = 0xe1;
++    else if (!_stricmp(token, "LitterInBin"))
++        result.kind = 0x51;
++    else if (!_stricmp(token, "DrawOffsetY"))
++        result.kind = 0xf4;
++    else if (!_stricmp(token, "DrawOffsetX"))
++        result.kind = 0xf3;
++    else if (!_stricmp(token, "ApplyLotion"))
++        result.kind = 0x52;
++    else if (!_stricmp(token, "AppliedLotion"))
++        result.kind = 0x53;
++    else if (!_stricmp(token, "DestDir"))
++        result.kind = 0x54;
++    else if (!_stricmp(token, "MyVictim"))
++        result.kind = 0xf5;
++    else if (!_stricmp(token, "MyVictimOffsetX"))
++        result.kind = 0xf6;
++    else if (!_stricmp(token, "MyVictimOffsetY"))
++        result.kind = 0xf7;
++    else if (!_stricmp(token, "VictimDir"))
++        result.kind = 0xf8;
++    else if (!_stricmp(token, "WorldX"))
++        result.kind = 0xc3;
++    else if (!_stricmp(token, "WorldY"))
++        result.kind = 0xc4;
++    else if (!_stricmp(token, "FoodIll"))
++        result.kind = 0x55;
++    else if (!_stricmp(token, "ImIll"))
++        result.kind = 0x56;
++    else if (!_stricmp(token, "FoodIllDecay"))
++        result.kind = 0x57;
++    else if (!_stricmp(token, "CurWeather"))
++        result.kind = 0x58;
++    else if (!_stricmp(token, "WthrLightRain"))
++        result.kind = 0x59;
++    else if (!_stricmp(token, "LeavingEarly"))
++        result.kind = 0x5a;
++    else if (!_stricmp(token, "ComplaintsHut"))
++        result.kind = 0x5b;
++    else if (!_stricmp(token, "StartTime"))
++        result.kind = 0x7b;
++    else if (!_stricmp(token, "EndTime"))
++        result.kind = 0x7c;
++    else if (!_stricmp(token, "AtWork"))
++        result.kind = 0x7d;
++    else if (!_stricmp(token, "Topless"))
++        result.kind = 0x5c;
++    else if (!_stricmp(token, "MessState"))
++        result.kind = 0x5d;
++    else if (!_stricmp(token, "AmountLotion"))
++        result.kind = 0x5e;
++    else if (!_stricmp(token, "NumTimesBlocked"))
++        result.kind = 0x5f;
++    else if (!_stricmp(token, "NotOnPath"))
++        result.kind = 0x60;
++    else if (!_stricmp(token, "CurEvent"))
++        result.kind = 0x61;
++    else if (!_stricmp(token, "StageDirection"))
++        result.kind = 0x62;
++    else if (!_stricmp(token, "MySeaArea"))
++        result.kind = 0x63;
++    else if (!_stricmp(token, "TellOff"))
++        result.kind = 0xe0;
++    else if (!_stricmp(token, "MissedPurchase"))
++        result.kind = 0x64;
++    else if (!_stricmp(token, "MyOffence"))
++        result.kind = 0x65;
++    else if (!_stricmp(token, "NoOffence"))
++        result.kind = 0x66;
++    else if (!_stricmp(token, "DesiredCommodSeaClosed"))
++        result.kind = 0x67;
++    else if (!_stricmp(token, "IsEntryPointClear"))
++        result.kind = 0x68;
++    else if (!_stricmp(token, "SunburnLevel"))
++        result.kind = 0x69;
++
++    else if (token[0] == '"')
++    {
++        char* text = static_cast<char*>(::operator new(std::strlen(token) - 1, std::nothrow));
++        token[std::strlen(token) - 1] = 0;
++        std::strcpy(text, token + 1);
++        result.kind = 0x36;
++        result.data = reinterpret_cast<std::uintptr_t>(text);
++    }
++    else if (!std::strncmp(token, "RandDWORD", 9))
++    {
++        unsigned int* value = new (std::nothrow) unsigned int;
++        *value = std::atoi(token + 9);
++        result.kind = 0xe3;
++        result.data = reinterpret_cast<std::uintptr_t>(value);
++    }
++    else if (!std::strncmp(token, "Random", 6))
++    {
++        unsigned int* value = new (std::nothrow) unsigned int;
++        *value = std::atoi(token + 6);
++        result.kind = 0xe4;
++        result.data = reinterpret_cast<std::uintptr_t>(value);
++    }
++    else if (!std::strncmp(token, "STATE_", 6))
++    {
++        float* value = new (std::nothrow) float;
++        unsigned int state = 0;
++        unsigned int index;
++        for (index = 0; index < 137; ++index)
++        {
++            if (std::strcmp(token, object_script_states[index].name) == 0)
++            {
++                state = object_script_states[index].state;
++                break;
++            }
++        }
++        if (index == 137)
++            StartupFatal("ObjectScript::DetermineState - State doesnt exist check state decode table");
++        *value = static_cast<float>(state);
++        result.kind = 0xe8;
++        result.data = reinterpret_cast<std::uintptr_t>(value);
++    }
++    else if (result.kind == 0x110)
++    {
++        if ((token[0] < '0' || token[0] > '9') && token[0] != '-')
++            StartupFatal("Data in script has not been defined and is not a number : %s", token);
++        float* value = new (std::nothrow) float;
++        *value = static_cast<float>(std::atof(token));
++        result.kind = 0xe8;
++        result.data = reinterpret_cast<std::uintptr_t>(value);
++    }
++    return result;
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 1330544faf29beeb831966de71ccf016df079233..e37060ebb6e1b0a2a68bc1355b43cde0960ca29b 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -269,7 +269,8 @@ struct WorldSubsystemScript
+     };
+     struct Rule
+     {
+-        Rule(); // 0x004d5240.
++        Rule();                                                      // 0x004d5240.
++        void AddCommand(Expression* expression, unsigned int phase); // 0x004d5320.
+         struct Command
+         {
+             Command(); // Folded 0x004db1d0.
+@@ -309,7 +310,7 @@ struct WorldSubsystemScript
+     int ParseSetAction(unsigned int phase);                                                      // 0x004d65d0.
+     int ParsePlaySoundAction(unsigned int phase);                                                // 0x004d6680.
+     int ParseMessage();                                                                          // 0x004d90f0.
+-    WorldScriptOperand DecodeOperand(const char* token);                                         // 0x004d9390.
++    WorldScriptOperand DecodeOperand(char* token);                                               // 0x004d9390.
+     void AppendExpression(Expression* expression, unsigned int phase);                           // 0x004d6f70.
+     Rule rules_00[60];
+     unsigned int count_5910;

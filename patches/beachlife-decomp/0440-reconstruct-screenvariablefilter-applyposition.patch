@@ -1,0 +1,122 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 7c9fe81..6148b7a 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2858,3 +2858,10 @@ extern "C" __declspec(dllexport) void FixtureMatch3_69(ScreenManager* receiver)
+ {
+     receiver->ScreenManager::ReleaseOwner190();
+ }
++
++#include "startup_screen_variable_filter.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch3_70(ScreenVariableFilter* receiver, int dx, int dy)
++{
++    receiver->ScreenVariableFilter::ApplyPosition(dx, dy);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 0c9542f..2bc5ccf 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -311,3 +311,4 @@ address,type,size,symbol
+ 0x004c3d60,function,42,?TestRectangle@ScreenImageItem@@UAE_NHH@Z
+ 0x004eb380,function,42,??0FrameClock@@QAE@H@Z
+ 0x0040e3a0,function,43,?RestoreSurface@ScreenRequestRenderer@@QAEXH@Z
++0x004c2360,function,43,?ApplyPosition@ScreenVariableFilter@@QAEXHH@Z
+diff --git a/src/startup_screen_variable_filter.h b/src/startup_screen_variable_filter.h
+new file mode 100644
+index 0000000..7e813a7
+--- /dev/null
++++ b/src/startup_screen_variable_filter.h
+@@ -0,0 +1,59 @@
++#ifndef STARTUP_SCREEN_VARIABLE_FILTER_H
++#define STARTUP_SCREEN_VARIABLE_FILTER_H
++
++#include "startup_screen_item.h"
++
++struct ScreenRequestContext;
++
++struct ScreenBar;
++
++// Genuine 0x2c-byte filter object created for a FILTER_ table column. It is not
++// a ScreenItem (no table). Descriptive names only.
++struct ScreenVariableFilter
++{
++    // Owned bar: 0x004c20f0 deletes it (virtual destructor) when the selected
++    // key changes and creates a new 0x80-byte ScreenBar (0x004c1340) for
++    // kind-0 entries of the filter table 0x00581188.
++    ScreenBar* bar_00;
++    ScreenRectangle bounds_04;
++    ScreenRectangle initial_14;
++    int kind_24;             // Kind of the selected entry: 0 bar, 1 text, 2 none.
++    const char* variable_28; // Variable named by a kind-1 entry.
++
++    // Actual 0x004c2090, RET 0x10: stores the bounds twice, clears the bar and
++    // the shared selected key.
++    explicit ScreenVariableFilter(ScreenRectangle bounds);
++    // Actual 0x004c20e0, 13 bytes: deletes the owned bar. The physical body is
++    // shared with ScreenListBoxEntry's destructor (identical code, one copy).
++    ~ScreenVariableFilter();
++
++    // Actual 0x004c20f0, RET4: selects the filter table entry for a new key,
++    // replacing the bar.
++    void SelectKey(int key);
++    // Actual 0x004c2360, RET8: moves the filter; body separate.
++    void ApplyPosition(int dx, int dy);
++    // Actual 0x004c2330, RET8: moves the filter rectangle; body separate.
++    void MoveRectangle(int dx, int dy);
++    void DrawRow(int y, ScreenRequestContext* context, int font);        // 0x004c22e0.
++    void DrawRowOverlay(int y, ScreenRequestContext* context, int font); // 0x004c2200.
++};
++
++// Observed 0x18-byte filter table entry. Descriptive names.
++struct VariableFilterEntry
++{
++    int key;
++    int kind;             // 0 bar, 1 text, 2 none.
++    const char* variable; // Variable name shown.
++    float minimum;        // Bar range.
++    float maximum;
++    int style; // Bar style.
++};
++
++// The 28 filter entries, 0x00581188 (the selection loop's bound).
++extern VariableFilterEntry variable_filter_entries[28];
++
++// Key last selected by any filter (0x004c20f0 compares and stores it); every
++// filter constructor clears it. Descriptive name.
++extern int variable_filter_key; // 0x005baedc.
++
++#endif
+diff --git a/src/startup_screen_variable_filter_position.cpp b/src/startup_screen_variable_filter_position.cpp
+new file mode 100644
+index 0000000..1cb1673
+--- /dev/null
++++ b/src/startup_screen_variable_filter_position.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_variable_filter.h"
++
++// FUNCTION: BEACHLIFE 0x004c2360
++void ScreenVariableFilter::ApplyPosition(int dx, int dy)
++{
++    bounds_04.left = initial_14.left + dx;
++    bounds_04.right = initial_14.right + dx;
++    bounds_04.top = initial_14.top + dy;
++    bounds_04.bottom = initial_14.bottom + dy;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 5a26061..7abae7f 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1472,6 +1472,12 @@
+       "size": 43,
+       "name": "ScreenManager::ReleaseOwner190",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004c2360",
++      "size": 43,
++      "name": "ScreenVariableFilter::ApplyPosition",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

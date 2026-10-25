@@ -57,6 +57,7 @@ int main(int argc, char** argv)
                   "       beachlife --play [--source image.iso] [--config file]\n"
                   "                 [--preview-screen Data/Screens/FrontScreen.tga]\n"
                   "                 [--frames count] [--screenshot file.png] [--smoke-test]\n"
+                  "                 [--headless]\n"
                   "       beachlife --help | --version | --build-info\n\n"
                   "       beachlife --inspect-iso image.iso\n\n"
                   "Open without arguments to launch the graphical interface.\n"
@@ -72,6 +73,7 @@ int main(int argc, char** argv)
     bool play = false;
     std::string preview_screen;
     int frames = 0;
+    bool headless = false;
     try
     {
         for (int i = 1; i < argc; ++i)
@@ -84,6 +86,11 @@ int main(int argc, char** argv)
             if (arg == "--smoke-test")
             {
                 options.smoke = true;
+                continue;
+            }
+            if (arg == "--headless")
+            {
+                headless = true;
                 continue;
             }
             if (arg == "--play")
@@ -183,6 +190,7 @@ int main(int argc, char** argv)
     game.screenshot = play ? std::exchange(options.screenshot, {}) : std::filesystem::path{};
     game.frames = frames;
     game.hidden = options.smoke;
+    game.headless = headless;
     game.cache = options.cache;
     for (;;)
     {

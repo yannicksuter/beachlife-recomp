@@ -1,0 +1,138 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 54c1a15..8c924d4 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3328,3 +3328,10 @@ extern "C" __declspec(dllexport) void FixtureMatch4_58(WindowAudioState* receive
+ {
+     receiver->WindowAudioState::StopAllSounds();
+ }
++
++#include "startup_screen_manager.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_60(ScreenRequestGamePrefix* receiver)
++{
++    receiver->ScreenRequestGamePrefix::Activate();
++}
+diff --git a/metadata.csv b/metadata.csv
+index dc0176c..3b2aff4 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -388,3 +388,4 @@ address,type,size,symbol
+ 0x00409500,function,84,??1InputMotionState@@QAE@XZ
+ 0x004cf440,function,228,?Update@WindowAudioState@@QAEXM@Z
+ 0x004cfdc0,function,84,?StopAllSounds@WindowAudioState@@QAEXXZ
++0x004e3b70,function,86,?Activate@ScreenRequestGamePrefix@@QAEXXZ
+diff --git a/src/startup_screen_activate.cpp b/src/startup_screen_activate.cpp
+new file mode 100644
+index 0000000..80931a7
+--- /dev/null
++++ b/src/startup_screen_activate.cpp
+@@ -0,0 +1,18 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_name_search.h"
++
++// FUNCTION: BEACHLIFE 0x004ae8f0
++void ScreenManager::ActivateScreens()
++{
++    CircularList& screens = active;
++    CircularListIterator found;
++    CircularListNode* node = FindScreenByName(&found, screens.Begin(), screens.End(), "ScenarioWon")->node;
++    if (node != screens.head)
++        return;
++
++    node = FindScreenByName(&found, screens.Begin(), screens.End(), "ScenarioLost")->node;
++    if (node != screens.head)
++        return;
++
++    RequestScreen("PauseBox", 0, 1);
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index e321656..27f5922 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -5,6 +5,7 @@
+ #include "startup_controller_selection.h"
+ 
+ struct ScreenItem;
++struct InputState;
+ struct ScreenManagerAuxiliaryState;
+ struct ScreenManagerOwner190;
+ struct ScreenListBoxPrefix;
+@@ -22,7 +23,9 @@ struct ScreenManager;
+ struct ScreenRequestGamePrefix
+ {
+     ControllerSelectionState controller_selection;
+-    unsigned char unknown_2c[0x1c];
++    unsigned char unknown_2c[4];
++    InputState* input;
++    unsigned char unknown_34[0x14];
+     ScreenManager* screens;
+     unsigned char unknown_4c[8];
+     ScreenPlacementStore* placement;
+@@ -33,6 +36,7 @@ struct ScreenRequestGamePrefix
+     unsigned char save_info_enabled;
+     unsigned char unknown_b9[0xb];
+     unsigned char flag_c4;
++    unsigned char inactive_c5;
+ 
+     bool HasScenarioFlag08(unsigned int index);
+ 
+@@ -47,6 +51,7 @@ struct ScreenRequestGamePrefix
+     void PopulateLoadGameMenu();
+     void PopulateSaveList(ScreenListBoxPrefix* list, unsigned int row_word, unsigned char clear);
+     void RefreshSaveRecords();
++    void Activate();
+ };
+ 
+ // Observed manager prefix only. Complete construction, destruction and field
+@@ -93,6 +98,7 @@ struct ScreenManager
+     void StartCredits();
+     void ShowItemText(ScreenItem* item, int x, int y, const char* text);
+     void PrepareActiveScreens(unsigned char prepare_surface);
++    void ActivateScreens();
+ };
+ 
+ extern ScreenRequestGamePrefix* screen_request_game;
+diff --git a/src/window_activate.cpp b/src/window_activate.cpp
+new file mode 100644
+index 0000000..b6e89ca
+--- /dev/null
++++ b/src/window_activate.cpp
+@@ -0,0 +1,20 @@
++#include "startup_input_state.h"
++#include "startup_screen_manager.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004e3b70
++void ScreenRequestGamePrefix::Activate()
++{
++    if (window_deactivation_enabled && inactive_c5)
++    {
++        if (window_deactivation_state)
++        {
++            screens->ActivateScreens();
++        }
++        window_audio_state->ResumeAudioStream();
++        window_audio_state->UnmuteDigitalDriver();
++        input->ResetTransition();
++        input->ApplyCurrentCursor();
++        inactive_c5 = 0;
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 0af345a..7142bd2 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1868,6 +1868,12 @@
+       "size": 84,
+       "name": "WindowAudioState::StopAllSounds",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004e3b70",
++      "size": 86,
++      "name": "ScreenRequestGamePrefix::Activate",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

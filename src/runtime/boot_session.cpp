@@ -2,12 +2,14 @@
 #include "data/content_manifest.h"
 #include "platform/compat/compat_files.h"
 #include "platform/compat/cursor_provider.h"
+#include "platform/compat/kernel_files.h"
 #include "platform/compat/user32_cursor.h"
 #include "platform/compat/user32_host.h"
 #include "runtime/resource_files.h"
 #include "runtime/retail_cursor.h"
 #include "runtime/retail_files.h"
 
+#include <filesystem>
 #include <stdexcept>
 #include <vector>
 
@@ -32,6 +34,10 @@ int run_boot_game(GameHost& host)
     compat::DirectorySession directories(entries);
     compat::ResourceCursorSession cursor_resources;
     retail_cursor::Session cursors(compat::retail_cursor_provider());
+    // The retail installer creates an empty Data\Temp folder (listed in
+    // data1.hdr); the game keeps its map cache there. Writes go to the
+    // per-user folder, so recreate the folder there as the installer did.
+    std::filesystem::create_directories(compat::kernel::user_path("data/temp"));
     // The retail HWND is Play's Video (see winmain_native.cpp).
     compat::bind_window(reinterpret_cast<HWND>(&host.video));
     return beachlife_boot_main(host);

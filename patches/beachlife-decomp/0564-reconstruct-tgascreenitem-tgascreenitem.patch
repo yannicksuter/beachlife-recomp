@@ -1,0 +1,277 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 602e17b..ded0c3b 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3275,3 +3275,10 @@ extern "C" __declspec(dllexport) void FixtureMatch4_51(ScreenPlacementStore* rec
+ {
+     receiver->ScreenPlacementStore::ClearPlacements();
+ }
++
++#include "startup_tga_screen_item.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_52(TgaScreenItem* receiver)
++{
++    receiver->TgaScreenItem::~TgaScreenItem();
++}
+diff --git a/metadata.csv b/metadata.csv
+index 1e437c0..602eb51 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -376,3 +376,4 @@ address,type,size,symbol
+ 0x004c0bf0,function,78,?Unresolved1c@ScreenTabItem@@UAEXXZ
+ 0x004c0f50,function,79,?Unresolved4c@ScreenLinearContainer@@UAEXI@Z
+ 0x004e68f0,function,79,?ClearPlacements@ScreenPlacementStore@@QAEXXZ
++0x004c85c0,function,81,??1TgaScreenItem@@UAE@XZ
+diff --git a/src/startup_screen_item.h b/src/startup_screen_item.h
+index 8e0ad0c..84872e3 100644
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -18,13 +18,13 @@ struct ScreenItem
+ {
+     virtual ~ScreenItem();
+     virtual void Unresolved04(float elapsed);
+-    virtual void Unresolved08() = 0;
+-    virtual void Unresolved0c() = 0;
++    virtual void Unresolved08();
++    virtual void Unresolved0c();
+     // The one-item argument is observed; the original implementation is unresolved.
+-    virtual void Unresolved10(ScreenItem* item) = 0;
++    virtual void Unresolved10(ScreenItem* item);
+     virtual void ApplyPosition(int dx, int dy);
+     virtual void MarkPrepared();
+-    virtual void Unresolved1c() = 0;
++    virtual void Unresolved1c();
+     virtual unsigned char Unresolved20();
+     virtual void Unresolved24(unsigned char enabled);
+     virtual void Unresolved28();
+@@ -32,7 +32,7 @@ struct ScreenItem
+     virtual unsigned char ReadState40();
+     virtual bool TestRectangle(int x, int y);
+     virtual bool HandleInput38(int x, int y, int value);
+-    virtual bool HandleTimedCoordinates(int x, int y, int value) = 0;
++    virtual bool HandleTimedCoordinates(int x, int y, int value);
+     virtual bool HandleTimedEvent(int x, int y, int value);
+     virtual unsigned char ReadState41();
+     virtual unsigned char ReadState42();
+diff --git a/src/startup_screen_item_defaults.cpp b/src/startup_screen_item_defaults.cpp
+index 6d80ed1..b09c138 100644
+--- a/src/startup_screen_item_defaults.cpp
++++ b/src/startup_screen_item_defaults.cpp
+@@ -21,3 +21,25 @@ void ScreenItem::Unresolved04(float elapsed)
+ void ScreenItem::Unresolved28()
+ {
+ }
++
++// FUNCTION: BEACHLIFE 0x00437d10 FOLDED
++void ScreenItem::Unresolved08()
++{
++}
++
++// FUNCTION: BEACHLIFE 0x004d3890 FOLDED
++void ScreenItem::Unresolved0c()
++{
++    IgnoreScreenAction();
++}
++
++// Same original RET4 address 0x0049dbe0, with the observed slot10 pointer argument.
++void ScreenItem::Unresolved10(ScreenItem* item)
++{
++    IgnoreScreenWord(item);
++}
++
++// Same original RET0 address 0x00437d10, distinct virtual slots.
++void ScreenItem::Unresolved1c()
++{
++}
+diff --git a/src/startup_screen_item_timed_coordinates.cpp b/src/startup_screen_item_timed_coordinates.cpp
+new file mode 100644
+index 0000000..e816494
+--- /dev/null
++++ b/src/startup_screen_item_timed_coordinates.cpp
+@@ -0,0 +1,58 @@
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++#include "startup_frame_clock.h"
++#include "startup_input_motion.h"
++
++// FUNCTION: BEACHLIFE 0x004adb00
++bool ScreenItem::HandleTimedCoordinates(int x, int y, int value)
++{
++    if (owned_text)
++    {
++        float delta = startup_frame_clock->delta_seconds;
++        if (TestRectangle(x, y))
++        {
++            float threshold = screen_manager->ReadItemThreshold();
++            if (!(elapsed_24 >= threshold))
++            {
++                if (x == last_x && y == last_y)
++                {
++                    elapsed_24 = delta + elapsed_24;
++                }
++                else
++                {
++                    elapsed_24 = 0.0f;
++                }
++            }
++            if ((value == 1 || value == 2 || value == 3) && elapsed_24 >= threshold)
++            {
++                screen_manager->ClearItemReference(this);
++                elapsed_24 = 7.0f;
++            }
++            if (elapsed_24 >= 7.0f)
++            {
++                screen_manager->ClearItemReference(this);
++                last_y = y;
++                last_x = x;
++                return false;
++            }
++            if (elapsed_24 >= threshold)
++            {
++                const char* text = owned_text;
++                screen_manager->ShowItemText(this, x, y, text);
++                float elapsed = delta + elapsed_24;
++                last_y = y;
++                last_x = x;
++                elapsed_24 = elapsed;
++                return false;
++            }
++        }
++        else
++        {
++            screen_manager->ClearItemReference(this);
++            elapsed_24 = 0.0f;
++        }
++    }
++    last_y = y;
++    last_x = x;
++    return false;
++}
+diff --git a/src/startup_screen_manager_owner190_visit.cpp b/src/startup_screen_manager_owner190_visit.cpp
+index ba80b7e..6182006 100644
+--- a/src/startup_screen_manager_owner190_visit.cpp
++++ b/src/startup_screen_manager_owner190_visit.cpp
+@@ -3,6 +3,7 @@
+ 
+ // Native typed projection of shared library traversal 0x004e8200.
+ // Its active-screen projection already exists; this earns no new physical credit.
++// FUNCTION: BEACHLIFE 0x004e8200 FOLDED
+ ScreenManagerOwner190Callback VisitManagerOwner190Entries(ScreenManagerOwner190Iterator first,
+     ScreenManagerOwner190Iterator last, ScreenManagerOwner190Callback callback)
+ {
+diff --git a/src/startup_tga_screen_item_activation.cpp b/src/startup_tga_screen_item_activation.cpp
+new file mode 100644
+index 0000000..009ce5e
+--- /dev/null
++++ b/src/startup_tga_screen_item_activation.cpp
+@@ -0,0 +1,36 @@
++#include "startup_tga_screen_item.h"
++#include "startup_screen_renderer.h"
++#include "tga_image.h"
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x005816f8
++const char* tga_screen_path_prefix = "data\\screens\\";
++
++// FUNCTION: BEACHLIFE 0x004c8620
++void TgaScreenItem::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    if (enabled)
++    {
++        if (!image)
++        {
++            char path[128];
++            strcpy(path, tga_screen_path_prefix);
++            strcat(path, filename);
++            image = LoadTgaFile(path);
++            if (screen_request_renderer->format_44 == 1)
++            {
++                image->ConvertPalette(1);
++            }
++            else
++            {
++                image->ConvertPalette(0);
++            }
++        }
++    }
++    else if (image)
++    {
++        delete image;
++        image = 0;
++    }
++}
+diff --git a/src/startup_tga_screen_item_destructor.cpp b/src/startup_tga_screen_item_destructor.cpp
+new file mode 100644
+index 0000000..ab99f2e
+--- /dev/null
++++ b/src/startup_tga_screen_item_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_tga_screen_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c85c0
++TgaScreenItem::~TgaScreenItem()
++{
++    Unresolved24(0);
++}
+diff --git a/src/tga_palette_convert.cpp b/src/tga_palette_convert.cpp
+new file mode 100644
+index 0000000..a1493c9
+--- /dev/null
++++ b/src/tga_palette_convert.cpp
+@@ -0,0 +1,28 @@
++#include "tga_image.h"
++
++// Descriptive name; the original symbol and exact declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ea320
++void TgaImage::ConvertPalette(unsigned char use_rgb555)
++{
++    converted_palette = new unsigned short[256];
++    if (use_rgb555)
++    {
++        for (int index = 0; index < 256; ++index)
++        {
++            unsigned char green = palette[index * 3 + 1] & 0xf8;
++            unsigned char red = palette[index * 3] & 0xf8;
++            unsigned char blue = palette[index * 3 + 2] >> 3;
++            converted_palette[index] = ((unsigned short)red << 7) | ((unsigned short)green << 2) | (unsigned short)blue;
++        }
++    }
++    else
++    {
++        for (int index = 0; index < 256; ++index)
++        {
++            unsigned char green = palette[index * 3 + 1] & 0xfc;
++            unsigned char red = palette[index * 3] & 0xf8;
++            unsigned char blue = palette[index * 3 + 2] >> 3;
++            converted_palette[index] = ((unsigned short)red << 8) | ((unsigned short)green << 3) | (unsigned short)blue;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 9ff5009..551c2fc 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1826,6 +1826,12 @@
+       "size": 79,
+       "name": "ScreenPlacementStore::ClearPlacements",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004c85c0",
++      "size": 81,
++      "name": "TgaScreenItem::~TgaScreenItem",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2024,6 +2030,9 @@
+     ],
+     "startup_screen_placement_clear.cpp": [
+       "/Ob1"
++    ],
++    "startup_tga_screen_item_destructor.cpp": [
++      "/GX"
+     ]
+   },
+   "stdcall_imports": {

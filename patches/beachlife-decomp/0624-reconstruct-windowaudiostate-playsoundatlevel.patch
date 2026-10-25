@@ -1,0 +1,104 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 214ba25..878bd7e 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3457,3 +3457,13 @@ extern "C" __declspec(dllexport) void FixtureMatch5_4(ScreenRadioItem* receiver)
+ {
+     receiver->ScreenRadioItem::~ScreenRadioItem();
+ }
++
++#include "window_sound_voice.h"
++#include <math.h>
++#include "window_audio.h"
++#include "miles_imports.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) int FixtureMatch5_7(WindowAudioState* receiver, const char* p0, float p1, unsigned int p2, float p3)
++{
++    return receiver->WindowAudioState::PlaySoundAtLevel(p0, p1, p2, p3);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 9b1631f..0b5d2b8 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -415,3 +415,5 @@ address,type,size,symbol
+ 0x004c6920,function,98,?TestRectangle@ScreenRadioItem@@UAE_NHH@Z
+ 0x004c6990,function,169,?HandleTimedCoordinates@ScreenRadioItem@@UAE_NHHH@Z
+ 0x004c6850,function,105,??1ScreenRadioItem@@UAE@XZ
++0x004f4d10,float,4,
++0x004cf740,function,107,?PlaySoundAtLevel@WindowAudioState@@QAEHPBDMIM@Z
+diff --git a/src/window_audio.h b/src/window_audio.h
+index ab9de33..6327311 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -39,6 +39,7 @@ struct WindowAudioState
+ 
+     // Existing R287 declaration for the real 0x004cf710, RET12.
+     int PlaySound(const char* name, unsigned int flags, float fade);
++    int PlaySoundAtLevel(const char* name, float level, unsigned int flags, float fade);
+     // Actual 0x004d0040, RET20; full owner lifetime remains separate.
+     int PlaySoundWithParameters(const char* name, int volume, unsigned int flags, float fade, float scale);
+ 
+diff --git a/src/window_audio_controls.cpp b/src/window_audio_controls.cpp
+index 237291a..294c1a3 100644
+--- a/src/window_audio_controls.cpp
++++ b/src/window_audio_controls.cpp
+@@ -3,6 +3,21 @@
+ #include "window_audio.h"
+ #include "miles_imports.h"
+ 
++namespace
++{
++inline int SoundVolume(float level)
++{
++    if (!(level >= 0.0f))
++        level = 0.0f;
++    else if (level > 1.0f)
++        level = 1.0f;
++    int volume = static_cast<int>(level * 127.0f);
++    if (volume < 3)
++        volume = 0;
++    return volume;
++}
++} // namespace
++
+ // FUNCTION: BEACHLIFE 0x004cfee0
+ bool WindowAudioState::IsStreamPlaying()
+ {
+@@ -30,3 +45,10 @@ int WindowAudioState::VoiceStatus(int voice)
+     }
+     return count;
+ }
++
++// FUNCTION: BEACHLIFE 0x004cf740
++int WindowAudioState::PlaySoundAtLevel(const char* name, float level, unsigned int flags, float fade)
++{
++    int volume = SoundVolume(level * scale_d8);
++    return PlaySoundWithParameters(name, volume, flags, fade, level);
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index ae3051f..f9b64e0 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1976,6 +1976,12 @@
+       "size": 105,
+       "name": "ScreenRadioItem::~ScreenRadioItem",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004cf740",
++      "size": 107,
++      "name": "WindowAudioState::PlaySoundAtLevel",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2203,6 +2209,9 @@
+     ],
+     "startup_screen_radio_item_destructor.cpp": [
+       "/GX"
++    ],
++    "window_audio_controls.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

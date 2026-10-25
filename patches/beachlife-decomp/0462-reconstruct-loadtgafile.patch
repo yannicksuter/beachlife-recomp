@@ -1,0 +1,233 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 78b48ec..6bf88cb 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2935,3 +2935,10 @@ extern "C" __declspec(dllexport) void FixtureMatch4_00(ScreenLinearContainer* re
+ {
+     receiver->ScreenLinearContainer::MoveRectangle(p0, p1);
+ }
++
++#include "tga_image.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) TgaImage* FixtureMatch4_01(const char* p0)
++{
++    return LoadTgaFile(p0);
++}
+diff --git a/metadata.csv b/metadata.csv
+index c97a7a0..3a2f385 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -322,3 +322,4 @@ address,type,size,symbol
+ 0x004a53a0,function,47,?ApplyPosition@GuiDefinedItem@@UAEXHH@Z
+ 0x004a53d0,function,47,?MoveRectangle@GuiDefinedItem@@UAEXHH@Z
+ 0x004c0d60,function,47,?MoveRectangle@ScreenLinearContainer@@UAEXHH@Z
++0x004ea910,function,47,?LoadTgaFile@@YAPAUTgaImage@@PBD@Z
+diff --git a/src/tga_buffer_parser.cpp b/src/tga_buffer_parser.cpp
+new file mode 100644
+index 0000000..3453480
+--- /dev/null
++++ b/src/tga_buffer_parser.cpp
+@@ -0,0 +1,100 @@
++#include "tga_image.h"
++
++unsigned char* GetTgaPaletteData(unsigned char* buffer, unsigned char id_length,
++    unsigned char has_color_map);
++unsigned char* GetTgaPixelData(unsigned char* buffer, unsigned char id_length,
++    unsigned short palette_length, unsigned char has_color_map);
++void CopyTgaPalette(const unsigned char* source, TgaImage* image, int count);
++void CopyTgaPixels(const unsigned char* source, TgaImage* image);
++void ExpandTgaRle(const unsigned char* source, TgaImage* image);
++
++// Descriptive name; the original symbol and declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ea6c0
++TgaImage* ParseTgaBuffer(unsigned char* buffer)
++{
++    unsigned char* cursor = buffer;
++    unsigned char id_length = *cursor++;
++    unsigned char create_palette = 0;
++    unsigned char color_map_type = *cursor++;
++    unsigned char image_type = *cursor++;
++    unsigned short palette_first = static_cast<unsigned short>(cursor[0] | (static_cast<unsigned int>(cursor[1]) << 8));
++    cursor += 2;
++    unsigned short palette_length = static_cast<unsigned short>(cursor[0] | (static_cast<unsigned int>(cursor[1]) << 8));
++    cursor += 2;
++    unsigned char palette_depth = *cursor++;
++    cursor += 4;
++    unsigned short width = static_cast<unsigned short>(cursor[0] | (static_cast<unsigned int>(cursor[1]) << 8));
++    cursor += 2;
++    unsigned short height = static_cast<unsigned short>(cursor[0] | (static_cast<unsigned int>(cursor[1]) << 8));
++    cursor += 2;
++    unsigned char depth = *cursor++;
++    unsigned char descriptor = *cursor++;
++
++    switch (depth)
++    {
++    case 8:
++        if (color_map_type)
++        {
++            create_palette = 1;
++            if (palette_depth != 24)
++            {
++                return 0;
++            }
++        }
++        break;
++    case 24:
++    case 32:
++        if (color_map_type)
++        {
++            return 0;
++        }
++        break;
++    default:
++        return 0;
++    }
++    if (palette_first)
++    {
++        return 0;
++    }
++    unsigned char orientation = descriptor & 0x30;
++    if (orientation)
++    {
++        return 0;
++    }
++
++    TgaImage* image = new TgaImage(width, height, depth, create_palette);
++    if (!image)
++    {
++        return 0;
++    }
++    switch (image_type)
++    {
++    case 1:
++    {
++        unsigned char* palette_data = GetTgaPaletteData(buffer, id_length, color_map_type);
++        CopyTgaPalette(palette_data, image, palette_length);
++    }
++    case 2:
++    {
++        unsigned char* pixel_data = GetTgaPixelData(buffer, id_length, palette_length, color_map_type);
++        CopyTgaPixels(pixel_data, image);
++        break;
++    }
++    case 9:
++    {
++        unsigned char* palette_data = GetTgaPaletteData(buffer, id_length, color_map_type);
++        CopyTgaPalette(palette_data, image, palette_length);
++    }
++    case 10:
++    {
++        unsigned char* pixel_data = GetTgaPixelData(buffer, id_length, palette_length, color_map_type);
++        ExpandTgaRle(pixel_data, image);
++        break;
++    }
++    case 0:
++    case 3:
++    case 11:
++        return 0;
++    }
++    return image;
++}
+diff --git a/src/tga_file_loader.cpp b/src/tga_file_loader.cpp
+new file mode 100644
+index 0000000..24bb2a1
+--- /dev/null
++++ b/src/tga_file_loader.cpp
+@@ -0,0 +1,17 @@
++#include "tga_image.h"
++
++char* LoadFile(const char* filename);
++
++// Descriptive name; the original symbol and declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ea910
++TgaImage* LoadTgaFile(const char* filename)
++{
++    char* buffer = LoadFile(filename);
++    if (buffer)
++    {
++        TgaImage* image = ParseTgaBuffer(reinterpret_cast<unsigned char*>(buffer));
++        delete[] buffer;
++        return image;
++    }
++    return 0;
++}
+diff --git a/src/tga_image.h b/src/tga_image.h
+index 0e94eba..4473a75 100644
+--- a/src/tga_image.h
++++ b/src/tga_image.h
+@@ -14,5 +14,11 @@ struct TgaImage
+     unsigned char unknown_1c[4];
+ 
+     TgaImage(int image_width, int image_height);
++    TgaImage(int image_width, int image_height, int image_depth, unsigned char has_palette);
+     ~TgaImage();
++
++    void ConvertPalette(unsigned char use_rgb555);
+ };
++
++TgaImage* ParseTgaBuffer(unsigned char* buffer);
++TgaImage* LoadTgaFile(const char* filename);
+diff --git a/src/tga_image_allocation.cpp b/src/tga_image_allocation.cpp
+new file mode 100644
+index 0000000..65d42bb
+--- /dev/null
++++ b/src/tga_image_allocation.cpp
+@@ -0,0 +1,41 @@
++#include "tga_image.h"
++
++#include <string.h>
++
++// Descriptive class name; the original symbol and declaration are unknown.
++// FUNCTION: BEACHLIFE 0x004ea200
++TgaImage::TgaImage(int image_width, int image_height, int image_depth, unsigned char has_palette)
++{
++    pixels = 0;
++    palette = 0;
++    width = image_width;
++    height = image_height;
++    bytes_per_pixel = image_depth / 8;
++    bits_per_pixel = image_depth;
++    converted_palette = 0;
++    pixels = new unsigned char[bytes_per_pixel * width * height];
++    unsigned int pixel_bytes = bytes_per_pixel;
++    pixel_bytes *= height;
++    pixel_bytes *= width;
++    memset(pixels, 0, pixel_bytes);
++    if (has_palette)
++    {
++        palette = new unsigned char[768];
++        memset(palette, 0, 768);
++    }
++    switch (image_depth)
++    {
++    case 1:
++        unknown_1c[0] = 2;
++        unknown_1c[1] = 0;
++        unknown_1c[2] = 0;
++        unknown_1c[3] = 0;
++        break;
++    case 8:
++        unknown_1c[0] = 0;
++        unknown_1c[1] = 0;
++        unknown_1c[2] = 0;
++        unknown_1c[3] = 0;
++        break;
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index a7e5a2e..ba22802 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1538,6 +1538,12 @@
+       "size": 47,
+       "name": "ScreenLinearContainer::MoveRectangle",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004ea910",
++      "size": 47,
++      "name": "LoadTgaFile",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

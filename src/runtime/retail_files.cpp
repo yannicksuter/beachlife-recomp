@@ -56,6 +56,18 @@ Session::~Session()
     current_session = previous_;
 }
 
+namespace
+{
+void (*open_observer)(const char*, void*) = nullptr;
+void* open_observer_context = nullptr;
+} // namespace
+
+void set_open_observer(void (*observer)(const char* filename, void* context), void* context)
+{
+    open_observer = observer;
+    open_observer_context = context;
+}
+
 File* open(const char* filename, const char* mode) noexcept
 {
     if (!current_session || !filename || !mode || std::strcmp(mode, "rb") != 0)
@@ -70,6 +82,10 @@ File* open(const char* filename, const char* mode) noexcept
             return nullptr;
         }
         const auto cursor = stream->tell();
+        if (open_observer)
+        {
+            open_observer(filename, open_observer_context);
+        }
         return new File{
             current_session->source_, std::move(stream), std::this_thread::get_id(), cursor};
     }

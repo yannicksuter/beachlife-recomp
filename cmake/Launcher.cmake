@@ -143,6 +143,7 @@ add_dependencies(beachlife_launcher build_identity)
 # Play's game window and caller-thread startup, shared with the generated fixture.
 add_library(beachlife_runtime STATIC src/runtime/runtime.cpp src/runtime/startup.cpp
     src/runtime/loading_view.cpp src/runtime/content_startup.cpp src/runtime/fps_overlay.cpp
+    src/platform/video_headless.cpp
     src/platform/video_sdl_gpu.cpp)
 target_include_directories(beachlife_runtime PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(beachlife_runtime PUBLIC beachlife_ui beachlife_launcher_core

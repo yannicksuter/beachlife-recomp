@@ -1,0 +1,172 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 4ba3f0f..92ef98e 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3305,3 +3305,10 @@ extern "C" __declspec(dllexport) InputState* FixtureMatch4_55(void* memory, int
+ {
+     return new (memory) InputState(p0, p1, p2);
+ }
++
++#include "startup_input_state.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) bool FixtureMatch4_56(InputState* receiver, void* p0, void* p1)
++{
++    return receiver->InputState::Initialize(p0, p1);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 33ce7c9..a4d83ca 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -381,3 +381,7 @@ address,type,size,symbol
+ 0x004ed1c0,function,145,?Initialize@StartupMovie@@QAEXXZ
+ 0x004ed0d0,function,82,??0StartupMovie@@QAE@PAXHHHHEE@Z
+ 0x004ea940,function,83,??0InputState@@QAE@HHE@Z
++0x004eab60,function,92,?CreateKeyboard@InputState@@QAEEPAX@Z
++0x004eac60,function,285,?CreateMouse@InputState@@QAEEPAX@Z
++0x004eaa50,function,83,?Initialize@InputState@@QAE_NPAX0@Z
++0x004ed5e2,library,6,_DirectInput8Create@20
+diff --git a/src/startup_direct_input8.h b/src/startup_direct_input8.h
+new file mode 100644
+index 0000000..d361707
+--- /dev/null
++++ b/src/startup_direct_input8.h
+@@ -0,0 +1,37 @@
++#ifndef STARTUP_DIRECT_INPUT8_H
++#define STARTUP_DIRECT_INPUT8_H
++
++#include <windows.h>
++#include <dinput.h>
++
++// DirectInput 8 creation ABI used by the game (DINPUT8.dll and dxguid). The
++// pinned VC6 SDK only declares DirectInput 5.
++#define DIRECTINPUT8_VERSION 0x0800
++
++#ifndef DISCL_NOWINKEY
++#define DISCL_NOWINKEY 0x00000010
++#endif
++
++// IDirectInput8A in DINPUT8.dll slot order. Devices are used through the
++// shared IDirectInputDeviceA prefix; DI8-only parameter structures are opaque.
++struct IDirectInput8A : public IUnknown
++{
++    STDMETHOD(CreateDevice)(REFGUID guid, IDirectInputDeviceA** device, LPUNKNOWN outer) PURE;
++    STDMETHOD(EnumDevices)(
++        DWORD device_type, LPDIENUMDEVICESCALLBACKA callback, LPVOID context, DWORD flags) PURE;
++    STDMETHOD(GetDeviceStatus)(REFGUID instance) PURE;
++    STDMETHOD(RunControlPanel)(HWND owner, DWORD flags) PURE;
++    STDMETHOD(Initialize)(HINSTANCE instance, DWORD version) PURE;
++    STDMETHOD(FindDevice)(REFGUID guid, LPCSTR name, LPGUID instance) PURE;
++    STDMETHOD(EnumDevicesBySemantics)(
++        LPCSTR user, void* action_format, void* callback, LPVOID context, DWORD flags) PURE;
++    STDMETHOD(ConfigureDevices)(void* callback, void* parameters, DWORD flags, LPVOID data) PURE;
++};
++
++extern "C" const GUID IID_IDirectInput8A;
++// Original DIMOUSESTATE2 format: three axes and eight buttons.
++extern "C" const DIDATAFORMAT c_dfDIMouse2;
++extern "C" HRESULT WINAPI DirectInput8Create(
++    HINSTANCE instance, DWORD version, REFIID interface_id, LPVOID* output, LPUNKNOWN outer);
++
++#endif
+diff --git a/src/startup_input_guids.cpp b/src/startup_input_guids.cpp
+new file mode 100644
+index 0000000..3e6da1c
+--- /dev/null
++++ b/src/startup_input_guids.cpp
+@@ -0,0 +1,6 @@
++#include "startup_direct_input8.h"
++
++// GLOBAL: BEACHLIFE 0x004f5334
++extern "C" const GUID IID_IDirectInput8A = {
++    0xbf798030, 0x483a, 0x4da2, { 0xaa, 0x99, 0x5d, 0x64, 0xed, 0x36, 0x97, 0 }
++};
+diff --git a/src/startup_input_initialize.cpp b/src/startup_input_initialize.cpp
+new file mode 100644
+index 0000000..9d61975
+--- /dev/null
++++ b/src/startup_input_initialize.cpp
+@@ -0,0 +1,23 @@
++#include <windows.h>
++#include "startup_direct_input8.h"
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004eaa50
++bool InputState::Initialize(void* instance, void* window)
++{
++    window_handle = window;
++    resource_instance = instance;
++    if (FAILED(DirectInput8Create(static_cast<HINSTANCE>(instance),
++            DIRECTINPUT8_VERSION,
++            IID_IDirectInput8A,
++            reinterpret_cast<void**>(&direct_input),
++            0)))
++    {
++        return false;
++    }
++    if (!CreateKeyboard(window))
++    {
++        return false;
++    }
++    return CreateMouse(window) ? true : false;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 374b903..6710877 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1850,6 +1850,12 @@
+       "size": 83,
+       "name": "InputState::InputState",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004eaa50",
++      "size": 83,
++      "name": "InputState::Initialize",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2085,6 +2091,12 @@
+         "Sleep": 4,
+         "WideCharToMultiByte": 32
+       }
++    },
++    "DINPUT8.dll": {
++      "export_names": "undecorated",
++      "symbols": {
++        "DirectInput8Create": 20
++      }
+     }
+   },
+   "unclassified_functions": [
+@@ -2941,6 +2953,30 @@
+       "kind": "void-member",
+       "return_type": "void",
+       "parameters": []
++    },
++    {
++      "address": "0x004eab60",
++      "size": 92,
++      "name": "InputState::CreateKeyboard",
++      "symbol": "?CreateKeyboard@InputState@@QAEEPAX@Z",
++      "header": "startup_input_state.h",
++      "kind": "false-member",
++      "return_type": "unsigned char",
++      "parameters": [
++        "void*"
++      ]
++    },
++    {
++      "address": "0x004eac60",
++      "size": 285,
++      "name": "InputState::CreateMouse",
++      "symbol": "?CreateMouse@InputState@@QAEEPAX@Z",
++      "header": "startup_input_state.h",
++      "kind": "false-member",
++      "return_type": "unsigned char",
++      "parameters": [
++        "void*"
++      ]
+     }
+   ]
+ }

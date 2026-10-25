@@ -1,0 +1,183 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 779221c..d0a4046 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3419,3 +3419,10 @@ extern "C" __declspec(dllexport) void FixtureMatch4_76(ScreenManager* receiver,
+ {
+     receiver->ScreenManager::PrepareNamedScreen(p0, p1);
+ }
++
++#include "startup_screen_manager.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_77(ScreenRequestGamePrefix* receiver, int p0, int p1)
++{
++    receiver->ScreenRequestGamePrefix::SetScreenSize(p0, p1);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 76700d7..5fd7423 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -401,3 +401,5 @@ address,type,size,symbol
+ 0x0042fab0,function,98,?SetKeylines@VariableWorldPrefix@@QAEXE@Z
+ 0x00416d40,function,99,??1ScreenDialogResourceFrame@@QAE@XZ
+ 0x004b12b0,function,99,?PrepareNamedScreen@ScreenManager@@QAEXPBDE@Z
++0x00410960,function,723,?SetScreenSize@ScreenRequestRenderer@@QAEEHH@Z
++0x0049f370,function,161,?LookupText@ScreenTextLookup@@QAEPBGPBD@Z
+diff --git a/src/startup_game_set_screen_size.cpp b/src/startup_game_set_screen_size.cpp
+new file mode 100644
+index 0000000..82cc95f
+--- /dev/null
++++ b/src/startup_game_set_screen_size.cpp
+@@ -0,0 +1,27 @@
++#include "startup_screen_manager.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_text.h"
++#include "startup_window_fatal.h"
++
++// FUNCTION: BEACHLIFE 0x004e41e0
++void ScreenRequestGamePrefix::SetScreenSize(int width, int height)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    if (renderer->width == static_cast<unsigned int>(width)
++        && renderer->height == static_cast<unsigned int>(height))
++    {
++        return;
++    }
++
++    if (!renderer->SetScreenSize(width, height))
++    {
++        // STRING: BEACHLIFE 0x0058649c
++        const unsigned short* message = screen_text_lookup->LookupText("ERROR_DIRECTX");
++        ShowFatalWindowMessage(controller_selection.window, message);
++    }
++
++    startup_input_state->SetScreenSize(width, height);
++    controller_selection.active->ScreenSizeChanged(width, height);
++}
+diff --git a/src/startup_input_screen_size.cpp b/src/startup_input_screen_size.cpp
+new file mode 100644
+index 0000000..55dad4b
+--- /dev/null
++++ b/src/startup_input_screen_size.cpp
+@@ -0,0 +1,8 @@
++#include "startup_input_state.h"
++
++// FUNCTION: BEACHLIFE 0x004ea9a0
++void InputState::SetScreenSize(int width, int height)
++{
++    height_18 = height;
++    width_14 = width;
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 42e4a44..4eae076 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -89,6 +89,7 @@ struct ScreenRequestRenderer
+     void DrawTga(const ScreenPoint& destination, const ScreenRectangle& bounds, TgaImage* image, int mode, unsigned int flags, unsigned int extra);
+     bool ClipRectangle(int& destination_x, int& destination_y, int& source_left, int& source_top, int& source_right, int& source_bottom);
+     void AccumulateRectangle(ScreenRectangle bounds);
++    unsigned char SetScreenSize(int width, int height);
+ };
+ 
+ // Observed renderer pointer published by its constructor; lifetime is unresolved.
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index aa9689d..66452f0 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -4,7 +4,14 @@
+ #include "startup_render_rectangle.h"
+ 
+ struct ScreenFontData;
+-struct ScreenTextLookup;
++typedef const unsigned short ScreenTextCharacter;
++// Borrowed lookup receiver; storage and ownership remain separate.
++struct ScreenTextLookup
++{
++    const unsigned short* LookupText(const char* key);
++};
++
++extern ScreenTextLookup* screen_text_lookup;
+ 
+ // Observed nonpolymorphic font renderer prefix.
+ // Its real constructor and complete owner lifetime are separate methods.
+diff --git a/src/startup_screen_text_globals.cpp b/src/startup_screen_text_globals.cpp
+new file mode 100644
+index 0000000..9be3e5e
+--- /dev/null
++++ b/src/startup_screen_text_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_text.h"
++
++// GLOBAL: BEACHLIFE 0x005baeb4
++ScreenTextLookup* screen_text_lookup;
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index fc725fb..68b1093 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1946,6 +1946,12 @@
+       "size": 99,
+       "name": "ScreenManager::PrepareNamedScreen",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004e41e0",
++      "size": 100,
++      "name": "ScreenRequestGamePrefix::SetScreenSize",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2386,19 +2392,6 @@
+       "return_type": "void",
+       "parameters": []
+     },
+-    {
+-      "address": "0x004e41e0",
+-      "size": 100,
+-      "name": "ScreenRequestGamePrefix::SetScreenSize",
+-      "symbol": "?SetScreenSize@ScreenRequestGamePrefix@@QAEXHH@Z",
+-      "header": "startup_screen_manager.h",
+-      "kind": "void-member",
+-      "return_type": "void",
+-      "parameters": [
+-        "int",
+-        "int"
+-      ]
+-    },
+     {
+       "address": "0x004ae9e0",
+       "size": 279,
+@@ -3099,6 +3092,31 @@
+         "int",
+         "unsigned int*"
+       ]
++    },
++    {
++      "address": "0x00410960",
++      "size": 723,
++      "name": "ScreenRequestRenderer::SetScreenSize",
++      "symbol": "?SetScreenSize@ScreenRequestRenderer@@QAEEHH@Z",
++      "header": "startup_screen_renderer.h",
++      "kind": "false-member",
++      "return_type": "unsigned char",
++      "parameters": [
++        "int",
++        "int"
++      ]
++    },
++    {
++      "address": "0x0049f370",
++      "size": 161,
++      "name": "ScreenTextLookup::LookupText",
++      "symbol": "?LookupText@ScreenTextLookup@@QAEPBGPBD@Z",
++      "header": "startup_screen_text.h",
++      "kind": "null-pointer-member",
++      "return_type": "ScreenTextCharacter*",
++      "parameters": [
++        "const char*"
++      ]
+     }
+   ]
+ }

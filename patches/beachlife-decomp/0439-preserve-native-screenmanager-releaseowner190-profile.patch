@@ -1,0 +1,365 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 7c9fe81..e4c5aa2 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -273,7 +273,7 @@ typedef char save_manager_registry_check[offsetof(ScreenManager, registry) == 0x
+ typedef char save_manager_active_check[offsetof(ScreenManager, active) == 0xbc ? 1 : -1];
+ typedef char save_manager_mode_check[offsetof(ScreenManager, mode) == 0x128 ? 1 : -1];
+ typedef char save_manager_previous_check[offsetof(ScreenManager, previous_mode) == 0x12c ? 1 : -1];
+-typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x194 ? 1 : -1];
++typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x13c ? 1 : -1];
+ typedef char save_game_placement_check[offsetof(ScreenRequestGamePrefix, placement) == 0x54 ? 1 : -1];
+ typedef char save_game_prefix_size_check[sizeof(ScreenRequestGamePrefix) == 0xc8 ? 1 : -1];
+ typedef char save_rectangle_size_check[sizeof(ScreenRectangle) == 16 ? 1 : -1];
+@@ -2849,12 +2849,3 @@ extern "C" __declspec(dllexport) void FixtureMatch3_68(ScreenRequestRenderer* re
+ {
+     receiver->ScreenRequestRenderer::RestoreSurface(surface);
+ }
+-
+-typedef char Match3Owner190Offset[offsetof(ScreenManager, word_190) == 0x190 ? 1 : -1];
+-
+-#include "startup_screen_manager.h"
+-// Borrowed typed receiver; compile/link retention only, never executed.
+-extern "C" __declspec(dllexport) void FixtureMatch3_69(ScreenManager* receiver)
+-{
+-    receiver->ScreenManager::ReleaseOwner190();
+-}
+diff --git b/src/startup_pointer_list_operations.h a/src/startup_pointer_list_operations.h
+deleted file mode 100644
+index ff021c1..0000000
+--- b/src/startup_pointer_list_operations.h
++++ /dev/null
+@@ -1,49 +0,0 @@
+-#ifndef STARTUP_POINTER_LIST_OPERATIONS_H
+-#define STARTUP_POINTER_LIST_OPERATIONS_H
+-
+-#include "pool_return.h"
+-
+-// Folded holder constructor at 0x00437de0; both allocator proxies and list
+-// heads store only their incoming pointer.
+-template <class T>
+-void InitializePointerHolder(T*& destination, T* value)
+-{
+-    destination = value;
+-}
+-
+-// Shared typed forms of the retail folded list traversal and erasure bodies.
+-template <class Node, class Iterator, class Callback, class Value>
+-Callback VisitPointerList(Iterator first, Iterator last, Callback callback, Value Node::* payload)
+-{
+-    while (first.node != last.node)
+-    {
+-        callback(static_cast<Node*>(first.node)->*payload);
+-        first.node = first.node->next;
+-    }
+-    return callback;
+-}
+-
+-template <class Node, class Iterator>
+-Iterator ErasePointerListNode(Iterator position)
+-{
+-    Node* node = position.node;
+-    Node* previous = node->previous;
+-    Node* next = node->next;
+-    previous->next = next;
+-    next->previous = previous;
+-    if (node)
+-        ReturnPool(node, sizeof(Node));
+-    Iterator result;
+-    result.node = next;
+-    return result;
+-}
+-
+-template <class Iterator, class Node>
+-Iterator PointerListEnd(Node* head)
+-{
+-    Iterator result;
+-    result.node = head;
+-    return result;
+-}
+-
+-#endif
+diff --git b/src/startup_screen_manager.h a/src/startup_screen_manager.h
+index 335c586..1eafda6 100644
+--- b/src/startup_screen_manager.h
++++ a/src/startup_screen_manager.h
+@@ -5,7 +5,6 @@
+ #include "startup_controller_selection.h"
+ 
+ struct ScreenItem;
+-struct ScreenManagerOwner190;
+ struct ScreenListBoxPrefix;
+ struct ScreenFontData;
+ struct ScreenFontRenderer;
+@@ -66,8 +65,6 @@ struct ScreenManager
+     int previous_mode;
+     unsigned char unknown_130[8];
+     float value_138;
+-    unsigned char unknown_13c[0x54];
+-    ScreenManagerOwner190* word_190;
+ 
+     ScreenRequestContext* CurrentContext();
+ 
+@@ -79,7 +76,7 @@ struct ScreenManager
+ 
+     void ClearRegistration();
+     void SetMode(int value);
+-    // CloseActiveScreens remains an excluded boundary; ReleaseOwner190 is selected separately.
++    // Actual 0x004b1890 and 0x004b11d0, both RET0; bodies are not reconstructed here.
+     void CloseActiveScreens();
+     void ReleaseOwner190();
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+diff --git b/src/startup_screen_manager_owner190.h a/src/startup_screen_manager_owner190.h
+index 4ed39b9..5cc71ed 100644
+--- b/src/startup_screen_manager_owner190.h
++++ a/src/startup_screen_manager_owner190.h
+@@ -2,90 +2,28 @@
+ #define STARTUP_SCREEN_MANAGER_OWNER190_H
+ 
+ struct ScreenManagerOwner190Entry;
+-
+-// The entry payload remains distinct from ActiveScreenEntry.
+ struct ScreenManagerOwner190Node
+ {
+     ScreenManagerOwner190Node* next;
+     ScreenManagerOwner190Node* previous;
+     ScreenManagerOwner190Entry* entry;
+ };
+-
+-// Real list iterators are returned through a hidden pointer (folded 0x00437a40,
+-// 0x004209d0), so the iterator keeps a user-declared copy constructor.
+-struct ScreenManagerOwner190Iterator
+-{
+-    ScreenManagerOwner190Node* node;
+-
+-    ScreenManagerOwner190Iterator() { }
+-    ScreenManagerOwner190Iterator(const ScreenManagerOwner190Iterator& other)
+-        : node(other.node)
+-    {
+-    }
+-
+-    ScreenManagerOwner190Iterator operator++(int)
+-    {
+-        ScreenManagerOwner190Iterator old(*this);
+-        node = node->next;
+-        return old;
+-    }
+-};
+-
+ struct ScreenManagerOwner190List
+ {
+     ScreenManagerOwner190Node* head;
+-
+-    // Actual folded 0x00437a40 and distinct insertion 0x004c1fa0.
+-    ScreenManagerOwner190Iterator End() const;
+-    ScreenManagerOwner190Iterator Insert(
+-        ScreenManagerOwner190Iterator position, ScreenManagerOwner190Entry* const& entry);
+-
+-    ScreenManagerOwner190Node* CreateNode(ScreenManagerOwner190Entry* const& entry);
+-
+-    // Actual 0x004c1f00. A distinct original container instantiation.
+-    void ReleaseStorage();
+-    // Folded list erase 0x004209d0; hidden iterator result plus position, RET8.
+-    ScreenManagerOwner190Iterator Erase(ScreenManagerOwner190Iterator position);
+ };
+ 
+-typedef void (*ScreenManagerOwner190Callback)(ScreenManagerOwner190Entry* entry);
+-
+-// Actual folded traversal 0x004e8200, also used by the active-screen list.
+-// This declaration does not treat the distinct payload as ActiveScreenEntry.
+-ScreenManagerOwner190Callback VisitManagerOwner190Entries(ScreenManagerOwner190Iterator first,
+-    ScreenManagerOwner190Iterator last,
+-    ScreenManagerOwner190Callback callback);
+-
+-// Actual cdecl 0x004c1ee0: destroys the owned item and then the entry.
+-void DestroyManagerOwner190Entry(ScreenManagerOwner190Entry* entry);
+-
+-// Observed 20-byte x86 allocation at 0x004b1177; fields follow the constructor and updates.
+-// Native pointer-width layout is separate (32-byte owner, 24-byte node on x64).
+-// Complete construction owns a real pool sentinel; word_08 stays uninitialized
+-// until the real Reset or producer writes it.
++// Observed borrowed prefix; no lifetime or owning operation is selected.
+ struct ScreenManagerOwner190
+ {
+     unsigned int index_00;
+     ScreenManagerOwner190List entries;
+-    int word_08; // Spacing countdown to the next credit line.
+-    // Set when the last credit leaves the screen; IsFinished then waits for
+-    // the delay to run out.
++    int word_08;
+     float finish_delay_0c;
+     unsigned char finishing_10;
+-
+-    ~ScreenManagerOwner190();   // Actual 0x004c1b50; cleanup then rethrow.
+-    void AddNextEntry();        // Actual 0x004c1da0, RET0.
+-    void Update(float elapsed); // Actual 0x004c1c50, RET4.
+-    // Actual 0x004c1d50: byte +10 set and float +0c below zero.
++    void Reset();
+     bool IsFinished();
+-    // Actual 0x004c1d70, RET0: each entry's item slot 0x1c in list order.
+     void RenderChildren();
+-    // Actual 0x004c1c40, RET0; resets index_00 and word_08 only.
+-    void Reset();
+-
+-    // Native ownership exposes the real constructor without a fabricated manager.
+-    // Access is descriptive; it changes neither layout nor initialization.
+-    ScreenManagerOwner190(); // Actual 0x004c1a70, returns this in EAX, RET0.
+ };
+ 
+ #endif
+diff --git b/src/startup_screen_manager_owner190_destructor.cpp a/src/startup_screen_manager_owner190_destructor.cpp
+deleted file mode 100644
+index afb6d7c..0000000
+--- b/src/startup_screen_manager_owner190_destructor.cpp
++++ /dev/null
+@@ -1,32 +0,0 @@
+-#include "startup_screen_manager_owner190.h"
+-#include "pool_return.h"
+-
+-// FUNCTION: BEACHLIFE 0x004c1b50
+-ScreenManagerOwner190::~ScreenManagerOwner190()
+-{
+-    try
+-    {
+-        ScreenManagerOwner190Iterator last;
+-        last.node = entries.head;
+-        ScreenManagerOwner190Iterator first;
+-        first.node = entries.head->next;
+-        VisitManagerOwner190Entries(first, last, DestroyManagerOwner190Entry);
+-
+-        ScreenManagerOwner190Node* node = entries.head->next;
+-        while (node != entries.head)
+-        {
+-            ScreenManagerOwner190Node* released = node;
+-            node = node->next;
+-            if (released != 0)
+-                ReturnPool(released, sizeof(ScreenManagerOwner190Node));
+-        }
+-        entries.head->next = entries.head;
+-        entries.head->previous = entries.head;
+-    }
+-    catch (...)
+-    {
+-        entries.ReleaseStorage();
+-        throw;
+-    }
+-    entries.ReleaseStorage();
+-}
+diff --git b/src/startup_screen_manager_owner190_list_storage.cpp a/src/startup_screen_manager_owner190_list_storage.cpp
+deleted file mode 100644
+index 068490b..0000000
+--- b/src/startup_screen_manager_owner190_list_storage.cpp
++++ /dev/null
+@@ -1,20 +0,0 @@
+-#include "startup_screen_manager_owner190.h"
+-#include "pool_return.h"
+-
+-// FUNCTION: BEACHLIFE 0x004c1f00
+-void ScreenManagerOwner190List::ReleaseStorage()
+-{
+-    ScreenManagerOwner190Node* node = head->next;
+-    while (node != head)
+-    {
+-        ScreenManagerOwner190Node* released = node;
+-        node = node->next;
+-        if (released != 0)
+-            ReturnPool(released, sizeof(ScreenManagerOwner190Node));
+-    }
+-    head->next = head;
+-    head->previous = head;
+-    ScreenManagerOwner190Node* released = head;
+-    if (released != 0)
+-        ReturnPool(released, sizeof(ScreenManagerOwner190Node));
+-}
+diff --git b/src/startup_screen_manager_owner190_visit.cpp a/src/startup_screen_manager_owner190_visit.cpp
+deleted file mode 100644
+index ba80b7e..0000000
+--- b/src/startup_screen_manager_owner190_visit.cpp
++++ /dev/null
+@@ -1,10 +0,0 @@
+-#include "startup_pointer_list_operations.h"
+-#include "startup_screen_manager_owner190.h"
+-
+-// Native typed projection of shared library traversal 0x004e8200.
+-// Its active-screen projection already exists; this earns no new physical credit.
+-ScreenManagerOwner190Callback VisitManagerOwner190Entries(ScreenManagerOwner190Iterator first,
+-    ScreenManagerOwner190Iterator last, ScreenManagerOwner190Callback callback)
+-{
+-    return VisitPointerList(first, last, callback, &ScreenManagerOwner190Node::entry);
+-}
+diff --git b/src/startup_screen_release_owner190.cpp a/src/startup_screen_release_owner190.cpp
+deleted file mode 100644
+index 8ad77ee..0000000
+--- b/src/startup_screen_release_owner190.cpp
++++ /dev/null
+@@ -1,15 +0,0 @@
+-#include "startup_screen_manager.h"
+-#include "startup_screen_manager_owner190.h"
+-#include <new>
+-
+-// FUNCTION: BEACHLIFE 0x004b11d0
+-void ScreenManager::ReleaseOwner190()
+-{
+-    ScreenManagerOwner190* owner = word_190;
+-    if (owner != 0)
+-    {
+-        owner->~ScreenManagerOwner190();
+-        ::operator delete(owner);
+-        word_190 = 0;
+-    }
+-}
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 5a26061..88cc88b 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -1466,12 +1466,6 @@
+       "size": 43,
+       "name": "ScreenRequestRenderer::RestoreSurface",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+-    },
+-    {
+-      "address": "0x004b11d0",
+-      "size": 43,
+-      "name": "ScreenManager::ReleaseOwner190",
+-      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1617,20 +1611,6 @@
+     ],
+     "startup_screen_dialog_resource_release.cpp": [
+       "/Ob1"
+-    ],
+-    "startup_screen_manager_owner190_destructor.cpp": [
+-      "/GX",
+-      "/Ob1"
+-    ],
+-    "startup_screen_manager_owner190_list_storage.cpp": [
+-      "/GX",
+-      "/Ob1"
+-    ],
+-    "startup_screen_manager_owner190_visit.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_screen_release_owner190.cpp": [
+-      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -1833,6 +1813,16 @@
+         "unsigned char"
+       ]
+     },
++    {
++      "address": "0x004b11d0",
++      "size": 43,
++      "name": "ScreenManager::ReleaseOwner190",
++      "symbol": "?ReleaseOwner190@ScreenManager@@QAEXXZ",
++      "header": "startup_screen_manager.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
++    },
+     {
+       "address": "0x004e4000",
+       "size": 243,

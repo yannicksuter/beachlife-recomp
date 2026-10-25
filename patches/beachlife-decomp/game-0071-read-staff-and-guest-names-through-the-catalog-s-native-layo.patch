@@ -1,0 +1,53 @@
+diff --git a/src/startup_world_guest_constructor.cpp b/src/startup_world_guest_constructor.cpp
+index 9816b20d66519ed83cde5ee0110617640a5a8c69..733bc68683532d461c9fb483946b12fd1973d4e4 100644
+--- a/src/startup_world_guest_constructor.cpp
++++ b/src/startup_world_guest_constructor.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_world_entity_construction.h"
++#include "startup_variable_catalog_fields.h"
+ #include "startup_world_subsystems.h"
+ #include "startup_screen_text.h"
+ #include "window_activation.h"
+@@ -28,10 +29,10 @@ static float RandomGuestValue(unsigned int index)
+ }
+ static unsigned short* GuestNameKey(unsigned int count_offset, unsigned int names_offset)
+ {
+-    unsigned int count;
+-    memcpy(&count, reinterpret_cast<const unsigned char*>(variable_catalog) + count_offset, sizeof(count));
++    // Retail catalog offsets, mapped into the catalog's native layout.
++    unsigned int count = CatalogField<unsigned int>(CatalogRecordAddress(variable_catalog, count_offset, 0, 0), 0);
+     unsigned int index = static_cast<unsigned int>(rand()) % count;
+-    const char* key = reinterpret_cast<const char*>(variable_catalog) + names_offset + index * 64;
++    const char* key = reinterpret_cast<const char*>(CatalogRecordAddress(variable_catalog, names_offset, 64, index));
+     unsigned short* wide = static_cast<unsigned short*>(::operator new((strlen(key) + 1) * sizeof(unsigned short)));
+     MultiByteToWideChar(0, 0, key, -1, reinterpret_cast<LPWSTR>(wide), strlen(key) + 1);
+     return wide;
+diff --git a/src/startup_world_staff_names.h b/src/startup_world_staff_names.h
+index 66dd0e5f7f7fadcbdafdf47760f6054dc29d5af1..805cdcdb20d286ae2077602560ea82e9f473620a 100644
+--- a/src/startup_world_staff_names.h
++++ b/src/startup_world_staff_names.h
+@@ -1,6 +1,7 @@
+ #ifndef STARTUP_WORLD_STAFF_NAMES_H
+ #define STARTUP_WORLD_STAFF_NAMES_H
+ #include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
+ #include "startup_screen_text.h"
+ #include <windows.h>
+ #include <stdlib.h>
+@@ -11,12 +12,11 @@
+ // Shared spelling of the inline name generation in the staff constructors.
+ static void AssignStaffName(WorldStaffEntity* staff, bool female, const unsigned short* format, int count)
+ {
+-    const unsigned char* catalog = reinterpret_cast<const unsigned char*>(variable_catalog);
+-    unsigned int names;
+-    memcpy(&names, catalog + (female ? 0x4e5e0 : 0x4e5dc), sizeof(names));
++    // Retail offsets 0x4e5dc/0x4e5e0 (counts) and 0x409dc/0x42cdc (64-byte
++    // names), mapped into the catalog's native layout.
++    unsigned int names = CatalogField<unsigned int>(CatalogRecordAddress(variable_catalog, female ? 0x4e5e0 : 0x4e5dc, 0, 0), 0);
+     unsigned int index = static_cast<unsigned int>(rand()) % names;
+-    catalog = reinterpret_cast<const unsigned char*>(variable_catalog);
+-    const char* key = reinterpret_cast<const char*>(catalog + (female ? 0x42cdc : 0x409dc) + index * 64);
++    const char* key = reinterpret_cast<const char*>(CatalogRecordAddress(variable_catalog, female ? 0x42cdc : 0x409dc, 64, index));
+     unsigned short* wide = static_cast<unsigned short*>(::operator new((strlen(key) + 1) * sizeof(unsigned short)));
+     MultiByteToWideChar(0, 0, key, -1, reinterpret_cast<LPWSTR>(wide), strlen(key) + 1);
+     unsigned short surname[64];

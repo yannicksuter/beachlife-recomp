@@ -1,0 +1,182 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index a94672f..7327304 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2378,3 +2378,10 @@ extern "C" __declspec(dllexport) ExitGameController* FixtureMatch3_00(void* memo
+ {
+     return new (memory) ExitGameController(name);
+ }
++
++#include "startup_intro.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) IntroController* FixtureMatch3_01(void* memory, const char* name)
++{
++    return new (memory) IntroController(name);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 0a1b55c..681991d 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -213,3 +213,5 @@ address,type,size,symbol
+ 0x004c2450,function,25,??1ScreenLoadPanel13c@@QAE@XZ
+ 0x004e8230,function,25,??0ExitGameController@@QAE@PBD@Z
+ 0x004e8300,function,99,?Enter@ExitGameController@@UAEXXZ
++0x004e8c40,function,206,?Enter@IntroController@@UAEXXZ
++0x004e8b40,function,25,??0IntroController@@QAE@PBD@Z
+diff --git a/src/startup_intro.h b/src/startup_intro.h
+index d5ac715..6964965 100644
+--- a/src/startup_intro.h
++++ b/src/startup_intro.h
+@@ -5,8 +5,7 @@
+ 
+ // Observed Intro state through original x86+0x9b. Complete construction and
+ // destruction bodies preserve the original inline-name/state ownership.
+-// Original table 0x004f4db0 is provenance only in this borrowed declaration.
+-// This project selects Exit only; it does not construct Intro or emit its table.
++// VTABLE: BEACHLIFE 0x004f4db0
+ struct IntroController : ControllerState
+ {
+     int stage;
+diff --git a/src/startup_intro_constructor.cpp b/src/startup_intro_constructor.cpp
+new file mode 100644
+index 0000000..6b8911b
+--- /dev/null
++++ b/src/startup_intro_constructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_intro.h"
++
++// FUNCTION: BEACHLIFE 0x004e8b40
++IntroController::IntroController(const char* controller_name)
++    : ControllerState(controller_name)
++{
++}
+diff --git a/src/startup_intro_destructor.cpp b/src/startup_intro_destructor.cpp
+new file mode 100644
+index 0000000..2581f47
+--- /dev/null
++++ b/src/startup_intro_destructor.cpp
+@@ -0,0 +1,10 @@
++#include "startup_intro.h"
++
++// FUNCTION: BEACHLIFE 0x004e8b80
++IntroController::~IntroController()
++{
++    if (active)
++    {
++        active = 0;
++    }
++}
+diff --git a/src/startup_intro_update.cpp b/src/startup_intro_update.cpp
+new file mode 100644
+index 0000000..c6e2931
+--- /dev/null
++++ b/src/startup_intro_update.cpp
+@@ -0,0 +1,38 @@
++#include "startup_frame_clock.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_intro.h"
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x004f4da8
++const float intro_duration = 5.0f;
++
++// FUNCTION: BEACHLIFE 0x004e8ba0
++int IntroController::Update()
++{
++    float delta = startup_frame_clock->delta_seconds;
++    if (delta > 0.1f)
++    {
++        delta = 0.1f;
++    }
++    elapsed += delta;
++    if (elapsed > intro_duration)
++    {
++        elapsed = 0.0f;
++        switch (stage)
++        {
++        case 0:
++            stage = 1;
++            screen_manager->RequestScreen("FrontScreen", 0, 0);
++            break;
++        case 1:
++            screen_request_game->controller_selection.SelectPendingController(1);
++            break;
++        }
++    }
++    if (startup_input_state->ReadFirstButtonTransition() == 1)
++    {
++        elapsed = intro_duration;
++    }
++    return 0;
++}
+diff --git a/src/startup_intro_virtuals.cpp b/src/startup_intro_virtuals.cpp
+index ef337f2..ff29a08 100644
+--- a/src/startup_intro_virtuals.cpp
++++ b/src/startup_intro_virtuals.cpp
+@@ -1,7 +1,31 @@
+ #include "startup_intro.h"
++#include "startup_screen_shared_methods.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004e8d10
+ const char* IntroController::ScriptPath()
+ {
+     return "data/script/gui/Intro.pis";
+ }
++
++// Folded with the shared RET0 methods at 0x00437d10 and 0x004d3890.
++void IntroController::ControllerSlot1c()
++{
++    IgnoreScreenAction();
++}
++void IntroController::ControllerSlot24()
++{
++    IgnoreScreenAction();
++}
++void IntroController::RenderBeforeScreens()
++{
++    IgnoreScreenAction();
++}
++void IntroController::RenderAfterScreens()
++{
++    IgnoreScreenAction();
++}
++
++void IntroController::ScreenSizeChanged(int width, int height)
++{
++    ControllerState::ScreenSizeChanged(width, height);
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 457793b..51f2c37 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1064,6 +1064,12 @@
+       "size": 25,
+       "name": "ExitGameController::ExitGameController",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004e8b40",
++      "size": 25,
++      "name": "IntroController::IntroController",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1618,6 +1624,16 @@
+       "kind": "void-member",
+       "return_type": "void",
+       "parameters": []
++    },
++    {
++      "address": "0x004e8c40",
++      "size": 206,
++      "name": "IntroController::Enter",
++      "symbol": "?Enter@IntroController@@UAEXXZ",
++      "header": "startup_intro.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
+     }
+   ]
+ }

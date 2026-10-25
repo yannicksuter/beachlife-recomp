@@ -1,0 +1,96 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 5cdb7e7..f9860f0 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3082,3 +3082,10 @@ extern "C" __declspec(dllexport) void FixtureMatch4_21(GameFileReader* receiver,
+ {
+     receiver->GameFileReader::Unknown08(p0, p1);
+ }
++
++#include "startup_screen_renderer.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_22(ScreenRequestRenderer* receiver, int p0)
++{
++    receiver->ScreenRequestRenderer::RecreateSurface(p0);
++}
+diff --git a/metadata.csv b/metadata.csv
+index e2baf6b..485dfe8 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -345,3 +345,5 @@ address,type,size,symbol
+ 0x0049e680,function,55,?Unknown18@GameFileReader@@UAEXPBDE@Z
+ 0x0049e7b0,function,55,?Unknown0c@GameFileReader@@UAEXPBDI@Z
+ 0x0049e7f0,function,55,?Unknown08@GameFileReader@@UAEXPBDG@Z
++0x0040e500,function,326,?InitializeSurface@ScreenRequestRenderer@@QAEXHHPAUScreenSurfacePosition@@E@Z
++0x0040e4c0,function,57,?RecreateSurface@ScreenRequestRenderer@@QAEXH@Z
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 557855f..6d6a153 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -76,6 +76,8 @@ struct ScreenRequestRenderer
+     void UnlockPixels();
+     unsigned char SurfaceLost(int surface);
+     void RestoreSurface(int surface);
++    void RecreateSurface(int index);
++    void InitializeSurface(int width, int height, ScreenSurfacePosition* entry, unsigned char mode);
+ };
+ 
+ // Observed renderer pointer published by its constructor; lifetime is unresolved.
+diff --git a/src/startup_surface_recreate.cpp b/src/startup_surface_recreate.cpp
+new file mode 100644
+index 0000000..0eac58b
+--- /dev/null
++++ b/src/startup_surface_recreate.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e4c0
++void ScreenRequestRenderer::RecreateSurface(int index)
++{
++    if (!software_mode)
++    {
++        DirectDrawSurface7Prefix* surface = surfaces[index]->surface;
++        surface->vtable->Release(surface);
++        ScreenSurfacePosition* entry = surfaces[index];
++        InitializeSurface(static_cast<int>(entry->width), static_cast<int>(entry->height), entry, 0);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 5b4fbc2..9baeaa6 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1664,6 +1664,12 @@
+       "size": 55,
+       "name": "GameFileReader::Unknown08",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x0040e4c0",
++      "size": 57,
++      "name": "ScreenRequestRenderer::RecreateSurface",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2650,6 +2656,21 @@
+         "int",
+         "int"
+       ]
++    },
++    {
++      "address": "0x0040e500",
++      "size": 326,
++      "name": "ScreenRequestRenderer::InitializeSurface",
++      "symbol": "?InitializeSurface@ScreenRequestRenderer@@QAEXHHPAUScreenSurfacePosition@@E@Z",
++      "header": "startup_screen_renderer.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "int",
++        "int",
++        "ScreenSurfacePosition*",
++        "unsigned char"
++      ]
+     }
+   ]
+ }

@@ -481,6 +481,34 @@ Windows, DirectInput and Miles APIs the retail executable imports, implemented
 on SDL3, so decompiled code keeps its original API calls. An API that is declared
 there but not implemented yet becomes a trap like missing game code.
 
+Boot checks run headless: `--headless` opens the game window on SDL's offscreen
+driver with silent audio, so nothing appears on screen and no input focus is
+needed; screenshots are saved at the game's own resolution. A headless run plays
+in a fresh temporary profile that is removed afterwards, so it is reproducible and
+never changes the player's options, progress or saves; `BEACHLIFE_BOOT_USER_DIR`
+selects a profile folder explicitly. Development
+switches drive the game without a player:
+
+- `BEACHLIFE_BOOT_ROUTE=scenario1` clicks past the intro screens, then the main
+  menu's "start" and "play" on the first scenario, and closes its Objectives
+  dialog. A step `x,y>file` clicks one point until the game opens the file that
+  marks the next screen, so it does not depend on timing; `x,y+N` clicks once,
+  N frames after the previous step. Coordinates are the game's.
+  `BEACHLIFE_BOOT_ROUTE=sandbox1` starts the first sandbox island instead.
+- `BEACHLIFE_BOOT_MONKEY="seed[,interval]"` clicks random game coordinates
+  every interval frames (default 90) once the route is done, and logs each click
+  so a failure reproduces from the seed.
+- `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames.
+- `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
+- `BEACHLIFE_BOOT_TRACE_FILES=1` prints each file the game opens.
+- `BEACHLIFE_BOOT_ASSUME_FOCUS=1` accepts input without window focus; a route
+  implies it.
+
+```sh
+BEACHLIFE_BOOT_ROUTE=scenario1 ./build/boot/beachlife --play --headless \
+  --frames 4000 --screenshot world.png
+```
+
 `game-series` is written from a local merge tree. `tools/game_tree.py init`
 creates it under `build/game-tree/work` from the current series. Commit merged
 source there, check that every file compiles with `tools/game_tree.py check`,
@@ -2009,3 +2037,299 @@ first defined value. Native copying is disabled until a real list-copy body
 is selected. Existing GUI dependencies currently require the optional
 reconstructed-test configuration. This headless lifetime proof does not select
 the credits producer, scrolling/rendering loop, or complete Game/GUI startup.
+
+
+The matching profile includes the music and playlist accessors below. Each
+uses the boot source file name and method body and passes 100% normalized
+comparison with identical raw code bytes. Alignment is excluded from the
+audited extents. Changed-body controls read a different field while retaining
+the complete original extent. All 129 earlier scores and raw-byte results
+remain unchanged, including the existing `AccessPixels` result of 98.18%.
+Native inverse patches retain the existing native source selections; the
+comparison images are never executed.
+
+| Method | Address | Code bytes | Changed-body control |
+| --- | --- | ---: | ---: |
+| `ScreenPlacementStore::ReadMusicName` | `0x004e6bf0` | 15 | 80% |
+| `ScreenPlacementStore::ReadMusicDirectory` | `0x004e6c00` | 16 | 80% |
+| `ScreenPlacementStore::ReadMusicWord08` | `0x004e6c10` | 16 | 80% |
+| `ScreenPlacementStore::ReadMusicWord0c` | `0x004e6c20` | 16 | 80% |
+| `ScreenPlacementStore::MusicCount` | `0x004e6c30` | 10 | 75% |
+| `ScreenLoadPanel13cOwner::ReadEntryWord10` | `0x004cdb90` | 16 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryName` | `0x004cdba0` | 15 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryDirectory` | `0x004cdbb0` | 16 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryWord18` | `0x004cdbc0` | 16 | 80% |
+
+
+The matching profile also promotes these existing startup methods.
+Each complete code extent passes 100% normalized comparison. Raw equality
+is listed separately; changed-body controls retain the audited original
+extent and are rejected. All other existing comparison results remain
+unchanged. `ScreenRequestRenderer::AccessPixels` (M001) remains outside this
+matching credit; its normalized display varies with the linked layout. Paired
+inverse patches preserve the native game export. Comparison images are never
+executed.
+
+| Method | Address | Code bytes | Raw equality | Changed-body control |
+| --- | --- | ---: | --- | ---: |
+| `ScreenItem::Unresolved4c` | `0x004a1160` | 3 | yes | 66.67% |
+| `ControllerState::ScreenSizeChanged` | `0x004e8fa0` | 3 | yes | 66.67% |
+| `ScreenItem::Unresolved20` | `0x004a1150` | 4 | yes | 50.00% |
+| `GuiParserState::ReadRegistryHead` | `0x004aa890` | 4 | yes | 40.00% |
+| `GuiParserState::ReadItemsHead` | `0x004aa8a0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState40` | `0x004adac0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState41` | `0x004adcc0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState42` | `0x004adcd0` | 4 | yes | 40.00% |
+| `ScreenItem::HandleInput38` | `0x004a70a0` | 5 | yes | 50.00% |
+| `ScreenMode6Controller::HandleFourWords` | `0x004a70b0` | 5 | yes | 50.00% |
+| `ScreenManagerAuxiliaryState::ClearState` | `0x004c1330` | 5 | yes | 50.00% |
+| `CurrentScreenTerrain` | `0x00416cd0` | 6 | no (relocations) | 40.00% |
+| `IntroController::ScriptPath` | `0x004e8d10` | 6 | no (relocations) | 50.00% |
+| `ControllerState::~ControllerState` | `0x0049ee50` | 7 | no (relocations) | 80.00% |
+| `ScreenModeController::~ScreenModeController` | `0x004a61c0` | 7 | no (relocations) | 80.00% |
+| `ScreenManager::CurrentContext` | `0x004b1b90` | 7 | yes | 40.00% |
+| `ScreenRequestGamePrefix::ReadMenuReturnFlag` | `0x004e3bd0` | 7 | yes | 50.00% |
+| `InputState::ReadDeltaY` | `0x004eab20` | 7 | yes | 40.00% |
+| `ScreenRequestGamePrefix::ClearMenuReturnFlag` | `0x004e3be0` | 8 | yes | 50.00% |
+| `ScreenRequestRenderer::SetUnscaledClip` | `0x00483590` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetWord10` | `0x0049fa00` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetState14` | `0x0049fa10` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetWord18` | `0x0049fa20` | 10 | yes | 40.00% |
+| `SetFatalWindow` | `0x004ea1f0` | 10 | no (relocations) | 40.00% |
+| `ScreenRendererRegistration::~ScreenRendererRegistration` | `0x00411ee0` | 11 | no (relocations) | 50.00% |
+| `ScreenMode6Controller::~ScreenMode6Controller` | `0x004a7680` | 11 | no (relocations) | 80.00% |
+| `ScreenVariableItem::~ScreenVariableItem` | `0x004c8a20` | 11 | no (relocations) | 80.00% |
+| `GameUpdatePairRegistration::~GameUpdatePairRegistration` | `0x004d3080` | 11 | no (relocations) | 50.00% |
+| `ScreenGameRegistration::~ScreenGameRegistration` | `0x004e5520` | 11 | no (relocations) | 50.00% |
+| `FrameClock::~FrameClock` | `0x004eb3b0` | 11 | no (relocations) | 50.00% |
+| `StartupProfilerRegistration::~StartupProfilerRegistration` | `0x004ecfa0` | 11 | no (relocations) | 50.00% |
+| `GuiParserState::GuiParserState` | `0x004ecfb0` | 11 | yes | 57.14% |
+| `RendererSeaStatePrefix::SetSeaEnabled` | `0x004184f0` | 13 | yes | 40.00% |
+| `ScreenItem::ClearManagerReference` | `0x004add90` | 13 | no (relocations) | 75.00% |
+| `ScreenListBoxEntry::~ScreenListBoxEntry` | `0x004c20e0` | 13 | yes | 22.22% |
+| `ScreenImageItem::Unresolved04` | `0x004c3d20` | 13 | no (relocations) | 57.14% |
+| `ScreenFrameItem::SetHeight` | `0x004c7830` | 13 | yes | 75.00% |
+| `ScreenLoadPanel140::ScreenLoadPanel140` | `0x004c8760` | 13 | yes | 36.36% |
+| `RendererSeaStatePrefix::~RendererSeaStatePrefix` | `0x004184e0` | 14 | no (relocations) | 22.22% |
+| `ScreenManagerAuxiliaryState::~ScreenManagerAuxiliaryState` | `0x004c1160` | 14 | yes | 22.22% |
+| `ScreenManagerOwner190::Reset` | `0x004c1c40` | 14 | yes | 66.67% |
+| `ScreenManager::SetFontData` | `0x004aedb0` | 15 | yes | 57.14% |
+| `ScreenManager::SetFontRenderer` | `0x004aedc0` | 15 | yes | 57.14% |
+| `ScreenPlacementStore::SetScreenSize` | `0x004e6960` | 17 | yes | 66.67% |
+| `ScreenModeController::ScreenModeController` | `0x004a6180` | 18 | no (relocations) | 66.67% |
+| `ScreenRequestRenderer::SetSeaEnabled` | `0x0040bf70` | 19 | no (relocations) | 66.67% |
+| `ScreenRadioItem::ClearFlag10` | `0x004c6aa0` | 19 | yes | 87.50% |
+| `ScreenButtonActionAt004a3290` | `0x004a3290` | 21 | no (relocations) | 83.33% |
+| `ScreenRequestGamePrefix::HasScenarioFlag08` | `0x004e41c0` | 22 | yes | 88.89% |
+| `InputState::SetSystemCursor` | `0x004eb330` | 22 | no (relocations) | 83.33% |
+| `ScreenLinearContainer::Unresolved08` | `0x004c0ed0` | 24 | yes | 91.67% |
+| `ScreenLinearContainer::Unresolved0c` | `0x004c0fa0` | 24 | yes | 91.67% |
+| `ScreenLinearContainer::Unresolved1c` | `0x004c0fe0` | 24 | yes | 91.67% |
+| `ScreenFontData::~ScreenFontData` | `0x004183f0` | 25 | no (relocations) | 95.65% |
+| `VariableCatalog::Scenery` | `0x00449780` | 25 | yes | 71.43% |
+| `ScreenMode0Controller::ScreenMode0Controller` | `0x004a6e90` | 25 | no (relocations) | 82.35% |
+| `ScreenMode6Controller::ScreenMode6Controller` | `0x004a7640` | 25 | no (relocations) | 82.35% |
+| `ScreenMode5Controller::ScreenMode5Controller` | `0x004a7b50` | 25 | no (relocations) | 82.35% |
+| `ScreenMode4Controller::ScreenMode4Controller` | `0x004a8610` | 25 | no (relocations) | 82.35% |
+| `ScreenLoadPanel13c::~ScreenLoadPanel13c` | `0x004c2450` | 25 | no (relocations) | 95.65% |
+| `ExitGameController::ExitGameController` | `0x004e8230` | 25 | no (relocations) | 94.74% |
+| `IntroController::IntroController` | `0x004e8b40` | 25 | no (relocations) | 94.74% |
+| `LoadGameController::LoadGameController` | `0x004e8d20` | 25 | no (relocations) | 94.74% |
+| `ResetGameController::ResetGameController` | `0x004e8fb0` | 25 | no (relocations) | 94.74% |
+| `InputState::HideSystemCursor` | `0x004eb0b0` | 25 | no (relocations) | 96.00% |
+| `WindowDeactivationState::SetGameSpeed` | `0x0043f480` | 26 | no (relocations) | 90.91% |
+| `VariableWorldPrefix::HasNamed` | `0x0042f000` | 27 | no (relocations) | 94.12% |
+| `GameUpdatePair::Update` | `0x004d2760` | 27 | no (relocations) | 88.00% |
+| `ScreenImageItem::ConfigureIcon` | `0x004c3e10` | 28 | yes | 94.12% |
+| `IntroController::~IntroController` | `0x004e8b80` | 28 | no (relocations) | 76.92% |
+| `MainMenuController::~MainMenuController` | `0x004e8e30` | 28 | no (relocations) | 76.92% |
+| `InputState::Poll` | `0x004eaab0` | 28 | no (relocations) | 96.30% |
+| `ScreenRequestRenderer::PositionSurface` | `0x0040e350` | 29 | yes | 66.67% |
+| `VariableCatalog::Building` | `0x004493a0` | 29 | yes | 94.12% |
+| `ScreenMode10Controller::ScreenMode10Controller` | `0x004a70c0` | 29 | no (relocations) | 95.24% |
+| `ScreenLinearContainer::MarkPrepared` | `0x004c0fc0` | 29 | no (relocations) | 96.30% |
+| `ScreenImageItem::Unresolved24` | `0x004c8510` | 30 | no (relocations) | 89.66% |
+| `GuiDefinedItem::Unresolved08` | `0x004a5400` | 31 | yes | 96.97% |
+| `GuiDefinedItem::Unresolved0c` | `0x004a54b0` | 31 | yes | 96.97% |
+| `GuiDefinedItem::MarkPrepared` | `0x004a54d0` | 31 | yes | 96.97% |
+| `ScreenDialog::Unresolved08` | `0x004a5cb0` | 31 | yes | 96.97% |
+| `ScreenRadioGroup::Unresolved1c` | `0x004c7140` | 31 | yes | 96.97% |
+| `ScreenFrameItem::Unresolved1c` | `0x004c7940` | 31 | yes | 96.97% |
+| `ScreenDialogResourceRecord::ScreenDialogResourceRecord` | `0x004171c0` | 32 | yes | 83.33% |
+| `MenuShowMain` | `0x004a1c20` | 32 | no (relocations) | 94.12% |
+| `ScreenLinearContainer::HandleInput38` | `0x004c0dd0` | 32 | yes | 96.30% |
+| `ScreenManagerOwner190::IsFinished` | `0x004c1d50` | 32 | no (relocations) | 96.00% |
+| `DestroyManagerOwner190Entry` | `0x004c1ee0` | 32 | no (relocations) | 96.77% |
+| `ScreenFrameItem::SetRectangle` | `0x004c7840` | 32 | yes | 95.65% |
+| `RendererSeaStatePrefix::RendererSeaStatePrefix` | `0x00418410` | 33 | yes | 71.43% |
+| `ScreenMode9Controller::ScreenMode9Controller` | `0x004a9de0` | 33 | no (relocations) | 96.00% |
+| `ScreenManager::ReadItemThreshold` | `0x004af6f0` | 33 | no (relocations) | 94.74% |
+| `ScreenLinearContainer::Unresolved04` | `0x004c0ea0` | 33 | yes | 96.97% |
+| `ScreenManagerOwner190::RenderChildren` | `0x004c1d70` | 33 | yes | 97.14% |
+| `ScreenTextItem::~ScreenTextItem` | `0x004c83d0` | 34 | no (relocations) | 88.89% |
+| `GuiDefinedItem::Unresolved10` | `0x004a5480` | 36 | no (relocations) | 96.97% |
+| `ScreenDialog::Unresolved10` | `0x004a5ef0` | 36 | no (relocations) | 96.97% |
+| `ScreenTabItem::Unresolved10` | `0x004c0c40` | 36 | no (relocations) | 96.97% |
+| `ScreenRadioGroup::MarkPrepared` | `0x004c70c0` | 36 | no (relocations) | 97.14% |
+| `ScreenFrameItem::MarkPrepared` | `0x004c7860` | 36 | no (relocations) | 97.14% |
+| `ScreenFrameItem::Unresolved10` | `0x004c7960` | 36 | no (relocations) | 96.97% |
+| `ScreenRequestRenderer::UnlockPixels` | `0x0040e2e0` | 37 | yes | 96.77% |
+| `VariableWorldPrefix::CountType` | `0x0042f0f0` | 37 | no (relocations) | 96.00% |
+| `ScreenItem::Unresolved24` | `0x004ada40` | 37 | no (relocations) | 80.00% |
+| `ScreenScrollBarPrefix::Unresolved24` | `0x004b52c0` | 37 | no (relocations) | 91.43% |
+| `WindowAudioState::PlaySound` | `0x004cf710` | 37 | no (relocations) | 96.00% |
+| `ScreenMode7Controller::ScreenMode7Controller` | `0x004a8f40` | 38 | no (relocations) | 88.89% |
+| `ScreenRequestGamePrefix::PopulateLoadGameMenu` | `0x004e4ed0` | 38 | no (relocations) | 89.66% |
+| `StartupMovie::Play` | `0x004ed190` | 38 | no (relocations) | 96.77% |
+| `ScreenDialogResourceLookup::Release` | `0x00417d10` | 39 | no (relocations) | 96.77% |
+| `WorldCursorNames::FirstNameNumber` | `0x00432260` | 39 | no (relocations) | 96.30% |
+| `VariableEntity::FlagAt00460340` | `0x00460340` | 39 | no (relocations) | 96.55% |
+| `ScreenImageItem::Unresolved0c` | `0x004c3d30` | 39 | no (relocations) | 96.97% |
+| `ScreenRequestRenderer::SurfaceLost` | `0x0040e370` | 40 | yes | 91.89% |
+| `GuiDefinedItem::Unresolved4c` | `0x004a5420` | 40 | yes | 97.56% |
+| `GuiDefinedItem::Unresolved24` | `0x004a5450` | 40 | yes | 97.56% |
+| `GuiDefinedItem::Unresolved04` | `0x004a54f0` | 40 | yes | 97.56% |
+| `ScreenDialog::Unresolved4c` | `0x004a5d40` | 40 | yes | 97.56% |
+| `ScreenFrameItem::Unresolved04` | `0x004c77d0` | 40 | yes | 97.56% |
+| `ScreenFrameItem::Unresolved24` | `0x004c7800` | 40 | yes | 97.56% |
+| `ScreenMode1Controller::ScreenMode1Controller` | `0x004a9390` | 41 | no (relocations) | 88.89% |
+| `ScreenItem::TestRectangle` | `0x004adad0` | 41 | yes | 25.81% |
+| `WindowAudioState::IsStreamPlaying` | `0x004cfee0` | 41 | no (relocations) | 92.68% |
+| `ScreenButtonActionAt004a3260` | `0x004a3260` | 42 | no (relocations) | 94.74% |
+| `ScreenMode8Controller::ScreenMode8Controller` | `0x004a7690` | 42 | no (relocations) | 96.77% |
+| `ScreenImageItem::TestRectangle` | `0x004c3d60` | 42 | yes | 91.43% |
+| `FrameClock::FrameClock` | `0x004eb380` | 42 | no (relocations) | 96.55% |
+| `ScreenRequestRenderer::RestoreSurface` | `0x0040e3a0` | 43 | yes | 97.30% |
+| `ScreenManager::ReleaseOwner190` | `0x004b11d0` | 43 | no (relocations) | 96.77% |
+| `ScreenVariableFilter::ApplyPosition` | `0x004c2360` | 43 | yes | 96.77% |
+| `DeactivateActiveScreen` | `0x004b2e80` | 44 | no (relocations) | 97.14% |
+| `ScreenTabItem::Unresolved08` | `0x004c0a80` | 44 | yes | 77.27% |
+| `ScreenTabItem::MarkPrepared` | `0x004c0af0` | 44 | yes | 90.00% |
+| `ScreenRadioGroup::Unresolved10` | `0x004c71e0` | 44 | no (relocations) | 91.89% |
+| `ScreenItem::SetRectanglePosition` | `0x004add60` | 45 | yes | 73.68% |
+| `StartupConfig::GetInteger` | `0x004ecce0` | 45 | no (relocations) | 96.77% |
+| `StartupConfig::GetString` | `0x004ecd10` | 45 | no (relocations) | 96.77% |
+| `GuiDefinedItem::ApplyPosition` | `0x004a53a0` | 47 | yes | 97.96% |
+| `GuiDefinedItem::MoveRectangle` | `0x004a53d0` | 47 | yes | 97.96% |
+| `ScreenLinearContainer::MoveRectangle` | `0x004c0d60` | 47 | no (relocations) | 85.11% |
+| `LoadTgaFile` | `0x004ea910` | 47 | no (relocations) | 93.33% |
+| `ScreenVariableFilter::MoveRectangle` | `0x004c2330` | 48 | yes | 79.07% |
+| `ScreenLinearContainer::ApplyPosition` | `0x004c0d90` | 49 | no (relocations) | 89.80% |
+| `WindowAudioState::VoiceStatus` | `0x004cfac0` | 49 | yes | 97.78% |
+| `GameFileReader::Unknown48` | `0x0049eb30` | 50 | no (relocations) | 89.80% |
+| `ReleasePlacementMusicEntry` | `0x004e7f30` | 51 | no (relocations) | 97.67% |
+| `ScreenManager::ClearItemReference` | `0x004af6b0` | 52 | no (relocations) | 96.00% |
+| `ScreenButtonActionAt004a2ef0` | `0x004a2ef0` | 53 | no (relocations) | 95.65% |
+| `ScreenManager::ShowItemText` | `0x004af670` | 54 | no (relocations) | 90.91% |
+| `ScreenTabItem::ApplyPosition` | `0x004c08a0` | 54 | no (relocations) | 87.27% |
+| `ScreenTabItem::MoveRectangle` | `0x004c0ab0` | 54 | no (relocations) | 87.27% |
+| `ScreenRadioGroup::ApplyPosition` | `0x004c7160` | 54 | no (relocations) | 87.27% |
+| `ScreenRadioGroup::MoveRectangle` | `0x004c71a0` | 54 | no (relocations) | 87.27% |
+| `GameFileReader::Unknown34` | `0x0049e440` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown30` | `0x0049e480` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown2c` | `0x0049e4c0` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown28` | `0x0049e500` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown24` | `0x0049e540` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown18` | `0x0049e680` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown0c` | `0x0049e7b0` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown08` | `0x0049e7f0` | 55 | no (relocations) | 90.20% |
+| `ScreenRequestRenderer::RecreateSurface` | `0x0040e4c0` | 57 | no (relocations) | 98.04% |
+| `ScreenDialog::Unresolved24` | `0x004a5aa0` | 57 | no (relocations) | 94.12% |
+| `ScreenDialog::BeginTransition` | `0x004a5d70` | 57 | no (relocations) | 79.07% |
+| `ScreenDialog::HandleInput38` | `0x004a5ae0` | 58 | yes | 98.31% |
+| `ScreenTablePrefix::Unresolved10` | `0x004b8670` | 58 | no (relocations) | 93.88% |
+| `ScreenTabItem::HandleInput38` | `0x004c08e0` | 58 | yes | 98.31% |
+| `ScreenRadioGroup::HandleTimedCoordinates` | `0x004c7080` | 58 | yes | 98.31% |
+| `ScreenFrameItem::HandleTimedEvent` | `0x004c7790` | 58 | yes | 98.31% |
+| `ScreenTabItem::Unresolved04` | `0x004c0a40` | 59 | no (relocations) | 85.71% |
+| `ControllerState::ControllerState` | `0x0049edf0` | 62 | no (relocations) | 90.57% |
+| `ScreenFrameItem::TestRectangle` | `0x004c76c0` | 62 | no (relocations) | 88.89% |
+| `ScreenManager::PrepareActiveScreens` | `0x004b1260` | 65 | no (relocations) | 94.74% |
+| `ScreenDialogPaletteModifiers::ScreenDialogPaletteModifiers` | `0x00409810` | 66 | no (relocations) | 97.30% |
+| `ScreenScrollBarPrefix::MoveRectangle` | `0x004b5a60` | 66 | no (relocations) | 92.54% |
+| `ScreenTabItem::Unresolved24` | `0x004c09f0` | 66 | no (relocations) | 85.71% |
+| `ScreenScrollBarPrefix::Unresolved1c` | `0x004b5ab0` | 69 | yes | 98.25% |
+| `ScreenLinearContainer::ScreenLinearContainer` | `0x004c0c70` | 69 | no (relocations) | 97.78% |
+| `ScreenRadioGroup::Unresolved0c` | `0x004c70f0` | 69 | no (relocations) | 98.36% |
+| `TgaScreenItem::Unresolved0c` | `0x004c8710` | 69 | no (relocations) | 97.67% |
+| `ScreenItem::SetOwnedText` | `0x004adcf0` | 71 | no (relocations) | 92.54% |
+| `ScreenTextItem::Unresolved0c` | `0x004c8400` | 71 | no (relocations) | 94.92% |
+| `ScreenDialog::Unresolved1c` | `0x004a5e70` | 72 | yes | 98.51% |
+| `ShowFatalWindowMessage` | `0x004ea1a0` | 74 | no (relocations) | 93.02% |
+| `ScreenTextItem::Unresolved1c` | `0x004c8450` | 75 | no (relocations) | 95.52% |
+| `ScreenTabItem::Unresolved1c` | `0x004c0bf0` | 78 | yes | 94.44% |
+| `ScreenLinearContainer::Unresolved4c` | `0x004c0f50` | 79 | no (relocations) | 98.55% |
+| `ScreenPlacementStore::ClearPlacements` | `0x004e68f0` | 79 | no (relocations) | 98.59% |
+| `TgaScreenItem::~TgaScreenItem` | `0x004c85c0` | 81 | no (relocations) | 93.02% |
+| `ScreenDialogResourceFrame::ScreenDialogResourceFrame` | `0x00416ce0` | 82 | yes | 94.92% |
+| `StartupMovie::StartupMovie` | `0x004ed0d0` | 82 | no (relocations) | 60.71% |
+| `InputState::InputState` | `0x004ea940` | 83 | no (relocations) | 81.63% |
+| `InputState::Initialize` | `0x004eaa50` | 83 | no (relocations) | 92.96% |
+| `InputMotionState::~InputMotionState` | `0x00409500` | 84 | no (relocations) | 93.62% |
+| `WindowAudioState::StopAllSounds` | `0x004cfdc0` | 84 | no (relocations) | 98.73% |
+| `ScreenRequestGamePrefix::Activate` | `0x004e3b70` | 86 | no (relocations) | 89.80% |
+| `ScreenLinearContainer::Unresolved24` | `0x004c0ef0` | 88 | no (relocations) | 96.47% |
+| `ScreenListBoxPrefix::HandleInput38` | `0x004c55b0` | 88 | yes | 96.47% |
+| `ScreenItem::HandleTimedEvent` | `0x004adc30` | 89 | no (relocations) | 98.46% |
+| `StartupMovie::~StartupMovie` | `0x004ed130` | 91 | yes | 98.88% |
+| `InputState::CreateKeyboard` | `0x004eab60` | 92 | no (relocations) | 98.85% |
+| `ScreenImageItem::~ScreenImageItem` | `0x004c3cc0` | 96 | no (relocations) | 94.12% |
+| `ScreenLoadPanel140::Update` | `0x004c8770` | 96 | no (relocations) | 96.63% |
+| `GameFileReader::Unknown3c` | `0x0049e360` | 97 | no (relocations) | 94.38% |
+| `VariableWorldPrefix::SetKeylines` | `0x0042fab0` | 98 | yes | 88.89% |
+| `ScreenDialogResourceFrame::~ScreenDialogResourceFrame` | `0x00416d40` | 99 | no (relocations) | 96.39% |
+| `ScreenManager::StartCredits` | `0x004b1160` | 99 | no (relocations) | 94.74% |
+| `ScreenManager::PrepareNamedScreen` | `0x004b12b0` | 99 | no (relocations) | 96.39% |
+| `ScreenRequestGamePrefix::SetScreenSize` | `0x004e41e0` | 100 | no (relocations) | 86.84% |
+| `ScreenCheckBox::~ScreenCheckBox` | `0x004c1730` | 101 | no (relocations) | 94.55% |
+| `ScreenManager::FindListBox` | `0x004ae2f0` | 102 | yes | 94.85% |
+| `GameFileReader::Unknown38` | `0x0049e3d0` | 104 | no (relocations) | 97.87% |
+| `ScreenRadioItem::~ScreenRadioItem` | `0x004c6850` | 105 | no (relocations) | 93.10% |
+| `WindowAudioState::PlaySoundAtLevel` | `0x004cf740` | 107 | no (relocations) | 98.59% |
+| `TgaScreenItem::TgaScreenItem` | `0x004c8530` | 108 | no (relocations) | 97.44% |
+| `ScreenTextItem::ApplyFontSettings` | `0x004c84a0` | 109 | no (relocations) | 97.83% |
+| `GameFileReader::Unknown20` | `0x0049e580` | 113 | no (relocations) | 97.96% |
+| `GameFileReader::Unknown10` | `0x0049e730` | 113 | no (relocations) | 97.96% |
+| `ScreenManager::HandlePanelInput` | `0x004b10e0` | 113 | yes | 97.50% |
+| `ScreenPlacementStore::ClearMusicEntries` | `0x004e6980` | 113 | no (relocations) | 90.74% |
+| `GameFileReader::Unknown1c` | `0x0049e600` | 114 | no (relocations) | 97.96% |
+| `ScreenRadioItem::Unresolved1c` | `0x004c6b20` | 114 | no (relocations) | 97.73% |
+| `WindowAudioState::StopSound` | `0x004cfc80` | 114 | no (relocations) | 97.37% |
+| `ScreenManager::SetTickerRectangle` | `0x004af5f0` | 115 | no (relocations) | 97.37% |
+| `ScreenImageItem::HandleTimedCoordinates` | `0x004c3d90` | 115 | no (relocations) | 98.25% |
+| `ScreenButtonPrefix::Unresolved24` | `0x004a0f10` | 116 | no (relocations) | 79.01% |
+| `GameFileReader::Unknown50` | `0x0049ea70` | 118 | no (relocations) | 90.91% |
+| `ScreenManager::ActivateScreens` | `0x004ae8f0` | 119 | no (relocations) | 97.92% |
+| `RecordDisplayMode` | `0x00411ad0` | 121 | yes | 17.91% |
+| `ScreenLinearContainer::~ScreenLinearContainer` | `0x004c0ce0` | 122 | no (relocations) | 91.89% |
+| `ScreenVariableItem::ScreenVariableItem` | `0x004c8980` | 122 | no (relocations) | 97.73% |
+| `ScreenDialogResourceRecord::~ScreenDialogResourceRecord` | `0x004171e0` | 123 | no (relocations) | 83.02% |
+| `WindowDeactivationState::CountBuildings` | `0x0043cea0` | 126 | no (relocations) | 96.23% |
+| `InputState::~InputState` | `0x004ea9c0` | 130 | no (relocations) | 98.00% |
+| `GameFileReader::Unknown5c` | `0x0049e920` | 133 | no (relocations) | 96.43% |
+| `ScreenFrameItem::HandleTimedCoordinates` | `0x004c7700` | 133 | yes | 90.91% |
+| `ScreenListBoxPrefix::Unresolved24` | `0x004c51b0` | 137 | no (relocations) | 52.54% |
+| `WindowSoundBank::ReleaseSample` | `0x004d1fe0` | 137 | no (relocations) | 93.33% |
+| `ScreenRequestRenderer::ResizeSurface` | `0x0040e3d0` | 139 | no (relocations) | 66.67% |
+| `WindowAudioState::SetSoundLevel` | `0x004cfb00` | 141 | no (relocations) | 97.87% |
+| `ScreenManagerAuxiliaryState::SetText` | `0x004c1170` | 142 | no (relocations) | 97.92% |
+| `ScreenCheckBox::Unresolved04` | `0x004c1810` | 144 | no (relocations) | 98.04% |
+| `StartupMovie::Initialize` | `0x004ed1c0` | 145 | no (relocations) | 98.46% |
+| `InputMotionState::Render` | `0x004095f0` | 148 | no (relocations) | 98.04% |
+| `ScreenScrollBarPrefix::~ScreenScrollBarPrefix` | `0x004b5220` | 153 | no (relocations) | 98.11% |
+| `ScreenButtonPrefix::~ScreenButtonPrefix` | `0x004a0e70` | 155 | no (relocations) | 97.78% |
+| `ScreenBar::ScreenBar` | `0x004c1340` | 160 | no (relocations) | 98.18% |
+| `InputMotionState::InputMotionState` | `0x00409450` | 161 | no (relocations) | 97.92% |
+| `ScreenTextLookup::LookupText` | `0x0049f370` | 161 | no (relocations) | 93.33% |
+| `ScreenTextItem::ScreenTextItem` | `0x004c8250` | 161 | no (relocations) | 97.87% |
+| `ScreenLinearContainer::HandleTimedCoordinates` | `0x004c0df0` | 163 | no (relocations) | 98.48% |
+| `ScreenManager::RenderProgressOverlay` | `0x004b0f30` | 164 | no (relocations) | 97.87% |
+| `WindowDeactivationState::CountReadyBuildings` | `0x0043cdf0` | 166 | no (relocations) | 98.53% |
+| `ScreenRadioItem::HandleTimedCoordinates` | `0x004c6990` | 169 | no (relocations) | 87.77% |
+| `ScreenTextItem::ScreenTextItem` | `0x004c8320` | 175 | no (relocations) | 98.11% |
+| `StartupMovie::OpenStream` | `0x004ed390` | 183 | no (relocations) | 98.41% |
+| `ScreenFontRenderer::ScreenFontRenderer` | `0x0049f6c0` | 187 | no (relocations) | 98.25% |
+| `ScreenCheckBox::ScreenCheckBox` | `0x004c1650` | 192 | no (relocations) | 98.44% |
+| `ScreenDialogResourceFrame::LoadAllData` | `0x00416f10` | 195 | no (relocations) | 98.53% |
+| `WindowAudioState::Initialize3DProvider` | `0x004d0370` | 196 | no (relocations) | 76.56% |
+| `ScreenManager::HandleOverlayInput` | `0x004b0270` | 197 | no (relocations) | 85.29% |

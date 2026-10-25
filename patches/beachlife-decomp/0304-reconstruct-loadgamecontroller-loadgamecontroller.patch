@@ -1,0 +1,166 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 7327304..2049c82 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2385,3 +2385,10 @@ extern "C" __declspec(dllexport) IntroController* FixtureMatch3_01(void* memory,
+ {
+     return new (memory) IntroController(name);
+ }
++
++#include "startup_load_game.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) LoadGameController* FixtureMatch3_02(void* memory, const char* name)
++{
++    return new (memory) LoadGameController(name);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 681991d..5e3a233 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -215,3 +215,5 @@ address,type,size,symbol
+ 0x004e8300,function,99,?Enter@ExitGameController@@UAEXXZ
+ 0x004e8c40,function,206,?Enter@IntroController@@UAEXXZ
+ 0x004e8b40,function,25,??0IntroController@@QAE@PBD@Z
++0x004e8d20,function,25,??0LoadGameController@@QAE@PBD@Z
++0x004e8de0,function,3,?ScriptPath@LoadGameController@@UAEPBDXZ
+diff --git a/src/startup_load_game.h b/src/startup_load_game.h
+new file mode 100644
+index 0000000..7be2193
+--- /dev/null
++++ b/src/startup_load_game.h
+@@ -0,0 +1,27 @@
++#ifndef STARTUP_LOAD_GAME_H
++#define STARTUP_LOAD_GAME_H
++
++#include "startup_controller.h"
++
++// Actual 140-byte x86 "LoadGame" controller at Game+0x24. Shared cells are
++// folded identical bodies; each slot remains this class's own override.
++// VTABLE: BEACHLIFE 0x004f4ddc
++struct LoadGameController : ControllerState
++{
++    float elapsed; // 0x88.
++
++    // Actual 0x004e8d20, RET4: Game passes "LoadGame".
++    explicit LoadGameController(const char* name);
++    virtual ~LoadGameController();                         // 0x004e8d40, deleting wrapper, RET4.
++    virtual int Update();                                  // 0x004e8d80, RET0.
++    virtual void RenderBeforeScreens();                    // 0x004d3890, RET0.
++    virtual void RenderAfterScreens();                     // 0x00437d10, RET0.
++    virtual void Enter();                                  // 0x004e8dc0, RET0.
++    virtual void Exit();                                   // 0x004e8f30, RET0.
++    virtual const char* ScriptPath();                      // 0x004e8de0, RET0.
++    virtual void ControllerSlot1c();                       // 0x00437d10, RET0.
++    virtual void ScreenSizeChanged(int width, int height); // 0x004e8fa0, RET8.
++    virtual void ControllerSlot24();                       // 0x00437d10, RET0.
++};
++
++#endif
+diff --git a/src/startup_load_game_constructor.cpp b/src/startup_load_game_constructor.cpp
+new file mode 100644
+index 0000000..a5d657c
+--- /dev/null
++++ b/src/startup_load_game_constructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_load_game.h"
++
++// FUNCTION: BEACHLIFE 0x004e8d20
++LoadGameController::LoadGameController(const char* name)
++    : ControllerState(name)
++{
++}
+diff --git a/src/startup_load_game_dependencies.cpp b/src/startup_load_game_dependencies.cpp
+new file mode 100644
+index 0000000..51dbbf5
+--- /dev/null
++++ b/src/startup_load_game_dependencies.cpp
+@@ -0,0 +1,72 @@
++#include "startup_load_game.h"
++#include "startup_frame_clock.h"
++#include "startup_input_state.h"
++#include "startup_input_motion.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_shared_methods.h"
++#include "startup_screen_placement.h"
++#include <stdlib.h>
++
++// FUNCTION: BEACHLIFE 0x004e8d60
++// Scalar deleting wrapper: 0x004e8d40.
++LoadGameController::~LoadGameController()
++{
++    if (active)
++        ControllerState::Exit();
++}
++
++// FUNCTION: BEACHLIFE 0x004e8d80
++int LoadGameController::Update()
++{
++    elapsed += startup_frame_clock->delta_seconds;
++    if (elapsed > 0.1f)
++        screen_request_game->controller_selection.SelectPendingController(0);
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004e8de0 FOLDED
++const char* LoadGameController::ScriptPath()
++{
++    return 0;
++}
++
++// Folded retail RET0, shared with the screen-item defaults.
++void LoadGameController::RenderBeforeScreens()
++{
++    IgnoreScreenAction();
++}
++
++// Folded retail RET0, shared with the screen-item defaults.
++void LoadGameController::RenderAfterScreens()
++{
++    IgnoreScreenAction();
++}
++
++// Folded retail RET0, shared with the screen-item defaults.
++void LoadGameController::ControllerSlot1c()
++{
++    IgnoreScreenAction();
++}
++
++// Folded retail RET0, shared with the screen-item defaults.
++void LoadGameController::ControllerSlot24()
++{
++    IgnoreScreenAction();
++}
++
++void LoadGameController::Exit()
++{
++    ControllerState::Exit();
++}
++
++void LoadGameController::ScreenSizeChanged(int width, int height)
++{
++    ControllerState::ScreenSizeChanged(width, height);
++}
++
++// FUNCTION: BEACHLIFE 0x004e8dc0
++void LoadGameController::Enter()
++{
++    active = 1;
++    elapsed = 0.0f;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 51f2c37..8da9cfb 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1070,6 +1070,12 @@
+       "size": 25,
+       "name": "IntroController::IntroController",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004e8d20",
++      "size": 25,
++      "name": "LoadGameController::LoadGameController",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

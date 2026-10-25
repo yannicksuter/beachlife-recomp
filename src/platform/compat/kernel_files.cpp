@@ -46,8 +46,10 @@ struct File
     }
 };
 
-std::mutex files_mutex;
-std::map<int, std::unique_ptr<File>> files;
+// exit() flushes open game streams after static destructors have run (the
+// game's fatal path calls exit), so the table lives for the whole process.
+std::mutex& files_mutex = *new std::mutex;
+std::map<int, std::unique_ptr<File>>& files = *new std::map<int, std::unique_ptr<File>>;
 int next_file = 0x10000;
 
 std::string fold(std::string text)
@@ -198,6 +200,13 @@ DWORD file_error(int error)
 
 fs::path user_root()
 {
+    // Checks and automation use their own profile so they never change the
+    // player's options, progress or saves.
+    if (const char* override = SDL_getenv("BEACHLIFE_BOOT_USER_DIR"))
+    {
+        fs::create_directories(override);
+        return fs::weakly_canonical(fs::path(override));
+    }
     std::unique_ptr<char, decltype(&SDL_free)> path(
         SDL_GetPrefPath("BeachLife", "BeachLife"), SDL_free);
     if (!path)

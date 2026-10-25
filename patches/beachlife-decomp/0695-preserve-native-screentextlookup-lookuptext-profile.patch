@@ -1,0 +1,218 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 00f75d6..aed38f3 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -3772,10 +3772,3 @@ extern "C" __declspec(dllexport) InputMotionState* FixtureMatch5_58(void* memory
+ {
+     return new (memory) InputMotionState(p0, p1);
+ }
+-
+-#include "startup_screen_text.h"
+-// Borrowed typed receiver; compile/link retention only, never executed.
+-extern "C" __declspec(dllexport) const unsigned short* FixtureMatch5_59(ScreenTextLookup* receiver, const char* p0)
+-{
+-    return receiver->ScreenTextLookup::LookupText(p0);
+-}
+diff --git b/src/startup_screen_text.h a/src/startup_screen_text.h
+index 704d417..9cc785f 100644
+--- b/src/startup_screen_text.h
++++ a/src/startup_screen_text.h
+@@ -2,42 +2,14 @@
+ #define STARTUP_SCREEN_TEXT_H
+ 
+ #include "startup_render_rectangle.h"
+-#include "startup_screen_text_key.h"
+ 
+ struct ScreenFontData;
+ typedef const unsigned short ScreenTextCharacter;
+-struct ScreenTextLookup;
+-struct ScreenTextValue
+-{
+-    const char* key;
+-    const unsigned short* text;
+-};
+-struct ScreenTextBucket
+-{
+-    const char* key;
+-    ScreenTextValue* value;
+-    unsigned char unavailable;
+-};
+-struct ScreenTextIterator
+-{
+-    ScreenTextBucket* bucket;
+-    ScreenTextLookup* lookup;
+-    ~ScreenTextIterator() { }
+-};
+-// Actual lookup table prefix; callers borrow its key and value storage.
++// Borrowed lookup receiver; storage and ownership remain separate.
+ struct ScreenTextLookup
+ {
+-    int end_index;
+-    int capacity_04;
+-    ScreenTextBucket* buckets;
+-    unsigned char unknown_0c[4];
+-    int bucket_count;
+-    unsigned int used_14;
+     const unsigned short* LookupText(const char* key);
+-    ScreenTextIterator FindText(const ScreenTextKey& key);
+-    ScreenTextIterator EndText();
+ };
+-extern unsigned short screen_text_empty[1];
+ 
+ extern ScreenTextLookup* screen_text_lookup;
+ 
+diff --git b/src/startup_screen_text_empty.cpp a/src/startup_screen_text_empty.cpp
+deleted file mode 100644
+index 948f736..0000000
+--- b/src/startup_screen_text_empty.cpp
++++ /dev/null
+@@ -1,4 +0,0 @@
+-#include "startup_screen_text.h"
+-
+-// GLOBAL: BEACHLIFE 0x005bac6c
+-unsigned short screen_text_empty[1] = { 0 };
+diff --git b/src/startup_screen_text_end.cpp a/src/startup_screen_text_end.cpp
+deleted file mode 100644
+index 52bebb7..0000000
+--- b/src/startup_screen_text_end.cpp
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#include "startup_screen_text.h"
+-
+-// FUNCTION: BEACHLIFE 0x004d2450 FOLDED
+-ScreenTextIterator ScreenTextLookup::EndText()
+-{
+-    ScreenTextIterator end = { buckets + end_index, this };
+-    return end;
+-}
+diff --git b/src/startup_screen_text_find.cpp a/src/startup_screen_text_find.cpp
+deleted file mode 100644
+index dba799c..0000000
+--- b/src/startup_screen_text_find.cpp
++++ /dev/null
+@@ -1,31 +0,0 @@
+-#include "startup_screen_text.h"
+-#include <string.h>
+-
+-// FUNCTION: BEACHLIFE 0x004d2310 FOLDED
+-ScreenTextIterator ScreenTextLookup::FindText(const ScreenTextKey& key)
+-{
+-    ScreenTextIterator end = EndText();
+-    const char* cursor = key.text;
+-    unsigned int hash = 0;
+-    while (*cursor != 0)
+-    {
+-        hash = hash * 5 + static_cast<signed char>(*cursor);
+-        ++cursor;
+-    }
+-
+-    int first = static_cast<int>(hash % static_cast<unsigned int>(bucket_count));
+-    int index = first;
+-    do
+-    {
+-        if (buckets[index].unavailable == 0
+-            && _stricmp(buckets[index].key, key.text) == 0)
+-        {
+-            ScreenTextIterator found = { buckets + index, this };
+-            return found;
+-        }
+-        ++index;
+-        if (index >= bucket_count)
+-            index = 0;
+-    } while (index != first);
+-    return end;
+-}
+diff --git b/src/startup_screen_text_lookup.cpp a/src/startup_screen_text_lookup.cpp
+deleted file mode 100644
+index c660e5c..0000000
+--- b/src/startup_screen_text_lookup.cpp
++++ /dev/null
+@@ -1,14 +0,0 @@
+-#include "startup_screen_text.h"
+-
+-// FUNCTION: BEACHLIFE 0x0049f370
+-const unsigned short* ScreenTextLookup::LookupText(const char* key)
+-{
+-    ScreenTextIterator found = { 0, 0 };
+-    if (key != 0)
+-    {
+-        found = FindText(ScreenTextKey(key));
+-        if (found.bucket != EndText().bucket)
+-            return found.bucket->value->text;
+-    }
+-    return screen_text_empty;
+-}
+diff --git b/src/window_sound_end.cpp a/src/window_sound_end.cpp
+index 01863ca..8fc1d5b 100644
+--- b/src/window_sound_end.cpp
++++ a/src/window_sound_end.cpp
+@@ -1,6 +1,6 @@
+ #include "window_sound_bank.h"
+ 
+-// FUNCTION: BEACHLIFE 0x004d2450 FOLDED
++// FUNCTION: BEACHLIFE 0x004d2450
+ WindowSoundIterator WindowSoundBank::EndSound()
+ {
+     WindowSoundIterator end = { buckets + end_index, this };
+diff --git b/src/window_sound_find_key.cpp a/src/window_sound_find_key.cpp
+index a9e7f3a..8f83de7 100644
+--- b/src/window_sound_find_key.cpp
++++ a/src/window_sound_find_key.cpp
+@@ -1,7 +1,7 @@
+ #include "window_sound_bank.h"
+ #include <string.h>
+ 
+-// FUNCTION: BEACHLIFE 0x004d2310 FOLDED
++// FUNCTION: BEACHLIFE 0x004d2310
+ WindowSoundIterator WindowSoundBank::FindSoundKey(const ScreenTextKey& key)
+ {
+     WindowSoundIterator end = EndSound();
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 3d6a3e5..0add2a7 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -2186,12 +2186,6 @@
+       "size": 161,
+       "name": "InputMotionState::InputMotionState",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+-    },
+-    {
+-      "address": "0x0049f370",
+-      "size": 161,
+-      "name": "ScreenTextLookup::LookupText",
+-      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2456,12 +2450,6 @@
+     "startup_input_motion_constructor.cpp": [
+       "/GX",
+       "/Ob1"
+-    ],
+-    "startup_screen_text_find.cpp": [],
+-    "startup_screen_text_end.cpp": [],
+-    "startup_screen_text_lookup.cpp": [
+-      "/GX",
+-      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -3373,6 +3361,18 @@
+         "int"
+       ]
+     },
++    {
++      "address": "0x0049f370",
++      "size": 161,
++      "name": "ScreenTextLookup::LookupText",
++      "symbol": "?LookupText@ScreenTextLookup@@QAEPBGPBD@Z",
++      "header": "startup_screen_text.h",
++      "kind": "null-pointer-member",
++      "return_type": "ScreenTextCharacter*",
++      "parameters": [
++        "const char*"
++      ]
++    },
+     {
+       "address": "0x004c19b0",
+       "size": 188,

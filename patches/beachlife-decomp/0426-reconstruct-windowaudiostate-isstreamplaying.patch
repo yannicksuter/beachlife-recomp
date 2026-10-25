@@ -1,0 +1,120 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index c349548..64cdce4 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2807,3 +2807,10 @@ extern "C" __declspec(dllexport) void FixtureMatch3_62(ScreenItem* receiver, int
+ {
+     receiver->ScreenItem::TestRectangle(x, y);
+ }
++
++#include "window_audio.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch3_63(WindowAudioState* receiver)
++{
++    receiver->WindowAudioState::IsStreamPlaying();
++}
+diff --git a/metadata.csv b/metadata.csv
+index 383a1fa..68933be 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -301,3 +301,4 @@ address,type,size,symbol
+ 0x004a98e0,function,807,?HandleFourWords@ScreenMode1Controller@@UAEEIIII@Z
+ 0x004a9390,function,41,??0ScreenMode1Controller@@QAE@PAUScreenManager@@@Z
+ 0x004adad0,function,41,?TestRectangle@ScreenItem@@UAE_NHH@Z
++0x004cfee0,function,41,?IsStreamPlaying@WindowAudioState@@QAE_NXZ
+diff --git a/src/miles_imports.h b/src/miles_imports.h
+index bb0a282..a90461a 100644
+--- a/src/miles_imports.h
++++ b/src/miles_imports.h
+@@ -43,4 +43,6 @@ extern "C" __declspec(dllimport) void __stdcall AIL_close_digital_driver(void* d
+ extern "C" __declspec(dllimport) int __stdcall AIL_sample_status(void* sample);
+ extern "C" __declspec(dllimport) int __stdcall AIL_3D_sample_status(void* sample);
+ 
++extern "C" __declspec(dllimport) int __stdcall AIL_stream_status(void* stream);
++
+ #endif
+diff --git a/src/startup_screen_child_end.cpp b/src/startup_screen_child_end.cpp
+index f3e5063..dabde79 100644
+--- a/src/startup_screen_child_end.cpp
++++ b/src/startup_screen_child_end.cpp
+@@ -1,6 +1,6 @@
+ #include "startup_screen_children.h"
+-
+-// Descriptive typed specialization of the already-qualified shared End body.
++// Same qualified library body; line matching covers this retained ICF alias.
++// FUNCTION: BEACHLIFE 0x00437a40 FOLDED
+ ScreenChildIterator ScreenChildRing::End() const
+ {
+     ScreenChildIterator result;
+diff --git a/src/window_audio.h b/src/window_audio.h
+index 072a797..2e5328b 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -53,6 +53,7 @@ struct WindowAudioState
+     void UnmuteDigitalDriver();
+     void PauseAudioStream();
+     void ResumeAudioStream();
++    bool IsStreamPlaying();
+ };
+ 
+ #endif
+diff --git a/src/window_audio_controls.cpp b/src/window_audio_controls.cpp
+new file mode 100644
+index 0000000..30d0837
+--- /dev/null
++++ b/src/window_audio_controls.cpp
+@@ -0,0 +1,15 @@
++#include "window_audio.h"
++#include "miles_imports.h"
++
++// FUNCTION: BEACHLIFE 0x004cfee0
++bool WindowAudioState::IsStreamPlaying()
++{
++    bool playing = false;
++    if (enabled && stream)
++    {
++        int status = AIL_stream_status(stream);
++        if (status == 4 || status == 8)
++            playing = true;
++    }
++    return playing;
++}
+diff --git a/support/startup_list_end.cpp b/support/startup_list_end.cpp
+index 17985c7..d96fa52 100644
+--- a/support/startup_list_end.cpp
++++ b/support/startup_list_end.cpp
+@@ -1,6 +1,6 @@
+ #include "startup_list.h"
+ 
+-// LIBRARY: BEACHLIFE 0x00437a40
++// LIBRARY: BEACHLIFE 0x00437a40 FOLDED
+ // ?End@CircularList@@QBE?AUCircularListIterator@@XZ
+ CircularListIterator CircularList::End() const
+ {
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 111185c..ede9fb2 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1430,6 +1430,12 @@
+       "size": 41,
+       "name": "ScreenItem::TestRectangle",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004cfee0",
++      "size": 41,
++      "name": "WindowAudioState::IsStreamPlaying",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1588,7 +1594,8 @@
+         "AIL_set_sample_loop_count": 8,
+         "AIL_start_sample": 4,
+         "AIL_set_sample_volume": 8,
+-        "AIL_set_3D_sample_volume": 8
++        "AIL_set_3D_sample_volume": 8,
++        "AIL_stream_status": 4
+       }
+     },
+     "USER32.dll": {

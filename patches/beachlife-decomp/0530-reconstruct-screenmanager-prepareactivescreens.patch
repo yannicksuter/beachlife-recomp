@@ -1,0 +1,104 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index cedd90c..d306d14 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3159,3 +3159,10 @@ extern "C" __declspec(dllexport) bool FixtureMatch4_33(ScreenFrameItem* receiver
+ {
+     return receiver->ScreenFrameItem::TestRectangle(p0, p1);
+ }
++
++#include "startup_screen_manager.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_35(ScreenManager* receiver, unsigned char p0)
++{
++    receiver->ScreenManager::PrepareActiveScreens(p0);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 8f49f8d..0c914f0 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -357,3 +357,5 @@ address,type,size,symbol
+ 0x004c0a40,function,59,?Unresolved04@ScreenTabItem@@UAEXM@Z
+ 0x0049edf0,function,62,??0ControllerState@@QAE@PBD@Z
+ 0x004c76c0,function,62,?TestRectangle@ScreenFrameItem@@UAE_NHH@Z
++0x004b1260,function,65,?PrepareActiveScreens@ScreenManager@@QAEXE@Z
++0x0040e0d0,function,340,?PrepareSurface@ScreenRequestRenderer@@QAEXH@Z
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 0dda4e3..e321656 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -92,6 +92,7 @@ struct ScreenManager
+     ScreenListBoxPrefix* FindListBox(const char* name);
+     void StartCredits();
+     void ShowItemText(ScreenItem* item, int x, int y, const char* text);
++    void PrepareActiveScreens(unsigned char prepare_surface);
+ };
+ 
+ extern ScreenRequestGamePrefix* screen_request_game;
+diff --git a/src/startup_screen_manager_prepare_active.cpp b/src/startup_screen_manager_prepare_active.cpp
+new file mode 100644
+index 0000000..f60ca25
+--- /dev/null
++++ b/src/startup_screen_manager_prepare_active.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_dialog.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004b1260
++void ScreenManager::PrepareActiveScreens(unsigned char prepare_surface)
++{
++    CircularListNode* head = active.head;
++    CircularListNode* node = head->next;
++    if (node != head)
++    {
++        do
++        {
++            ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++            if (prepare_surface)
++            {
++                int surface = entry->surface;
++                ScreenRequestRenderer* current_renderer = renderer;
++                current_renderer->PrepareSurface(surface);
++            }
++            entry->item->MarkPrepared();
++            node = node->next;
++        } while (node != active.head);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index c122ad8..d00fb4a 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1730,6 +1730,12 @@
+       "size": 62,
+       "name": "ScreenFrameItem::TestRectangle",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004b1260",
++      "size": 65,
++      "name": "ScreenManager::PrepareActiveScreens",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2744,6 +2750,18 @@
+         "ScreenSurfacePosition*",
+         "unsigned char"
+       ]
++    },
++    {
++      "address": "0x0040e0d0",
++      "size": 340,
++      "name": "ScreenRequestRenderer::PrepareSurface",
++      "symbol": "?PrepareSurface@ScreenRequestRenderer@@QAEXH@Z",
++      "header": "startup_screen_renderer.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "int"
++      ]
+     }
+   ]
+ }

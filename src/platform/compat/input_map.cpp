@@ -110,11 +110,19 @@ bool mapping(HWND handle, Mapping& result)
 
 bool cursor_position(POINT& point)
 {
+    // GetCursorPos never fails on Windows and the game ignores its result, so
+    // when the live position is unknown (Wayland while the pointer is outside
+    // the window) report the last known one instead of failing.
+    static std::optional<POINT> last;
     auto* window = bound_window();
     Mapping map;
-    if (!window || !mapping(bound, map) || (clip_screen && !apply_clip(window, map)))
+    if (!window || !mapping(bound, map))
     {
         return false;
+    }
+    if (clip_screen)
+    {
+        apply_clip(window, map);
     }
     float x = 0, y = 0;
     if (SDL_GetMouseFocus() == window)
@@ -128,13 +136,23 @@ bool cursor_position(POINT& point)
         if (!driver || std::strcmp(driver, "wayland") == 0 ||
             !SDL_GetWindowPosition(window, &left, &top))
         {
-            return false;
+            if (!last)
+            {
+                return false;
+            }
+            point = *last;
+            return true;
         }
         SDL_GetGlobalMouseState(&x, &y);
         x -= left;
         y -= top;
     }
-    const auto client = map.from_window(x, y);
+    auto client = map.from_window(x, y);
+    // As on Windows, an active ClipCursor rectangle bounds the position.
+    if (clip_screen)
+    {
+        client = map.clamp(client);
+    }
     const auto sx = std::int64_t(map.origin.x) + static_cast<LONG>(std::floor(client.x));
     const auto sy = std::int64_t(map.origin.y) + static_cast<LONG>(std::floor(client.y));
     if (sx < INT32_MIN || sx > INT32_MAX || sy < INT32_MIN || sy > INT32_MAX)
@@ -142,6 +160,7 @@ bool cursor_position(POINT& point)
         return false;
     }
     point = {static_cast<LONG>(sx), static_cast<LONG>(sy)};
+    last = point;
     return true;
 }
 
