@@ -2187,3 +2187,20 @@ executed.
 | `ScreenFrameItem::Unresolved24` | `0x004c7800` | 40 | yes | 97.56% |
 | `ScreenMode1Controller::ScreenMode1Controller` | `0x004a9390` | 41 | no (relocations) | 88.89% |
 | `ScreenItem::TestRectangle` | `0x004adad0` | 41 | yes | 25.81% |
+| `WindowAudioState::IsStreamPlaying` | `0x004cfee0` | 41 | no (relocations) | 92.68% |
+| `ScreenButtonActionAt004a3260` | `0x004a3260` | 42 | no (relocations) | 94.74% |
+| `ScreenMode8Controller::ScreenMode8Controller` | `0x004a7690` | 42 | no (relocations) | 96.77% |
+| `ScreenImageItem::TestRectangle` | `0x004c3d60` | 42 | yes | 91.43% |
+| `FrameClock::FrameClock` | `0x004eb380` | 42 | no (relocations) | 96.55% |
+| `ScreenRequestRenderer::RestoreSurface` | `0x0040e3a0` | 43 | yes | 97.30% |
+| `ScreenManager::ReleaseOwner190` | `0x004b11d0` | 43 | no (relocations) | 96.77% |
+| `ScreenVariableFilter::ApplyPosition` | `0x004c2360` | 43 | yes | 96.77% |
+| `DeactivateActiveScreen` | `0x004b2e80` | 44 | no (relocations) | 97.14% |
+| `ScreenTabItem::Unresolved08` | `0x004c0a80` | 44 | yes | 77.27% |
+| `ScreenTabItem::MarkPrepared` | `0x004c0af0` | 44 | yes | 90.00% |
+| `ScreenRadioGroup::Unresolved10` | `0x004c71e0` | 44 | no (relocations) | 91.89% |
+| `ScreenItem::SetRectanglePosition` | `0x004add60` | 45 | yes | 73.68% |
+| `StartupConfig::GetInteger` | `0x004ecce0` | 45 | no (relocations) | 96.77% |
+| `StartupConfig::GetString` | `0x004ecd10` | 45 | no (relocations) | 96.77% |
+| `GuiDefinedItem::ApplyPosition` | `0x004a53a0` | 47 | yes | 97.96% |
+| `GuiDefinedItem::MoveRectangle` | `0x004a53d0` | 47 | yes | 97.96% |
