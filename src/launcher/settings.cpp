@@ -211,6 +211,14 @@ void read_keyed(std::istream& file, Settings& result, int version)
         {
             result.diagnostics.log_window = value_of(switches, word);
         }
+        else if (key == "tweaks.skip_intro" && in >> word)
+        {
+            result.tweaks.skip_intro = value_of(switches, word);
+        }
+        else if (key == "tweaks.wheel_zoom" && in >> word)
+        {
+            result.tweaks.wheel_zoom = value_of(switches, word);
+        }
         else if (key == "updates.check" && in >> word)
         {
             result.updates.check = value_of(switches, word);
@@ -317,6 +325,8 @@ void save_settings(const fs::path& path, const Settings& settings)
              << '\n'
              << "diagnostics.log_window " << name_of(switches, settings.diagnostics.log_window)
              << '\n'
+             << "tweaks.skip_intro " << name_of(switches, settings.tweaks.skip_intro) << '\n'
+             << "tweaks.wheel_zoom " << name_of(switches, settings.tweaks.wheel_zoom) << '\n'
              << "updates.check " << name_of(switches, settings.updates.check) << '\n'
              << "updates.channel " << name_of(channels, settings.updates.channel) << '\n';
         file.close();

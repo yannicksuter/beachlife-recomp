@@ -41,9 +41,9 @@ def digest(data):
 
 def native_decomp_profile(info):
     profile = info.get('decomp_profile', 'native')
-    if profile not in ('native', 'native-experimental', 'native-game'):
+    if profile not in ('native', 'native-experimental', 'native-game', 'native-game-tweaks'):
         raise ValueError('Unknown native reconstructed source profile')
-    if profile in ('native-experimental', 'native-game') and info['channel'] == 'release':
+    if profile in ('native-experimental', 'native-game', 'native-game-tweaks') and info['channel'] == 'release':
         raise ValueError('Experimental reconstructed code requires a dev or test build')
     return profile
 

@@ -477,7 +477,9 @@ def traps(args):
             covered |= symbol_family(method['symbol'])
     functions, services, unresolved = [], [], []
     for symbol, name in zip(names, demangled):
-        if name.startswith(('beachlife::', 'std::', '__gnu_cxx::', 'ImGui', 'SDL_', '_GLOBAL_OFFSET_TABLE_', '__dso_handle')):
+        # beachlife_ C functions are host services (CRT, tweaks) the runtime defines.
+        if name.startswith(('beachlife::', 'beachlife_', 'std::', '__gnu_cxx::', 'ImGui', 'SDL_',
+                            '_GLOBAL_OFFSET_TABLE_', '__dso_handle')):
             continue  # host and library code, resolved by the link
         class_name = re.match(r'(?:vtable|typeinfo|typeinfo name) for (\w+)$', name)
         if symbol in covered or (class_name and classes.get(class_name.group(1))):

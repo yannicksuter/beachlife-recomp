@@ -498,7 +498,10 @@ switches drive the game without a player:
 - `BEACHLIFE_BOOT_MONKEY="seed[,interval]"` clicks random game coordinates
   every interval frames (default 90) once the route is done, and logs each click
   so a failure reproduces from the seed.
-- `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames.
+- `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames, and
+  `BEACHLIFE_BOOT_WHEEL="frame:steps;..."` rolls the mouse wheel (positive is up).
+- `BEACHLIFE_BOOT_PROGRESS=all` starts the test profile with every scenario
+  available.
 - `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
 - `BEACHLIFE_BOOT_TRACE_FILES=1` prints each file the game opens.
 - `BEACHLIFE_BOOT_ASSUME_FOCUS=1` accepts input without window focus; a route
@@ -508,6 +511,17 @@ switches drive the game without a player:
 BEACHLIFE_BOOT_ROUTE=scenario1 ./build/boot/beachlife --play --headless \
   --frames 4000 --screenshot world.png
 ```
+
+Player-visible changes that are not in the original game live in
+`patches/beachlife-decomp-tweaks/`, applied after the faithful series when the
+boot build is configured with `-DBEACHLIFE_ENABLE_TWEAKS=ON`. Each tweak stays
+off until the player enables it under Advanced > Gameplay options in the
+launcher; checks can enable one with its environment variable:
+
+| Tweak | Setting | Check override |
+|---|---|---|
+| Skip intro: start at the main menu (no movie, logo or title screen) | `tweaks.skip_intro` | `BEACHLIFE_TWEAK_SKIP_INTRO=1` |
+| Mouse wheel zooms the camera (up in, down out) | `tweaks.wheel_zoom` | `BEACHLIFE_TWEAK_WHEEL_ZOOM=1` |
 
 `game-series` is written from a local merge tree. `tools/game_tree.py init`
 creates it under `build/game-tree/work` from the current series. Commit merged

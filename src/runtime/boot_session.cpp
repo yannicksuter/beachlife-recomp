@@ -5,6 +5,7 @@
 #include "platform/compat/kernel_files.h"
 #include "platform/compat/user32_cursor.h"
 #include "platform/compat/user32_host.h"
+#include "runtime/jpeg_export.h"
 #include "runtime/resource_files.h"
 #include "runtime/retail_cursor.h"
 #include "runtime/retail_files.h"
@@ -38,6 +39,13 @@ int run_boot_game(GameHost& host)
     // data1.hdr); the game keeps its map cache there. Writes go to the
     // per-user folder, so recreate the folder there as the installer did.
     std::filesystem::create_directories(compat::kernel::user_path("data/temp"));
+    // Photos (photos\\BeachLife_Snapshot_*.jpg) go through the game's C runtime
+    // like every other file it writes, into the player's folder.
+    jpeg::set_open_function(
+        [](const char* path, const char* mode) -> std::FILE*
+        {
+            return beachlife_crt_fopen(path, mode);
+        });
     // The retail HWND is Play's Video (see winmain_native.cpp).
     compat::bind_window(reinterpret_cast<HWND>(&host.video));
     return beachlife_boot_main(host);

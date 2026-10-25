@@ -17,6 +17,8 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype', 'dr-libs', 'pl-mpeg')
 DECOMP = 'beachlife-decomp'
+# Optional player-visible changes, kept apart from the faithful series.
+DECOMP_TWEAKS = 'beachlife-decomp-tweaks'
 DECOMP_PROFILES = {
     'native': ('reconstruction-series', 'native-pre-series', 'series'),
     'matching': ('reconstruction-series',),
@@ -25,6 +27,10 @@ DECOMP_PROFILES = {
     # The boot build's one merged game tree, applied last.
     'native-game': ('reconstruction-series', 'native-pre-series',
                     'experimental-series', 'series', 'game-series'),
+    # The boot build plus the optional tweak series, each off by default at run time.
+    'native-game-tweaks': ('reconstruction-series', 'native-pre-series',
+                           'experimental-series', 'series', 'game-series',
+                           (DECOMP_TWEAKS, 'series')),
 }
 
 
@@ -131,20 +137,42 @@ def decomp_inputs(source, revision, decomp_profile='native'):
         raise ValueError('The selected commit has no decomp source files')
     series_names = DECOMP_PROFILES[decomp_profile]
     patches, series, seen = [], [], set()
-    for filename in series_names:
-        for path in patch_paths(source, DECOMP, filename):
+    for entry in series_names:
+        folder, filename = entry if isinstance(entry, tuple) else (DECOMP, entry)
+        for path in patch_paths(source, folder, filename):
             resolved = path.resolve()
             if resolved in seen:
                 raise ValueError(f'Duplicate patch entry across series: {path.name}')
             seen.add(resolved)
             patches.append(path)
-        path = source / 'patches' / DECOMP / filename
+        path = source / 'patches' / folder / filename
         series.append({'path': path.relative_to(source).as_posix(),
                        'sha256': sha256(path) if path.is_file() else None})
     identity = {'name': DECOMP, 'commit': revision, 'subtree': 'decomp', 'tree': tree,
                 'profile': decomp_profile, 'series': series,
                 'patches': [{'path': p.relative_to(source).as_posix(), 'sha256': sha256(p)} for p in patches]}
     return identity, patches, files
+
+
+def sync_tree(staged, destination):
+    """Make destination equal to staged, replacing only files whose content
+    changed, so a build after an update recompiles just what changed."""
+    if not destination.exists():
+        os.replace(staged, destination)
+        return
+    new = {p.relative_to(staged).as_posix() for p in staged.rglob('*') if p.is_file()}
+    old = {p.relative_to(destination).as_posix() for p in destination.rglob('*') if p.is_file()}
+    for relative in sorted(old - new):
+        (destination / relative).unlink()
+    for relative in sorted(new):
+        source, target = staged / relative, destination / relative
+        if target.is_file() and target.read_bytes() == source.read_bytes():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(source, target)
+    for folder in sorted((p for p in destination.rglob('*') if p.is_dir()), reverse=True):
+        if not any(folder.iterdir()) and not (staged / folder.relative_to(destination)).is_dir():
+            folder.rmdir()
 
 
 def export_tree(repository, revision, archive, staged):
@@ -243,9 +271,7 @@ def prepare(source, output, names=DEPENDENCIES, verify=False, decomp_revision=No
                 if previous != record:
                     raise ValueError(f'Prepared {name} manifest or files were edited; remove both to regenerate')
             else:
-                if destination.exists():
-                    shutil.rmtree(destination)
-                os.replace(staged, destination)
+                sync_tree(staged, destination)
                 staged_stamp = temporary / 'manifest.json'
                 staged_stamp.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
                 os.replace(staged_stamp, stamp)

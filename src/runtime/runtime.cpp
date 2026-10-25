@@ -33,6 +33,23 @@
 #include <utility>
 #include <vector>
 
+// Optional gameplay tweaks (patches/beachlife-decomp-tweaks) ask the host
+// whether the player enabled them; all are off by default.
+namespace
+{
+bool wheel_zoom_tweak = false, skip_intro_tweak = false;
+} // namespace
+
+extern "C" int beachlife_tweak_wheel_zoom(void)
+{
+    return wheel_zoom_tweak;
+}
+
+extern "C" int beachlife_tweak_skip_intro(void)
+{
+    return skip_intro_tweak;
+}
+
 namespace beachlife::runtime
 {
 namespace
@@ -97,6 +114,14 @@ struct GamePumpState
         double x, y;
     };
     std::vector<Click> clicks;
+    // BEACHLIFE_BOOT_WHEEL="frame:steps;..." rolls the mouse wheel (positive
+    // is up) at those frames.
+    struct Wheel
+    {
+        std::uint64_t frame;
+        float steps;
+    };
+    std::vector<Wheel> wheels;
     // BEACHLIFE_BOOT_SHOTS="frame,..." also saves <screenshot>-<frame>.png.
     std::vector<std::uint64_t> shots;
     // BEACHLIFE_BOOT_ROUTE drives the menus without anyone at the mouse. A
@@ -316,6 +341,26 @@ std::vector<std::uint64_t> scripted_shots()
     return shots;
 }
 
+std::vector<GamePumpState::Wheel> scripted_wheels()
+{
+    std::vector<GamePumpState::Wheel> wheels;
+    const char* text = SDL_getenv("BEACHLIFE_BOOT_WHEEL");
+    for (const char* cursor = text; cursor && *cursor;)
+    {
+        unsigned long long frame = 0;
+        float steps = 0;
+        int used = 0;
+        if (std::sscanf(cursor, "%llu:%f%n", &frame, &steps, &used) != 2)
+        {
+            break;
+        }
+        wheels.push_back({frame, steps});
+        cursor += used;
+        cursor += *cursor == ';';
+    }
+    return wheels;
+}
+
 std::vector<GamePumpState::Click> scripted_clicks()
 {
     std::vector<GamePumpState::Click> clicks;
@@ -361,6 +406,18 @@ bool game_pump(void* context)
     ++state.frames;
     advance_route(state);
     advance_monkey(state);
+    for (const auto& scripted : state.wheels)
+    {
+        if (scripted.frame == state.frames)
+        {
+            SDL_Event event{};
+            event.type = SDL_EVENT_MOUSE_WHEEL;
+            event.wheel.windowID = SDL_GetWindowID(state.video->window());
+            event.wheel.y = scripted.steps;
+            event.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+            SDL_PushEvent(&event);
+        }
+    }
     for (const auto& scripted : state.clicks)
     {
         if (scripted.frame == state.frames || scripted.frame + 2 == state.frames)
@@ -665,11 +722,16 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             static_cast<std::uint64_t>(options.frames),
             options.screenshot,
             scripted_clicks(),
+            scripted_wheels(),
             scripted_shots(),
             scripted_route(),
             SDL_getenv("BEACHLIFE_BOOT_TRACE_FILES") != nullptr,
             scripted_monkey()};
         GameHost host{video, game_pump, &pump, game_source};
+        wheel_zoom_tweak =
+            settings.tweaks.wheel_zoom || SDL_getenv("BEACHLIFE_TWEAK_WHEEL_ZOOM") != nullptr;
+        skip_intro_tweak =
+            settings.tweaks.skip_intro || SDL_getenv("BEACHLIFE_TWEAK_SKIP_INTRO") != nullptr;
         retail_files::set_open_observer(game_file_opened, &pump);
         struct ObserverReset
         {
