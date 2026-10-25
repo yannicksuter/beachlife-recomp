@@ -1,0 +1,145 @@
+diff --git a/src/startup_game_scenario_progress.cpp b/src/startup_game_scenario_progress.cpp
+index 4c3db2b89af65ef16a459c496ad1b2008f8e5a99..d184df7c338dae07bd752b1b5148b7492193e4ee 100644
+--- a/src/startup_game_scenario_progress.cpp
++++ b/src/startup_game_scenario_progress.cpp
+@@ -71,3 +71,19 @@ void ScreenRequestGamePrefix::LoadScenarioProgress()
+     if (scenario_a0 > 11)
+         scenario_a0 = 11;
+ }
++
++// FUNCTION: BEACHLIFE 0x004e4140
++void ScreenRequestGamePrefix::UnlockNextScenario()
++{
++    unsigned int current = scenario_a0;
++    words_70[current] |= 8;
++    unsigned int next = current + 1;
++    if (next < 12 && (words_70[next] & 0xc) == 0)
++        words_70[next] = 2;
++    FILE* file = fopen(startup_game_state_path, "wb");
++    if (file)
++    {
++        fwrite(words_70, 0x30, 1, file);
++        fclose(file);
++    }
++}
+diff --git a/src/startup_overlay_map_lock.cpp b/src/startup_overlay_map_lock.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..354905bd11ff0c9213a599d707b6bc9449723042
+--- /dev/null
++++ b/src/startup_overlay_map_lock.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x0041aa20
++void OverlayMapPrefix::LockMap()
++{
++    flag_130 = 1;
++}
++
++// FUNCTION: BEACHLIFE 0x0041aa30
++void OverlayMapPrefix::UnlockMap()
++{
++    flag_130 = 0;
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 5009979c2ae256e36807d6ad11dff0f25e0e6930..3831f0a63eb5e22ccca470eb3325854279a8bd9d 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -205,6 +205,7 @@ struct ScreenRequestGamePrefix : ScreenGameRegistration
+     void LoadScenarioProgress();
+     void ResetScenarioProgress(); // 0x004e3d70.
+     void SaveScenarioProgress();  // 0x004e4100.
++    void UnlockNextScenario();    // 0x004e4140.
+     // Actual 0x004e44e0; loads the selected save after releasing the list records.
+     void ProcessWordB4();
+     // Actual 0x004e5100; updates the enabled load/save information panel.
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index da4640dfab719ab39aca12d3dcdd7545751a2b8e..477139e96fd97416ef59beedbb92237e2e8e8228 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -61,6 +61,8 @@ struct OverlayMapPrefix
+ {
+     OverlayMapPrefix(DebugFont* font, ScreenRequestRenderer* renderer, const char* path); // 0x00418600.
+     bool LoadWaterAnimation(const char* path);                                            // 0x0041b490.
++    void LockMap();                                                                       // 0x0041aa20.
++    void UnlockMap();                                                                     // 0x0041aa30.
+     bool PrepareMap(int width, int height, int tile_size, float progress);                // 0x00419a30.
+     void SetDepthPlane(int value);                                                        // 0x00418940.
+     void SetDepthSlant(int value);                                                        // 0x00418950.
+diff --git a/src/startup_world_script_actions.cpp b/src/startup_world_script_actions.cpp
+index 8c27c9fd260ce0ad66890321f314bafe1519576c..8be389310ff05efc02c679b5d7866b3d93f90644 100644
+--- a/src/startup_world_script_actions.cpp
++++ b/src/startup_world_script_actions.cpp
+@@ -49,9 +49,9 @@ void WorldSubsystem20::Action::Update()
+     {
+     case 0:
+     {
+-        unsigned int speed = *static_cast<unsigned int*>(data_08);
+-        if (speed != 7)
+-            window_deactivation_state->SetGameSpeed(speed);
++        unsigned int function = *static_cast<unsigned int*>(data_08);
++        if (function != 7)
++            window_deactivation_state->ExecuteScriptFunction(function);
+         break;
+     }
+     case 1:
+diff --git a/src/window_activation.h b/src/window_activation.h
+index 84dae718546282b776a2ce628bfbf8369ff9cadd..4b2ec3c099f1e101c8d6abd6e7d9aba43daf1f9d 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -224,6 +224,9 @@ struct WindowDeactivationState
+     void RenderBeforeScreens();                                                // 0x0043c950.
+     void RenderAfterScreens();                                                 // 0x0043c9e0.
+     void SetGameSpeed(unsigned int index);
++    // World-script Function command: PauseGame, ResumeGame, LockMap, UnlockMap,
++    // NoBreakDowns, AllowBreakDowns, UnlockNextScenario, (Debug), NoLitter.
++    void ExecuteScriptFunction(unsigned int function);                                  // 0x0043ee90.
+     void SetZoom(unsigned int level);                                                   // 0x0043f3a0.
+     unsigned int CurrentZoom();                                                         // 0x0043f3b0.
+     unsigned int CycleBuilding(unsigned int id, unsigned char forward);                 // 0x0043cf20.
+diff --git a/src/window_script_function.cpp b/src/window_script_function.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2eafb4f12970deea9d2d603881bede05dacb50d4
+--- /dev/null
++++ b/src/window_script_function.cpp
+@@ -0,0 +1,40 @@
++#include "window_activation.h"
++#include "startup_game_file.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x0043ee90
++void WindowDeactivationState::ExecuteScriptFunction(unsigned int function)
++{
++    switch (function)
++    {
++    case 0: // PauseGame
++        deactivation_requested = 1;
++        pause_requested_43a = 1;
++        break;
++    case 1: // ResumeGame
++        deactivation_requested = 0;
++        break;
++    case 2: // LockMap
++        map_34->LockMap();
++        break;
++    case 3: // UnlockMap
++        map_34->UnlockMap();
++        break;
++    case 4: // NoBreakDowns
++        flag_384 = 0;
++        break;
++    case 5: // AllowBreakDowns
++        flag_384 = 1;
++        break;
++    case 6: // UnlockNextScenario
++        screen_request_game->UnlockNextScenario();
++        break;
++    case 8: // NoLitter
++        flag_385 = 0;
++        break;
++    default:
++        StartupFatal("An invalid function has been called within the world script");
++        break;
++    }
++}

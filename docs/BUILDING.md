@@ -487,9 +487,10 @@ needed; screenshots are saved at the game's own resolution. Development
 switches drive the game without a player:
 
 - `BEACHLIFE_BOOT_ROUTE=scenario1` clicks past the intro screens, then the main
-  menu's "start" and "play" on the first scenario. Each step clicks one point
-  until the game opens the file that marks the next screen, so it does not
-  depend on timing. Custom routes are `x,y>file;...` in game coordinates.
+  menu's "start" and "play" on the first scenario, and closes its Objectives
+  dialog. A step `x,y>file` clicks one point until the game opens the file that
+  marks the next screen, so it does not depend on timing; `x,y+N` clicks once,
+  N frames after the previous step. Coordinates are the game's.
 - `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames.
 - `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
 - `BEACHLIFE_BOOT_TRACE_FILES=1` prints each file the game opens.

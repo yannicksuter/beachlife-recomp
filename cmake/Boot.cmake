@@ -162,6 +162,8 @@ target_include_directories(beachlife_boot_link PRIVATE "${BEACHLIFE_DECOMP_SOURC
 target_compile_options(beachlife_boot_link PRIVATE ${beachlife_game_compile_options})
 target_compile_features(beachlife_boot_link PRIVATE cxx_std_20)
 
-# Play runs the decompiled entry instead of its placeholder frame.
-target_link_libraries(beachlife PRIVATE beachlife_boot)
+# Play runs the decompiled entry instead of its placeholder frame. Whole
+# archive: retail static initializers live in files nothing references, and
+# the C runtime must still run them before WinMain.
+target_link_libraries(beachlife PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,beachlife_boot>")
 target_compile_definitions(beachlife PRIVATE BEACHLIFE_BOOT_GAME=1)

@@ -1,0 +1,171 @@
+diff --git a/src/startup_world_route_visit.cpp b/src/startup_world_route_visit.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7b48ec2cf61b103b40ebe118df4d9007d6992445
+--- /dev/null
++++ b/src/startup_world_route_visit.cpp
+@@ -0,0 +1,152 @@
++#include "startup_world_subsystems.h"
++
++#include <cstdlib>
++
++// FUNCTION: BEACHLIFE 0x004312a0
++void WorldRouteFinder::VisitRouteCell(ScreenTerrainCell* cell, const ScreenPoint* point, const ScreenPoint*, int cost)
++{
++    int new_cost = static_cast<int>(static_cast<unsigned int>(cell->cost_3c) + cost);
++    unsigned int y = static_cast<unsigned int>(point->y) % terrain_00->height_08;
++    unsigned int x = static_cast<unsigned int>(point->x) % terrain_00->width_04;
++    ScreenTerrainCell* neighbour = &terrain_00->cells_0c[y * terrain_00->width_04 + x];
++    if (neighbour->open_31 && neighbour->visited_generation_08 == generation_08)
++    {
++        for (int i = 0; i < 8; ++i)
++        {
++            ScreenTerrainCell* previous = cell->neighbours_10[i];
++            if (!previous || previous->visited_generation_08 != generation_08)
++            {
++                cell->neighbours_10[i] = neighbour;
++                break;
++            }
++        }
++        if (new_cost < neighbour->cost_3c)
++        {
++            neighbour->parent_00 = cell;
++            neighbour->cost_3c = new_cost;
++            neighbour->score_34 = static_cast<int>(static_cast<unsigned int>(neighbour->distance_38) + new_cost);
++        }
++        return;
++    }
++    if (neighbour->closed_30 && neighbour->visited_generation_08 == generation_08)
++    {
++        for (int i = 0; i < 8; ++i)
++        {
++            ScreenTerrainCell* previous = cell->neighbours_10[i];
++            if (!previous || previous->visited_generation_08 != generation_08)
++            {
++                cell->neighbours_10[i] = neighbour;
++                break;
++            }
++        }
++        if (new_cost < neighbour->cost_3c)
++        {
++            neighbour->parent_00 = cell;
++            neighbour->cost_3c = new_cost;
++            neighbour->score_34 = static_cast<int>(static_cast<unsigned int>(neighbour->distance_38) + new_cost);
++            PropagateRouteCost(neighbour);
++        }
++        return;
++    }
++
++    neighbour->parent_00 = cell;
++    neighbour->cost_3c = new_cost;
++    ScreenWorldPosition position = terrain_00->TilePosition(point->x, point->y, 4);
++    int dx = static_cast<int>(static_cast<long double>(position.x) - start_position_1c.x);
++    int dy = static_cast<int>(static_cast<long double>(position.y) - start_position_1c.y);
++    neighbour->distance_38 = static_cast<int>(static_cast<unsigned int>(dx) * dx + static_cast<unsigned int>(dy) * dy);
++    neighbour->score_34 = static_cast<int>(static_cast<unsigned int>(neighbour->distance_38) + new_cost);
++    neighbour->open_31 = 1;
++    neighbour->visited_generation_08 = generation_08;
++    InsertOpenRouteCell(neighbour);
++    for (int i = 0; i < 8; ++i)
++    {
++        ScreenTerrainCell* previous = cell->neighbours_10[i];
++        if (!previous || previous->visited_generation_08 != generation_08)
++        {
++            cell->neighbours_10[i] = neighbour;
++            break;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00431470
++void WorldRouteFinder::InsertOpenRouteCell(ScreenTerrainCell* cell)
++{
++    ScreenTerrainCell* next = cell_34.next_04;
++    if (!next || cell_34.linked_generation_0c != generation_08)
++    {
++        cell_34.next_04 = cell;
++        cell_34.linked_generation_0c = generation_08;
++        return;
++    }
++    if (next->visited_generation_08 != generation_08)
++    {
++        cell_34.linked_generation_0c = generation_08;
++        cell_34.next_04 = cell;
++        cell->visited_generation_08 = generation_08;
++        return;
++    }
++
++    ScreenTerrainCell* previous = &cell_34;
++    int score = cell->score_34;
++    while (next && next->visited_generation_08 == generation_08 && next->score_34 < score)
++    {
++        previous = next;
++        next = previous->next_04;
++        if (!next || previous->linked_generation_0c != generation_08)
++            next = 0;
++    }
++    cell->linked_generation_0c = generation_08;
++    cell->next_04 = next;
++    previous->next_04 = cell;
++    previous->linked_generation_0c = generation_08;
++    previous->visited_generation_08 = generation_08;
++}
++
++// FUNCTION: BEACHLIFE 0x00431520
++void WorldRouteFinder::PropagateRouteCost(ScreenTerrainCell* cell)
++{
++    int cost = cell->cost_3c;
++    for (int i = 0; i < 8; ++i)
++    {
++        ScreenTerrainCell* neighbour = cell->neighbours_10[i];
++        if (!neighbour || neighbour->visited_generation_08 != generation_08)
++            break;
++        int new_cost = static_cast<int>(static_cast<unsigned int>(cost) + 1);
++        if (new_cost < neighbour->cost_3c)
++        {
++            neighbour->cost_3c = new_cost;
++            neighbour->score_34 = static_cast<int>(static_cast<unsigned int>(neighbour->distance_38) + new_cost);
++            neighbour->parent_00 = cell;
++            AllocationNode* node = static_cast<AllocationNode*>(std::calloc(1, sizeof(AllocationNode)));
++            node->data = neighbour;
++            node->next = data_8c->next;
++            data_8c->next = node;
++        }
++    }
++    while (data_8c->next)
++    {
++        AllocationNode* node = data_8c->next;
++        cell = static_cast<ScreenTerrainCell*>(node->data);
++        data_8c->next = node->next;
++        std::free(node);
++        for (int i = 0; i < 8; ++i)
++        {
++            ScreenTerrainCell* neighbour = cell->neighbours_10[i];
++            if (!neighbour || neighbour->visited_generation_08 != generation_08)
++                break;
++            int new_cost = static_cast<int>(static_cast<unsigned int>(cell->cost_3c) + 1);
++            if (new_cost < neighbour->cost_3c)
++            {
++                neighbour->cost_3c = new_cost;
++                neighbour->score_34 = static_cast<int>(static_cast<unsigned int>(neighbour->distance_38) + new_cost);
++                neighbour->parent_00 = cell;
++                AllocationNode* pending = static_cast<AllocationNode*>(std::calloc(1, sizeof(AllocationNode)));
++                pending->data = neighbour;
++                pending->next = data_8c->next;
++                data_8c->next = pending;
++            }
++        }
++    }
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 4f0dfc68928f2ef60dd604c6af01fe9a4db5020e..3162c22c4a7ecf7a12d4eb0bcf600caa41220083 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -48,6 +48,8 @@ struct WorldRouteFinder
+     ~WorldRouteFinder() noexcept(false); // 0x00430980.
+ 
+     void VisitRouteCell(ScreenTerrainCell* cell, const ScreenPoint* point, const ScreenPoint* destination, int cost); // 0x004312a0.
++    void InsertOpenRouteCell(ScreenTerrainCell* cell);                                                                // 0x00431470.
++    void PropagateRouteCost(ScreenTerrainCell* cell);                                                                 // 0x00431520.
+ };
+ 
+ struct WorldRouteData
