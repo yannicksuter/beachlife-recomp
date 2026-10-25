@@ -2283,3 +2283,27 @@ executed.
 | `ScreenRequestGamePrefix::SetScreenSize` | `0x004e41e0` | 100 | no (relocations) | 86.84% |
 | `ScreenCheckBox::~ScreenCheckBox` | `0x004c1730` | 101 | no (relocations) | 94.55% |
 | `ScreenManager::FindListBox` | `0x004ae2f0` | 102 | yes | 94.85% |
+| `GameFileReader::Unknown38` | `0x0049e3d0` | 104 | no (relocations) | 97.87% |
+| `ScreenRadioItem::~ScreenRadioItem` | `0x004c6850` | 105 | no (relocations) | 93.10% |
+| `WindowAudioState::PlaySoundAtLevel` | `0x004cf740` | 107 | no (relocations) | 98.59% |
+| `TgaScreenItem::TgaScreenItem` | `0x004c8530` | 108 | no (relocations) | 97.44% |
+| `ScreenTextItem::ApplyFontSettings` | `0x004c84a0` | 109 | no (relocations) | 97.83% |
+| `GameFileReader::Unknown20` | `0x0049e580` | 113 | no (relocations) | 97.96% |
+| `GameFileReader::Unknown10` | `0x0049e730` | 113 | no (relocations) | 97.96% |
+| `ScreenManager::HandlePanelInput` | `0x004b10e0` | 113 | yes | 97.50% |
+| `ScreenPlacementStore::ClearMusicEntries` | `0x004e6980` | 113 | no (relocations) | 90.74% |
+| `GameFileReader::Unknown1c` | `0x0049e600` | 114 | no (relocations) | 97.96% |
+| `ScreenRadioItem::Unresolved1c` | `0x004c6b20` | 114 | no (relocations) | 97.73% |
+| `WindowAudioState::StopSound` | `0x004cfc80` | 114 | no (relocations) | 97.37% |
+| `ScreenManager::SetTickerRectangle` | `0x004af5f0` | 115 | no (relocations) | 97.37% |
+| `ScreenImageItem::HandleTimedCoordinates` | `0x004c3d90` | 115 | no (relocations) | 98.25% |
+| `ScreenButtonPrefix::Unresolved24` | `0x004a0f10` | 116 | no (relocations) | 79.01% |
+| `GameFileReader::Unknown50` | `0x0049ea70` | 118 | no (relocations) | 90.91% |
+| `ScreenManager::ActivateScreens` | `0x004ae8f0` | 119 | no (relocations) | 97.92% |
+| `RecordDisplayMode` | `0x00411ad0` | 121 | yes | 17.91% |
+| `ScreenLinearContainer::~ScreenLinearContainer` | `0x004c0ce0` | 122 | no (relocations) | 91.89% |
+| `ScreenVariableItem::ScreenVariableItem` | `0x004c8980` | 122 | no (relocations) | 97.73% |
+| `ScreenDialogResourceRecord::~ScreenDialogResourceRecord` | `0x004171e0` | 123 | no (relocations) | 83.02% |
+| `WindowDeactivationState::CountBuildings` | `0x0043cea0` | 126 | no (relocations) | 96.23% |
+| `InputState::~InputState` | `0x004ea9c0` | 130 | no (relocations) | 98.00% |
+| `GameFileReader::Unknown5c` | `0x0049e920` | 133 | no (relocations) | 96.43% |

@@ -1,0 +1,115 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 65c3705..dd5178f 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3552,3 +3552,16 @@ extern "C" __declspec(dllexport) void FixtureMatch5_17(WindowAudioState* receive
+ {
+     receiver->WindowAudioState::StopSound(p0, p1);
+ }
++
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_text.h"
++#include "startup_screen_text_item.h"
++#include "window_activation.h"
++#include <new>
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch5_18(ScreenManager* receiver, ScreenRectangle p0)
++{
++    receiver->ScreenManager::SetTickerRectangle(p0);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 904842d..d92ccd0 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -425,3 +425,4 @@ address,type,size,symbol
+ 0x004e6980,function,113,?ClearMusicEntries@ScreenPlacementStore@@QAEXXZ
+ 0x0049e600,function,114,?Unknown1c@GameFileReader@@UAEXPBDPBG@Z
+ 0x004cfc80,function,114,?StopSound@WindowAudioState@@QAEXHM@Z
++0x004af5f0,function,115,?SetTickerRectangle@ScreenManager@@QAEXUScreenRectangle@@@Z
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 9aefca5..ad40474 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -2,6 +2,7 @@
+ #define STARTUP_SCREEN_MANAGER_H
+ 
+ #include "startup_list.h"
++#include "startup_screen_item.h"
+ #include "startup_controller_selection.h"
+ 
+ struct ScreenItem;
+@@ -10,6 +11,7 @@ struct InputState;
+ struct ScreenManagerAuxiliaryState;
+ struct ScreenManagerOwner190;
+ struct ScreenListBoxPrefix;
++struct ScreenTextItem;
+ struct ScreenFontData;
+ struct ScreenFontRenderer;
+ struct ScreenChildLink;
+@@ -70,7 +72,12 @@ struct ScreenManager
+     unsigned char unknown_98[0x24];
+     CircularList active;
+     void LoadScreen(const char* path);
+-    unsigned char unknown_c0[0x68];
++    unsigned char unknown_c0[0x10];
++    ScreenTextItem* ticker_item_d0;
++    unsigned char ticker_enabled_d4;
++    unsigned char unknown_d5[3];
++    ScreenRectangle ticker_rectangle_d8;
++    unsigned char unknown_e8[0x40];
+     int mode;
+     int previous_mode;
+     ScreenManagerAuxiliaryState* auxiliary_130;
+@@ -112,6 +119,7 @@ struct ScreenManager
+     void ShowItemText(ScreenItem* item, int x, int y, const char* text);
+     void PrepareActiveScreens(unsigned char prepare_surface);
+     void ActivateScreens();
++    void SetTickerRectangle(ScreenRectangle rectangle);
+     void HandlePanelInput(int x, int y, unsigned int buttons);
+     void PrepareNamedScreen(const char* name, unsigned char prepare);
+ };
+diff --git a/src/startup_screen_manager_ticker.cpp b/src/startup_screen_manager_ticker.cpp
+new file mode 100644
+index 0000000..5772286
+--- /dev/null
++++ b/src/startup_screen_manager_ticker.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_text.h"
++#include "startup_screen_text_item.h"
++#include "window_activation.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004af5f0
++void ScreenManager::SetTickerRectangle(ScreenRectangle rectangle)
++{
++    ticker_rectangle_d8 = rectangle;
++    if (ticker_enabled_d4)
++    {
++        ScreenRectangle current;
++        current = ticker_item_d0->GetRectangle();
++        ticker_item_d0->MoveRectangle(0, rectangle.top - current.top);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 985e8ce..9b5820b 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2036,6 +2036,12 @@
+       "size": 114,
+       "name": "WindowAudioState::StopSound",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004af5f0",
++      "size": 115,
++      "name": "ScreenManager::SetTickerRectangle",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
