@@ -1,0 +1,156 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 625c31b..46f75b1 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3716,3 +3716,12 @@ extern "C" __declspec(dllexport) void FixtureMatch5_47(ScreenCheckBox* receiver,
+ {
+     receiver->ScreenCheckBox::Unresolved04(p0);
+ }
++
++#include <windows.h>
++#include "startup_direct_draw4.h"
++#include "startup_movie.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch5_48(StartupMovie* receiver)
++{
++    receiver->StartupMovie::Initialize();
++}
+diff --git a/metadata.csv b/metadata.csv
+index 58b7714..fe63a26 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -443,3 +443,6 @@ address,type,size,symbol
+ 0x0040e3d0,function,139,?ResizeSurface@ScreenRequestRenderer@@QAEEHHH@Z
+ 0x004cfb00,function,141,?SetSoundLevel@WindowAudioState@@QAEXHM@Z
+ 0x004e30b0,function,1410,?ReadText@ScreenRequestGamePrefix@@QAEXPBDPAG@Z
++0x004ed260,function,176,?CreatePrimarySurface@StartupMovie@@QAEXXZ
++0x004ed310,function,113,?AttachBackBuffer@StartupMovie@@QAEXXZ
++0x004ee6a6,library,6,_DirectDrawCreate@12
+diff --git a/src/startup_movie_guids.cpp b/src/startup_movie_guids.cpp
+new file mode 100644
+index 0000000..abd9e66
+--- /dev/null
++++ b/src/startup_movie_guids.cpp
+@@ -0,0 +1,6 @@
++#include "startup_direct_draw4.h"
++
++// GLOBAL: BEACHLIFE 0x004f5364
++extern "C" const GUID IID_IDirectDraw4 = {
++    0x9c59509a, 0x39bd, 0x11d1, { 0x8c, 0x4a, 0x00, 0xc0, 0x4f, 0xd9, 0x30, 0xc5 }
++};
+diff --git a/src/startup_movie_initialize.cpp b/src/startup_movie_initialize.cpp
+new file mode 100644
+index 0000000..aa387c7
+--- /dev/null
++++ b/src/startup_movie_initialize.cpp
+@@ -0,0 +1,36 @@
++#include <windows.h>
++
++#include "startup_direct_draw4.h"
++#include "startup_movie.h"
++
++// FUNCTION: BEACHLIFE 0x004ed1c0
++void StartupMovie::Initialize()
++{
++    if (DirectDrawCreate(0, &direct_draw, 0) != DD_OK)
++    {
++        return;
++    }
++    direct_draw->QueryInterface(IID_IDirectDraw4, reinterpret_cast<void**>(&direct_draw4));
++    DWORD flags = windowed ? DDSCL_NORMAL : DDSCL_FULLSCREEN | DDSCL_EXCLUSIVE;
++    if (direct_draw4->SetCooperativeLevel(static_cast<HWND>(window), flags | DDSCL_FPUSETUP) == DD_OK)
++    {
++        if (!windowed)
++        {
++            direct_draw4->SetDisplayMode(width, height, 16, 0, 0);
++        }
++    }
++    else
++    {
++        // The released interface pointer is kept (original quirk).
++        direct_draw4->Release();
++        ready = 0;
++    }
++    if (ready)
++    {
++        CreatePrimarySurface();
++        if (ready)
++        {
++            AttachBackBuffer();
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 089ac3a..e5a7e82 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2150,6 +2150,12 @@
+       "size": 144,
+       "name": "ScreenCheckBox::Unresolved04",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004ed1c0",
++      "size": 145,
++      "name": "StartupMovie::Initialize",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2446,6 +2452,12 @@
+       "symbols": {
+         "DirectInput8Create": 20
+       }
++    },
++    "DDRAW.dll": {
++      "export_names": "undecorated",
++      "symbols": {
++        "DirectDrawCreate": 12
++      }
+     }
+   },
+   "unclassified_functions": [
+@@ -3246,16 +3258,6 @@
+         "const unsigned short*"
+       ]
+     },
+-    {
+-      "address": "0x004ed1c0",
+-      "size": 145,
+-      "name": "StartupMovie::Initialize",
+-      "symbol": "?Initialize@StartupMovie@@QAEXXZ",
+-      "header": "startup_movie.h",
+-      "kind": "void-member",
+-      "return_type": "void",
+-      "parameters": []
+-    },
+     {
+       "address": "0x004eac60",
+       "size": 285,
+@@ -3426,6 +3428,26 @@
+         "const char*",
+         "unsigned short*"
+       ]
++    },
++    {
++      "address": "0x004ed260",
++      "size": 176,
++      "name": "StartupMovie::CreatePrimarySurface",
++      "symbol": "?CreatePrimarySurface@StartupMovie@@QAEXXZ",
++      "header": "startup_movie.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
++    },
++    {
++      "address": "0x004ed310",
++      "size": 113,
++      "name": "StartupMovie::AttachBackBuffer",
++      "symbol": "?AttachBackBuffer@StartupMovie@@QAEXXZ",
++      "header": "startup_movie.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
+     }
+   ]
+ }

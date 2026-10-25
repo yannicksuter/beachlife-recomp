@@ -1,0 +1,179 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 307bc3d..f34a23f 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3837,3 +3837,14 @@ extern "C" __declspec(dllexport) ScreenTextItem* FixtureMatch5_67(void* memory,
+ {
+     return new (memory) ScreenTextItem(p0, p1, p2, p3, p4);
+ }
++
++#include <windows.h>
++#include <ddraw.h>
++#include "startup_movie_stream_abi.h"
++#include "startup_direct_draw4.h"
++#include "startup_movie.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch5_71(StartupMovie* receiver, const char* p0)
++{
++    receiver->StartupMovie::OpenStream(p0);
++}
+diff --git a/src/startup_movie_guids.cpp b/src/startup_movie_guids.cpp
+index abd9e66..7f4b57e 100644
+--- a/src/startup_movie_guids.cpp
++++ b/src/startup_movie_guids.cpp
+@@ -4,3 +4,17 @@
+ extern "C" const GUID IID_IDirectDraw4 = {
+     0x9c59509a, 0x39bd, 0x11d1, { 0x8c, 0x4a, 0x00, 0xc0, 0x4f, 0xd9, 0x30, 0xc5 }
+ };
++
++#include "startup_movie_stream_abi.h"
++
++// GLOBAL: BEACHLIFE 0x004f541c
++extern "C" const GUID CLSID_AMMultiMediaStream = { 0x49c47ce5, 0x9ba4, 0x11d0, { 0x82, 0x12, 0x0, 0xc0, 0x4f, 0xc3, 0x2c, 0x45 } };
++
++// GLOBAL: BEACHLIFE 0x004f542c
++extern "C" const GUID IID_IAMMultiMediaStream = { 0xbebe595c, 0x9a6f, 0x11d0, { 0x8f, 0xde, 0x0, 0xc0, 0x4f, 0xd9, 0x18, 0x9d } };
++
++// GLOBAL: BEACHLIFE 0x004f53fc
++extern "C" const GUID MSPID_PrimaryVideo = { 0xa35ff56a, 0x9fda, 0x11d0, { 0x8f, 0xdf, 0x0, 0xc0, 0x4f, 0xd9, 0x18, 0x9d } };
++
++// GLOBAL: BEACHLIFE 0x004f53ec
++extern "C" const GUID MSPID_PrimaryAudio = { 0xa35ff56b, 0x9fda, 0x11d0, { 0x8f, 0xdf, 0x0, 0xc0, 0x4f, 0xd9, 0x18, 0x9d } };
+diff --git a/src/startup_movie_stream.cpp b/src/startup_movie_stream.cpp
+new file mode 100644
+index 0000000..2f6588a
+--- /dev/null
++++ b/src/startup_movie_stream.cpp
+@@ -0,0 +1,21 @@
++#include <windows.h>
++#include <ddraw.h>
++#include "startup_movie_stream_abi.h"
++
++#include "startup_direct_draw4.h"
++#include "startup_movie.h"
++
++// FUNCTION: BEACHLIFE 0x004ed390
++void StartupMovie::OpenStream(const char* path)
++{
++    IAMMultiMediaStream* opened;
++    CoCreateInstance(CLSID_AMMultiMediaStream, 0, CLSCTX_INPROC_SERVER, IID_IAMMultiMediaStream, reinterpret_cast<void**>(&opened));
++    WCHAR wide_path[260];
++    MultiByteToWideChar(CP_ACP, 0, path, -1, wide_path, 260);
++    opened->Initialize(STREAMTYPE_READ, AMMSF_NOGRAPHTHREAD, 0);
++    opened->AddMediaStream(direct_draw, &MSPID_PrimaryVideo, 0, 0);
++    opened->AddMediaStream(0, &MSPID_PrimaryAudio, AMMSF_ADDDEFAULTRENDERER, 0);
++    if (opened->OpenFile(wide_path, 0) != S_OK)
++        ready = 0;
++    stream_2c = opened;
++}
+diff --git a/src/startup_movie_stream_abi.h b/src/startup_movie_stream_abi.h
+new file mode 100644
+index 0000000..1b6f8f7
+--- /dev/null
++++ b/src/startup_movie_stream_abi.h
+@@ -0,0 +1,46 @@
++#ifndef STARTUP_MOVIE_STREAM_ABI_H
++#define STARTUP_MOVIE_STREAM_ABI_H
++#include <windows.h>
++#include <unknwn.h>
++struct IMediaStream;
++struct IGraphBuilder;
++struct IMediaStreamFilter;
++enum STREAM_TYPE
++{
++    STREAMTYPE_READ,
++    STREAMTYPE_WRITE,
++    STREAMTYPE_TRANSFORM
++};
++enum STREAM_STATE
++{
++    STREAMSTATE_STOP,
++    STREAMSTATE_RUN
++};
++// DirectShow multimedia-stream interface prefix through OpenFile, in SDK order.
++struct IAMMultiMediaStream : IUnknown
++{
++    STDMETHOD(GetInformation)(DWORD*, STREAM_TYPE*) PURE;
++    STDMETHOD(GetMediaStream)(const GUID&, IMediaStream**) PURE;
++    STDMETHOD(EnumMediaStreams)(LONG, IMediaStream**) PURE;
++    STDMETHOD(GetState)(STREAM_STATE*) PURE;
++    STDMETHOD(SetState)(STREAM_STATE) PURE;
++    STDMETHOD(GetTime)(__int64*) PURE;
++    STDMETHOD(GetDuration)(__int64*) PURE;
++    STDMETHOD(Seek)(__int64) PURE;
++    STDMETHOD(GetEndOfStreamEventHandle)(HANDLE*) PURE;
++    STDMETHOD(Initialize)(STREAM_TYPE, DWORD, IGraphBuilder*) PURE;
++    STDMETHOD(GetFilterGraph)(IGraphBuilder**) PURE;
++    STDMETHOD(GetFilter)(IMediaStreamFilter**) PURE;
++    STDMETHOD(AddMediaStream)(IUnknown*, const GUID*, DWORD, IMediaStream**) PURE;
++    STDMETHOD(OpenFile)(LPCWSTR, DWORD) PURE;
++};
++enum
++{
++    AMMSF_NOGRAPHTHREAD = 1,
++    AMMSF_ADDDEFAULTRENDERER = 1
++};
++extern "C" const GUID CLSID_AMMultiMediaStream;
++extern "C" const GUID IID_IAMMultiMediaStream;
++extern "C" const GUID MSPID_PrimaryVideo;
++extern "C" const GUID MSPID_PrimaryAudio;
++#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 4d43234..585f465 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2228,6 +2228,12 @@
+       "size": 175,
+       "name": "ScreenTextItem::ScreenTextItem",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004ed390",
++      "size": 183,
++      "name": "StartupMovie::OpenStream",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2541,7 +2547,8 @@
+       "symbols": {
+         "InterlockedExchange": 8,
+         "Sleep": 4,
+-        "WideCharToMultiByte": 32
++        "WideCharToMultiByte": 32,
++        "MultiByteToWideChar": 24
+       }
+     },
+     "DINPUT8.dll": {
+@@ -2555,6 +2562,12 @@
+       "symbols": {
+         "DirectDrawCreate": 12
+       }
++    },
++    "ole32.dll": {
++      "export_names": "undecorated",
++      "symbols": {
++        "CoCreateInstance": 20
++      }
+     }
+   },
+   "unclassified_functions": [
+@@ -3109,18 +3122,6 @@
+         "unsigned char"
+       ]
+     },
+-    {
+-      "address": "0x004ed390",
+-      "size": 183,
+-      "name": "StartupMovie::OpenStream",
+-      "symbol": "?OpenStream@StartupMovie@@QAEXPBD@Z",
+-      "header": "startup_movie.h",
+-      "kind": "void-member",
+-      "return_type": "void",
+-      "parameters": [
+-        "const char*"
+-      ]
+-    },
+     {
+       "address": "0x004ed450",
+       "size": 370,

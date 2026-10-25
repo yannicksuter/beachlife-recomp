@@ -1,0 +1,116 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 287de3f..97beb79 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3866,3 +3866,13 @@ extern "C" __declspec(dllexport) ScreenCheckBox* FixtureMatch5_75(void* memory,
+ {
+     return new (memory) ScreenCheckBox(p0, p1, p2);
+ }
++
++#include "startup_screen_dialog_frame_file.h"
++#include "startup_screen_dialog_resource.h"
++#include <io.h>
++#include <new>
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch5_77(ScreenDialogResourceFrame* receiver)
++{
++    receiver->ScreenDialogResourceFrame::LoadAllData();
++}
+diff --git a/metadata.csv b/metadata.csv
+index d68808f..64f6a71 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -466,3 +466,4 @@ address,type,size,symbol
+ 0x004c8320,function,175,??0ScreenTextItem@@QAE@UScreenRectangle@@PBGHHH@Z
+ 0x0049f6c0,function,187,??0ScreenFontRenderer@@QAE@PAUScreenFontData@@PAUScreenTextLookup@@@Z
+ 0x004c1650,function,192,??0ScreenCheckBox@@QAE@UScreenRectangle@@PBD1@Z
++0x00416f10,function,195,?LoadAllData@ScreenDialogResourceFrame@@QAEXXZ
+diff --git a/msvcrt.def b/msvcrt.def
+index fd5f05f..1bae002 100644
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -26,3 +26,5 @@ swprintf
+     wcslen
+     _wtol
+     wcscpy
++    _lseek
++    _read
+diff --git a/src/startup_screen_dialog_frame_file.cpp b/src/startup_screen_dialog_frame_file.cpp
+new file mode 100644
+index 0000000..f183128
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_file.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_dialog_frame_file.h"
++
++// GLOBAL: BEACHLIFE 0x004fccb8
++int screen_dialog_frame_file = -1;
++
++// GLOBAL: BEACHLIFE 0x005a891c
++unsigned int screen_dialog_frame_cursor = 0;
+diff --git a/src/startup_screen_dialog_frame_file.h b/src/startup_screen_dialog_frame_file.h
+new file mode 100644
+index 0000000..98997ed
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_file.h
+@@ -0,0 +1,9 @@
++#ifndef STARTUP_SCREEN_DIALOG_FRAME_FILE_H
++#define STARTUP_SCREEN_DIALOG_FRAME_FILE_H
++
++// Actual shared words at 0x004fccb8 and 0x005a891c. The real initialization
++// path owns their definitions; these loading methods do not initialize them.
++extern int screen_dialog_frame_file;
++extern unsigned int screen_dialog_frame_cursor;
++
++#endif
+diff --git a/src/startup_screen_dialog_frame_load_all.cpp b/src/startup_screen_dialog_frame_load_all.cpp
+new file mode 100644
+index 0000000..ee54ac7
+--- /dev/null
++++ b/src/startup_screen_dialog_frame_load_all.cpp
+@@ -0,0 +1,28 @@
++#include "startup_screen_dialog_frame_file.h"
++#include "startup_screen_dialog_resource.h"
++
++#include <io.h>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00416f10
++void ScreenDialogResourceFrame::LoadAllData()
++{
++    screen_dialog_frame_cursor = _lseek(screen_dialog_frame_file,
++        static_cast<long>(file_offset_1c - screen_dialog_frame_cursor),
++        1);
++
++    indices_44 = static_cast<unsigned short*>(
++        ::operator new(2 * plane_count_0c * count_0a));
++    int read_result = _read(screen_dialog_frame_file, indices_44, 2 * plane_count_0c * count_0a);
++    screen_dialog_frame_cursor += read_result;
++
++    offsets_70 = static_cast<unsigned int*>(::operator new(4 * offset_count_40));
++    read_result = _read(screen_dialog_frame_file, offsets_70, 4 * offset_count_40);
++    screen_dialog_frame_cursor += read_result;
++
++    whole_data_48 = 1;
++    data_4c = new unsigned char[data_size_18];
++    read_result = _read(screen_dialog_frame_file, data_4c, data_size_18);
++    screen_dialog_frame_cursor += read_result;
++    loaded_08 = 1;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 19da761..9e3656c 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2246,6 +2246,12 @@
+       "size": 192,
+       "name": "ScreenCheckBox::ScreenCheckBox",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x00416f10",
++      "size": 195,
++      "name": "ScreenDialogResourceFrame::LoadAllData",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
