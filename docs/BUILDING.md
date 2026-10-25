@@ -2162,3 +2162,28 @@ executed.
 | `ScreenTextItem::~ScreenTextItem` | `0x004c83d0` | 34 | no (relocations) | 88.89% |
 | `GuiDefinedItem::Unresolved10` | `0x004a5480` | 36 | no (relocations) | 96.97% |
 | `ScreenDialog::Unresolved10` | `0x004a5ef0` | 36 | no (relocations) | 96.97% |
+| `ScreenTabItem::Unresolved10` | `0x004c0c40` | 36 | no (relocations) | 96.97% |
+| `ScreenRadioGroup::MarkPrepared` | `0x004c70c0` | 36 | no (relocations) | 97.14% |
+| `ScreenFrameItem::MarkPrepared` | `0x004c7860` | 36 | no (relocations) | 97.14% |
+| `ScreenFrameItem::Unresolved10` | `0x004c7960` | 36 | no (relocations) | 96.97% |
+| `ScreenRequestRenderer::UnlockPixels` | `0x0040e2e0` | 37 | yes | 96.77% |
+| `VariableWorldPrefix::CountType` | `0x0042f0f0` | 37 | no (relocations) | 96.00% |
+| `ScreenItem::Unresolved24` | `0x004ada40` | 37 | no (relocations) | 80.00% |
+| `ScreenScrollBarPrefix::Unresolved24` | `0x004b52c0` | 37 | no (relocations) | 91.43% |
+| `WindowAudioState::PlaySound` | `0x004cf710` | 37 | no (relocations) | 96.00% |
+| `ScreenMode7Controller::ScreenMode7Controller` | `0x004a8f40` | 38 | no (relocations) | 88.89% |
+| `ScreenRequestGamePrefix::PopulateLoadGameMenu` | `0x004e4ed0` | 38 | no (relocations) | 89.66% |
+| `StartupMovie::Play` | `0x004ed190` | 38 | no (relocations) | 96.77% |
+| `ScreenDialogResourceLookup::Release` | `0x00417d10` | 39 | no (relocations) | 96.77% |
+| `WorldCursorNames::FirstNameNumber` | `0x00432260` | 39 | no (relocations) | 96.30% |
+| `VariableEntity::FlagAt00460340` | `0x00460340` | 39 | no (relocations) | 96.55% |
+| `ScreenImageItem::Unresolved0c` | `0x004c3d30` | 39 | no (relocations) | 96.97% |
+| `ScreenRequestRenderer::SurfaceLost` | `0x0040e370` | 40 | yes | 91.89% |
+| `GuiDefinedItem::Unresolved4c` | `0x004a5420` | 40 | yes | 97.56% |
+| `GuiDefinedItem::Unresolved24` | `0x004a5450` | 40 | yes | 97.56% |
+| `GuiDefinedItem::Unresolved04` | `0x004a54f0` | 40 | yes | 97.56% |
+| `ScreenDialog::Unresolved4c` | `0x004a5d40` | 40 | yes | 97.56% |
+| `ScreenFrameItem::Unresolved04` | `0x004c77d0` | 40 | yes | 97.56% |
+| `ScreenFrameItem::Unresolved24` | `0x004c7800` | 40 | yes | 97.56% |
+| `ScreenMode1Controller::ScreenMode1Controller` | `0x004a9390` | 41 | no (relocations) | 88.89% |
+| `ScreenItem::TestRectangle` | `0x004adad0` | 41 | yes | 25.81% |
