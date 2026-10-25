@@ -91,6 +91,12 @@ int main()
                   3 &&
               std::memcmp(bytes.data(), ansi, 3) == 0,
         "Windows-1252 round trip");
+    check(MultiByteToWideChar(CP_ACP, 0, ansi, -1, wide.data(), wide.size()) == 3 &&
+              wide[0] == 0x20ac && wide[1] == 0xe9 &&
+              WideCharToMultiByte(
+                  CP_ACP, 0, wide.data(), 3, bytes.data(), bytes.size(), nullptr, nullptr) == 3 &&
+              std::memcmp(bytes.data(), ansi, 3) == 0,
+        "the ANSI code page is the Western releases' Windows-1252");
     const WCHAR unmappable[] = {0x4e00, 0};
     BOOL replaced = FALSE;
     check(WideCharToMultiByte(CP_WINDOWS_1252,

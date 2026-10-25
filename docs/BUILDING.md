@@ -491,6 +491,9 @@ switches drive the game without a player:
   dialog. A step `x,y>file` clicks one point until the game opens the file that
   marks the next screen, so it does not depend on timing; `x,y+N` clicks once,
   N frames after the previous step. Coordinates are the game's.
+- `BEACHLIFE_BOOT_MONKEY="seed[,interval]"` clicks random game coordinates
+  every interval frames (default 90) once the route is done, and logs each click
+  so a failure reproduces from the seed.
 - `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames.
 - `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
 - `BEACHLIFE_BOOT_TRACE_FILES=1` prints each file the game opens.

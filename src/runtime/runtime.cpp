@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -117,7 +118,65 @@ struct GamePumpState
     } route;
     // BEACHLIFE_BOOT_TRACE_FILES=1 prints each file the game opens.
     bool trace_files = false;
+    // BEACHLIFE_BOOT_MONKEY="seed[,interval]" clicks random game coordinates
+    // every interval frames once the route is done, logging each click so a
+    // failure reproduces from the seed.
+    struct Monkey
+    {
+        bool enabled = false;
+        std::mt19937 random;
+        std::uint64_t interval = 90, next = 0;
+    } monkey;
 };
+
+GamePumpState::Monkey scripted_monkey()
+{
+    GamePumpState::Monkey monkey;
+    const char* text = SDL_getenv("BEACHLIFE_BOOT_MONKEY");
+    unsigned long seed = 0;
+    unsigned long long interval = 0;
+    const int read = text ? std::sscanf(text, "%lu,%llu", &seed, &interval) : 0;
+    if (read >= 1)
+    {
+        monkey.enabled = true;
+        monkey.random.seed(static_cast<std::mt19937::result_type>(seed));
+        if (read == 2 && interval >= 30)
+        {
+            monkey.interval = interval;
+        }
+        SDL_setenv_unsafe("BEACHLIFE_BOOT_ASSUME_FOCUS", "1", 1);
+    }
+    return monkey;
+}
+
+void advance_monkey(GamePumpState& state)
+{
+    auto& monkey = state.monkey;
+    if (!monkey.enabled || state.route.current < state.route.steps.size())
+    {
+        return;
+    }
+    if (!monkey.next)
+    {
+        monkey.next = state.frames + monkey.interval;
+        return;
+    }
+    if (state.frames < monkey.next)
+    {
+        return;
+    }
+    const double x = std::uniform_int_distribution<int>(0, 799)(monkey.random);
+    const double y = std::uniform_int_distribution<int>(0, 599)(monkey.random);
+    std::fprintf(stderr,
+        "Monkey: click %.0f,%.0f at frame %llu\n",
+        x,
+        y,
+        static_cast<unsigned long long>(state.frames));
+    // Hover first: game buttons take a press only after a frame over them.
+    state.clicks.push_back({state.frames + 1, x, y});
+    state.clicks.push_back({state.frames + 21, x, y});
+    monkey.next = state.frames + monkey.interval;
+}
 
 std::string lowercase(std::string text)
 {
@@ -298,6 +357,7 @@ bool game_pump(void* context)
     auto& state = *static_cast<GamePumpState*>(context);
     ++state.frames;
     advance_route(state);
+    advance_monkey(state);
     for (const auto& scripted : state.clicks)
     {
         if (scripted.frame == state.frames || scripted.frame + 2 == state.frames)
@@ -550,7 +610,8 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             scripted_clicks(),
             scripted_shots(),
             scripted_route(),
-            SDL_getenv("BEACHLIFE_BOOT_TRACE_FILES") != nullptr};
+            SDL_getenv("BEACHLIFE_BOOT_TRACE_FILES") != nullptr,
+            scripted_monkey()};
         GameHost host{video, game_pump, &pump, game_source};
         retail_files::set_open_observer(game_file_opened, &pump);
         struct ObserverReset
