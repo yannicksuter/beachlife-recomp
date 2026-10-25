@@ -2095,3 +2095,32 @@ executed.
 | `ScreenGameRegistration::~ScreenGameRegistration` | `0x004e5520` | 11 | no (relocations) | 50.00% |
 | `FrameClock::~FrameClock` | `0x004eb3b0` | 11 | no (relocations) | 50.00% |
 | `StartupProfilerRegistration::~StartupProfilerRegistration` | `0x004ecfa0` | 11 | no (relocations) | 50.00% |
+| `GuiParserState::GuiParserState` | `0x004ecfb0` | 11 | yes | 57.14% |
+| `RendererSeaStatePrefix::SetSeaEnabled` | `0x004184f0` | 13 | yes | 40.00% |
+| `ScreenItem::ClearManagerReference` | `0x004add90` | 13 | no (relocations) | 75.00% |
+| `ScreenListBoxEntry::~ScreenListBoxEntry` | `0x004c20e0` | 13 | yes | 22.22% |
+| `ScreenImageItem::Unresolved04` | `0x004c3d20` | 13 | no (relocations) | 57.14% |
+| `ScreenFrameItem::SetHeight` | `0x004c7830` | 13 | yes | 75.00% |
+| `ScreenLoadPanel140::ScreenLoadPanel140` | `0x004c8760` | 13 | yes | 36.36% |
+| `RendererSeaStatePrefix::~RendererSeaStatePrefix` | `0x004184e0` | 14 | no (relocations) | 22.22% |
+| `ScreenManagerAuxiliaryState::~ScreenManagerAuxiliaryState` | `0x004c1160` | 14 | yes | 22.22% |
+| `ScreenManagerOwner190::Reset` | `0x004c1c40` | 14 | yes | 66.67% |
+| `ScreenManager::SetFontData` | `0x004aedb0` | 15 | yes | 57.14% |
+| `ScreenManager::SetFontRenderer` | `0x004aedc0` | 15 | yes | 57.14% |
+| `ScreenPlacementStore::SetScreenSize` | `0x004e6960` | 17 | yes | 66.67% |
+| `ScreenModeController::ScreenModeController` | `0x004a6180` | 18 | no (relocations) | 66.67% |
+| `ScreenRequestRenderer::SetSeaEnabled` | `0x0040bf70` | 19 | no (relocations) | 66.67% |
+| `ScreenRadioItem::ClearFlag10` | `0x004c6aa0` | 19 | yes | 87.50% |
+| `ScreenButtonActionAt004a3290` | `0x004a3290` | 21 | no (relocations) | 83.33% |
+| `ScreenRequestGamePrefix::HasScenarioFlag08` | `0x004e41c0` | 22 | yes | 88.89% |
+| `InputState::SetSystemCursor` | `0x004eb330` | 22 | no (relocations) | 83.33% |
+| `ScreenLinearContainer::Unresolved08` | `0x004c0ed0` | 24 | yes | 91.67% |
+| `ScreenLinearContainer::Unresolved0c` | `0x004c0fa0` | 24 | yes | 91.67% |
+| `ScreenLinearContainer::Unresolved1c` | `0x004c0fe0` | 24 | yes | 91.67% |
+| `ScreenFontData::~ScreenFontData` | `0x004183f0` | 25 | no (relocations) | 95.65% |
+| `VariableCatalog::Scenery` | `0x00449780` | 25 | yes | 71.43% |
+| `ScreenMode0Controller::ScreenMode0Controller` | `0x004a6e90` | 25 | no (relocations) | 82.35% |
+| `ScreenMode6Controller::ScreenMode6Controller` | `0x004a7640` | 25 | no (relocations) | 82.35% |
+| `ScreenMode5Controller::ScreenMode5Controller` | `0x004a7b50` | 25 | no (relocations) | 82.35% |
+| `ScreenMode4Controller::ScreenMode4Controller` | `0x004a8610` | 25 | no (relocations) | 82.35% |
+| `ScreenLoadPanel13c::~ScreenLoadPanel13c` | `0x004c2450` | 25 | no (relocations) | 95.65% |

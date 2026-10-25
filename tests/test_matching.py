@@ -126,6 +126,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         for name in ('fixtures', 'support', 'targets'):
             (self.metadata / name).mkdir(parents=True)
         (self.metadata / 'fixtures/game.cpp').write_text('void fixture_entry() {}\n')
+        (self.metadata / 'metadata.csv').write_text('address,type,size,symbol\n')
         (self.metadata / 'support/operator_delete.cpp').write_text('// generated fixture\n')
         self.original = self.root / 'generated.bin'
         data = b'generated identity only; no executable code'
@@ -174,6 +175,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
                 specification = self.sdk_spec | {
                     'headers_sha256': {'FIXTURE.H': matching.digest(self.sdk_header)}}
                 self.sdk_pin.write_text(json.dumps(specification))
+        (folder / 'generated.map').write_text('')
         return folder / 'generated.exe', folder / 'generated.pdb'
 
     def compare(self, arguments, folder):

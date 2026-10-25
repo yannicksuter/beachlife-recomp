@@ -452,7 +452,7 @@ def comparison_anchor_specs(metadata, target):
                 not ((item['kind'] == 'null-pointer-member' and
                       re.fullmatch(r'[A-Za-z_]\w*\*', item['return_type'])) or
                      (item['kind'] == 'void-member' and item['return_type'] == 'void') or
-                     (item['kind'] == 'false-member' and item['return_type'] == 'bool')) or
+                     (item['kind'] == 'false-member' and item['return_type'] in ('bool', 'unsigned char'))) or
                 not isinstance(item.get('parameters'), list) or len(item['parameters']) > 4 or
                 not all(isinstance(parameter, str) and
                         re.fullmatch(r'(?:const )?(?:unsigned )?[A-Za-z_]\w*\*?', parameter)
