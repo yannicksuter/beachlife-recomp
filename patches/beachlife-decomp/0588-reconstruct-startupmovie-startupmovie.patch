@@ -1,0 +1,148 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 2885861..eb82de6 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3356,3 +3356,10 @@ extern "C" __declspec(dllexport) bool FixtureMatch4_63(ScreenItem* receiver, int
+ {
+     return receiver->ScreenItem::HandleTimedEvent(p0, p1, p2);
+ }
++
++#include "startup_movie.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_64(StartupMovie* receiver)
++{
++    receiver->StartupMovie::~StartupMovie();
++}
+diff --git a/metadata.csv b/metadata.csv
+index aeecc31..33ebc1a 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -392,3 +392,4 @@ address,type,size,symbol
+ 0x004c0ef0,function,88,?Unresolved24@ScreenLinearContainer@@UAEXE@Z
+ 0x004c55b0,function,88,?HandleInput38@ScreenListBoxPrefix@@UAE_NHHH@Z
+ 0x004adc30,function,89,?HandleTimedEvent@ScreenItem@@UAE_NHHH@Z
++0x004ed130,function,91,??1StartupMovie@@QAE@XZ
+diff --git a/src/startup_direct_draw4.h b/src/startup_direct_draw4.h
+new file mode 100644
+index 0000000..4a7426f
+--- /dev/null
++++ b/src/startup_direct_draw4.h
+@@ -0,0 +1,63 @@
++#ifndef STARTUP_DIRECT_DRAW4_H
++#define STARTUP_DIRECT_DRAW4_H
++
++#include <windows.h>
++#include <ddraw.h>
++
++// DirectDraw 6 platform ABI used by the movie player (DDRAW.dll, dxguid). The
++// pinned VC6 SDK only declares interfaces up to IDirectDraw2; DX6-only
++// parameter structures stay opaque here.
++#ifndef DDSCL_FPUSETUP
++#define DDSCL_FPUSETUP 0x00000800
++#endif
++
++// IDirectDraw4 in DDRAW.dll slot order (slot offsets after IUnknown's three).
++#ifndef IDirectDraw4_SetDisplayMode
++struct IDirectDraw4 : public IUnknown
++{
++    STDMETHOD(Compact)() PURE;
++    STDMETHOD(CreateClipper)(DWORD flags, LPDIRECTDRAWCLIPPER* clipper, IUnknown* outer) PURE;
++    STDMETHOD(CreatePalette)(
++        DWORD flags, LPPALETTEENTRY entries, LPDIRECTDRAWPALETTE* palette, IUnknown* outer) PURE;
++    STDMETHOD(CreateSurface)(void* description, void** surface, IUnknown* outer) PURE;
++    STDMETHOD(DuplicateSurface)(void* surface, void** duplicate) PURE;
++    STDMETHOD(EnumDisplayModes)(
++        DWORD flags, void* description, LPVOID context, void* callback) PURE;
++    STDMETHOD(EnumSurfaces)(DWORD flags, void* description, LPVOID context, void* callback) PURE;
++    STDMETHOD(FlipToGDISurface)() PURE;
++    STDMETHOD(GetCaps)(LPDDCAPS driver, LPDDCAPS emulation) PURE;
++    STDMETHOD(GetDisplayMode)(void* description) PURE;
++    STDMETHOD(GetFourCCCodes)(LPDWORD count, LPDWORD codes) PURE;
++    STDMETHOD(GetGDISurface)(void** surface) PURE;
++    STDMETHOD(GetMonitorFrequency)(LPDWORD frequency) PURE;
++    STDMETHOD(GetScanLine)(LPDWORD line) PURE;
++    STDMETHOD(GetVerticalBlankStatus)(LPBOOL in_blank) PURE;
++    STDMETHOD(Initialize)(GUID* guid) PURE;
++    STDMETHOD(RestoreDisplayMode)() PURE;
++    STDMETHOD(SetCooperativeLevel)(HWND window, DWORD flags) PURE;
++    STDMETHOD(SetDisplayMode)(
++        DWORD width, DWORD height, DWORD bpp, DWORD refresh, DWORD flags) PURE;
++};
++
++extern "C" const GUID IID_IDirectDraw4;
++#endif
++
++// Older SDKs omit the DX6 interfaces; keep the surface prefix through Flip.
++#ifndef IDirectDrawSurface4_Flip
++struct IDirectDrawSurface4 : public IUnknown
++{
++    STDMETHOD(AddAttachedSurface)(IDirectDrawSurface4* surface) PURE;
++    STDMETHOD(AddOverlayDirtyRect)(RECT* rectangle) PURE;
++    STDMETHOD(Blt)(RECT* destination, IDirectDrawSurface4* source,
++        RECT* source_rectangle, DWORD flags, DDBLTFX* effects) PURE;
++    STDMETHOD(BltBatch)(DDBLTBATCH* batch, DWORD count, DWORD flags) PURE;
++    STDMETHOD(BltFast)(DWORD x, DWORD y, IDirectDrawSurface4* source,
++        RECT* source_rectangle, DWORD flags) PURE;
++    STDMETHOD(DeleteAttachedSurface)(DWORD flags, IDirectDrawSurface4* surface) PURE;
++    STDMETHOD(EnumAttachedSurfaces)(void* context, void* callback) PURE;
++    STDMETHOD(EnumOverlayZOrders)(DWORD flags, void* context, void* callback) PURE;
++    STDMETHOD(Flip)(IDirectDrawSurface4* target, DWORD flags) PURE;
++};
++#endif
++
++#endif
+diff --git a/src/startup_movie_destructor.cpp b/src/startup_movie_destructor.cpp
+new file mode 100644
+index 0000000..e1165af
+--- /dev/null
++++ b/src/startup_movie_destructor.cpp
+@@ -0,0 +1,32 @@
++#include <windows.h>
++#include "startup_direct_draw4.h"
++#include "startup_movie.h"
++
++// FUNCTION: BEACHLIFE 0x004ed130
++StartupMovie::~StartupMovie()
++{
++    if (direct_draw)
++    {
++        if (flag_16)
++        {
++            direct_draw->RestoreDisplayMode();
++        }
++        direct_draw->SetCooperativeLevel(static_cast<HWND>(window), DDSCL_NORMAL);
++    }
++    if (back_buffer)
++    {
++        back_buffer->Release();
++    }
++    if (primary)
++    {
++        primary->Release();
++    }
++    if (direct_draw4)
++    {
++        direct_draw4->Release();
++    }
++    if (direct_draw)
++    {
++        direct_draw->Release();
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index b22f8b6..0b02cad 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1892,6 +1892,12 @@
+       "size": 89,
+       "name": "ScreenItem::HandleTimedEvent",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004ed130",
++      "size": 91,
++      "name": "StartupMovie::~StartupMovie",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

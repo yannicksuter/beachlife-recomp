@@ -2249,3 +2249,34 @@ executed.
 | `ScreenLinearContainer::ScreenLinearContainer` | `0x004c0c70` | 69 | no (relocations) | 97.78% |
 | `ScreenRadioGroup::Unresolved0c` | `0x004c70f0` | 69 | no (relocations) | 98.36% |
 | `TgaScreenItem::Unresolved0c` | `0x004c8710` | 69 | no (relocations) | 97.67% |
+| `ScreenItem::SetOwnedText` | `0x004adcf0` | 71 | no (relocations) | 92.54% |
+| `ScreenTextItem::Unresolved0c` | `0x004c8400` | 71 | no (relocations) | 94.92% |
+| `ScreenDialog::Unresolved1c` | `0x004a5e70` | 72 | yes | 98.51% |
+| `ShowFatalWindowMessage` | `0x004ea1a0` | 74 | no (relocations) | 93.02% |
+| `ScreenTextItem::Unresolved1c` | `0x004c8450` | 75 | no (relocations) | 95.52% |
+| `ScreenTabItem::Unresolved1c` | `0x004c0bf0` | 78 | yes | 94.44% |
+| `ScreenLinearContainer::Unresolved4c` | `0x004c0f50` | 79 | no (relocations) | 98.55% |
+| `ScreenPlacementStore::ClearPlacements` | `0x004e68f0` | 79 | no (relocations) | 98.59% |
+| `TgaScreenItem::~TgaScreenItem` | `0x004c85c0` | 81 | no (relocations) | 93.02% |
+| `ScreenDialogResourceFrame::ScreenDialogResourceFrame` | `0x00416ce0` | 82 | yes | 94.92% |
+| `StartupMovie::StartupMovie` | `0x004ed0d0` | 82 | no (relocations) | 60.71% |
+| `InputState::InputState` | `0x004ea940` | 83 | no (relocations) | 81.63% |
+| `InputState::Initialize` | `0x004eaa50` | 83 | no (relocations) | 92.96% |
+| `InputMotionState::~InputMotionState` | `0x00409500` | 84 | no (relocations) | 93.62% |
+| `WindowAudioState::StopAllSounds` | `0x004cfdc0` | 84 | no (relocations) | 98.73% |
+| `ScreenRequestGamePrefix::Activate` | `0x004e3b70` | 86 | no (relocations) | 89.80% |
+| `ScreenLinearContainer::Unresolved24` | `0x004c0ef0` | 88 | no (relocations) | 96.47% |
+| `ScreenListBoxPrefix::HandleInput38` | `0x004c55b0` | 88 | yes | 96.47% |
+| `ScreenItem::HandleTimedEvent` | `0x004adc30` | 89 | no (relocations) | 98.46% |
+| `StartupMovie::~StartupMovie` | `0x004ed130` | 91 | yes | 98.88% |
+| `InputState::CreateKeyboard` | `0x004eab60` | 92 | no (relocations) | 98.85% |
+| `ScreenImageItem::~ScreenImageItem` | `0x004c3cc0` | 96 | no (relocations) | 94.12% |
+| `ScreenLoadPanel140::Update` | `0x004c8770` | 96 | no (relocations) | 96.63% |
+| `GameFileReader::Unknown3c` | `0x0049e360` | 97 | no (relocations) | 94.38% |
+| `VariableWorldPrefix::SetKeylines` | `0x0042fab0` | 98 | yes | 88.89% |
+| `ScreenDialogResourceFrame::~ScreenDialogResourceFrame` | `0x00416d40` | 99 | no (relocations) | 96.39% |
+| `ScreenManager::StartCredits` | `0x004b1160` | 99 | no (relocations) | 94.74% |
+| `ScreenManager::PrepareNamedScreen` | `0x004b12b0` | 99 | no (relocations) | 96.39% |
+| `ScreenRequestGamePrefix::SetScreenSize` | `0x004e41e0` | 100 | no (relocations) | 86.84% |
+| `ScreenCheckBox::~ScreenCheckBox` | `0x004c1730` | 101 | no (relocations) | 94.55% |
+| `ScreenManager::FindListBox` | `0x004ae2f0` | 102 | yes | 94.85% |

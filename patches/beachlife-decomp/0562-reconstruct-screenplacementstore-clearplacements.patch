@@ -1,0 +1,139 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index e396740..602e17b 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3268,3 +3268,10 @@ extern "C" __declspec(dllexport) void FixtureMatch4_50(ScreenLinearContainer* re
+ {
+     receiver->ScreenLinearContainer::Unresolved4c(p0);
+ }
++
++#include "startup_screen_placement.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_51(ScreenPlacementStore* receiver)
++{
++    receiver->ScreenPlacementStore::ClearPlacements();
++}
+diff --git a/metadata.csv b/metadata.csv
+index 037604c..1e437c0 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -375,3 +375,4 @@ address,type,size,symbol
+ 0x004ea1a0,function,74,?ShowFatalWindowMessage@@YAXPAXPBG@Z
+ 0x004c0bf0,function,78,?Unresolved1c@ScreenTabItem@@UAEXXZ
+ 0x004c0f50,function,79,?Unresolved4c@ScreenLinearContainer@@UAEXI@Z
++0x004e68f0,function,79,?ClearPlacements@ScreenPlacementStore@@QAEXXZ
+diff --git a/src/startup_saved_placement_helpers.cpp b/src/startup_saved_placement_helpers.cpp
+new file mode 100644
+index 0000000..3faf8d0
+--- /dev/null
++++ b/src/startup_saved_placement_helpers.cpp
+@@ -0,0 +1,17 @@
++#include "startup_pointer_list_operations.h"
++#include "startup_screen_placement_visit.h"
++#include <new>
++
++// Folded traversal 0x004e8200, shared with VisitActiveScreens.
++// FUNCTION: BEACHLIFE 0x004e8200 FOLDED
++SavedPlacementCallback VisitSavedPlacements(CircularListIterator first,
++    CircularListIterator last, SavedPlacementCallback callback)
++{
++    return VisitPointerList(first, last, callback, &SavedScreenPlacementNode::placement);
++}
++
++// FUNCTION: BEACHLIFE 0x004209c0
++void DeleteSavedPlacement(SavedScreenPlacement* placement)
++{
++    ::operator delete(placement);
++}
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index cf6de44..2ee8e0b 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -45,6 +45,7 @@ struct ScreenPlacementStore
+ 
+     bool FindPlacement(int group, int* x, int* y);
+     void WritePlacement(int x, int y, int group);
++    void ClearPlacements();
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_placement_clear.cpp b/src/startup_screen_placement_clear.cpp
+new file mode 100644
+index 0000000..b698d11
+--- /dev/null
++++ b/src/startup_screen_placement_clear.cpp
+@@ -0,0 +1,22 @@
++#include "pool_return.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_placement_visit.h"
++
++// FUNCTION: BEACHLIFE 0x004e68f0
++void ScreenPlacementStore::ClearPlacements()
++{
++    // Free every saved placement, then release the nodes but keep the sentinel.
++    VisitSavedPlacements(saved.Begin(), saved.End(), DeleteSavedPlacement);
++    CircularListNode* node = saved.head->next;
++    while (node != saved.head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released != 0)
++        {
++            ReturnPool(released, sizeof(SavedScreenPlacementNode));
++        }
++    }
++    saved.head->next = saved.head;
++    saved.head->previous = saved.head;
++}
+diff --git a/src/startup_screen_placement_visit.h b/src/startup_screen_placement_visit.h
+new file mode 100644
+index 0000000..e9f6be2
+--- /dev/null
++++ b/src/startup_screen_placement_visit.h
+@@ -0,0 +1,16 @@
++#ifndef STARTUP_SCREEN_PLACEMENT_VISIT_H
++#define STARTUP_SCREEN_PLACEMENT_VISIT_H
++
++#include "startup_screen_placement.h"
++
++typedef void (*SavedPlacementCallback)(SavedScreenPlacement* placement);
++
++// Actual folded cdecl traversal 0x004e8200 (also used for the active-screen
++// and owner190 lists): calls the callback for each payload, returns it.
++SavedPlacementCallback VisitSavedPlacements(
++    CircularListIterator first, CircularListIterator last, SavedPlacementCallback callback);
++
++// Actual cdecl 0x004209c0: forwards the payload to scalar delete.
++void DeleteSavedPlacement(SavedScreenPlacement* placement);
++
++#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 4ac0d0c..9ff5009 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1820,6 +1820,12 @@
+       "size": 79,
+       "name": "ScreenLinearContainer::Unresolved4c",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004e68f0",
++      "size": 79,
++      "name": "ScreenPlacementStore::ClearPlacements",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2012,6 +2018,12 @@
+     ],
+     "startup_screen_linear_attach.cpp": [
+       "/GX"
++    ],
++    "startup_saved_placement_helpers.cpp": [
++      "/Ob1"
++    ],
++    "startup_screen_placement_clear.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

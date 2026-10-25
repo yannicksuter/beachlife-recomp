@@ -1,0 +1,169 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 92ef98e..be03ef3 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -700,6 +700,8 @@ extern "C" __declspec(dllexport) void FixtureTiffPaletteByte(unsigned short valu
+ 
+ InputState* volatile fixture_input_receiver;
+ 
++InputMotionState* volatile fixture_input_motion_receiver;
++
+ extern "C" void fixture_entry()
+ {
+     FixtureTiffPaletteByte(0x7fff);
+@@ -825,8 +827,8 @@ extern "C" void fixture_entry()
+     fixture_frame_clock.Update(1000);
+     startup_input_state = fixture_input;
+     startup_frame_clock = &fixture_frame_clock;
+-    InputMotionState fixture_input_motion = { 0 };
+-    fixture_config_offset = fixture_input_motion.Update();
++    InputMotionState* fixture_input_motion = fixture_input_motion_receiver;
++    fixture_config_offset = fixture_input_motion->Update();
+     CircularListNode fixture_list_head = { 0 };
+     fixture_list_head.next = &fixture_list_head;
+     fixture_list_head.previous = &fixture_list_head;
+@@ -3312,3 +3314,10 @@ extern "C" __declspec(dllexport) bool FixtureMatch4_56(InputState* receiver, voi
+ {
+     return receiver->InputState::Initialize(p0, p1);
+ }
++
++#include "startup_input_motion.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_57(InputMotionState* receiver)
++{
++    receiver->InputMotionState::~InputMotionState();
++}
+diff --git a/metadata.csv b/metadata.csv
+index a4d83ca..405d27e 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -385,3 +385,4 @@ address,type,size,symbol
+ 0x004eac60,function,285,?CreateMouse@InputState@@QAEEPAX@Z
+ 0x004eaa50,function,83,?Initialize@InputState@@QAE_NPAX0@Z
+ 0x004ed5e2,library,6,_DirectInput8Create@20
++0x00409500,function,84,??1InputMotionState@@QAE@XZ
+diff --git a/src/startup_input_motion.h b/src/startup_input_motion.h
+index 9e74216..cdddbd4 100644
+--- a/src/startup_input_motion.h
++++ b/src/startup_input_motion.h
+@@ -1,24 +1,64 @@
+ #ifndef STARTUP_INPUT_MOTION_H
+ #define STARTUP_INPUT_MOTION_H
+ 
++struct ScreenPoint;
++struct ScreenRectangle;
+ struct InputState;
+ struct FrameClock;
++struct TgaImage;
++struct InputMotionState;
+ 
+-// Descriptive observed prefix only; original names and complete class are unknown.
+-struct InputMotionState
++// Actual pointer slot0x005a883c; producer/lifetime remain separate obligations.
++extern InputMotionState* startup_input_motion_state;
++
++// Empty first base that publishes the singleton slot while the owner is
++// constructed; its out-of-line destructor 0x00409800 clears the slot again.
++struct InputMotionRegistration
++{
++    InputMotionRegistration();
++    // Inline: InputMotionState's destructor 0x00409500 expands it, and the
++    // out-of-line copy 0x00409800 serves the constructor/destructor unwinds.
++    ~InputMotionRegistration() { startup_input_motion_state = 0; }
++};
++
++// Actual 36-byte x86 owner at Game+0x2c. Original names remain descriptive.
++struct InputMotionState : InputMotionRegistration
+ {
+-    unsigned char unknown_00[8];
++    void* window_00;
++    TgaImage* cursor_04;
+     int value_134;
+     int value_138;
+-    unsigned char unknown_10[4];
++    int word_10;
+     unsigned int unknown_14;
+     float value_18;
+     float scale_1c;
++    unsigned char byte_20;
++    unsigned char byte_21;
++    unsigned char unknown_22[2];
++
++    // Actual 0x00409450, RET8: Game passes "data/cursor.tga" and its window.
++    InputMotionState(const char* cursor_path, void* window);
++    // Actual 0x00409500: deletes the cursor image; the inline registration
++    // destructor then clears the slot (its out-of-line copy serves unwinds).
++    ~InputMotionState();
++
++    void SetCursor(unsigned int cursor);               // 0x00409700.
++    bool ContainsRectangle(ScreenRectangle rectangle); // 0x004096c0.
++    void SetRelativeMode(unsigned char enabled);       // 0x004095d0.
++    void SetSoftwareCursor(unsigned char enabled);     // 0x00409690.
++    ScreenPoint Position();                            // 0x004097c0.
+ 
+     unsigned char Update();
++    // Actual 0x004095f0, no stack arguments, AL1 on normal return.
++    unsigned char Render();
+ };
+ 
+ extern InputState* startup_input_state;
+ extern FrameClock* startup_frame_clock;
+ 
++inline InputMotionRegistration::InputMotionRegistration()
++{
++    startup_input_motion_state = static_cast<InputMotionState*>(this);
++}
++
+ #endif
+diff --git a/src/startup_input_motion_destructor.cpp b/src/startup_input_motion_destructor.cpp
+new file mode 100644
+index 0000000..77fcdbd
+--- /dev/null
++++ b/src/startup_input_motion_destructor.cpp
+@@ -0,0 +1,8 @@
++#include "startup_input_motion.h"
++#include "tga_image.h"
++
++// FUNCTION: BEACHLIFE 0x00409500
++InputMotionState::~InputMotionState()
++{
++    delete cursor_04;
++}
+diff --git a/src/startup_input_motion_globals.cpp b/src/startup_input_motion_globals.cpp
+new file mode 100644
+index 0000000..bec4dd7
+--- /dev/null
++++ b/src/startup_input_motion_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_input_motion.h"
++
++// GLOBAL: BEACHLIFE 0x005a883c
++InputMotionState* startup_input_motion_state;
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 6710877..669c617 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1856,6 +1856,12 @@
+       "size": 83,
+       "name": "InputState::Initialize",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x00409500",
++      "size": 84,
++      "name": "InputMotionState::~InputMotionState",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2057,6 +2063,10 @@
+     ],
+     "startup_tga_screen_item_destructor.cpp": [
+       "/GX"
++    ],
++    "startup_input_motion_destructor.cpp": [
++      "/GX",
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
