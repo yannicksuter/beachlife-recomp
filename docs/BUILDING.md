@@ -2207,3 +2207,25 @@ executed.
 | `StartupConfig::GetString` | `0x004ecd10` | 45 | no (relocations) | 96.77% |
 | `GuiDefinedItem::ApplyPosition` | `0x004a53a0` | 47 | yes | 97.96% |
 | `GuiDefinedItem::MoveRectangle` | `0x004a53d0` | 47 | yes | 97.96% |
+| `ScreenLinearContainer::MoveRectangle` | `0x004c0d60` | 47 | no (relocations) | 85.11% |
+| `LoadTgaFile` | `0x004ea910` | 47 | no (relocations) | 93.33% |
+| `ScreenVariableFilter::MoveRectangle` | `0x004c2330` | 48 | yes | 79.07% |
+| `ScreenLinearContainer::ApplyPosition` | `0x004c0d90` | 49 | no (relocations) | 89.80% |
+| `WindowAudioState::VoiceStatus` | `0x004cfac0` | 49 | yes | 97.78% |
+| `GameFileReader::Unknown48` | `0x0049eb30` | 50 | no (relocations) | 89.80% |
+| `ReleasePlacementMusicEntry` | `0x004e7f30` | 51 | no (relocations) | 97.67% |
+| `ScreenManager::ClearItemReference` | `0x004af6b0` | 52 | no (relocations) | 96.00% |
+| `ScreenButtonActionAt004a2ef0` | `0x004a2ef0` | 53 | no (relocations) | 95.65% |
+| `ScreenManager::ShowItemText` | `0x004af670` | 54 | no (relocations) | 90.91% |
+| `ScreenTabItem::ApplyPosition` | `0x004c08a0` | 54 | no (relocations) | 87.27% |
+| `ScreenTabItem::MoveRectangle` | `0x004c0ab0` | 54 | no (relocations) | 87.27% |
+| `ScreenRadioGroup::ApplyPosition` | `0x004c7160` | 54 | no (relocations) | 87.27% |
+| `ScreenRadioGroup::MoveRectangle` | `0x004c71a0` | 54 | no (relocations) | 87.27% |
+| `GameFileReader::Unknown34` | `0x0049e440` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown30` | `0x0049e480` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown2c` | `0x0049e4c0` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown28` | `0x0049e500` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown24` | `0x0049e540` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown18` | `0x0049e680` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown0c` | `0x0049e7b0` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown08` | `0x0049e7f0` | 55 | no (relocations) | 90.20% |
