@@ -46,8 +46,10 @@ struct File
     }
 };
 
-std::mutex files_mutex;
-std::map<int, std::unique_ptr<File>> files;
+// exit() flushes open game streams after static destructors have run (the
+// game's fatal path calls exit), so the table lives for the whole process.
+std::mutex& files_mutex = *new std::mutex;
+std::map<int, std::unique_ptr<File>>& files = *new std::map<int, std::unique_ptr<File>>;
 int next_file = 0x10000;
 
 std::string fold(std::string text)

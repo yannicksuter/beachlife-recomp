@@ -1,0 +1,640 @@
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 7f2e3a6fcd7b1d3c49c77e2afbc7f94145330379..d4fcb3df3727d277c8f023e70b4013e0267b2358 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -89,6 +89,8 @@ struct ScreenDialogResource
+ {
+     void BurnTerrain(const ScreenWorldPosition* position);                                                                                                     // 0x00415090.
+     ScreenRectangle WorldRectangle(const ScreenWorldPosition* position);                                                                                       // 0x00412b80.
++    void BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth);                                                             // 0x00415210.
++    void BurnTerrainClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth);                    // 0x004146f0.
+     void BurnBuildingFootprint(const ScreenWorldPosition* position, unsigned int width, unsigned int height);                                                  // 0x004155f0.
+     void BurnBuildingTiles(int tile_x, int tile_y, int offset_x, int offset_y, float depth_step, unsigned int depth);                                          // 0x00415890.
+     void BurnBuildingClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, float depth_step, unsigned int depth); // 0x00415c40.
+diff --git a/src/startup_screen_dialog_resource_terrain.cpp b/src/startup_screen_dialog_resource_terrain.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..bf6f82c2a396cd471335a552b32a3ab7279d30e9
+--- /dev/null
++++ b/src/startup_screen_dialog_resource_terrain.cpp
+@@ -0,0 +1,55 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x00412b80
++ScreenRectangle ScreenDialogResource::WorldRectangle(const ScreenWorldPosition* position)
++{
++    ScreenPoint screen = overlay_map->WorldToScreen(*position);
++    screen.x += overlay_map->scroll_x_c4;
++    screen.y += overlay_map->scroll_y_c8;
++    screen.x += CurrentFrameValue();
++    screen.y += SelectedFrame()->word_14;
++    return { screen.x, screen.y, screen.x + SelectedFrame()->width_0e, screen.y + SelectedFrame()->height_10 };
++}
++
++// FUNCTION: BEACHLIFE 0x00415090
++void ScreenDialogResource::BurnTerrain(const ScreenWorldPosition* position)
++{
++    ScreenPoint screen = overlay_map->WorldToScreen(*position);
++    screen.x += CurrentFrameValue();
++    screen.y += SelectedFrame()->word_14;
++    screen.x += overlay_map->scroll_x_c4;
++    screen.y += overlay_map->scroll_y_c8;
++    ScreenRectangle rectangle = { 0, 0, SelectedFrame()->width_0e, SelectedFrame()->height_10 };
++    bool clipped = false;
++    if (screen.x < 0)
++    {
++        rectangle.left = -screen.x;
++        screen.x = 0;
++        clipped = true;
++    }
++    if (screen.x + rectangle.right > 4096)
++    {
++        rectangle.right = 4096 - screen.x;
++        clipped = true;
++    }
++    if (screen.y + rectangle.bottom > 4096)
++    {
++        rectangle.bottom = 4096 - screen.y;
++        clipped = true;
++    }
++    if (screen.y < 0)
++    {
++        rectangle.top = -screen.y;
++        screen.y = 0;
++        clipped = true;
++    }
++    unsigned int depth = overlay_map->DepthAt(position);
++    if (!(depth & 1))
++        ++depth;
++    int size = overlay_map->tile_size_dc;
++    if (clipped)
++        BurnTerrainClippedTiles(&rectangle, screen.x / size, screen.y / size, screen.x % size, screen.y % size, depth);
++    else
++        BurnTerrainTiles(screen.x / size, screen.y / size, screen.x % size, screen.y % size, depth);
++}
+diff --git a/src/startup_world_motion_steering.cpp b/src/startup_world_motion_steering.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab01a0b9ddbcb29e2104b0eaaf2d8ee915246057
+--- /dev/null
++++ b/src/startup_world_motion_steering.cpp
+@@ -0,0 +1,80 @@
++#include "startup_world_motion_helpers.h"
++
++static void LimitSteeringForce(WorldMovingEntity* entity)
++{
++    long double x = entity->motion_64[4];
++    long double y = entity->motion_64[5];
++    float length = MotionSquareRoot(static_cast<float>(y * y + x * x));
++    if (length > entity->acceleration_7c)
++    {
++        float ratio = static_cast<float>(static_cast<long double>(length) / entity->acceleration_7c);
++        float reciprocal = MotionReciprocal(ratio);
++        entity->motion_64[4] = static_cast<long double>(reciprocal) * entity->motion_64[4];
++        entity->motion_64[5] = static_cast<long double>(entity->motion_64[5]) * reciprocal;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00482940
++void WorldMovingEntity::SteerTowardTarget()
++{
++    float x = static_cast<long double>(target_84[0]) - motion_64[0];
++    long double y = static_cast<long double>(target_84[1]) - motion_64[1];
++    float rounded_y = y;
++    float squared = y * y + static_cast<long double>(x) * x;
++    if (!(MotionSquareRoot(squared) > 0.001f))
++    {
++        motion_64[4] = motion_64[5] = 0.0f;
++        return;
++    }
++    float reciprocal = MotionReciprocal(MotionSquareRoot(squared));
++    long double desired_x = static_cast<long double>(reciprocal) * x * speed_80;
++    float desired_y = static_cast<long double>(rounded_y) * reciprocal;
++    desired_y = static_cast<long double>(desired_y) * speed_80;
++    motion_64[4] = desired_x - motion_64[2];
++    motion_64[5] = static_cast<long double>(desired_y) - motion_64[3];
++    LimitSteeringForce(this);
++}
++
++// FUNCTION: BEACHLIFE 0x00482ab0
++void WorldMovingEntity::SteerArriving()
++{
++    float x = static_cast<long double>(target_84[0]) - motion_64[0];
++    long double y = static_cast<long double>(target_84[1]) - motion_64[1];
++    float rounded_y = y;
++    float distance = MotionSquareRoot(static_cast<float>(y * rounded_y + static_cast<long double>(x) * x));
++    long double slowing_distance = static_cast<int>(word_b0);
++    if (slowing_distance == 0.0f)
++        slowing_distance = static_cast<long double>(speed_80) * 0.2f;
++    long double desired_speed = static_cast<long double>(distance) / slowing_distance * speed_80;
++    if (desired_speed > speed_80)
++        desired_speed = speed_80;
++    long double scale = desired_speed / distance;
++    float desired_x = x * scale;
++    motion_64[4] = static_cast<long double>(desired_x) - motion_64[2];
++    motion_64[5] = scale * rounded_y - motion_64[3];
++    LimitSteeringForce(this);
++}
++
++// FUNCTION: BEACHLIFE 0x00482c30
++void WorldMovingEntity::SteerFollowing()
++{
++    float x = static_cast<long double>(target_84[0]) - motion_64[0];
++    long double y = static_cast<long double>(target_84[1]) - motion_64[1];
++    float rounded_y = y;
++    float distance = MotionSquareRoot(static_cast<float>(y * rounded_y + static_cast<long double>(x) * x));
++    long double desired_speed = static_cast<long double>(distance) / static_cast<int>(word_b0) * speed_80;
++    if (desired_speed > speed_80)
++        desired_speed = speed_80;
++    long double scale = desired_speed / distance;
++    float desired_x = x * scale;
++    motion_64[4] = static_cast<long double>(desired_x) - motion_64[2];
++    motion_64[5] = scale * rounded_y - motion_64[3];
++    LimitSteeringForce(this);
++}
++
++// FUNCTION: BEACHLIFE 0x00486b60
++void WorldMovingEntity::SetSteeringTarget(ScreenMapPosition position)
++{
++    target_84[0] = position.x;
++    target_84[1] = position.y;
++}
+diff --git a/src/startup_world_motion_velocity.cpp b/src/startup_world_motion_velocity.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..59cb82c05cbbe5daf915a5ed93636a55e470c9f8
+--- /dev/null
++++ b/src/startup_world_motion_velocity.cpp
+@@ -0,0 +1,26 @@
++#include "startup_world_motion_helpers.h"
++
++// FUNCTION: BEACHLIFE 0x00482d90
++void WorldMovingEntity::IntegrateVelocity(float step)
++{
++    float reciprocal = MotionReciprocal(value_60);
++    float acceleration_x = static_cast<long double>(reciprocal) * motion_64[4];
++    float acceleration_y = static_cast<long double>(motion_64[5]) * reciprocal;
++    motion_64[2] = static_cast<long double>(acceleration_x) + motion_64[2];
++    motion_64[3] = static_cast<long double>(acceleration_y) + motion_64[3];
++    long double x = motion_64[2];
++    long double y = motion_64[3];
++    float length = MotionSquareRoot(static_cast<float>(y * y + x * x));
++    if (!(length > 0.0f))
++        return;
++    if (!(speed_80 >= length))
++    {
++        float ratio = static_cast<long double>(length) / speed_80;
++        motion_64[3] = static_cast<long double>(motion_64[3]) / ratio;
++        motion_64[2] = static_cast<long double>(motion_64[2]) / ratio;
++    }
++    float step_x = static_cast<long double>(step) * motion_64[2];
++    float step_y = static_cast<long double>(step) * motion_64[3];
++    SetMotionPosition({ static_cast<float>(static_cast<long double>(step_x) + motion_64[0]),
++        static_cast<float>(static_cast<long double>(step_y) + motion_64[1]) });
++}
+diff --git a/src/startup_world_route_cells.cpp b/src/startup_world_route_cells.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5dd613d6f777973d22ead0c0b369d345036fb215
+--- /dev/null
++++ b/src/startup_world_route_cells.cpp
+@@ -0,0 +1,43 @@
++#include "startup_world_subsystems.h"
++
++static unsigned int RouteCellFlags(ScreenTerrainGrid* terrain, const ScreenPoint* point)
++{
++    unsigned int y = static_cast<unsigned int>(point->y) % terrain->height_08;
++    unsigned int x = static_cast<unsigned int>(point->x) % terrain->width_04;
++    return terrain->cells_0c[y * terrain->width_04 + x].flags_48;
++}
++
++// FUNCTION: BEACHLIFE 0x00431650
++bool WorldRouteFinder::CanUseVehicleCell(const ScreenPoint* point)
++{
++    unsigned int flags = RouteCellFlags(terrain_00, point);
++    return (flags & 0x60000004u) && !(flags & 0x10);
++}
++
++// FUNCTION: BEACHLIFE 0x004316a0
++bool WorldRouteFinder::CanUsePathCell(const ScreenPoint* point)
++{
++    return (RouteCellFlags(terrain_00, point) & 0xc0000000u) != 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004316f0
++bool WorldRouteFinder::CanUseGroundCell(const ScreenPoint* point)
++{
++    unsigned int flags = RouteCellFlags(terrain_00, point);
++    return ((flags & 0x10000000u) && !(flags & 0x8000))
++        || ((flags & 2) && !(flags & 0x8010))
++        || ((flags & 0x80) && !(flags & 0x8000));
++}
++
++// FUNCTION: BEACHLIFE 0x00431760
++bool WorldRouteFinder::CanUseLandCell(const ScreenPoint* point)
++{
++    unsigned int flags = RouteCellFlags(terrain_00, point);
++    return (flags & 0x80000080u) && !(flags & 0x8000);
++}
++
++// FUNCTION: BEACHLIFE 0x004317c0
++bool WorldRouteFinder::CanUseWaterCell(const ScreenPoint* point)
++{
++    return (RouteCellFlags(terrain_00, point) & 0x80008080u) != 0;
++}
+diff --git a/src/startup_world_route_data_state.cpp b/src/startup_world_route_data_state.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..26eb8854e7dafc7ccef8ce371259eda867e790b3
+--- /dev/null
++++ b/src/startup_world_route_data_state.cpp
+@@ -0,0 +1,47 @@
++#include "startup_world_subsystems.h"
++#include "startup_game_file.h"
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004303f0
++void WorldRouteData::SaveState(GameFileReader* file)
++{
++    unsigned int time;
++    std::memcpy(&time, &time_00, sizeof(time));
++    file->Unknown30("m_fTimeStamp", time);
++    file->Unknown24("m_iRefCount", references_04);
++    file->Unknown24("m_iNumSteps", count_08);
++    for (int i = 0; i < static_cast<int>(count_08); ++i)
++    {
++        file->Unknown24("m_pDirections.x", points_0c[i].x);
++        file->Unknown24("m_pDirections.y", points_0c[i].y);
++    }
++    file->Unknown24("m_Start.x", start_10.x);
++    file->Unknown24("m_Start.y", start_10.y);
++    file->Unknown24("m_Stop.x", destination_18.x);
++    file->Unknown24("m_Stop.y", destination_18.y);
++    file->Unknown24("m_ePathType", kind_20);
++    file->Unknown34("m_bValid", flag_24);
++}
++
++// FUNCTION: BEACHLIFE 0x004304d0
++void WorldRouteData::LoadState(GameFileReader* file)
++{
++    file->ReadFloat(&time_00);
++    file->Unknown68(&references_04);
++    file->Unknown68(&count_08);
++    points_0c = static_cast<ScreenPoint*>(::operator new(count_08 * sizeof(ScreenPoint), std::nothrow));
++    for (int i = 0; i < static_cast<int>(count_08); ++i)
++    {
++        file->Unknown68(reinterpret_cast<unsigned int*>(&points_0c[i].x));
++        file->Unknown68(reinterpret_cast<unsigned int*>(&points_0c[i].y));
++    }
++    file->Unknown68(reinterpret_cast<unsigned int*>(&start_10.x));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&start_10.y));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&destination_18.x));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&destination_18.y));
++    unsigned int kind;
++    file->Unknown68(&kind);
++    kind_20 = kind;
++    file->ReadByte(&flag_24);
++}
+diff --git a/src/startup_world_route_finder.cpp b/src/startup_world_route_finder.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..40f91f16f18fe06e97cf0e19e50f5058cd7ad2ab
+--- /dev/null
++++ b/src/startup_world_route_finder.cpp
+@@ -0,0 +1,91 @@
++#include "startup_world_subsystems.h"
++#include <new>
++
++static unsigned int CopyFoundRoute(WorldRouteFinder* finder, ScreenPoint** points, bool include_endpoints)
++{
++    ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(finder->data_88);
++    unsigned int count = 0;
++    while (cell && cell->visited_generation_08 == finder->generation_08)
++    {
++        cell = cell->parent_00;
++        ++count;
++    }
++    if (!include_endpoints)
++        count -= 2;
++    if (include_endpoints || count)
++        *points = static_cast<ScreenPoint*>(::operator new(count * sizeof(ScreenPoint), std::nothrow));
++    cell = static_cast<ScreenTerrainCell*>(finder->data_88);
++    if (!include_endpoints)
++        cell = cell->parent_00;
++    unsigned int index = 0;
++    while ((include_endpoints ? cell != 0 : cell->parent_00 != 0)
++           && cell->visited_generation_08 == finder->generation_08)
++    {
++        (*points)[index].x = cell->x_40;
++        (*points)[index].y = cell->y_44;
++        cell = cell->parent_00;
++        ++index;
++    }
++    finder->Clear();
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004309e0
++unsigned int WorldRouteFinder::FindLandRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut)
++{
++    flags_04[0] = shortcut;
++    flags_04[2] = 0;
++    start_0c = { x1, y1 };
++    ++generation_08;
++    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
++    { return finder->CanUseLandCell(point); };
++    ScreenPoint start = { x1, y1 };
++    ScreenPoint end = { x2, y2 };
++    bool start_allowed = CanUseLandCell(&start);
++    bool end_allowed = callback_90(this, &end);
++    if (!start_allowed || !end_allowed || (x1 == x2 && y1 == y2) || !SearchRoute(x1, y1, x2, y2))
++        return 0;
++    return CopyFoundRoute(this, points, false);
++}
++
++// FUNCTION: BEACHLIFE 0x00430b00
++unsigned int WorldRouteFinder::FindWaterRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut)
++{
++    flags_04[0] = shortcut;
++    flags_04[2] = 0;
++    start_0c = { x1, y1 };
++    ++generation_08;
++    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
++    { return finder->CanUseWaterCell(point); };
++    ScreenPoint start = { x1, y1 };
++    ScreenPoint end = { x2, y2 };
++    bool start_allowed = CanUseWaterCell(&start);
++    bool end_allowed = callback_90(this, &end);
++    if (!start_allowed || !end_allowed || (x1 == x2 && y1 == y2) || !SearchRoute(x1, y1, x2, y2))
++        return 0;
++    return CopyFoundRoute(this, points, false);
++}
++
++// FUNCTION: BEACHLIFE 0x00430c20
++unsigned int WorldRouteFinder::FindVehicleRoute(int x1, int y1, int x2, int y2, ScreenPoint** points)
++{
++    flags_04[1] = 1;
++    flags_04[0] = 0;
++    flags_04[2] = 0;
++    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
++    { return finder->CanUseVehicleCell(point); };
++    start_0c = { x1, y1 };
++    ++generation_08;
++    ScreenPoint start = { x1, y1 };
++    ScreenPoint end = { x2, y2 };
++    bool start_allowed = callback_90(this, &start);
++    bool end_allowed = callback_90(this, &end);
++    if (!start_allowed || !end_allowed || (x1 == x2 && y1 == y2) || !SearchRoute(x1, y1, x2, y2))
++    {
++        flags_04[1] = 0;
++        return 0;
++    }
++    unsigned int count = CopyFoundRoute(this, points, true);
++    flags_04[1] = 0;
++    return count;
++}
+diff --git a/src/startup_world_route_requests.cpp b/src/startup_world_route_requests.cpp
+index bb1546eeaf0040622a1c331251b9c314b9498aec..7fcae39361e2a2940939e2551f2a91e914bd2471 100644
+--- a/src/startup_world_route_requests.cpp
++++ b/src/startup_world_route_requests.cpp
+@@ -69,6 +69,17 @@ void* WorldSubsystem18::FindVehicleRoute(int x1, int y1, int x2, int y2, unsigne
+     return 0;
+ }
+ 
++// FUNCTION: BEACHLIFE 0x00431c90
++void* WorldSubsystem18::FindPathRoute(int x1, int y1, int x2, int y2, unsigned char* success)
++{
++    ScreenPoint* points = 0;
++    unsigned int count = route_finder_00->FindGroundRoute(x1, y1, x2, y2, &points);
++    if (count && points)
++        return MakeRouteReference(points, count, x1, y1, x2, y2, 0);
++    *success = 0;
++    return 0;
++}
++
+ // FUNCTION: BEACHLIFE 0x00431d90
+ bool WorldSubsystem18::CanUseRouteCell(int x, int y, unsigned int kind)
+ {
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 9dabb8afe220ca22982958aa506247ed06d8e271..2e58bb984079788bb0c57996f4537b39a688e6d8 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -18,6 +18,8 @@ struct WorldRouteFinder
+     unsigned int FindLandRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut);  // 0x004309e0.
+     unsigned int FindWaterRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut); // 0x00430b00.
+     unsigned int FindVehicleRoute(int x1, int y1, int x2, int y2, ScreenPoint** points);                       // 0x00430c20.
++    unsigned int FindGroundRoute(int x1, int y1, int x2, int y2, ScreenPoint** points);                        // 0x00430d50.
++    bool SearchRoute(int x1, int y1, int x2, int y2);                                                          // 0x00430f00.
+     bool CanUseVehicleCell(const ScreenPoint* point);                                                          // 0x00431650.
+     bool CanUsePathCell(const ScreenPoint* point);                                                             // 0x004316a0.
+     bool CanUseGroundCell(const ScreenPoint* point);                                                           // 0x004316f0.
+@@ -33,7 +35,8 @@ struct WorldRouteFinder
+     unsigned char flags_04[3];
+     unsigned char unknown_07;
+     unsigned int generation_08;
+-    unsigned char unknown_0c[0x28];
++    ScreenPoint start_0c;
++    unsigned char unknown_14[0x20];
+     ScreenTerrainCell cell_34;
+     void* data_88;
+     AllocationNode* data_8c;
+diff --git a/src/startup_world_vehicle_turn_animation.cpp b/src/startup_world_vehicle_turn_animation.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7c0c31eed895cc51d176cd96b7ddf95f46e6096
+--- /dev/null
++++ b/src/startup_world_vehicle_turn_animation.cpp
+@@ -0,0 +1,198 @@
++#include "startup_world_vehicle_helpers.h"
++
++// GLOBAL: BEACHLIFE 0x0057c2dc
++const char* vehicle_animation_57c2dc = "d_jetski_turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c2e0
++const char* vehicle_animation_57c2e0 = "d_jetski_turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c308
++const char* vehicle_animation_57c308 = "d_wake_turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c30c
++const char* vehicle_animation_57c30c = "d_wake_turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c334
++const char* vehicle_animation_57c334 = "boat_turn_left";
++
++// GLOBAL: BEACHLIFE 0x0057c338
++const char* vehicle_animation_57c338 = "boat_turn_right";
++
++// GLOBAL: BEACHLIFE 0x0057c374
++const char* vehicle_animation_57c374 = "turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c378
++const char* vehicle_animation_57c378 = "turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c38c
++const char* vehicle_animation_57c38c = "boat_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c390
++const char* vehicle_animation_57c390 = "boat_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c39c
++const char* vehicle_animation_57c39c = "fish_driver_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3ac
++const char* vehicle_animation_57c3ac = "rod01_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3b0
++const char* vehicle_animation_57c3b0 = "rod01_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3c8
++const char* vehicle_animation_57c3c8 = "rod02_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3cc
++const char* vehicle_animation_57c3cc = "rod02_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3e0
++const char* vehicle_animation_57c3e0 = "d_jetski_turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c3e4
++const char* vehicle_animation_57c3e4 = "d_jetski_turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c3f8
++const char* vehicle_animation_57c3f8 = "boat_driver_turn_left";
++
++// GLOBAL: BEACHLIFE 0x0057c3fc
++const char* vehicle_animation_57c3fc = "boat_driver_turn_right";
++
++// GLOBAL: BEACHLIFE 0x0057c408
++const char* vehicle_animation_57c408 = "boat_pass_turn_left";
++
++// GLOBAL: BEACHLIFE 0x0057c40c
++const char* vehicle_animation_57c40c = "boat_pass_turn_right";
++
++// GLOBAL: BEACHLIFE 0x0057c418
++const char* vehicle_animation_57c418 = "d_ped_turn_l_pass";
++
++// GLOBAL: BEACHLIFE 0x0057c41c
++const char* vehicle_animation_57c41c = "d_ped_turn_r_pass";
++
++// GLOBAL: BEACHLIFE 0x0057c42c
++const char* vehicle_animation_57c42c = "d_ped_turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c430
++const char* vehicle_animation_57c430 = "d_ped_turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c454
++const char* vehicle_animation_57c454 = "fish_man1_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c458
++const char* vehicle_animation_57c458 = "fish_man2_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c45c
++const char* vehicle_animation_57c45c = "fish_man1_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c460
++const char* vehicle_animation_57c460 = "fish_man2_turn";
++
++// FUNCTION: BEACHLIFE 0x00495be0
++void WorldVehicleEntity::StartTurnAnimation()
++{
++    const char* animation;
++    const char* first;
++    const char* second;
++    ScreenWorldPosition position = Position();
++    if (flag_901)
++    {
++        switch (vehicle_type_f8)
++        {
++        case 0:
++            animation = vehicle_animation_57c2e0;
++            first = vehicle_animation_57c3e4;
++            if (vehicle_animation_57c308)
++                resource_fc->SetAnimation(vehicle_animation_57c308, MotionFloat(words_904[1]), &position);
++            break;
++        case 1:
++            animation = vehicle_animation_57c338;
++            first = vehicle_animation_57c3fc;
++            second = vehicle_animation_57c40c;
++            break;
++        case 4:
++            animation = vehicle_animation_57c378;
++            first = vehicle_animation_57c41c;
++            second = vehicle_animation_57c430;
++            break;
++        case 6:
++        {
++            animation = vehicle_animation_57c390;
++            first = vehicle_animation_57c45c;
++            second = vehicle_animation_57c460;
++            const char* rod1 = vehicle_animation_57c3b0;
++            const char* rod2 = vehicle_animation_57c3cc;
++            const char* driver = vehicle_animation_57c39c;
++            if (rod1)
++                resource_100->SetAnimation(rod1, MotionFloat(words_904[1]), &position);
++            if (rod2)
++                resource_104->SetAnimation(rod2, MotionFloat(words_904[1]), &position);
++            if (driver)
++                resource_108->SetAnimation(driver, MotionFloat(words_904[1]), &position);
++            break;
++        }
++        }
++    }
++    else
++    {
++        switch (vehicle_type_f8)
++        {
++        case 0:
++            animation = vehicle_animation_57c2dc;
++            first = vehicle_animation_57c3e0;
++            if (vehicle_animation_57c30c)
++                resource_fc->SetAnimation(vehicle_animation_57c30c, MotionFloat(words_904[1]), &position);
++            break;
++        case 1:
++            animation = vehicle_animation_57c334;
++            first = vehicle_animation_57c3f8;
++            second = vehicle_animation_57c408;
++            break;
++        case 4:
++            animation = vehicle_animation_57c374;
++            first = vehicle_animation_57c418;
++            second = vehicle_animation_57c42c;
++            break;
++        case 6:
++        {
++            animation = vehicle_animation_57c38c;
++            first = vehicle_animation_57c454;
++            second = vehicle_animation_57c458;
++            const char* rod1 = vehicle_animation_57c3ac;
++            const char* rod2 = vehicle_animation_57c3c8;
++            const char* driver = vehicle_animation_57c39c;
++            if (rod1)
++                resource_100->SetAnimation(rod1, MotionFloat(words_904[1]), &position);
++            if (rod2)
++                resource_104->SetAnimation(rod2, MotionFloat(words_904[1]), &position);
++            if (driver)
++                resource_108->SetAnimation(driver, MotionFloat(words_904[1]), &position);
++            break;
++        }
++        }
++    }
++    words_904[1] = MotionWord(window_deactivation_state->clock_158);
++    words_904[2] = MotionWord(keyline_state_44->SetAnimation(animation, MotionFloat(words_904[1]), &position));
++    keyline_state_44->word_08 = 2;
++    if (vehicle_type_f8 == 6 && flag_901)
++    {
++        keyline_state_44->word_08 = 1;
++        resource_100->word_08 = 1;
++        resource_104->word_08 = 1;
++        resource_108->word_08 = 1;
++    }
++    if (passenger_count_5bc)
++    {
++        WorldMovingEntity* passenger = variable_world->FindObject(passengers_10c[0])->AsMoving();
++        passenger->SetMovementPosition(position);
++        passenger->keyline_state_44->SetAnimation(first, MotionFloat(words_904[1]), &position);
++        passenger->keyline_state_44->word_08 = vehicle_type_f8 == 6 && flag_901 ? 1 : 2;
++        if (passenger_count_5bc > 1)
++        {
++            passenger = variable_world->FindObject(passengers_10c[1])->AsMoving();
++            passenger->SetMovementPosition(position);
++            passenger->keyline_state_44->SetAnimation(second, MotionFloat(words_904[1]), &position);
++            passenger->keyline_state_44->word_08 = vehicle_type_f8 == 6 && flag_901 ? 1 : 2;
++        }
++    }
++    --words_904[0];
++}
