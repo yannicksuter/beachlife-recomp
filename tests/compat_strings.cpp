@@ -97,6 +97,10 @@ int main()
                   CP_ACP, 0, wide.data(), 3, bytes.data(), bytes.size(), nullptr, nullptr) == 3 &&
               std::memcmp(bytes.data(), ansi, 3) == 0,
         "the ANSI code page is the Western releases' Windows-1252");
+    beachlife_crt_srand(1);
+    const int random_values[] = {beachlife_crt_rand(), beachlife_crt_rand(), beachlife_crt_rand()};
+    check(random_values[0] == 41 && random_values[1] == 18467 && random_values[2] == 6334,
+        "rand follows the MSVCRT sequence");
     const WCHAR unmappable[] = {0x4e00, 0};
     BOOL replaced = FALSE;
     check(WideCharToMultiByte(CP_WINDOWS_1252,

@@ -195,6 +195,8 @@ constexpr std::pair<const char*, const char*> route_presets[] = {
     // scenario, then close its Objectives dialog.
     {"scenario1",
         "425,335>mainmenu.ble;425,335>scenarioscreen.tga;694,556>scenario1.pis;608,402+300"},
+    // Main menu "sandbox", then "play" on the first sandbox island.
+    {"sandbox1", "425,335>mainmenu.ble;416,384>scenarioscreen.tga;694,556>sandscenario1.pis"},
 };
 
 GamePumpState::Route scripted_route()

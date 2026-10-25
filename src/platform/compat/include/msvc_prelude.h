@@ -18,6 +18,8 @@
 #define fseek beachlife_crt_fseek
 #define ftell beachlife_crt_ftell
 #define fgetpos beachlife_crt_fgetpos
+#define rand beachlife_crt_rand
+#define srand beachlife_crt_srand
 
 #define wcslen beachlife_msvc_wcslen
 #define wcscpy beachlife_msvc_wcscpy
