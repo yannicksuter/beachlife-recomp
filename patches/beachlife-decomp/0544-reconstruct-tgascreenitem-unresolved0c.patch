@@ -1,0 +1,533 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 0120fc4..f2093ea 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -970,7 +970,7 @@ typedef char GlyphDirectFontState14[(offsetof(ScreenFontRenderer, state_14) == 0
+ typedef char GlyphDirectFontData[(offsetof(ScreenFontRenderer, data_1c) == 0x1c) ? 1 : -1];
+ typedef char GlyphDirectFontLookup[(offsetof(ScreenFontRenderer, lookup_20) == 0x20) ? 1 : -1];
+ typedef char GlyphDirectFontSize[(sizeof(ScreenFontRenderer) == 0x24) ? 1 : -1];
+-typedef char GlyphDirectRendererOpaque0c[(offsetof(ScreenRequestRenderer, unknown_0c) == 0x0c) ? 1 : -1];
++typedef char GlyphDirectRendererOpaque0c[(offsetof(ScreenRequestRenderer, clip_rectangle) == 0x0c) ? 1 : -1];
+ typedef char GlyphDirectRendererFormat44[(offsetof(ScreenRequestRenderer, format_44) == 0x44) ? 1 : -1];
+ typedef char GlyphDirectRendererOpaque48[(offsetof(ScreenRequestRenderer, unknown_48) == 0x48) ? 1 : -1];
+ typedef char GlyphDirectRendererOpaque5e[(offsetof(ScreenRequestRenderer, unknown_5e) == 0x5e) ? 1 : -1];
+@@ -1363,7 +1363,7 @@ typedef char SelectSurfaceMode[(offsetof(ScreenRequestRenderer, software_mode) =
+ typedef char SelectSurfaceOpaque01[(offsetof(ScreenRequestRenderer, unknown_01) == 1) ? 1 : -1];
+ typedef char SelectSurfaceWidth[(offsetof(ScreenRequestRenderer, width) == 4) ? 1 : -1];
+ typedef char SelectSurfaceHeight[(offsetof(ScreenRequestRenderer, height) == 8) ? 1 : -1];
+-typedef char SelectSurfaceOpaque0c[(offsetof(ScreenRequestRenderer, unknown_0c) == 0x0c) ? 1 : -1];
++typedef char SelectSurfaceOpaque0c[(offsetof(ScreenRequestRenderer, clip_rectangle) == 0x0c) ? 1 : -1];
+ typedef char SelectSurfaceFormat[(offsetof(ScreenRequestRenderer, format_44) == 0x44) ? 1 : -1];
+ typedef char SelectSurfaceOpaque48[(offsetof(ScreenRequestRenderer, unknown_48) == 0x48) ? 1 : -1];
+ typedef char SelectSurfaceOpaque5e[(offsetof(ScreenRequestRenderer, unknown_5e) == 0x5e) ? 1 : -1];
+@@ -1809,7 +1809,7 @@ typedef char ClipModeIntWidth[(sizeof(int) == 4) ? 1 : -1];
+ typedef char ClipModeRendererSize[(sizeof(ScreenRequestRenderer) == 0x138) ? 1 : -1];
+ typedef char ClipModeOpaque48[(offsetof(ScreenRequestRenderer, unknown_48) == 0x48) ? 1 : -1];
+ typedef char ClipModeSuppression[(offsetof(ScreenRequestRenderer, rectangle_suppressed_4d) == 0x4d) ? 1 : -1];
+-typedef char ClipModeOpaque4e[(offsetof(ScreenRequestRenderer, unknown_4e) == 0x4e) ? 1 : -1];
++typedef char ClipModeOpaque4e[(offsetof(ScreenRequestRenderer, rectangle_enabled_4e) == 0x4e) ? 1 : -1];
+ typedef char ClipModeWord50[(offsetof(ScreenRequestRenderer, word_50) == 0x50) ? 1 : -1];
+ typedef char ClipModeWord54[(offsetof(ScreenRequestRenderer, clip_mode_54) == 0x54) ? 1 : -1];
+ typedef char ClipModeWord58[(offsetof(ScreenRequestRenderer, word_58) == 0x58) ? 1 : -1];
+@@ -3208,3 +3208,14 @@ extern "C" __declspec(dllexport) void FixtureMatch4_41(ScreenRadioGroup* receive
+ {
+     receiver->ScreenRadioGroup::Unresolved0c();
+ }
++
++#include "startup_tga_screen_item.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_42(TgaScreenItem* receiver)
++{
++    receiver->TgaScreenItem::Unresolved0c();
++}
++
++typedef char TgaRendererPixels[(offsetof(ScreenRequestRenderer, pixels_1c) == 0x1c) ? 1 : -1];
++typedef char TgaRendererReady[(offsetof(ScreenRequestRenderer, rectangle_ready_4f) == 0x4f) ? 1 : -1];
++typedef char TgaRendererClipFlag[(offsetof(ScreenRequestRenderer, clip_flag_5d) == 0x5d) ? 1 : -1];
+diff --git a/metadata.csv b/metadata.csv
+index 4beb3b7..dac9aab 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -367,3 +367,5 @@ address,type,size,symbol
+ 0x004c0920,function,199,?HandleTabCoordinates@ScreenTabItem@@QAE_NHHHE@Z
+ 0x004c0c70,function,69,??0ScreenLinearContainer@@QAE@UScreenRectangle@@H@Z
+ 0x004c70f0,function,69,?Unresolved0c@ScreenRadioGroup@@UAEXXZ
++0x0040cd70,function,3141,?AccumulateRectangle@ScreenRequestRenderer@@QAEXUScreenRectangle@@@Z
++0x004c8710,function,69,?Unresolved0c@TgaScreenItem@@UAEXXZ
+diff --git a/src/indexed_palette_blit.cpp b/src/indexed_palette_blit.cpp
+new file mode 100644
+index 0000000..782bf42
+--- /dev/null
++++ b/src/indexed_palette_blit.cpp
+@@ -0,0 +1,25 @@
++#include "indexed_palette_blit.h"
++
++// FUNCTION: BEACHLIFE 0x00401110
++void IndexedPaletteBlit(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette)
++{
++    int source_offset = (source_y + height - 1) * source_stride + source_x;
++    int destination_offset = ((destination_y + height - 1) * destination_stride + destination_x) * 2;
++
++    for (; height != 0; --height)
++    {
++        int remaining = width;
++        while (remaining != 0)
++        {
++            destination[destination_offset] = palette[source[source_offset]];
++            destination_offset += 2;
++            ++source_offset;
++            --remaining;
++        }
++        destination_offset -= (destination_stride + width) * 2;
++        source_offset -= source_stride + width;
++    }
++}
+diff --git a/src/indexed_palette_blit.h b/src/indexed_palette_blit.h
+new file mode 100644
+index 0000000..85bded9
+--- /dev/null
++++ b/src/indexed_palette_blit.h
+@@ -0,0 +1,30 @@
++#pragma once
++
++// Descriptive declaration; the original symbol and pointer typedefs are unknown.
++// source_stride is bytes. destination_stride is four-byte slots, not halfwords.
++// Each slot receives only its first halfword; its second halfword is preserved.
++void IndexedPaletteBlit(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette);
++
++// Actual target 0x00401190; body remains a separate reconstruction dependency.
++// Same four-byte destination slots; a zero source index leaves the slot untouched.
++void IndexedPaletteBlitTransparent(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette);
++
++// Actual target 0x00401220; body remains a separate reconstruction dependency.
++// destination_pitch is bytes, each output is one halfword, and destination_y is ignored.
++void IndexedPaletteBlitPacked(const unsigned char* source, int source_stride,
++    unsigned short* destination, unsigned int destination_pitch,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette);
++
++// Actual target 0x004012b0; body remains a separate reconstruction dependency.
++// Four-byte destination slots, zero index skipped, selected palette word AND mask.
++void IndexedPaletteBlitMasked(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette, unsigned int mask);
+diff --git a/src/indexed_palette_blit_masked.cpp b/src/indexed_palette_blit_masked.cpp
+new file mode 100644
+index 0000000..711f2ef
+--- /dev/null
++++ b/src/indexed_palette_blit_masked.cpp
+@@ -0,0 +1,29 @@
++#include "indexed_palette_blit.h"
++
++// FUNCTION: BEACHLIFE 0x004012b0
++void IndexedPaletteBlitMasked(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette, unsigned int mask)
++{
++    int source_offset = (source_y + height - 1) * source_stride + source_x;
++    int destination_offset = ((destination_y + height - 1) * destination_stride + destination_x) * 2;
++
++    for (; height != 0; --height)
++    {
++        int remaining = width;
++        while (remaining != 0)
++        {
++            unsigned char index = source[source_offset];
++            if (index != 0)
++            {
++                destination[destination_offset] = static_cast<unsigned short>(palette[index] & mask);
++            }
++            destination_offset += 2;
++            ++source_offset;
++            --remaining;
++        }
++        destination_offset -= (destination_stride + width) * 2;
++        source_offset -= source_stride + width;
++    }
++}
+diff --git a/src/indexed_palette_blit_packed.cpp b/src/indexed_palette_blit_packed.cpp
+new file mode 100644
+index 0000000..0f13e14
+--- /dev/null
++++ b/src/indexed_palette_blit_packed.cpp
+@@ -0,0 +1,30 @@
++#include "indexed_palette_blit.h"
++
++// FUNCTION: BEACHLIFE 0x00401220
++void IndexedPaletteBlitPacked(const unsigned char* source, int source_stride,
++    unsigned short* destination, unsigned int destination_pitch,
++    int source_x, int source_y, int destination_x, int /* destination_y */,
++    int width, int height, const unsigned short* palette)
++{
++    int source_offset = (source_y + height - 1) * source_stride + source_x;
++    int destination_stride = static_cast<int>(destination_pitch >> 1);
++    int destination_offset = (height - 1) * destination_stride + destination_x;
++
++    for (; height != 0; --height)
++    {
++        int remaining = width;
++        while (remaining != 0)
++        {
++            unsigned char index = source[source_offset];
++            if (index != 0)
++            {
++                destination[destination_offset] = palette[index];
++            }
++            ++destination_offset;
++            ++source_offset;
++            --remaining;
++        }
++        destination_offset -= destination_stride + width;
++        source_offset -= source_stride + width;
++    }
++}
+diff --git a/src/indexed_palette_blit_transparent.cpp b/src/indexed_palette_blit_transparent.cpp
+new file mode 100644
+index 0000000..931e023
+--- /dev/null
++++ b/src/indexed_palette_blit_transparent.cpp
+@@ -0,0 +1,29 @@
++#include "indexed_palette_blit.h"
++
++// FUNCTION: BEACHLIFE 0x00401190
++void IndexedPaletteBlitTransparent(const unsigned char* source, int source_stride,
++    unsigned short* destination, int destination_stride,
++    int source_x, int source_y, int destination_x, int destination_y,
++    int width, int height, const unsigned short* palette)
++{
++    int source_offset = (source_y + height - 1) * source_stride + source_x;
++    int destination_offset = ((destination_y + height - 1) * destination_stride + destination_x) * 2;
++
++    for (; height != 0; --height)
++    {
++        int remaining = width;
++        while (remaining != 0)
++        {
++            unsigned char index = source[source_offset];
++            if (index != 0)
++            {
++                destination[destination_offset] = palette[index];
++            }
++            destination_offset += 2;
++            ++source_offset;
++            --remaining;
++        }
++        destination_offset -= (destination_stride + width) * 2;
++        source_offset -= source_stride + width;
++    }
++}
+diff --git a/src/startup_renderer_clip.cpp b/src/startup_renderer_clip.cpp
+new file mode 100644
+index 0000000..5c47df0
+--- /dev/null
++++ b/src/startup_renderer_clip.cpp
+@@ -0,0 +1,75 @@
++#include "startup_screen_renderer.h"
++#include "startup_screen_item.h"
++
++// FUNCTION: BEACHLIFE 0x0040cb10
++bool ScreenRequestRenderer::ClipRectangle(int& destination_x, int& destination_y,
++    int& source_left, int& source_top, int& source_right, int& source_bottom)
++{
++    int clip_left = clip_rectangle.x;
++    int clip_top = clip_rectangle.y;
++    int clip_right;
++    int clip_bottom;
++
++    // The source-level default is unresolved. The proposed defined domain uses
++    // modes 0/1/2, or an active unscaled flag; no fallback is invented here.
++    if ((unscaled_clip_5c != 0 && clip_flag_5d == 0) || clip_mode_54 == 1 || unscaled_clip_5c != 0)
++    {
++        clip_right = clip_left + clip_rectangle.width;
++        clip_bottom = clip_top + clip_rectangle.height;
++    }
++    else if (clip_mode_54 == 2)
++    {
++        clip_right = clip_left + clip_rectangle.width * 2;
++        clip_bottom = clip_top + clip_rectangle.height * 2;
++    }
++    else if (clip_mode_54 == 0)
++    {
++        clip_right = clip_left + static_cast<int>(static_cast<unsigned int>(clip_rectangle.width) >> 1);
++        clip_bottom = clip_top + static_cast<int>(static_cast<unsigned int>(clip_rectangle.height) >> 1);
++    }
++
++    if (destination_x > clip_right)
++    {
++        return false;
++    }
++    if (destination_y > clip_bottom)
++    {
++        return false;
++    }
++    if (source_right - source_left + destination_x < clip_left)
++    {
++        return false;
++    }
++    if (destination_y - source_top + source_bottom < clip_top)
++    {
++        return false;
++    }
++
++    if (destination_x < clip_left)
++    {
++        int amount = clip_left - destination_x;
++        destination_x += amount;
++        source_left += amount;
++    }
++    if (source_right - source_left + destination_x > clip_right)
++    {
++        source_right = source_left - destination_x + clip_right;
++    }
++    if (destination_y < clip_top)
++    {
++        int amount = clip_top - destination_y;
++        destination_y += amount;
++        source_top += amount;
++    }
++    if (destination_y - source_top + source_bottom > clip_bottom)
++    {
++        source_bottom = source_top - destination_y + clip_bottom;
++    }
++
++    if (rectangle_enabled_4e != 0 && rectangle_suppressed_4d == 0 && rectangle_ready_4f != 0)
++    {
++        ScreenRectangle bounds = { destination_x, destination_y, source_right - source_left + destination_x, destination_y - source_top + source_bottom };
++        AccumulateRectangle(bounds);
++    }
++    return true;
++}
+diff --git a/src/startup_renderer_tga_draw.cpp b/src/startup_renderer_tga_draw.cpp
+new file mode 100644
+index 0000000..76fafb6
+--- /dev/null
++++ b/src/startup_renderer_tga_draw.cpp
+@@ -0,0 +1,76 @@
++#include "startup_screen_renderer.h"
++#include "startup_screen_item.h"
++#include "indexed_palette_blit.h"
++#include "tga_image.h"
++
++// FUNCTION: BEACHLIFE 0x0040c550
++void ScreenRequestRenderer::DrawTga(const ScreenPoint& destination, const ScreenRectangle& bounds,
++    TgaImage* image, int mode, unsigned int flags, unsigned int extra)
++{
++    int destination_x = destination.x;
++    int destination_y = destination.y;
++    int source_left = bounds.left;
++    int source_top = bounds.top;
++    int source_right = bounds.right;
++    int source_bottom = bounds.bottom;
++
++    if (source_right == 0 || source_bottom == 0)
++    {
++        source_right = image->width + source_left;
++        source_bottom = image->height + source_top;
++    }
++
++    if (!ClipRectangle(destination_x, destination_y, source_left, source_top, source_right, source_bottom))
++    {
++        return;
++    }
++
++    int destination_stride = static_cast<int>(width);
++    const unsigned char* source = image->pixels;
++    int source_stride = image->width;
++    const unsigned short* palette = image->converted_palette;
++    unsigned short* destination_pixels = pixels_1c;
++
++    switch (mode)
++    {
++    case 0:
++        if (flags & 1)
++        {
++            int draw_height = source_bottom - source_top;
++            if (static_cast<unsigned int>(destination_y + draw_height) >= height)
++            {
++                return;
++            }
++            IndexedPaletteBlitTransparent(source, source_stride, destination_pixels, destination_stride, source_left, source_top, destination_x, destination_y, source_right - source_left, draw_height, palette);
++        }
++        else
++        {
++            IndexedPaletteBlit(source, source_stride, destination_pixels, destination_stride, source_left, source_top, destination_x, destination_y, source_right - source_left, source_bottom - source_top, palette);
++        }
++        return;
++
++    case 10:
++        IndexedPaletteBlitMasked(source, source_stride, destination_pixels, destination_stride, source_left, source_top, destination_x, destination_y, source_right - source_left, source_bottom - source_top, palette, extra);
++        return;
++
++    case 11:
++    {
++        unsigned short* locked_pixels = AccessPixels();
++        if (!locked_pixels)
++        {
++            return;
++        }
++        IndexedPaletteBlitPacked(source, source_stride, locked_pixels, surfaces[current_surface]->pitch, source_left, source_top, 0, 0, source_right - source_left, source_bottom - source_top, palette);
++        if (!software_mode)
++        {
++            DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++            surface->vtable->Unlock(surface, 0);
++        }
++        pixels_locked = 0;
++        return;
++    }
++
++    default:
++        return;
++    }
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 6d6a153..42e4a44 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -2,6 +2,11 @@
+ #define STARTUP_SCREEN_RENDERER_H
+ 
+ #include "startup_directdraw_surface.h"
++#include "startup_render_rectangle.h"
++#include "startup_screen_item.h"
++
++struct TgaImage;
++struct ScreenRectangle;
+ 
+ // Observed two-word value and prefixes; original names and declarations unknown.
+ struct ScreenPoint
+@@ -38,16 +43,19 @@ struct ScreenRequestRenderer
+     unsigned char unknown_01[3];
+     unsigned int width;
+     unsigned int height;
+-    unsigned char unknown_0c[0x38];
++    RenderRectangle clip_rectangle;
++    unsigned short* pixels_1c;
++    unsigned char unknown_20[0x24];
+     unsigned int format_44;
+     unsigned char unknown_48[5];
+     unsigned char rectangle_suppressed_4d;
+-    unsigned char unknown_4e[2];
++    unsigned char rectangle_enabled_4e;
++    unsigned char rectangle_ready_4f;
+     unsigned int word_50;
+     int clip_mode_54;
+     unsigned int word_58;
+     unsigned char unscaled_clip_5c;
+-    unsigned char unknown_5d;
++    unsigned char clip_flag_5d;
+     unsigned char unknown_5e[2];
+     unsigned int word_60;
+     unsigned char unknown_64[4];
+@@ -78,6 +86,9 @@ struct ScreenRequestRenderer
+     void RestoreSurface(int surface);
+     void RecreateSurface(int index);
+     void InitializeSurface(int width, int height, ScreenSurfacePosition* entry, unsigned char mode);
++    void DrawTga(const ScreenPoint& destination, const ScreenRectangle& bounds, TgaImage* image, int mode, unsigned int flags, unsigned int extra);
++    bool ClipRectangle(int& destination_x, int& destination_y, int& source_left, int& source_top, int& source_right, int& source_bottom);
++    void AccumulateRectangle(ScreenRectangle bounds);
+ };
+ 
+ // Observed renderer pointer published by its constructor; lifetime is unresolved.
+diff --git a/src/startup_tga_screen_item.h b/src/startup_tga_screen_item.h
+new file mode 100644
+index 0000000..9398834
+--- /dev/null
++++ b/src/startup_tga_screen_item.h
+@@ -0,0 +1,32 @@
++#ifndef STARTUP_TGA_SCREEN_ITEM_H
++#define STARTUP_TGA_SCREEN_ITEM_H
++
++#include "startup_screen_item.h"
++
++struct TgaImage;
++
++// Observed TGA-widget tail over the complete observed 21-slot base.
++// Original class names and any unobserved fields remain unknown.
++// VTABLE: BEACHLIFE 0x004f4c08
++struct TgaScreenItem : ScreenItem
++{
++    TgaScreenItem(ScreenRectangle initial, const char* image_filename);
++
++    // Actual ordinary destructor at 0x004c85c0.
++    // It calls the real activation(false) body before the base destructor.
++    virtual ~TgaScreenItem();
++
++    // Observed draw callback at slot +0x0c; retain the existing base slot name.
++    virtual void Unresolved0c();
++
++    // Observed activation callback at slot +0x24; the base call is required.
++    virtual void Unresolved24(unsigned char enabled);
++
++    TgaImage* image;
++    char filename[32];
++};
++
++// Initialized path pointer observed at 0x005816f8; original name unknown.
++extern const char* tga_screen_path_prefix;
++
++#endif
+diff --git a/src/startup_tga_screen_item_draw.cpp b/src/startup_tga_screen_item_draw.cpp
+new file mode 100644
+index 0000000..61fd9b5
+--- /dev/null
++++ b/src/startup_tga_screen_item_draw.cpp
+@@ -0,0 +1,12 @@
++#include "startup_tga_screen_item.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004c8710
++void TgaScreenItem::Unresolved0c()
++{
++    ScreenPoint destination;
++    ScreenRectangle bounds = { 0, 0, 800, 600 };
++    destination.x = 0;
++    destination.y = 0;
++    screen_request_renderer->DrawTga(destination, bounds, image, 0, 0, 0);
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 585a7dd..6bfdf7a 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1772,6 +1772,12 @@
+       "size": 69,
+       "name": "ScreenRadioGroup::Unresolved0c",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004c8710",
++      "size": 69,
++      "name": "TgaScreenItem::Unresolved0c",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2836,6 +2842,18 @@
+         "int",
+         "unsigned char"
+       ]
++    },
++    {
++      "address": "0x0040cd70",
++      "size": 3141,
++      "name": "ScreenRequestRenderer::AccumulateRectangle",
++      "symbol": "?AccumulateRectangle@ScreenRequestRenderer@@QAEXUScreenRectangle@@@Z",
++      "header": "startup_screen_renderer.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "ScreenRectangle"
++      ]
+     }
+   ]
+ }

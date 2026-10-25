@@ -2229,3 +2229,22 @@ executed.
 | `GameFileReader::Unknown18` | `0x0049e680` | 55 | no (relocations) | 90.20% |
 | `GameFileReader::Unknown0c` | `0x0049e7b0` | 55 | no (relocations) | 90.20% |
 | `GameFileReader::Unknown08` | `0x0049e7f0` | 55 | no (relocations) | 90.20% |
+| `ScreenRequestRenderer::RecreateSurface` | `0x0040e4c0` | 57 | no (relocations) | 98.04% |
+| `ScreenDialog::Unresolved24` | `0x004a5aa0` | 57 | no (relocations) | 94.12% |
+| `ScreenDialog::BeginTransition` | `0x004a5d70` | 57 | no (relocations) | 79.07% |
+| `ScreenDialog::HandleInput38` | `0x004a5ae0` | 58 | yes | 98.31% |
+| `ScreenTablePrefix::Unresolved10` | `0x004b8670` | 58 | no (relocations) | 93.88% |
+| `ScreenTabItem::HandleInput38` | `0x004c08e0` | 58 | yes | 98.31% |
+| `ScreenRadioGroup::HandleTimedCoordinates` | `0x004c7080` | 58 | yes | 98.31% |
+| `ScreenFrameItem::HandleTimedEvent` | `0x004c7790` | 58 | yes | 98.31% |
+| `ScreenTabItem::Unresolved04` | `0x004c0a40` | 59 | no (relocations) | 85.71% |
+| `ControllerState::ControllerState` | `0x0049edf0` | 62 | no (relocations) | 90.57% |
+| `ScreenFrameItem::TestRectangle` | `0x004c76c0` | 62 | no (relocations) | 88.89% |
+| `ScreenManager::PrepareActiveScreens` | `0x004b1260` | 65 | no (relocations) | 94.74% |
+| `ScreenDialogPaletteModifiers::ScreenDialogPaletteModifiers` | `0x00409810` | 66 | no (relocations) | 97.30% |
+| `ScreenScrollBarPrefix::MoveRectangle` | `0x004b5a60` | 66 | no (relocations) | 92.54% |
+| `ScreenTabItem::Unresolved24` | `0x004c09f0` | 66 | no (relocations) | 85.71% |
+| `ScreenScrollBarPrefix::Unresolved1c` | `0x004b5ab0` | 69 | yes | 98.25% |
+| `ScreenLinearContainer::ScreenLinearContainer` | `0x004c0c70` | 69 | no (relocations) | 97.78% |
+| `ScreenRadioGroup::Unresolved0c` | `0x004c70f0` | 69 | no (relocations) | 98.36% |
+| `TgaScreenItem::Unresolved0c` | `0x004c8710` | 69 | no (relocations) | 97.67% |

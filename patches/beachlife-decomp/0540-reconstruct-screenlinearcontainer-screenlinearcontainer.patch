@@ -1,0 +1,361 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 6ca9007..9d4fac1 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3194,3 +3194,10 @@ extern "C" __declspec(dllexport) void FixtureMatch4_39(ScreenScrollBarPrefix* re
+ {
+     receiver->ScreenScrollBarPrefix::Unresolved1c();
+ }
++
++#include "startup_screen_linear_container.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) ScreenLinearContainer* FixtureMatch4_40(void* memory, ScreenRectangle p0, int p1)
++{
++    return new (memory) ScreenLinearContainer(p0, p1);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 2747223..e73cc95 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -364,3 +364,5 @@ address,type,size,symbol
+ 0x004b5a60,function,66,?MoveRectangle@ScreenScrollBarPrefix@@UAEXHH@Z
+ 0x004c09f0,function,66,?Unresolved24@ScreenTabItem@@UAEXE@Z
+ 0x004b5ab0,function,69,?Unresolved1c@ScreenScrollBarPrefix@@UAEXXZ
++0x004c0920,function,199,?HandleTabCoordinates@ScreenTabItem@@QAE_NHHHE@Z
++0x004c0c70,function,69,??0ScreenLinearContainer@@QAE@UScreenRectangle@@H@Z
+diff --git a/src/startup_screen_button_constants.h b/src/startup_screen_button_constants.h
+new file mode 100644
+index 0000000..12e6730
+--- /dev/null
++++ b/src/startup_screen_button_constants.h
+@@ -0,0 +1,15 @@
++#ifndef STARTUP_SCREEN_BUTTON_CONSTANTS_H
++#define STARTUP_SCREEN_BUTTON_CONSTANTS_H
++
++// Actual writable string storage, read by the constructor. These declarations
++// do not provide definitions, infer a larger object extent or replace writers.
++extern char screen_button_no_text_name[];                // 0x004fcf90, initially "None".
++extern char screen_button_variable_prefix[];             // 0x0057e208, initially "BUTVAR_".
++extern char screen_button_state_entry_variable_prefix[]; // 0x0057e1f8, initially "BUTSTATENTVAR_".
++extern char screen_button_state_variable_prefix[];       // 0x0057e1e8, initially "BUTSTATEVAR_".
++
++// Additional actual writable strings read by Button update; definitions remain separate.
++extern char screen_button_state_key_format[]; // 0x0057e21c, initially "%s_STATE".
++extern char screen_button_click_sound[12];    // 0x0057e210, initially "ButtonClick".
++
++#endif
+diff --git a/src/startup_screen_button_globals.cpp b/src/startup_screen_button_globals.cpp
+new file mode 100644
+index 0000000..6848359
+--- /dev/null
++++ b/src/startup_screen_button_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_button_constants.h"
++
++// GLOBAL: BEACHLIFE 0x0057e210
++char screen_button_click_sound[12] = "ButtonClick";
+diff --git a/src/startup_screen_item.h b/src/startup_screen_item.h
+index e1944ea..dab87a0 100644
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -27,13 +27,13 @@ struct ScreenItem
+     virtual void Unresolved1c() = 0;
+     virtual unsigned char Unresolved20();
+     virtual void Unresolved24(unsigned char enabled);
+-    virtual void Unresolved28() = 0;
++    virtual void Unresolved28();
+     virtual void MoveRectangle(int dx, int dy);
+     virtual unsigned char ReadState40();
+     virtual bool TestRectangle(int x, int y);
+     virtual bool HandleInput38(int x, int y, int value);
+     virtual bool HandleTimedCoordinates(int x, int y, int value) = 0;
+-    virtual bool HandleTimedEvent(int x, int y, int value) = 0;
++    virtual bool HandleTimedEvent(int x, int y, int value);
+     virtual unsigned char ReadState41();
+     virtual unsigned char ReadState42();
+     // One ignored argument word at slot 0x4c.
+diff --git a/src/startup_screen_item_defaults.cpp b/src/startup_screen_item_defaults.cpp
+index b0624e1..6d80ed1 100644
+--- a/src/startup_screen_item_defaults.cpp
++++ b/src/startup_screen_item_defaults.cpp
+@@ -17,3 +17,7 @@ void ScreenItem::Unresolved04(float elapsed)
+ {
+     IgnoreScreenWord(elapsed);
+ }
++
++void ScreenItem::Unresolved28()
++{
++}
+diff --git a/src/startup_screen_item_timed_event.cpp b/src/startup_screen_item_timed_event.cpp
+new file mode 100644
+index 0000000..0bb1534
+--- /dev/null
++++ b/src/startup_screen_item_timed_event.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x004f4628
++const float screen_item_event_limit = 7.0f;
++
++// FUNCTION: BEACHLIFE 0x004adc30
++bool ScreenItem::HandleTimedEvent(int, int, int value)
++{
++    if (owned_text && ReadState40())
++    {
++        float threshold = screen_manager->ReadItemThreshold();
++        if ((value == 1 || value == 2) && !(threshold > elapsed_24))
++        {
++            screen_manager->ClearItemReference(this);
++            elapsed_24 = screen_item_event_limit;
++        }
++    }
++    return false;
++}
+diff --git a/src/startup_screen_linear_activation.cpp b/src/startup_screen_linear_activation.cpp
+new file mode 100644
+index 0000000..6321f00
+--- /dev/null
++++ b/src/startup_screen_linear_activation.cpp
+@@ -0,0 +1,30 @@
++#include "startup_screen_child_link.h"
++#include "startup_screen_linear_container.h"
++
++// FUNCTION: BEACHLIFE 0x004c0ef0
++void ScreenLinearContainer::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    ScreenChildLink* child = children;
++    if (enabled)
++    {
++        while (child)
++        {
++            child->item->Unresolved24(0);
++            child = child->next;
++        }
++        ScreenItem* selected = selected_child;
++        if (selected)
++        {
++            selected->Unresolved24(1);
++        }
++    }
++    else
++    {
++        while (child)
++        {
++            child->item->Unresolved24(0);
++            child = child->next;
++        }
++    }
++}
+diff --git a/src/startup_screen_linear_attach.cpp b/src/startup_screen_linear_attach.cpp
+new file mode 100644
+index 0000000..76f032f
+--- /dev/null
++++ b/src/startup_screen_linear_attach.cpp
+@@ -0,0 +1,34 @@
++#include "startup_gui_defined_item.h"
++#include "startup_screen_child_link.h"
++#include "startup_screen_linear_container.h"
++
++// FUNCTION: BEACHLIFE 0x004c1000
++void ScreenLinearContainer::Unresolved10(ScreenItem* item)
++{
++    ScreenItem* value;
++    if (item->kind_28 == 3)
++    {
++        value = static_cast<GuiDefinedItem*>(item)->children.head->next->item;
++    }
++    else
++    {
++        value = item;
++    }
++
++    ScreenChildLink* child = children;
++    if (child)
++    {
++        ScreenChildLink* next = child->next;
++        while (next)
++        {
++            child = next;
++            next = child->next;
++        }
++        child->next = new ScreenChildLink(value);
++    }
++    else
++    {
++        children = new ScreenChildLink(value);
++        selected_child = children->item;
++    }
++}
+diff --git a/src/startup_screen_linear_constructor.cpp b/src/startup_screen_linear_constructor.cpp
+new file mode 100644
+index 0000000..87c89e0
+--- /dev/null
++++ b/src/startup_screen_linear_constructor.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_linear_container.h"
++
++// FUNCTION: BEACHLIFE 0x004c0c70
++ScreenLinearContainer::ScreenLinearContainer(ScreenRectangle initial, int)
++    : ScreenItem(initial)
++    , children(0)
++    , selected_child(0)
++{
++    kind_28 = 8;
++}
+diff --git a/src/startup_screen_linear_coordinates.cpp b/src/startup_screen_linear_coordinates.cpp
+new file mode 100644
+index 0000000..8fb9add
+--- /dev/null
++++ b/src/startup_screen_linear_coordinates.cpp
+@@ -0,0 +1,40 @@
++#include "startup_screen_button_constants.h"
++#include "startup_screen_child_link.h"
++#include "startup_screen_linear_container.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_tab_item.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004c0df0
++bool ScreenLinearContainer::HandleTimedCoordinates(int x, int y, int value)
++{
++    bool handled = false;
++    ScreenTabItem* selected = static_cast<ScreenTabItem*>(selected_child);
++    if (selected != 0)
++    {
++        handled = selected->HandleTabCoordinates(x, y, value, 1);
++    }
++
++    if (!handled)
++    {
++        ScreenChildLink* node = children;
++        while (node != 0 && !handled)
++        {
++            ScreenItem* child = node->item;
++            if (child != selected_child)
++            {
++                handled = static_cast<ScreenTabItem*>(child)->HandleTabCoordinates(x, y, value, 0);
++                if (handled)
++                {
++                    selected_child->Unresolved24(0);
++                    selected_child = child;
++                    child->Unresolved24(1);
++                    screen_manager->PrepareActiveScreens(0);
++                    window_audio_state->PlaySound(screen_button_click_sound, 1, 0.0f);
++                }
++            }
++            node = node->next;
++        }
++    }
++    return handled;
++}
+diff --git a/src/startup_screen_linear_destructor.cpp b/src/startup_screen_linear_destructor.cpp
+new file mode 100644
+index 0000000..89898f0
+--- /dev/null
++++ b/src/startup_screen_linear_destructor.cpp
+@@ -0,0 +1,21 @@
++#include "startup_screen_child_link.h"
++#include "startup_screen_linear_container.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c0ce0
++ScreenLinearContainer::~ScreenLinearContainer()
++{
++    ScreenChildLink* child = children;
++    while (child)
++    {
++        ScreenChildLink* next = child->next;
++        child->item = 0;
++        children = next;
++        if (child)
++        {
++            child->~ScreenChildLink();
++            ::operator delete(child);
++        }
++        child = children;
++    }
++}
+diff --git a/src/startup_screen_linear_word4c.cpp b/src/startup_screen_linear_word4c.cpp
+new file mode 100644
+index 0000000..bebb4a8
+--- /dev/null
++++ b/src/startup_screen_linear_word4c.cpp
+@@ -0,0 +1,24 @@
++#include "startup_screen_child_link.h"
++#include "startup_screen_linear_container.h"
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004c0f50
++void ScreenLinearContainer::Unresolved4c(unsigned int value)
++{
++    ScreenChildLink* child = children;
++    int index = 0;
++    while (child && index < static_cast<int>(value))
++    {
++        child = child->next;
++        ++index;
++    }
++    if (child)
++    {
++        ScreenItem* previous = selected_child;
++        ScreenItem* item = child->item;
++        previous->Unresolved24(0);
++        selected_child = item;
++        item->Unresolved24(1);
++        screen_manager->PrepareActiveScreens(0);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 5adddac..3404208 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1760,6 +1760,12 @@
+       "size": 69,
+       "name": "ScreenScrollBarPrefix::Unresolved1c",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004c0c70",
++      "size": 69,
++      "name": "ScreenLinearContainer::ScreenLinearContainer",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1946,6 +1952,12 @@
+     ],
+     "startup_screen_palette_modifiers_destructor.cpp": [
+       "/Ob1"
++    ],
++    "startup_screen_linear_destructor.cpp": [
++      "/GX"
++    ],
++    "startup_screen_linear_attach.cpp": [
++      "/GX"
+     ]
+   },
+   "stdcall_imports": {
+@@ -2803,6 +2815,21 @@
+       "kind": "void-member",
+       "return_type": "void",
+       "parameters": []
++    },
++    {
++      "address": "0x004c0920",
++      "size": 199,
++      "name": "ScreenTabItem::HandleTabCoordinates",
++      "symbol": "?HandleTabCoordinates@ScreenTabItem@@QAE_NHHHE@Z",
++      "header": "startup_screen_tab_item.h",
++      "kind": "false-member",
++      "return_type": "bool",
++      "parameters": [
++        "int",
++        "int",
++        "int",
++        "unsigned char"
++      ]
+     }
+   ]
+ }

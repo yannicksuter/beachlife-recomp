@@ -1,0 +1,429 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index a2217d8..530776f 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3110,3 +3110,10 @@ extern "C" __declspec(dllexport) bool FixtureMatch4_25(ScreenDialog* receiver, i
+ {
+     return receiver->ScreenDialog::HandleInput38(p0, p1, p2);
+ }
++
++#include "startup_screen_table.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch4_26(ScreenTablePrefix* receiver, ScreenItem* p0)
++{
++    receiver->ScreenTablePrefix::Unresolved10(p0);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 752ff62..5ce1e06 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -350,3 +350,4 @@ address,type,size,symbol
+ 0x004a5aa0,function,57,?Unresolved24@ScreenDialog@@UAEXE@Z
+ 0x004a5d70,function,57,?BeginTransition@ScreenDialog@@QAEXIMH@Z
+ 0x004a5ae0,function,58,?HandleInput38@ScreenDialog@@UAE_NHHH@Z
++0x004b8670,function,58,?Unresolved10@ScreenTable@@UAEXPAUScreenItem@@@Z
+diff --git a/src/startup_screen_request_context.h b/src/startup_screen_request_context.h
+new file mode 100644
+index 0000000..9f2eab7
+--- /dev/null
++++ b/src/startup_screen_request_context.h
+@@ -0,0 +1,6 @@
++#ifndef STARTUP_SCREEN_REQUEST_CONTEXT_H
++#define STARTUP_SCREEN_REQUEST_CONTEXT_H
++
++struct ScreenRequestContext;
++
++#endif
+diff --git a/src/startup_screen_table.h b/src/startup_screen_table.h
+new file mode 100644
+index 0000000..310fa10
+--- /dev/null
++++ b/src/startup_screen_table.h
+@@ -0,0 +1,107 @@
++#ifndef STARTUP_SCREEN_TABLE_H
++#define STARTUP_SCREEN_TABLE_H
++
++#include "startup_screen_item.h"
++
++#include "startup_screen_table_column.h"
++#include "startup_screen_table_storage.h"
++
++#include "startup_screen_request_context.h"
++
++// The observed child prefix is the real table column type.
++typedef ScreenTableColumn ScreenTableChildPrefix;
++
++// Distinct circular child list of the table: its insert 0x004b95c0 and node
++// creation 0x004b9620 are separate instances from ScreenChildRing's. The
++// node payload at +8 is the borrowed child, typed as the child prefix: the
++// original converts the attached item before inserting it.
++struct ScreenTableNode
++{
++    ScreenTableNode* next;
++    ScreenTableNode* previous;
++    ScreenTableChildPrefix* item;
++};
++
++static const unsigned int screen_table_node_slot_bytes = (sizeof(ScreenTableNode) + 7u) & ~7u;
++
++struct ScreenTableIterator
++{
++    ScreenTableNode* node;
++
++    ScreenTableIterator() { }
++    ScreenTableIterator(const ScreenTableIterator& other)
++        : node(other.node)
++    {
++    }
++};
++
++struct ScreenTableChildRing
++{
++    ScreenTableNode* head;
++
++    ScreenTableChildRing();
++    ~ScreenTableChildRing();
++    void Clear();
++
++    ScreenTableIterator End() const; // Shared library body 0x00437a40.
++    // Actual 0x004b95c0, hidden iterator result, RET12; body separate.
++    ScreenTableIterator Insert(ScreenTableIterator position, ScreenTableChildPrefix* const& item);
++    ScreenTableNode* CreateNode(ScreenTableChildPrefix* const& item); // Actual 0x004b9620.
++};
++
++// Genuine table: x86 allocation 0xa8, vtable 0x004f4800.
++struct ScreenTable : ScreenItem
++{
++    int word_44;                                       // +44: row height, published into columns.
++    unsigned int first_row_48;                         // +48
++    int source_kind_4c;                                // +4c
++    int individual_rows_50;                            // +50
++    unsigned int row_count_54;                         // +54
++    ScreenItem* scrollbar_58;                          // +58
++    unsigned int maximum_rows_5c;                      // +5c
++    unsigned char unknown_60[4];                       // +60: constructor leaves untouched.
++    ScreenTableStorage<ScreenRequestContext*> rows_64; // +64..6f
++    ScreenTableChildRing children_70;                  // +70
++    ScreenRectangle content_74;                        // +74
++    ScreenRectangle saved_content_84;                  // +84
++    unsigned int visible_rows_94;                      // +94
++    unsigned char state_98;                            // +98
++    unsigned char unknown_99[3];
++    float elapsed_9c;   // +9c
++    bool selectable_a0; // +a0
++    unsigned char unknown_a1[3];
++    int selected_row_a4; // +a4
++
++    ScreenTable(ScreenRectangle initial,
++        ScreenRectangle content,
++        const char* name,
++        int value_a,
++        int value_b,
++        bool flag);
++
++    void UpdateSource0(float elapsed); // 0x004b8790.
++    void UpdateSource1(float elapsed); // 0x004b8900.
++    void UpdateSource2(float elapsed); // 0x004b8e10.
++    void UpdateSource4(float elapsed); // 0x004b8b00.
++    void UpdateSource5(float elapsed); // 0x004b8ca0.
++    void UpdateSource6(float elapsed); // 0x004b8f60.
++    void RefreshRows(float elapsed);   // Common source dispatch in the update and prepare methods.
++    void RefreshScrollBar();           // 0x004b83c0.
++
++    virtual ~ScreenTable();                                       // 0x004b7e30; wrapper 0x004b7e10.
++    virtual void Unresolved04(float elapsed);                     // 0x004b8250
++    virtual void Unresolved08();                                  // 0x004b8130
++    virtual void Unresolved0c();                                  // 0x004b8500
++    virtual void Unresolved10(ScreenItem* item);                  // 0x004b8670
++    virtual void ApplyPosition(int dx, int dy);                   // 0x004b8720
++    virtual void MarkPrepared();                                  // 0x004b84d0
++    virtual void Unresolved1c();                                  // 0x004b85b0
++    virtual void Unresolved24(unsigned char enabled);             // 0x004b7f50
++    virtual void MoveRectangle(int dx, int dy);                   // 0x004b86b0
++    virtual bool HandleInput38(int x, int y, int value);          // 0x004b7fe0
++    virtual bool HandleTimedCoordinates(int x, int y, int value); // 0x004b8030
++};
++
++typedef ScreenTable ScreenTablePrefix;
++
++#endif
+diff --git a/src/startup_screen_table_attach.cpp b/src/startup_screen_table_attach.cpp
+new file mode 100644
+index 0000000..e7033a6
+--- /dev/null
++++ b/src/startup_screen_table_attach.cpp
+@@ -0,0 +1,9 @@
++#include "startup_screen_table.h"
++
++// FUNCTION: BEACHLIFE 0x004b8670
++void ScreenTablePrefix::Unresolved10(ScreenItem* item)
++{
++    ScreenTableChildPrefix* child = static_cast<ScreenTableChildPrefix*>(item);
++    children_70.Insert(children_70.End(), child);
++    child->table_word_48 = word_44;
++}
+diff --git a/src/startup_screen_table_child_end.cpp b/src/startup_screen_table_child_end.cpp
+new file mode 100644
+index 0000000..b65bc06
+--- /dev/null
++++ b/src/startup_screen_table_child_end.cpp
+@@ -0,0 +1,15 @@
++#include "pool_allocate.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++#include "startup_screen_table.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00437a40 FOLDED
++ScreenTableIterator ScreenTableChildRing::End() const
++{
++    ScreenTableIterator result;
++    result.node = head;
++    return result;
++}
+diff --git a/src/startup_screen_table_child_insert.cpp b/src/startup_screen_table_child_insert.cpp
+new file mode 100644
+index 0000000..c427f9e
+--- /dev/null
++++ b/src/startup_screen_table_child_insert.cpp
+@@ -0,0 +1,22 @@
++#include "pool_allocate.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++#include "startup_screen_table.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004b95c0
++ScreenTableIterator ScreenTableChildRing::Insert(
++    ScreenTableIterator position, ScreenTableChildPrefix* const& item)
++{
++    ScreenTableNode* node = CreateNode(item);
++    ScreenTableNode* previous = position.node->previous;
++    node->next = position.node;
++    node->previous = previous;
++    previous->next = node;
++    position.node->previous = node;
++    ScreenTableIterator result;
++    result.node = node;
++    return result;
++}
+diff --git a/src/startup_screen_table_child_node.cpp b/src/startup_screen_table_child_node.cpp
+new file mode 100644
+index 0000000..1729a44
+--- /dev/null
++++ b/src/startup_screen_table_child_node.cpp
+@@ -0,0 +1,57 @@
++#include "pool_allocate.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++#include "startup_screen_table.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004b9620
++ScreenTableNode* ScreenTableChildRing::CreateNode(ScreenTableChildPrefix* const& item)
++{
++    const unsigned int block_size = screen_table_node_slot_bytes;
++    const unsigned int bucket_index = (block_size - 1u) / 8u;
++    PoolChunkLink* block;
++    {
++        AcquirePoolLock(&pool_lock_word);
++        PoolLockGuard guard;
++        block = pool_chunk_buckets[bucket_index];
++        if (block)
++        {
++            pool_chunk_buckets[bucket_index] = block->next;
++        }
++        else
++        {
++            int count = 20;
++            unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
++            block = reinterpret_cast<PoolChunkLink*>(chunk);
++            if (count != 1)
++            {
++                PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
++                pool_chunk_buckets[bucket_index] = next;
++                for (int index = 1;; ++index)
++                {
++                    PoolChunkLink* current = next;
++                    if (count - 1 == index)
++                    {
++                        current->next = 0;
++                        break;
++                    }
++                    next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
++                    current->next = next;
++                }
++            }
++        }
++    }
++    ScreenTableNode* result = ::new (static_cast<void*>(block)) ScreenTableNode;
++    try
++    {
++        new (&result->item) ScreenTableChildPrefix*(item);
++    }
++    catch (...)
++    {
++        ReturnPool(result, block_size);
++        throw;
++    }
++    return result;
++}
+diff --git a/src/startup_screen_table_column.h b/src/startup_screen_table_column.h
+new file mode 100644
+index 0000000..76d7d06
+--- /dev/null
++++ b/src/startup_screen_table_column.h
+@@ -0,0 +1,57 @@
++#ifndef STARTUP_SCREEN_TABLE_COLUMN_H
++#define STARTUP_SCREEN_TABLE_COLUMN_H
++
++#include "startup_screen_item.h"
++#include "startup_screen_request_context.h"
++#include "startup_screen_table_storage.h"
++#include "startup_screen_variable_filter.h"
++
++struct ScreenVariableImage;
++
++// Genuine "<COL>" table column: original allocation 0x8c and table 0x004f47ac.
++// Its source name selects a VAR_, VARIMG_ or FILTER_ column. Descriptive names
++// only; unresolved nonvirtual helpers remain separate dependencies.
++// VTABLE: BEACHLIFE 0x004f47ac
++struct ScreenTableColumn : ScreenItem
++{
++    char* name_44;                            // +44: owned stripped source name.
++    int table_word_48;                        // +48: row height, supplied by table.
++    int value_b_4c;                           // +4c
++    int value_a_50;                           // +50: font index.
++    int row_position_54;                      // +54: initialized by table drawing.
++    int source_kind_58;                       // +58
++    ScreenVariableImage* variable_image_5c;   // +5c
++    ScreenTableStorage<ScreenItem*> items_60; // +60..6b
++    ScreenTableStorage<ScreenItem*> items_6c; // +6c..77
++    unsigned int count_78;                    // +78
++    unsigned int current_item_7c;             // +7c
++    ScreenVariableFilter* filter_80;          // +80
++    int value_c_84;                           // +84
++    int value_d_88;                           // +88: horizontal text offset.
++
++    // Actual 0x004b6300, RET 0x24. The last argument shifts the child left edge.
++    ScreenTableColumn(ScreenRectangle bounds,
++        const char* source,
++        int value_a,
++        int value_b,
++        int value_c,
++        int value_d);
++
++    // Every differing retail vtable slot remains an explicit dependency.
++    ~ScreenTableColumn();                                 // 0x004b6640; wrapper 0x004b6620.
++    void ApplyPosition(int dx, int dy);                   // 0x004b6900
++    void MarkPrepared();                                  // 0x004b6d50
++    void Unresolved24(unsigned char enabled);             // 0x004b6820
++    void MoveRectangle(int dx, int dy);                   // 0x004b79b0
++    bool HandleTimedCoordinates(int x, int y, int value); // 0x004b6ce0
++
++    void SetRowCount(unsigned int count);                                                                // 0x004b7250.
++    void UpdateRow(float elapsed, ScreenRequestContext* context);                                        // 0x004b6980.
++    void UpdateIndexedRow(float elapsed, ScreenRequestContext* context, unsigned int row);               // 0x004b6c10.
++    void DrawRow(ScreenRequestContext* context, unsigned char selected);                                 // 0x004b6d90.
++    void DrawRowOverlay(ScreenRequestContext* context, unsigned char selected);                          // 0x004b6eb0.
++    void DrawIndexedRowOverlay(ScreenRequestContext* context, unsigned int row, unsigned char selected); // 0x004b7130.
++    void ClearItems();                                                                                   // 0x004b6770
++};
++
++#endif
+diff --git a/src/startup_screen_table_storage.h b/src/startup_screen_table_storage.h
+new file mode 100644
+index 0000000..9a29427
+--- /dev/null
++++ b/src/startup_screen_table_storage.h
+@@ -0,0 +1,47 @@
++#ifndef STARTUP_SCREEN_TABLE_STORAGE_H
++#define STARTUP_SCREEN_TABLE_STORAGE_H
++
++#include "pool_return.h"
++
++#include <new>
++
++// The table and column use three-pointer VC6 vectors. Elements are borrowed
++// pointers; callers explicitly destroy owned widgets before clearing them.
++// Pointer-size changes affect the native allocation's pool size class.
++template <class T>
++struct ScreenTableStorage
++{
++    T* begin;
++    T* end;
++    T* limit;
++
++    ScreenTableStorage()
++        : begin(0)
++        , end(0)
++        , limit(0)
++    {
++    }
++    ~ScreenTableStorage()
++    {
++        if (begin)
++        {
++            unsigned int bytes = static_cast<unsigned int>(limit - begin) * sizeof(T);
++            if (bytes > 128)
++            {
++                ::operator delete(begin);
++            }
++            else
++            {
++                ReturnPool(begin, bytes);
++            }
++        }
++    }
++
++    // The erase(begin,end) instances are expanded inline in the retail bodies.
++    void Clear()
++    {
++        end = begin;
++    }
++};
++
++#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 534180f..8622ef0 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1688,6 +1688,12 @@
+       "size": 58,
+       "name": "ScreenDialog::HandleInput38",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004b8670",
++      "size": 58,
++      "name": "ScreenTablePrefix::Unresolved10",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1854,6 +1860,19 @@
+     "startup_screen_radio_child_node.cpp": [
+       "/GX",
+       "/Ob1"
++    ],
++    "startup_screen_table_attach.cpp": [
++      "/Ob1"
++    ],
++    "startup_screen_table_child_end.cpp": [
++      "/Ob1"
++    ],
++    "startup_screen_table_child_insert.cpp": [
++      "/Ob1"
++    ],
++    "startup_screen_table_child_node.cpp": [
++      "/GX",
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
