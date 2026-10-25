@@ -3,6 +3,7 @@
 
 #include "imgui.h"
 
+#include <cstdio>
 #include <stdexcept>
 #include <utility>
 
@@ -71,9 +72,11 @@ class HeadlessVideo final : public Video
             frame.width * 4);
         const bool saved = surface && SDL_SavePNG(surface, utf8(file).c_str());
         SDL_DestroySurface(surface);
+        // Report and continue: an exception here would unwind through the
+        // game's frame code, and a check must still reach its frame limit.
         if (!saved)
         {
-            throw std::runtime_error(std::string("Cannot save the screenshot: ") + SDL_GetError());
+            std::fprintf(stderr, "Beach Life: cannot save the screenshot: %s\n", SDL_GetError());
         }
     }
     void save_next(const std::filesystem::path& file) override
