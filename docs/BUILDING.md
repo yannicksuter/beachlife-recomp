@@ -2347,3 +2347,63 @@ executed.
 | `ScreenDialogResourceFrame::LoadAllData` | `0x00416f10` | 195 | no (relocations) | 98.53% |
 | `WindowAudioState::Initialize3DProvider` | `0x004d0370` | 196 | no (relocations) | 76.56% |
 | `ScreenManager::HandleOverlayInput` | `0x004b0270` | 197 | no (relocations) | 85.29% |
+| `EmptyStaticInitializer432f00` | `0x00432f00` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f10` | `0x00432f10` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f20` | `0x00432f20` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f30` | `0x00432f30` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f40` | `0x00432f40` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f50` | `0x00432f50` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f60` | `0x00432f60` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f70` | `0x00432f70` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer437ee0` | `0x00437ee0` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer49ad00` | `0x0049ad00` | 1 | yes | 66.67% |
+| `VariableEntity::CanSelectAtPointer` | `0x00453750` | 3 | yes | 40.00% |
+| `RejectWorldPointerSelection` | `0x0048c200` | 3 | yes | 80.00% |
+| `AcceptWorldStateExit` | `0x0048e880` | 3 | yes | 40.00% |
+| `LoadGameController::ScriptPath` | `0x004e8de0` | 3 | yes | 80.00% |
+| `WorldSceneryEntity::EntityName` | `0x0041c830` | 4 | yes | 80.00% |
+| `ScreenTerrainCell::Objects` | `0x004452d0` | 4 | yes | 80.00% |
+| `ScreenTerrainRouteNode::Bounds` | `0x004456c0` | 4 | yes | 80.00% |
+| `ScreenTerrainRouteNode::Next` | `0x004456d0` | 4 | yes | 80.00% |
+| `VariableEntity::EntityName` | `0x00453760` | 4 | yes | 80.00% |
+| `VariableEntity::StaffName` | `0x0048f0f0` | 4 | yes | 80.00% |
+| `WorldSubsystem3c::Controller` | `0x004dae90` | 4 | yes | 80.00% |
+| `WorldCursorNames::FirstName` | `0x00432de0` | 5 | yes | 85.71% |
+| `WindowDeactivationState::UpdatePower` | `0x0043f0c0` | 5 | no (relocations) | 66.67% |
+| `WorldSharkEntity::Unknown3c` | `0x0048b8d0` | 5 | no (relocations) | 66.67% |
+| `WorldEntity19::Unknown08` | `0x0049aef0` | 5 | yes | 40.00% |
+| `ScreenMode10Controller::Enter` | `0x004a7110` | 5 | yes | 80.00% |
+| `ScreenLoadPanel13cOwner::NextTrack` | `0x004ce560` | 5 | no (relocations) | 66.67% |
+| `WorldCursorNames::SecondName` | `0x00432dd0` | 6 | yes | 85.71% |
+| `WorldCursorNames::CursorValue` | `0x00432df0` | 6 | yes | 80.00% |
+| `ScreenRequestGamePrefix::ScenarioDirectory` | `0x004e3d60` | 6 | no (relocations) | 80.00% |
+| `ExitGameController::ScriptPath` | `0x004e8370` | 6 | no (relocations) | 80.00% |
+| `WorldSubsystem4c::MessageCounts` | `0x00424700` | 7 | yes | 80.00% |
+| `VariableEntity::GuestValue467d70` | `0x00467d70` | 7 | yes | 80.00% |
+| `ScreenManager::SelectionInputEnabled` | `0x004b2190` | 7 | yes | 80.00% |
+| `ScreenLoadPanel13c::StartPlayback` | `0x004c2470` | 7 | no (relocations) | 80.00% |
+| `ScreenLoadPanel13c::StopPlayback` | `0x004c2480` | 7 | no (relocations) | 80.00% |
+| `ScreenLoadPanel13cOwner::IsPlaying` | `0x004cdb50` | 7 | no (relocations) | 80.00% |
+| `WindowAudioState::EffectsVolume` | `0x004cf680` | 7 | yes | 80.00% |
+| `InputState::ReadSecondButtonTransition` | `0x004eab00` | 7 | yes | 80.00% |
+| `InputState::ReadDeltaX` | `0x004eab10` | 7 | yes | 80.00% |
+| `InputState::ReadWheel` | `0x004eab30` | 7 | yes | 80.00% |
+| `OverlayMapPrefix::LockMap` | `0x0041aa20` | 8 | yes | 33.33% |
+| `OverlayMapPrefix::UnlockMap` | `0x0041aa30` | 8 | yes | 80.00% |
+| `VariableTransport::StartDay` | `0x0042d100` | 8 | yes | 88.89% |
+| `ClearEntitySelection` | `0x00490c20` | 8 | yes | 80.00% |
+| `ScreenManager::DisableOverlay` | `0x004b0fe0` | 8 | yes | 80.00% |
+| `ScreenManager::RequestCameraCapture` | `0x004b2180` | 8 | yes | 33.33% |
+| `WindowDeactivationState::CurrentZoom` | `0x0043f3b0` | 9 | no (relocations) | 85.71% |
+| `VariableEntity::Unknown28` | `0x00453a40` | 9 | no (relocations) | 80.00% |
+| `VariableEntity::SetKind` | `0x004539f0` | 10 | yes | 85.71% |
+| `VariableEntity::SetEntityId` | `0x00453a00` | 10 | yes | 85.71% |
+| `VariableEntity::SetMovementMode` | `0x00453a10` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetFootprintX` | `0x00491090` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetFootprintY` | `0x004910a0` | 10 | yes | 85.71% |
+| `VariableEntity::SetFlag5a` | `0x004910b0` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetRepairAssigned` | `0x004910c0` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetRepairActive` | `0x00491110` | 10 | yes | 85.71% |
+| `VariableEntity::SetCleaningRequested` | `0x00491120` | 10 | yes | 85.71% |
+| `VariableEntity::SetRepairRequested` | `0x00491130` | 10 | yes | 85.71% |
+| `ScreenRequestGamePrefix::ScenarioNameCount` | `0x004e3d40` | 10 | yes | 88.89% |
