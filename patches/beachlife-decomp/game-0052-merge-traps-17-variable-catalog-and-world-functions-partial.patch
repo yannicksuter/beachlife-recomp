@@ -1,0 +1,3837 @@
+diff --git a/src/startup_building_builder_tasks.cpp b/src/startup_building_builder_tasks.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..94533ad0d0dcccd189ee5c4a4854c7a9b2869fa0
+--- /dev/null
++++ b/src/startup_building_builder_tasks.cpp
+@@ -0,0 +1,166 @@
++#include "startup_building_status.h"
++#include "startup_world_entities.h"
++#include "startup_screen_overlay_layout.h"
++
++#include <cmath>
++#include <cstdlib>
++
++static BuildingStatusEntry* FindBuildingTask(VariableBuildingStatus* status, unsigned int id)
++{
++    for (CircularListNode* node = status->head_00->next; node != status->head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if (entry->id_00 == id)
++            return entry;
++    }
++    return 0;
++}
++
++static unsigned int FindBuilderIndex(VariableBuildingStatus* status, unsigned int id)
++{
++    unsigned int index = 0;
++    while (status->workers_08[index].id_00 != id && index < status->worker_count_3f0)
++        ++index;
++    return index;
++}
++
++// FUNCTION: BEACHLIFE 0x004210d0
++void VariableBuildingStatus::ActivateBuilder(unsigned int id)
++{
++    workers_08[worker_count_3f0].id_00 = id;
++    workers_08[worker_count_3f0].word_0c = -1;
++    workers_08[worker_count_3f0].word_08 = 0;
++    workers_08[worker_count_3f0].word_04 = 0;
++    workers_08[worker_count_3f0].flag_10 = 0;
++    ++worker_count_3f0;
++    ReassignBuilders();
++}
++
++// FUNCTION: BEACHLIFE 0x00421500
++int VariableBuildingStatus::CountBuilderTasks(unsigned int kind)
++{
++    int count = 0;
++    for (CircularListNode* node = head_00->next; node != head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if ((entry->byte_28 && kind == 0) || (entry->byte_29 && kind == 1) || kind == 2)
++            ++count;
++    }
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x00421540
++void VariableBuildingStatus::FinishBuilderTask(unsigned int id)
++{
++    variable_world->FindObject(id);
++    for (unsigned int index = 0; index < worker_count_3f0; ++index)
++    {
++        if (workers_08[index].id_00 == id)
++        {
++            workers_08[index].word_0c = -1;
++            workers_08[index].flag_10 = 0;
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00421590
++void VariableBuildingStatus::CancelBuilderTask(unsigned int id)
++{
++    WorldBuilderEntity* builder = variable_world->FindObject(id)->AsBuilder();
++    for (unsigned int index = 0; index < worker_count_3f0; ++index)
++    {
++        if (workers_08[index].id_00 != id)
++            continue;
++        BuildingStatusEntry* entry = FindBuildingTask(this, workers_08[index].word_0c);
++        if (entry)
++        {
++            --entry->word_04;
++            for (int slot = 0; slot < 10; ++slot)
++            {
++                if (entry->indices_54[slot] == builder->builder_index_7f0)
++                {
++                    entry->indices_54[slot] = -1;
++                    break;
++                }
++            }
++        }
++        FinishBuilderTask(id);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00421130
++void VariableBuildingStatus::RemoveBuilder(unsigned int id)
++{
++    unsigned int index = FindBuilderIndex(this, id);
++    CancelBuilderTask(workers_08[index].id_00);
++    for (unsigned int next = index; next < worker_count_3f0 - 1; ++next)
++        workers_08[next] = workers_08[next + 1];
++    --worker_count_3f0;
++    ReassignBuilders();
++}
++
++// FUNCTION: BEACHLIFE 0x004212b0
++unsigned int VariableBuildingStatus::AssignBuilderTask(unsigned int id, ScreenWorldPosition* position, unsigned int kind, unsigned int* task)
++{
++    ScreenPoint tile = overlay_map->WorldToTile(position);
++    int distance = 999999;
++    BuildingStatusEntry* selected = 0;
++    for (CircularListNode* node = head_00->next; node != head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        WorldBuildingEntity* building = variable_world->FindObject(entry->id_00)->AsBuilding();
++        ScreenPoint location = building->TilePosition();
++        int candidate = std::abs(location.y - tile.y) + std::abs(location.x - tile.x);
++        float limit = *reinterpret_cast<float*>(building->building_60->unknown_d94);
++        if ((static_cast<double>(static_cast<unsigned int>(entry->word_04)) < limit || std::isnan(limit))
++            && ((entry->byte_28 && kind == 0) || (entry->byte_29 && kind == 1) || kind == 2)
++            && candidate < distance)
++        {
++            distance = candidate;
++            selected = entry;
++        }
++    }
++    if (!selected)
++        return static_cast<unsigned int>(-1);
++    unsigned int index = FindBuilderIndex(this, id);
++    BuildingStatusWorker* worker = index == worker_count_3f0 ? 0 : &workers_08[index];
++    worker->word_0c = selected->id_00;
++    worker->flag_10 = 0;
++    ++selected->word_04;
++    *task = selected->byte_28 ? 0 : 1;
++    return selected->id_00;
++}
++
++// FUNCTION: BEACHLIFE 0x00422660
++unsigned int VariableBuildingStatus::BuilderLocation(unsigned int id)
++{
++    unsigned int index = FindBuilderIndex(this, id);
++    BuildingStatusWorker* worker = index == worker_count_3f0 ? 0 : &workers_08[index];
++    return worker ? worker->word_08 : static_cast<unsigned int>(-1);
++}
++
++// FUNCTION: BEACHLIFE 0x004226b0
++void VariableBuildingStatus::SetBuilderLocation(unsigned int id, unsigned int location)
++{
++    unsigned int index = FindBuilderIndex(this, id);
++    BuildingStatusWorker* worker = index == worker_count_3f0 ? 0 : &workers_08[index];
++    worker->word_08 = location;
++}
++
++// FUNCTION: BEACHLIFE 0x004229c0
++unsigned int VariableBuildingStatus::BuilderDirection(unsigned int building, unsigned int builder)
++{
++    BuildingStatusEntry* entry = FindBuildingTask(this, building);
++    if (!entry || !entry->details_2c[0])
++        return 0;
++    unsigned int rotation = variable_world->FindObject(building)->keyline_state_44->word_18;
++    unsigned int index = 0;
++    while (index < 10 && entry->indices_54[index] != builder)
++        ++index;
++    if (index == 10)
++        index = 0;
++    int direction = entry->details_2c[index]->word_08 - 2 * rotation;
++    if (direction < 0)
++        direction += 8;
++    return direction;
++}
+diff --git a/src/startup_building_construction_tasks.cpp b/src/startup_building_construction_tasks.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f662d4eed3b0ef886ede04a6a412480f4764550d
+--- /dev/null
++++ b/src/startup_building_construction_tasks.cpp
+@@ -0,0 +1,162 @@
++#include "startup_building_status.h"
++#include "startup_world_entities.h"
++#include "startup_world_repairs.h"
++#include "startup_screen_overlay_layout.h"
++#include "window_activation.h"
++
++#include <cmath>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00421730
++unsigned int VariableBuildingStatus::AvailableBuilders()
++{
++    unsigned int count = 0;
++    for (unsigned int index = 0; index < worker_count_3f0; ++index)
++    {
++        WorldStaffEntity* builder = variable_world->FindObject(workers_08[index].id_00)->AsStaff();
++        VariableEntity* home = variable_world->FindObject(builder->home_id_100);
++        if (builder->IsOnDuty() && home->FlagAt00460370())
++            ++count;
++    }
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x00421e00
++void VariableBuildingStatus::StartConstruction(unsigned int id)
++{
++    if (!window_deactivation_state->flag_17c)
++        ++word_04;
++    BuildingStatusEntry* entry = new (std::nothrow) BuildingStatusEntry(id);
++    CircularListIterator end;
++    end.node = head_00;
++    Insert(end, entry);
++    FindTask(id)->byte_2a = 1;
++    VariableBuilding* building = variable_world->FindObject(id)->AsBuilding()->building_60;
++    PrepareConstruction(id);
++    if (building->footprint_e14)
++        PrepareBuilderLocations(id);
++    entry->byte_28 = 1;
++    if (!window_deactivation_state->flag_17c && !strstr(building->name_04, "JETTY"))
++        ReassignBuilders();
++    else
++    {
++        ScreenModeCommand command;
++        command.words[0] = id;
++        command.words[1] = id;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00421f50
++void VariableBuildingStatus::StartDemolition(unsigned int id)
++{
++    BuildingStatusEntry* entry = new (std::nothrow) BuildingStatusEntry(id);
++    ++word_04;
++    CircularListIterator end;
++    end.node = head_00;
++    Insert(end, entry);
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    if (building->footprint_e14)
++        PrepareBuilderLocations(id);
++    entry->byte_29 = 1;
++    ScreenModeCommand command;
++    command.words[0] = id;
++    command.words[1] = static_cast<unsigned int>(-1);
++    command.words[2] = 0x2c;
++    command.words[3] = 0;
++    command.words[4] = 0;
++    window_deactivation_state->BroadcastCommand(&command);
++    window_deactivation_state->repairs_28->RemoveObject(id);
++    window_deactivation_state->cleaning_2c->RemoveObject(id);
++    if (building->footprint_e14)
++    {
++        ScreenPoint position = entity->TilePosition();
++        SetFootprint(position.x, position.y, 0, 3, id);
++    }
++    overlay_map->PendingTileCount();
++    ScreenRectangle& rectangle = variable_world->FindObject(id)->AsBuilding()->footprint_rectangle_3f0;
++    overlay_map->QueueTileRectangle(rectangle.left, rectangle.top, rectangle.right - rectangle.left, rectangle.bottom - rectangle.top);
++    ReassignBuilders();
++}
++
++// FUNCTION: BEACHLIFE 0x004220d0
++void VariableBuildingStatus::UpdateBuildingTask(unsigned int id)
++{
++    VariableEntity* entity = variable_world->FindObject(id);
++    if (!entity)
++        return;
++    VariableBuilding* building = entity->AsBuilding()->building_60;
++    BuildingStatusEntry* entry = FindTask(id);
++    if (!entry || !entry->byte_2a)
++        return;
++    unsigned int index = entry->byte_28 ? 2 : 3;
++    unsigned int duration = entry->byte_28 ? building->cost_1e0 : building->cost_1e4;
++    double remaining = entry->values_10[index] - static_cast<double>(window_deactivation_state->value_16c) * 0.01f;
++    entry->values_10[index] = static_cast<float>(remaining);
++    entry->values_10[index + 2] = static_cast<float>(1.0 - remaining / duration);
++    if (entry->byte_2b || entry->values_10[index] > 0.0f)
++        return;
++    entry->byte_2b = 1;
++    for (unsigned int worker = 0; worker < worker_count_3f0; ++worker)
++    {
++        if (workers_08[worker].word_0c == id)
++        {
++            ScreenModeCommand command;
++            command.words[0] = workers_08[worker].id_00;
++            command.words[1] = workers_08[worker].id_00;
++            command.words[2] = 0x5f;
++            command.words[3] = 0;
++            command.words[4] = 0;
++            screen_mode_commands->QueueCommand(&command);
++        }
++    }
++    --word_04;
++    ScreenModeCommand command;
++    command.words[0] = id;
++    command.words[1] = id;
++    command.words[2] = 0x62;
++    command.words[3] = 0;
++    command.words[4] = entry->byte_28 ? 0x28 : 0x2e;
++    if (entry->byte_28)
++        screen_mode_commands->QueueCommand(&command);
++    else
++        screen_mode_commands->QueueDelayed(&command, (building->terrain_flags_31c & 0xc) ? 11.0f : 0.0f);
++}
++
++// FUNCTION: BEACHLIFE 0x004222d0
++void VariableBuildingStatus::UpdateBuilding(unsigned int id)
++{
++    UpdateConstructionFootprint(id);
++}
++
++// FUNCTION: BEACHLIFE 0x004222e0
++void VariableBuildingStatus::CompleteConstruction(unsigned int id)
++{
++    ScreenPoint position = variable_world->FindObject(id)->TilePosition();
++    SetFootprint(position.x, position.y, 1, 2, id);
++    RemoveTask(id);
++    ReassignBuilders();
++}
++
++// FUNCTION: BEACHLIFE 0x004225a0
++void VariableBuildingStatus::RemoveBuilding(unsigned int id)
++{
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    RestoreFootprint(id);
++    ScreenPoint position = entity->TilePosition();
++    SetFootprint(position.x, position.y, 1, 3, id);
++    unsigned int refund = *reinterpret_cast<unsigned int*>(building->unknown_1d0);
++    window_deactivation_state->economy_1c->value_80 = static_cast<float>(static_cast<double>(window_deactivation_state->economy_1c->value_80) + static_cast<int>(refund));
++    double value = *reinterpret_cast<unsigned int*>(building->unknown_1d0);
++    window_deactivation_state->income_770 = static_cast<float>(window_deactivation_state->income_770 + value);
++    window_deactivation_state->income_774 = static_cast<float>(window_deactivation_state->income_774 + value);
++    entity->inactive_04 = 1;
++    RemoveTask(id);
++    ReassignBuilders();
++}
+diff --git a/src/startup_building_reassign_builders.cpp b/src/startup_building_reassign_builders.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..118166750c083199110fc28a1d715a39f6ec178f
+--- /dev/null
++++ b/src/startup_building_reassign_builders.cpp
+@@ -0,0 +1,149 @@
++#include "startup_building_status.h"
++#include "startup_world_entities.h"
++#include "window_activation.h"
++
++#include <cmath>
++
++// FUNCTION: BEACHLIFE 0x0048ffb0
++bool WorldStaffEntity::IsOnDuty()
++{
++    unsigned int hour = static_cast<int>(window_deactivation_state->render_value_160);
++    if (shift_start_114 <= shift_end_118)
++        return hour >= shift_start_114 && hour < shift_end_118;
++    return hour >= shift_start_114 || hour < shift_end_118;
++}
++
++static void NotifyBuilderAssignment(BuildingStatusWorker* worker, BuildingStatusEntry* entry)
++{
++    ScreenModeCommand command;
++    command.words[0] = worker->id_00;
++    command.words[1] = worker->id_00;
++    command.words[2] = entry->byte_28 ? 0x28 : 0x2e;
++    command.words[3] = 0;
++    command.words[4] = worker->word_0c;
++    screen_mode_commands->QueueCommand(&command);
++}
++
++static bool BuildingHasBuilderCapacity(BuildingStatusEntry* entry)
++{
++    VariableBuilding* building = variable_world->FindObject(entry->id_00)->AsBuilding()->building_60;
++    float limit = *reinterpret_cast<float*>(building->unknown_d94);
++    return static_cast<double>(static_cast<unsigned int>(entry->word_04)) < limit || std::isnan(limit);
++}
++
++// FUNCTION: BEACHLIFE 0x004217b0
++void VariableBuildingStatus::ReassignBuilders()
++{
++    unsigned int available = 0;
++    bool missing_home = false;
++    for (unsigned int index = 0; index < worker_count_3f0; ++index)
++    {
++        BuildingStatusWorker& worker = workers_08[index];
++        WorldBuilderEntity* builder = variable_world->FindObject(worker.id_00)->AsBuilder();
++        VariableEntity* home = variable_world->FindObject(builder->home_id_100);
++        if (home)
++        {
++            worker.word_04 = 1;
++            if (builder->IsOnDuty() && home->FlagAt00460370() && builder->words_794[2] == 0
++                && !worker.flag_10 && builder->state_3c != 0x83)
++            {
++                ++available;
++                worker.word_04 = 0;
++            }
++        }
++        else
++            missing_home = true;
++    }
++    if (missing_home)
++        return;
++    if (!word_04)
++    {
++        for (unsigned int index = 0; index < worker_count_3f0; ++index)
++            workers_08[index].word_0c = -1;
++        return;
++    }
++    unsigned int target = available / static_cast<unsigned int>(word_04);
++    if (target < 1)
++        target = 1;
++    unsigned int remainder = available % static_cast<unsigned int>(word_04);
++    unsigned int shortage = 0;
++    for (CircularListNode* node = head_00->next; node != head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if (!entry->byte_2b && static_cast<unsigned int>(entry->word_04) < target)
++            shortage += target - entry->word_04;
++    }
++    if (static_cast<int>(remainder) > 1)
++        ++shortage;
++    for (CircularListNode* node = head_00->next; node != head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if (entry->byte_2b || target >= static_cast<unsigned int>(entry->word_04))
++            continue;
++        unsigned int excess = entry->word_04 - target;
++        for (unsigned int index = 0; index < worker_count_3f0 && excess && shortage; ++index)
++        {
++            BuildingStatusWorker& worker = workers_08[index];
++            if (worker.word_0c == entry->id_00 && !worker.word_04 && !worker.flag_10)
++            {
++                CancelBuilderTask(worker.id_00);
++                --excess;
++                --shortage;
++            }
++        }
++    }
++    for (CircularListNode* node = head_00->next; node != head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if (entry->byte_2b || target <= static_cast<unsigned int>(entry->word_04))
++            continue;
++        unsigned int needed = target - entry->word_04;
++        for (unsigned int index = 0; index < worker_count_3f0 && needed; ++index)
++        {
++            BuildingStatusWorker& worker = workers_08[index];
++            if (worker.word_0c == -1 && !worker.word_04 && !worker.flag_10
++                && BuildingHasBuilderCapacity(entry) && (entry->byte_28 || entry->byte_29))
++            {
++                worker.word_0c = entry->id_00;
++                ++entry->word_04;
++                --needed;
++                NotifyBuilderAssignment(&worker, entry);
++            }
++        }
++    }
++    unsigned int idle = 0;
++    for (unsigned int index = 0; index < worker_count_3f0; ++index)
++    {
++        BuildingStatusWorker& worker = workers_08[index];
++        WorldStaffEntity* builder = variable_world->FindObject(worker.id_00)->AsStaff();
++        variable_world->FindObject(builder->home_id_100);
++        if (!worker.word_04 && worker.word_0c == -1)
++            ++idle;
++    }
++    unsigned int extra = static_cast<int>(std::ceil(static_cast<double>(static_cast<int>(idle)) / word_04));
++    if (!extra)
++        return;
++    for (CircularListNode* node = head_00->next; node != head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if (entry->byte_2b || target + extra <= static_cast<unsigned int>(entry->word_04))
++            continue;
++        unsigned int needed = target - entry->word_04;
++        if (idle)
++            needed += extra;
++        if (!BuildingHasBuilderCapacity(entry))
++            continue;
++        for (unsigned int index = 0; index < worker_count_3f0 && needed; ++index)
++        {
++            BuildingStatusWorker& worker = workers_08[index];
++            if (worker.word_0c == -1 && !worker.word_04)
++            {
++                worker.word_0c = entry->id_00;
++                ++entry->word_04;
++                --needed;
++                --idle;
++                NotifyBuilderAssignment(&worker, entry);
++            }
++        }
++    }
++}
+diff --git a/src/startup_building_status.h b/src/startup_building_status.h
+index d42a558a5c728ac042989678e318a38c7c494c8c..f802544edf8af73d0a16561d2922b4d8c58fb1e1 100644
+--- a/src/startup_building_status.h
++++ b/src/startup_building_status.h
+@@ -67,6 +67,13 @@ struct VariableBuildingStatus
+     void RemoveBuilder(unsigned int id);                                                                                   // 0x00421130.
+     void CancelBuilderTask(unsigned int id);                                                                               // 0x00421590.
+     void ReassignBuilders();                                                                                               // 0x004217b0.
++    BuildingStatusEntry* FindTask(unsigned int id);                                                                        // 0x00421090.
++    void RemoveTask(unsigned int id);                                                                                      // 0x00421690.
++    void PrepareConstruction(unsigned int id);                                                                             // 0x004235f0.
++    void PrepareBuilderLocations(unsigned int id);                                                                         // 0x00422700.
++    void UpdateConstructionFootprint(unsigned int id);                                                                     // 0x00422a50.
++    void SetFootprint(int x, int y, unsigned char enabled, unsigned int stage, unsigned int id);                           // 0x00422c50.
++    void RestoreFootprint(unsigned int id);                                                                                // 0x00423c20.
+     CircularListNode* head_00;
+     int word_04;
+     BuildingStatusWorker workers_08[50];
+diff --git a/src/startup_building_status_methods.cpp b/src/startup_building_status_methods.cpp
+index 79a288b306385071daf8cb3e3a305c3cdca980f9..ab6dd280be7d5f70058d183ba2f2182182cb6d27 100644
+--- a/src/startup_building_status_methods.cpp
++++ b/src/startup_building_status_methods.cpp
+@@ -140,3 +140,26 @@ void VariableBuildingStatus::LoadState(GameFileReader* file)
+         file->ReadByte(&worker.flag_10);
+     }
+ }
++
++// FUNCTION: BEACHLIFE 0x00421090
++BuildingStatusEntry* VariableBuildingStatus::FindTask(unsigned int id)
++{
++    return FindBuildingStatus(this, id);
++}
++
++// FUNCTION: BEACHLIFE 0x00421690
++void VariableBuildingStatus::RemoveTask(unsigned int id)
++{
++    for (CircularListNode* node = head_00->next; node != head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if (entry->id_00 == id)
++        {
++            node->previous->next = node->next;
++            node->next->previous = node->previous;
++            ReleaseNodeStorage(node, sizeof(BuildingStatusNode));
++            DeleteBuildingStatusEntry(entry);
++            return;
++        }
++    }
++}
+diff --git a/src/startup_building_task_progress.cpp b/src/startup_building_task_progress.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2545f6ca7af71f0d206db3178fc42797773b6518
+--- /dev/null
++++ b/src/startup_building_task_progress.cpp
+@@ -0,0 +1,55 @@
++#include "startup_building_status.h"
++
++#include <cmath>
++
++static BuildingStatusEntry* FindProgressEntry(VariableBuildingStatus* status, unsigned int id)
++{
++    for (CircularListNode* node = status->head_00->next; node != status->head_00; node = node->next)
++    {
++        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
++        if (entry->id_00 == id)
++            return entry;
++    }
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00422330
++float VariableBuildingStatus::ConstructionProgress(unsigned int id)
++{
++    BuildingStatusEntry* entry = FindProgressEntry(this, id);
++    if (!entry)
++        return 1.0f;
++    float progress = entry->values_10[4];
++    if (progress < 0.0f || std::isnan(progress))
++        return 0.0f;
++    if (progress > 1.0f)
++        return 1.0f;
++    return progress;
++}
++
++// FUNCTION: BEACHLIFE 0x004223b0
++float VariableBuildingStatus::DemolitionProgress(unsigned int id)
++{
++    BuildingStatusEntry* entry = FindProgressEntry(this, id);
++    if (!entry)
++        return 1.0f;
++    float progress = entry->values_10[5];
++    if (progress < 0.0f || std::isnan(progress))
++        return 0.0f;
++    if (progress > 1.0f)
++        return 1.0f;
++    return progress;
++}
++
++// FUNCTION: BEACHLIFE 0x00422510
++void VariableBuildingStatus::SetReadyForDemolition(unsigned int id, unsigned char ready)
++{
++    FindProgressEntry(this, id)->byte_2a = ready;
++}
++
++// FUNCTION: BEACHLIFE 0x00422560
++bool VariableBuildingStatus::ReadyForDemolition(unsigned int id)
++{
++    BuildingStatusEntry* entry = FindProgressEntry(this, id);
++    return entry ? entry->byte_2a : false;
++}
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index b2c3350d4564e38aa03fd82901996e6a97ac3666..da4640dfab719ab39aca12d3dcdd7545751a2b8e 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -132,6 +132,8 @@ struct OverlayMapPrefix
+     unsigned int depth_bias_15c;
+     int depth_scale_160;
+ 
++    int PendingTileCount();                                                                 // 0x00418c50.
++    void QueueTileRectangle(int x, int y, int width, int height);                           // 0x004189b0.
+     ScreenWorldPosition TilePosition(const ScreenPoint* tile);                              // 0x00418c90.
+     ScreenPoint WorldToTile(const ScreenWorldPosition* position);                           // 0x00418cc0.
+     float WaterCoverage();                                                                  // 0x0041b4b0.
+diff --git a/src/startup_variable_catalog_fields.h b/src/startup_variable_catalog_fields.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2acbcfe587bb968789e8ed3531119d34b112458
+--- /dev/null
++++ b/src/startup_variable_catalog_fields.h
+@@ -0,0 +1,32 @@
++#ifndef STARTUP_VARIABLE_CATALOG_FIELDS_H
++#define STARTUP_VARIABLE_CATALOG_FIELDS_H
++
++template <class T>
++static T& CatalogField(void* record, unsigned int offset)
++{
++    return *reinterpret_cast<T*>(static_cast<unsigned char*>(record) + offset);
++}
++
++static char* CatalogNextField(char* field)
++{
++    while (*field != '"')
++        ++field;
++    return field + 1;
++}
++
++template <unsigned int Count>
++static void CatalogReadFields(char* first, char* (&fields)[Count])
++{
++    fields[0] = first;
++    for (unsigned int index = 1; index < Count; ++index)
++        fields[index] = CatalogNextField(fields[index - 1]);
++}
++
++template <unsigned int Count>
++static void CatalogConsumeFields(char* (&fields)[Count])
++{
++    for (unsigned int index = 1; index < Count; ++index)
++        fields[index][-1] = 0;
++}
++
++#endif
+diff --git a/src/startup_variable_catalog_lookup.cpp b/src/startup_variable_catalog_lookup.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2596471b30928d86534572a9e36cf78dffdd2630
+--- /dev/null
++++ b/src/startup_variable_catalog_lookup.cpp
+@@ -0,0 +1,117 @@
++#include "startup_variable_state.h"
++#include "startup_game_file.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00448fc0
++const char* VariableCatalog::FeatureTypeName(unsigned int index)
++{
++    return reinterpret_cast<const char*>(reinterpret_cast<unsigned char*>(this) + 0x3c + index * 0xc4);
++}
++
++// FUNCTION: BEACHLIFE 0x00449070
++const char* VariableCatalog::FeatureKey(unsigned int index)
++{
++    return reinterpret_cast<const char*>(reinterpret_cast<unsigned char*>(this) + 0x129c + index * 0xc8);
++}
++
++// FUNCTION: BEACHLIFE 0x00449380
++VariableCrimeDefinition* VariableCatalog::Crime(unsigned int index)
++{
++    return reinterpret_cast<VariableCrimeDefinition*>(reinterpret_cast<unsigned char*>(this) + 0x4f114 + index * 0x48);
++}
++
++// FUNCTION: BEACHLIFE 0x004496e0
++VariableCatalogObjectDefinition* VariableCatalog::Object(unsigned int index)
++{
++    return reinterpret_cast<VariableCatalogObjectDefinition*>(reinterpret_cast<unsigned char*>(this) + 0x4f1a4 + index * 0x428);
++}
++
++// FUNCTION: BEACHLIFE 0x00449170
++unsigned int VariableCatalog::FindEvent(const char* name)
++{
++    unsigned char* storage = reinterpret_cast<unsigned char*>(this);
++    unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x24);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        unsigned char* record = storage + 0x4e5e8 + index * 0x58;
++        if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
++            return *reinterpret_cast<unsigned int*>(record);
++    }
++    StartupFatal("WorldParams::GetEventID - keyword not found - %s", name);
++    return *reinterpret_cast<unsigned int*>(storage + 0x24);
++}
++
++// FUNCTION: BEACHLIFE 0x00449220
++unsigned int VariableCatalog::FindUnlock(const char* name)
++{
++    unsigned char* storage = reinterpret_cast<unsigned char*>(this);
++    unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x28);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        unsigned char* record = storage + 0x4ecc8 + index * 0xdc;
++        if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
++            return *reinterpret_cast<unsigned int*>(record);
++    }
++    StartupFatal("WorldParams::GetBeerID - keyword not found - %s", name);
++    return *reinterpret_cast<unsigned int*>(storage + 0x28);
++}
++
++// FUNCTION: BEACHLIFE 0x004492f0
++unsigned int VariableCatalog::FindCrime(const char* name)
++{
++    unsigned char* storage = reinterpret_cast<unsigned char*>(this);
++    unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x2c);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        unsigned char* record = storage + 0x4f114 + index * 0x48;
++        if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
++            return *reinterpret_cast<unsigned int*>(record);
++    }
++    StartupFatal("WorldParams::GetFineID - keyword not found - %s", name);
++    return *reinterpret_cast<unsigned int*>(storage + 0x2c);
++}
++
++// FUNCTION: BEACHLIFE 0x00449440
++unsigned int VariableCatalog::FindStaff(const char* name)
++{
++    unsigned char* storage = reinterpret_cast<unsigned char*>(this);
++    unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x14);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        unsigned char* record = storage + 0x384c0 + index * 0x224;
++        if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
++            return *reinterpret_cast<unsigned int*>(record);
++    }
++    StartupFatal("WorldParams::GetStaffID - keyword not found - %s", name);
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00449650
++unsigned int VariableCatalog::FindObject(const char* name)
++{
++    unsigned char* storage = reinterpret_cast<unsigned char*>(this);
++    unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x30);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        unsigned char* record = storage + 0x4f1a4 + index * 0x428;
++        if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
++            return *reinterpret_cast<unsigned int*>(record);
++    }
++    StartupFatal("WorldParams::GetTableID - keyword not found - %s", name);
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00449700
++unsigned int VariableCatalog::FindScenery(const char* name)
++{
++    unsigned char* storage = reinterpret_cast<unsigned char*>(this);
++    unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x34);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        unsigned char* record = storage + 0x5409c + index * 0x314;
++        if (strcmp(reinterpret_cast<const char*>(record + 4), name) == 0)
++            return *reinterpret_cast<unsigned int*>(record);
++    }
++    return 0;
++}
+diff --git a/src/startup_variable_catalog_parse.cpp b/src/startup_variable_catalog_parse.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea6e192182b8dc300fa5a8619207a5128b828a32
+--- /dev/null
++++ b/src/startup_variable_catalog_parse.cpp
+@@ -0,0 +1,301 @@
++#include "startup_variable_state.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++
++static unsigned int& CatalogWord(void* base, unsigned int offset)
++{
++    return *reinterpret_cast<unsigned int*>(static_cast<unsigned char*>(base) + offset);
++}
++
++static unsigned char* CatalogRecord(VariableCatalog* catalog, unsigned int offset, unsigned int stride, unsigned int index)
++{
++    return reinterpret_cast<unsigned char*>(catalog) + offset + stride * index;
++}
++
++static unsigned char* FindCatalogRecord(VariableCatalog* catalog, unsigned int count_offset, unsigned int offset, unsigned int stride, const char* name)
++{
++    for (unsigned int index = 0; index < CatalogWord(catalog, count_offset); ++index)
++    {
++        unsigned char* record = CatalogRecord(catalog, offset, stride, index);
++        if (strcmp(reinterpret_cast<char*>(record + 4), name) == 0)
++            return record;
++    }
++    return 0;
++}
++
++static unsigned char* BeginCatalogRecord(VariableCatalog* catalog, unsigned int count_offset, unsigned int offset, unsigned int stride, const char* name)
++{
++    unsigned int id = CatalogWord(catalog, count_offset);
++    unsigned char* record = CatalogRecord(catalog, offset, stride, id);
++    CatalogWord(record, 0) = id;
++    strcpy(reinterpret_cast<char*>(record + 4), name);
++    return record;
++}
++
++static unsigned int NextCatalogValue(const char* data, unsigned int index)
++{
++    while (data[index] != '"')
++        ++index;
++    return index + 1;
++}
++
++// FUNCTION: BEACHLIFE 0x0044bd80
++void VariableCatalog::ParseStaff(const char* key, const char* name, const char* gender, const char* wage, const char* resource, const char* role, const char* script, const char* base_wage, const char* value210, const char* value214, const char* morale, const char* shift_start, const char* shift_end)
++{
++    unsigned char* record = BeginCatalogRecord(this, 0x14, 0x384c0, 0x224, key);
++    strcpy(reinterpret_cast<char*>(record + 0x44), name);
++    if (*gender == 'M')
++        CatalogWord(record, 0xc4) = 0;
++    else if (*gender == 'F')
++        CatalogWord(record, 0xc4) = 1;
++    else
++        StartupFatal("WorldParams::AddStaff - sex isn't M or F - %s", key);
++    CatalogWord(record, 0xc8) = atoi(wage);
++    strcpy(reinterpret_cast<char*>(record + 0xcc), resource);
++    strcpy(reinterpret_cast<char*>(record + 0x1cc), role);
++    strcpy(reinterpret_cast<char*>(record + 0x1ec), script);
++    CatalogWord(record, 0x20c) = atoi(base_wage);
++    *reinterpret_cast<float*>(record + 0x210) = static_cast<float>(atof(value210));
++    *reinterpret_cast<float*>(record + 0x214) = static_cast<float>(atof(value214));
++    *reinterpret_cast<float*>(record + 0x218) = static_cast<float>(atof(morale));
++    CatalogWord(record, 0x21c) = atoi(shift_start);
++    CatalogWord(record, 0x220) = atoi(shift_end);
++    ++CatalogWord(this, 0x14);
++}
++
++static bool GuestValueKey(const char* key)
++{
++    static const char* const names[] = {
++        "NAME", "GENDER", "DRUNK_TYPE", "SPRITE", "DRUNKTYPE", "MONEY", "LITTER", "DEF_SPRITE", "ATTRACTIVE", "ATTRACTIVE_PREF", "NAMESET", "SWIM_ENERGY", "SWIM_DIST", "COLOUR", "DRUNKDECAY", "FLIRTDECAY", "FIGHTDECAY", "VANDALISEDECAY", "NIGHTS_MIN", "NIGHTS_MAX", "SUNBURN_TIME", "ILL_DECAY", "START_BLADDER", "START_FIGHT", "START_FLIRT", "START_VANDALISE", "START_ILL", "START_DRUNK", "START_SUNBURN", "MAX_ACCOMODATION", "MAX_ALCOHOL", "MAX_AMUSEMENT", "MAX_FIRSTAID", "MAX_HEADACHE", "MAX_MEALS", "MAX_PARTYFUN", "MAX_SHOWER", "MAX_SNACKS", "MAX_SOFTDRINKS", "MAX_SOUVENIRS", "MAX_SPORTSFUN", "MAX_SUNBATHE", "MAX_SWIMFUN", "MAX_TOILET", "MAX_WATERSPORTSFUN", "MAX_STROLL", "MAX_LEAVE", "MAX_VANDALISE", "MAX_FIGHT", "MAX_FLIRT", "MAX_UMBRELLAS", "MAX_SUNTAN", "MAX_HARDSEX", "MAX_SLEEP", "MAX_SCARED"
++    };
++    for (const char* name : names)
++    {
++        if (strcmp(key, name) == 0)
++            return true;
++    }
++    return false;
++}
++
++static bool GuestRangeKey(const char* key)
++{
++    static const char* const names[] = {
++        "ALCOHOLPREF", "AMUSEMENTPREF", "MEALSPREF", "PARTYFUNPREF", "SOFTDRINKSPREF", "SOUVENIRSPREF", "SPORTSFUNPREF", "SUNBATHEPREF", "SWIMMINGPREF", "WATERFUNPREF", "STROLLPREF", "SLEEPPREF", "SNACKSPREF", "BEAUTYTOL", "CROWDINGTOL", "TOTTYTOL", "PRICETOL", "VARIETYTOL", "CLEANLINESSTOL", "SAFETYTOL", "SLEEPTIME", "BEAUTY_EFFECT", "CROWDING_EFFECT", "TOTTY_EFFECT", "PRICE_EFFECT", "VARIETY_EFFECT", "CLEANLINESS_EFFECT", "SAFETY_EFFECT", "BEAUTY_START", "CROWDING_START", "TOTTY_START", "PRICE_START", "VARIETY_START", "CLEANLINESS_START", "SAFETY_START", "WAKETIME"
++    };
++    for (const char* name : names)
++    {
++        if (strcmp(key, name) == 0)
++            return true;
++    }
++    return false;
++}
++
++// FUNCTION: BEACHLIFE 0x0044ff10
++void VariableCatalog::ParseData(char* data, int size)
++{
++    bool quoted = false;
++    for (unsigned int index = 0; index < static_cast<unsigned int>(size); ++index)
++    {
++        if (data[index] == '"')
++        {
++            if (quoted)
++                data[index] = 0;
++            quoted = !quoted;
++        }
++        else if (!quoted)
++            data[index] = 0;
++    }
++    if (quoted)
++        StartupFatal("WorldParams::Process - odd number of quotes in gameplay file");
++    for (unsigned int index = 0; index < static_cast<unsigned int>(size); ++index)
++    {
++        if (data[index] != '"')
++            continue;
++        char key[256] = { };
++        unsigned int cursor = index + 1;
++        char* destination = key;
++        for (;;)
++        {
++            char value = data[cursor];
++            if (value == '_' && strcmp(key, "JETTY") != 0 && strcmp(key, "SECURITY") != 0)
++                break;
++            if (value == '"')
++                break;
++            *destination++ = value;
++            ++cursor;
++        }
++        const char* value = data + cursor + 1;
++        unsigned char* record;
++        if (strcmp(key, "COMFAM") == 0)
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            record = BeginCatalogRecord(this, 0, 0x38, 0xc4, value);
++            strcpy(reinterpret_cast<char*>(record + 0x44), data + index);
++            ++CatalogWord(this, 0);
++        }
++        else if (strcmp(key, "COM") == 0)
++        {
++            unsigned int display = NextCatalogValue(data, cursor + 1);
++            index = NextCatalogValue(data, display);
++            record = BeginCatalogRecord(this, 4, 0x1298, 0xc8, value);
++            strcpy(reinterpret_cast<char*>(record + 0x44), data + display);
++            CatalogWord(record, 0xc4) = FindFeatureType(data + index);
++            ++CatalogWord(this, 4);
++        }
++        else if (strcmp(key, "HOURS") == 0)
++        {
++            unsigned int first = NextCatalogValue(data, cursor + 1);
++            index = NextCatalogValue(data, first);
++            record = BeginCatalogRecord(this, 8, 0x32a0, 0x4c, value);
++            *reinterpret_cast<float*>(record + 0x44) = static_cast<float>(atof(data + first));
++            *reinterpret_cast<float*>(record + 0x48) = static_cast<float>(atof(data + index));
++            ++CatalogWord(this, 8);
++        }
++        else if (strcmp(key, "BUILD") == 0)
++        {
++            record = BeginCatalogRecord(this, 0xc, 0x341c, 0xe1c, value);
++            reinterpret_cast<VariableBuilding*>(record)->footprint_e14 = 0;
++            ++building_count_0c;
++            index = cursor + 1;
++        }
++        else if (FindCatalogRecord(this, 0xc, 0x341c, 0xe1c, key))
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            ParseBuilding(FindBuilding(key), value, data + index);
++        }
++        else if (strcmp(key, "DESIRE") == 0)
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            record = BeginCatalogRecord(this, 0x10, 0x37490, 0x128, value);
++            strcpy(reinterpret_cast<char*>(record + 0x44), data + index);
++            CatalogWord(record, 0xc4) = 0;
++            ++CatalogWord(this, 0x10);
++        }
++        else if ((record = FindCatalogRecord(this, 0x10, 0x37490, 0x128, key)))
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            unsigned int id = CatalogWord(record, 0);
++            record = CatalogRecord(this, 0x37490, 0x128, id);
++            if (strcmp(value, "COMFAM") == 0)
++            {
++                unsigned int count = CatalogWord(record, 0xc4);
++                CatalogWord(record, 0xc8 + count * 4) = FindFeatureType(data + index);
++                ++CatalogWord(record, 0xc4);
++            }
++            else
++                StartupFatal("WorldParams::AddDesireComFamPull - hmmm - datakeyword should be COMFAM - %s", value);
++        }
++        else if (strcmp(key, "STAFF") == 0)
++        {
++            const char* fields[13];
++            fields[0] = value;
++            index = cursor + 1;
++            for (unsigned int field = 1; field < 13; ++field)
++            {
++                index = NextCatalogValue(data, index);
++                fields[field] = data + index;
++            }
++            ParseStaff(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], fields[7], fields[8], fields[9], fields[10], fields[11], fields[12]);
++        }
++        else if (strcmp(key, "GUEST") == 0)
++        {
++            BeginCatalogRecord(this, 0x18, 0x3b1b4, 0x3ac, value);
++            ++guest_count_18;
++            index = cursor + 1;
++        }
++        else if (FindCatalogRecord(this, 0x18, 0x3b1b4, 0x3ac, key))
++        {
++            unsigned int id = FindGuest(key);
++            if (GuestValueKey(value))
++            {
++                index = NextCatalogValue(data, cursor + 1);
++                ParseGuestValue(id, value, data + index);
++            }
++            else if (GuestRangeKey(value))
++            {
++                unsigned int first = NextCatalogValue(data, cursor + 1);
++                index = NextCatalogValue(data, first);
++                ParseGuestRange(id, value, data + first, data + index);
++            }
++            else
++                StartupFatal("WorldParams::Process - unrecognised guest keyword prefix - %s", value);
++        }
++        else if (strcmp(key, "VEHICLE") == 0)
++        {
++            BeginCatalogRecord(this, 0x1c, 0x3fb24, 0x274, value);
++            ++vehicle_count_1c;
++            index = cursor + 1;
++        }
++        else if (FindCatalogRecord(this, 0x1c, 0x3fb24, 0x274, key))
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            ParseVehicle(FindVehicle(key), value, data + index);
++        }
++        else if (strcmp(key, "TABLE") == 0)
++        {
++            BeginCatalogRecord(this, 0x30, 0x4f1a4, 0x428, value);
++            ++object_count_30;
++            index = cursor + 1;
++        }
++        else if (FindCatalogRecord(this, 0x30, 0x4f1a4, 0x428, key))
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            ParseObject(FindObject(key), value, data + index);
++        }
++        else if (strcmp(key, "SURNAME") == 0 || strcmp(key, "MALENAME") == 0 || strcmp(key, "FEMALENAME") == 0)
++        {
++            index = cursor + 1;
++            ParseName(key, data + index);
++        }
++        else if (strcmp(key, "EVENT") == 0)
++        {
++            BeginCatalogRecord(this, 0x24, 0x4e5e8, 0x58, value);
++            ++CatalogWord(this, 0x24);
++            index = cursor + 1;
++        }
++        else if (FindCatalogRecord(this, 0x24, 0x4e5e8, 0x58, key))
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            ParseEvent(FindEvent(key), value, data + index);
++        }
++        else if (strcmp(key, "BEER") == 0)
++        {
++            BeginCatalogRecord(this, 0x28, 0x4ecc8, 0xdc, value);
++            ++drink_count_28;
++            index = cursor + 1;
++        }
++        else if (FindCatalogRecord(this, 0x28, 0x4ecc8, 0xdc, key))
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            ParseUnlock(FindUnlock(key), value, data + index);
++        }
++        else if (strcmp(key, "FINE") == 0)
++        {
++            BeginCatalogRecord(this, 0x2c, 0x4f114, 0x48, value);
++            ++CatalogWord(this, 0x2c);
++            index = cursor + 1;
++        }
++        else if (FindCatalogRecord(this, 0x2c, 0x4f114, 0x48, key))
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            unsigned int id = FindCrime(key);
++            if (strcmp(value, "COST") == 0)
++                *reinterpret_cast<float*>(CatalogRecord(this, 0x4f114, 0x48, id) + 0x44) = static_cast<float>(atof(data + index));
++            else
++                StartupFatal("WorldParams::AddFineData - unrecognised event keyword - %s", value);
++        }
++        else if (strcmp(key, "SCENERY") == 0)
++        {
++            BeginCatalogRecord(this, 0x34, 0x5409c, 0x314, value);
++            ++scenery_count_34;
++            index = cursor + 1;
++        }
++        else if (FindCatalogRecord(this, 0x34, 0x5409c, 0x314, key))
++        {
++            index = NextCatalogValue(data, cursor + 1);
++            ParseScenery(FindScenery(key), value, data + index);
++        }
++        else
++            StartupFatal("WorldParams::Process - unrecognised keyword prefix - %s", key);
++    }
++}
+diff --git a/src/startup_variable_catalog_parse_building.cpp b/src/startup_variable_catalog_parse_building.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3fc2e31dd78428ac8f0f8c6b6b057d8e6bf68489
+--- /dev/null
++++ b/src/startup_variable_catalog_parse_building.cpp
+@@ -0,0 +1,219 @@
++#include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++static unsigned int FindCatalogField(VariableCatalog* catalog, unsigned int count_offset, unsigned int records_offset, unsigned int stride, const char* value, const char* error)
++{
++    unsigned int count = CatalogField<unsigned int>(catalog, count_offset);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        unsigned char* entry = reinterpret_cast<unsigned char*>(catalog) + records_offset + index * stride;
++        if (strcmp(reinterpret_cast<char*>(entry + 4), value) == 0)
++            return CatalogField<unsigned int>(entry, 0);
++    }
++    StartupFatal(error, value);
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004497a0
++void VariableCatalog::ParseBuilding(unsigned int id, const char* key, char* value)
++{
++    VariableBuilding* building = Building(id);
++    building->default_drink_e18 = 0;
++    if (strcmp(key, "NAME") == 0)
++        strcpy(building->name_04 + 0x40, value);
++    else if (strcmp(key, "SPRITE") == 0)
++        strcpy(building->resource_c4, value);
++    else if (strcmp(key, "ICON") == 0)
++        CatalogField<int>(building, 0x1c4) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "COST2BUILD") == 0)
++        CatalogField<int>(building, 0x1cc) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "REFUNDVALUE") == 0)
++        CatalogField<int>(building, 0x1d0) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "GRIDWIDTH") == 0)
++        CatalogField<unsigned int>(building, 0x1d4) = static_cast<unsigned int>(atoi(value));
++    else if (strcmp(key, "GRIDHEIGHT") == 0)
++        CatalogField<unsigned int>(building, 0x1d8) = static_cast<unsigned int>(atoi(value));
++    else if (strcmp(key, "XSERVEOFFSET") == 0)
++        CatalogField<short>(building, 0x314) = static_cast<short>(atoi(value));
++    else if (strcmp(key, "YSERVEOFFSET") == 0)
++        CatalogField<short>(building, 0x316) = static_cast<short>(atoi(value));
++    else if (strcmp(key, "STAFF_XOFFSET") == 0)
++        CatalogField<short>(building, 0x318) = static_cast<short>(atoi(value));
++    else if (strcmp(key, "STAFF_YOFFSET") == 0)
++        CatalogField<short>(building, 0x31a) = static_cast<short>(atoi(value));
++    else if (strcmp(key, "XENTRANCEOFFSET") == 0)
++        CatalogField<short>(building, 0xca4) = static_cast<short>(atoi(value));
++    else if (strcmp(key, "YENTRANCEOFFSET") == 0)
++        CatalogField<short>(building, 0xca6) = static_cast<short>(atoi(value));
++    else if (strcmp(key, "GUESTCAPACITY") == 0)
++        CatalogField<unsigned int>(building, 0x1dc) = static_cast<unsigned int>(atoi(value));
++    else if (strcmp(key, "BUILDTIME") == 0)
++        CatalogField<unsigned int>(building, 0x1e0) = static_cast<unsigned int>(atoi(value));
++    else if (strcmp(key, "OPENINGHOURS") == 0)
++        building->hours_1e8 = FindCatalogField(this, 8, 0x32a0, 0x4c, value, "WorldParams::GetOpeningHoursID - keyword not found - %s");
++    else if (strcmp(key, "MAXINSTANCES") == 0)
++        building->unique_1ec = atoi(value);
++    else if (strcmp(key, "ATTRACTOR") == 0)
++        CatalogField<unsigned int>(building, 0x1f0) = FindFeatureType(value);
++    else if (strcmp(key, "TREE") == 0)
++        strcpy(building->required_320, value);
++    else if (strcmp(key, "MENU") == 0)
++        strcpy(building->screen_name_360, value);
++    else if (strcmp(key, "ANIMSPRITE") == 0)
++    {
++        ++building->resource_count_380;
++        VariableBuilding::Resource* resource = &building->resources_384[building->resource_count_380 - 1];
++        strcpy(resource->name, value);
++        char* fields[10];
++        CatalogReadFields(value, fields);
++        for (unsigned int direction = 0; direction < 4; ++direction)
++        {
++            resource->offset_x_100[direction] = atoi(fields[direction * 2 + 1]);
++            resource->offset_y_110[direction] = atoi(fields[direction * 2 + 2]);
++        }
++        resource->animate_closed_120 = atoi(fields[9]) != 0;
++        CatalogConsumeFields(fields);
++    }
++    else if (strcmp(key, "COMMODITY") == 0)
++    {
++        unsigned int index = building->rows_1f4;
++        char* fields[7];
++        CatalogReadFields(value, fields);
++        building->features_1fc[index] = FindCatalogField(this, 4, 0x1298, 0xc8, value, "WorldParams::GetCommodityID - keyword not found - %s");
++        building->appeal_210[index][0] = static_cast<float>(atof(fields[1]));
++        building->appeal_210[index][1] = static_cast<float>(atof(fields[2]));
++        CatalogField<float>(building, 0x238 + index * 4) = static_cast<float>(atof(fields[3]));
++        CatalogField<float>(building, 0x24c + index * 4) = static_cast<float>(atof(fields[4]));
++        CatalogField<float>(building, 0x260 + index * 4) = static_cast<float>(atof(fields[5]));
++        CatalogField<float>(building, 0x274 + index * 4) = static_cast<float>(atof(fields[6]));
++        ++building->rows_1f4;
++        CatalogConsumeFields(fields);
++    }
++    else if (strcmp(key, "MAXSTAFF") == 0)
++        building->capacity_288 = atoi(value);
++    else if (strcmp(key, "STAFF") == 0)
++    {
++        unsigned int staff = FindStaff(value);
++        unsigned int& count = CatalogField<unsigned int>(building, 0x28c);
++        CatalogField<unsigned int>(building, 0x290 + count * 4) = staff;
++        ++count;
++    }
++    else if (strcmp(key, "VEHICLE") == 0)
++    {
++        unsigned int vehicle = FindVehicle(value);
++        unsigned int& count = CatalogField<unsigned int>(building, 0x2b8);
++        CatalogField<unsigned int>(building, 0x2bc + count * 4) = vehicle;
++        ++count;
++    }
++    else if (strcmp(key, "VEHICLE_DIR") == 0)
++        CatalogField<int>(building, 0x2fc + CatalogField<unsigned int>(building, 0x2d0) * 4) = atoi(value);
++    else if (strcmp(key, "VEHICLE_GRID_XOFFSET") == 0)
++        CatalogField<int>(building, 0x2d4 + CatalogField<unsigned int>(building, 0x2d0) * 8) = atoi(value);
++    else if (strcmp(key, "VEHICLE_GRID_YOFFSET") == 0)
++    {
++        unsigned int& count = CatalogField<unsigned int>(building, 0x2d0);
++        CatalogField<int>(building, 0x2d8 + count * 8) = atoi(value);
++        ++count;
++    }
++    else if (strcmp(key, "BUILDON") == 0)
++    {
++        if (strcmp(value, "SHALLOW_WATER") == 0)
++            building->terrain_flags_31c |= 4;
++        else if (strcmp(value, "LAND") == 0)
++            building->terrain_flags_31c |= 1;
++        else if (strcmp(value, "DEEP_SEA") == 0)
++            building->terrain_flags_31c |= 8;
++        else if (strcmp(value, "BEACH") == 0)
++            building->terrain_flags_31c |= 2;
++        else if (strcmp(value, "WATER") == 0)
++            building->terrain_flags_31c |= 12;
++        else
++            StartupFatal("WorldParams::AddBuildingData - Invalid BUILDON Type %s", value);
++    }
++    else if (strcmp(key, "TABLE") == 0)
++    {
++        unsigned int object = FindObject(value);
++        unsigned int count = CatalogField<unsigned int>(building->unknown_d94, 0x7c);
++        CatalogField<unsigned int>(building->unknown_d94, 4 + count * 4) = object;
++    }
++    else if (strcmp(key, "TABLE_POSX") == 0)
++        CatalogField<float>(building->unknown_d94, 0x2c + CatalogField<unsigned int>(building->unknown_d94, 0x7c) * 8) = static_cast<float>(atof(value));
++    else if (strcmp(key, "TABLE_POSY") == 0)
++    {
++        unsigned int& count = CatalogField<unsigned int>(building->unknown_d94, 0x7c);
++        CatalogField<float>(building->unknown_d94, 0x30 + count * 8) = static_cast<float>(atof(value));
++        ++count;
++    }
++    else if (strcmp(key, "EVENT") == 0)
++    {
++        unsigned int count = CatalogField<unsigned int>(this, 0x24);
++        unsigned int event = FindEvent(value);
++        // The retail store uses the catalog's event count as its array index.
++        CatalogField<unsigned int>(building, 0xca8 + count * 4) = event;
++        ++CatalogField<unsigned int>(building, 0xcbc);
++    }
++    else if (strcmp(key, "CONSTRUCT") == 0)
++    {
++        strcpy(building->resource_cc1, value);
++        building->flag_cc0 = 1;
++    }
++    else if (strcmp(key, "POWER") == 0)
++        building->power_cf4 = atoi(value);
++    else if (strcmp(key, "NUM_WALKPOINTS") == 0)
++    {
++        building->count_d88 = 0;
++        if (atoi(value) != 0)
++            building->data_d84 = ::operator new(static_cast<unsigned int>(atoi(value)) * 8);
++    }
++    else if (strcmp(key, "WALKPOINTX") == 0)
++        static_cast<ScreenMapPosition*>(building->data_d84)[building->count_d88].x = static_cast<float>(atof(value));
++    else if (strcmp(key, "WALKPOINTY") == 0)
++    {
++        static_cast<ScreenMapPosition*>(building->data_d84)[building->count_d88].y = static_cast<float>(atof(value));
++        ++building->count_d88;
++    }
++    else if (strcmp(key, "AVFAILTIME") == 0)
++        building->breakdown_interval_cf8 = static_cast<float>(atof(value));
++    else if (strcmp(key, "FAIL_PERCENT") == 0)
++        building->breakdown_chance_cfc = atoi(value);
++    else if (strcmp(key, "FAIL_AGE") == 0)
++        building->breakdown_growth_d00 = atoi(value);
++    else if (strcmp(key, "DEMOLISHTIME") == 0)
++        building->cost_1e4 = atoi(value);
++    else if (strcmp(key, "MAX_QUEUE") == 0)
++        building->word_1f8 = atoi(value);
++    else if (strcmp(key, "CATEGORY") == 0)
++    {
++        if (strcmp(value, "Hotel") == 0)
++            building->list_kind_1c8 = 0;
++        else if (strcmp(value, "Food") == 0)
++            building->list_kind_1c8 = 1;
++        else if (strcmp(value, "Leisure") == 0)
++            building->list_kind_1c8 = 2;
++        else if (strcmp(value, "Other") == 0)
++            building->list_kind_1c8 = 3;
++    }
++    else if (strcmp(key, "NUM_BASEPLATES") == 0)
++    {
++        building->count_d8c = 0;
++        if (atoi(value) != 0)
++            building->data_d90 = ::operator new(static_cast<unsigned int>(atoi(value)) * 4);
++    }
++    else if (strcmp(key, "BASEPLATETYPE") == 0)
++    {
++        static_cast<unsigned int*>(building->data_d90)[building->count_d8c] = atoi(value);
++        ++building->count_d8c;
++    }
++    else if (strcmp(key, "MAXBUILDERS") == 0)
++        CatalogField<float>(building->unknown_d94, 0) = static_cast<float>(atoi(value));
++    else if (strcmp(key, "FEMALEFILENAME") == 0)
++        strcpy(building->staff_model_d44, value);
++    else if (strcmp(key, "MALEFILENAME") == 0)
++        strcpy(building->staff_model_d04, value);
++    else
++        StartupFatal("WorldParams::AddBuildingData - unrecognised building keyword - %s", key);
++}
+diff --git a/src/startup_variable_catalog_parse_guests.cpp b/src/startup_variable_catalog_parse_guests.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9d8bc001e675771efc3f2ba5c2cbd0fbf77e744c
+--- /dev/null
++++ b/src/startup_variable_catalog_parse_guests.cpp
+@@ -0,0 +1,327 @@
++#include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0044bf30
++void VariableCatalog::ParseGuestValue(unsigned int id, const char* key, const char* value)
++{
++    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x3b1b4 + id * 0x3ac;
++    if (strcmp(key, "NAME") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x44), value);
++    else if (strcmp(key, "GENDER") == 0)
++    {
++        if (strcmp(value, "M") == 0)
++            CatalogField<unsigned int>(record, 0x1c4) = 0;
++        else if (strcmp(value, "F") == 0)
++            CatalogField<unsigned int>(record, 0x1c4) = 1;
++        else
++            StartupFatal("WorldParams::AddGuestData - illegal gender code (not M/F) - %s", value);
++    }
++    else if (strcmp(key, "DRUNK_TYPE") == 0)
++    {
++        if (strcmp(value, "TIRED") == 0)
++            record[0x1e0] = 1;
++        else if (strcmp(value, "HORNY") == 0)
++            record[0x1e0] = 2;
++        else if (strcmp(value, "FIGHT") == 0)
++            record[0x1e0] = 3;
++        else if (strcmp(value, "VANDALISE") == 0)
++            record[0x1e0] = 4;
++        else
++            StartupFatal("WorldParams::AddGuestData - illegal gender code (not M/F) - %s", value);
++    }
++    else if (strcmp(key, "SPRITE") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0xc4), value);
++    else if (strcmp(key, "DRUNKTYPE") == 0)
++        CatalogField<unsigned char>(record, 0x1e0) = static_cast<unsigned char>(atoi(value));
++    else if (strcmp(key, "MONEY") == 0)
++        CatalogField<float>(record, 0x1c8) = static_cast<float>(atof(value));
++    else if (strcmp(key, "LITTER") == 0)
++        CatalogField<float>(record, 0x1ec) = static_cast<float>(atof(value));
++    else if (strcmp(key, "DEF_SPRITE") == 0)
++        CatalogField<int>(record, 0x1dc) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "ATTRACTIVE") == 0)
++        CatalogField<float>(record, 0x1d8) = static_cast<float>(atof(value));
++    else if (strcmp(key, "ATTRACTIVE_PREF") == 0)
++        CatalogField<float>(record, 0x1e4) = static_cast<float>(atof(value));
++    else if (strcmp(key, "SWIM_ENERGY") == 0)
++        CatalogField<float>(record, 0x1d0) = static_cast<float>(atof(value));
++    else if (strcmp(key, "SWIM_DIST") == 0)
++        CatalogField<float>(record, 0x1d4) = static_cast<float>(atof(value));
++    else if (strcmp(key, "MAX_ACCOMODATION") == 0)
++        CatalogField<int>(record, 0x320) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_ALCOHOL") == 0)
++        CatalogField<int>(record, 0x324) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_AMUSEMENT") == 0)
++        CatalogField<int>(record, 0x328) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_FIRSTAID") == 0)
++        CatalogField<int>(record, 0x32c) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_HEADACHE") == 0)
++        CatalogField<int>(record, 0x330) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_MEALS") == 0)
++        CatalogField<int>(record, 0x334) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_PARTYFUN") == 0)
++        CatalogField<int>(record, 0x338) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SHOWER") == 0)
++        CatalogField<int>(record, 0x33c) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SNACKS") == 0)
++        CatalogField<int>(record, 0x340) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SOFTDRINKS") == 0)
++        CatalogField<int>(record, 0x344) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SOUVENIRS") == 0)
++        CatalogField<int>(record, 0x348) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SPORTSFUN") == 0)
++        CatalogField<int>(record, 0x34c) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SUNBATHE") == 0)
++        CatalogField<int>(record, 0x350) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SWIMFUN") == 0)
++        CatalogField<int>(record, 0x354) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_TOILET") == 0)
++        CatalogField<int>(record, 0x358) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_WATERSPORTSFUN") == 0)
++        CatalogField<int>(record, 0x35c) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_STROLL") == 0)
++        CatalogField<int>(record, 0x360) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_LEAVE") == 0)
++        CatalogField<int>(record, 0x364) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_VANDALISE") == 0)
++        CatalogField<int>(record, 0x368) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_FIGHT") == 0)
++        CatalogField<int>(record, 0x36c) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_FLIRT") == 0)
++        CatalogField<int>(record, 0x370) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_UMBRELLAS") == 0)
++        CatalogField<int>(record, 0x374) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SUNTAN") == 0)
++        CatalogField<int>(record, 0x378) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_HARDSEX") == 0)
++        CatalogField<int>(record, 0x37c) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SLEEP") == 0)
++        CatalogField<int>(record, 0x380) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "MAX_SCARED") == 0)
++        CatalogField<int>(record, 0x384) = static_cast<int>(atoi(value));
++    else if (strcmp(key, "COLOUR") == 0)
++        CatalogField<unsigned char>(record, 0x1e8) = static_cast<unsigned char>(atoi(value));
++    else if (strcmp(key, "DRUNKDECAY") == 0)
++        CatalogField<float>(record, 0x1f0) = static_cast<float>(atof(value));
++    else if (strcmp(key, "FLIRTDECAY") == 0)
++        CatalogField<float>(record, 0x1f8) = static_cast<float>(atof(value));
++    else if (strcmp(key, "FIGHTDECAY") == 0)
++        CatalogField<float>(record, 0x1f4) = static_cast<float>(atof(value));
++    else if (strcmp(key, "VANDALISEDECAY") == 0)
++        CatalogField<float>(record, 0x1fc) = static_cast<float>(atof(value));
++    else if (strcmp(key, "NIGHTS_MIN") == 0)
++        CatalogField<unsigned char>(record, 0x1e9) = static_cast<unsigned char>(atoi(value));
++    else if (strcmp(key, "NIGHTS_MAX") == 0)
++        CatalogField<unsigned char>(record, 0x1ea) = static_cast<unsigned char>(atoi(value));
++    else if (strcmp(key, "SUNBURN_TIME") == 0)
++        CatalogField<float>(record, 0x388) = static_cast<float>(atof(value));
++    else if (strcmp(key, "ILL_DECAY") == 0)
++        CatalogField<float>(record, 0x38c) = static_cast<float>(atof(value));
++    else if (strcmp(key, "START_BLADDER") == 0)
++        CatalogField<float>(record, 0x390) = static_cast<float>(atof(value));
++    else if (strcmp(key, "START_FIGHT") == 0)
++        CatalogField<float>(record, 0x394) = static_cast<float>(atof(value));
++    else if (strcmp(key, "START_FLIRT") == 0)
++        CatalogField<float>(record, 0x398) = static_cast<float>(atof(value));
++    else if (strcmp(key, "START_ILL") == 0)
++        CatalogField<float>(record, 0x3a0) = static_cast<float>(atof(value));
++    else if (strcmp(key, "START_DRUNK") == 0)
++        CatalogField<float>(record, 0x39c) = static_cast<float>(atof(value));
++    else if (strcmp(key, "START_SUNBURN") == 0)
++        CatalogField<float>(record, 0x3a4) = static_cast<float>(atof(value));
++    else if (strcmp(key, "START_VANDALISE") == 0)
++        CatalogField<float>(record, 0x3a8) = static_cast<float>(atof(value));
++}
++
++// FUNCTION: BEACHLIFE 0x0044d600
++void VariableCatalog::ParseGuestRange(unsigned int id, const char* key, const char* first, const char* second)
++{
++    float minimum = static_cast<float>(atof(first));
++    double maximum = atof(second);
++    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x3b1b4 + id * 0x3ac;
++    if (strcmp(key, "ALCOHOLPREF") == 0)
++    {
++        CatalogField<float>(record, 0x200) = minimum;
++        CatalogField<float>(record, 0x204) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "AMUSEMENTPREF") == 0)
++    {
++        CatalogField<float>(record, 0x208) = minimum;
++        CatalogField<float>(record, 0x20c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "MEALSPREF") == 0)
++    {
++        CatalogField<float>(record, 0x210) = minimum;
++        CatalogField<float>(record, 0x214) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "PARTYFUNPREF") == 0)
++    {
++        CatalogField<float>(record, 0x218) = minimum;
++        CatalogField<float>(record, 0x21c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SOFTDRINKSPREF") == 0)
++    {
++        CatalogField<float>(record, 0x228) = minimum;
++        CatalogField<float>(record, 0x22c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SOUVENIRSPREF") == 0)
++    {
++        CatalogField<float>(record, 0x230) = minimum;
++        CatalogField<float>(record, 0x234) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SPORTSFUNPREF") == 0)
++    {
++        CatalogField<float>(record, 0x238) = minimum;
++        CatalogField<float>(record, 0x23c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SUNBATHEPREF") == 0)
++    {
++        CatalogField<float>(record, 0x240) = minimum;
++        CatalogField<float>(record, 0x244) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SWIMMINGPREF") == 0)
++    {
++        CatalogField<float>(record, 0x248) = minimum;
++        CatalogField<float>(record, 0x24c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "WATERFUNPREF") == 0)
++    {
++        CatalogField<float>(record, 0x250) = minimum;
++        CatalogField<float>(record, 0x254) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "STROLLPREF") == 0)
++    {
++        CatalogField<float>(record, 0x258) = minimum;
++        CatalogField<float>(record, 0x25c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SLEEPPREF") == 0)
++    {
++        CatalogField<float>(record, 0x260) = minimum;
++        CatalogField<float>(record, 0x264) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SNACKSPREF") == 0)
++    {
++        CatalogField<float>(record, 0x220) = minimum;
++        CatalogField<float>(record, 0x224) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "BEAUTYTOL") == 0)
++    {
++        CatalogField<float>(record, 0x2d8) = minimum;
++        CatalogField<float>(record, 0x2dc) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "CROWDINGTOL") == 0)
++    {
++        CatalogField<float>(record, 0x2e0) = minimum;
++        CatalogField<float>(record, 0x2e4) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "TOTTYTOL") == 0)
++    {
++        CatalogField<float>(record, 0x2e8) = minimum;
++        CatalogField<float>(record, 0x2ec) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "PRICETOL") == 0)
++    {
++        CatalogField<float>(record, 0x2f0) = minimum;
++        CatalogField<float>(record, 0x2f4) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "VARIETYTOL") == 0)
++    {
++        CatalogField<float>(record, 0x2f8) = minimum;
++        CatalogField<float>(record, 0x2fc) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "CLEANLINESSTOL") == 0)
++    {
++        CatalogField<float>(record, 0x300) = minimum;
++        CatalogField<float>(record, 0x304) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SAFETYTOL") == 0)
++    {
++        CatalogField<float>(record, 0x308) = minimum;
++        CatalogField<float>(record, 0x30c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SLEEPTIME") == 0)
++    {
++        CatalogField<float>(record, 0x310) = minimum;
++        CatalogField<float>(record, 0x314) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "WAKETIME") == 0)
++    {
++        CatalogField<float>(record, 0x318) = minimum;
++        CatalogField<float>(record, 0x31c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "BEAUTY_EFFECT") == 0)
++    {
++        CatalogField<float>(record, 0x2a0) = minimum;
++        CatalogField<float>(record, 0x2a4) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "CROWDING_EFFECT") == 0)
++    {
++        CatalogField<float>(record, 0x2a8) = minimum;
++        CatalogField<float>(record, 0x2ac) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "TOTTY_EFFECT") == 0)
++    {
++        CatalogField<float>(record, 0x2b0) = minimum;
++        CatalogField<float>(record, 0x2b4) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "PRICE_EFFECT") == 0)
++    {
++        CatalogField<float>(record, 0x2b8) = minimum;
++        CatalogField<float>(record, 0x2bc) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "VARIETY_EFFECT") == 0)
++    {
++        CatalogField<float>(record, 0x2c0) = minimum;
++        CatalogField<float>(record, 0x2c4) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "CLEANLINESS_EFFECT") == 0)
++    {
++        CatalogField<float>(record, 0x2c8) = minimum;
++        CatalogField<float>(record, 0x2cc) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SAFETY_EFFECT") == 0)
++    {
++        CatalogField<float>(record, 0x2d0) = minimum;
++        CatalogField<float>(record, 0x2d4) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "BEAUTY_START") == 0)
++    {
++        CatalogField<float>(record, 0x268) = minimum;
++        CatalogField<float>(record, 0x26c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "CROWDING_START") == 0)
++    {
++        CatalogField<float>(record, 0x270) = minimum;
++        CatalogField<float>(record, 0x274) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "TOTTY_START") == 0)
++    {
++        CatalogField<float>(record, 0x278) = minimum;
++        CatalogField<float>(record, 0x27c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "PRICE_START") == 0)
++    {
++        CatalogField<float>(record, 0x280) = minimum;
++        CatalogField<float>(record, 0x284) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "VARIETY_START") == 0)
++    {
++        CatalogField<float>(record, 0x288) = minimum;
++        CatalogField<float>(record, 0x28c) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "CLEANLINESS_START") == 0)
++    {
++        CatalogField<float>(record, 0x290) = minimum;
++        CatalogField<float>(record, 0x294) = static_cast<float>(maximum);
++    }
++    else if (strcmp(key, "SAFETY_START") == 0)
++    {
++        CatalogField<float>(record, 0x298) = minimum;
++        CatalogField<float>(record, 0x29c) = static_cast<float>(maximum);
++    }
++    else
++        StartupFatal("WorldParams::AddGuestFloatRange - illegal datakeyword - %s", key);
++}
+diff --git a/src/startup_variable_catalog_parse_objects.cpp b/src/startup_variable_catalog_parse_objects.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8599f3186cdebb81635405143d88a9a06e9c5163
+--- /dev/null
++++ b/src/startup_variable_catalog_parse_objects.cpp
+@@ -0,0 +1,130 @@
++#include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++static char* CopyCatalogText(const char* value)
++{
++    char* text = static_cast<char*>(::operator new(strlen(value) + 1));
++    strcpy(text, value);
++    return text;
++}
++
++// FUNCTION: BEACHLIFE 0x0044e410
++void VariableCatalog::ParseObject(unsigned int id, const char* key, const char* value)
++{
++    VariableCatalogObjectDefinition* object = Object(id);
++    if (strcmp(key, "NAME") == 0)
++        strcpy(reinterpret_cast<char*>(object->unknown_00 + 0x44), value);
++    else if (strcmp(key, "TABLE_SPRITE") == 0)
++        strcpy(object->resource_c4, value);
++    else if (strcmp(key, "CHAIR_SPRITE") == 0)
++        strcpy(object->resource_1c4, value);
++    else if (strcmp(key, "GRIDWIDTH") == 0)
++        CatalogField<int>(object->unknown_348, 0x80) = atoi(value);
++    else if (strcmp(key, "GRIDHEIGHT") == 0)
++        CatalogField<int>(object->unknown_348, 0x84) = atoi(value);
++    else if (strcmp(key, "CAPACITY") == 0)
++    {
++        object->frame_count_3d0 = atoi(value);
++        object->data_3f0 = ::operator new(object->frame_count_3d0 * sizeof(unsigned int));
++        object->frames_3f4 = static_cast<void**>(::operator new(object->frame_count_3d0 * sizeof(void*)));
++    }
++    else if (strcmp(key, "NUM_WALK_PTS") == 0)
++        object->data_3e0 = ::operator new(static_cast<unsigned int>(atoi(value)) * sizeof(ScreenMapPosition));
++    else if (strcmp(key, "WALK_PNT_X") == 0)
++        static_cast<ScreenMapPosition*>(object->data_3e0)[CatalogField<unsigned int>(object->unknown_3d8, 4)].x = static_cast<float>(atof(value));
++    else if (strcmp(key, "WALK_PNT_Y") == 0)
++    {
++        unsigned int& count = CatalogField<unsigned int>(object->unknown_3d8, 4);
++        static_cast<ScreenMapPosition*>(object->data_3e0)[count].y = static_cast<float>(atof(value));
++        ++count;
++    }
++    else if (strcmp(key, "NUM_CHAIRPOS_PTS") == 0)
++        object->data_3e8 = ::operator new(static_cast<unsigned int>(atoi(value)) * sizeof(ScreenMapPosition));
++    else if (strcmp(key, "CHAIRPOS_X") == 0)
++        static_cast<ScreenMapPosition*>(object->data_3e8)[CatalogField<unsigned int>(object->unknown_3e4, 0)].x = static_cast<float>(atof(value));
++    else if (strcmp(key, "CHAIRPOS_Y") == 0)
++    {
++        unsigned int& count = CatalogField<unsigned int>(object->unknown_3e4, 0);
++        static_cast<ScreenMapPosition*>(object->data_3e8)[count].y = static_cast<float>(atof(value));
++        ++count;
++    }
++    else if (strcmp(key, "CHAIR_DIRECTION") == 0)
++    {
++        static const char* const directions[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
++        unsigned int direction = 0;
++        while (direction < 8 && strcmp(value, directions[direction]) != 0)
++            ++direction;
++        unsigned int& count = CatalogField<unsigned int>(object->unknown_3ec, 0);
++        if (direction < 8)
++            static_cast<unsigned int*>(object->data_3f0)[count] = direction;
++        else
++            StartupFatal("Invalid direction in table - %s", value);
++        ++count;
++    }
++    else if (strcmp(key, "CHAIR_NUM_WALKPNT") == 0)
++    {
++        unsigned int size = static_cast<unsigned int>(atoi(value)) * 4 + 4;
++        void* points = ::operator new(size);
++        unsigned int& count = CatalogField<unsigned int>(object->unknown_414, 4);
++        object->frames_3f4[count] = points;
++        *static_cast<int*>(object->frames_3f4[count]) = atoi(value);
++        ++count;
++        CatalogField<unsigned int>(object->unknown_414, 0) = 1;
++    }
++    else if (strcmp(key, "CHAIR_WALKPNT") == 0)
++    {
++        int point = atoi(value);
++        unsigned int count = CatalogField<unsigned int>(object->unknown_414, 4);
++        unsigned int& index = CatalogField<unsigned int>(object->unknown_414, 0);
++        static_cast<int*>(object->frames_3f4[count - 1])[index] = point;
++        ++index;
++    }
++    else if (strcmp(key, "SIT_DOWN_ANIM") == 0)
++        strcpy(reinterpret_cast<char*>(object->unknown_2c4), value);
++    else if (strcmp(key, "NUM_SAT_DOWN_ANIM") == 0)
++        object->names_344 = static_cast<void**>(::operator new(static_cast<unsigned int>(atoi(value)) * sizeof(void*)));
++    else if (strcmp(key, "SAT_DOWN_ANIM") == 0)
++    {
++        object->names_344[object->name_count_3d4] = ::operator new(strlen(value) + 1);
++        strcpy(static_cast<char*>(object->names_344[object->name_count_3d4]), value);
++        ++object->name_count_3d4;
++    }
++    else if (strcmp(key, "GET_UP_ANIM") == 0)
++        strcpy(reinterpret_cast<char*>(object->unknown_348), value);
++    else if (strcmp(key, "SERVE_TABLE") == 0)
++        object->flag_424 = atoi(value) != 0;
++    else if (strcmp(key, "XOFFSET_TABLE") == 0)
++        object->draw_offset_x_41c = atoi(value);
++    else if (strcmp(key, "YOFFSET_TABLE") == 0)
++        object->draw_offset_y_420 = atoi(value);
++    else if (strcmp(key, "HAS_WAITER") == 0)
++        object->flag_3f8 = atoi(value) != 0;
++    else if (strcmp(key, "WAITER_SPRITE") == 0)
++        object->data_40c = CopyCatalogText(value);
++    else if (strcmp(key, "WAITER_WALK_ANIM") == 0)
++        object->data_404 = CopyCatalogText(value);
++    else if (strcmp(key, "WAITER_SERVE_ANIM") == 0)
++        object->data_408 = CopyCatalogText(value);
++    else if (strcmp(key, "CALL_WAITER_ANIM") == 0)
++        object->data_3fc = CopyCatalogText(value);
++    else if (strcmp(key, "WAIT_WAITER_ANIM") == 0)
++        object->data_400 = CopyCatalogText(value);
++    else if (strcmp(key, "WAITER_SERVE_POINT_X") == 0)
++    {
++        if (CatalogField<unsigned int>(object->unknown_3d8, 0) == 0)
++            object->data_410 = ::operator new(object->frame_count_3d0 * sizeof(ScreenMapPosition));
++        static_cast<ScreenMapPosition*>(object->data_410)[CatalogField<unsigned int>(object->unknown_3d8, 0)].x = static_cast<float>(atof(value));
++    }
++    else if (strcmp(key, "WAITER_SERVE_POINT_Y") == 0)
++    {
++        unsigned int& count = CatalogField<unsigned int>(object->unknown_3d8, 0);
++        static_cast<ScreenMapPosition*>(object->data_410)[count].y = static_cast<float>(atof(value));
++        ++count;
++    }
++    else
++        StartupFatal("WorldParams::AddTableData - unrecognised Table keyword - %s", key);
++}
+diff --git a/src/startup_variable_catalog_parse_records.cpp b/src/startup_variable_catalog_parse_records.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c9ee72621e95ae45a1268a68e3a278fcffed3d61
+--- /dev/null
++++ b/src/startup_variable_catalog_parse_records.cpp
+@@ -0,0 +1,133 @@
++#include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0044f260
++void VariableCatalog::ParseVehicle(unsigned int id, const char* key, const char* value)
++{
++    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x3fb24 + id * 0x274;
++    if (strcmp(key, "NAME") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x44), value);
++    else if (strcmp(key, "SPRITE") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0xc4), value);
++    else if (strcmp(key, "GRIDWIDTH") == 0)
++        CatalogField<int>(record, 0x1c4) = atoi(value);
++    else if (strcmp(key, "GRIDHEIGHT") == 0)
++        CatalogField<int>(record, 0x1c8) = atoi(value);
++    else if (strcmp(key, "CAPACITY") == 0)
++        CatalogField<int>(record, 0x1cc) = atoi(value);
++    else if (strcmp(key, "TERRAIN") == 0)
++        return;
++    else if (strcmp(key, "MAX_SPEED") == 0)
++        CatalogField<float>(record, 0x1d4) = static_cast<float>(atof(value));
++    else if (strcmp(key, "TOWED") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x1e4), value);
++    else if (strcmp(key, "FORCE") == 0)
++        CatalogField<float>(record, 0x1d0) = static_cast<float>(atof(value));
++    else if (strcmp(key, "MASS") == 0)
++        CatalogField<float>(record, 0x1d8) = static_cast<float>(atof(value));
++    else if (strcmp(key, "MOVETYPE") == 0)
++    {
++        if (strcmp(value, "POINTS") == 0)
++            record[0x1dc] = 1;
++        else if (strcmp(value, "BOUNDARY") == 0)
++            record[0x1dc] = 2;
++        else
++            StartupFatal("WorldParams::AddVehicleData - Invalid Movement Type - %s", value);
++    }
++    else if (strcmp(key, "ANIMSET") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x224), value);
++    else if (strcmp(key, "STAFF") == 0)
++    {
++        unsigned int staff = FindStaff(value);
++        unsigned int& count = CatalogField<unsigned int>(record, 0x1e0);
++        CatalogField<unsigned int>(record, 0x264 + count * 4) = staff;
++        ++count;
++    }
++    else if (strcmp(key, "CREATION_PNTX") == 0)
++        CatalogField<float>(record, 0x26c) = static_cast<float>(atof(value));
++    else if (strcmp(key, "CREATION_PNTY") == 0)
++        CatalogField<float>(record, 0x270) = static_cast<float>(atof(value));
++    else
++        StartupFatal("WorldParams::AddVehicleData - unrecognised Vehicle keyword - %s", key);
++}
++
++// FUNCTION: BEACHLIFE 0x0044f830
++void VariableCatalog::ParseName(const char* kind, const char* value)
++{
++    unsigned char* names = reinterpret_cast<unsigned char*>(this) + 0x409dc;
++    if (strcmp(kind, "MALENAME") == 0)
++    {
++        unsigned int& count = CatalogField<unsigned int>(names, 0xdc00);
++        strcpy(reinterpret_cast<char*>(names + count * 64), value);
++        ++count;
++    }
++    else if (strcmp(kind, "FEMALENAME") == 0)
++    {
++        unsigned int& count = CatalogField<unsigned int>(names, 0xdc04);
++        strcpy(reinterpret_cast<char*>(names + (count + 0x8c) * 64), value);
++        ++count;
++    }
++    else if (strcmp(kind, "SURNAME") == 0)
++    {
++        unsigned int& count = CatalogField<unsigned int>(names, 0xdc08);
++        strcpy(reinterpret_cast<char*>(names + (count + 0x118) * 64), value);
++        ++count;
++    }
++    else
++        StartupFatal("WorldParams::AddNameData - unrecognised comment keyword - %s", kind);
++}
++
++// FUNCTION: BEACHLIFE 0x0044f9d0
++void VariableCatalog::ParseEvent(unsigned int id, const char* key, const char* value)
++{
++    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x4e5e8 + id * 0x58;
++    if (strcmp(key, "COST") == 0)
++        CatalogField<float>(record, 0x4c) = static_cast<float>(atof(value));
++    else if (strcmp(key, "DEF_PRICE") == 0)
++        CatalogField<float>(record, 0x48) = static_cast<float>(atof(value));
++    else if (strcmp(key, "MALE_INTENSITY") == 0)
++        CatalogField<float>(record, 0x50) = static_cast<float>(atof(value));
++    else if (strcmp(key, "FEMALE_INTENSITY") == 0)
++        CatalogField<float>(record, 0x54) = static_cast<float>(atof(value));
++    else
++        StartupFatal("WorldParams::AddEventData - unrecognised event keyword - %s", key);
++}
++
++// FUNCTION: BEACHLIFE 0x0044fb40
++void VariableCatalog::ParseUnlock(unsigned int id, const char* key, const char* value)
++{
++    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x4ecc8 + id * 0xdc;
++    record[0xd8] = 1;
++    if (strcmp(key, "BRAND") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x44), value);
++    else if (strcmp(key, "BASECOST") == 0)
++        CatalogField<float>(record, 0xc4) = static_cast<float>(atof(value));
++    else if (strcmp(key, "COCKTAIL") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x84), value);
++    else if (strcmp(key, "STRCOST") == 0)
++        CatalogField<float>(record, 0xc8) = static_cast<float>(atof(value));
++    else if (strcmp(key, "ALCSTR") == 0)
++        CatalogField<float>(record, 0xd0) = static_cast<float>(atof(value));
++    else if (strcmp(key, "PRICE") == 0)
++        CatalogField<float>(record, 0xcc) = static_cast<float>(atof(value));
++    else if (strcmp(key, "EFFECT") == 0)
++    {
++        if (strcmp(value, "FIGHT") == 0)
++            CatalogField<unsigned int>(record, 0xd4) = 0;
++        else if (strcmp(value, "FLIRT") == 0)
++            CatalogField<unsigned int>(record, 0xd4) = 1;
++        else if (strcmp(value, "VANDAL") == 0)
++            CatalogField<unsigned int>(record, 0xd4) = 2;
++        else if (strcmp(value, "HAPPY") == 0)
++            CatalogField<unsigned int>(record, 0xd4) = 3;
++        else if (strcmp(value, "SAD") == 0)
++            CatalogField<unsigned int>(record, 0xd4) = 4;
++        else
++            StartupFatal("WorldParams::AddBeerData - Invalid beer effect Type %s", value);
++    }
++    else
++        StartupFatal("WorldParams::AddEventData - unrecognised event keyword - %s", key);
++}
+diff --git a/src/startup_variable_catalog_parse_scenery.cpp b/src/startup_variable_catalog_parse_scenery.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8e0c054bc63b5aba1a49b978a273911a07db9765
+--- /dev/null
++++ b/src/startup_variable_catalog_parse_scenery.cpp
+@@ -0,0 +1,81 @@
++#include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0044b2d0
++void VariableCatalog::ParseScenery(unsigned int id, const char* key, const char* value)
++{
++    unsigned char* record = reinterpret_cast<unsigned char*>(this) + 0x5409c + id * 0x314;
++    if (strcmp(key, "NAME") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x44), value);
++    else if (strcmp(key, "SPRITE") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0xc4), value);
++    else if (strcmp(key, "ANIM") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x1c4), value);
++    else if (strcmp(key, "GRIDWIDTH") == 0)
++        CatalogField<int>(record, 0x2c8) = atoi(value);
++    else if (strcmp(key, "GRIDHEIGHT") == 0)
++        CatalogField<int>(record, 0x2cc) = atoi(value);
++    else if (strcmp(key, "COST2BUILD") == 0)
++        CatalogField<int>(record, 0x2d0) = atoi(value);
++    else if (strcmp(key, "BUILDON") == 0)
++    {
++        if (strcmp(value, "SHALLOW_WATER") == 0)
++            CatalogField<unsigned int>(record, 0x2d4) |= 4;
++        else if (strcmp(value, "LAND") == 0)
++            CatalogField<unsigned int>(record, 0x2d4) |= 1;
++        else if (strcmp(value, "DEEP_SEA") == 0)
++            CatalogField<unsigned int>(record, 0x2d4) |= 8;
++        else if (strcmp(value, "BEACH") == 0)
++            CatalogField<unsigned int>(record, 0x2d4) |= 2;
++        else if (strcmp(value, "PATH") == 0)
++            CatalogField<unsigned int>(record, 0x2d4) |= 128;
++    }
++    else if (strcmp(key, "COLLIDE") == 0)
++        record[0x2d8] = atoi(value) != 0;
++    else if (strcmp(key, "CAPACITY") == 0)
++        CatalogField<int>(record, 0x2dc) = atoi(value);
++    else if (strcmp(key, "MENU") == 0)
++        strcpy(reinterpret_cast<char*>(record + 0x2e0), value);
++    else if (strcmp(key, "ICON") == 0)
++        CatalogField<int>(record, 0x300) = atoi(value);
++    else if (strcmp(key, "CATEGORY") == 0)
++    {
++        if (strcmp(value, "FURNITURE") == 0)
++            CatalogField<unsigned int>(record, 0x2c4) = 0;
++        else if (strcmp(value, "PATHS") == 0)
++            CatalogField<unsigned int>(record, 0x2c4) = 1;
++        else if (strcmp(value, "PLANTS") == 0)
++            CatalogField<unsigned int>(record, 0x2c4) = 2;
++        else if (strcmp(value, "ORNAMENTS") == 0)
++            CatalogField<unsigned int>(record, 0x2c4) = 3;
++        else if (strcmp(value, "TREES") == 0)
++            CatalogField<unsigned int>(record, 0x2c4) = 4;
++        else if (strcmp(value, "SHRUBS") == 0)
++            CatalogField<unsigned int>(record, 0x2c4) = 5;
++        else if (strcmp(value, "BILLBOARD") == 0)
++            CatalogField<unsigned int>(record, 0x2c4) = 6;
++        else if (strcmp(value, "OTHER") == 0)
++            CatalogField<unsigned int>(record, 0x2c4) = 7;
++        else
++            StartupFatal("Unknown scenery category");
++    }
++    else if (strcmp(key, "RATING") == 0)
++        CatalogField<float>(record, 0x304) = static_cast<float>(atof(value));
++    else if (strcmp(key, "CLEAN") == 0)
++        record[0x308] = atoi(value) != 0;
++    else if (strcmp(key, "REPAIR") == 0)
++        record[0x309] = atoi(value) != 0;
++    else if (strcmp(key, "BURN") == 0)
++        record[0x310] = atoi(value) != 0;
++    else if (strcmp(key, "USERREMOVE") == 0)
++        record[0x311] = atoi(value) != 0;
++    else if (strcmp(key, "VEGFLAG") == 0)
++        record[0x312] = atoi(value) != 0;
++    else if (strcmp(key, "PATHFLAG") == 0)
++        CatalogField<int>(record, 0x30c) = atoi(value);
++    else if (strcmp(key, "WATER") == 0)
++        record[0x30a] = atoi(value) != 0;
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 9e8843d946e3959b166b4ac3b40f6790ad4f96df..ede2fdff3a31f19531f6d483b80cc8f6368ec3b5 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -611,6 +611,16 @@ struct VariableCatalog
+     VariableCatalog(const char* buildings, const char* guests);  // 0x00448b40.
+     const char* BuildingName(unsigned int index);                // 0x004493c0.
+     ~VariableCatalog() noexcept(false);                          // 0x00448d90.
++    void ParseBuilding(unsigned int id, const char* key, char* value);                                                                                                                                                                                                                           // 0x004497a0.
++    void ParseStaff(const char* key, const char* name, const char* gender, const char* wage, const char* resource, const char* role, const char* script, const char* base_wage, const char* value210, const char* value214, const char* morale, const char* shift_start, const char* shift_end); // 0x0044bd80.
++    void ParseGuestValue(unsigned int id, const char* key, const char* value);                                                                                                                                                                                                                   // 0x0044bf30.
++    void ParseGuestRange(unsigned int id, const char* key, const char* first, const char* second);                                                                                                                                                                                               // 0x0044d600.
++    void ParseObject(unsigned int id, const char* key, const char* value);                                                                                                                                                                                                                       // 0x0044e410.
++    void ParseVehicle(unsigned int id, const char* key, const char* value);                                                                                                                                                                                                                      // 0x0044f260.
++    void ParseName(const char* kind, const char* value);                                                                                                                                                                                                                                         // 0x0044f830.
++    void ParseEvent(unsigned int id, const char* key, const char* value);                                                                                                                                                                                                                        // 0x0044f9d0.
++    void ParseUnlock(unsigned int id, const char* key, const char* value);                                                                                                                                                                                                                       // 0x0044fb40.
++    void ParseScenery(unsigned int id, const char* key, const char* value);                                                                                                                                                                                                                      // 0x0044b2d0.
+     void ParseData(char* data, int size);                        // 0x0044ff10.
+     void PrepareBuildingFootprints();                            // 0x00447a10.
+ 
+diff --git a/src/startup_world_cleaner_methods.cpp b/src/startup_world_cleaner_methods.cpp
+index f573739792acc2267583a6569749c2cebe68aeaf..9e52c547a76875e66074f0e419eab8c3afffc2a5 100644
+--- a/src/startup_world_cleaner_methods.cpp
++++ b/src/startup_world_cleaner_methods.cpp
+@@ -62,7 +62,7 @@ bool WorldCleanerEntity::Unknown0c()
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00466060
+-float WorldCleanerEntity::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char*)
++float WorldStaffEntity::PlayStaffAnimation(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char*)
+ {
+     ScreenWorldPosition position = { x_30, y_34, z_38 };
+     float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
+@@ -92,3 +92,13 @@ void WorldCleanerEntity::Dismiss()
+     SetMovementMode(0x4c);
+     Unknown08(0x4c);
+ }
++
++float WorldCleanerEntity::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
++{
++    return PlayStaffAnimation(animation, once, next_state, hold, next_animation);
++}
++
++float WorldSecurityEntity::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
++{
++    return PlayStaffAnimation(animation, once, next_state, hold, next_animation);
++}
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index eab172ba8a96682e5800091ebb647278a24efca4..a705203059e6bacb5efeaf6acaeb5197a351a436 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -23,6 +23,7 @@ static_assert(sizeof(void*) != 4 || sizeof(VariableEntity) == 0x58);
+ 
+ struct WorldStaticEntity : VariableEntity
+ {
++    void SetRepairAssigned(unsigned char assigned);      // 0x004910c0.
+     bool NeedsCleaning();                                // 0x004910f0.
+     bool NeedsRepair();                                  // 0x004910d0.
+     void SetFootprintX(unsigned char size);              // 0x00491090.
+@@ -115,6 +116,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldPedestrianEntity) == 0xf4);
+ struct WorldStaffEntity : WorldPedestrianEntity
+ {
+     void ChooseRandomDestination();                                                                                 // 0x004900e0.
++    void UpdateStaffFeedback();                                                                                     // 0x0048ec30.
+     void AddThought(unsigned int flags);                                                                            // 0x004907e0.
+     explicit WorldStaffEntity(const char* name);                                                                    // 0x0048e930.
+     ~WorldStaffEntity() noexcept(false);                                                                            // 0x0048eb10.
+@@ -136,6 +138,10 @@ struct WorldStaffEntity : WorldPedestrianEntity
+     virtual const char* Notification(unsigned int flags);                                                           // 0x004908e0.
+     virtual void Dismiss();                                                                                         // 0x00490a00.
+     virtual void DirectTo(unsigned int id) { IgnoreScreenWord(id); }                                                // Folded 0x0049dbe0.
++    bool IsOnDuty();                                                                                                // 0x0048ffb0.
++    bool EnterDefaultScriptState(unsigned int state);                                                               // 0x00486fc0.
++    float PlayStaffAnimation(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x00466060.
++    bool FindInteractionOffset(ScreenWorldPosition* position, int x, int y);                                                                      // 0x0048fff0.
+     bool LeaveScriptState();                                                                                        // 0x00487110.
+     void QueueScriptCommand(ScreenModeCommand command);                                                             // 0x004812a0.
+     void QueueDelayedScriptCommand(ScreenModeCommand command, float delay);                                         // 0x004812d0.
+@@ -371,6 +377,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldBuildingEntity) == 0x45c);
+ 
+ struct WorldGuestEntity : WorldPedestrianEntity
+ {
++    bool CanBeFined();                                                                                                                            // 0x0046be90.
+     bool HasSatDown();                                                                                                                            // 0x00478b80.
+     float IllnessTint() { return GuestValue467d70(); }                                                                                            // 0x00467d70.
+     void DrawDesire(ScreenPoint* position);                                                                                                       // 0x0047bd00.
+@@ -591,6 +598,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldObjectEntity) == 0xa4);
+ 
+ struct WorldServiceStaffEntity : WorldStaffEntity
+ {
++    ~WorldServiceStaffEntity() noexcept(false);                              // 0x0048e920.
+     explicit WorldServiceStaffEntity(const char* name);                      // 0x0048d240.
+     void Destroy(unsigned int flags) override;                               // 0x0048e900.
+     bool Unknown04(unsigned int state) override;                             // 0x0048e1a0.
+@@ -1059,6 +1067,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldEntity17) == 0x114);
+ 
+ struct WorldEntity18 : WorldPedestrianEntity
+ {
++    ~WorldEntity18() noexcept(false);                                                                                                             // 0x0049c220.
+     void SetOwner(unsigned int owner);                                                                                                            // 0x0049c280.
+     void SetVariant(unsigned int variant);                                                                                                        // 0x0049db10.
+     explicit WorldEntity18(const char* name);                                                                                                     // 0x0049c1e0.
+@@ -1073,9 +1082,15 @@ struct WorldEntity18 : WorldPedestrianEntity
+     void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00464660.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0049e0a0.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x0049e150.
+-    unsigned char unknown_f4[0x14];
++    unsigned int action_f4;
++    unsigned int contestant_f8;
++    int type_fc;
++    unsigned int owner_100;
++    unsigned char unknown_104[4];
+     unsigned char flag_108;
+-    unsigned char unknown_109[0x13];
++    unsigned char unknown_109[3];
++    ScreenWorldPosition action_point_10c;
++    unsigned char unknown_118[4];
+ };
+ static_assert(sizeof(void*) != 4 || sizeof(WorldEntity18) == 0x11c);
+ 
+diff --git a/src/startup_world_entity18_commands.cpp b/src/startup_world_entity18_commands.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e25d9dfcf3802331d66646202673133b64bddb7
+--- /dev/null
++++ b/src/startup_world_entity18_commands.cpp
+@@ -0,0 +1,345 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <cstdlib>
++
++static float ContestAnimation(WorldEntity18* entity, const char* name)
++{
++    ScreenWorldPosition position = { entity->x_30, entity->y_34, entity->z_38 };
++    return entity->keyline_state_44->SetAnimation(name, window_deactivation_state->time_158, &position);
++}
++
++static void QueueContestCommand(unsigned int sender, unsigned int recipient, unsigned int kind, unsigned int argument, float delay)
++{
++    ScreenModeCommand command;
++    command.words[0] = sender;
++    command.words[1] = recipient;
++    command.words[2] = kind;
++    command.words[3] = 0;
++    command.words[4] = argument;
++    screen_mode_commands->QueueDelayed(&command, delay);
++}
++
++static void QueueContestStep(WorldEntity18* entity, float delay)
++{
++    QueueContestCommand(entity->id_28, entity->id_28, 0x39, 0, delay);
++}
++
++static void BroadcastContestCommand(WorldEntity18* entity, unsigned int kind, unsigned int argument, float delay)
++{
++    ScreenModeCommand command;
++    command.words[0] = entity->id_28;
++    command.words[1] = entity->id_28;
++    command.words[2] = kind;
++    command.words[3] = 0;
++    command.words[4] = argument;
++    command.words[5] = 0x3e;
++    command.words[6] = 0;
++    variable_world->FindObject(entity->owner_100)->AsBuilding()->events_170->BroadcastGuests(&command, delay);
++}
++
++static ScreenMapPosition ContestPosition(WorldEntity18* entity, ScreenMapPosition offset)
++{
++    WorldBuildingEntity* building = variable_world->FindObject(entity->owner_100)->AsBuilding();
++    ScreenPoint tile = building->TilePosition();
++    return CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, building->building_60->footprint_x_1d4, building->building_60->footprint_y_1d8, offset, building->keyline_state_44->word_18);
++}
++
++static void MoveContestEntity(WorldEntity18* entity, ScreenMapPosition position)
++{
++    ScreenModeCommand command;
++    command.words[0] = entity->id_28;
++    command.words[1] = entity->id_28;
++    command.words[2] = 5;
++    command.words[3] = static_cast<int>(position.x);
++    command.words[4] = static_cast<int>(position.y);
++    screen_mode_commands->QueueCommand(&command);
++}
++
++static void NotifyContestAttendants(WorldEntity18* entity)
++{
++    unsigned int count;
++    VariableEntity** entities = variable_world->ByType(18, &count);
++    ScreenModeCommand command;
++    command.words[0] = entity->id_28;
++    command.words[1] = 0;
++    command.words[2] = 0x3c;
++    command.words[3] = 0;
++    command.words[4] = 0;
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        WorldEntity18* attendant = static_cast<WorldEntity18*>(entities[index]);
++        if (attendant->owner_100 == entity->owner_100 && attendant->type_fc == 3)
++        {
++            command.words[1] = attendant->id_28;
++            screen_mode_commands->QueueCommand(&command);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0049c320
++bool WorldEntity18::Unknown14(ScreenModeCommand* command)
++{
++    static const char* const waiting[] = { "WTS_WAIT1", "WTS_WAIT2", "WTS_WAIT3", "WTS_WAIT4", "WTS_WAIT5", "WTS_WAIT6", "WTS_WAIT_TO_DANCE_DRY" };
++    static const char* const reacting[] = { "WTS_REACT1", "WTS_REACT2", "WTS_REACT3", "WTS_REACT4", "WTS_REACT5", "WTS_REACT6" };
++    static const char* const dancing[] = { "WTS_DANCE1_DRY", "WTS_DANCE2_DRY", "WTS_DANCE3_DRY", "WTS_DANCE_TO_WAIT_DRY" };
++    static const char* const wet_dancing[] = { "WTS_DANCE1_WET", "WTS_DANCE2_WET", "WTS_DANCE3_WET" };
++    unsigned char result;
++    float duration;
++    switch (static_cast<unsigned int>(command->words[2]))
++    {
++    case 0x3b:
++        flag_108 = 1;
++        return result != 0;
++    case 0x16:
++        if (state_3c == 4)
++        {
++            duration = ContestAnimation(this, "WTS_WALK_TO_WAIT_DRY");
++            keyline_state_44->word_08 = 2;
++            int rotation = variable_world->FindObject(owner_100)->keyline_state_44->rotation_18;
++            keyline_state_44->SelectVariant((13 - 2 * rotation) % 8);
++            QueueContestStep(this, duration);
++        }
++        else if (state_3c == 0)
++        {
++            if (type_fc == 3)
++            {
++                if (action_f4 == 8)
++                {
++                    duration = ContestAnimation(this, "WTSC_WALK_TO_POSE");
++                    keyline_state_44->word_08 = 2;
++                    int rotation = variable_world->FindObject(owner_100)->keyline_state_44->rotation_18;
++                    keyline_state_44->SelectVariant(((5 - rotation) * 2) % 8);
++                    QueueContestCommand(id_28, contestant_f8, 0x3c, 0, duration);
++                }
++                else if (action_f4 == 6)
++                {
++                    action_f4 = 7;
++                    duration = ContestAnimation(this, "WTSC_PICKUP");
++                    BroadcastContestCommand(this, 0x3c, 1, duration);
++                    keyline_state_44->word_08 = 2;
++                    QueueContestStep(this, duration);
++                }
++                else if (action_f4 == 5)
++                {
++                    duration = ContestAnimation(this, rand() % 2 ? "WTSC_EXCITE" : "WTSC_WAIT");
++                    int rotation = variable_world->FindObject(owner_100)->keyline_state_44->rotation_18;
++                    keyline_state_44->SelectVariant(((5 - rotation) * 2) % 8);
++                    keyline_state_44->word_08 = 2;
++                    QueueContestStep(this, duration);
++                }
++            }
++            else
++            {
++                int rotation = variable_world->FindObject(owner_100)->keyline_state_44->rotation_18;
++                keyline_state_44->SelectVariant((11 - 2 * rotation) % 8);
++                action_f4 = 1;
++                duration = ContestAnimation(this, "WTS_WALK_TO_WAIT_DRY");
++                keyline_state_44->word_08 = 2;
++                QueueContestStep(this, duration);
++            }
++        }
++        else if (state_3c == 6)
++        {
++            if (type_fc == 3)
++            {
++                ScreenModeCommand response;
++                response.words[0] = id_28;
++                response.words[1] = owner_100;
++                response.words[2] = 0x3b;
++                response.words[3] = 0;
++                response.words[4] = 0;
++                screen_mode_commands->QueueCommand(&response);
++            }
++            inactive_04 = 1;
++        }
++        return true;
++    case 0x3c:
++        if (state_3c == 4)
++        {
++            if (action_f4 == 0 || action_f4 == 5)
++            {
++                ContestAnimation(this, action_f4 == 0 ? "WTS_WALK_DRY" : "WTS_WALK_WET");
++                keyline_state_44->word_08 = 0;
++            }
++            else if (action_f4 == 1)
++                action_f4 = 2;
++        }
++        else if (action_f4 == 8)
++        {
++            action_f4 = 9;
++            duration = ContestAnimation(this, "WTSC_THROW");
++            BroadcastContestCommand(this, 0x3c, 2, duration);
++            keyline_state_44->word_08 = 2;
++            QueueContestStep(this, duration);
++        }
++        else if (action_f4 == 5)
++        {
++            contestant_f8 = command->words[0];
++            action_f4 = 6;
++            ContestAnimation(this, "WTSC_WALK_NB");
++            keyline_state_44->word_08 = 0;
++            WorldBuildingEntity* building = variable_world->FindObject(owner_100)->AsBuilding();
++            unsigned int rotation = building->keyline_state_44->word_18;
++            ScreenMapPosition point;
++            if (rotation == 0)
++                point = { building->x_30 + 78.0f, building->y_34 - 354.0f };
++            else if (rotation == 3)
++                point = { building->x_30 + 64.0f, building->y_34 - 234.0f };
++            else
++            {
++                ScreenPoint tile = building->TilePosition();
++                point = CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, building->building_60->footprint_x_1d4, building->building_60->footprint_y_1d8, { 78.0f, -354.0f }, rotation);
++            }
++            MoveContestEntity(this, point);
++        }
++        return true;
++    case 0x39:
++        if (state_3c == 4)
++        {
++            switch (action_f4)
++            {
++            case 0:
++                if (flag_5c)
++                    break;
++                NotifyContestAttendants(this);
++                duration = ContestAnimation(this, waiting[rand() % 6]);
++                keyline_state_44->word_08 = 2;
++                action_f4 = 1;
++                QueueContestStep(this, duration);
++                break;
++            case 1:
++                duration = ContestAnimation(this, waiting[rand() % 6]);
++                keyline_state_44->word_08 = 2;
++                QueueContestStep(this, duration);
++                break;
++            case 2:
++                NotifyContestAttendants(this);
++                duration = ContestAnimation(this, reacting[rand() % 6]);
++                keyline_state_44->word_08 = 2;
++                action_f4 = 3;
++                QueueContestStep(this, duration);
++                if (rand() % 10 == 0)
++                {
++                    ScreenModeCommand response;
++                    response.words[0] = id_28;
++                    response.words[1] = id_28;
++                    response.words[2] = 0x49;
++                    response.words[3] = 0;
++                    response.words[4] = 5;
++                    response.words[5] = 0x3e;
++                    response.words[6] = 0;
++                    VariableEventSchedule* events = variable_world->FindObject(owner_100)->AsBuilding()->events_170;
++                    float delay = static_cast<float>(static_cast<double>(rand()) * 0.000030518509447574615f - 0.5f + duration);
++                    events->BroadcastGuests(&response, delay);
++                }
++                break;
++            case 3:
++                action_f4 = 4;
++                duration = ContestAnimation(this, "WTS_WAIT_TO_DANCE_WET");
++                QueueContestStep(this, duration);
++                keyline_state_44->word_08 = 2;
++                break;
++            case 4:
++                duration = ContestAnimation(this, wet_dancing[rand() % 3]);
++                keyline_state_44->word_08 = 2;
++                action_f4 = 5;
++                QueueContestStep(this, duration);
++                break;
++            case 5:
++                action_f4 = 6;
++                duration = ContestAnimation(this, "WTS_WAIT_TO_WALK_WET");
++                QueueContestStep(this, duration);
++                keyline_state_44->word_08 = 2;
++                break;
++            case 6:
++            {
++                unsigned int count;
++                ScreenModeCommand response;
++                response.words[0] = id_28;
++                response.words[1] = id_28;
++                response.words[2] = 3;
++                response.words[3] = 0;
++                response.words[4] = 0;
++                if (!flag_108)
++                {
++                    screen_mode_commands->QueueCommand(&response);
++                    VariableEntity** entities = variable_world->ByType(18, &count);
++                    for (unsigned int index = 0; index < count; ++index)
++                    {
++                        WorldEntity18* next = static_cast<WorldEntity18*>(entities[index]);
++                        if (next->owner_100 == owner_100 && next->type_fc == (type_fc + 1) % 3)
++                        {
++                            response.words[1] = next->id_28;
++                            response.words[4] = 4;
++                            break;
++                        }
++                    }
++                    screen_mode_commands->QueueCommand(&response);
++                }
++                else
++                {
++                    VariableEntity** entities = variable_world->ByType(18, &count);
++                    response.words[1] = 0;
++                    response.words[4] = 6;
++                    for (unsigned int index = 0; index < count; ++index)
++                    {
++                        WorldEntity18* next = static_cast<WorldEntity18*>(entities[index]);
++                        if (next->owner_100 == owner_100)
++                        {
++                            response.words[1] = next->id_28;
++                            screen_mode_commands->QueueCommand(&response);
++                        }
++                    }
++                }
++                break;
++            }
++            }
++        }
++        else if (state_3c == 0)
++        {
++            switch (action_f4)
++            {
++            case 1:
++            {
++                int animation = rand() % 7;
++                if (animation == 6)
++                    action_f4 = 2;
++                duration = ContestAnimation(this, waiting[animation]);
++                keyline_state_44->word_08 = 2;
++                QueueContestStep(this, duration);
++                break;
++            }
++            case 2:
++            {
++                int animation = rand() % 4;
++                if (animation == 3)
++                    action_f4 = 1;
++                duration = ContestAnimation(this, dancing[animation]);
++                keyline_state_44->word_08 = 2;
++                QueueContestStep(this, duration);
++                break;
++            }
++            case 5:
++                duration = ContestAnimation(this, rand() % 2 ? "WTSC_EXCITE" : "WTSC_WAIT");
++                keyline_state_44->word_08 = 2;
++                QueueContestStep(this, duration);
++                break;
++            case 7:
++                action_f4 = 8;
++                ContestAnimation(this, "WTSC_WALK_WB");
++                keyline_state_44->word_08 = 0;
++                MoveContestEntity(this, ContestPosition(this, { -28.0f, -266.0f }));
++                break;
++            case 9:
++                action_f4 = 5;
++                duration = ContestAnimation(this, "WTSC_WATCH");
++                keyline_state_44->word_08 = 2;
++                QueueContestStep(this, duration);
++                break;
++            }
++        }
++        return true;
++    default:
++        return WorldPedestrianEntity::Unknown14(command);
++    }
++}
+diff --git a/src/startup_world_entity18_methods.cpp b/src/startup_world_entity18_methods.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b493aed12cc6cca8d45465fb9b58de15e566e42f
+--- /dev/null
++++ b/src/startup_world_entity18_methods.cpp
+@@ -0,0 +1,177 @@
++#include "startup_world_entities.h"
++#include "startup_state_save_helpers.h"
++#include "window_activation.h"
++#include <cstdlib>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x0049c220
++WorldEntity18::~WorldEntity18() noexcept(false)
++{
++    screen_dialog_resources->Release(keyline_state_44);
++    keyline_state_44 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0049c200
++void WorldEntity18::Destroy(unsigned int flags)
++{
++    this->~WorldEntity18();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x0049c280
++void WorldEntity18::SetOwner(unsigned int owner)
++{
++    type_fc = owner;
++    if (type_fc == 3)
++        keyline_state_44 = screen_dialog_resources->Find("wtsc");
++    else
++    {
++        rand();
++        keyline_state_44 = screen_dialog_resources->Find("wts");
++    }
++    int palette = rand() % keyline_state_44->record->palette_count;
++    if (palette >= keyline_state_44->record->palette_count)
++        palette = keyline_state_44->record->palette_count - 1;
++    keyline_state_44->word_1c = palette;
++}
++
++// FUNCTION: BEACHLIFE 0x0049c2f0
++bool WorldEntity18::Unknown0c()
++{
++    if (!WorldPedestrianEntity::Unknown0c())
++        StartupFatal("WetTShirt::Update - error calling HuimanObject::update - %s", name_06);
++    return true;
++}
++
++static ScreenMapPosition ContestBuildingOffset(WorldBuildingEntity* building, ScreenMapPosition offset)
++{
++    ScreenPoint tile = building->TilePosition();
++    return CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, building->building_60->footprint_x_1d4, building->building_60->footprint_y_1d8, offset, building->keyline_state_44->word_18);
++}
++
++// FUNCTION: BEACHLIFE 0x0049db10
++void WorldEntity18::SetVariant(unsigned int variant)
++{
++    owner_100 = variant;
++    variable_world->FindObject(owner_100)->AsBuilding()->events_170->AddPerformer(id_28);
++    WorldBuildingEntity* building = variable_world->FindObject(owner_100)->AsBuilding();
++    ScreenMapPosition point = ContestBuildingOffset(building, { 13.0f, -274.0f });
++    action_point_10c = { point.x, point.y, 0.0f };
++}
++
++// FUNCTION: BEACHLIFE 0x0049dbf0
++bool WorldEntity18::Unknown04(unsigned int state)
++{
++    return state == 0 || state == 1 || state == 4 || state == 6;
++}
++
++static void QueueContestMovement(unsigned int id, ScreenMapPosition point)
++{
++    ScreenModeCommand command;
++    command.words[0] = id;
++    command.words[1] = id;
++    command.words[2] = 5;
++    command.words[3] = static_cast<int>(point.x);
++    command.words[4] = static_cast<int>(point.y);
++    screen_mode_commands->QueueCommand(&command);
++}
++
++// FUNCTION: BEACHLIFE 0x0049dc30
++bool WorldEntity18::Unknown08(unsigned int state)
++{
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    if (state == 6)
++    {
++        keyline_state_44->SetAnimation(type_fc == 3 ? "WTSC_WALK_NB" : "WTS_WALK_DRY", window_deactivation_state->time_158, &position);
++        keyline_state_44->word_08 = 0;
++        WorldBuildingEntity* building = variable_world->FindObject(owner_100)->AsBuilding();
++        QueueContestMovement(id_28, ContestBuildingOffset(building, { -122.0f, -286.0f }));
++        return true;
++    }
++    if (state == 0)
++    {
++        WorldBuildingEntity* building = variable_world->FindObject(owner_100)->AsBuilding();
++        const char* animation = type_fc < 3 ? (action_f4 == 6 ? "WTS_WALK_WET" : "WTS_WALK_DRY") : "WTSC_WALK_NB";
++        keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++        action_f4 = type_fc < 3 ? 0 : 5;
++        ScreenMapPosition offset;
++        switch (type_fc)
++        {
++        case 0:
++            offset = { -58.0f, -290.0f };
++            break;
++        case 1:
++            offset = { -30.0f, -320.0f };
++            break;
++        case 2:
++            offset = { -3.0f, -348.0f };
++            break;
++        case 3:
++            offset = { -28.0f, -266.0f };
++            break;
++        }
++        keyline_state_44->word_08 = 0;
++        QueueContestMovement(id_28, ContestBuildingOffset(building, offset));
++        return true;
++    }
++    if (state == 1)
++    {
++        unsigned int rotation = variable_world->FindObject(owner_100)->keyline_state_44->word_18;
++        if (rotation == 1 || rotation == 2)
++            visible_40 = 0;
++        action_f4 = 0;
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = type_fc == 0 ? 4 : 0;
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    if (state == 4)
++    {
++        float duration = keyline_state_44->SetAnimation("WTS_WAIT_TO_WALK_DRY", window_deactivation_state->time_158, &position);
++        keyline_state_44->word_08 = 2;
++        action_f4 = 0;
++        QueueContestMovement(id_28, { action_point_10c.x, action_point_10c.y });
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 0x3c;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        screen_mode_commands->QueueDelayed(&command, duration);
++        return true;
++    }
++    return static_cast<unsigned char>(state) != 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0049e0a0
++void WorldEntity18::Unknown48(GameFileReader* file)
++{
++    file->Unknown28("m_dwActionState", action_f4);
++    file->Unknown24("m_iType", type_fc);
++    file->Unknown28("m_OwnerID", owner_100);
++    file->Unknown34("m_bFinished", flag_108);
++    file->Unknown28("m_Contestent", contestant_f8);
++    WriteStateFloat(file, "m_ActionPoint.x", action_point_10c.x);
++    WriteStateFloat(file, "m_ActionPoint.y", action_point_10c.y);
++    WriteStateFloat(file, "m_ActionPoint.z", action_point_10c.y);
++    WorldPedestrianEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x0049e150
++void WorldEntity18::Unknown4c(GameFileReader* file)
++{
++    file->ReadInt(reinterpret_cast<int*>(&action_f4));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&type_fc));
++    file->ReadInt(reinterpret_cast<int*>(&owner_100));
++    file->ReadByte(&flag_108);
++    file->ReadInt(reinterpret_cast<int*>(&contestant_f8));
++    file->ReadFloat(&action_point_10c.x);
++    file->ReadFloat(&action_point_10c.y);
++    file->ReadFloat(&action_point_10c.y);
++    WorldPedestrianEntity::Unknown4c(file);
++}
+diff --git a/src/startup_world_repair_assignments.cpp b/src/startup_world_repair_assignments.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..985d015be3389803f25033e509b73465a94c1233
+--- /dev/null
++++ b/src/startup_world_repair_assignments.cpp
+@@ -0,0 +1,243 @@
++#include "startup_world_repairs.h"
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include "node_storage.h"
++
++#include <cmath>
++#include <new>
++
++template <class Entry>
++static CircularListNode* FindRepairNode(CircularListNode* head, unsigned int id)
++{
++    for (CircularListNode* node = head->next; node != head; node = node->next)
++    {
++        if (static_cast<WorldRepairNode<Entry>*>(node)->entry->id_00 == id)
++            return node;
++    }
++    return head;
++}
++
++template <class Entry>
++static void DeleteRepairNode(CircularListNode* node)
++{
++    ::operator delete(static_cast<WorldRepairNode<Entry>*>(node)->entry);
++    node->previous->next = node->next;
++    node->next->previous = node->previous;
++    ReleaseNodeStorage(node, sizeof(WorldRepairNode<Entry>));
++}
++
++// FUNCTION: BEACHLIFE 0x00436110
++void WorldRepairManager::AddInspection(unsigned int id, unsigned int type)
++{
++    if (!variable_world->FindObject(id))
++        return;
++    WorldRepairList* list = (type == 2 || type == 0) ? &repairs_00 : &pending_08;
++    CircularListNode* node = FindRepairNode<WorldRepairAssignment>(assignments_10.head, id);
++    if (node != assignments_10.head)
++    {
++        WorldRepairAssignment* assignment = static_cast<WorldRepairNode<WorldRepairAssignment>*>(node)->entry;
++        if (type > static_cast<unsigned int>(assignment->word_08))
++            assignment->word_08 = type;
++        return;
++    }
++    node = FindRepairNode<WorldRepairEntry>(list->head, id);
++    if (node != list->head)
++    {
++        WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++        if (entry->word_14 == 0 && type == 2)
++            entry->word_14 = type;
++        ++entry->word_04;
++        return;
++    }
++    WorldRepairEntry* entry = new (std::nothrow) WorldRepairEntry;
++    entry->word_04 = 0;
++    entry->id_00 = id;
++    entry->value_0c = window_deactivation_state->time_158;
++    entry->flag_10 = 0;
++    entry->word_14 = type;
++    CircularListIterator end;
++    end.node = list->head;
++    list->Insert(end, entry);
++}
++
++// FUNCTION: BEACHLIFE 0x00436e70
++void WorldRepairManager::AddAssignment(unsigned int id, unsigned char urgent, unsigned int type)
++{
++    if (FindRepairNode<WorldRepairAssignment>(assignments_10.head, id) != assignments_10.head)
++        return;
++    variable_world->FindObject(id);
++    WorldRepairAssignment* entry = new (std::nothrow) WorldRepairAssignment;
++    entry->id_00 = id;
++    entry->flag_04 = 0;
++    entry->flag_05 = urgent;
++    entry->word_08 = type;
++    ++word_14;
++    CircularListIterator end;
++    end.node = assignments_10.head;
++    assignments_10.Insert(end, entry);
++}
++
++// FUNCTION: BEACHLIFE 0x00436f10
++void WorldRepairManager::RemoveAssignment(unsigned int id)
++{
++    CircularListNode* node = FindRepairNode<WorldRepairAssignment>(assignments_10.head, id);
++    if (node != assignments_10.head)
++        DeleteRepairNode<WorldRepairAssignment>(node);
++}
++
++// FUNCTION: BEACHLIFE 0x00437070
++void WorldRepairManager::MarkRepairing(unsigned int id)
++{
++    variable_world->FindObject(id);
++    CircularListNode* node = FindRepairNode<WorldRepairAssignment>(assignments_10.head, id);
++    if (node != assignments_10.head)
++        static_cast<WorldRepairNode<WorldRepairAssignment>*>(node)->entry->flag_04 = 1;
++}
++
++// FUNCTION: BEACHLIFE 0x004370c0
++void WorldRepairManager::RequeueAssignment(unsigned int id, unsigned int type)
++{
++    CircularListNode* node = FindRepairNode<WorldRepairAssignment>(assignments_10.head, id);
++    unsigned char urgent = static_cast<WorldRepairNode<WorldRepairAssignment>*>(node)->entry->flag_05;
++    RemoveAssignment(id);
++    WorldStaticEntity* entity = variable_world->FindObject(id)->AsStatic();
++    if (type != 3)
++    {
++        if (urgent)
++            RequestRepair(id);
++        else
++            AddInspection(id, type);
++    }
++    entity->SetRepairAssigned(0);
++}
++
++// FUNCTION: BEACHLIFE 0x00437150
++unsigned int WorldRepairManager::AssignmentType(unsigned int id)
++{
++    CircularListNode* node = FindRepairNode<WorldRepairAssignment>(assignments_10.head, id);
++    if (node == assignments_10.head)
++        return static_cast<unsigned int>(-1);
++    return static_cast<WorldRepairNode<WorldRepairAssignment>*>(node)->entry->word_08;
++}
++
++// FUNCTION: BEACHLIFE 0x00436e20
++unsigned int WorldRepairManager::FindWateringJob(const ScreenWorldPosition* position)
++{
++    unsigned int id = SelectWateringJob(position, 0);
++    if (id == static_cast<unsigned int>(-1))
++        return id;
++    AddAssignment(id, 0, 3);
++    variable_world->FindObject(id)->AsStatic()->SetRepairAssigned(1);
++    return id;
++}
++
++// FUNCTION: BEACHLIFE 0x004367a0
++unsigned int WorldRepairManager::FindJob(const ScreenWorldPosition* position, unsigned int type, unsigned int* result_type)
++{
++    if (type == 3)
++    {
++        unsigned int id = SelectWateringJob(position, 200);
++        if (id == static_cast<unsigned int>(-1))
++            return id;
++        AddAssignment(id, 1, 3);
++        variable_world->FindObject(id)->AsStatic()->SetRepairAssigned(1);
++        *result_type = 3;
++        return id;
++    }
++    WorldRepairSelection selection;
++    selection.flags_00[0] = 0;
++    selection.flags_00[1] = 0;
++    selection.flags_00[2] = 0;
++    SelectJobs(&selection, position, type);
++    CircularListNode* node;
++    if (selection.flags_00[0])
++        node = selection.nodes_04[0];
++    else if (selection.flags_00[1])
++        node = selection.nodes_04[1];
++    else if (selection.flags_00[2])
++        node = selection.nodes_04[2];
++    else
++        return static_cast<unsigned int>(-1);
++    WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++    unsigned int id = entry->id_00;
++    WorldStaticEntity* entity = variable_world->FindObject(id)->AsStatic();
++    AddAssignment(id, selection.flags_00[0] ? 1 : 0, entry->word_14);
++    *result_type = entry->word_14;
++    entity->SetRepairAssigned(1);
++    DeleteRepairNode<WorldRepairEntry>(node);
++    return id;
++}
++
++static double RepairDistanceSquared(VariableEntity* entity, const ScreenWorldPosition* position)
++{
++    double x = static_cast<double>(entity->x_30) - position->x;
++    double y = static_cast<double>(entity->y_34) - position->y;
++    double z = static_cast<double>(entity->z_38) - position->z;
++    return z * z + y * y + x * x;
++}
++
++// FUNCTION: BEACHLIFE 0x00436920
++unsigned int WorldRepairManager::FindBetterJob(const ScreenWorldPosition* position, unsigned int id, unsigned int* result_type)
++{
++    CircularListNode* current_node = FindRepairNode<WorldRepairAssignment>(assignments_10.head, id);
++    if (current_node == assignments_10.head)
++        return static_cast<unsigned int>(-1);
++    WorldRepairAssignment* current = static_cast<WorldRepairNode<WorldRepairAssignment>*>(current_node)->entry;
++    if (current->word_08 == 3 && current->flag_05)
++        return static_cast<unsigned int>(-1);
++    float distance = static_cast<float>(RepairDistanceSquared(variable_world->FindObject(id), position));
++    WorldRepairSelection selection;
++    selection.flags_00[0] = 0;
++    selection.flags_00[1] = 0;
++    selection.flags_00[2] = 0;
++    SelectJobs(&selection, position, current->word_08);
++    if (selection.flags_00[0])
++    {
++        CircularListNode* node = selection.nodes_04[0];
++        WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++        unsigned int candidate = entry->id_00;
++        WorldStaticEntity* entity = 0;
++        bool replace = !current->flag_05;
++        if (!replace)
++        {
++            entity = variable_world->FindObject(candidate)->AsStatic();
++            double candidate_distance = RepairDistanceSquared(entity, position);
++            replace = candidate_distance < distance || std::isnan(candidate_distance) || std::isnan(distance);
++        }
++        if (replace)
++        {
++            RequeueAssignment(id, current->word_08);
++            AddAssignment(candidate, 1, entry->word_14);
++            *result_type = entry->word_14;
++            if (!entity)
++                entity = variable_world->FindObject(candidate)->AsStatic();
++            entity->SetRepairAssigned(1);
++            DeleteRepairNode<WorldRepairEntry>(node);
++            return candidate;
++        }
++    }
++    if ((!selection.flags_00[1] && !selection.flags_00[2]) || current->flag_05)
++        return static_cast<unsigned int>(-1);
++    CircularListNode* node = selection.nodes_04[selection.flags_00[1] ? 1 : 2];
++    WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++    unsigned int candidate = entry->id_00;
++    if (static_cast<unsigned int>(entry->word_14) < static_cast<unsigned int>(current->word_08) || candidate == id)
++        return static_cast<unsigned int>(-1);
++    WorldStaticEntity* entity = variable_world->FindObject(candidate)->AsStatic();
++    double candidate_distance = RepairDistanceSquared(entity, position);
++    if (!(candidate_distance < distance || std::isnan(candidate_distance) || std::isnan(distance))
++        && static_cast<unsigned int>(entry->word_14) <= static_cast<unsigned int>(current->word_08))
++        return static_cast<unsigned int>(-1);
++    RequeueAssignment(id, current->word_08);
++    AddAssignment(candidate, 0, entry->word_14);
++    *result_type = entry->word_14;
++    entity->SetRepairAssigned(1);
++    DeleteRepairNode<WorldRepairEntry>(node);
++    return candidate;
++}
++
++// FUNCTION: BEACHLIFE 0x004910c0
++void WorldStaticEntity::SetRepairAssigned(unsigned char assigned)
++{
++    flags_5a[1] = assigned;
++}
+diff --git a/src/startup_world_repairs.h b/src/startup_world_repairs.h
+index ccba97b6f3af18e5f671b61e01c7f21308c1b8ff..45cf9dfc079b4c6b701baf180fe9a2d163467dc2 100644
+--- a/src/startup_world_repairs.h
++++ b/src/startup_world_repairs.h
+@@ -42,8 +42,20 @@ struct WorldRepairAssignmentList
+     CircularListIterator Insert(CircularListIterator position, WorldRepairAssignment* const& entry); // 0x00437ce0.
+ };
+ 
++struct WorldRepairSelection
++{
++    unsigned char flags_00[3];
++    unsigned char unknown_03;
++    CircularListNode* nodes_04[3];
++    WorldRepairList* list_10;
++};
++
+ struct WorldRepairManager
+ {
++    void SelectJobs(WorldRepairSelection* selection, const ScreenWorldPosition* position, unsigned int type);    // 0x00436370.
++    unsigned int SelectWateringJob(const ScreenWorldPosition* position, unsigned int range);                     // 0x004377e0.
++    void AddAssignment(unsigned int id, unsigned char urgent, unsigned int type);                                // 0x00436e70.
++    void RemoveObject(unsigned int id);                                                                          // 0x00437190.
+     void AddInspection(unsigned int id, unsigned int type);                                                      // 0x00436110.
+     unsigned int AssignmentType(unsigned int id);                                                                // 0x00437150.
+     void RemoveAssignment(unsigned int id);                                                                      // 0x00436f10.
+diff --git a/src/startup_world_security_crime.cpp b/src/startup_world_security_crime.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..96cc75adeba54c5885cb4e516ac07bc93db87c15
+--- /dev/null
++++ b/src/startup_world_security_crime.cpp
+@@ -0,0 +1,244 @@
++#include "startup_world_entities.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_manager.h"
++#include "window_activation.h"
++#include <cmath>
++#include <cstdlib>
++#include <cstring>
++
++static void NotifySecurityConditions(WorldSecurityEntity* guard)
++{
++    guard->words_7c0[2] = guard->words_7c0[1];
++    guard->words_7c0[1] = 0;
++    const char* message = guard->Notification(guard->words_7c0[2]);
++    if (message)
++        window_deactivation_state->ticker_30->AddMessage(message, guard->id_28, 13);
++    guard->AddThought(guard->words_7c0[2]);
++    screen_manager->SetNamedItemFlag("SecurityGuardIcon", 0);
++}
++
++// FUNCTION: BEACHLIFE 0x0048a550
++void WorldSecurityEntity::UpdateConditions()
++{
++    if (words_7c0[1])
++        return;
++    if (!(words_7c0[0] & 2))
++    {
++        words_7c0[0] |= 2;
++        if (!(window_deactivation_state->ticker_30->Feedback(12) & 2))
++        {
++            unsigned int guests = variable_world->CountType(3);
++            if (guests > variable_world->HasNamed("bin") * 15)
++            {
++                words_7c0[1] |= 2;
++                window_deactivation_state->ticker_30->AddFeedback(2, 12);
++                NotifySecurityConditions(this);
++            }
++        }
++    }
++    if (static_cast<int>(words_7a8[2]) > 5 && !(words_7c0[0] & 4))
++    {
++        words_7c0[0] |= 4;
++        if (!(window_deactivation_state->ticker_30->Feedback(12) & 4))
++        {
++            words_7c0[1] |= 4;
++            window_deactivation_state->ticker_30->AddFeedback(4, 12);
++            NotifySecurityConditions(this);
++        }
++    }
++    if (static_cast<int>(words_7a8[3]) > 5 && !(words_7c0[0] & 8))
++    {
++        words_7c0[0] |= 8;
++        if (!(window_deactivation_state->ticker_30->Feedback(12) & 8))
++        {
++            words_7c0[1] |= 8;
++            window_deactivation_state->ticker_30->AddFeedback(8, 12);
++            NotifySecurityConditions(this);
++        }
++    }
++    if (!(words_7c0[0] & 0x400000))
++    {
++        words_7c0[0] |= 0x400000;
++        if (flag_766)
++        {
++            words_7c0[1] |= 0x400000;
++            NotifySecurityConditions(this);
++            flag_766 = 0;
++        }
++    }
++    if (!(words_7c0[0] & 0x800000) && (morale_10c < 0.6f || std::isnan(morale_10c)))
++    {
++        words_7c0[0] |= 0x800000;
++        words_7c0[1] |= 0x800000;
++        window_deactivation_state->ticker_30->AddMessage(Notification(0x100000), id_28, 7);
++        AddThought(0x800000);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0048abd0
++bool WorldSecurityEntity::FindCrime(ScreenWorldPosition*)
++{
++    flag_794 = 0;
++    if (!flag_5c)
++    {
++        unsigned int count;
++        VariableEntity** buildings = variable_world->ByType(2, &count);
++        VariableEntity* building;
++        do
++        {
++            building = buildings[static_cast<unsigned int>(rand()) % count];
++        } while (building->id_28 == word_98 || strstr(building->name_06, "JETTY"));
++        Unknown28("WALK_NORMAL", 0, static_cast<unsigned int>(-1), 1, 0);
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 9;
++        command.words[3] = 0;
++        command.words[4] = building->id_28;
++        screen_mode_commands->QueueCommand(&command);
++    }
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    ScreenPoint tile = overlay_map->WorldToTile(&position);
++    unsigned int count;
++    VariableEntity** nearby = variable_world->Nearby(tile.x, tile.y, 6, &count);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        word_78c = 0;
++        VariableEntity* entity = nearby[index];
++        if (entity->kind_2c != 3)
++            continue;
++        WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(entity);
++        if (!guest->CanBeFined())
++            continue;
++        if (guest->word_3dc == 1 && guest->id_28 != word_77c)
++            word_78c = 1;
++        else if (guest->word_3dc == 2 && guest->id_28 != word_77c && guest->id_28 != word_780)
++            word_78c = 2;
++        else if (guest->word_3dc == 3 && guest->id_28 != word_77c)
++            word_78c = 2;
++        if (word_78c)
++        {
++            word_77c = guest->id_28;
++            entity = variable_world->FindObject(word_77c);
++            patrol_position_79c = { entity->x_30, entity->y_34, entity->z_38 };
++            return true;
++        }
++    }
++    return false;
++}
++
++// FUNCTION: BEACHLIFE 0x0048a990
++void WorldSecurityEntity::DirectTo(unsigned int id)
++{
++    WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(variable_world->FindObject(id));
++    ScreenWorldPosition position;
++    bool found = false;
++    if (guest && guest->CanBeFined())
++    {
++        position = { guest->x_30, guest->y_34, guest->z_38 };
++        found = FindInteractionOffset(&position, 20, 10);
++    }
++    if (found)
++    {
++        fine_offset_7e8 = position;
++        if (word_788 <= 2)
++        {
++            if (word_788 == 2)
++            {
++                position = { guest->x_30, guest->y_34, guest->z_38 };
++                FindInteractionOffset(&position, 13, 8);
++                fine_offset_7e8 = position;
++            }
++            else
++                word_7e4 = word_788;
++            word_77c = id;
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 1;
++            command.words[4] = word_788 == 2 ? 0x7e : 0x7d;
++            Unknown20(command);
++        }
++        flag_766 = 0;
++        return;
++    }
++    words_7c0[1] = 0;
++    words_7c0[0] &= ~0x400000u;
++    flag_766 = 1;
++    ScreenModeCommand command;
++    command.words[0] = id_28;
++    command.words[1] = id_28;
++    command.words[2] = 0x3c;
++    command.words[3] = 0;
++    command.words[4] = 0;
++    command.words[5] = 0x83;
++    command.words[6] = 0;
++    screen_mode_commands->QueueCommand(&command);
++}
++
++// FUNCTION: BEACHLIFE 0x0048ae60
++void WorldSecurityEntity::ChooseCrimeAction()
++{
++    WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(variable_world->FindObject(word_77c));
++    word_790 = 0;
++    if (!guest->CanBeFined())
++        return;
++    ScreenWorldPosition position = { guest->x_30, guest->y_34, guest->z_38 };
++    if (!FindInteractionOffset(&position, 20, 10))
++        return;
++    fine_offset_7e8 = position;
++    if (word_788 == 2)
++    {
++        if (word_78c == 2)
++        {
++            word_790 = 2;
++            position = { guest->x_30, guest->y_34, guest->z_38 };
++            FindInteractionOffset(&position, 13, 8);
++            fine_offset_7e8 = position;
++        }
++        else
++        {
++            word_790 = 1;
++            word_7e4 = 1;
++        }
++    }
++    else if (word_788 == 1)
++    {
++        word_790 = 1;
++        word_7e4 = word_78c == 2 ? 1 : 0;
++    }
++    else if (word_788 == 0 && word_78c == 2)
++    {
++        word_790 = 1;
++        word_7e4 = 0;
++    }
++    if (guest->word_3dc == 3)
++    {
++        if (static_cast<int>(++words_7a8[2]) > 5)
++        {
++            words_7c0[1] = 0;
++            words_7c0[0] &= ~4u;
++        }
++        AddThought(word_790 == 2 ? 0x400 : 0x80);
++    }
++    else if (guest->word_3dc == 2)
++    {
++        if (static_cast<int>(++words_7a8[3]) > 5)
++        {
++            words_7c0[1] = 0;
++            words_7c0[0] &= ~8u;
++        }
++        AddThought(word_790 == 2 ? 0x800 : 0x100);
++    }
++    else if (guest->word_3dc == 1)
++    {
++        unsigned int guests = variable_world->CountType(3);
++        if (guests > variable_world->HasNamed("bin") * 15)
++        {
++            words_7c0[1] = 0;
++            words_7c0[0] &= ~2u;
++        }
++        AddThought(word_790 == 2 ? 0x200 : 0x40);
++    }
++}
+diff --git a/src/startup_world_service_staff_commands.cpp b/src/startup_world_service_staff_commands.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e3e320c5468f0ad4cc9d4845da3be12340d45b7b
+--- /dev/null
++++ b/src/startup_world_service_staff_commands.cpp
+@@ -0,0 +1,183 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <bit>
++#include <cstdlib>
++#include <cstring>
++
++static float ServiceAnimation(WorldServiceStaffEntity* staff, const char* animation)
++{
++    ScreenWorldPosition position = { staff->x_30, staff->y_34, staff->z_38 };
++    return staff->keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++}
++
++static void QueueServiceAnimationEnd(WorldServiceStaffEntity* staff, unsigned int action, float duration)
++{
++    ScreenModeCommand command;
++    command.words[0] = staff->id_28;
++    command.words[1] = staff->id_28;
++    command.words[2] = 0x3c;
++    command.words[3] = 0;
++    command.words[4] = action;
++    staff->Unknown24(command, duration);
++}
++
++// FUNCTION: BEACHLIFE 0x0048d3e0
++bool WorldServiceStaffEntity::Unknown14(ScreenModeCommand* command)
++{
++    unsigned int result = static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(command));
++    switch (static_cast<unsigned int>(command->words[2]))
++    {
++    case 0x24:
++    {
++        ScreenModeCommand response;
++        response.words[0] = id_28;
++        response.words[1] = command->words[4];
++        response.words[2] = 0x30;
++        response.words[3] = command->words[3];
++        response.words[4] = command->words[4];
++        response.words[6] = command->words[6];
++        float delay = 1.0f;
++        if (strcmp(staff_104->resource_cc, "CHEF") == 0)
++        {
++            ScreenDialogResourceRecord* record = keyline_state_44->record;
++            int frame = -1;
++            for (int index = 0; index < record->frame_count; ++index)
++            {
++                if (strcmp("catch_burger", record->frames[index]->name) == 0)
++                {
++                    frame = index;
++                    break;
++                }
++            }
++            result = record->frames[frame]->count_0a;
++            delay = static_cast<float>(static_cast<double>(record->frames[frame]->count_0a) / keyline_state_44->word_0c + 1.0f);
++        }
++        Unknown24(response, delay);
++        if (word_778)
++            ServiceAnimation(this, "stand");
++        word_778 = 1;
++        QueueServiceAnimationEnd(this, 1, 1.0f);
++        break;
++    }
++    case 0x32:
++    {
++        ScreenModeCommand response;
++        response.words[0] = id_28;
++        response.words[1] = home_id_100;
++        response.words[2] = 0x53;
++        response.words[3] = 0;
++        response.words[4] = 0;
++        Unknown20(response);
++        break;
++    }
++    case 0x26:
++        window_deactivation_state->economy_1c->value_80 = static_cast<float>(static_cast<double>(window_deactivation_state->economy_1c->value_80) - static_cast<int>(wages_108));
++        break;
++    case 0x3c:
++    {
++        const char* resource = staff_104->resource_cc;
++        unsigned int action = command->words[4];
++        float duration;
++        if (strcmp(resource, "BARMAN") == 0 || strcmp(resource, "BARWOMAN") == 0)
++        {
++            switch (action)
++            {
++            case 1:
++                word_778 = 1;
++                duration = ServiceAnimation(this, "serve_drink");
++                QueueServiceAnimationEnd(this, 2, duration);
++                result = std::bit_cast<unsigned int>(duration);
++                break;
++            case 3:
++                if (word_778 == 3)
++                {
++                    duration = ServiceAnimation(this, rand() % 2 ? "blow_glass" : "clean_glass");
++                    QueueServiceAnimationEnd(this, 4, duration);
++                    word_778 = 4;
++                    result = std::bit_cast<unsigned int>(duration);
++                }
++                break;
++            case 4:
++                if (word_778 == 4)
++                {
++                    duration = ServiceAnimation(this, "replace_glass");
++                    QueueServiceAnimationEnd(this, 5, duration);
++                    word_778 = 5;
++                    result = std::bit_cast<unsigned int>(duration);
++                }
++                break;
++            case 5:
++                if (word_778 == 5)
++                {
++                    ServiceAnimation(this, "stand");
++                    word_778 = 0;
++                }
++                break;
++            default:
++                word_778 = 0;
++                ServiceAnimation(this, "stand");
++                break;
++            }
++        }
++        else if (strcmp(resource, "CHEF") == 0 || strcmp(resource, "CHEFFFETTE") == 0)
++        {
++            if (action == 0 || action == 1)
++            {
++                duration = ServiceAnimation(this, action ? "catch_burger" : "serve_burger");
++                QueueServiceAnimationEnd(this, action ? 0 : 2, duration);
++                result = std::bit_cast<unsigned int>(duration);
++            }
++            else
++                ServiceAnimation(this, "stand");
++        }
++        break;
++    }
++    case 0x54:
++    {
++        if (!word_778)
++        {
++            word_778 = 3;
++            float duration = ServiceAnimation(this, "pick_up_glass");
++            QueueServiceAnimationEnd(this, 3, duration);
++            result = std::bit_cast<unsigned int>(duration);
++        }
++        ScreenModeCommand response;
++        response.words[0] = id_28;
++        response.words[1] = id_28;
++        response.words[2] = 0x54;
++        response.words[3] = 0;
++        response.words[4] = 0;
++        Unknown24(response, 20.0f);
++        break;
++    }
++    case 0x39:
++    {
++        if (word_778 > 13)
++            break;
++        static const char* const animations[] = {
++            "Stand_dance1", "Stand_to_dance1", "Stand_to_mic", "Stand_que_deck1", "Stand_mix", "Stand_flip_deck2", "Stand_to_dance1", "Stand_dance1", "Stand_to_dance1", "Stand_to_mic", "Stand_que_deck2", "Stand_mix", "Stand_flip_deck1", "Stand_to_dance1"
++        };
++        unsigned int action = word_778;
++        keyline_state_44->word_08 = (action == 0 || action == 7) ? 0 : (action == 1 || action == 8) ? 1
++                                                                                                    : 2;
++        float time = window_deactivation_state->time_158;
++        float duration = ServiceAnimation(this, animations[action]);
++        ScreenModeCommand response;
++        response.words[0] = id_28;
++        response.words[1] = id_28;
++        response.words[2] = 0x39;
++        response.words[3] = 0;
++        response.words[4] = 0;
++        Unknown24(response, (action == 0 || action == 7) ? duration * 20.0f : duration);
++        word_778 = action == 13 ? 0 : action + 1;
++        if (action != 0 && action != 7)
++            result = std::bit_cast<unsigned int>(duration);
++        else
++            result = std::bit_cast<unsigned int>(time);
++        break;
++    }
++    default:
++        return WorldPedestrianEntity::Unknown14(command);
++    }
++    return static_cast<unsigned char>(result) != 0;
++}
+diff --git a/src/startup_world_service_staff_methods.cpp b/src/startup_world_service_staff_methods.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..19cc3fc5745f6306e1ddda35eb4980df4229918e
+--- /dev/null
++++ b/src/startup_world_service_staff_methods.cpp
+@@ -0,0 +1,187 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x0048e920
++WorldServiceStaffEntity::~WorldServiceStaffEntity() noexcept(false)
++{
++}
++
++// FUNCTION: BEACHLIFE 0x0048e900
++void WorldServiceStaffEntity::Destroy(unsigned int flags)
++{
++    this->~WorldServiceStaffEntity();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x0048e1a0
++bool WorldServiceStaffEntity::Unknown04(unsigned int state)
++{
++    return state <= 1 || state == 75;
++}
++
++// FUNCTION: BEACHLIFE 0x0048e200
++bool WorldServiceStaffEntity::Unknown08(unsigned int state)
++{
++    ScreenModeCommand command;
++    if (state == 0)
++    {
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 1;
++        Unknown20(command);
++    }
++    else if (state == 1)
++    {
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 75;
++        Unknown20(command);
++        command.words[0] = id_28;
++        command.words[1] = home_id_100;
++        command.words[2] = 0x25;
++        command.words[3] = 0;
++        command.words[4] = strstr(name_06, "DJ") ? 1 : 0;
++        Unknown20(command);
++        if (strcmp(staff_104->resource_cc, "BARMAN") == 0)
++        {
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 0x54;
++            command.words[3] = 0;
++            command.words[4] = 0;
++            Unknown24(command, 20.0f);
++        }
++    }
++    return true;
++}
++
++void WorldServiceStaffEntity::Unknown20(ScreenModeCommand command)
++{
++    VariableEntity::Unknown20(command);
++}
++
++void WorldServiceStaffEntity::Unknown24(ScreenModeCommand command, float delay)
++{
++    VariableEntity::Unknown24(command, delay);
++}
++
++// FUNCTION: BEACHLIFE 0x0048e890
++void WorldServiceStaffEntity::Unknown3c()
++{
++    if (strcmp(staff_104->resource_cc, "NONE") != 0)
++    {
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        keyline_state_44->DrawWorld(&position, window_deactivation_state->time_158);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0048e3a0
++void WorldServiceStaffEntity::SetHome(unsigned int id)
++{
++    home_id_100 = id;
++    if (!strstr(name_06, "DJ"))
++    {
++        if (!strstr(name_06, "CHEF"))
++        {
++            ScreenWorldPosition position = { x_30, y_34, z_38 };
++            keyline_state_44->FacePositions(variable_world->FindObject(id)->AsBuilding()->StaffPosition(), position);
++            return;
++        }
++        WorldBuildingEntity* building = variable_world->FindObject(id)->AsBuilding();
++        keyline_state_44->SelectVariant((11 - 2 * building->keyline_state_44->rotation_18) % 8);
++        ScreenWorldPosition position = { building->x_30, building->y_34, building->z_38 };
++        switch (building->keyline_state_44->word_18)
++        {
++        case 0:
++            position.x += 11.0f;
++            position.y -= 152.0f;
++            break;
++        case 1:
++            position.x -= 12.0f;
++            position.y -= 148.0f;
++            break;
++        case 2:
++            position.x -= 12.0f;
++            position.y -= 126.0f;
++            break;
++        case 3:
++            position.x += 12.0f;
++            position.y -= 126.0f;
++            break;
++        }
++        SetMovementPosition(position);
++        return;
++    }
++    WorldBuildingEntity* building = variable_world->FindObject(id)->AsBuilding();
++    ScreenMapPosition offset;
++    ScreenWorldPosition position;
++    if (_stricmp(building->name_06, "CLUB1") == 0)
++    {
++        offset = { -206.0f, -382.0f };
++        ScreenPoint tile = building->TilePosition();
++        ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, building->building_60->footprint_x_1d4, building->building_60->footprint_y_1d8, offset, building->keyline_state_44->word_18);
++        position = { point.x, point.y, 0.0f };
++    }
++    else
++    {
++        if (_stricmp(building->name_06, "CLUB2") == 0)
++        {
++            switch (building->keyline_state_44->word_18)
++            {
++            case 0:
++                offset = { -108.0f, -424.0f };
++                break;
++            case 1:
++                offset = { -44.0f, -268.0f };
++                break;
++            case 2:
++                offset = { 108.0f, -332.0f };
++                break;
++            case 3:
++                offset = { 42.0f, -486.0f };
++                break;
++            }
++        }
++        else
++        {
++            switch (building->keyline_state_44->word_18)
++            {
++            case 0:
++                offset = { 64.0f, -324.0f };
++                break;
++            case 1:
++                offset = { -50.0f, -338.0f };
++                break;
++            case 2:
++                offset = { -66.0f, -224.0f };
++                break;
++            case 3:
++                offset = { 51.0f, -208.0f };
++                break;
++            }
++        }
++        position = { building->x_30 + offset.x, building->y_34 + offset.y, 0.0f };
++    }
++    SetMovementPosition(position);
++    int rotation = building->keyline_state_44->rotation_18;
++    if (_stricmp(building->name_06, "CLUB1") == 0)
++        keyline_state_44->SelectVariant((6 - rotation) % 4);
++    else if (_stricmp(building->name_06, "CLUB2") == 0)
++        keyline_state_44->SelectVariant(((5 - rotation) * 2) % 8);
++    else
++        keyline_state_44->SelectVariant(((6 - rotation) * 2) % 8);
++    ScreenModeCommand command;
++    command.words[0] = id_28;
++    command.words[1] = id_28;
++    command.words[2] = 0x39;
++    command.words[3] = 0;
++    command.words[4] = 0;
++    Unknown20(command);
++}
+diff --git a/src/startup_world_staff_behavior.cpp b/src/startup_world_staff_behavior.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..eed38100d870a4d324e853a00384ded6e67c1049
+--- /dev/null
++++ b/src/startup_world_staff_behavior.cpp
+@@ -0,0 +1,123 @@
++#include "startup_world_entities.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_text.h"
++#include "startup_config_owner.h"
++#include "startup_game_file.h"
++#include "window_activation.h"
++#include <bit>
++#include <cmath>
++#include <cstdlib>
++#include <new>
++#include <wchar.h>
++
++// FUNCTION: BEACHLIFE 0x004907e0
++void WorldStaffEntity::AddThought(unsigned int flags)
++{
++    int last = static_cast<int>(word_154) - 1;
++    if (last >= 0 && text_158[last] == screen_text_lookup->LookupText(Notification(flags)))
++        return;
++    if (!word_154)
++    {
++        wcscpy(text_158[word_154], screen_text_lookup->LookupText(Notification(flags)));
++        ++word_154;
++        return;
++    }
++    if (word_154 != 3)
++        ++word_154;
++    for (unsigned int index = word_154 - 1; index; --index)
++        wcscpy(text_158[index], text_158[index - 1]);
++    wcscpy(text_158[0], screen_text_lookup->LookupText(Notification(flags)));
++}
++
++// FUNCTION: BEACHLIFE 0x004900e0
++void WorldStaffEntity::ChooseRandomDestination()
++{
++    ScreenWorldPosition position;
++    for (unsigned int attempt = 0;; ++attempt)
++    {
++        position.x = x_30 + (-300 - static_cast<int>(static_cast<double>(rand()) * 0.000030518509447574615f * -600.0f));
++        position.y = y_34 + (-300 - static_cast<int>(static_cast<double>(rand()) * 0.000030518509447574615f * -600.0f));
++        position.z = z_38;
++        if (!(position.x >= 0.0f && position.x < 4096.0f))
++            position.x = x_30;
++        if (!(position.y >= 0.0f && position.y < 8192.0f))
++            position.y = y_34;
++        ScreenPoint tile = overlay_map->WorldToTile(&position);
++        unsigned int x = static_cast<unsigned int>(tile.x) % screen_terrain_grid->width_04;
++        unsigned int y = static_cast<unsigned int>(tile.y) % screen_terrain_grid->height_08;
++        unsigned int flags = screen_terrain_grid->cells_0c[y * screen_terrain_grid->width_04 + x].flags_48;
++        if (((flags & 0x10000002) && !(flags & 0x10)) || attempt >= 1000)
++            break;
++    }
++    directed_x_768 = position.x;
++    directed_y_76c = position.y;
++}
++
++// FUNCTION: BEACHLIFE 0x0048eb20
++bool WorldStaffEntity::Unknown0c()
++{
++    if (!WorldPedestrianEntity::Unknown0c())
++        StartupFatal("GuestObject::Update - error calling Guestobject::update - %s", name_06);
++    UpdateStaffFeedback();
++    if (static_cast<int>(static_cast<double>(target_morale_75c) * 1000.0f)
++            == static_cast<int>(static_cast<double>(morale_10c) * 1000.0f)
++        && morale_changing_764)
++    {
++        morale_change_760 = 0.0f;
++        morale_changing_764 = 0;
++    }
++    int day_length;
++    startup_config_owner->GetInteger(&day_length, "iDAY_LENGTH_IN_SECONDS");
++    day_length /= 24;
++    double morale = static_cast<double>(window_deactivation_state->value_16c) / day_length
++                      * (static_cast<double>(morale_change_760) * 100.0f) * 0.01f
++                  + morale_10c;
++    morale_10c = static_cast<float>(morale);
++    if (morale > 1.0f)
++        morale_10c = 1.0f;
++    if (morale_10c < 0.0f || std::isnan(morale_10c))
++        morale_10c = 0.0f;
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x0048ee00
++bool WorldStaffEntity::Unknown14(ScreenModeCommand* command)
++{
++    if (command->words[2] == 0x55)
++    {
++        VariableEntity* home = variable_world->FindObject(home_id_100);
++        if (IsOnDuty() && home->FlagAt00460370())
++        {
++            if (++hours_worked_11c > 10)
++                AddThought(0x80000000);
++            window_deactivation_state->economy_1c->value_80 = static_cast<float>(static_cast<double>(window_deactivation_state->economy_1c->value_80) - static_cast<int>(wages_108));
++            double wages = wages_108;
++            window_deactivation_state->spent_78c = static_cast<float>(window_deactivation_state->spent_78c + wages);
++            window_deactivation_state->cost_798 = static_cast<float>(window_deactivation_state->cost_798 + wages);
++        }
++        else if (--hours_worked_11c < 0)
++            hours_worked_11c = 0;
++        UpdateWageMorale();
++        word_14c = static_cast<int>(60.0f - static_cast<double>(morale_10c) * 60.0f);
++    }
++    else if (command->words[2] == 0x26)
++    {
++        double wage = staff_104->base_wage_20c;
++        wage_basis_110 = static_cast<float>(wage * std::bit_cast<float>(word_130) - wage + wage_basis_110);
++        UpdateWageMorale();
++    }
++    ScreenModeCommand* previous = current_command_fc;
++    ScreenModeCommand* current = new (std::nothrow) ScreenModeCommand;
++    if (current)
++    {
++        for (int index = 0; index < 7; ++index)
++            current->words[index] = command->words[index];
++    }
++    current_command_fc = current;
++    bool handled = script_f4->HandleCommand(this, *command);
++    if (!handled)
++        handled = WorldPedestrianEntity::Unknown14(command);
++    ::operator delete(current_command_fc);
++    current_command_fc = previous;
++    return handled;
++}
+diff --git a/src/startup_world_staff_save.cpp b/src/startup_world_staff_save.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..af9708db1d124cd9d9f6f835269fe02d4f6a68b9
+--- /dev/null
++++ b/src/startup_world_staff_save.cpp
+@@ -0,0 +1,73 @@
++#include "startup_world_entities.h"
++#include "startup_state_save_helpers.h"
++#include <bit>
++
++// FUNCTION: BEACHLIFE 0x004903f0
++void WorldStaffEntity::Unknown48(GameFileReader* file)
++{
++    file->Unknown28("m_HomeID", home_id_100);
++    file->Unknown28("m_Wage", wages_108);
++    file->Unknown28("m_walkpoint", word_134);
++    WriteStateFloat(file, "m_happiness", morale_10c);
++    WriteStateFloat(file, "m_SalaryExpectation", wage_basis_110);
++    file->Unknown28("m_StartTime", shift_start_114);
++    file->Unknown28("m_EndTime", shift_end_118);
++    file->Unknown24("m_hoursWorkedInRow", hours_worked_11c);
++    file->Unknown24("m_OverWorkReduct", word_120);
++    file->Unknown28("m_IdleTimePerHour", word_14c);
++    file->Unknown28("m_HiredOn", next_day_150);
++    file->Unknown34("m_DirectStaff", moving_138);
++    file->Unknown28("m_GotoObject", target_13c);
++    file->Unknown28("m_LastAction", word_128);
++    WriteStateFloat(file, "m_DirectPos", target_x_140);
++    WriteStateFloat(file, "m_DirectPos", target_y_144);
++    file->Unknown34("m_bFoundDirecting", flag_124);
++    file->Unknown28("m_NumFeedBackMesslog", word_154);
++    file->Unknown34("m_bCantDoJob", flag_766);
++    WriteStateFloat(file, "m_WanderPos.x", directed_x_768);
++    WriteStateFloat(file, "m_WanderPos.y", directed_y_76c);
++    file->Unknown30("m_WanderPos.z", word_770);
++    file->Unknown28("m_DebugInfo", word_774);
++    for (int index = 0; index < 3; ++index)
++        file->Unknown1c("m_Thoughts", text_158[index]);
++    file->Unknown34("m_bGotTheSack", byte_758);
++    file->Unknown34("m_bEndedShift", flag_759);
++    file->Unknown34("m_bGonePastShift", flag_75a);
++    WorldPedestrianEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x00490630
++void WorldStaffEntity::Unknown4c(GameFileReader* file)
++{
++    file->ReadInt(reinterpret_cast<int*>(&home_id_100));
++    file->ReadInt(reinterpret_cast<int*>(&wages_108));
++    file->ReadInt(reinterpret_cast<int*>(&word_134));
++    file->ReadFloat(&morale_10c);
++    file->ReadFloat(&wage_basis_110);
++    file->ReadInt(reinterpret_cast<int*>(&shift_start_114));
++    file->ReadInt(reinterpret_cast<int*>(&shift_end_118));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&hours_worked_11c));
++    file->Unknown68(&word_120);
++    file->ReadInt(reinterpret_cast<int*>(&word_14c));
++    file->ReadInt(reinterpret_cast<int*>(&next_day_150));
++    file->ReadByte(&moving_138);
++    file->ReadInt(&target_13c);
++    file->ReadInt(reinterpret_cast<int*>(&word_128));
++    file->ReadFloat(&target_x_140);
++    file->ReadFloat(&target_y_144);
++    file->ReadByte(&flag_124);
++    file->ReadInt(reinterpret_cast<int*>(&word_154));
++    file->ReadByte(&flag_766);
++    file->ReadFloat(&directed_x_768);
++    file->ReadFloat(&directed_y_76c);
++    float z;
++    file->ReadFloat(&z);
++    word_770 = std::bit_cast<unsigned int>(z);
++    file->ReadInt(reinterpret_cast<int*>(&word_774));
++    for (int index = 0; index < 3; ++index)
++        file->Unknown5c(text_158[index], 256);
++    file->ReadByte(&byte_758);
++    file->ReadByte(&flag_759);
++    file->ReadByte(&flag_75a);
++    WorldPedestrianEntity::Unknown4c(file);
++}
+diff --git a/src/startup_world_staff_script.cpp b/src/startup_world_staff_script.cpp
+index 203ad5166051b5f4a53078f99c8d570646d85272..c97f6d2381d0e1f3b564c85e16b8e23d14271f33 100644
+--- a/src/startup_world_staff_script.cpp
++++ b/src/startup_world_staff_script.cpp
+@@ -59,7 +59,7 @@ static void NotifyStaffHome(WorldStaffEntity* entity)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00486fc0
+-bool WorldRepresentativeEntity::Unknown08(unsigned int state)
++bool WorldStaffEntity::EnterDefaultScriptState(unsigned int state)
+ {
+     if (state == 1)
+         NotifyStaffHome(this);
+@@ -127,3 +127,13 @@ void WorldMechanicEntity::Unknown24(ScreenModeCommand command, float delay)
+ {
+     QueueDelayedScriptCommand(command, delay);
+ }
++
++bool WorldRepresentativeEntity::Unknown08(unsigned int state)
++{
++    return EnterDefaultScriptState(state);
++}
++
++bool WorldSecurityEntity::Unknown08(unsigned int state)
++{
++    return EnterDefaultScriptState(state);
++}
+diff --git a/src/startup_world_staff_script_shared.cpp b/src/startup_world_staff_script_shared.cpp
+index cf7c322c664250fc953e6d7709cc1b0c968afe77..3cfbb09386ef955a087f9a6699e8d7d31177404f 100644
+--- a/src/startup_world_staff_script_shared.cpp
++++ b/src/startup_world_staff_script_shared.cpp
+@@ -46,3 +46,18 @@ void WorldCleanerEntity::Unknown24(ScreenModeCommand command, float delay)
+ {
+     QueueDelayedScriptCommand(command, delay);
+ }
++
++bool WorldSecurityEntity::Unknown10()
++{
++    return LeaveScriptState();
++}
++
++void WorldSecurityEntity::Unknown20(ScreenModeCommand command)
++{
++    QueueScriptCommand(command);
++}
++
++void WorldSecurityEntity::Unknown24(ScreenModeCommand command, float delay)
++{
++    QueueDelayedScriptCommand(command, delay);
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 9d89a43c58e45f0b3f46b1676491c77b0754c129..d398a5400065d6b7f859cfaf5e35e6b5e46c31d7 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -126,6 +126,7 @@ struct WorldSubsystem20
+ #include "startup_world_repairs.h"
+ struct WorldCleaningManager
+ {
++    void RemoveObject(unsigned int id);       // 0x00420580.
+     void AddCleaningRequest(unsigned int id); // 0x0041fae0.
+     WorldCleaningManager();                   // 0x0041f8b0.
+     CircularList requests_00;

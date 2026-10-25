@@ -1,0 +1,2789 @@
+diff --git a/src/startup_animation_sound.h b/src/startup_animation_sound.h
+index b4cb59e99593429a9d4cb10f23ff50e94724b02f..8944bd514972f0ad6f89d4b28acdcff8b1e6c150 100644
+--- a/src/startup_animation_sound.h
++++ b/src/startup_animation_sound.h
+@@ -25,7 +25,7 @@ struct AnimationSoundGroup
+ {
+     int count_00;
+     int word_04;
+-    char* name_08;
++    float* volumes_08;
+     char** sounds_0c;
+ };
+ 
+diff --git a/src/startup_animation_sound_buildings.cpp b/src/startup_animation_sound_buildings.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..946ec7f52baf62a1ca9f8d1623e500797957d2ff
+--- /dev/null
++++ b/src/startup_animation_sound_buildings.cpp
+@@ -0,0 +1,57 @@
++#include "startup_animation_sound.h"
++#include "startup_game_file.h"
++#include "startup_game_update_pair.h"
++#include "startup_variable_state.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++#include <new>
++#include <stdlib.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004d1260
++int AnimationSoundLookup::ParseBuildingSounds(const char* data)
++{
++    char token[52];
++    int offset = SkipWhitespace(data);
++    offset += ReadToken(token, data + offset);
++    while (strcmp(token, "End"))
++    {
++        AnimationObjectSound& entry = objects_2d4[object_count_414];
++        entry.name_00 = static_cast<char*>(::operator new(strlen(token) + 1));
++        strcpy(entry.name_00, token);
++        offset += ReadToken(token, data + offset);
++        entry.sound_04 = static_cast<char*>(::operator new(strlen(token) + 1));
++        strcpy(entry.sound_04, token);
++        if (!window_audio_state->HasSound(token))
++            StartupFatal("Building Sound File Doesnt Exist %s", token);
++        offset += ReadToken(token, data + offset);
++        entry.volume_08 = static_cast<float>(atof(token));
++        offset += ReadToken(token, data + offset);
++        entry.flags_0c = 0;
++        if (atoi(token))
++            entry.flags_0c = 1;
++        ++object_count_414;
++        offset += ReadToken(token, data + offset);
++    }
++    return offset;
++}
++
++// FUNCTION: BEACHLIFE 0x004d1a70
++void AnimationSoundLookup::PlayObject(unsigned int id)
++{
++    VariableEntity* object = variable_world->FindObject(id);
++    if (object)
++        for (int index = 0; index < object_count_414; ++index)
++            if (!_stricmp(object->name_06, objects_2d4[index].name_00))
++            {
++                AnimationObjectSound& entry = objects_2d4[index];
++                game_update_pair->AddObjectSound(entry.sound_04, id, entry.volume_08, entry.flags_0c);
++                return;
++            }
++}
++
++// FUNCTION: BEACHLIFE 0x004d1b00
++void AnimationSoundLookup::StopObject(unsigned int id)
++{
++    game_update_pair->RemoveObjectSound(id);
++}
+diff --git a/src/startup_animation_sound_constructor.cpp b/src/startup_animation_sound_constructor.cpp
+index 06f568b3a46926c390d4d351f44256fba6cec1fd..88e49db2516e7809b1b3727c49bc68d0bcf7f59d 100644
+--- a/src/startup_animation_sound_constructor.cpp
++++ b/src/startup_animation_sound_constructor.cpp
+@@ -11,7 +11,7 @@ AnimationSoundLookup::AnimationSoundLookup()
+     {
+         groups_418[index].count_00 = 0;
+         groups_418[index].word_04 = 0;
+-        groups_418[index].name_08 = 0;
++        groups_418[index].volumes_08 = 0;
+         groups_418[index].sounds_0c = 0;
+     }
+     for (int index = 0; index < 20; ++index)
+diff --git a/src/startup_animation_sound_crowd.cpp b/src/startup_animation_sound_crowd.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..044cbb43e7146a31716435b1cb76917455bfcbc9
+--- /dev/null
++++ b/src/startup_animation_sound_crowd.cpp
+@@ -0,0 +1,34 @@
++#include "startup_animation_sound.h"
++#include "startup_game_file.h"
++#include <stdlib.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004d14a0
++int AnimationSoundLookup::ParseCrowdSound(const char* data)
++{
++    char token[52];
++    int offset = SkipWhitespace(data);
++    offset += ReadToken(token, data + offset);
++    while (strcmp(token, "End"))
++    {
++        if (!_stricmp("MaxNumber", token))
++        {
++            offset += ReadToken(token, data + offset);
++            crowd_divisor_570 = static_cast<float>(atof(token));
++        }
++        else if (!_stricmp("MaxVolume", token))
++        {
++            offset += ReadToken(token, data + offset);
++            crowd_maximum_56c = static_cast<float>(atof(token));
++        }
++        else if (!_stricmp("FadeTime", token))
++        {
++            offset += ReadToken(token, data + offset);
++            crowd_fade_574 = static_cast<float>(atof(token));
++        }
++        else
++            StartupFatal("Unknown CrowdSound command %s", token);
++        offset += ReadToken(token, data + offset);
++    }
++    return offset;
++}
+diff --git a/src/startup_animation_sound_methods.cpp b/src/startup_animation_sound_methods.cpp
+index 77ba9adc2d4e9e6fc2188048e3142387c6dc9b1e..1c3e9b50112af13e8722e8351cb29f09f8815bb3 100644
+--- a/src/startup_animation_sound_methods.cpp
++++ b/src/startup_animation_sound_methods.cpp
+@@ -61,7 +61,7 @@ AnimationSoundLookup::~AnimationSoundLookup() noexcept(false)
+     for (int index = 0; index < group_count_518; ++index)
+     {
+         AnimationSoundGroup& group = groups_418[index];
+-        ::operator delete(group.name_08);
++        ::operator delete(group.volumes_08);
+         for (int sound = 0; sound < group.count_00; ++sound)
+             ::operator delete(group.sounds_0c[sound]);
+         ::operator delete(group.sounds_0c);
+diff --git a/src/startup_animation_sound_opinions.cpp b/src/startup_animation_sound_opinions.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c95ebf9cda04f0f3aa8272fdf031a262b18b6403
+--- /dev/null
++++ b/src/startup_animation_sound_opinions.cpp
+@@ -0,0 +1,58 @@
++#include "startup_animation_sound.h"
++#include "startup_game_file.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++#include <new>
++#include <stdlib.h>
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x0058275c
++const char* animation_opinion_names[16] = {
++    "Male_StinkyToilet", "Male_Vomit", "Male_Vandalism", "Male_Fight", "Male_Topless", "Male_WetTShirt", "Male_BuildingQueueClosed", "Male_GoodSale", "Male_BadSale", "Female_StinkyToilet", "Female_Vomit", "Female_Vandalism", "Female_Fight", "Female_BuildingQueueClosed", "Female_GoodSale", "Female_BadSale"
++};
++
++// FUNCTION: BEACHLIFE 0x004d1640
++int AnimationSoundLookup::ParseOpinionSounds(const char* data)
++{
++    char token[52];
++    int offset = SkipWhitespace(data);
++    offset += ReadToken(token, data + offset);
++    while (strcmp(token, "End"))
++    {
++        int opinion = 0;
++        while (opinion < 16 && strcmp(animation_opinion_names[opinion], token))
++            ++opinion;
++        if (opinion == 16)
++            StartupFatal("ProcessOpinionSound, unknown or missing opinion, %s", token);
++        else
++        {
++            AnimationSoundGroup& group = groups_418[group_count_518];
++            offset += ReadToken(token, data + offset);
++            if (!strcmp("Group", token))
++            {
++                offset += ReadToken(token, data + offset);
++                group.word_04 = atoi(token);
++                offset += ReadToken(token, data + offset);
++            }
++            else
++                group.word_04 = -1;
++            int count = atoi(token);
++            group.count_00 = count;
++            group.volumes_08 = static_cast<float*>(::operator new(count * sizeof(float)));
++            group.sounds_0c = static_cast<char**>(::operator new(count * sizeof(char*)));
++            for (int sound = 0; sound < count; ++sound)
++            {
++                offset += ReadToken(token, data + offset);
++                group.sounds_0c[sound] = static_cast<char*>(::operator new(strlen(token) + 1));
++                strcpy(group.sounds_0c[sound], token);
++                if (!window_audio_state->HasSound(token))
++                    StartupFatal("Sound File Doesnt Exist %s", token);
++                offset += ReadToken(token, data + offset);
++                group.volumes_08[sound] = static_cast<float>(atof(token));
++            }
++        }
++        ++group_count_518;
++        offset += ReadToken(token, data + offset);
++    }
++    return offset;
++}
+diff --git a/src/startup_animation_sound_sprites.cpp b/src/startup_animation_sound_sprites.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..208c10982bca08648e47554ac561dae68fe733fb
+--- /dev/null
++++ b/src/startup_animation_sound_sprites.cpp
+@@ -0,0 +1,68 @@
++#include "startup_animation_sound.h"
++#include "startup_game_file.h"
++#include "startup_screen_dialog_resource.h"
++#include "window_activation.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++#include <new>
++#include <stdlib.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004d0dd0
++int AnimationSoundLookup::ParseSpriteSounds(const char* data)
++{
++    char token[52];
++    int offset = SkipWhitespace(data);
++    offset += ReadToken(token, data + offset);
++    AnimationSoundEntry& entry = animations_00[animation_count_2d0];
++    entry.name_00 = static_cast<char*>(::operator new(strlen(token) + 1));
++    strcpy(entry.name_00, token);
++    ScreenDialogResource* resource = screen_dialog_resources->Find(token);
++    int count = resource->record->frame_count;
++    entry.sounds_04 = static_cast<char***>(::operator new(count * sizeof(char**)));
++    entry.counts_08 = static_cast<int*>(::operator new(count * sizeof(int)));
++    entry.next_0c = static_cast<int*>(::operator new(count * sizeof(int)));
++    entry.limit_indices_10 = static_cast<int*>(::operator new(count * sizeof(int)));
++    entry.volumes_14 = static_cast<float**>(::operator new(count * sizeof(float*)));
++    for (int index = 0; index < count; ++index)
++    {
++        entry.counts_08[index] = 0;
++        entry.limit_indices_10[index] = -1;
++    }
++    offset += ReadToken(token, data + offset);
++    while (strcmp(token, "End"))
++    {
++        resource->SetAnimation(token, window_deactivation_state->time_158, 0);
++        int animation = resource->word_10;
++        if (_stricmp(resource->record->frames[animation]->name, token))
++            StartupFatal("Animation %s not found on sprite %s", token, resource->name);
++        offset += ReadToken(token, data + offset);
++        if (!strcmp("Group", token))
++        {
++            offset += ReadToken(token, data + offset);
++            entry.limit_indices_10[animation] = atoi(token);
++            offset += ReadToken(token, data + offset);
++        }
++        int sounds = atoi(token);
++        if (!sounds)
++            StartupFatal("Error in sound.dat around %s", token);
++        entry.sounds_04[animation] = static_cast<char**>(::operator new(sounds * sizeof(char*)));
++        entry.counts_08[animation] = sounds;
++        entry.next_0c[animation] = 0;
++        entry.volumes_14[animation] = static_cast<float*>(::operator new(sounds * sizeof(float)));
++        for (int sound = 0; sound < sounds; ++sound)
++        {
++            offset += ReadToken(token, data + offset);
++            entry.sounds_04[animation][sound] = static_cast<char*>(::operator new(strlen(token) + 1));
++            strcpy(entry.sounds_04[animation][sound], token);
++            if (!window_audio_state->HasSound(token))
++                StartupFatal("Sound File Doesnt Exist %s", token);
++            offset += ReadToken(token, data + offset);
++            entry.volumes_14[animation][sound] = static_cast<float>(atof(token));
++        }
++        offset += ReadToken(token, data + offset);
++    }
++    screen_dialog_resources->Release(resource);
++    ++animation_count_2d0;
++    return offset;
++}
+diff --git a/src/startup_animation_sound_tokens.cpp b/src/startup_animation_sound_tokens.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea5f240469f3be32d27798f7792447f66340e3c2
+--- /dev/null
++++ b/src/startup_animation_sound_tokens.cpp
+@@ -0,0 +1,44 @@
++#include "startup_animation_sound.h"
++
++// FUNCTION: BEACHLIFE 0x004d0c20
++int AnimationSoundLookup::SkipWhitespace(const char* data)
++{
++    int offset = 0;
++    while (data[offset] == ' ' || data[offset] == '\r' || data[offset] == '\n' || data[offset] == '\t')
++        ++offset;
++    return offset;
++}
++
++// FUNCTION: BEACHLIFE 0x004d0d40
++int AnimationSoundLookup::SkipComments(const char* data)
++{
++    int offset = SkipWhitespace(data);
++    if (data[offset] == '/')
++    {
++        do
++            ++offset;
++        while (data[offset] != '\n');
++        offset += SkipWhitespace(data + offset);
++        offset += SkipComments(data + offset);
++        offset += SkipWhitespace(data + offset);
++    }
++    return offset;
++}
++
++// FUNCTION: BEACHLIFE 0x004d0c50
++int AnimationSoundLookup::ReadToken(char* token, const char* data)
++{
++    int offset = SkipWhitespace(data);
++    offset += SkipComments(data + offset);
++    if (data[offset] == ';')
++    {
++        token[0] = ';';
++        token[1] = 0;
++        return offset + 1;
++    }
++    while (data[offset] != ' ' && data[offset] != '\n' && data[offset] != '\t'
++           && data[offset] != '\r' && data[offset] != ';')
++        *token++ = data[offset++];
++    *token = 0;
++    return offset;
++}
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 1c466eb6242aab09366669b576d5239b28bcd59c..89563c86e361911fe402f169ba26da3267de2d76 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -50,6 +50,9 @@ static_assert(sizeof(void*) != 4 || sizeof(ScreenTerrainCell) == 0x54);
+ 
+ struct ScreenTerrainRouteNode
+ {
++    ScreenPoint* Points(unsigned int* count); // 0x004456b0.
++    ScreenPoint* Bounds();                    // 0x004456c0.
++
+     ScreenTerrainRouteNode* Next(); // 0x004456d0.
+     ScreenTerrainRouteNode(const ScreenPoint* points, unsigned int count, unsigned int word04,
+         unsigned int word08, unsigned int word0c, unsigned int word10, unsigned int word14,
+diff --git a/src/startup_screen_terrain_route_access.cpp b/src/startup_screen_terrain_route_access.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..42cdaa8d885daa35e71326129fac33b2fbeeea21
+--- /dev/null
++++ b/src/startup_screen_terrain_route_access.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_mode_world.h"
++
++// FUNCTION: BEACHLIFE 0x004456b0
++ScreenPoint* ScreenTerrainRouteNode::Points(unsigned int* count)
++{
++    *count = count_28;
++    return static_cast<ScreenPoint*>(data_00);
++}
++
++// FUNCTION: BEACHLIFE 0x004456c0
++ScreenPoint* ScreenTerrainRouteNode::Bounds()
++{
++    return reinterpret_cast<ScreenPoint*>(words_04);
++}
++
++// FUNCTION: BEACHLIFE 0x004456d0
++ScreenTerrainRouteNode* ScreenTerrainRouteNode::Next()
++{
++    return next_30;
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 85949221c9c7eafb959836f9644144ddd3e1c8ed..9e8843d946e3959b166b4ac3b40f6790ad4f96df 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -51,6 +51,9 @@ struct TickerHistoryMessage
+ 
+ struct VariableTicker
+ {
++    void AddFeedback(unsigned int flags, unsigned int kind); // 0x0042b5b0.
++    unsigned int Feedback(unsigned int kind);                // 0x0042b640.
++
+     VariableTicker();                                  // 0x00429950.
+     void AddNamedMessage(const char* name);            // 0x0042a940.
+     void ClearFeedback(unsigned int kind);             // 0x0042b540.
+@@ -255,10 +258,12 @@ struct VariableGuestState
+ // female appeal at +0x68/+0x6c. Size not proved.
+ struct VariableEventSchedule
+ {
+-    explicit VariableEventSchedule(unsigned int id); // 0x00427b40.
+-    void Update();                                   // 0x00428510.
+-    void SaveState(GameFileReader* file);            // 0x004293e0.
+-    void LoadState(GameFileReader* file);            // 0x004295c0.
++    void BroadcastGuests(ScreenModeCommand* command, float delay); // 0x00427ee0.
++    void AddPerformer(unsigned int id);                            // 0x00427fb0.
++    explicit VariableEventSchedule(unsigned int id);               // 0x00427b40.
++    void Update();                                                 // 0x00428510.
++    void SaveState(GameFileReader* file);                          // 0x004293e0.
++    void LoadState(GameFileReader* file);                          // 0x004295c0.
+     struct Entry
+     {
+         WorldDequeStorage<unsigned int> staff_00;
+diff --git a/src/startup_variable_ticker_feedback.cpp b/src/startup_variable_ticker_feedback.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fc71f4a4b8434b6a4ef1d9960c5fc2362615a63
+--- /dev/null
++++ b/src/startup_variable_ticker_feedback.cpp
+@@ -0,0 +1,54 @@
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x0042b5b0
++void VariableTicker::AddFeedback(unsigned int flags, unsigned int kind)
++{
++    switch (kind)
++    {
++    case 0x0b:
++        word_64 |= flags;
++        break;
++    case 7:
++        word_60 |= flags;
++        break;
++    case 0x0c:
++        word_68 |= flags;
++        break;
++    case 8:
++        word_6c |= flags;
++        break;
++    case 9:
++        word_70 |= flags;
++        break;
++    case 0x0a:
++        word_74 |= flags;
++        break;
++    case 6:
++        word_78 |= flags;
++        break;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0042b640
++unsigned int VariableTicker::Feedback(unsigned int kind)
++{
++    switch (kind)
++    {
++    case 0x0b:
++        return word_64;
++    case 7:
++        return word_60;
++    case 0x0c:
++        return word_68;
++    case 8:
++        return word_6c;
++    case 9:
++        return word_70;
++    case 0x0a:
++        return word_74;
++    case 6:
++        return word_78;
++    default:
++        return 0;
++    }
++}
+diff --git a/src/startup_world_aerobic_commands.cpp b/src/startup_world_aerobic_commands.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d1d59cad005dab7cd228a0fcdb9406f14959037c
+--- /dev/null
++++ b/src/startup_world_aerobic_commands.cpp
+@@ -0,0 +1,108 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <stdlib.h>
++
++// FUNCTION: BEACHLIFE 0x00452dc0
++bool WorldEntity20::Unknown14(ScreenModeCommand* command)
++{
++    unsigned int kind = command->words[2];
++    if (kind == 0x3b)
++    {
++        flag_10c = 1;
++        unsigned char result;
++        return result != 0;
++    }
++    if (kind == 0x39)
++    {
++        if (flag_10c && action_state_f4 != 0)
++        {
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 3;
++            next.words[3] = 0;
++            next.words[4] = 6;
++            screen_mode_commands->QueueCommand(&next);
++            return true;
++        }
++        int reaction;
++        const char* animation;
++        if (flag_10c)
++        {
++            animation = "Aerobic_To_Stand";
++            reaction = 4;
++        }
++        else
++        {
++            reaction = rand() % 3;
++            switch (reaction)
++            {
++            case 0:
++                animation = "Aerobic1";
++                break;
++            case 1:
++                animation = "Aerobic2";
++                break;
++            case 2:
++                animation = "Aerobic3";
++                break;
++            default:
++                return true;
++            }
++        }
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++        keyline_state_44->word_08 = 1;
++        if (flag_10c)
++            action_state_f4 = 1;
++        ScreenModeCommand next;
++        next.words[0] = id_28;
++        next.words[1] = id_28;
++        next.words[2] = 0x39;
++        next.words[3] = 0;
++        next.words[4] = 0;
++        screen_mode_commands->QueueDelayed(&next, duration);
++        ScreenModeCommand broadcast;
++        broadcast.words[0] = id_28;
++        broadcast.words[1] = id_28;
++        broadcast.words[2] = 0x3c;
++        broadcast.words[3] = 0;
++        broadcast.words[4] = reaction;
++        broadcast.words[5] = 0x40;
++        broadcast.words[6] = 0;
++        variable_world->FindObject(owner_id_fc)->AsBuilding()->events_170->BroadcastGuests(&broadcast, 0.0f);
++        return true;
++    }
++    if (kind == 0x16)
++    {
++        if (state_3c == 0)
++        {
++            ScreenWorldPosition position = { x_30, y_34, z_38 };
++            float duration = keyline_state_44->SetAnimation("stand_to_aerobic", window_deactivation_state->time_158, &position);
++            keyline_state_44->word_08 = 2;
++            action_state_f4 = 0;
++            int rotation = variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18;
++            keyline_state_44->SelectVariant((11 - rotation * 2) % 8);
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 0x39;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            screen_mode_commands->QueueDelayed(&next, duration);
++        }
++        else if (state_3c == 6)
++        {
++            inactive_04 = 1;
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = owner_id_fc;
++            next.words[2] = 0x3b;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            screen_mode_commands->QueueCommand(&next);
++        }
++        return true;
++    }
++    return WorldPedestrianEntity::Unknown14(command);
++}
+diff --git a/src/startup_world_cabaret_commands.cpp b/src/startup_world_cabaret_commands.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2f87d19a1484ac9cb320285eb71bd2fbd24ec417
+--- /dev/null
++++ b/src/startup_world_cabaret_commands.cpp
+@@ -0,0 +1,130 @@
++#include "startup_world_performer_helpers.h"
++#include "window_activation.h"
++#include <stdlib.h>
++
++// FUNCTION: BEACHLIFE 0x00462e10
++bool WorldEntity14::Unknown14(ScreenModeCommand* command)
++{
++    unsigned char result;
++    unsigned int kind = command->words[2];
++    if (kind == 0x3b)
++    {
++        flag_104 = 1;
++        // Retail returns a local byte that this branch does not initialize.
++        return result != 0;
++    }
++    if (kind == 0x39)
++    {
++        if (action_state_f4 <= 1)
++        {
++            bool starting = action_state_f4 == 0;
++            WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++            unsigned int rotation = owner->keyline_state_44->word_18;
++            ScreenMapPosition point;
++            if (rotation == 0)
++            {
++                point = { owner->x_30 - 21.0f, owner->y_34 - 322.0f };
++                keyline_state_44->SelectVariant(4);
++            }
++            else if (rotation == 3)
++            {
++                point = { owner->x_30 + 33.0f, owner->y_34 - 308.0f };
++                keyline_state_44->SelectVariant(6);
++            }
++            else
++            {
++                point = PerformerBuildingPoint(owner, { -25.0f, -282.0f });
++                if (starting)
++                    keyline_state_44->SelectVariant((static_cast<int>(keyline_state_44->word_18) + 7) % 8);
++                else
++                    keyline_state_44->SelectVariant(((4 - static_cast<int>(owner->keyline_state_44->word_18)) * 2) % 8);
++            }
++            ScreenWorldPosition position = { x_30, y_34, z_38 };
++            float duration = keyline_state_44->SetAnimation(starting ? "D_CABARET" : "D_CABARET_TO_WALK",
++                window_deactivation_state->time_158,
++                &position);
++            keyline_state_44->word_08 = 2;
++            SetMovementPosition({ point.x, point.y, 0.0f });
++            action_state_f4 = starting ? 1 : 2;
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 0x39;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            screen_mode_commands->QueueDelayed(&next, duration);
++        }
++        else if (action_state_f4 == 2)
++        {
++            WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++            unsigned int rotation = owner->keyline_state_44->word_18;
++            ScreenMapPosition point;
++            if (rotation == 0)
++                point = { owner->x_30 + 5.0f, owner->y_34 - 364.0f };
++            else if (rotation == 3)
++                point = { owner->x_30 + 102.0f, owner->y_34 - 286.0f };
++            else
++                point = PerformerBuildingPoint(owner, { 5.0f, -364.0f });
++            ScreenWorldPosition position = { x_30, y_34, z_38 };
++            keyline_state_44->SetAnimation("D_CABARET_WALK_CYCLE", window_deactivation_state->time_158, &position);
++            keyline_state_44->SelectVariant(owner->keyline_state_44->word_18 == 0 ? 1 : 3);
++            keyline_state_44->word_08 = 0;
++            action_state_f4 = 3;
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 0xa;
++            next.words[3] = static_cast<int>(point.x);
++            next.words[4] = static_cast<int>(point.y);
++            screen_mode_commands->QueueCommand(&next);
++        }
++        return true;
++    }
++    if (kind == 0x16)
++    {
++        if (action_state_f4 == 0)
++        {
++            WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++            ScreenWorldPosition position = { x_30, y_34, z_38 };
++            float duration = keyline_state_44->SetAnimation("D_CABARET_TO_WALK", window_deactivation_state->time_158, &position);
++            int rotation = owner->keyline_state_44->word_18;
++            keyline_state_44->SelectVariant(rotation == 0 ? 4 : rotation == 3 ? 6
++                                                                              : ((6 - rotation) * 2) % 8);
++            keyline_state_44->word_08 = 1;
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 0x39;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            screen_mode_commands->QueueDelayed(&next, duration);
++        }
++        else if (action_state_f4 == 3)
++        {
++            ScreenModeCommand next;
++            if (!flag_104)
++            {
++                screen_dialog_resources->Release(keyline_state_44);
++                keyline_state_44 = 0;
++                SetOwner(rand() % 2);
++                next.words[0] = id_28;
++                next.words[1] = id_28;
++                next.words[2] = 3;
++                next.words[3] = 0;
++                next.words[4] = 1;
++            }
++            else
++            {
++                inactive_04 = 1;
++                next.words[0] = id_28;
++                next.words[1] = owner_id_fc;
++                next.words[2] = 0x3b;
++                next.words[3] = 0;
++                next.words[4] = 0;
++            }
++            screen_mode_commands->QueueCommand(&next);
++        }
++        return true;
++    }
++    return WorldPedestrianEntity::Unknown14(command);
++}
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index fcce1ef04ddbfb40503906c32d2fbda33958ff6a..eab172ba8a96682e5800091ebb647278a24efca4 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -95,6 +95,11 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldMovingEntity) == 0xf4);
+ 
+ struct WorldPedestrianEntity : WorldMovingEntity
+ {
++    bool AcceptPerformerState(unsigned int state); // 0x0048ce00.
++    bool LeavePerformerState();                    // 0x0048d080.
++    float PlayPerformerAnimation(const char* animation, unsigned char once, unsigned int next_state,
++        unsigned char hold, const char* next_animation);                                                            // 0x00464590.
++    WorldScriptValue ReadPerformerValue(unsigned int kind, std::uintptr_t data);                                    // 0x004533b0.
+     explicit WorldPedestrianEntity(const char* name);                                                               // 0x0047c350.
+     ~WorldPedestrianEntity() noexcept(false);                                                                       // 0x0047c390.
+     void Destroy(unsigned int flags) override;                                                                      // 0x0047c370.
+@@ -947,6 +952,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldSharkEntity) == 0x124);
+ 
+ struct WorldEntity14 : WorldPedestrianEntity
+ {
++    ~WorldEntity14() noexcept(false);                                                                                                             // 0x00462c60.
+     void SetOwner(unsigned int owner);                                                                                                            // 0x00462cc0.
+     void SetVariant(unsigned int variant);                                                                                                        // 0x004637c0.
+     explicit WorldEntity14(const char* name);                                                                                                     // 0x00462c00.
+@@ -962,7 +968,10 @@ struct WorldEntity14 : WorldPedestrianEntity
+     void Unknown34(unsigned int value) override { IgnoreScreenAction(); }                                                                         // Folded 0x004c3d20.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x00463810.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x00463880.
+-    unsigned char unknown_f4[0x10];
++    unsigned int action_state_f4;
++    int type_f8;
++    unsigned int owner_id_fc;
++    unsigned char unknown_100[4];
+     unsigned char flag_104;
+     unsigned char unknown_105[0x3];
+ };
+@@ -970,6 +979,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldEntity14) == 0x108);
+ 
+ struct WorldEntity15 : WorldPedestrianEntity
+ {
++    ~WorldEntity15() noexcept(false);                                                                                                             // 0x0048c2d0.
+     void SetOwner(unsigned int owner);                                                                                                            // 0x0048c350.
+     void SetVariant(unsigned int variant);                                                                                                        // 0x0048ccb0.
+     explicit WorldEntity15(const char* name);                                                                                                     // 0x0048c210.
+@@ -985,9 +995,12 @@ struct WorldEntity15 : WorldPedestrianEntity
+     void Unknown3c() override;                                                                                                                    // 0x0048cc60.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0048d090.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x0048d180.
+-    unsigned char unknown_f4[0x10];
++    unsigned int action_state_f4;
++    int type_f8;
++    unsigned int owner_id_fc;
++    unsigned char unknown_100[4];
+     ScreenDialogResource* resource_104;
+-    unsigned char unknown_108[0xc];
++    ScreenWorldPosition action_point_108;
+     unsigned char flag_114;
+     unsigned char unknown_115[0x3];
+ };
+@@ -995,6 +1008,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldEntity15) == 0x118);
+ 
+ struct WorldEntity16 : WorldPedestrianEntity
+ {
++    ~WorldEntity16() noexcept(false);                                                                                                             // 0x0049b030.
+     void SetOwner(unsigned int owner);                                                                                                            // 0x0049b0b0.
+     void SetVariant(unsigned int variant);                                                                                                        // 0x0049b980.
+     explicit WorldEntity16(const char* name);                                                                                                     // 0x0049afa0.
+@@ -1010,10 +1024,14 @@ struct WorldEntity16 : WorldPedestrianEntity
+     void Unknown3c() override;                                                                                                                    // 0x0049b930.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0049c020.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x0049c110.
+-    unsigned char unknown_f4[0x10];
++    unsigned int action_state_f4;
++    int type_f8;
++    unsigned int owner_id_fc;
++    unsigned char unknown_100[4];
+     ScreenDialogResource* resource_104;
+     unsigned char flag_108;
+-    unsigned char unknown_109[0xf];
++    unsigned char unknown_109[3];
++    ScreenWorldPosition action_point_10c;
+ };
+ static_assert(sizeof(void*) != 4 || sizeof(WorldEntity16) == 0x118);
+ 
+@@ -1079,6 +1097,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldEntity19) == 0x77c);
+ 
+ struct WorldEntity20 : WorldPedestrianEntity
+ {
++    ~WorldEntity20() noexcept(false);                                                                                                             // 0x00452cc0.
+     void SetOwner(unsigned int owner);                                                                                                            // 0x00452d20.
+     void SetVariant(unsigned int variant);                                                                                                        // 0x004532e0.
+     explicit WorldEntity20(const char* name);                                                                                                     // 0x00452c80.
+@@ -1093,7 +1112,10 @@ struct WorldEntity20 : WorldPedestrianEntity
+     void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00464660.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x00453630.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x004536d0.
+-    unsigned char unknown_f4[0x18];
++    unsigned int action_state_f4;
++    int type_f8;
++    unsigned int owner_id_fc;
++    ScreenWorldPosition action_point_100;
+     unsigned char flag_10c;
+     unsigned char unknown_10d[0x3];
+ };
+diff --git a/src/startup_world_lifeguard_feedback.cpp b/src/startup_world_lifeguard_feedback.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f821542bffc11d25a5ec83a172f2b141d9839f8
+--- /dev/null
++++ b/src/startup_world_lifeguard_feedback.cpp
+@@ -0,0 +1,76 @@
++#include "startup_world_entities.h"
++#include "startup_screen_manager.h"
++#include "window_activation.h"
++
++namespace
++{
++inline void PublishLifeguardFeedback(WorldLifeguardEntity* lifeguard)
++{
++    lifeguard->feedback_7fc[2] = lifeguard->feedback_7fc[1];
++    lifeguard->feedback_7fc[1] = 0;
++    const char* message = lifeguard->Notification(lifeguard->feedback_7fc[2]);
++    if (message)
++        window_deactivation_state->ticker_30->AddMessage(message, lifeguard->id_28, 8);
++    lifeguard->AddThought(lifeguard->feedback_7fc[2]);
++    screen_manager->SetNamedItemFlag("LifeguardIcon", 0);
++}
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x0047cfc0
++void WorldLifeguardEntity::UpdateFeedback()
++{
++    if (feedback_7fc[1])
++        return;
++    if (flag_818 && !(feedback_7fc[0] & 2))
++    {
++        feedback_7fc[0] |= 2;
++        feedback_7fc[1] = 2;
++        window_deactivation_state->ticker_30->AddFeedback(2, 7);
++        PublishLifeguardFeedback(this);
++        flag_818 = 0;
++    }
++    if (!(feedback_7fc[0] & 4))
++    {
++        feedback_7fc[0] |= 4;
++        if (!(window_deactivation_state->ticker_30->Feedback(7) & 4) && word_81c > 8)
++        {
++            feedback_7fc[1] |= 4;
++            window_deactivation_state->ticker_30->AddFeedback(4, 7);
++            PublishLifeguardFeedback(this);
++        }
++    }
++    if (!(feedback_7fc[0] & 8))
++    {
++        feedback_7fc[0] |= 8;
++        if (flag_766)
++        {
++            feedback_7fc[1] |= 8;
++            PublishLifeguardFeedback(this);
++        }
++    }
++    if (!(feedback_7fc[0] & 0x10))
++    {
++        feedback_7fc[0] |= 0x10;
++        if (flag_766)
++        {
++            feedback_7fc[1] |= 0x10;
++            PublishLifeguardFeedback(this);
++        }
++    }
++    if (!(feedback_7fc[0] & 0x20))
++    {
++        feedback_7fc[0] |= 0x20;
++        if (flag_766)
++        {
++            feedback_7fc[1] |= 0x20;
++            PublishLifeguardFeedback(this);
++        }
++    }
++    if (!(feedback_7fc[0] & 0x800000) && !(morale_10c >= 0.6f))
++    {
++        feedback_7fc[0] |= 0x800000;
++        feedback_7fc[1] |= 0x800000;
++        window_deactivation_state->ticker_30->AddMessage(Notification(0x100000), id_28, 7);
++        AddThought(0x800000);
++    }
++}
+diff --git a/src/startup_world_lifeguard_patrol.cpp b/src/startup_world_lifeguard_patrol.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2f71930cf35aa3678b9e4c91bcee446f0cfd0412
+--- /dev/null
++++ b/src/startup_world_lifeguard_patrol.cpp
+@@ -0,0 +1,91 @@
++#include "startup_world_entities.h"
++#include "startup_screen_mode_world.h"
++#include <cmath>
++#include <cstdlib>
++
++namespace
++{
++inline float BeachPointDistance(ScreenPoint point, ScreenWorldPosition position)
++{
++    ScreenWorldPosition tile = screen_terrain_grid->TileOrigin(point.x, point.y);
++    float x = tile.x - position.x;
++    float y = tile.y - position.y;
++    float z = tile.z - position.z;
++    return std::sqrt(z * z + y * y + x * x);
++}
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x0047e930
++void WorldLifeguardEntity::FindBeachArea()
++{
++    float distance = 0.0f;
++    unsigned int area = 0;
++    unsigned int nearest_area = 0;
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    ScreenTerrainRouteNode* nearest = screen_terrain_grid->routes_1c;
++    unsigned int count;
++    ScreenPoint* points = nearest->Points(&count);
++    ScreenPoint closest = points[0];
++    // The first scan's closest point is discarded by the original routine.
++    for (unsigned int i = 1; i < count; ++i)
++    {
++        float candidate_distance = BeachPointDistance(points[i], position);
++        float closest_distance = BeachPointDistance(closest, position);
++        if (closest_distance > candidate_distance)
++            closest = points[i];
++    }
++    for (ScreenTerrainRouteNode* route = nearest; route; route = route->Next(), ++area)
++    {
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            float candidate_distance = BeachPointDistance(points[i], position);
++            if (!(candidate_distance >= distance) || distance == 0.0f)
++            {
++                nearest_area = area;
++                nearest = route;
++                distance = BeachPointDistance(points[i], position);
++            }
++        }
++    }
++    beach_route_780 = nearest;
++    beach_area_784 = nearest_area;
++}
++
++// FUNCTION: BEACHLIFE 0x0047ed60
++void WorldLifeguardEntity::PatrolBeach()
++{
++    ScreenPoint first = beach_route_780->Bounds()[0];
++    ScreenPoint last = beach_route_780->Bounds()[3];
++    float width = static_cast<float>(last.x - first.x);
++    float left = static_cast<float>(first.x);
++    int x = static_cast<int>(static_cast<float>(std::rand()) * 0.000030518509447574615f * width + left);
++    float height = static_cast<float>(last.y - first.y);
++    float top = static_cast<float>(first.y);
++    int y = static_cast<int>(static_cast<float>(std::rand()) * 0.000030518509447574615f * height + top);
++    for (;;)
++    {
++        unsigned int index = (static_cast<unsigned int>(y) % screen_terrain_grid->height_08) * screen_terrain_grid->width_04
++                           + static_cast<unsigned int>(x) % screen_terrain_grid->width_04;
++        unsigned int flags = screen_terrain_grid->cells_0c[index].flags_48;
++        if ((flags & 2) && !(flags & 0x10))
++            break;
++        x = static_cast<int>(static_cast<float>(std::rand()) * 0.000030518509447574615f * width + left);
++        y = static_cast<int>(static_cast<float>(std::rand()) * 0.000030518509447574615f * height + top);
++    }
++    ScreenWorldPosition position = screen_terrain_grid->TileOrigin(x, y);
++    ScreenModeCommand command;
++    command.words[0] = id_28;
++    command.words[1] = id_28;
++    if (word_820 < 10)
++        command.words[2] = 8;
++    else
++    {
++        unsigned int mode = word_820;
++        word_820 = 0;
++        command.words[2] = mode == 20 ? 0x0d : 5;
++    }
++    command.words[3] = static_cast<int>(position.x);
++    command.words[4] = static_cast<int>(position.y);
++    screen_mode_commands->QueueCommand(&command);
++}
+diff --git a/src/startup_world_lifeguard_rescue.cpp b/src/startup_world_lifeguard_rescue.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..dee9fb294fbeb17a7fe7d591cc398eee736236b8
+--- /dev/null
++++ b/src/startup_world_lifeguard_rescue.cpp
+@@ -0,0 +1,82 @@
++#include "startup_world_entities.h"
++#include "startup_screen_mode_world.h"
++
++// FUNCTION: BEACHLIFE 0x0047f0b0
++void WorldLifeguardEntity::DirectTo(unsigned int id)
++{
++    VariableEntity* target = variable_world->FindObject(id);
++    unsigned int feedback = 0;
++    ScreenModeCommand command;
++    if (!target)
++        feedback = 8;
++    else
++    {
++        if (target->state_3c == 0x13)
++        {
++            saving_id_77c = id;
++            WorldGuestEntity* guest = variable_world->FindObject(id)->AsGuest();
++            if (!guest->lightning_state_318)
++            {
++                saving_id_77c = id;
++                flag_778 = 1;
++                command.words[0] = id_28;
++                command.words[1] = id_28;
++                command.words[2] = 0x3c;
++                command.words[3] = 0;
++                command.words[4] = 1;
++                command.words[5] = 0x83;
++                command.words[6] = 0;
++                screen_mode_commands->QueueCommand(&command);
++            }
++            else
++            {
++                saving_id_77c = 0xffffffff;
++                flag_778 = 0;
++                feedback = 0x10;
++            }
++        }
++        else
++            feedback = 0x20;
++        flag_766 = 0;
++    }
++    if (feedback)
++    {
++        feedback_7fc[0] &= ~feedback;
++        flag_766 = 1;
++        feedback_7fc[1] = 0;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 0x3c;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        command.words[5] = 0x83;
++        command.words[6] = 0;
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0047f6b0
++void WorldLifeguardEntity::EndRescue()
++{
++    if (flag_778)
++    {
++        if (action_state_7ec == 0 || action_state_7ec == 1)
++        {
++            variable_world->FindObject(saving_id_77c)->AsGuest()->lightning_state_318 = 2;
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0x4c;
++            screen_mode_commands->QueueCommand(&command);
++        }
++        else
++            flag_779 = 1;
++    }
++    else
++    {
++        SetMovementMode(0x4c);
++        Unknown08(0x4c);
++    }
++}
+diff --git a/src/startup_world_lifeguard_sea_points.cpp b/src/startup_world_lifeguard_sea_points.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e410c3c755f0760b44c5b5bef1568183eb7e1cd1
+--- /dev/null
++++ b/src/startup_world_lifeguard_sea_points.cpp
+@@ -0,0 +1,123 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++#include "startup_screen_mode_world.h"
++#include "window_activation.h"
++#include <cmath>
++
++namespace
++{
++inline void SeaPointNeighbours(ScreenPoint point, ScreenPoint* neighbours)
++{
++    screen_terrain_grid->Step(point.x, point.y, 0, &neighbours[0]);
++    screen_terrain_grid->Step(point.x, point.y, 2, &neighbours[1]);
++    screen_terrain_grid->Step(point.x, point.y, 4, &neighbours[2]);
++    screen_terrain_grid->Step(point.x, point.y, 6, &neighbours[3]);
++}
++
++inline bool SeaPointClear(ScreenPoint point, const ScreenPoint* neighbours)
++{
++    unsigned int index = screen_terrain_grid->TileIndex(point.x, point.y);
++    if (screen_terrain_grid->cells_0c[index].flags_48 & 0x10)
++        return false;
++    for (unsigned int i = 0; i < 4; ++i)
++    {
++        index = screen_terrain_grid->TileIndex(neighbours[i].x, neighbours[i].y);
++        if (screen_terrain_grid->cells_0c[index].flags_48 & 0x10)
++            return false;
++    }
++    return true;
++}
++
++inline bool SeaPointCloser(WorldLifeguardEntity* lifeguard, ScreenPoint point, ScreenPoint closest)
++{
++    ScreenWorldPosition position = screen_terrain_grid->TileOrigin(point.x, point.y);
++    float x = position.x - lifeguard->x_30;
++    float y = position.y - lifeguard->y_34;
++    float z = position.z - lifeguard->z_38;
++    ScreenWorldPosition previous = screen_terrain_grid->TileOrigin(closest.x, closest.y);
++    float previous_x = previous.x - lifeguard->x_30;
++    float previous_y = previous.y - lifeguard->y_34;
++    float previous_z = previous.z - lifeguard->z_38;
++    return std::sqrt(previous_x * previous_x + previous_z * previous_z + previous_y * previous_y)
++         > std::sqrt(x * x + z * z + y * y);
++}
++
++inline ScreenTerrainRouteNode* NearestSeaPoint(WorldLifeguardEntity* lifeguard, ScreenPoint* closest)
++{
++    ScreenTerrainRouteNode* nearest = screen_terrain_grid->routes_20;
++    unsigned int count;
++    ScreenPoint* points = nearest->Points(&count);
++    unsigned int index = 0;
++    ScreenPoint neighbours[4];
++    SeaPointNeighbours(points[index], neighbours);
++    while (!SeaPointClear(points[index], neighbours))
++    {
++        if (++index == count)
++        {
++            nearest = nearest->Next();
++            if (!nearest)
++                StartupFatal("I hope This Never Happens ( Cant Get Sea Entry Point)");
++            points = nearest->Points(&count);
++            index = 0;
++        }
++        SeaPointNeighbours(points[index], neighbours);
++    }
++    *closest = points[index];
++    for (++index; index < count; ++index)
++    {
++        SeaPointNeighbours(points[index], neighbours);
++        if (SeaPointCloser(lifeguard, points[index], *closest) && SeaPointClear(points[index], neighbours))
++            *closest = points[index];
++    }
++    for (ScreenTerrainRouteNode* route = nearest->Next(); route; route = route->Next())
++    {
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            SeaPointNeighbours(points[i], neighbours);
++            if (SeaPointCloser(lifeguard, points[i], *closest) && SeaPointClear(points[i], neighbours))
++            {
++                nearest = route;
++                *closest = points[i];
++            }
++        }
++    }
++    return nearest;
++}
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x0047f760
++void WorldLifeguardEntity::FindExitPoint()
++{
++    variable_world->FindObject(saving_id_77c)->AsGuest()->lightning_state_318 = 1;
++    ScreenPoint tile;
++    if (NearestSeaPoint(this, &tile))
++    {
++        ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile.x, tile.y, 4);
++        exit_point_788 = position;
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(position.x);
++        command.words[4] = static_cast<int>(position.y);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0047fee0
++void WorldLifeguardEntity::FindRescueTarget()
++{
++    ScreenPoint tile;
++    if (NearestSeaPoint(this, &tile))
++    {
++        ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile.x, tile.y, 4);
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 0x0b;
++        command.words[3] = static_cast<int>(position.x);
++        command.words[4] = static_cast<int>(position.y);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
+diff --git a/src/startup_world_lifeguard_tower.cpp b/src/startup_world_lifeguard_tower.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..cc19918df097cdeb0cc3574ec5194b4a8d83b8b1
+--- /dev/null
++++ b/src/startup_world_lifeguard_tower.cpp
+@@ -0,0 +1,79 @@
++#include "startup_world_entities.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++
++// FUNCTION: BEACHLIFE 0x0047eb90
++void WorldLifeguardEntity::EnterTower()
++{
++    WorldBuildingEntity* tower = variable_world->FindObject(home_id_100)->AsBuilding();
++    ScreenWorldPosition position = tower->StaffPosition();
++    switch (tower->keyline_state_44->word_18)
++    {
++    case 2:
++        position.x -= 29.0f;
++        position.y += 30.0f;
++        break;
++    case 3:
++        position.x += 29.0f;
++        position.y += 30.0f;
++        break;
++    }
++    ScreenPoint tile = overlay_map->WorldToTile(&position);
++    unsigned int index = (static_cast<unsigned int>(tile.y) % screen_terrain_grid->height_08) * screen_terrain_grid->width_04
++                       + static_cast<unsigned int>(tile.x) % screen_terrain_grid->width_04;
++    screen_terrain_grid->cells_0c[index].depth_50 += 500;
++    SetMovementPosition(position);
++}
++
++// FUNCTION: BEACHLIFE 0x0047ec70
++void WorldLifeguardEntity::LeaveTower()
++{
++    WorldBuildingEntity* tower = variable_world->FindObject(home_id_100)->AsBuilding();
++    ScreenWorldPosition previous = { x_30, y_34, z_38 };
++    ScreenWorldPosition position = tower->StaffPosition();
++    switch (tower->keyline_state_44->word_18)
++    {
++    case 2:
++        position.x -= 29.0f;
++        position.y += 30.0f;
++        break;
++    case 3:
++        position.x += 29.0f;
++        position.y += 30.0f;
++        break;
++    }
++    ScreenPoint tile = overlay_map->WorldToTile(&position);
++    unsigned int index = (static_cast<unsigned int>(tile.y) % screen_terrain_grid->height_08) * screen_terrain_grid->width_04
++                       + static_cast<unsigned int>(tile.x) % screen_terrain_grid->width_04;
++    screen_terrain_grid->cells_0c[index].depth_50 -= 500;
++    SetMovementPosition(previous);
++}
++
++// FUNCTION: BEACHLIFE 0x0047ef60
++void WorldLifeguardEntity::GoToTower()
++{
++    WorldBuildingEntity* tower = variable_world->FindObject(home_id_100)->AsBuilding();
++    unsigned int rotation = tower->keyline_state_44->word_18;
++    ScreenModeCommand command;
++    if (rotation == 0 || rotation == 1)
++    {
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 9;
++        command.words[3] = 0;
++        command.words[4] = tower->id_28;
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else if (rotation == 2 || rotation == 3)
++    {
++        ScreenWorldPosition position = tower->StaffPosition();
++        position.x += rotation == 2 ? -29.0f : 29.0f;
++        position.y += 30.0f;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(position.x);
++        command.words[4] = static_cast<int>(position.y);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
+diff --git a/src/startup_world_object_script_constructor.cpp b/src/startup_world_object_script_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..15fdf4d844198199716017cb9b32d6e332811f17
+--- /dev/null
++++ b/src/startup_world_object_script_constructor.cpp
+@@ -0,0 +1,33 @@
++#include "startup_world_subsystems.h"
++#include "startup_world_script_command_init.h"
++#include <cstring>
++
++// GLOBAL: BEACHLIFE 0x005baf00
++std::uintptr_t world_object_script_stack[10];
++// GLOBAL: BEACHLIFE 0x005baffe
++unsigned char world_object_script_nested;
++
++WorldSubsystemScript::Rule::Command::Command()
++{
++    InitializeWorldScriptCommand(id_00, first_04, second_08);
++}
++
++// FUNCTION: BEACHLIFE 0x004d5240
++WorldSubsystemScript::Rule::Rule()
++{
++    first_170 = 0;
++    second_174 = 0;
++    third_178 = 0;
++    count_16c = 0;
++    word_00 = 0x0fffffff;
++}
++
++// FUNCTION: BEACHLIFE 0x004d54b0
++WorldSubsystemScript::WorldSubsystemScript()
++{
++    count_5910 = 0;
++    word_5914 = 0;
++    word_5918 = 0;
++    std::memset(world_object_script_stack, 0, sizeof(world_object_script_stack));
++    world_object_script_nested = 0;
++}
+diff --git a/src/startup_world_object_script_dispatch.cpp b/src/startup_world_object_script_dispatch.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..950e3b7c0de7a996aaa574a72447cb793d3954f7
+--- /dev/null
++++ b/src/startup_world_object_script_dispatch.cpp
+@@ -0,0 +1,98 @@
++#include "startup_world_subsystems.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004d5520
++bool WorldSubsystemScript::HandleCommand(VariableEntity* entity, ScreenModeCommand command)
++{
++    unsigned int state = entity->state_3c;
++    for (unsigned int index = 0; index < count_5910; ++index)
++        if (rules_00[index].word_00 == state)
++            for (unsigned int entry = 0; entry < rules_00[index].count_16c; ++entry)
++                if (rules_00[index].commands_04[entry].id_00 == static_cast<unsigned int>(command.words[2]))
++                {
++                    Expression* expression = rules_00[index].commands_04[entry].first_04;
++                    if (expression)
++                        expression->Update(entity);
++                    return true;
++                }
++    return false;
++}
++
++// FUNCTION: BEACHLIFE 0x004d55c0
++void WorldSubsystemScript::DispatchCommand(VariableEntity* entity, ScreenModeCommand command)
++{
++    unsigned int state = entity->state_3c;
++    for (unsigned int index = 0; index < count_5910; ++index)
++        if (rules_00[index].word_00 == state)
++        {
++            Rule& rule = rules_00[index];
++            for (unsigned int entry = 0; entry < rule.count_16c; ++entry)
++                if (rule.commands_04[entry].id_00 == static_cast<unsigned int>(command.words[2]))
++                {
++                    if (rule.commands_04[entry].second_08)
++                        rule.commands_04[entry].second_08->Update(entity);
++                    break;
++                }
++            break;
++        }
++    screen_mode_commands->QueueCommand(&command);
++}
++
++// FUNCTION: BEACHLIFE 0x004d5660
++void WorldSubsystemScript::DispatchDelayedCommand(VariableEntity* entity, ScreenModeCommand command, float delay)
++{
++    unsigned int state = entity->state_3c;
++    for (unsigned int index = 0; index < count_5910; ++index)
++        if (rules_00[index].word_00 == state)
++        {
++            Rule& rule = rules_00[index];
++            for (unsigned int entry = 0; entry < rule.count_16c; ++entry)
++                if (rule.commands_04[entry].id_00 == static_cast<unsigned int>(command.words[2]))
++                {
++                    if (rule.commands_04[entry].second_08)
++                        rule.commands_04[entry].second_08->Update(entity);
++                    break;
++                }
++            break;
++        }
++    screen_mode_commands->QueueDelayed(&command, delay);
++}
++
++// FUNCTION: BEACHLIFE 0x004d5700
++void WorldSubsystemScript::ExitState(VariableEntity* entity, unsigned int state)
++{
++    for (unsigned int index = 0; index < count_5910; ++index)
++        if (rules_00[index].word_00 == state)
++        {
++            if (rules_00[index].second_174)
++                rules_00[index].second_174->Update(entity);
++            break;
++        }
++}
++
++// FUNCTION: BEACHLIFE 0x004d5750
++void WorldSubsystemScript::EnterState(VariableEntity* entity, unsigned int state)
++{
++    for (unsigned int index = 0; index < count_5910; ++index)
++        if (rules_00[index].word_00 == state)
++        {
++            if (rules_00[index].first_170)
++                rules_00[index].first_170->Update(entity);
++            break;
++        }
++}
++
++// FUNCTION: BEACHLIFE 0x004d57a0
++void WorldSubsystemScript::UpdateState(VariableEntity* entity, unsigned int state)
++{
++    if (window_deactivation_state->deactivation_requested)
++        return;
++    for (unsigned int index = 0; index < count_5910; ++index)
++        if (rules_00[index].word_00 == state)
++        {
++            if (rules_00[index].third_178)
++                rules_00[index].third_178->Update(entity);
++            break;
++        }
++}
+diff --git a/src/startup_world_object_script_load.cpp b/src/startup_world_object_script_load.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f8fa0c0e0eb39946ce19ac6534c5ed894e89bbcb
+--- /dev/null
++++ b/src/startup_world_object_script_load.cpp
+@@ -0,0 +1,49 @@
++#include "startup_world_subsystems.h"
++#include "startup_ble_file.h"
++#include "startup_game_file.h"
++#include <cstring>
++#include <new>
++
++static int SkipObjectScriptWhitespace(char*& cursor)
++{
++    int count = 0;
++    while (*cursor == ' ' || *cursor == '\r' || *cursor == '\n' || *cursor == '\t')
++    {
++        ++count;
++        ++cursor;
++    }
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d5800
++void WorldSubsystemScript::LoadScript(const char* path)
++{
++    unsigned int length = std::strlen(path);
++    char* filename = static_cast<char*>(::operator new(length + 1));
++    std::strcpy(filename, path);
++    filename[length - 4] = '.';
++    filename[length - 3] = 'b';
++    filename[length - 2] = 'l';
++    filename[length - 1] = 'e';
++    int size = GetFileSize(filename);
++    cursor_591c = LoadBleFile(filename);
++    ::operator delete(filename);
++    char* buffer = cursor_591c;
++    int consumed = 0;
++    char token[52];
++    while (consumed < size)
++    {
++        consumed += SkipObjectScriptWhitespace(cursor_591c);
++        consumed += SkipComments();
++        if (consumed >= size)
++            break;
++        consumed += ReadToken(token);
++        if (!std::strcmp(token, "State"))
++            consumed += ParseState();
++        else if (token[0] == '/')
++            consumed += SkipComments();
++        else
++            StartupFatal("Invalid Command Recieved in ObjectScript %s", token);
++    }
++    ::operator delete(buffer);
++}
+diff --git a/src/startup_world_performer_enter.cpp b/src/startup_world_performer_enter.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..16d7f9211a3ac3400474e5f02f49c8f11ca63742
+--- /dev/null
++++ b/src/startup_world_performer_enter.cpp
+@@ -0,0 +1,275 @@
++#include "startup_world_performer_helpers.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x0048ce20
++bool WorldEntity15::Unknown08(unsigned int state)
++{
++    if (state == 0)
++        return true;
++    if (state == 6)
++    {
++        keyline_state_44->word_08 = 0;
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        keyline_state_44->SetAnimation("SING_WALK", window_deactivation_state->time_158, &position);
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++        ScreenMapPosition point = PerformerBuildingPoint(owner, { -122.0f, -286.0f });
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(point.x);
++        command.words[4] = static_cast<int>(point.y);
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    if (state == 1)
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++        unsigned int rotation = owner->keyline_state_44->word_18;
++        if (rotation == 2 || rotation == 1)
++            visible_40 = 0;
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        keyline_state_44->SetAnimation("SING_WALK", window_deactivation_state->time_158, &position);
++        ScreenMapPosition point = PerformerBuildingPoint(owner, { 6.0f, -286.0f });
++        ScreenModeCommand move;
++        move.words[0] = id_28;
++        move.words[1] = id_28;
++        move.words[2] = 5;
++        move.words[3] = static_cast<int>(point.x);
++        move.words[4] = static_cast<int>(point.y);
++        command = move;
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    return static_cast<unsigned char>(state) != 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004533d0
++bool WorldEntity20::Unknown08(unsigned int state)
++{
++    if (state == 0)
++        return true;
++    if (state == 6)
++    {
++        keyline_state_44->word_08 = 0;
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        keyline_state_44->SetAnimation("d_walk_normal", window_deactivation_state->time_158, &position);
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++        ScreenMapPosition point = PerformerBuildingPoint(owner, { -122.0f, -286.0f });
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(point.x);
++        command.words[4] = static_cast<int>(point.y);
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    if (state == 1)
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++        unsigned int rotation = owner->keyline_state_44->word_18;
++        if (rotation == 2 || rotation == 1)
++            visible_40 = 0;
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        keyline_state_44->SetAnimation("d_walk_normal", window_deactivation_state->time_158, &position);
++        ScreenMapPosition point = PerformerBuildingPoint(owner, { 6.0f, -286.0f });
++        ScreenModeCommand move;
++        move.words[0] = id_28;
++        move.words[1] = id_28;
++        move.words[2] = 5;
++        move.words[3] = static_cast<int>(point.x);
++        move.words[4] = static_cast<int>(point.y);
++        command = move;
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    return static_cast<unsigned char>(state) != 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004638d0
++bool WorldEntity14::Unknown08(unsigned int state)
++{
++    unsigned char result;
++    if (state == 0)
++        return true;
++    if (state == 1)
++    {
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        keyline_state_44->SetAnimation("D_CABARET_WALK_CYCLE", window_deactivation_state->time_158, &position);
++        keyline_state_44->word_08 = 0;
++        action_state_f4 = 0;
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++        ScreenMapPosition point = PerformerBuildingPoint(owner, { -122.0f, -286.0f });
++        SetMovementPosition({ point.x, point.y, 0.0f });
++        unsigned int rotation = owner->keyline_state_44->word_18;
++        if (rotation == 0)
++        {
++            point.x = owner->x_30 - 21.0f;
++            point.y = owner->y_34 - 322.0f;
++            keyline_state_44->SelectVariant(4);
++        }
++        else if (rotation == 3)
++        {
++            point.x = owner->x_30 + 33.0f;
++            point.y = owner->y_34 - 308.0f;
++            keyline_state_44->SelectVariant(6);
++        }
++        else
++        {
++            visible_40 = 0;
++            point = PerformerBuildingPoint(owner, { -25.0f, -282.0f });
++            keyline_state_44->SelectVariant(((4 - static_cast<int>(owner->keyline_state_44->word_18)) * 2) % 8);
++        }
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 0xa;
++        command.words[3] = static_cast<int>(point.x);
++        command.words[4] = static_cast<int>(point.y);
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    // The retail path for a rejected state returns an uninitialized local byte.
++    return result != 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0049ba50
++bool WorldEntity16::Unknown04(unsigned int state)
++{
++    return state == 0 || state == 1 || state == 4 || state == 6;
++}
++
++// FUNCTION: BEACHLIFE 0x0049bfe0
++bool WorldEntity16::Unknown10()
++{
++    if (state_3c == 0 || state_3c == 1)
++        return true;
++    if (state_3c == 4)
++    {
++        screen_dialog_resources->Release(resource_104);
++        resource_104 = 0;
++        return true;
++    }
++    return false;
++}
++
++// FUNCTION: BEACHLIFE 0x0049ba90
++bool WorldEntity16::Unknown08(unsigned int state)
++{
++    const char* walk;
++    switch (type_f8)
++    {
++    case 0:
++        walk = "D_WEIGHT_THIN_WALK";
++        break;
++    case 1:
++        walk = "D_WEIGHT_FAT_WALK";
++        break;
++    case 2:
++        walk = "D_WEIGHT_BIG_WALK";
++        break;
++    default:
++        walk = 0;
++        break;
++    }
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    if (state == 6)
++    {
++        if (walk)
++            keyline_state_44->SetAnimation(walk, window_deactivation_state->time_158, &position);
++        keyline_state_44->word_08 = 0;
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++        ScreenMapPosition point = PerformerBuildingPoint(owner, { -122.0f, -286.0f });
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(point.x);
++        command.words[4] = static_cast<int>(point.y);
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    if (state == 0)
++    {
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++        if (walk)
++            keyline_state_44->SetAnimation(walk, window_deactivation_state->time_158, &position);
++        ScreenMapPosition offset;
++        switch (type_f8)
++        {
++        case 0:
++            offset = { -58.0f, -290.0f };
++            break;
++        case 1:
++            offset = { -30.0f, -320.0f };
++            break;
++        case 2:
++            offset = { -3.0f, -348.0f };
++            break;
++        }
++        keyline_state_44->word_08 = 0;
++        ScreenMapPosition point = PerformerBuildingPoint(owner, offset);
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(point.x);
++        command.words[4] = static_cast<int>(point.y);
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    if (state == 1)
++    {
++        unsigned int rotation = variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18;
++        if (rotation == 2 || rotation == 1)
++            visible_40 = 0;
++        action_state_f4 = 0;
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = type_f8 == 0 ? 4 : 0;
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    if (state == 4)
++    {
++        float duration;
++        if (walk)
++            duration = keyline_state_44->SetAnimation(walk, window_deactivation_state->time_158, &position);
++        keyline_state_44->word_08 = 0;
++        resource_104 = screen_dialog_resources->Find("STAGE_EVENTS");
++        resource_104->SetAnimation("D_WEIGHT_STILL", window_deactivation_state->time_158, &position);
++        resource_104->word_08 = 2;
++        int rotation = variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18;
++        resource_104->SelectVariant((11 - rotation * 2) % 8);
++        action_state_f4 = 0;
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(action_point_10c.x);
++        command.words[4] = static_cast<int>(action_point_10c.y);
++        screen_mode_commands->QueueDelayed(&command, duration);
++        return true;
++    }
++    // The retail path for a rejected state returns an uninitialized local byte.
++    unsigned char result;
++    return result != 0;
++}
+diff --git a/src/startup_world_performer_helpers.h b/src/startup_world_performer_helpers.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..96be4fa9b5edc494e98478728de3106ac262f42b
+--- /dev/null
++++ b/src/startup_world_performer_helpers.h
+@@ -0,0 +1,16 @@
++#ifndef STARTUP_WORLD_PERFORMER_HELPERS_H
++#define STARTUP_WORLD_PERFORMER_HELPERS_H
++
++#include "startup_screen_mode_world.h"
++#include "startup_world_entities.h"
++
++inline ScreenMapPosition PerformerBuildingPoint(WorldBuildingEntity* owner, ScreenMapPosition offset)
++{
++    unsigned int rotation = owner->keyline_state_44->word_18;
++    unsigned int height = owner->building_60->footprint_y_1d8;
++    unsigned int width = owner->building_60->footprint_x_1d4;
++    ScreenPoint tile = owner->TilePosition();
++    return CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, width, height, offset, rotation);
++}
++
++#endif
+diff --git a/src/startup_world_performer_lifetime.cpp b/src/startup_world_performer_lifetime.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..568d56094f2b43ed80f94ea348c5ec781ce01829
+--- /dev/null
++++ b/src/startup_world_performer_lifetime.cpp
+@@ -0,0 +1,174 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++#include <new>
++#include <stdlib.h>
++
++// FUNCTION: BEACHLIFE 0x00462c60
++WorldEntity14::~WorldEntity14() noexcept(false)
++{
++    screen_dialog_resources->Release(keyline_state_44);
++    keyline_state_44 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00462c40
++void WorldEntity14::Destroy(unsigned int flags)
++{
++    this->~WorldEntity14();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x0048c2d0
++WorldEntity15::~WorldEntity15() noexcept(false)
++{
++    screen_dialog_resources->Release(keyline_state_44);
++    keyline_state_44 = 0;
++    screen_dialog_resources->Release(resource_104);
++    resource_104 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0048c2b0
++void WorldEntity15::Destroy(unsigned int flags)
++{
++    this->~WorldEntity15();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x0049b030
++WorldEntity16::~WorldEntity16() noexcept(false)
++{
++    screen_dialog_resources->Release(keyline_state_44);
++    keyline_state_44 = 0;
++    if (resource_104)
++    {
++        screen_dialog_resources->Release(resource_104);
++        resource_104 = 0;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x0049b010
++void WorldEntity16::Destroy(unsigned int flags)
++{
++    this->~WorldEntity16();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x00452cc0
++WorldEntity20::~WorldEntity20() noexcept(false)
++{
++    screen_dialog_resources->Release(keyline_state_44);
++    keyline_state_44 = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00452ca0
++void WorldEntity20::Destroy(unsigned int flags)
++{
++    this->~WorldEntity20();
++    if (flags & 1)
++        ::operator delete(this);
++}
++
++// FUNCTION: BEACHLIFE 0x00462cc0
++void WorldEntity14::SetOwner(unsigned int owner)
++{
++    type_f8 = owner;
++    int palette;
++    switch (owner)
++    {
++    case 0:
++    case 1:
++    {
++        keyline_state_44 = screen_dialog_resources->Find(owner == 0 ? "GAIL" : "SHAZ");
++        int group = rand() % 4;
++        palette = rand() % 7 + group * 10 + 2;
++        break;
++    }
++    case 2:
++        keyline_state_44 = screen_dialog_resources->Find("FAT_BLOKE");
++        palette = rand() % keyline_state_44->record->palette_count;
++        break;
++    case 3:
++        keyline_state_44 = screen_dialog_resources->Find("FIT_BLOKE");
++        palette = rand() % keyline_state_44->record->palette_count;
++        break;
++    default:
++        return;
++    }
++    if (palette >= keyline_state_44->record->palette_count)
++        palette = keyline_state_44->record->palette_count - 1;
++    keyline_state_44->word_1c = palette;
++}
++
++// FUNCTION: BEACHLIFE 0x0048c350
++void WorldEntity15::SetOwner(unsigned int owner)
++{
++    type_f8 = owner;
++    int group = rand() % 6;
++    int palette = rand() % 7 + group * 10 + 2;
++    if (palette >= keyline_state_44->record->palette_count)
++        palette = keyline_state_44->record->palette_count - 1;
++    keyline_state_44->word_1c = palette;
++}
++
++// FUNCTION: BEACHLIFE 0x0049b0b0
++void WorldEntity16::SetOwner(unsigned int owner)
++{
++    type_f8 = owner;
++    int palette = rand() % keyline_state_44->record->palette_count;
++    if (palette >= keyline_state_44->record->palette_count)
++        palette = keyline_state_44->record->palette_count - 1;
++    keyline_state_44->word_1c = palette;
++    if (rand() % 2)
++        palette = rand() % 30 + 11;
++    else
++        palette = rand() % 20 + 41;
++    if (palette >= keyline_state_44->record->palette_count)
++        palette = keyline_state_44->record->palette_count - 1;
++    keyline_state_44->word_1c = palette;
++}
++
++// FUNCTION: BEACHLIFE 0x00452d20
++void WorldEntity20::SetOwner(unsigned int owner)
++{
++    type_f8 = owner;
++    keyline_state_44 = screen_dialog_resources->Find(owner == 0 ? "Gail" : "Shaz");
++    int group = rand() % 6;
++    int palette = rand() % 7 + group * 10 + 2;
++    if (palette >= keyline_state_44->record->palette_count)
++        palette = keyline_state_44->record->palette_count - 1;
++    keyline_state_44->word_1c = palette;
++}
++
++// FUNCTION: BEACHLIFE 0x00462de0
++bool WorldEntity14::Unknown0c()
++{
++    if (!WorldPedestrianEntity::Unknown0c())
++        StartupFatal("Cabaret::Update - error calling HuimanObject::update - %s", name_06);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x0048c3a0
++bool WorldEntity15::Unknown0c()
++{
++    if (!WorldPedestrianEntity::Unknown0c())
++        StartupFatal("Singer::Update - error calling HuimanObject::update - %s", name_06);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x0049b150
++bool WorldEntity16::Unknown0c()
++{
++    if (!WorldPedestrianEntity::Unknown0c())
++        StartupFatal("WeightLifter::Update - error calling HuimanObject::update - %s", name_06);
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x00452d90
++bool WorldEntity20::Unknown0c()
++{
++    if (!WorldPedestrianEntity::Unknown0c())
++        StartupFatal("Aerobic::Update - error calling HuimanObject::update - %s", name_06);
++    return true;
++}
+diff --git a/src/startup_world_performer_placement.cpp b/src/startup_world_performer_placement.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..70c146e1f097e66225b99388d8acf76b3f3642ad
+--- /dev/null
++++ b/src/startup_world_performer_placement.cpp
+@@ -0,0 +1,73 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004637c0
++void WorldEntity14::SetVariant(unsigned int variant)
++{
++    owner_id_fc = variant;
++    variable_world->FindObject(variant)->AsBuilding()->events_170->AddPerformer(id_28);
++}
++
++// FUNCTION: BEACHLIFE 0x0048ccb0
++void WorldEntity15::SetVariant(unsigned int variant)
++{
++    owner_id_fc = variant;
++    variable_world->FindObject(variant)->AsBuilding()->events_170->AddPerformer(id_28);
++    WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++    ScreenMapPosition offset = { 6.0f, -286.0f };
++    unsigned int rotation = owner->keyline_state_44->word_18;
++    unsigned int height = owner->building_60->footprint_y_1d8;
++    unsigned int width = owner->building_60->footprint_x_1d4;
++    ScreenPoint tile = owner->TilePosition();
++    ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, width, height, offset, rotation);
++    action_point_108 = { point.x, point.y, 0.0f };
++    int facing = (11 - static_cast<int>(variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18) * 2) % 8;
++    resource_104->SelectVariant(facing);
++}
++
++// FUNCTION: BEACHLIFE 0x0049b980
++void WorldEntity16::SetVariant(unsigned int variant)
++{
++    owner_id_fc = variant;
++    variable_world->FindObject(variant)->AsBuilding()->events_170->AddPerformer(id_28);
++    WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++    ScreenMapPosition offset = { 6.0f, -286.0f };
++    unsigned int rotation = owner->keyline_state_44->word_18;
++    unsigned int height = owner->building_60->footprint_y_1d8;
++    unsigned int width = owner->building_60->footprint_x_1d4;
++    ScreenPoint tile = owner->TilePosition();
++    ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, width, height, offset, rotation);
++    action_point_10c = { point.x, point.y, 0.0f };
++}
++
++// FUNCTION: BEACHLIFE 0x004532e0
++void WorldEntity20::SetVariant(unsigned int variant)
++{
++    owner_id_fc = variant;
++    variable_world->FindObject(variant)->AsBuilding()->events_170->AddPerformer(id_28);
++    WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++    ScreenMapPosition offset = { 6.0f, -286.0f };
++    unsigned int rotation = owner->keyline_state_44->word_18;
++    unsigned int height = owner->building_60->footprint_y_1d8;
++    unsigned int width = owner->building_60->footprint_x_1d4;
++    ScreenPoint tile = owner->TilePosition();
++    ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, width, height, offset, rotation);
++    action_point_100 = { point.x, point.y, 0.0f };
++}
++
++// FUNCTION: BEACHLIFE 0x0048cc60
++void WorldEntity15::Unknown3c()
++{
++    resource_104->DrawWorld(&action_point_108, window_deactivation_state->time_158);
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    keyline_state_44->DrawWorld(&position, window_deactivation_state->time_158);
++}
++
++// FUNCTION: BEACHLIFE 0x0049b930
++void WorldEntity16::Unknown3c()
++{
++    if (resource_104)
++        resource_104->DrawWorld(&action_point_10c, window_deactivation_state->time_158);
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    keyline_state_44->DrawWorld(&position, window_deactivation_state->time_158);
++}
+diff --git a/src/startup_world_performer_shared.cpp b/src/startup_world_performer_shared.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5cabea09eed920d82741c06b35ea46aec8dbe5bd
+--- /dev/null
++++ b/src/startup_world_performer_shared.cpp
+@@ -0,0 +1,123 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <cmath>
++
++// FUNCTION: BEACHLIFE 0x0048ce00
++bool WorldPedestrianEntity::AcceptPerformerState(unsigned int state)
++{
++    return state <= 1 || state == 6;
++}
++
++// FUNCTION: BEACHLIFE 0x0048d080
++bool WorldPedestrianEntity::LeavePerformerState()
++{
++    return state_3c == 0 || state_3c == 1;
++}
++
++// FUNCTION: BEACHLIFE 0x00464590
++float WorldPedestrianEntity::PlayPerformerAnimation(const char* animation, unsigned char once,
++    unsigned int next_state, unsigned char hold, const char*)
++{
++    if (once)
++        keyline_state_44->word_08 = 1;
++    else if (hold)
++        keyline_state_44->word_08 = 0;
++    else
++        keyline_state_44->word_08 = 2;
++    ScreenWorldPosition position = { x_30, y_34, z_38 };
++    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++    if (duration == 0.0f || std::isnan(duration))
++        duration = 1.0f;
++    if (!hold && next_state != 0xffffffffu)
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = next_state;
++        Unknown24(command, duration);
++    }
++    return duration;
++}
++
++// FUNCTION: BEACHLIFE 0x004533b0
++WorldScriptValue WorldPedestrianEntity::ReadPerformerValue(unsigned int kind, std::uintptr_t data)
++{
++    return WorldPedestrianEntity::Unknown2c(kind, data);
++}
++
++bool WorldEntity15::Unknown04(unsigned int state)
++{
++    return AcceptPerformerState(state);
++}
++bool WorldEntity20::Unknown04(unsigned int state)
++{
++    return AcceptPerformerState(state);
++}
++bool WorldEntity14::Unknown10()
++{
++    return LeavePerformerState();
++}
++bool WorldEntity15::Unknown10()
++{
++    return LeavePerformerState();
++}
++bool WorldEntity20::Unknown10()
++{
++    return LeavePerformerState();
++}
++
++float WorldEntity14::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
++{
++    return PlayPerformerAnimation(animation, once, next_state, hold, next_animation);
++}
++float WorldEntity15::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
++{
++    return PlayPerformerAnimation(animation, once, next_state, hold, next_animation);
++}
++float WorldEntity16::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
++{
++    return PlayPerformerAnimation(animation, once, next_state, hold, next_animation);
++}
++float WorldEntity20::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
++{
++    return PlayPerformerAnimation(animation, once, next_state, hold, next_animation);
++}
++
++WorldScriptValue WorldEntity14::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    return ReadPerformerValue(kind, data);
++}
++WorldScriptValue WorldEntity15::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    return ReadPerformerValue(kind, data);
++}
++WorldScriptValue WorldEntity16::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    return ReadPerformerValue(kind, data);
++}
++WorldScriptValue WorldEntity20::Unknown2c(unsigned int kind, std::uintptr_t data)
++{
++    return ReadPerformerValue(kind, data);
++}
++
++// FUNCTION: BEACHLIFE 0x004637f0
++void WorldEntity14::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++{
++    WorldPedestrianEntity::Unknown30(kind, data, value_kind, value);
++}
++
++// The other performer setters share the retail RET16 at 0x00464660.
++void WorldEntity15::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++{
++    IgnoreScreenAction();
++}
++void WorldEntity16::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++{
++    IgnoreScreenAction();
++}
++void WorldEntity20::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++{
++    IgnoreScreenAction();
++}
+diff --git a/src/startup_world_performer_state.cpp b/src/startup_world_performer_state.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..feb19318d09dab72e207f92c3ff382607e994ad3
+--- /dev/null
++++ b/src/startup_world_performer_state.cpp
+@@ -0,0 +1,136 @@
++#include "startup_world_entities.h"
++#include "startup_state_save_helpers.h"
++
++// FUNCTION: BEACHLIFE 0x00463810
++void WorldEntity14::Unknown48(GameFileReader* file)
++{
++    file->Unknown28("m_dwActionState", action_state_f4);
++    file->Unknown24("m_iType", type_f8);
++    file->Unknown28("m_OwnerID", owner_id_fc);
++    file->Unknown34("m_bFinish", flag_104);
++    WorldPedestrianEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x00463880
++void WorldEntity14::Unknown4c(GameFileReader* file)
++{
++    file->ReadInt(reinterpret_cast<int*>(&action_state_f4));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&type_f8));
++    file->ReadInt(reinterpret_cast<int*>(&owner_id_fc));
++    file->ReadByte(&flag_104);
++    WorldPedestrianEntity::Unknown4c(file);
++}
++
++// FUNCTION: BEACHLIFE 0x0048d090
++void WorldEntity15::Unknown48(GameFileReader* file)
++{
++    file->Unknown28("m_dwActionState", action_state_f4);
++    file->Unknown24("m_iType", type_f8);
++    file->Unknown28("m_OwnerID", owner_id_fc);
++    file->Unknown34("m_bFinish", flag_114);
++    WriteStateFloat(file, "m_ActionPoint.x", action_point_108.x);
++    WriteStateFloat(file, "m_ActionPoint.y", action_point_108.y);
++    // Retail writes y again for z.
++    WriteStateFloat(file, "m_ActionPoint.z", action_point_108.y);
++    if (resource_104)
++    {
++        file->Unknown24("m_pAttachedSprite", 1);
++        file->Unknown38("Sprite name", resource_104->name);
++        resource_104->SaveState(file);
++    }
++    else
++        file->Unknown24("m_pAttachedSprite", 0);
++    WorldPedestrianEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x0048d180
++void WorldEntity15::Unknown4c(GameFileReader* file)
++{
++    file->ReadInt(reinterpret_cast<int*>(&action_state_f4));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&type_f8));
++    file->ReadInt(reinterpret_cast<int*>(&owner_id_fc));
++    file->ReadByte(&flag_114);
++    file->ReadFloat(&action_point_108.x);
++    file->ReadFloat(&action_point_108.y);
++    file->ReadFloat(&action_point_108.y);
++    unsigned int attached;
++    file->Unknown68(&attached);
++    if (attached)
++    {
++        char name[128];
++        file->ReadText(name, 128);
++        resource_104->LoadState(file);
++    }
++    WorldPedestrianEntity::Unknown4c(file);
++}
++
++// FUNCTION: BEACHLIFE 0x0049c020
++void WorldEntity16::Unknown48(GameFileReader* file)
++{
++    file->Unknown28("m_dwActionState", action_state_f4);
++    file->Unknown24("m_iType", type_f8);
++    file->Unknown28("m_OwnerID", owner_id_fc);
++    file->Unknown34("m_bFinished", flag_108);
++    WriteStateFloat(file, "m_ActionPoint.x", action_point_10c.x);
++    WriteStateFloat(file, "m_ActionPoint.y", action_point_10c.y);
++    // Retail writes y again for z.
++    WriteStateFloat(file, "m_ActionPoint.z", action_point_10c.y);
++    if (resource_104)
++    {
++        file->Unknown24("m_pAttachedSprite", 1);
++        file->Unknown38("Sprite name", resource_104->name);
++        resource_104->SaveState(file);
++    }
++    else
++        file->Unknown24("m_pAttachedSprite", 0);
++    WorldPedestrianEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x0049c110
++void WorldEntity16::Unknown4c(GameFileReader* file)
++{
++    file->ReadInt(reinterpret_cast<int*>(&action_state_f4));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&type_f8));
++    file->ReadInt(reinterpret_cast<int*>(&owner_id_fc));
++    file->ReadByte(&flag_108);
++    file->ReadFloat(&action_point_10c.x);
++    file->ReadFloat(&action_point_10c.y);
++    file->ReadFloat(&action_point_10c.y);
++    unsigned int attached;
++    file->Unknown68(&attached);
++    if (attached)
++    {
++        char name[128];
++        file->ReadText(name, 128);
++        resource_104 = screen_dialog_resources->Find(name);
++        resource_104->LoadState(file);
++    }
++    WorldPedestrianEntity::Unknown4c(file);
++}
++
++// FUNCTION: BEACHLIFE 0x00453630
++void WorldEntity20::Unknown48(GameFileReader* file)
++{
++    file->Unknown28("m_dwActionState", action_state_f4);
++    file->Unknown24("m_iType", type_f8);
++    file->Unknown28("m_OwnerID", owner_id_fc);
++    file->Unknown34("m_bFinish", flag_10c);
++    WriteStateFloat(file, "m_ActionPoint.x", action_point_100.x);
++    WriteStateFloat(file, "m_ActionPoint.y", action_point_100.y);
++    // Retail writes y again for z.
++    WriteStateFloat(file, "m_ActionPoint.z", action_point_100.y);
++    WorldPedestrianEntity::Unknown48(file);
++}
++
++// FUNCTION: BEACHLIFE 0x004536d0
++void WorldEntity20::Unknown4c(GameFileReader* file)
++{
++    file->ReadInt(reinterpret_cast<int*>(&action_state_f4));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&type_f8));
++    file->ReadInt(reinterpret_cast<int*>(&owner_id_fc));
++    file->ReadByte(&flag_10c);
++    file->ReadFloat(&action_point_100.x);
++    file->ReadFloat(&action_point_100.y);
++    file->ReadFloat(&action_point_100.y);
++    WorldPedestrianEntity::Unknown4c(file);
++}
+diff --git a/src/startup_world_script_command_init.h b/src/startup_world_script_command_init.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7deff6fb109dae279a299be6a87acb0b948529a6
+--- /dev/null
++++ b/src/startup_world_script_command_init.h
+@@ -0,0 +1,13 @@
++#ifndef STARTUP_WORLD_SCRIPT_COMMAND_INIT_H
++#define STARTUP_WORLD_SCRIPT_COMMAND_INIT_H
++
++// The object and world script command constructors share the same retail body.
++template <class Action>
++void InitializeWorldScriptCommand(unsigned int& id, Action*& first, Action*& second)
++{
++    id = 0x0fffffff;
++    first = 0;
++    second = 0;
++}
++
++#endif
+diff --git a/src/startup_world_script_load.cpp b/src/startup_world_script_load.cpp
+index dea58dce6472f9272ab9a874f71412ce9c56b681..2de8e3870503bc61c58a365d16bdaf9accfcb080 100644
+--- a/src/startup_world_script_load.cpp
++++ b/src/startup_world_script_load.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_world_subsystems.h"
++#include "startup_world_script_command_init.h"
+ #include "startup_ble_file.h"
+ #include "startup_game_file.h"
+ #include <cstring>
+@@ -10,9 +11,7 @@ unsigned int world_script_state_words[10];
+ // FUNCTION: BEACHLIFE 0x004db1d0
+ WorldSubsystem20::Group::Command::Command()
+ {
+-    id_00 = 0x0fffffff;
+-    actions_04 = 0;
+-    actions_08 = 0;
++    InitializeWorldScriptCommand(id_00, actions_04, actions_08);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004daf20
+diff --git a/src/startup_world_singer_commands.cpp b/src/startup_world_singer_commands.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..687ce8e7de75f75b89201fc3b38fd018e9b1b879
+--- /dev/null
++++ b/src/startup_world_singer_commands.cpp
+@@ -0,0 +1,157 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <stdlib.h>
++
++// FUNCTION: BEACHLIFE 0x0048c3d0
++bool WorldEntity15::Unknown14(ScreenModeCommand* command)
++{
++    unsigned int kind = command->words[2];
++    if (kind == 0x3b)
++    {
++        flag_114 = 1;
++        unsigned char result;
++        return result != 0;
++    }
++    if (kind == 0x39)
++    {
++        const char* animation;
++        const char* microphone;
++        switch (action_state_f4)
++        {
++        case 0:
++            if (flag_114)
++            {
++                action_state_f4 = 8;
++                animation = "SING_NORM_BOW";
++                microphone = "SINGMIC_STILL";
++            }
++            else
++            {
++                action_state_f4 = 1;
++                animation = "SING_NORM";
++                microphone = "SINGMIC_STILL";
++            }
++            break;
++        case 1:
++            switch (rand() % 4)
++            {
++            case 0:
++                animation = "SING_NORM";
++                microphone = "SINGMIC_STILL";
++                break;
++            case 1:
++                action_state_f4 = 2;
++                animation = "SING_NORM_CROUCH";
++                microphone = "SINGMIC_NORM_CROUCH";
++                break;
++            case 2:
++                action_state_f4 = 4;
++                animation = "SING_NORM_LIFT";
++                microphone = "SINGMIC_STILL";
++                break;
++            case 3:
++                action_state_f4 = 6;
++                animation = "SING_NORM_KNEE";
++                microphone = "SINGMIC_STILL";
++                break;
++            }
++            break;
++        case 2:
++            action_state_f4 = 3;
++            animation = "SING_CROUCH";
++            microphone = "SINGMIC_CROUCH";
++            break;
++        case 3:
++            action_state_f4 = 0;
++            animation = "SING_CROUCH_NORM";
++            microphone = "SINGMIC_CROUCH_NORM";
++            break;
++        case 4:
++            action_state_f4 = 5;
++            animation = "SING_LIFT";
++            microphone = "SINGMIC_LIFT";
++            break;
++        case 5:
++            action_state_f4 = 0;
++            animation = "SING_LIFT_NORM";
++            microphone = "SINGMIC_LIFT_NORM";
++            break;
++        case 6:
++            action_state_f4 = 7;
++            if (rand() % 2)
++            {
++                animation = "SING_KNEE_LEAN";
++                microphone = "SINGMIC_KNEE_LEAN";
++            }
++            else
++            {
++                animation = "SING_KNEE_POINT";
++                microphone = "SINGMIC_KNEE_POINT";
++            }
++            break;
++        case 7:
++            action_state_f4 = 0;
++            animation = "SING_KNEE_NORM";
++            microphone = "SINGMIC_KNEE_NORM";
++            break;
++        case 8:
++        {
++            action_state_f4 = 0;
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 3;
++            next.words[3] = 0;
++            next.words[4] = 6;
++            screen_mode_commands->QueueCommand(&next);
++            return true;
++        }
++        default:
++            return true;
++        }
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++        resource_104->SetAnimation(microphone, window_deactivation_state->time_158, &position);
++        ScreenModeCommand next;
++        next.words[0] = id_28;
++        next.words[1] = id_28;
++        next.words[2] = 0x39;
++        next.words[3] = 0;
++        next.words[4] = 0;
++        screen_mode_commands->QueueDelayed(&next, duration);
++        return true;
++    }
++    if (kind == 0x16)
++    {
++        if (state_3c == 0)
++        {
++            ScreenWorldPosition position = { x_30, y_34, z_38 };
++            float duration = keyline_state_44->SetAnimation("SING_WAVE", window_deactivation_state->time_158, &position);
++            keyline_state_44->word_08 = 2;
++            resource_104->word_08 = 2;
++            action_state_f4 = 0;
++            int rotation = variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18;
++            keyline_state_44->SelectVariant((11 - rotation * 2) % 8);
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 0x39;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            screen_mode_commands->QueueDelayed(&next, duration);
++        }
++        else if (state_3c == 6)
++        {
++            inactive_04 = 1;
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = owner_id_fc;
++            next.words[2] = 0x3b;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            screen_mode_commands->QueueCommand(&next);
++        }
++        return true;
++    }
++    return WorldPedestrianEntity::Unknown14(command);
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index e5424dc27771b043b184319390f8c5f4b57a5895..9d89a43c58e45f0b3f46b1676491c77b0754c129 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -149,6 +149,7 @@ struct WorldSubsystemScript
+     void UpdateState(VariableEntity* entity, unsigned int state);          // 0x004d57a0.
+     struct Expression
+     {
++        void Update(VariableEntity* entity); // 0x004d4080.
+         Expression* next_00;
+         unsigned int kind_04;
+         void* data_08;
+@@ -156,8 +157,10 @@ struct WorldSubsystemScript
+     };
+     struct Rule
+     {
++        Rule(); // 0x004d5240.
+         struct Command
+         {
++            Command(); // Folded 0x004db1d0.
+             unsigned int id_00;
+             Expression* first_04;
+             Expression* second_08;
+@@ -176,11 +179,14 @@ struct WorldSubsystemScript
+     void ExitState(VariableEntity* entity, unsigned int state);                                  // 0x004d5700.
+     WorldSubsystemScript();                                                                      // 0x004d54b0.
+     void LoadScript(const char* text);                                                           // 0x004d5800.
++    int SkipComments();                                                                          // 0x004d5a80.
++    int ReadToken(char* token);                                                                  // 0x004d8fd0.
++    int ParseState();                                                                            // 0x004d5b10.
+     Rule rules_00[60];
+     unsigned int count_5910;
+     unsigned int word_5914;
+     unsigned int word_5918;
+-    unsigned char unknown_591c[4];
++    char* cursor_591c;
+     ~WorldSubsystemScript() noexcept(false); // 0x004d5500.
+ };
+ struct WorldSubsystem3c
+diff --git a/src/startup_world_weightlifter_commands.cpp b/src/startup_world_weightlifter_commands.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1b5c5c6f159bfc02526325768a932fac0b2e0e76
+--- /dev/null
++++ b/src/startup_world_weightlifter_commands.cpp
+@@ -0,0 +1,202 @@
++#include "startup_world_entities.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x0049b180
++bool WorldEntity16::Unknown14(ScreenModeCommand* command)
++{
++    unsigned int kind = command->words[2];
++    if (kind == 0x3b)
++    {
++        flag_108 = 1;
++        unsigned char result;
++        return result != 0;
++    }
++    if (kind == 0x39)
++    {
++        float duration;
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        if (action_state_f4 == 0)
++        {
++            action_state_f4 = 2;
++            duration = keyline_state_44->SetAnimation("D_WEIGHT_BIG_JOY", window_deactivation_state->time_158, &position);
++            ScreenModeCommand broadcast;
++            broadcast.words[0] = id_28;
++            broadcast.words[1] = id_28;
++            broadcast.words[2] = 0x3c;
++            broadcast.words[3] = 0;
++            broadcast.words[4] = 2;
++            broadcast.words[5] = 0x3e;
++            broadcast.words[6] = 0;
++            variable_world->FindObject(owner_id_fc)->AsBuilding()->events_170->BroadcastGuests(&broadcast, 0.0f);
++        }
++        else if (action_state_f4 == 1)
++        {
++            switch (type_f8)
++            {
++            case 0:
++                action_state_f4 = 2;
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_THIN_WEIGHT", window_deactivation_state->time_158, &position);
++                resource_104->SetAnimation("D_WEIGHT_THINBAR_WEIGHT", window_deactivation_state->time_158, &position);
++                break;
++            case 1:
++                action_state_f4 = 2;
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_FAT_WEIGHT", window_deactivation_state->time_158, &position);
++                resource_104->SetAnimation("D_WEIGHT_FATBAR_WEIGHT", window_deactivation_state->time_158, &position);
++                break;
++            case 2:
++                action_state_f4 = 0;
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_BIG_WEIGHT", window_deactivation_state->time_158, &position);
++                resource_104->SetAnimation("D_WEIGHT_BIGBAR_WEIGHT", window_deactivation_state->time_158, &position);
++                break;
++            }
++            if (type_f8 == 0 || type_f8 == 1)
++            {
++                ScreenModeCommand broadcast;
++                broadcast.words[0] = id_28;
++                broadcast.words[1] = id_28;
++                broadcast.words[2] = 0x3c;
++                broadcast.words[3] = 0;
++                broadcast.words[4] = 1;
++                broadcast.words[5] = 0x3e;
++                broadcast.words[6] = 0;
++                variable_world->FindObject(owner_id_fc)->AsBuilding()->events_170->BroadcastGuests(&broadcast, duration);
++            }
++            keyline_state_44->word_08 = 2;
++        }
++        else if (action_state_f4 == 2)
++        {
++            switch (type_f8)
++            {
++            case 0:
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_THIN_TOWALK", window_deactivation_state->time_158, &position);
++                break;
++            case 1:
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_FAT_TOWALK", window_deactivation_state->time_158, &position);
++                break;
++            case 2:
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_BIG_TOWALK", window_deactivation_state->time_158, &position);
++                break;
++            }
++            keyline_state_44->word_08 = 2;
++            action_state_f4 = 3;
++        }
++        else
++        {
++            unsigned int count;
++            ScreenModeCommand next;
++            if (!flag_108)
++            {
++                next.words[0] = id_28;
++                next.words[1] = id_28;
++                next.words[2] = 3;
++                next.words[3] = 0;
++                next.words[4] = 0;
++                screen_mode_commands->QueueCommand(&next);
++                VariableEntity** performers = variable_world->ByType(0x10, &count);
++                for (unsigned int index = 0; index < count; ++index)
++                {
++                    WorldEntity16* performer = static_cast<WorldEntity16*>(performers[index]);
++                    if (performer->owner_id_fc == owner_id_fc && performer->type_f8 == (type_f8 + 1) % 3)
++                    {
++                        next.words[1] = performer->id_28;
++                        next.words[4] = 4;
++                        break;
++                    }
++                }
++                screen_mode_commands->QueueCommand(&next);
++            }
++            else
++            {
++                VariableEntity** performers = variable_world->ByType(0x10, &count);
++                next.words[0] = id_28;
++                next.words[1] = 0;
++                next.words[2] = 3;
++                next.words[3] = 0;
++                next.words[4] = 6;
++                for (unsigned int index = 0; index < count; ++index)
++                {
++                    WorldEntity16* performer = static_cast<WorldEntity16*>(performers[index]);
++                    if (performer->owner_id_fc == owner_id_fc)
++                    {
++                        next.words[1] = performer->id_28;
++                        screen_mode_commands->QueueCommand(&next);
++                    }
++                }
++            }
++            return true;
++        }
++        ScreenModeCommand next;
++        next.words[0] = id_28;
++        next.words[1] = id_28;
++        next.words[2] = 0x39;
++        next.words[3] = 0;
++        next.words[4] = 0;
++        screen_mode_commands->QueueDelayed(&next, duration);
++        return true;
++    }
++    if (kind == 0x16)
++    {
++        ScreenWorldPosition position = { x_30, y_34, z_38 };
++        if (state_3c == 0)
++        {
++            switch (type_f8)
++            {
++            case 0:
++                keyline_state_44->SetAnimation("D_WEIGHT_THIN_WAIT", window_deactivation_state->time_158, &position);
++                break;
++            case 1:
++                keyline_state_44->SetAnimation("D_WEIGHT_FAT_WAIT", window_deactivation_state->time_158, &position);
++                break;
++            case 2:
++                keyline_state_44->SetAnimation("D_WEIGHT_BIG_WAIT", window_deactivation_state->time_158, &position);
++                break;
++            }
++            int rotation = variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18;
++            keyline_state_44->SelectVariant((11 - rotation * 2) % 8);
++            keyline_state_44->word_08 = 0;
++        }
++        else if (state_3c == 6)
++        {
++            if (type_f8 == 0)
++            {
++                ScreenModeCommand next;
++                next.words[0] = id_28;
++                next.words[1] = owner_id_fc;
++                next.words[2] = 0x3b;
++                next.words[3] = 0;
++                next.words[4] = 0;
++                screen_mode_commands->QueueCommand(&next);
++            }
++            inactive_04 = 1;
++        }
++        else if (action_state_f4 == 0)
++        {
++            float duration;
++            switch (type_f8)
++            {
++            case 0:
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_THIN_POSE", window_deactivation_state->time_158, &position);
++                break;
++            case 1:
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_FAT_POSE", window_deactivation_state->time_158, &position);
++                break;
++            case 2:
++                duration = keyline_state_44->SetAnimation("D_WEIGHT_BIG_POSE", window_deactivation_state->time_158, &position);
++                break;
++            }
++            keyline_state_44->word_08 = 2;
++            int rotation = variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18;
++            keyline_state_44->SelectVariant((11 - rotation * 2) % 8);
++            action_state_f4 = 1;
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 0x39;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            screen_mode_commands->QueueDelayed(&next, duration);
++        }
++        return true;
++    }
++    return WorldPedestrianEntity::Unknown14(command);
++}
+diff --git a/src/window_audio.h b/src/window_audio.h
+index 33513ee88096ed34ada50d21eb640f2b8ab9e614..112fb44b0c913b0cfe05299e477e0a06f8049a5e 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -39,6 +39,7 @@ struct WindowAudioState
+     void SetStreamVolume(float level);  // 0x004cffa0.
+     void SetEffectsVolume(float level); // 0x004cf530.
+     float EffectsVolume();              // 0x004cf680.
++    bool HasSound(const char* name);    // 0x004cf690.
+ 
+     // Actual 0x004d0370, RET4; its caller discards the return register.
+     void Initialize3DProvider(const char* provider_name);
