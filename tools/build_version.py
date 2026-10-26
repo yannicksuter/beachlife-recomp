@@ -20,6 +20,8 @@ def identity(source, config, git="git"):
     result["decomp_profile"] = result.get("decomp_profile", "native")
     if result["decomp_profile"] not in ("native", "native-experimental", "native-game", "native-game-tweaks"):
         raise ValueError("Unknown native reconstructed source profile")
+    if result["channel"] == "release" and result["decomp_profile"] != "native-game-tweaks":
+        raise ValueError("Release builds require the decompiled game and gameplay options")
     for field in ("pull_request", "run_id"):
         if not re.fullmatch(r"\d+", str(result[field])):
             raise ValueError(f"Invalid {field}")

@@ -386,8 +386,40 @@ void overflow_and_focus(IDirectInputDeviceA& device, SDL_WindowID window)
 }
 } // namespace
 
+// A Retina window: 1280x872 points backed by twice the pixels. A window point
+// must reach the same game pixel at density 2 as at density 1, both ways.
+void high_density_mapping()
+{
+    for (const int density : {1, 2})
+    {
+        beachlife::platform::PresentationTransform map;
+        map.width = 800;
+        map.height = 600;
+        map.window_width = 1280;
+        map.window_height = 872;
+        map.pixel_width = 1280 * density;
+        map.pixel_height = 872 * density;
+        map.destination =
+            beachlife::platform::frame_rect(800, 600, map.pixel_width, map.pixel_height, false);
+        require(map.valid(), "describe the high-density presentation");
+        const auto centre = map.to_client(640, 436);
+        require(std::abs(centre.x - 400) < 0.5 && std::abs(centre.y - 300) < 0.5,
+            "the window centre reaches the game centre at every density");
+        const auto corner =
+            map.to_client(map.destination.x / double(density), map.destination.y / double(density));
+        require(std::abs(corner.x) < 1e-9 && std::abs(corner.y) < 1e-9,
+            "the picture's corner is game pixel 0,0 at every density");
+        const auto window = map.to_window(123.5, 456.5);
+        const auto back = map.to_client(window.x, window.y);
+        require(window.x > 0 && window.x < 1280 && window.y > 0 && window.y < 872 &&
+                    std::abs(back.x - 123.5) < 1e-9 && std::abs(back.y - 456.5) < 1e-9,
+            "game points reach window points and back at every density");
+    }
+}
+
 int main()
 {
+    high_density_mapping();
     IDirectInput8A* input = nullptr;
     require(DirectInput8Create(
                 nullptr, 0x0800, IID_IDirectInput8A, reinterpret_cast<void**>(&input), nullptr) ==

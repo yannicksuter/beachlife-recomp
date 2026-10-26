@@ -173,10 +173,14 @@ endif()
 if(CMAKE_CXX_COMPILER_TARGET)
     list(APPEND beachlife_boot_inspection "--compiler-arg=--target=${CMAKE_CXX_COMPILER_TARGET}")
 endif()
+set(beachlife_boot_complete "$<$<CONFIG:Release>:--require-complete>")
+if(BEACHLIFE_BUILD_CHANNEL STREQUAL "release" OR BEACHLIFE_BUILD_CHANNEL STREQUAL "test")
+    set(beachlife_boot_complete --require-complete)
+endif()
 add_custom_command(
     OUTPUT "${beachlife_boot_dir}/traps.cpp" "${beachlife_boot_dir}/traps.json"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/game_tree.py" traps
-        --objects "${beachlife_boot_dir}/objects.txt" ${beachlife_boot_inventory}
+        --objects "${beachlife_boot_dir}/objects.txt" ${beachlife_boot_inventory} ${beachlife_boot_complete}
         --compiler "${CMAKE_CXX_COMPILER}" --nm "${beachlife_boot_nm}" ${beachlife_boot_inspection}
         --demangler "${beachlife_demangler}" --target-system "${CMAKE_SYSTEM_NAME}"
         --host $<TARGET_FILE:beachlife_compat> $<TARGET_FILE:beachlife_resource_pool_host>
@@ -185,6 +189,7 @@ add_custom_command(
     DEPENDS $<TARGET_OBJECTS:beachlife_boot_game> "${CMAKE_SOURCE_DIR}/tools/game_tree.py"
         beachlife_compat beachlife_resource_pool_host
     COMMENT "Generate boot traps for functions not decompiled yet"
+    COMMAND_EXPAND_LISTS
     VERBATIM)
 
 # The game tree plus its traps; Play links this when the boot build is enabled.

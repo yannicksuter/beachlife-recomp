@@ -27,6 +27,8 @@ int main()
         const auto file = temporary / "preferences" / "launcher.cfg";
         check(load_settings(file) == Settings{}, "Missing settings should use defaults");
         Settings settings;
+        check(!settings.tweaks.skip_intro && !settings.tweaks.wheel_zoom,
+            "Gameplay options must be off by default");
         settings.source =
             path_utf8(temporary / path_from_utf8("Grüsse / \"quoted\" \\ source.iso"));
         settings.scale = 125;
@@ -47,10 +49,12 @@ int main()
             OverlayCorner::BottomLeft};
         settings.diagnostics.log_window = true;
         settings.updates = {false, UpdateChoice::Test};
+        settings.tweaks.skip_intro = true;
+        settings.tweaks.wheel_zoom = true;
         settings.content = {std::string(64, 'a'), settings.source, 123456789, -6789012345};
         save_settings(file, settings);
         check(load_settings(file) == settings,
-            "Display, diagnostics and update settings must survive saving");
+            "Display, diagnostics, update and gameplay settings must survive saving");
         auto write = [&](const std::string& text)
         {
             std::ofstream out(file, std::ios::binary);

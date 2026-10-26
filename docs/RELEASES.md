@@ -10,7 +10,7 @@ Merging a promotion PR publishes the new version as the latest release.
 The root `CMakeLists.txt` declares the port's version:
 
 ```cmake
-project(beachlife_recomp VERSION 0.0.1 LANGUAGES C CXX)
+project(beachlife_recomp VERSION 0.0.4 LANGUAGES C CXX)
 ```
 
 This version is independent of the retail game's version. Update it on `main`:
@@ -38,11 +38,20 @@ builds its exact head SHA and produces these package artifacts:
 | macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, CLI/window smoke |
 | macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta CLI/window smoke |
 
-Every package, including stable releases, contains the experimental decompiled
-game (`BEACHLIFE_ENABLE_BOOT_GAME`, profile `native-game`). It is not complete
-gameplay: code not decompiled yet links as a loud trap that stops the game. Its
-tests need no retail files; GPU-dependent checks may skip, while the generated
-headless retail parser check must pass.
+Every package uses the optimized `release` preset with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, `BEACHLIFE_ENABLE_BOOT_GAME=ON` and
+`BEACHLIFE_ENABLE_TWEAKS=ON`. The launcher contains the decompiled game and its
+optional gameplay settings; both settings remain off until enabled by the player.
+The build fails if any generated game trap, host-service trap or unresolved
+symbol remains. The package manifest records all three zero counts, and the
+Native build gate requires `native-game-tweaks` and zero traps on all five targets.
+
+CTest and extracted-package checks use generated fixtures without retail data.
+They enter the real game's parser and verify its rejection of invalid input;
+GPU-dependent checks skip cleanly when a runner has no usable GPU. Windows runs
+the package smoke and component checks on its native runner. macOS validation is
+headless CI coverage only; retail gameplay and Metal presentation still require
+a Mac. Local Linux/Windows retail-data route checks complement these CI checks.
 
 PR artifacts expire after seven days; stable/manual artifacts after fourteen.
 A test or published release retains attached archives independently of that
@@ -56,7 +65,8 @@ Manual dispatch produces development artifacts and does not publish a release.
 2. Open a PR with base `stable` and head `main`. The promotion policy rejects
    other source branches/repositories. Keep the branch up to date with `stable`.
 3. Wait for every build/test and `Native build gate`. The gate also checks the
-   complete five-package set and each archive's version, SHA, channel and run ID.
+   complete five-package set, game/tweaks profile, zero trap counts, and each
+   archive's version, SHA, channel and run ID.
 4. Actions publishes `test-pr<N>-<sha>` as a prerelease, never the latest release.
    Each successful new head replaces older test builds for that PR. Download and
    inspect the build before merging.
@@ -107,14 +117,15 @@ team copied from another repository.
 
 ## Package contract
 
-Packages contain only declared native outputs, documentation and runtime
-notices. SOURCE-MANIFEST.json records build identity, dependency information and
-payload hashes. SHA256SUMS covers the release archives. Packages contain the
-launcher and the experimental decompiled game, but no retail data. They include
-the declared header, font and dependency notices. Window smoke uses software
-rendering and requires no game files or GPU. Future libraries/resources must be
-added explicitly to the packaging contract and its checks.
+Packages contain only declared native outputs, documentation, launcher resources
+and runtime notices. The decompiled game is linked into the launcher executable;
+no original executable, DLL, disc image, retail gameplay data, private reports or
+local test profiles enter an archive. Playing requires the user's prepared ISO
+data. SOURCE-MANIFEST.json records build identity, dependency and patch identities,
+zero trap counts and payload hashes. SHA256SUMS covers the release archives.
+Future libraries/resources must be added explicitly to the packaging contract
+and its checks.
 
-For local reproduction see [BUILDING](BUILDING.md); for startup see
-[INSTALL](INSTALL.md). A release verifies distribution of the launcher and the
-experimental game, not complete gameplay or a qualified game graphics backend.
+For local reproduction see [BUILDING](BUILDING.md); for startup and known limits
+see [INSTALL](INSTALL.md). A successful pipeline verifies the playable build's
+distribution and generated-data startup, not complete game parity on every platform.

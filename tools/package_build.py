@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 from build_version import git_output
 from project_version import ROOT, read_version
 from prepare_sources import prepare
+from game_release import GAME_PROFILES, require_release_game, trap_counts, validate_counts
 
 TARGETS = ("linux-x86_64", "steamdeck-x86_64", "windows-x86_64", "macos-arm64", "macos-x86_64")
 DOCUMENTS = ("README.md", "docs/BUILDING.md", "docs/RELEASES.md", "docs/INSTALL.md", "LICENSES/README.md",
@@ -29,6 +30,7 @@ LAUNCHER_RESOURCES = ("header.jpg", "logo.png", "Roboto-Medium.ttf")
 LAUNCHER_NOTICES = ("assets/launcher/README.md", "LICENSES/Apache-2.0.txt",
                     "LICENSES/SDL.txt", "LICENSES/ImGui.txt", "LICENSES/stb.txt", "LICENSES/FreeType.txt",
                     "LICENSES/FreeType-BDF.txt", "LICENSES/FreeType-PCF.txt")
+GAME_NOTICES = ("LICENSES/dr-libs.txt", "LICENSES/pl-mpeg.txt")
 MAC_WRAPPER = b'#!/bin/sh\nexec "$(dirname "$0")/beachlife.app/Contents/MacOS/beachlife" "$@"\n'
 STEAM_LIBRARIES = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
                    "libstdc++.so.6", "libgcc_s.so.1", "ld-linux-x86-64.so.2"}
@@ -43,6 +45,8 @@ def native_decomp_profile(info):
     profile = info.get('decomp_profile', 'native')
     if profile not in ('native', 'native-experimental', 'native-game', 'native-game-tweaks'):
         raise ValueError('Unknown native reconstructed source profile')
+    if profile == 'native-experimental' and info['channel'] == 'release':
+        raise ValueError('Experimental reconstructed code requires a dev or test build')
     return profile
 
 
@@ -104,6 +108,8 @@ def payload_names(info):
         names.update(prefix + "assets/launcher/" + name for name in LAUNCHER_RESOURCES)
         names.update((prefix + "assets/app/icon.png", "assets/app/README.md"))
         names.update(LAUNCHER_NOTICES)
+    if info.get('decomp_profile') in GAME_PROFILES:
+        names.update(GAME_NOTICES)
     return names
 
 
@@ -120,6 +126,13 @@ def package(build, output, source=ROOT, toolchain=None):
         raise ValueError("Source state changed; rebuild before packaging")
     if info["channel"] != "dev" and dirty:
         raise ValueError("Test/release packages require clean committed sources")
+    profile = native_decomp_profile(info)
+    game_traps = None
+    if profile in GAME_PROFILES:
+        game_traps = trap_counts(json.loads(regular_file(build, 'boot/traps.json').read_text()))
+        validate_counts(game_traps, complete=info['channel'] != 'dev')
+    if info['channel'] == 'release':
+        require_release_game(profile, game_traps)
     data, modes = {}, {}
 
     def copy(root, relative, destination=None):
@@ -155,6 +168,9 @@ def package(build, output, source=ROOT, toolchain=None):
                                                   ('freetype', 'src/bdf/README', 'FreeType-BDF.txt'),
                                                   ('freetype', 'src/pcf/README', 'FreeType-PCF.txt')]:
             copy(build / 'prepared' / dependency, filename, 'LICENSES/' + destination)
+        if profile in GAME_PROFILES:
+            copy(build / 'prepared/dr-libs', 'LICENSE', 'LICENSES/dr-libs.txt')
+            copy(source, 'LICENSES/pl-mpeg.txt')
     executable = MAC_FILES[0] if system == "macos" else "beachlife.exe" if system == "windows" else "beachlife"
     if system == "macos":
         actual = {p.relative_to(build).as_posix() for p in (build / "beachlife.app").rglob('*') if not p.is_dir()}
@@ -206,6 +222,8 @@ def package(build, output, source=ROOT, toolchain=None):
     manifest = {"format": 1, "build": info, "dependencies": dependencies, "patches": [],
                 "files": {name: {"sha256": digest(body), "bytes": len(body), "mode": modes[name]}
                           for name, body in sorted(data.items())}}
+    if game_traps is not None:
+        manifest['game_traps'] = game_traps
     if abi:
         manifest["runtime_requirements"] = abi
     data["SOURCE-MANIFEST.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
@@ -259,7 +277,11 @@ def inspect_package(path):
         raise ValueError("Missing package manifest")
     manifest = json.loads(files["SOURCE-MANIFEST.json"][0])
     info = manifest["build"]
-    native_decomp_profile(info)
+    profile = native_decomp_profile(info)
+    if profile in GAME_PROFILES:
+        validate_counts(manifest.get('game_traps'), complete=info['channel'] != 'dev')
+    if info['channel'] == 'release':
+        require_release_game(profile, manifest.get('game_traps'))
     if manifest.get("format") != 1 or info["platform"] + '-' + info["architecture"] not in TARGETS:
         raise ValueError("Unsupported package format or target")
     if info["system"] != ("linux" if info["platform"] == "steamdeck" else info["platform"]):
@@ -283,10 +305,12 @@ def verify_set(directory, version, sha, channel, run_id=None):
     paths = sorted(p for p in Path(directory).iterdir() if p.name.endswith(('.zip', '.tar.gz')))
     found = set()
     profiles = set()
+    games = []
     for path in paths:
         manifest, _ = inspect_package(path)
         info = manifest["build"]
         profiles.add(native_decomp_profile(info))
+        games.append((info["decomp_profile"], manifest.get("game_traps")))
         target = info["platform"] + '-' + info["architecture"]
         expected_version = version + '+g' + sha[:12]
         extension = '.zip' if info["system"] == 'windows' else '.tar.gz'
@@ -303,6 +327,8 @@ def verify_set(directory, version, sha, channel, run_id=None):
         raise ValueError(f"Incomplete package matrix: {sorted(found)}")
     if len(profiles) != 1:
         raise ValueError("Package reconstructed source profiles differ")
+    for profile, counts in games:
+        require_release_game(profile, counts)
     checksums = Path(directory) / 'SHA256SUMS'
     checksums.write_text(''.join(f'{digest(p.read_bytes())}  {p.name}\n' for p in paths))
     return [*paths, checksums]

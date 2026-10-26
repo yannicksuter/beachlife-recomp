@@ -51,7 +51,7 @@ int main(int argc, char** argv)
         std::puts("Beach Life - native launcher\n"
                   "Usage: beachlife [--launcher] [--source image.iso]\n"
                   "                 [--config file] [--page "
-                  "play|files|display|appearance|advanced|about]\n"
+                  "play|files|gameplay|display|appearance|advanced|about]\n"
                   "                 [--cache-directory folder]\n"
                   "                 [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --play [--source image.iso] [--config file]\n"
@@ -62,9 +62,14 @@ int main(int argc, char** argv)
                   "       beachlife --inspect-iso image.iso\n\n"
                   "Open without arguments to launch the graphical interface.\n"
                   "--play opens the game window and prepares files in its loading screen.\n"
-                  "--preview-screen displays an original TGA image through the VFS.\n"
-                  "The window loads the supported game configuration. Menu rendering\n"
-                  "and gameplay are still in development.");
+                  "--preview-screen displays an original TGA image through the VFS.");
+#if BEACHLIFE_BOOT_GAME
+        std::puts("Play runs the decompiled game using your prepared ISO data.\n"
+                  "Gameplay options are available under Advanced in the launcher.");
+#else
+        std::puts("This development launcher loads the supported game configuration.\n"
+                  "Build the release preset to include the decompiled game.");
+#endif
         return 0;
     }
     beachlife::launcher::Options options;
@@ -144,6 +149,10 @@ int main(int argc, char** argv)
                 else if (value == "files")
                 {
                     options.page = beachlife::launcher::PageFiles;
+                }
+                else if (value == "gameplay")
+                {
+                    options.page = beachlife::launcher::PageGameplay;
                 }
                 else if (value == "display")
                 {

@@ -9,26 +9,22 @@ over a pinned baseline in this repository. New launcher, data, runtime and nativ
 
 ## Current status
 
-The first graphical launcher and the build/release pipeline are implemented.
-Open it to select your ISO disc image, remember it, and adjust display,
-diagnostics and interface settings. Browse, drag-and-drop, manual paths, save
-and revert work. The launcher updates itself from published releases or pull
-requests' test builds.
-The independent [data tool](docs/DATA.md) indexes and reads files directly
-from an ISO, reads installer cabinets and prepares verified local game data
-for a read-only VFS. Play opens the game window, then checks, prepares and mounts
-those files on a worker behind its loading screen. Completed setup works with
-the ISO disconnected.
-**Game files → Preview title screen** displays the original title artwork from
-the prepared data in the native window. The preview uses the selected graphics
-API and display settings; Esc returns to the launcher. It is an image viewer,
-not the reconstructed game menu.
-The observed English data layout is supported; broader language detection and
-gameplay are still ahead. Play opens the game window on Direct3D 12, Vulkan or
-Metal, then constructs the reconstructed configuration owner through the VFS
-before its loading screen fades. This currently accepts the audited English
-configuration. Menu rendering and gameplay remain incomplete; the game loop
-still has an empty back buffer. Decompilation and native development advance together.
+Every native package includes the playable decompiled game.
+Select your own supported English ISO in the launcher and press **Play** to
+prepare its files, then enter the intro, menus and game. Prepared files work
+with the ISO disconnected. The original executable is never launched.
+
+On the **Gameplay** page, **Skip intro** starts at the main menu
+and **Mouse wheel zoom** controls the camera. Both are off by default. Display,
+interface and update settings remain available in the launcher. The independent
+[data tool](docs/DATA.md) can inspect and prepare the same local content.
+
+This is an early playable reconstruction with known limits. English retail data
+is supported; broader language support and complete gameplay parity remain work
+in progress. Linux and Windows have local headless scenario, sandbox and input
+stress checks. macOS validation is limited to CI's headless generated-data checks;
+Metal presentation and gameplay with retail data still need testing on a Mac.
+Steam Deck's package checks its runtime ABI; on-device gameplay is not qualified.
 
 The intended graphics backends are DX12/Vulkan on Windows, Metal on macOS, and
 Vulkan on Linux. The launcher uses pinned SDL3 and Dear ImGui, following
@@ -42,8 +38,8 @@ Requires CMake 3.25+, Ninja, Python 3.10+, Git and a C++20 compiler:
 
 ```sh
 python3 tools/setup_dependencies.py
-cmake --workflow --preset debug
-./build/debug/beachlife
+cmake --workflow --preset release
+./build/release/beachlife
 ```
 
 See [BUILDING](docs/BUILDING.md) for release builds, macOS and Windows.
@@ -66,8 +62,8 @@ Read [RELEASES](docs/RELEASES.md) for the complete process and
 ## Original game files
 
 No original executables, DLLs, disc images or gameplay data are
-committed or included in packages. The completed port will require the user's
-own game data. Development inputs belong under ignored `orig/` or outside the
+committed or included in packages. Playing requires the user's own game data.
+Development inputs belong under ignored `orig/` or outside the
 repository; see [orig/README.md](orig/README.md). CI uses generated fixtures and
 builds without game files. The launcher artwork, a remaster of Beach Life art,
 and the game's logo are documented in [launcher resources](assets/launcher/README.md).
@@ -94,9 +90,8 @@ docs/                architecture, building, installation and releases
 ```
 
 New retail reconstruction belongs in `patches/beachlife-decomp/`. Matching,
-normal Play's configuration libraries and optional native subsystem tests consume
-the pinned baseline plus ordered patches in build trees. The rest of the game
-module remains ahead. See [subsystem tests](docs/BUILDING.md#reconstructed-subsystem-tests),
+the game and optional native subsystem tests consume the pinned baseline plus
+ordered patches in build trees. See [subsystem tests](docs/BUILDING.md#reconstructed-subsystem-tests),
 [ARCHITECTURE](docs/ARCHITECTURE.md) and [patch rules](patches/README.md).
 
 The [progress report tool](docs/PROGRESS.md) turns a local audited split inventory

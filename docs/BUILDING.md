@@ -1,8 +1,10 @@
 # Building
 
-The current executable is the graphical launcher and native runtime. Gameplay
-and broader content-language detection are not implemented yet. Building requires
-no original game files or matching compiler.
+The release executable includes the launcher, playable decompiled game and optional
+gameplay settings. Building and CI tests require no original game files or matching
+compiler; playing requires the user's supported English ISO or prepared data.
+macOS validation is limited to headless CI checks; native retail gameplay and
+Metal presentation still need verification on a Mac.
 
 ## Requirements and presets
 
@@ -18,8 +20,13 @@ cmake --workflow --preset launcher
 ```
 
 Each workflow configures, builds and runs CTest. `debug` is for development;
-`release` is the distributable configuration; `launcher` currently builds the
-same launcher. Individual commands are available:
+`release` is the optimized distributable configuration, enabling
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME`, `BEACHLIFE_ENABLE_BOOT_GAME` and
+`BEACHLIFE_ENABLE_TWEAKS`. The two gameplay settings remain off at run time by
+default. `launcher` builds the independent launcher/subsystem runtime without
+the game; `debug` also leaves the game options off unless explicitly enabled.
+The raw CMake options still default to `OFF`; the release preset overrides them.
+Individual commands are available:
 
 ```sh
 cmake --preset release
@@ -112,7 +119,7 @@ an anchor does not qualify a dependency as reconstructed or native-tested.
 Build the prepared configuration and VFS file libraries without test executables:
 
 ```sh
-cmake --preset release -B build/reconstructed-config \
+cmake --preset launcher -B build/reconstructed-config \
   -DBUILD_TESTING=OFF
 cmake --build build/reconstructed-config \
   --target beachlife_reconstructed_startup_config --parallel
@@ -120,7 +127,7 @@ cmake --build build/reconstructed-config \
 
 Consumers link `beachlife_reconstructed_startup_config`; its public dependencies
 provide the file, scanner, token, allocation, parser and loading libraries.
-Normal Play now requires these libraries, so the former
+The independent runtime requires these libraries, so the former
 `BEACHLIFE_BUILD_RECONSTRUCTED_CONFIG` switch is no longer needed. They use the
 same pinned export and per-build verification as the tests below. The historical
 commit in `patches/beachlife-decomp/source.json` must be available locally; CI's
@@ -130,7 +137,7 @@ revision, source tree and ordered reconstruction/portability patch hashes in
 `SOURCE-MANIFEST.json`, alongside third-party dependency identities.
 Image, input, cursor and surface subsystem targets remain optional.
 
-The game's `beachlife_startup_configuration` host library validates the audited
+The independent runtime's `beachlife_startup_configuration` host library validates the audited
 1,242-byte English configuration, then constructs the real owner on the game
 thread before the loading fade. It retains the immutable input snapshot and
 the shared `beachlife_retail_files` binding through teardown. Unsupported input
@@ -141,8 +148,13 @@ snapshot/preflight errors remain recoverable. The original parser is unchanged.
 both default and injected allocators, plus subprocess allocation-failure probes.
 Its wrapper requires both successful exit and an explicit completion marker,
 so an original zero-status fatal exit cannot pass the test.
+Release Play enters the decompiled game's parser directly through the boot entry.
 
 ## Reconstructed subsystem tests
+
+Coverage in this section is scoped to each isolated fixture and source profile.
+The release game uses the unified `native-game-tweaks` profile described under
+the boot build below, including the complete Play entry and ownership path.
 
 The optional targets compile reconstructed image, file, configuration, input,
 surface, pool-lock, screen-list, screen-item and screen-registry helpers using the native compiler.
@@ -150,7 +162,7 @@ They consume a committed source export with faithful patches through the same
 preparation tool as dependencies. Enable them explicitly:
 
 ```sh
-cmake --preset release -B build/reconstructed-tga \
+cmake --preset launcher -B build/reconstructed-tga \
   -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
 cmake --build build/reconstructed-tga \
   --target reconstructed_tga_tests reconstructed_files_tests \
@@ -196,15 +208,17 @@ while original-compiler byte matching continues. Enable this source selection
 explicitly in a separate build directory:
 
 ```sh
-cmake --preset release -B build/experimental \
+cmake --preset launcher -B build/experimental \
   -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
   -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
 cmake --build build/experimental --parallel
 ctest --test-dir build/experimental -L reconstructed --output-on-failure
 ```
 
-The `release` preset selects compiler optimization; the build channel remains
-`dev`. The option defaults to `OFF`.
+The `launcher` preset selects compiler optimization with the game disabled; its
+build channel remains `dev`. Adding only the experimental option selects subsystem
+qualification rather than the full game. The `release` channel requires the full
+game with tweaks and rejects these subsystem-only configurations.
 It selects the `native-experimental` prepared-source profile, applying
 `reconstruction-series`, then `native-pre-series`, then `experimental-series`,
 then the native portability `series`. Ordinary native and matching builds ignore `experimental-series`.
@@ -212,9 +226,10 @@ The preparation CLI also accepts `--decomp-profile native-experimental`.
 
 Build metadata records `decomp_profile`; packaging verifies that exact profile
 and records its ordered patch hashes. Packages with different source profiles
-cannot form one release matrix. Enabling the option does not complete a missing
-game controller or menu. Each experimental subsystem still needs real source,
-behavior tests and an explicit runtime connection. A native test pass does not
+cannot form one release matrix. These isolated subsystem tests do not replace
+full game route checks. Each
+experimental subsystem still needs real source, behavior tests and an explicit
+runtime connection. A native test pass does not
 count as a byte match or establish production gameplay.
 
 The pool-lock target compiles the unchanged acquisition and cleanup methods
@@ -460,8 +475,11 @@ as described below. Hosted CI and hardware qualification remain separate checks.
 The boot build compiles all decompiled game source as one tree and links it
 with a generated, loud trap for every game function that is not decompiled
 yet. Calling a trap stops the game and names the function and its original
-address. That tells you what to decompile next. CI packages and releases ship
-this build as the experimental game; it is not complete gameplay. It supports Linux x86-64 and Windows
+address. That tells you what to decompile next. Debug development builds keep
+traps for reconstruction work. `Release` configurations and the `test`/`release`
+channels fail generation unless `boot/traps.json` contains zero game functions,
+host services and unresolved symbols, so every CI package and release runs without
+traps. It supports Linux x86-64 and Windows
 x64 with the pinned LLVM-MinGW toolchain, plus macOS arm64 and x86_64.
 
 ```sh
@@ -498,8 +516,8 @@ uses the shared compile environment in `cmake/GameCompile.cmake`. Boot builds
 add the compatibility headers, MSVC prelude and two-byte `wchar_t` ABI to those
 targets. These settings stay private to game-source targets and do not propagate
 to host consumers or fixture executables. Harness link providers stay unchanged.
-The default native presets keep their portable source profile without the boot
-compatibility flags.
+The `launcher` and plain `debug` presets keep their independent source profile
+without the boot compatibility flags; `release` compiles the complete game.
 
 The opt-in `reconstructed_screen_mode6_owner` and `reconstructed_game_mode_progress`
 fixtures still require the `native-experimental` profile: they assert aggregate,
@@ -557,9 +575,9 @@ mode remain Play's choices.
 
 Player-visible changes that are not in the original game live in
 `patches/beachlife-decomp-tweaks/`, applied after the faithful series when the
-boot build is configured with `-DBEACHLIFE_ENABLE_TWEAKS=ON`. Each tweak stays
-off until the player enables it under Advanced > Gameplay options in the
-launcher; checks can enable one with its environment variable:
+game build is configured with `-DBEACHLIFE_ENABLE_TWEAKS=ON` (already enabled by
+the release preset). Each tweak stays
+off until the player enables it on the launcher's Gameplay page; checks can enable one with its environment variable:
 
 | Tweak | Setting | Check override |
 |---|---|---|
@@ -587,7 +605,7 @@ a claim that GPU operation or gameplay has been qualified on the device.
 Install SDL's development prerequisites before configuring on Ubuntu:
 
 ```sh
-sudo apt-get install build-essential cmake ninja-build python3 git pkg-config \
+sudo apt-get install build-essential clang llvm cmake ninja-build python3 git pkg-config \
   libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev \
   libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libx11-xcb-dev libegl-dev \
   libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
@@ -609,7 +627,10 @@ CI uses Apple Silicon with Xcode 26.3, an explicit macOS 15.0 deployment target,
 and separate ARM64/x86_64 packages. Intel command-line tests run through Rosetta.
 
 ```sh
-cmake --preset release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+brew install cmake ninja llvm
+export PATH="$(brew --prefix llvm)/bin:$PATH"
+cmake --preset release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+  -DCMAKE_C_COMPILER="$(xcrun --find clang)" -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)"
 cmake --build --preset release
 ctest --preset release
 codesign --force --sign - build/release/beachlife.app
@@ -687,15 +708,16 @@ notices. CI inspects imports, then runs the extracted package and Python host
 checks on Windows. Do not run cross-compiled CTest executables on Linux without
 an explicitly configured execution environment.
 
-Local native MSVC/Ninja builds can use the ordinary presets from an x64 developer
-shell. The distributable Windows packager currently requires the pinned
+Local native MSVC/Ninja builds can use the `launcher` preset from an x64 developer
+shell for launcher/subsystem development. The distributable Windows packager
+currently requires the pinned
 LLVM-MinGW runtime, so use the documented cross build for release packages.
 
 ### Windows boot game
 
-The same `beachlife.exe` contains the launcher and the decompiled game. Enable
-both game options to make Play and `--play` enter the retail code on the SDL3
-compat layer. The default release preset still builds the independent launcher.
+The same `beachlife.exe` contains the launcher and the decompiled game. The
+release preset enables the game and tweaks so Play and `--play` enter the retail
+code on the SDL3 compat layer.
 Use the same pinned cross toolchain as CI; MSVC boot builds are not supported.
 
 ```sh
@@ -799,7 +821,7 @@ For an actual desktop screenshot (then exit), use:
 ./build/debug/beachlife --screenshot build/launcher.png --config build/preview.cfg
 ```
 
-`--page files|display|appearance|advanced|about` selects another page. `--source path.iso`
+`--page files|gameplay|display|appearance|advanced|about` selects another page. `--source path.iso`
 preselects a disc image without saving it automatically. Screenshot and smoke
 runs never check for updates; `--update-preview STATE` shows a made-up update
 state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
@@ -928,7 +950,7 @@ not establish owning-payload deletion, context pop, original allocation-failure
 semantics, full parser/derived-screen lifetimes or gameplay.
 
 ```sh
-cmake --preset release -B build/experimental-context -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --preset launcher -B build/experimental-context -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
 cmake --build build/experimental-context --target reconstructed_gui_context_tests
 ctest --test-dir build/experimental-context -R '^reconstructed_gui_context$' --output-on-failure
 ```
@@ -950,7 +972,7 @@ This target does not implement filename/VFS loading, renderer palette conversion
 widget activation or a game frame.
 
 ```sh
-cmake --preset release -B build/experimental-tga -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --preset launcher -B build/experimental-tga -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
 cmake --build build/experimental-tga --target reconstructed_tga_tests reconstructed_tga_parser_tests
 ctest --test-dir build/experimental-tga -R '^reconstructed_tga(_parser)?$' --output-on-failure
 ```
@@ -968,7 +990,7 @@ qualify short reads, malformed files, the original input leak when parsing throw
 renderer palette conversion, widget activation or a game frame.
 
 ```sh
-cmake --preset release -B build/experimental-tga-files -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --preset launcher -B build/experimental-tga-files -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
 cmake --build build/experimental-tga-files --target reconstructed_tga_files_tests
 ctest --test-dir build/experimental-tga-files -R '^reconstructed_tga_files$' --output-on-failure
 ```
@@ -987,7 +1009,7 @@ connect renderer storage or GPU presentation. Its partial compiler comparison
 remains separate from native behavior qualification.
 
 ```sh
-cmake --preset release -B build/experimental-indexed-blit -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --preset launcher -B build/experimental-indexed-blit -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
 cmake --build build/experimental-indexed-blit --target reconstructed_indexed_palette_blit_tests
 ctest --test-dir build/experimental-indexed-blit -R '^reconstructed_indexed_palette_blit$' --output-on-failure
 ```
@@ -1008,7 +1030,7 @@ lifetimes or gameplay. The method's partial compiler comparison remains separate
 from experimental native behavior qualification.
 
 ```sh
-cmake --preset release -B build/experimental-context-pop -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --preset launcher -B build/experimental-context-pop -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
 cmake --build build/experimental-context-pop --target reconstructed_gui_pop_tests
 ctest --test-dir build/experimental-context-pop -R '^reconstructed_gui_pop($|_fatal_)' --output-on-failure
 ```
@@ -1064,7 +1086,7 @@ cross-type aliasing and renderer/GPU integration are separate. The existing
 nontransparent indexed-blit target and source remain unchanged.
 
 ```sh
-cmake --preset release -B build/experimental-blit-kernels -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --preset launcher -B build/experimental-blit-kernels -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
 cmake --build build/experimental-blit-kernels --target reconstructed_renderer_blit_kernels_tests
 ctest --test-dir build/experimental-blit-kernels -R '^reconstructed_renderer_blit_kernels$' --output-on-failure
 ```
@@ -1082,7 +1104,7 @@ experimental declaration. Default native tests retain their existing declaration
 and use the same fixtures through a test profile definition.
 
 ```sh
-cmake --preset release -B build/experimental-activation -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --preset launcher -B build/experimental-activation -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
 cmake --build build/experimental-activation --target reconstructed_screen_activation_tests
 ctest --test-dir build/experimental-activation -R '^reconstructed_screen_activation$' --output-on-failure
 ```
@@ -1280,7 +1302,7 @@ cleanup. The sidecar must describe the complete supported input; this is a
 bounded full-read check.
 
 ```sh
-cmake --preset release -B build/metadata-smoke \
+cmake --preset launcher -B build/metadata-smoke \
   -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON \
   -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
   -DBEACHLIFE_RESOURCE_METADATA_SMOKE_INPUT:FILEPATH=/path/to/metadata \
@@ -1891,8 +1913,8 @@ top-down, little-endian RGB555 frames, with an explicit row stride, into the
 video boundary's RGBA pixels. Drawing contexts may outlive the display wrapper;
 the borrowed `Video` and window must remain alive. Invalid storage, wrong-thread
 use, expired windows and SDL errors are reported without a fabricated fallback.
-This library is linked by the runtime, but the reconstructed renderer owner and
-its DirectDraw/GDI calls are not connected to it yet. Normal Play is unchanged.
+The isolated library and fixture exercise this display boundary independently.
+Release Play runs the decompiled renderer through the compat DirectDraw/GDI path.
 
 The focused `renderer_display` test uses an actual hidden SDL dummy window and a
 recorder for `platform::Video`. It checks padded/unaligned literal pixels,
@@ -1903,7 +1925,7 @@ retail Game/renderer lifetime or a visible Intro/menu. Linux optimized and
 explicit address/undefined/leak sanitizer builds are the initial scope.
 
 ```sh
-cmake --preset release -B build/renderer-display -DBUILD_TESTING=ON
+cmake --preset launcher -B build/renderer-display -DBUILD_TESTING=ON
 cmake --build build/renderer-display --target renderer_display_tests
 ctest --test-dir build/renderer-display -R '^renderer_display$' --output-on-failure
 ```
@@ -2122,11 +2144,10 @@ generated TIFFs, real Vulkan presentation, downloaded pixel comparisons and
 normal owner cleanup. It needs X11 with an actual density-1 800×600 fullscreen
 mode; other displays are not silently substituted.
 
-This capability does not connect Play to the Game/Intro/menu loop. The actual
-COM loss/restore methods cannot operate on the native owner’s null COM fields;
-a real typed recovery boundary and the complete Game/GUI ownership connection
-remain separate. Windows/macOS, device recovery and allocation-failure timing
-are not qualified by the Linux owner fixture.
+This isolated owner fixture does not exercise the complete Game/Intro/menu loop
+or COM loss/restore against the native owner's null COM fields. Release Play
+uses the unified game and compat ownership path described above. Windows/macOS,
+device recovery and allocation-failure timing are not qualified by this fixture.
 
 
 The matching profile reconstructs the complete 793-byte building-list population
@@ -2178,8 +2199,8 @@ data, malformed mappings, row
 and format preservation, binding lifetime and actual reconstructed BLE text
 lookup. Preparation retains the required executable through the existing worker;
 completed prepared mounts work with the ISO disconnected. Older caches need one
-repair with the ISO present. The complete credits controller and the normal
-Play-to-menu connection remain separate.
+repair with the ISO present. This fixture covers data access and text lookup;
+complete credits-controller behavior requires separate retail-data coverage.
 
 
 The experimental `beachlife_reconstructed_renderer_clip_mode` library keeps the

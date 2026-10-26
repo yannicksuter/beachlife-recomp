@@ -11,8 +11,11 @@ def check(executable, expected):
     executable = str(Path(executable).resolve())
     for arguments in (["--help"],):
         output = subprocess.check_output([executable, *arguments], text=True)
-        assert "loads the supported game configuration" in output, output
-        assert "gameplay are still in development" in output, output
+        if expected.get('decomp_profile') in ('native-game', 'native-game-tweaks'):
+            assert "Play runs the decompiled game using your prepared ISO data." in output, output
+        else:
+            assert "loads the supported game configuration" in output, output
+            assert "Build the release preset to include the decompiled game." in output, output
     version = subprocess.check_output([executable, "--version"], text=True).strip()
     assert version == expected["build_version"], (version, expected)
     info = json.loads(subprocess.check_output([executable, "--build-info"], text=True))

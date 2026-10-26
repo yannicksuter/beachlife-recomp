@@ -8,6 +8,7 @@ enum Page
 {
     PagePlay,
     PageFiles,
+    PageGameplay,
     PageDisplay,
     PageAppearance,
     PageAdvanced,

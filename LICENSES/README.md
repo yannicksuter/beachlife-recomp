@@ -24,6 +24,11 @@ retained in `unshield.txt` and `zlib.txt`; `RSA-MD5.txt` identifies unshield's
 included RSA Data Security, Inc. MD5 Message-Digest Algorithm. The dependency
 checkouts are exported without edits before compilation.
 
+The decompiled game's audio and movie adapters link dr_libs and PL_MPEG.
+Game packages include the pinned dr_libs license as `dr-libs.txt` and PL_MPEG's
+MIT attribution and license text as `pl-mpeg.txt`. These adapters decode the
+player's data; no retail media or original middleware is included.
+
 Roboto Medium is copied from the Dear ImGui pin, with the Apache 2.0 text in
 `Apache-2.0.txt`. The launcher artwork has separate provenance and rights notes
 in `assets/launcher/README.md`. The original application icon's provenance is

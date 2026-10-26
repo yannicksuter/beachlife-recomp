@@ -1,9 +1,10 @@
 # Using a native package
 
-These packages contain the first graphical launcher and the game window. The
-launcher selects and remembers a game source; Play opens the game window and
-runs the experimental decompiled game. The game, game-content inspection and
-language detection remain under development.
+These packages contain the graphical launcher and the playable decompiled game.
+Select your own supported English ISO, prepare its files and press **Play**. The
+original executable is never run. Reconstruction and wider language support
+remain in progress; macOS coverage is currently CI headless checks only, with
+retail gameplay and Metal presentation still requiring verification on a Mac.
 
 Download the archive matching your OS and CPU from the GitHub releases page: a
 published release, or a pull request's test build (a prerelease). Extract the
@@ -34,6 +35,9 @@ inputs show a specific status. The original installer is never run.
 **Display** holds the window mode, window size, display, scaling, VSync and,
 on Windows, the graphics API (DirectX 12 or Vulkan). Play's game window uses
 them.
+**Gameplay** offers **Skip intro** (start at the main menu) and **Mouse wheel
+zoom** (up zooms in, down zooms out). Both are off by default. Save changes or
+press Play to apply them.
 **Advanced** has a Diagnostics & analytics section: a log window for the game
 (saved for later) and the settings file's location. No usage data is collected
 or sent.
@@ -51,7 +55,7 @@ game translations. This launcher's interface is English.
 After setup, the local files work with the ISO disconnected. **Verify and repair**
 on Game files needs the original ISO and restores missing or damaged files in
 the same loading screen, then returns to the launcher.
-An image changed in place requires setup again. Settings and future saves live
+An image changed in place requires setup again. Settings and saves live
 outside the game-data cache. See [DATA](DATA.md) for cache locations and checks.
 
 ## Play
@@ -64,19 +68,18 @@ window or fullscreen, size, display, Fit or Stretch, VSync and the graphics API
 (Direct3D 12 or Vulkan on Windows, Metal on macOS, Vulkan on Linux). A graphics
 API that is not available is reported, never replaced by another one. Startup
 checks, ISO preparation and VFS loading run behind the in-game loading screen;
-its progress appears when the work takes longer than a moment. Normal Play
-also loads the supported English game configuration before the loading screen
-fades. Menu rendering and gameplay are still being reconstructed, so the window
-shows an empty picture with a
-small overlay naming the graphics API and frame rate. Esc or closing the window
-returns to the launcher.
+its progress appears when the work takes longer than a moment. Play then runs
+the decompiled intro, main menu and game using your prepared files. Use the
+in-game menus to start a scenario or sandbox island and to save or load games.
+Closing the game returns to the launcher.
 
-To view original artwork now, open **Game files → Preview title screen**. This
-opens the native window, prepares data if needed and displays the title image
-from your copy. Display settings apply, and Esc returns to Game files. This is
-an image preview; the original menu buttons and gameplay are not implemented.
+**Game files → Preview title screen** remains a separate image viewer. It displays
+the title artwork from your copy with the selected display settings; Esc returns
+to Game files.
 
-The Display page's **Performance overlay** (off by default) adds a compact row
+The Display page's **Performance overlay** (off by default) currently applies to
+the image preview and independent runtime, not the decompiled game. It adds a
+compact row
 with the frame rate and the system's GPU and CPU usage in the chosen corner of
 the game window, also in fullscreen. A reading the system does not provide shows
 N/A: GPU usage comes from Windows' performance counters, macOS IOKit, NVIDIA's
@@ -108,8 +111,8 @@ and the system's libcurl on Linux and macOS.
 
 Release archives have SHA256SUMS and each package contains SOURCE-MANIFEST.json.
 No original executables, game DLLs, disc images or gameplay data are supplied. The
-completed port will require a copy of the original game's data. Downloading a
-launcher package does not provide that data or a playable game. The header
+game requires a copy of the original game's data. Downloading a package provides
+the decompiled executable, but does not provide that data. The header
 artwork (a remaster of Beach Life art), the game's logo, original application
 icon and font have separate notices in the package. Windows uses the original
 icon in the executable; macOS uses it in the app bundle. Linux window icons

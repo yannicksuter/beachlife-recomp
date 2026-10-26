@@ -25,7 +25,8 @@ class PackageSourceTests(unittest.TestCase):
         self.git(self.repo, 'init', '-q')
         self.git(self.repo, 'config', 'core.autocrlf', 'false')
         notices = {'sdl': ['LICENSE.txt'], 'imgui': ['LICENSE.txt'], 'stb': ['LICENSE'],
-                   'freetype': ['docs/FTL.TXT', 'src/bdf/README', 'src/pcf/README']}
+                   'freetype': ['docs/FTL.TXT', 'src/bdf/README', 'src/pcf/README'],
+                   'dr-libs': ['LICENSE']}
         for name in DEPENDENCIES:
             checkout = self.repo / 'extern' / name
             checkout.mkdir(parents=True)
@@ -36,7 +37,8 @@ class PackageSourceTests(unittest.TestCase):
             pin = self.commit(checkout)
             self.git(self.repo, 'update-index', '--add', '--cacheinfo',
                      '160000,' + pin + ',extern/' + name)
-        for name in (*packages.DOCUMENTS, *packages.LAUNCHER_NOTICES, 'assets/app/README.md'):
+        for name in (*packages.DOCUMENTS, *packages.LAUNCHER_NOTICES,
+                     *packages.GAME_NOTICES, 'assets/app/README.md'):
             self.write(self.repo / name, b'generated package documentation\n')
         self.write(self.repo / 'CMakeLists.txt',
                    b'project(beachlife_recomp VERSION 0.0.1 LANGUAGES C CXX)\n')
@@ -168,6 +170,30 @@ class PackageSourceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unknown native reconstructed source profile'):
             packages.package(self.build, self.output, source=self.repo)
         self.assertFalse(self.output.exists())
+
+    @unittest.skipIf(os.name == 'nt', 'Synthetic ELF packaging requires POSIX executable permissions')
+    def test_release_packages_the_complete_game_and_notices(self):
+        prepare(self.repo, self.prepared, decomp_revision=self.revision,
+                decomp_profile='native-game-tweaks')
+        self.refresh_build_identity('native-game-tweaks')
+        self.info['channel'] = 'release'
+        self.write(self.build / 'generated/build-info.json', json.dumps(self.info).encode())
+        complete = {'functions': [], 'host_services': [], 'unresolved': []}
+        for kind in complete:
+            self.write(self.build / 'boot/traps.json',
+                       json.dumps({**complete, kind: [{'symbol': 'missing'}]}).encode())
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'requires zero'):
+                packages.package(self.build, self.output, source=self.repo)
+            self.assertFalse(self.output.exists())
+        self.write(self.build / 'boot/traps.json', json.dumps(complete).encode())
+        archive = packages.package(self.build, self.output, source=self.repo)
+        manifest, payload = packages.inspect_package(archive)
+        self.assertEqual(manifest['game_traps'], {kind: 0 for kind in complete})
+        self.assertEqual(manifest['dependencies'][-1]['profile'], 'native-game-tweaks')
+        self.assertEqual(set(payload), packages.payload_names(self.info) | {'SOURCE-MANIFEST.json'})
+        for notice in packages.GAME_NOTICES:
+            self.assertIn(notice, payload)
+        self.assertNotIn('boot/traps.json', payload)
 
     def test_missing_native_export_is_rejected_without_repair(self):
         shutil.rmtree(self.export)

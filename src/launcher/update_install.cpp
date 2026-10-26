@@ -1049,6 +1049,9 @@ std::string restart_launcher(const fs::path& program, int argc, char** argv)
     {
         return std::system_category().message(static_cast<int>(GetLastError()));
     }
+    // Only the foreground process may hand the foreground on; without this the new
+    // window opens behind other programs.
+    AllowSetForegroundWindow(process.dwProcessId);
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     return {};
