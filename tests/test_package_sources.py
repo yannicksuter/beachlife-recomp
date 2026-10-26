@@ -161,17 +161,13 @@ class PackageSourceTests(unittest.TestCase):
                     packages.package(self.build, self.output, source=self.repo)
                 self.assertFalse(self.output.exists())
 
-    def test_package_rejects_experimental_release_and_unknown_profile(self):
-        for profile, channel, message in (
-                ('native-experimental', 'release', 'requires a dev or test build'),
-                ('matching', 'dev', 'Unknown native reconstructed source profile')):
-            with self.subTest(profile=profile, channel=channel):
-                self.refresh_build_identity(profile)
-                self.info['channel'] = channel
-                self.write(self.build / 'generated/build-info.json', json.dumps(self.info).encode())
-                with self.assertRaisesRegex(ValueError, message):
-                    packages.package(self.build, self.output, source=self.repo)
-                self.assertFalse(self.output.exists())
+    def test_package_rejects_unknown_profile(self):
+        self.refresh_build_identity('matching')
+        self.info['channel'] = 'dev'
+        self.write(self.build / 'generated/build-info.json', json.dumps(self.info).encode())
+        with self.assertRaisesRegex(ValueError, 'Unknown native reconstructed source profile'):
+            packages.package(self.build, self.output, source=self.repo)
+        self.assertFalse(self.output.exists())
 
     def test_missing_native_export_is_rejected_without_repair(self):
         shutil.rmtree(self.export)

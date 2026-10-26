@@ -36,7 +36,7 @@ The optional `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME` build uses the
 native compatibility and portability series for complete, behavior-tested methods
 whose byte matching is still in progress. Matching and ordinary native exports
 retain their existing source selection. Build and package metadata identify the
-profile; experimental sources are restricted to development and test channels.
+profile.
 Missing functions still require real implementations, and experimental native
 execution is tracked separately from matching and production integration.
 

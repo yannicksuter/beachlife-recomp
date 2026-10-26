@@ -20,9 +20,6 @@ option(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
     "Enable behavior-tested reconstructed code that is still being byte matched" OFF)
 set(BEACHLIFE_DECOMP_PROFILE native)
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
-    if(BEACHLIFE_BUILD_CHANNEL STREQUAL "release")
-        message(FATAL_ERROR "Experimental reconstructed code requires a dev or test build")
-    endif()
     set(BEACHLIFE_DECOMP_PROFILE native-experimental)
 endif()
 option(BEACHLIFE_ENABLE_BOOT_GAME

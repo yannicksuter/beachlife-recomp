@@ -55,14 +55,12 @@ class VersionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_version.identity(self.root, {**config, 'channel': 'test'})
 
-    def test_experimental_identity_cannot_be_a_release(self):
+    def test_identity_records_native_profile(self):
         config = {'project_version': '0.1.0', 'channel': 'dev', 'pull_request': '0',
                   'run_id': '0', 'decomp_profile': 'native-experimental'}
         with patch.object(build_version, 'git_output', side_effect=['a' * 40, '', '1']):
             self.assertEqual(build_version.identity(self.root, config)['decomp_profile'],
                              'native-experimental')
-        with self.assertRaisesRegex(ValueError, 'requires a dev or test build'):
-            build_version.identity(self.root, {**config, 'channel': 'release'})
         for profile in ('matching', 'unknown', None):
             with self.subTest(profile=profile), self.assertRaisesRegex(ValueError, 'Unknown native'):
                 build_version.identity(self.root, {**config, 'decomp_profile': profile})
@@ -124,16 +122,12 @@ class PackageTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     packages.inspect_package(path)
 
-    def test_archive_rejects_experimental_release_and_mixed_profiles(self):
+    def test_archive_set_rejects_mixed_profiles(self):
         for target in packages.TARGETS:
             fixture_archive(self.root, target)
         fixture_archive(self.root, 'linux-x86_64', profile='native-experimental')
         with self.assertRaisesRegex(ValueError, 'source profiles differ'):
             packages.verify_set(self.root, '0.1.0', 'a' * 40, 'test', 7)
-        archive = fixture_archive(self.root, 'linux-x86_64', channel='release',
-                                  profile='native-experimental')
-        with self.assertRaisesRegex(ValueError, 'requires a dev or test build'):
-            packages.inspect_package(archive)
 
     def test_symlink_input_is_rejected(self):
         (self.root / 'real').write_text('data')

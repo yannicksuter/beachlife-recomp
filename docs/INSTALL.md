@@ -2,8 +2,8 @@
 
 These packages contain the first graphical launcher and the game window. The
 launcher selects and remembers a game source; Play opens the game window and
-runs the game loop. The game code itself, game-content inspection and language
-detection remain under development.
+runs the experimental decompiled game. The game, game-content inspection and
+language detection remain under development.
 
 Download the archive matching your OS and CPU from the GitHub releases page: a
 published release, or a pull request's test build (a prerelease). Extract the

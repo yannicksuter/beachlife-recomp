@@ -204,7 +204,7 @@ ctest --test-dir build/experimental -L reconstructed --output-on-failure
 ```
 
 The `release` preset selects compiler optimization; the build channel remains
-`dev`. The option defaults to `OFF` and is rejected with the `release` channel.
+`dev`. The option defaults to `OFF`.
 It selects the `native-experimental` prepared-source profile, applying
 `reconstruction-series`, then `native-pre-series`, then `experimental-series`,
 then the native portability `series`. Ordinary native and matching builds ignore `experimental-series`.
@@ -460,8 +460,8 @@ as described below. Hosted CI and hardware qualification remain separate checks.
 The boot build compiles all decompiled game source as one tree and links it
 with a generated, loud trap for every game function that is not decompiled
 yet. Calling a trap stops the game and names the function and its original
-address. That tells you what to decompile next. A boot build with traps is a
-development tool, never release gameplay. It supports Linux x86-64 and Windows
+address. That tells you what to decompile next. CI packages and releases ship
+this build as the experimental game; it is not complete gameplay. It supports Linux x86-64 and Windows
 x64 with the pinned LLVM-MinGW toolchain, plus macOS arm64 and x86_64.
 
 ```sh

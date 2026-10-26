@@ -38,13 +38,11 @@ builds its exact head SHA and produces these package artifacts:
 | macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, CLI/window smoke |
 | macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta CLI/window smoke |
 
-A separate game matrix builds the experimental decompiled game on Linux x86_64,
-Windows x86_64, macOS arm64 and macOS x86_64. Its `beachlife_*` artifacts use the `dev`
-channel, including on stable pushes. Windows uses the same pinned cross compiler
-and is built only; its tests are not run. Boot tests need no retail files;
-GPU-dependent checks may skip, while the generated headless retail parser check
-must pass. These artifacts are development evidence only: they are
-outside the five-package set, Native build gate, promotion and publication jobs.
+Every package, including stable releases, contains the experimental decompiled
+game (`BEACHLIFE_ENABLE_BOOT_GAME`, profile `native-game`). It is not complete
+gameplay: code not decompiled yet links as a loud trap that stops the game. Its
+tests need no retail files; GPU-dependent checks may skip, while the generated
+headless retail parser check must pass.
 
 PR artifacts expire after seven days; stable/manual artifacts after fourteen.
 A test or draft release retains attached archives independently of that Actions
@@ -115,12 +113,12 @@ team copied from another repository.
 
 Packages contain only declared native outputs, documentation and runtime
 notices. SOURCE-MANIFEST.json records build identity, dependency information and
-payload hashes. SHA256SUMS covers the release archives. The current launcher
-has no game module or bundled retail data. It includes the declared header,
-font and dependency notices. Window smoke uses software rendering and requires
-no game files or GPU. Future libraries/resources must be
+payload hashes. SHA256SUMS covers the release archives. Packages contain the
+launcher and the experimental decompiled game, but no retail data. They include
+the declared header, font and dependency notices. Window smoke uses software
+rendering and requires no game files or GPU. Future libraries/resources must be
 added explicitly to the packaging contract and its checks.
 
 For local reproduction see [BUILDING](BUILDING.md); for startup see
-[INSTALL](INSTALL.md). The initial candidate verifies distribution of the
-launcher, not a playable game or qualified game graphics backend.
+[INSTALL](INSTALL.md). A release verifies distribution of the launcher and the
+experimental game, not complete gameplay or a qualified game graphics backend.

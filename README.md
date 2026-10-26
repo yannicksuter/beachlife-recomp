@@ -51,7 +51,8 @@ See [BUILDING](docs/BUILDING.md) for release builds, macOS and Windows.
 ## Binaries and releases
 
 PRs to `main` and `stable` produce native packages for Windows x86_64, Linux
-x86_64, Steam Deck, macOS ARM64 and macOS x86_64. `main` is the development
+x86_64, Steam Deck, macOS ARM64 and macOS x86_64, each with the launcher and the
+experimental decompiled game. `main` is the development
 branch; promotion to `stable` goes through a tested `main` → `stable` PR.
 
 Promotion PRs receive temporary test prereleases. Merging builds the stable
