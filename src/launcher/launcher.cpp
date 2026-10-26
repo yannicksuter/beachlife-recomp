@@ -3,6 +3,7 @@
 #include "content_service.h"
 #include "image.h"
 #include "platform/app_icon.h"
+#include "platform/game_log.h"
 #include "release_notes.h"
 #include "ui.h"
 #include "update_install.h"
@@ -20,6 +21,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -315,6 +317,7 @@ class Launcher
         SDL_SetAppMetadata("Beach Life", build::version, "org.beachlife.recomp");
         require(SDL_Init(SDL_INIT_VIDEO), "Cannot initialize the launcher");
         config_ = settings_file(options_);
+        log_folder_ = game_log_folder(config_);
         try
         {
             saved_ = settings_ = load_settings(config_);
@@ -393,6 +396,11 @@ class Launcher
             catch (const std::exception& error)
             {
                 show_notice(error.what());
+            }
+            if (!platform::unreported_crash(log_folder_).empty())
+            {
+                show_notice("The game stopped unexpectedly last time. Advanced > Game log has "
+                            "its log, with what stopped it.");
             }
         }
         if (!options_.update_preview.empty())
@@ -1414,6 +1422,18 @@ class Launcher
             std::error_code ignored;
             fs::create_directories(path_from_utf8(folder), ignored);
             if (!SDL_OpenURL(file_url(folder).c_str()))
+            {
+                notice_ = std::string("Cannot open the folder: ") + SDL_GetError();
+            }
+        }
+        const std::string logs = path_utf8(log_folder_);
+        at = setting_row(draw, iy, ix, iw, false, "Game log", logs.c_str(), dp(42));
+        if (ui::secondary_button(
+                "log_folder", "Open folder", Icon::Folder, at, {control_width(iw), dp(42)}))
+        {
+            std::error_code ignored;
+            fs::create_directories(path_from_utf8(logs), ignored);
+            if (!SDL_OpenURL(file_url(logs).c_str()))
             {
                 notice_ = std::string("Cannot open the folder: ") + SDL_GetError();
             }
@@ -2732,6 +2752,7 @@ class Launcher
 
     Options options_;
     fs::path config_;
+    fs::path log_folder_; // game_log_folder(config_)
     Settings settings_, saved_;
     SourceStatus source_;
     std::unique_ptr<ContentService> content_;
@@ -2767,6 +2788,41 @@ class Launcher
     double notice_until_ = 0;
 };
 } // namespace
+
+fs::path game_log_folder(const fs::path& settings_file)
+{
+    fs::path game;
+    if (const char* base = SDL_GetBasePath())
+    {
+        game = package_folder(path_from_utf8(base));
+        if (game.empty())
+        {
+            // A local build: its program folder, or the folder holding its app.
+            game = path_from_utf8(base).parent_path();
+            for (fs::path folder = game; folder.has_relative_path(); folder = folder.parent_path())
+            {
+                if (folder.extension() == ".app")
+                {
+                    game = folder.parent_path();
+                    break;
+                }
+            }
+        }
+    }
+    if (!game.empty())
+    {
+        const fs::path logs = game / "logs";
+        std::error_code error;
+        fs::create_directories(logs, error);
+        const fs::path probe = logs / ".writable";
+        if (std::ofstream(probe).good())
+        {
+            fs::remove(probe, error);
+            return logs;
+        }
+    }
+    return settings_file.parent_path() / "logs";
+}
 
 Outcome play_settings(const Options& options)
 {
