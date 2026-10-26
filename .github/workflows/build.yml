@@ -125,15 +125,20 @@ jobs:
         run: |
           cmake --build --preset release --parallel 3
           ctest --preset release
-      - name: Check and sign macOS bundle
+      - name: Check, sign and notarize macOS bundle
         if: runner.os == 'macOS'
         env:
           TARGET_ARCH: ${{ matrix.arch }}
+          # Developer ID signing and notarization; without them (forks) the app is ad hoc.
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
         run: |
           test "$(lipo -archs build/release/beachlife.app/Contents/MacOS/beachlife)" = "$TARGET_ARCH"
           test "$(lipo -archs build/release/beachlife_boot_link)" = "$TARGET_ARCH"
-          codesign --force --sign - build/release/beachlife.app
-          codesign --verify --deep --strict build/release/beachlife.app
+          python tools/sign_macos.py build/release/beachlife.app
       - name: Package and test extracted binaries
         run: |
           python tools/package_build.py --build-dir build/release --output-dir build/artifacts

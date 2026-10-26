@@ -25,7 +25,8 @@ WINDOWS_NOTICES = ("LICENSE.TXT", "x86_64-w64-mingw32/share/mingw32/COPYING.winp
                    "x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt")
 MAC_FILES = ("beachlife.app/Contents/MacOS/beachlife", "beachlife.app/Contents/Info.plist",
              "beachlife.app/Contents/Resources/beachlife.icns")
-MAC_SIGNATURE = "beachlife.app/Contents/_CodeSignature/CodeResources"
+# Written by signing: the seal, and the notarization ticket that stapling adds.
+MAC_SIGNING = ("beachlife.app/Contents/_CodeSignature/CodeResources", "beachlife.app/Contents/CodeResources")
 LAUNCHER_RESOURCES = ("header.jpg", "logo.png", "Roboto-Medium.ttf")
 LAUNCHER_NOTICES = ("assets/launcher/README.md", "LICENSES/Apache-2.0.txt",
                     "LICENSES/SDL.txt", "LICENSES/ImGui.txt", "LICENSES/stb.txt", "LICENSES/FreeType.txt",
@@ -175,12 +176,13 @@ def package(build, output, source=ROOT, toolchain=None):
     if system == "macos":
         actual = {p.relative_to(build).as_posix() for p in (build / "beachlife.app").rglob('*') if not p.is_dir()}
         allowed = {name for name in payload_names(info) if name.startswith('beachlife.app/')}
-        if actual - allowed - {MAC_SIGNATURE}:
+        if actual - allowed - set(MAC_SIGNING):
             raise ValueError("Unexpected files in the application bundle")
         for name in MAC_FILES:
             copy(build, name)
-        if (build / MAC_SIGNATURE).exists():
-            copy(build, MAC_SIGNATURE)
+        for name in MAC_SIGNING:
+            if (build / name).exists():
+                copy(build, name)
         data["beachlife"], modes["beachlife"] = MAC_WRAPPER, 0o755
     else:
         copy(build, executable)
@@ -287,8 +289,8 @@ def inspect_package(path):
     if info["system"] != ("linux" if info["platform"] == "steamdeck" else info["platform"]):
         raise ValueError("Package target system mismatch")
     expected = payload_names(info)
-    if info["system"] == "macos" and MAC_SIGNATURE in files:
-        expected.add(MAC_SIGNATURE)
+    if info["system"] == "macos":
+        expected.update(name for name in MAC_SIGNING if name in files)
     if set(files) != expected | {"SOURCE-MANIFEST.json"} or set(manifest["files"]) != expected:
         raise ValueError("Archive does not match the declared payload")
     for name in expected:

@@ -115,6 +115,28 @@ including the Windows execution checks. A personal
 repository uses its available owner/admin roles rather than an organization
 team copied from another repository.
 
+## macOS signing and notarization
+
+The macOS jobs sign `beachlife.app` with `tools/sign_macos.py`. With these
+repository secrets the app gets the Developer ID signature with the hardened
+runtime, is notarized by Apple and has its ticket stapled; without them (fork
+PRs, local builds) it is signed ad hoc as before:
+
+| Secret | Value |
+| --- | --- |
+| `MACOS_CERTIFICATE` | base64 of the Developer ID Application certificate and key, exported as `.p12` |
+| `MACOS_CERTIFICATE_PASSWORD` | the password chosen for that export |
+| `MACOS_NOTARY_KEY` | the text of an App Store Connect API key (`AuthKey_<ID>.p8`) |
+| `MACOS_NOTARY_KEY_ID` | that key's ID |
+| `MACOS_NOTARY_ISSUER` | the issuer ID shown above the App Store Connect key list |
+
+The certificate requires Apple Developer Program membership. Export it from
+Keychain Access (My Certificates, the Developer ID Application entry with its
+key) and store it with `base64 -i DeveloperID.p12 | gh secret set MACOS_CERTIFICATE`.
+Create the API key under App Store Connect → Users and Access → Integrations →
+App Store Connect API with Developer access; `gh secret set MACOS_NOTARY_KEY <
+AuthKey_<ID>.p8` stores it. Notarization adds a few minutes to each macOS job.
+
 ## Package contract
 
 Packages contain only declared native outputs, documentation, launcher resources

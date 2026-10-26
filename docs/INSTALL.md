@@ -15,11 +15,13 @@ entire archive into its own directory, which the launcher updates in place.
 - Linux x86_64: run `./beachlife`. Use the compatibility/Steam Deck package
   when the ordinary Linux package requires newer system libraries.
 - macOS ARM64 or Intel: open `beachlife.app`, or run the provided `./beachlife`
-  wrapper from Terminal. The application is
-  ad-hoc signed, without Developer ID signing or notarization. If the folder is
-  still marked as downloaded, macOS runs the app from a temporary read-only copy
-  that cannot update itself; run `xattr -dr com.apple.quarantine <unpacked folder>`
-  in Terminal once, then open it again.
+  wrapper from Terminal. Official packages are signed with a Developer ID and
+  notarized by Apple, so macOS opens them after a single confirmation; local
+  and fork builds are signed ad hoc and need **Open Anyway** under Privacy &
+  Security. If an ad-hoc folder is still marked as downloaded, macOS runs the
+  app from a temporary read-only copy that cannot update itself; run
+  `xattr -dr com.apple.quarantine <unpacked folder>` in Terminal once, then
+  open it again.
 
 `--version` reports the CMake version and compiled commit; `--build-info` emits
 JSON identifying the platform, build channel and workflow run. `--help` explains
