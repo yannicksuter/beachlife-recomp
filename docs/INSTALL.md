@@ -14,9 +14,14 @@ entire archive into its own directory, which the launcher updates in place.
   `assets/` beside it.
 - Linux x86_64: run `./beachlife`. Use the compatibility/Steam Deck package
   when the ordinary Linux package requires newer system libraries.
-- macOS ARM64 or Intel: open `beachlife.app`, or run the provided `./beachlife`
-  wrapper from Terminal. The application is
-  ad-hoc signed, without Developer ID signing or notarization.
+- macOS (Apple silicon or Intel): open the `macos-universal.dmg` disk image and
+  drag **Beach Life** onto **Applications**. The one app runs natively on both
+  kinds of Mac and updates itself in place. Official images are signed with a
+  Developer ID and notarized by Apple, so macOS opens Beach Life after a single
+  confirmation; local and fork builds are signed ad hoc and need **Open Anyway**
+  under Privacy & Security. If such a copy is still marked as downloaded, macOS
+  runs it from a temporary read-only place that cannot update itself; run
+  `xattr -dr com.apple.quarantine` on it in Terminal once, then open it again.
 
 `--version` reports the CMake version and compiled commit; `--build-info` emits
 JSON identifying the platform, build channel and workflow run. `--help` explains
@@ -43,8 +48,9 @@ press Play to apply them.
 is collected or sent.
 
 Each game session writes `game.log` in a `logs` folder beside the game (the
-folder holding `beachlife.exe`, `beachlife.app` or `beachlife`); the session
-before it stays as `game-previous.log`. It records the game's own messages and,
+folder holding `beachlife.exe` or `beachlife`), on macOS in
+`~/Library/Logs/Beach Life`, where Console.app lists it; the session before it
+stays as `game-previous.log`. It records the game's own messages and,
 if the game stops unexpectedly, what stopped it with the call stack. The
 launcher mentions such a stop at its next start, and **Advanced → Game log →
 Open folder** opens the logs. When the game's folder cannot be written, the logs
