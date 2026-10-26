@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
 endif()
-project(beachlife_recomp VERSION 0.0.2 LANGUAGES C CXX)
+project(beachlife_recomp VERSION 0.0.3 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")
