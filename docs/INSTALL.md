@@ -16,7 +16,10 @@ entire archive into its own directory, which the launcher updates in place.
   when the ordinary Linux package requires newer system libraries.
 - macOS ARM64 or Intel: open `beachlife.app`, or run the provided `./beachlife`
   wrapper from Terminal. The application is
-  ad-hoc signed, without Developer ID signing or notarization.
+  ad-hoc signed, without Developer ID signing or notarization. If the folder is
+  still marked as downloaded, macOS runs the app from a temporary read-only copy
+  that cannot update itself; run `xattr -dr com.apple.quarantine <unpacked folder>`
+  in Terminal once, then open it again.
 
 `--version` reports the CMake version and compiled commit; `--build-info` emits
 JSON identifying the platform, build channel and workflow run. `--help` explains

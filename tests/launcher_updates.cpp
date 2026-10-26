@@ -440,8 +440,10 @@ void test_install(const fs::path& fixtures, const fs::path& work)
         check(install_blocker(base).empty() ||
                   install_blocker(base).rfind("Downloads are not available", 0) == 0,
             "A package folder can be updated");
-        check(package_folder(base / "assets/launcher") == base && package_folder(base) == base,
-            "The package folder is found");
+        check(package_folder(base / "assets/launcher") == base && package_folder(base) == base &&
+                  package_folder(base / "beachlife.app/Contents/Resources/") == base &&
+                  package_folder(base / "beachlife.app/Contents/MacOS") == base,
+            "The package folder is found, also from inside the macOS app");
         const fs::path root = unpack_package(fixtures / archive, update_folder(base) / "staged-1");
         install_staged_package(base, root, update_folder(base) / "previous-1");
         check(read(base / "beachlife") == "new launcher\n" &&

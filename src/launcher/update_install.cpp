@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <optional>
@@ -24,6 +25,9 @@
 #include <windows.h>
 #else
 #include <unistd.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
 #endif
 
 namespace beachlife::launcher
@@ -821,8 +825,13 @@ PackageManifest read_package_manifest(const fs::path& file)
 
 fs::path package_folder(const fs::path& program_folder)
 {
-    // macOS: beachlife.app/Contents/Resources (SDL's base path) or .../MacOS.
+    // macOS: beachlife.app/Contents/Resources (SDL's base path) or .../MacOS. A
+    // trailing separator, as SDL's base path has, would cost one of the levels.
     fs::path folder = program_folder;
+    if (!folder.has_filename() && folder.has_relative_path())
+    {
+        folder = folder.parent_path();
+    }
     for (int level = 0; level < 4 && !folder.empty(); ++level)
     {
         if (present(folder / package_manifest))
@@ -898,6 +907,18 @@ fs::path update_folder(const fs::path& base)
 
 std::string install_blocker(const fs::path& base)
 {
+#ifdef __APPLE__
+    // Gatekeeper runs a downloaded app that is still quarantined from a read-only
+    // copy of just the app (App Translocation), away from its package folder.
+    char program[4096];
+    std::uint32_t size = sizeof program;
+    if (_NSGetExecutablePath(program, &size) == 0 && std::strstr(program, "/AppTranslocation/"))
+    {
+        return "macOS runs this copy from a temporary read-only place because the folder is "
+               "still marked as downloaded. In Terminal run xattr -dr com.apple.quarantine "
+               "followed by the Beach Life folder, then start Beach Life again.";
+    }
+#endif
     if (base.empty() || !present(base / package_manifest))
     {
         return "This copy was not unpacked from a release package, so it cannot update itself.";
