@@ -245,6 +245,11 @@ class Launcher
                 running = false;
             }
             ImGui::Render();
+            // Everything is laid out in window points. On high-density screens (Retina) SDL
+            // scales points to pixels; the ImGui backend leaves geometry to this scale.
+            const auto framebuffer = ImGui::GetIO().DisplayFramebufferScale;
+            require(SDL_SetRenderScale(renderer_, framebuffer.x, framebuffer.y),
+                "Cannot scale the launcher");
             require(SDL_SetRenderDrawColor(renderer_, 7, 18, 31, 255), "Cannot set the background");
             require(SDL_RenderClear(renderer_), "Cannot clear the launcher");
             render_backdrop();
@@ -472,10 +477,7 @@ class Launcher
                 (a.y - art_min_.y) / art_size_.y * height,
                 (b.x - a.x) / art_size_.x * width,
                 (b.y - a.y) / art_size_.y * height};
-            const SDL_FRect target{a.x * io.DisplayFramebufferScale.x,
-                a.y * io.DisplayFramebufferScale.y,
-                (b.x - a.x) * io.DisplayFramebufferScale.x,
-                (b.y - a.y) * io.DisplayFramebufferScale.y};
+            const SDL_FRect target{a.x, a.y, b.x - a.x, b.y - a.y};
             require(
                 SDL_RenderTexture(renderer_, texture, &source, &target), "Cannot draw the artwork");
         };
