@@ -714,6 +714,36 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
             self.run_game()
         self.assertEqual(self.calls, [])
 
+    def test_shared_callee_registrations_merge_once_and_conflicts_fail(self):
+        anchor = {'address': '0x1080', 'size': 8, 'name': 'Helper::Exit', 'symbol': '?Exit@Helper@@QAEXXZ',
+                  'header': 'helper.h', 'kind': 'void-member', 'return_type': 'void', 'parameters': []}
+        for address in (0x1020, 0x1040):
+            paths = self.add_registration(address, comparison_anchors=[anchor])
+            paths[0].write_text(paths[0].read_text() + '0x1080,function,8,?Exit@Helper@@QAEXXZ\n')
+        rows = matching.game_metadata_rows(self.metadata)
+        self.assertEqual([row['address'] for row in rows], ['0x00001020', '0x1080', '0x00001040'])
+        target = {}
+        matching.merge_target_fragments(self.metadata, target)
+        self.assertEqual(target['comparison_anchors'], [anchor])
+        paths[0].write_text(paths[0].read_text().replace(',8,', ',12,'))
+        with self.assertRaisesRegex(ValueError, 'Duplicate matching metadata address'):
+            matching.game_metadata_rows(self.metadata)
+
+    def test_matched_body_supersedes_identical_anchor_only(self):
+        anchor = {'address': '0x00001020', 'size': 4, 'name': 'Helper::Exit', 'symbol': '?method_00001020@@YAXXZ',
+                  'header': 'helper.h', 'kind': 'void-member', 'return_type': 'void', 'parameters': []}
+        self.add_registration(0x1020)
+        later = self.add_registration(0x1040, comparison_anchors=[anchor])
+        later[0].write_text(later[0].read_text() + '0x00001020,function,4,?method_00001020@@YAXXZ\n')
+        target = {'functions': []}
+        matching.merge_target_fragments(self.metadata, target)
+        self.assertEqual(target['comparison_anchors'], [])
+        later[1].write_text(json.dumps({'functions': [{'address': '0x00001040', 'size': 4, 'name': 'method_00001040'}],
+                                        'comparison_anchors': [anchor | {'size': 8}]}))
+        target = {'functions': []}
+        matching.merge_target_fragments(self.metadata, target)
+        self.assertEqual(target['comparison_anchors'], [anchor | {'size': 8}])
+
 
 if __name__ == '__main__':
     unittest.main()

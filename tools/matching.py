@@ -353,7 +353,7 @@ def game_metadata_paths(metadata):
 
 
 def game_metadata_rows(metadata):
-    rows, seen = [], set()
+    rows, seen = [], {}
     paths = game_metadata_paths(metadata)
     for index, path in enumerate(paths):
         with path.open(newline='') as stream:
@@ -363,8 +363,13 @@ def game_metadata_rows(metadata):
             for row in reader:
                 address = int(row['address'], 16)
                 if len(paths) > 1 and address in seen:
-                    raise ValueError(f'Duplicate matching metadata address: {row["address"]}')
-                seen.add(address)
+                    # Parallel registrations can each name a callee they share;
+                    # only the same identity may appear twice.
+                    if (seen[address]['type'], seen[address]['size'], seen[address]['symbol']) != (
+                            row['type'], row['size'], row['symbol']):
+                        raise ValueError(f'Duplicate matching metadata address: {row["address"]}')
+                    continue
+                seen[address] = row
                 rows.append(row)
     return rows
 
@@ -380,7 +385,12 @@ def merge_target_fragments(metadata, target):
             if key in lists:
                 if not isinstance(value, list) or not isinstance(target.get(key, []), list):
                     raise ValueError(f'{key} must be a list in matching target fragment: {path}')
-                target.setdefault(key, []).extend(value)
+                existing = target.setdefault(key, [])
+                if key == 'comparison_anchors':
+                    # A callee anchor shared by parallel registrations is kept
+                    # once; a different anchor at its address still fails later.
+                    value = [item for item in value if item not in existing]
+                existing.extend(value)
             else:
                 if not isinstance(value, dict) or not isinstance(target.get(key, {}), dict):
                     raise ValueError(f'{key} must be a mapping in matching target fragment: {path}')
@@ -388,6 +398,26 @@ def merge_target_fragments(metadata, target):
                 if existing.keys() & value.keys():
                     raise ValueError(f'Duplicate {key} entries in matching target fragment: {path}')
                 existing.update(value)
+    drop_superseded_anchors(metadata, target)
+
+
+def drop_superseded_anchors(metadata, target):
+    """Let a matched body replace an anchor that a parallel registration kept for it."""
+    anchors = target.get('comparison_anchors')
+    if not isinstance(anchors, list) or not anchors:
+        return
+    def identity(item):
+        if isinstance(item, dict) and re.fullmatch(r'0x[0-9a-fA-F]{1,8}', str(item.get('address'))):
+            return int(item['address'], 16), item.get('size')
+        return None
+    credited = {identity(item) for key in ('functions', 'library_functions', 'unclassified_functions')
+                for item in (target.get(key) if isinstance(target.get(key), list) else [])} - {None}
+    symbols = {(int(row['address'], 16), row['symbol']) for row in game_metadata_rows(metadata)}
+    def superseded(item):
+        # Only the same address, extent and symbol; anything else still fails validation.
+        key = identity(item)
+        return key in credited and (key[0], item.get('symbol')) in symbols
+    target['comparison_anchors'] = [item for item in anchors if not superseded(item)]
 
 
 def game_source_compile_options(target, sources):
