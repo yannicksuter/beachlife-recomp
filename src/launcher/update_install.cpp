@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -772,6 +773,56 @@ void apply_replacement(const fs::path& base,
         }
     }
 }
+// A self-contained macOS app installed on its own (from the disk image): its
+// bundle is the package, replaced as a whole. Release apps carry their package
+// id in Contents/Resources/PACKAGE; a local build's app has none.
+bool app_bundle(const fs::path& base)
+{
+    return base.extension() == ".app";
+}
+
+fs::path app_package_file(const fs::path& app)
+{
+    return app / "Contents" / "Resources" / "PACKAGE";
+}
+
+// The one app bundle an unpacked package holds.
+fs::path packaged_app(const fs::path& root)
+{
+    fs::path found;
+    for (const auto& entry : fs::directory_iterator(root))
+    {
+        if (entry.is_directory() && app_bundle(entry.path()))
+        {
+            if (!found.empty())
+            {
+                fail("The package holds more than one app.");
+            }
+            found = entry.path();
+        }
+    }
+    if (found.empty())
+    {
+        fail("The package holds no app to install.");
+    }
+    return found;
+}
+
+// The version an app bundle's Info.plist declares, or empty.
+std::string bundle_version(const fs::path& app)
+{
+    std::ifstream stream(app / "Contents" / "Info.plist", std::ios::binary);
+    const std::string text{std::istreambuf_iterator<char>(stream), {}};
+    auto at = text.find("<key>CFBundleShortVersionString</key>");
+    at = at == std::string::npos ? at : text.find("<string>", at);
+    const auto end = at == std::string::npos ? at : text.find("</string>", at);
+    if (end == std::string::npos)
+    {
+        return {};
+    }
+    at += std::string_view("<string>").size();
+    return text.substr(at, end - at);
+}
 } // namespace
 
 PackageManifest read_package_manifest(const fs::path& file)
@@ -844,7 +895,30 @@ fs::path package_folder(const fs::path& program_folder)
         }
         folder = folder.parent_path();
     }
+    // No package folder around it: a release app installed on its own is its package.
+    for (fs::path app = program_folder; app.has_relative_path(); app = app.parent_path())
+    {
+        if (app_bundle(app))
+        {
+            return present(app_package_file(app)) ? app : fs::path();
+        }
+    }
     return {};
+}
+
+std::string installed_package(const fs::path& base)
+{
+    if (app_bundle(base))
+    {
+        std::ifstream stream(app_package_file(base), std::ios::binary);
+        std::string package;
+        if (!std::getline(stream, package) || package.empty())
+        {
+            fail("The app does not name its package.");
+        }
+        return package;
+    }
+    return read_package_manifest(base / package_manifest).package();
 }
 
 fs::path unpack_package(
@@ -902,6 +976,14 @@ void replace_package(const fs::path& base,
 
 fs::path update_folder(const fs::path& base)
 {
+    if (app_bundle(base))
+    {
+        // Beside the app, never inside it: the bundle's signature seals its contents.
+        fs::path name = ".";
+        name += base.stem();
+        name += " update";
+        return base.parent_path() / name;
+    }
     return base / ".update";
 }
 
@@ -919,13 +1001,13 @@ std::string install_blocker(const fs::path& base)
                "followed by the Beach Life folder, then start Beach Life again.";
     }
 #endif
-    if (base.empty() || !present(base / package_manifest))
+    if (base.empty() || (!app_bundle(base) && !present(base / package_manifest)))
     {
         return "This copy was not unpacked from a release package, so it cannot update itself.";
     }
     try
     {
-        read_package_manifest(base / package_manifest);
+        installed_package(base);
     }
     catch (const std::exception& error)
     {
@@ -937,6 +1019,11 @@ std::string install_blocker(const fs::path& base)
     const fs::path probe = folder / "write-test";
     if (error || !std::ofstream(probe).good())
     {
+        if (app_bundle(base))
+        {
+            return "The folder holding Beach Life is read-only: " + utf8(base.parent_path()) +
+                   ". Move the app to Applications or another folder you can change.";
+        }
         return "The launcher's folder is read-only: " + utf8(base) + ".";
     }
     fs::remove(probe, error);
@@ -953,6 +1040,23 @@ std::string install_blocker(const fs::path& base)
 
 void install_staged_package(const fs::path& base, const fs::path& staged, const fs::path& backup)
 {
+    if (app_bundle(base))
+    {
+        // The whole app at once: the installed bundle moves aside, the new one into its place.
+        const fs::path incoming = packaged_app(staged);
+        fs::create_directories(backup);
+        const fs::path previous = backup / base.filename();
+        fs::rename(base, previous);
+        std::error_code error;
+        fs::rename(incoming, base, error);
+        if (error)
+        {
+            std::error_code ignored;
+            fs::rename(previous, base, ignored);
+            fail("Cannot move the new app into place: " + error.message());
+        }
+        return;
+    }
     const fs::path marker = update_folder(base) / replacing_marker;
     {
         std::ofstream stream(marker, std::ios::binary | std::ios::trunc);
@@ -1018,7 +1122,9 @@ std::string finish_updates(const fs::path& base)
         {
             try
             {
-                replaced = read_package_manifest(entry.path() / package_manifest).version;
+                replaced = app_bundle(base)
+                               ? bundle_version(entry.path() / base.filename())
+                               : read_package_manifest(entry.path() / package_manifest).version;
             }
             catch (const std::exception&)
             {
@@ -1039,10 +1145,16 @@ std::string finish_updates(const fs::path& base)
 
 fs::path installed_launcher(const fs::path& base)
 {
+    if (app_bundle(base))
+    {
+        return base / "Contents" / "MacOS" / "beachlife";
+    }
 #ifdef _WIN32
     return base / "beachlife.exe";
 #elif defined(__APPLE__)
-    return base / "beachlife.app/Contents/MacOS/beachlife";
+    const fs::path app =
+        present(base / "Beach Life.app") ? base / "Beach Life.app" : base / "beachlife.app";
+    return app / "Contents" / "MacOS" / "beachlife";
 #else
     return base / "beachlife";
 #endif

@@ -38,9 +38,14 @@ struct PackageManifest
 PackageManifest read_package_manifest(const std::filesystem::path& file);
 
 // The installed package around the program in `program_folder`: that folder, or
-// on macOS the one holding beachlife.app. Empty when no SOURCE-MANIFEST.json is
-// found (a local build).
+// on macOS the one holding the app. A release app installed on its own (from the
+// disk image) is its own package: then the .app bundle, which updates replace as
+// a whole. Empty for a local build.
 std::filesystem::path package_folder(const std::filesystem::path& program_folder);
+
+// The installed package's id, such as steamdeck-x86_64 or macos-universal.
+// Throws when the package does not name it.
+std::string installed_package(const std::filesystem::path& base);
 
 // Unpacks a package (.zip or .tar.gz) into `destination`, which must not exist
 // yet, and returns the folder holding its SOURCE-MANIFEST.json. Only plain files
