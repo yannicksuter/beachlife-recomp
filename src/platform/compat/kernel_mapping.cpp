@@ -1,16 +1,19 @@
 #include "kernel_files.h"
+#include "native_kernel.h"
 
 #include <cerrno>
 #include <cstdio>
 #include <map>
 #include <memory>
 #include <mutex>
+#ifndef _WIN32
 #include <sys/mman.h>
-#include <unistd.h>
+#endif
 
 namespace
 {
 using namespace beachlife::compat::kernel;
+namespace host = beachlife::compat::native;
 struct Mapping
 {
     int descriptor = -1;
@@ -20,7 +23,7 @@ struct Mapping
     {
         if (descriptor >= 0)
         {
-            ::close(descriptor);
+            host::close_descriptor(descriptor);
         }
     }
 };
@@ -88,13 +91,14 @@ extern "C"
                     }
                     std::unique_ptr<std::FILE, decltype(&std::fclose)> backing(
                         std::tmpfile(), std::fclose);
-                    if (!backing || ::ftruncate(::fileno(backing.get()),
-                                        static_cast<off_t>(mapping->size)) != 0)
+                    if (!backing || host::resize_descriptor(
+                                        host::file_descriptor(backing.get()), mapping->size) != 0)
                     {
                         last_error = file_error(errno);
                         return nullptr;
                     }
-                    mapping->descriptor = ::dup(::fileno(backing.get()));
+                    mapping->descriptor =
+                        host::duplicate_descriptor(host::file_descriptor(backing.get()));
                     if (mapping->descriptor < 0)
                     {
                         last_error = file_error(errno);
@@ -150,6 +154,14 @@ extern "C"
                 {
                     bytes = static_cast<SIZE_T>(mapping.size - offset);
                 }
+#ifdef _WIN32
+                void* view = host::map(
+                    mapping.descriptor, mapping.protection, access, offset, bytes, last_error);
+                if (!view)
+                {
+                    return nullptr;
+                }
+#else
                 void* view = ::mmap(nullptr,
                     bytes,
                     PROT_READ | ((copy || write) ? PROT_WRITE : 0),
@@ -161,13 +173,18 @@ extern "C"
                     last_error = file_error(errno);
                     return nullptr;
                 }
+#endif
                 try
                 {
                     views.emplace(view, bytes);
                 }
                 catch (...)
                 {
+#ifdef _WIN32
+                    host::unmap(view, last_error);
+#else
                     ::munmap(view, bytes);
+#endif
                     throw;
                 }
                 return view;
@@ -187,11 +204,18 @@ extern "C"
                     last_error = ERROR_INVALID_PARAMETER;
                     return FALSE;
                 }
+#ifdef _WIN32
+                if (!host::unmap(view, last_error))
+                {
+                    return FALSE;
+                }
+#else
                 if (::munmap(const_cast<void*>(view), found->second) != 0)
                 {
                     last_error = file_error(errno);
                     return FALSE;
                 }
+#endif
                 views.erase(found);
                 return TRUE;
             },

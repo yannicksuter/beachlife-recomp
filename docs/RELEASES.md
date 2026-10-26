@@ -38,6 +38,14 @@ builds its exact head SHA and produces these package artifacts:
 | macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, CLI/window smoke |
 | macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta CLI/window smoke |
 
+A separate boot matrix builds the experimental decompiled game on Linux x86_64,
+Windows x86_64, macOS arm64 and macOS x86_64. Its `boot-*` artifacts use the `dev`
+channel, including on stable pushes. Windows uses the same pinned cross compiler
+and runs the exported CTest suite on a native Windows runner. Boot tests need no
+retail files; GPU-dependent checks may skip, while the generated headless retail
+parser check must pass. These artifacts are development evidence only: they are
+outside the five-package set, Native build gate, promotion and publication jobs.
+
 PR artifacts expire after seven days; stable/manual artifacts after fourteen.
 A test or draft release retains attached archives independently of that Actions
 retention. Fork PRs receive build checks/artifacts without release privileges.

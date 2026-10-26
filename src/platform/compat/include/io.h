@@ -3,6 +3,27 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef _WIN32
+// System headers may include io.h too. Declare the native CRT first, then
+// redirect only the retail spellings below to our virtual file descriptors.
+#include_next <io.h>
+#endif
+
+#define _open beachlife_crt_open
+#define _read beachlife_crt_read
+#define _write beachlife_crt_write
+#define _lseek beachlife_crt_lseek
+#define _close beachlife_crt_close
+#ifdef _finddata_t
+#undef _finddata_t
+#undef _findfirst
+#undef _findnext
+#endif
+#define _finddata_t beachlife_finddata
+#define _findfirst beachlife_crt_findfirst
+#define _findnext beachlife_crt_findnext
+#define _findclose beachlife_crt_findclose
+
 // VC6 values, independent of the host's fcntl.h flags and 64-bit long/time_t.
 #define _O_RDONLY 0x0000
 #define _O_WRONLY 0x0001

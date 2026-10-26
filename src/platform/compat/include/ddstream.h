@@ -18,5 +18,7 @@ struct IDirectDrawStreamSample : IStreamSample
 };
 extern "C"
 {
-    extern const GUID IID_IDirectDrawMediaStream, IID_IDirectDrawStreamSample;
+    extern const GUID IID_IDirectDrawMediaStream BEACHLIFE_COMPAT_SYMBOL(
+        IID_IDirectDrawMediaStream),
+        IID_IDirectDrawStreamSample BEACHLIFE_COMPAT_SYMBOL(IID_IDirectDrawStreamSample);
 }

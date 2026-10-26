@@ -1,6 +1,7 @@
 #include "io.h"
 #include "kernel_files.h"
 #include "msvcrt.h"
+#include "native_kernel.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -25,7 +26,15 @@ struct Stream
     }
 };
 
-ssize_t read_stream(void* cookie, char* buffer, std::size_t bytes)
+#ifndef _WIN32
+#ifdef __APPLE__
+using StreamCount = int;
+using StreamResult = int;
+#else
+using StreamCount = std::size_t;
+using StreamResult = ssize_t;
+#endif
+StreamResult read_stream(void* cookie, char* buffer, StreamCount bytes)
 {
     auto& stream = *static_cast<Stream*>(cookie);
     if (stream.text && bytes)
@@ -36,7 +45,7 @@ ssize_t read_stream(void* cookie, char* buffer, std::size_t bytes)
         stream.descriptor, buffer, static_cast<unsigned>(std::min<std::size_t>(bytes, INT_MAX)));
 }
 
-ssize_t write_stream(void* cookie, const char* buffer, std::size_t bytes)
+StreamResult write_stream(void* cookie, const char* buffer, StreamCount bytes)
 {
     auto& stream = *static_cast<Stream*>(cookie);
     // The current text-mode caller opens preferences with "wt" solely to
@@ -47,10 +56,31 @@ ssize_t write_stream(void* cookie, const char* buffer, std::size_t bytes)
     }
     const auto written = _write(
         stream.descriptor, buffer, static_cast<unsigned>(std::min<std::size_t>(bytes, INT_MAX)));
+#ifdef __APPLE__
+    return written;
+#else
     // GNU cookie write callbacks report an error with zero, never -1.
     return written < 0 ? 0 : written;
+#endif
 }
 
+#ifdef __APPLE__
+fpos_t seek_stream(void* cookie, fpos_t offset, int origin)
+{
+    return guard(
+        [&]() -> fpos_t
+        {
+            const auto position =
+                seek_file(static_cast<Stream*>(cookie)->descriptor, offset, origin);
+            if (!position || *position > INT64_MAX)
+            {
+                return -1;
+            }
+            return static_cast<fpos_t>(*position);
+        },
+        fpos_t(-1));
+}
+#else
 int seek_stream(void* cookie, off64_t* offset, int origin)
 {
     return guard(
@@ -67,6 +97,7 @@ int seek_stream(void* cookie, off64_t* offset, int origin)
         },
         -1);
 }
+#endif
 
 int close_stream(void* cookie)
 {
@@ -75,6 +106,7 @@ int close_stream(void* cookie)
     stream->descriptor = -1;
     return result;
 }
+#endif
 } // namespace
 
 namespace
@@ -144,6 +176,25 @@ extern "C"
                 {
                     return nullptr;
                 }
+#ifdef _WIN32
+                FILE* result = stdio_stream(stream->descriptor);
+                stream->descriptor = -1;
+                if (result && stream->text && !beachlife::compat::native::text_mode(result))
+                {
+                    std::fclose(result);
+                    return nullptr;
+                }
+                return result;
+#else
+#ifdef __APPLE__
+                // funopen derives the mode from its callbacks. Append is
+                // enforced by the descriptor on every write, including after seek.
+                FILE* result = ::funopen(stream.get(),
+                    (*mode == 'r' || update) ? read_stream : nullptr,
+                    (*mode != 'r' || update) ? write_stream : nullptr,
+                    seek_stream,
+                    close_stream);
+#else
                 const char cookie_mode[] = {*mode, update ? '+' : '\0', '\0'};
                 // A real host FILE preserves stdio buffering, element counts,
                 // fgets/fgetc, seek, error and EOF semantics. Only opening is
@@ -151,23 +202,35 @@ extern "C"
                 FILE* result = ::fopencookie(stream.get(),
                     cookie_mode,
                     cookie_io_functions_t{read_stream, write_stream, seek_stream, close_stream});
+#endif
                 if (result)
                 {
                     stream.release();
+#ifdef __APPLE__
+                    // funopen has no append-mode flag for ftell to account for
+                    // buffered writes after a seek. Keep append writes immediate
+                    // so the descriptor always supplies the actual EOF position.
+                    if (*mode == 'a' && std::setvbuf(result, nullptr, _IONBF, 0) != 0)
+                    {
+                        std::fclose(result);
+                        return nullptr;
+                    }
+#endif
                 }
                 return result;
+#endif
             },
             static_cast<FILE*>(nullptr));
     }
 
     int beachlife_crt_fseek(FILE* stream, int32_t offset, int origin)
     {
-        return std::fseek(stream, offset, origin);
+        return beachlife::compat::native::seek(stream, offset, origin);
     }
 
     int32_t beachlife_crt_ftell(FILE* stream)
     {
-        const auto position = ::ftello(stream);
+        const auto position = beachlife::compat::native::tell(stream);
         if (position < 0 || position > INT32_MAX)
         {
             if (position > INT32_MAX)
@@ -186,7 +249,7 @@ extern "C"
             errno = EINVAL;
             return -1;
         }
-        const auto position = ::ftello(stream);
+        const auto position = beachlife::compat::native::tell(stream);
         if (position < 0)
         {
             return -1;

@@ -461,7 +461,8 @@ The boot build compiles all decompiled game source as one tree and links it
 with a generated, loud trap for every game function that is not decompiled
 yet. Calling a trap stops the game and names the function and its original
 address. That tells you what to decompile next. A boot build with traps is a
-development tool, never release gameplay. It currently supports Linux x86-64.
+development tool, never release gameplay. It supports Linux x86-64 and Windows
+x64 with the pinned LLVM-MinGW toolchain, plus macOS arm64 and x86_64.
 
 ```sh
 cmake --preset debug -B build/boot \
@@ -508,7 +509,8 @@ but these old fixtures cannot use the unified declarations unchanged. Keep runni
 them in the separate experimental configuration above.
 
 Boot checks run headless: `--headless` opens the game window on SDL's offscreen
-driver with silent audio, so nothing appears on screen and no input focus is
+driver (or dummy where offscreen is unavailable) with silent audio, so nothing
+appears on screen and no input focus is
 needed; screenshots are saved at the game's own resolution. A headless run plays
 in a fresh temporary profile that is removed afterwards, so it is reproducible and
 never changes the player's options, progress or saves; `BEACHLIFE_BOOT_USER_DIR`
@@ -615,6 +617,52 @@ Use `x86_64` for the Intel build. A package contains `beachlife.app` and a comma
 line wrapper. Ad-hoc signing enables the bundle's local signature checks; it is
 not Developer ID signing or notarization.
 
+### macOS boot game
+
+Install LLVM's symbol tools alongside CMake and Ninja. AppleClang remains the
+compiler; LLVM `nm`, `objdump` and `cxxfilt` inspect Mach-O objects and the selected
+SDK's libSystem/libc++ export stubs. Universal boot builds are not supported;
+use a separate directory for each architecture.
+
+```sh
+brew install cmake ninja llvm
+export PATH="$(brew --prefix llvm)/bin:$PATH"
+cmake --preset release -B build/boot-arm64 \
+  -DCMAKE_C_COMPILER="$(xcrun --find clang)" \
+  -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
+cmake --build build/boot-arm64 --parallel
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy BEACHLIFE_BOOT_QUIET=1 \
+  ctest --test-dir build/boot-arm64 --output-on-failure
+```
+
+Use `x86_64` and `build/boot-x86_64` for Intel; Apple Silicon needs Rosetta to run
+those tests. The default macOS deployment target is 15.0. Tool locations can be
+set with `BEACHLIFE_BOOT_NM`, `BEACHLIFE_BOOT_OBJDUMP` and
+`BEACHLIFE_BOOT_DEMANGLER`.
+
+The boot game lives in `beachlife.app/Contents/MacOS/beachlife`, with the same
+Resources layout as the launcher. Sign the completed app after resource copying.
+Retail content stays in the user's verified content store, and preferences/saves
+use SDL's Application Support location or `BEACHLIFE_BOOT_USER_DIR`. Tests use
+isolated profiles and canonical paths, including on case-insensitive APFS.
+
+Darwin stdio uses `funopen` over the compat descriptors. On ARM, the CPU capability
+adapter advertises the portable operations needed by the retail MMX startup
+check. Its profiling counter advances in nanoseconds (a fixed 1 GHz scale, so
+retail `/1000` values are microseconds); Intel retains RDTSC. The millisecond
+frame clock is unchanged. ARM game compilation disables floating-point
+contraction; retained x87 precision and alignment-sensitive raster operations
+still need native boundary-vector qualification.
+
+CTest includes `boot_link` (all game objects and static initializers),
+`compat_cpu` (counter and retail profiler), and `boot_headless` (generated invalid
+configuration through the retail entry). The last check requires three actual
+configuration reads and never skips for a missing GPU. GPU startup/runtime tests
+still skip with code 77 when unavailable. Native Metal presentation and gameplay
+with the user's retail data require separate macOS verification.
+
 ## Windows
 
 Release packages follow the reference port's Linux-hosted LLVM-MinGW route.
@@ -638,6 +686,70 @@ an explicitly configured execution environment.
 Local native MSVC/Ninja builds can use the ordinary presets from an x64 developer
 shell. The distributable Windows packager currently requires the pinned
 LLVM-MinGW runtime, so use the documented cross build for release packages.
+
+### Windows boot game
+
+The same `beachlife.exe` contains the launcher and the decompiled game. Enable
+both game options to make Play and `--play` enter the retail code on the SDL3
+compat layer. The default release preset still builds the independent launcher.
+Use the same pinned cross toolchain as CI; MSVC boot builds are not supported.
+
+```sh
+cmake --preset release -B build/win \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/llvm-mingw-x86_64.cmake \
+  -DLLVM_MINGW_ROOT="$PWD/build/toolchain/llvm-mingw-20261006-ucrt-ubuntu-22.04-x86_64" \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
+  -DBEACHLIFE_ENABLE_BOOT_GAME=ON -DBEACHLIFE_ENABLE_TWEAKS=ON
+cmake --build build/win --parallel
+```
+
+The three runtime DLLs listed in `tools/package_build.py` must be beside the EXE
+when running directly from a cross-build directory. Copy them from the pinned
+toolchain's `x86_64-w64-mingw32/bin` directory. Normal packaging does this itself.
+
+Game translation units use only the compat SDK headers and retail CRT adapters.
+Compat entry points have separate linker names, so SDL and host libraries still
+call the native Windows APIs. DirectX GUIDs are isolated too; SDL owns the process
+`WinMain`, while Play calls the retail entry under a private compiled name.
+The native kernel adapter is compiled without the
+compat include directory. It supplies Windows file descriptors, shared and copy
+views, named mutexes and atomic profile-file replacement. VFS stdio reads use
+temporary backing files because UCRT has no GNU cookie streams; user files stay
+in the selected profile. File offsets remain 64-bit and retail counters remain
+32-bit on both LP64 and LLP64 hosts. Trap generation uses the target compiler,
+symbol reader and runtime libraries for COFF objects.
+
+For headless Linux-hosted verification, use a dedicated Wine prefix and the
+prepared ISO data described in [DATA](DATA.md). Paths passed to the Windows
+process must be Windows paths: Wine's `Z:` drive maps the Linux filesystem.
+The config's `source.path` and `content.source` must also use Windows paths.
+An offline binding can reuse prepared files without the ISO connected. If Wine
+exposes the cache location as a reparse point, copy the prepared identity folder
+into the prefix's `drive_c` and select that cache parent instead.
+Wine versions that discard Unix `SDL_*` variables need those variables set
+inside `wine cmd /c` for standalone SDL fixtures. The game's `--headless` mode
+selects its drivers directly with SDL hints. Keep a headless `wine cmd /c pause`
+session alive if the execution environment otherwise reaps the Wine server
+between commands.
+
+```sh
+export WINEPREFIX="$PWD/build/wine"
+export WINEDEBUG=-all WINEDLLOVERRIDES='winemenubuilder.exe,mscoree,mshtml='
+export DISPLAY= WAYLAND_DISPLAY=
+export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+wineboot -u
+BEACHLIFE_BOOT_ROUTE=scenario1 wine build/win/beachlife.exe \
+  --play --headless --frames 4000 \
+  --config 'Z:\path\to\windows-launcher.cfg' \
+  --cache-directory 'Z:\path\to\prepared-content'
+```
+
+Repeat with `BEACHLIFE_BOOT_ROUTE=sandbox1`, then
+`BEACHLIFE_BOOT_PROGRESS=all BEACHLIFE_BOOT_ROUTE=scenario6`; each route should
+report `Route: step 5 of 5`. A monkey check adds `BEACHLIFE_BOOT_MONKEY=3,60`
+to the scenario1 route and uses `--frames 6000`. All these runs use fresh
+temporary profiles. Wine headless checks qualify the compat/game path; native
+Windows GPU presentation remains a separate check.
 
 ## Tests and scope
 

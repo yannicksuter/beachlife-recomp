@@ -250,8 +250,13 @@ struct IDirectDrawSurface4 : IUnknown
 #define IDirectDrawSurface4_Flip(p, a, b) (p)->Flip(a, b)
 extern "C"
 {
-    extern const GUID IID_IDirectDraw, IID_IDirectDraw4;
-    extern const GUID IID_IDirectDrawSurface, IID_IDirectDrawSurface4, IID_IDirectDrawClipper;
-    HRESULT WINAPI DirectDrawCreate(GUID*, IDirectDraw**, IUnknown*);
-    HRESULT WINAPI DirectDrawCreateEx(GUID*, void**, REFIID, IUnknown*);
+    extern const GUID IID_IDirectDraw BEACHLIFE_COMPAT_SYMBOL(IID_IDirectDraw), IID_IDirectDraw4
+        BEACHLIFE_COMPAT_SYMBOL(IID_IDirectDraw4);
+    extern const GUID IID_IDirectDrawSurface BEACHLIFE_COMPAT_SYMBOL(IID_IDirectDrawSurface),
+        IID_IDirectDrawSurface4 BEACHLIFE_COMPAT_SYMBOL(IID_IDirectDrawSurface4),
+        IID_IDirectDrawClipper BEACHLIFE_COMPAT_SYMBOL(IID_IDirectDrawClipper);
+    HRESULT WINAPI DirectDrawCreate(GUID*, IDirectDraw**, IUnknown*)
+        BEACHLIFE_COMPAT_SYMBOL(DirectDrawCreate);
+    HRESULT WINAPI DirectDrawCreateEx(GUID*, void**, REFIID, IUnknown*)
+        BEACHLIFE_COMPAT_SYMBOL(DirectDrawCreateEx);
 }

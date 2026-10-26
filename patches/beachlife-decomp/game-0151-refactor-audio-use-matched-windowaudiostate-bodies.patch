@@ -1,0 +1,116 @@
+diff --git a/src/window_audio_find_restart.cpp b/src/window_audio_find_restart.cpp
+index b8ea72cbfa5a9c14f12007220dd38d6f3b7328de..91218bfcd600e0dad3fc0de99acd1f2b9556882c 100644
+--- a/src/window_audio_find_restart.cpp
++++ b/src/window_audio_find_restart.cpp
+@@ -29,8 +29,11 @@ void WindowAudioState::RestartVoice(int voice)
+     WindowSoundVoice* current = voice < 16 ? voices_74[voice] : voices_b4[voice - 16];
+     if (!current)
+         return;
+-    if (voice < 16)
++    if (voice >= 16)
++    {
++        if (enabled_3d)
++            AIL_start_3D_sample(samples_54[voice - 16]);
++    }
++    else
+         AIL_start_sample(samples_14[voice]);
+-    else if (enabled_3d)
+-        AIL_start_3D_sample(samples_54[voice - 16]);
+ }
+diff --git a/src/window_audio_set_stream_volume.cpp b/src/window_audio_set_stream_volume.cpp
+index d08a0b943c7d9401c38f76a357587332173e3e19..64ec30718225b98e90b230784575a3d11f35e9fd 100644
+--- a/src/window_audio_set_stream_volume.cpp
++++ b/src/window_audio_set_stream_volume.cpp
+@@ -4,15 +4,20 @@
+ // FUNCTION: BEACHLIFE 0x004cffa0
+ void WindowAudioState::SetStreamVolume(float level)
+ {
++    float volume_level = level;
+     if (!(level >= 0.0f))
+-        level = 0.0f;
++        volume_level = 0.0f;
+     else if (level > 1.0f)
+-        level = 1.0f;
+-    stream_volume_10 = level;
++        volume_level = 1.0f;
++    stream_volume_10 = volume_level;
+ 
+     if (enabled && stream)
+     {
+-        int volume = static_cast<int>(static_cast<long double>(level) * 127.0L);
++        if (!(volume_level >= 0.0f))
++            volume_level = 0.0f;
++        else if (volume_level > 1.0f)
++            volume_level = 1.0f;
++        int volume = static_cast<int>(static_cast<long double>(volume_level) * 127.0L);
+         if (volume < 3)
+             volume = 0;
+         AIL_set_stream_volume(stream, volume);
+diff --git a/src/window_audio_stream.cpp b/src/window_audio_stream.cpp
+index 3a7fe099d1c6ddeef305f2f53957ae26484d7857..cde844c0513b5642bc232da2c9d6fae4e9cb00b6 100644
+--- a/src/window_audio_stream.cpp
++++ b/src/window_audio_stream.cpp
+@@ -4,28 +4,32 @@
+ // FUNCTION: BEACHLIFE 0x004cfe20
+ bool WindowAudioState::PlayStream(const char* path)
+ {
+-    if (!enabled)
+-        return false;
+-    if (stream)
++    bool result = false;
++    if (enabled)
+     {
+-        AIL_close_stream(stream);
+-        stream = 0;
++        if (stream)
++        {
++            AIL_close_stream(stream);
++            stream = 0;
++        }
++        stream = AIL_open_stream(digital_driver, path, 0);
++        if (stream)
++        {
++            result = true;
++            long double level = stream_volume_10;
++            if (!(level >= 0.0L))
++                level = 0.0L;
++            else if (level > 1.0L)
++                level = 1.0L;
++            int volume = static_cast<int>(level * 127.0L);
++            if (volume < 3)
++                volume = 0;
++            AIL_set_stream_loop_count(stream, 1);
++            AIL_set_stream_volume(stream, volume);
++            AIL_start_stream(stream);
++        }
+     }
+-    stream = AIL_open_stream(digital_driver, path, 0);
+-    if (!stream)
+-        return false;
+-    long double level = stream_volume_10;
+-    if (!(level >= 0.0L))
+-        level = 0.0L;
+-    else if (level > 1.0L)
+-        level = 1.0L;
+-    int volume = static_cast<int>(level * 127.0L);
+-    if (volume < 3)
+-        volume = 0;
+-    AIL_set_stream_loop_count(stream, 1);
+-    AIL_set_stream_volume(stream, volume);
+-    AIL_start_stream(stream);
+-    return true;
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004cff80
+@@ -41,5 +45,9 @@ void WindowAudioState::StopStream()
+ // FUNCTION: BEACHLIFE 0x004cff10
+ bool WindowAudioState::IsStreamPaused()
+ {
+-    return enabled && stream && AIL_stream_status(stream) == 8;
++    bool result = false;
++    if (enabled && stream)
++        if (AIL_stream_status(stream) == 8)
++            result = true;
++    return result;
+ }
