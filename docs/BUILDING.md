@@ -509,8 +509,8 @@ but these old fixtures cannot use the unified declarations unchanged. Keep runni
 them in the separate experimental configuration above.
 
 Boot checks run headless: `--headless` opens the game window on SDL's offscreen
-driver (or dummy where offscreen is unavailable, including Windows) with silent
-audio, so nothing appears on screen and no input focus is
+driver (or dummy where offscreen is unavailable) with silent audio, so nothing
+appears on screen and no input focus is
 needed; screenshots are saved at the game's own resolution. A headless run plays
 in a fresh temporary profile that is removed afterwards, so it is reproducible and
 never changes the player's options, progress or saves; `BEACHLIFE_BOOT_USER_DIR`
