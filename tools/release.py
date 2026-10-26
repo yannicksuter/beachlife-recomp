@@ -1,4 +1,4 @@
-"""Publish verified PR test packages or draft a new stable CMake version."""
+"""Publish verified PR test packages, or the stable CMake version as the merged PR describes it."""
 import argparse
 import json
 import re
@@ -52,6 +52,14 @@ def current_pr(repository, number, sha):
             and (pr['head']['repo'] or {}).get('full_name') == repository)
 
 
+def merged_pr(repository, sha):
+    for pr in api(f'repos/{repository}/commits/{sha}/pulls'):
+        if (pr.get('merged_at') and pr.get('merge_commit_sha') == sha
+                and pr['base']['ref'] == 'stable' and pr['head']['ref'] == 'main'):
+            return pr
+    raise RuntimeError(f'No merged main -> stable PR has merge commit {sha}; nothing published.')
+
+
 def publish(repository, kind, directory, sha, run_id, number=0):
     version = read_version()
     channel = 'test' if kind == 'test' else 'release'
@@ -65,21 +73,21 @@ def publish(repository, kind, directory, sha, run_id, number=0):
             command('release', 'delete', tag, '--repo', repository, '--cleanup-tag', '--yes')
         title = f'Beach Life test build: PR #{number}'
         flags = ['--prerelease', '--latest=false']
-        notes = f'Test build of https://github.com/{repository}/pull/{number} at {sha}.\n\n'
+        notes = (f'Test build of https://github.com/{repository}/pull/{number} at {sha}.\n\n'
+                 'The launcher and the experimental decompiled game are still under development.\n\n'
+                 'Download the package for your platform, extract it and follow docs/INSTALL.md. '
+                 'No original game files are included. SHA256SUMS covers every package.\n')
     else:
         tag = 'v' + version
         # The tag endpoint omits drafts: enumerate releases before checking tags.
         if (any(item['tag_name'] == tag for item in releases(repository))
                 or api(f'repos/{repository}/git/ref/tags/{tag}', optional=True)):
-            print(f'{tag} already exists; preserving its commit and assets. Bump CMake for a new candidate.')
+            print(f'{tag} already exists; preserving its commit and assets. Bump CMake for a new release.')
             return
-        title = f'Beach Life {version}'
-        flags = ['--draft', '--generate-notes']
-        notes = f'Release candidate built from stable commit {sha}.\n\n'
-    notes += ('This is the native bootstrap. The launcher and game are still under development. '
-              'Packages provide --help, --version and --build-info; they do not run the game yet.\n\n'
-              'Download the package for your platform, extract it and follow docs/INSTALL.md. '
-              'No original game files are included. SHA256SUMS covers every package.\n')
+        pr = merged_pr(repository, sha)
+        title = pr['title']
+        flags = ['--latest']
+        notes = (pr['body'] or '').strip() + '\n'
     with tempfile.TemporaryDirectory() as temp:
         body = Path(temp) / 'notes.md'
         body.write_text(notes)

@@ -284,13 +284,24 @@ typedef BOOL(CALLBACK* LPDIENUMDEVICEOBJECTSCALLBACKA)(LPCDIDEVICEOBJECTINSTANCE
 #ifdef __cplusplus
 extern "C"
 {
-    extern const GUID GUID_SysKeyboard, GUID_SysMouse;
-    extern const GUID GUID_Key, GUID_Button, GUID_XAxis, GUID_YAxis, GUID_ZAxis;
-    extern const GUID IID_IDirectInput8A, IID_IDirectInputDeviceA;
-    extern const GUID beachlife_dinput_prop_buffersize, beachlife_dinput_prop_axismode;
-    extern const DIDATAFORMAT c_dfDIKeyboard, c_dfDIMouse, c_dfDIMouse2;
+    extern const GUID GUID_SysKeyboard BEACHLIFE_COMPAT_SYMBOL(GUID_SysKeyboard), GUID_SysMouse
+        BEACHLIFE_COMPAT_SYMBOL(GUID_SysMouse);
+    extern const GUID GUID_Key BEACHLIFE_COMPAT_SYMBOL(GUID_Key),
+        GUID_Button BEACHLIFE_COMPAT_SYMBOL(GUID_Button),
+        GUID_XAxis BEACHLIFE_COMPAT_SYMBOL(GUID_XAxis),
+        GUID_YAxis BEACHLIFE_COMPAT_SYMBOL(GUID_YAxis),
+        GUID_ZAxis BEACHLIFE_COMPAT_SYMBOL(GUID_ZAxis);
+    extern const GUID IID_IDirectInput8A BEACHLIFE_COMPAT_SYMBOL(IID_IDirectInput8A),
+        IID_IDirectInputDeviceA BEACHLIFE_COMPAT_SYMBOL(IID_IDirectInputDeviceA);
+    extern const GUID beachlife_dinput_prop_buffersize BEACHLIFE_COMPAT_SYMBOL(
+        beachlife_dinput_prop_buffersize),
+        beachlife_dinput_prop_axismode BEACHLIFE_COMPAT_SYMBOL(beachlife_dinput_prop_axismode);
+    extern const DIDATAFORMAT c_dfDIKeyboard BEACHLIFE_COMPAT_SYMBOL(c_dfDIKeyboard),
+        c_dfDIMouse BEACHLIFE_COMPAT_SYMBOL(c_dfDIMouse),
+        c_dfDIMouse2 BEACHLIFE_COMPAT_SYMBOL(c_dfDIMouse2);
     HRESULT WINAPI DirectInput8Create(
-        HINSTANCE instance, DWORD version, REFIID interface_id, LPVOID* output, LPUNKNOWN outer);
+        HINSTANCE instance, DWORD version, REFIID interface_id, LPVOID* output, LPUNKNOWN outer)
+        BEACHLIFE_COMPAT_SYMBOL(DirectInput8Create);
 }
 
 struct IDirectInputDeviceA : IUnknown
@@ -314,7 +325,7 @@ struct IDirectInputDeviceA : IUnknown
     virtual HRESULT RunControlPanel(HWND owner, DWORD flags) = 0;
     virtual HRESULT Initialize(HINSTANCE instance, DWORD version, REFGUID device) = 0;
 
-#if ULONG_MAX > UINT32_MAX
+    // uint32_t and unsigned long can be distinct types even on LLP64.
     // The reconstructed mouse count is an unsigned long. Preserve that
     // host-sized field while keeping the actual Windows API's DWORD count.
     HRESULT GetDeviceData(
@@ -329,7 +340,6 @@ struct IDirectInputDeviceA : IUnknown
         *count = narrow_count;
         return result;
     }
-#endif
 };
 typedef IDirectInputDeviceA* LPDIRECTINPUTDEVICEA;
 

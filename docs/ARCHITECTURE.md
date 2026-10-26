@@ -36,7 +36,7 @@ The optional `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME` build uses the
 native compatibility and portability series for complete, behavior-tested methods
 whose byte matching is still in progress. Matching and ordinary native exports
 retain their existing source selection. Build and package metadata identify the
-profile; experimental sources are restricted to development and test channels.
+profile.
 Missing functions still require real implementations, and experimental native
 execution is tracked separately from matching and production integration.
 
@@ -387,8 +387,8 @@ PR and workflow run. Package manifests record provenance and payload hashes.
 
 PRs build native artifacts for every supported package target. Stable promotion
 requires all platform jobs, the Windows package smoke and the aggregate package
-validation. Stable rebuilds the merged commit and drafts its CMake version.
-Final publication reuses the candidate assets. See [BUILDING](BUILDING.md) and
+validation. Stable rebuilds the merged commit and publishes its CMake version
+as the latest release. See [BUILDING](BUILDING.md) and
 [RELEASES](RELEASES.md). Packages contain declared outputs and notices, never a
 recursive copy of the checkout or original game data.
 

@@ -15,6 +15,14 @@
 #include <string>
 #endif
 
+// These CRT extensions also exist on Windows, with the host wchar_t types.
+// Keep our retail adapters distinct from the host CRT declarations and symbols.
+#define _strupr beachlife_crt_strupr
+#define _stricmp beachlife_crt_stricmp
+#define _itoa beachlife_crt_itoa
+#define _itow beachlife_crt_itow
+#define _wtol beachlife_crt_wtol
+
 // These are Windows UTF-16 units, never the host libc's wchar_t ABI. The
 // game uses both unsigned-short arrays and short-wchar literals.
 typedef uint16_t MSVCRT_WCHAR;

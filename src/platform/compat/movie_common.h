@@ -18,7 +18,7 @@ inline bool same(REFGUID a, REFGUID b)
 }
 inline bool skipped()
 {
-    const char* value = std::getenv("BEACHLIFE_BOOT_SKIP_MOVIE");
+    const char* value = SDL_getenv("BEACHLIFE_BOOT_SKIP_MOVIE");
     return value && std::strcmp(value, "1") == 0;
 }
 inline void thread_check(std::thread::id thread, const char* api)

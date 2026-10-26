@@ -1,0 +1,64 @@
+diff --git a/src/startup_world_script_load.cpp b/src/startup_world_script_load.cpp
+index 81d9066ea889632dedbebc29e7f3453a61ba4a7c..960b7a0224d1474f18e4c045ef476b060c5ce943 100644
+--- a/src/startup_world_script_load.cpp
++++ b/src/startup_world_script_load.cpp
+@@ -49,17 +49,20 @@ static int SkipWorldScriptWhitespace(char*& cursor)
+ // FUNCTION: BEACHLIFE 0x004dd0c0
+ int WorldSubsystem20::SkipComments()
+ {
+-    if (*cursor_00 != '/')
+-        return 0;
+     int count = 0;
+-    do
++    if (*cursor_00 == '/')
+     {
+-        ++count;
+         ++cursor_00;
+-    } while (*cursor_00 != '\n');
+-    count += SkipWorldScriptWhitespace(cursor_00);
+-    count += SkipComments();
+-    count += SkipWorldScriptWhitespace(cursor_00);
++        count = 1;
++        while (*cursor_00 != '\n')
++        {
++            ++count;
++            ++cursor_00;
++        }
++        int whitespace = SkipWorldScriptWhitespace(cursor_00);
++        count += SkipComments() + whitespace;
++        count += SkipWorldScriptWhitespace(cursor_00);
++    }
+     return count;
+ }
+ 
+diff --git a/src/startup_world_script_state_parser.cpp b/src/startup_world_script_state_parser.cpp
+index 8b3e15e0c0ef6eb9e30a4b9e85606eddad4e95a0..62fff49cd479ccc8bf7b6dbc444397af7b4521f0 100644
+--- a/src/startup_world_script_state_parser.cpp
++++ b/src/startup_world_script_state_parser.cpp
+@@ -8,17 +8,19 @@ unsigned int WorldSubsystem20::FindState(const char* name)
+ {
+     unsigned int result = ~0u;
+     unsigned int index = 0;
+-    for (; index < count_32c; ++index)
++    if (index < count_32c)
+     {
+-        if (std::strcmp(names_330[index], name) == 0)
++        for (; index < count_32c; ++index)
+         {
+-            result = index;
+-            break;
++            if (std::strcmp(names_330[index], name) == 0)
++            {
++                result = index;
++                break;
++            }
+         }
++        if (index == ~0u)
++            StartupFatal("Invalid State in WorldScript");
+     }
+-    // Retail tests the scan index, not the not-found result.
+-    if (count_32c && index == ~0u)
+-        StartupFatal("Invalid State in WorldScript");
+     return result;
+ }
+ 

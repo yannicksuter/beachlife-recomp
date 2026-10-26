@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
-project(beachlife_recomp VERSION 0.0.1 LANGUAGES C CXX)
+if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
+endif()
+project(beachlife_recomp VERSION 0.0.3 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")
@@ -17,9 +20,6 @@ option(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
     "Enable behavior-tested reconstructed code that is still being byte matched" OFF)
 set(BEACHLIFE_DECOMP_PROFILE native)
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
-    if(BEACHLIFE_BUILD_CHANNEL STREQUAL "release")
-        message(FATAL_ERROR "Experimental reconstructed code requires a dev or test build")
-    endif()
     set(BEACHLIFE_DECOMP_PROFILE native-experimental)
 endif()
 option(BEACHLIFE_ENABLE_BOOT_GAME
@@ -174,7 +174,7 @@ if(BUILD_TESTING)
         add_executable(compat_miles_tests tests/compat_miles.cpp)
         target_include_directories(compat_miles_tests PRIVATE src src/platform/compat/include)
         target_compile_features(compat_miles_tests PRIVATE cxx_std_20)
-        target_link_libraries(compat_miles_tests PRIVATE beachlife_compat beachlife_retail_files)
+        target_link_libraries(compat_miles_tests PRIVATE beachlife_compat beachlife_retail_files SDL3::SDL3)
         add_test(NAME compat_miles
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_compat_miles.py"
                 "$<TARGET_FILE:compat_miles_tests>")

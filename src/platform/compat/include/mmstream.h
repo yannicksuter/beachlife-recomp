@@ -55,6 +55,9 @@ struct IStreamSample : IUnknown
 };
 extern "C"
 {
-    extern const GUID MSPID_PrimaryVideo, MSPID_PrimaryAudio;
-    extern const GUID IID_IMultiMediaStream, IID_IMediaStream, IID_IStreamSample;
+    extern const GUID MSPID_PrimaryVideo BEACHLIFE_COMPAT_SYMBOL(MSPID_PrimaryVideo),
+        MSPID_PrimaryAudio BEACHLIFE_COMPAT_SYMBOL(MSPID_PrimaryAudio);
+    extern const GUID IID_IMultiMediaStream BEACHLIFE_COMPAT_SYMBOL(IID_IMultiMediaStream),
+        IID_IMediaStream BEACHLIFE_COMPAT_SYMBOL(IID_IMediaStream),
+        IID_IStreamSample BEACHLIFE_COMPAT_SYMBOL(IID_IStreamSample);
 }

@@ -54,6 +54,10 @@ typedef void* HGDIOBJ;
 typedef struct HFONT__* HFONT;
 typedef struct HBITMAP__* HBITMAP;
 
+// Compat and native SDK calls coexist in the same process. Never interpose
+// on SDL, the C++ runtime or host code using the real Windows APIs.
+#define BEACHLIFE_COMPAT_SYMBOL(name) __asm__("beachlife_compat_" #name)
+
 #define WINAPI
 #define CALLBACK
 #define APIENTRY
@@ -331,18 +335,23 @@ extern "C"
 #endif
 
     // KERNEL32
-    BOOL WINAPI DeleteFileA(LPCSTR path);
-    void WINAPI GetStartupInfoA(LPSTARTUPINFOA info);
-    HMODULE WINAPI GetModuleHandleA(LPCSTR name);
+    BOOL WINAPI DeleteFileA(LPCSTR path) BEACHLIFE_COMPAT_SYMBOL(DeleteFileA);
+    void WINAPI GetStartupInfoA(LPSTARTUPINFOA info) BEACHLIFE_COMPAT_SYMBOL(GetStartupInfoA);
+    HMODULE WINAPI GetModuleHandleA(LPCSTR name) BEACHLIFE_COMPAT_SYMBOL(GetModuleHandleA);
     DWORD WINAPI GetPrivateProfileStringA(
-        LPCSTR section, LPCSTR key, LPCSTR fallback, LPSTR result, DWORD size, LPCSTR file);
-    BOOL WINAPI WritePrivateProfileStringA(LPCSTR section, LPCSTR key, LPCSTR value, LPCSTR file);
-    DWORD WINAPI GetCurrentDirectoryA(DWORD size, LPSTR buffer);
-    DWORD WINAPI GetTickCount(void);
-    BOOL WINAPI CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES security);
-    DWORD WINAPI GetFileAttributesA(LPCSTR path);
-    HANDLE WINAPI CreateMutexA(LPSECURITY_ATTRIBUTES security, BOOL owner, LPCSTR name);
-    BOOL WINAPI ReleaseMutex(HANDLE mutex);
+        LPCSTR section, LPCSTR key, LPCSTR fallback, LPSTR result, DWORD size, LPCSTR file)
+        BEACHLIFE_COMPAT_SYMBOL(GetPrivateProfileStringA);
+    BOOL WINAPI WritePrivateProfileStringA(LPCSTR section, LPCSTR key, LPCSTR value, LPCSTR file)
+        BEACHLIFE_COMPAT_SYMBOL(WritePrivateProfileStringA);
+    DWORD WINAPI GetCurrentDirectoryA(DWORD size, LPSTR buffer)
+        BEACHLIFE_COMPAT_SYMBOL(GetCurrentDirectoryA);
+    DWORD WINAPI GetTickCount(void) BEACHLIFE_COMPAT_SYMBOL(GetTickCount);
+    BOOL WINAPI CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES security)
+        BEACHLIFE_COMPAT_SYMBOL(CreateDirectoryA);
+    DWORD WINAPI GetFileAttributesA(LPCSTR path) BEACHLIFE_COMPAT_SYMBOL(GetFileAttributesA);
+    HANDLE WINAPI CreateMutexA(LPSECURITY_ATTRIBUTES security, BOOL owner, LPCSTR name)
+        BEACHLIFE_COMPAT_SYMBOL(CreateMutexA);
+    BOOL WINAPI ReleaseMutex(HANDLE mutex) BEACHLIFE_COMPAT_SYMBOL(ReleaseMutex);
     int WINAPI WideCharToMultiByte(UINT code_page,
         DWORD flags,
         LPCWSTR wide,
@@ -350,42 +359,50 @@ extern "C"
         LPSTR narrow,
         int narrow_size,
         LPCSTR fallback,
-        LPBOOL used_fallback);
+        LPBOOL used_fallback) BEACHLIFE_COMPAT_SYMBOL(WideCharToMultiByte);
     int WINAPI MultiByteToWideChar(
-        UINT code_page, DWORD flags, LPCSTR narrow, int narrow_length, LPWSTR wide, int wide_size);
-    BOOL WINAPI UnmapViewOfFile(LPCVOID view);
+        UINT code_page, DWORD flags, LPCSTR narrow, int narrow_length, LPWSTR wide, int wide_size)
+        BEACHLIFE_COMPAT_SYMBOL(MultiByteToWideChar);
+    BOOL WINAPI UnmapViewOfFile(LPCVOID view) BEACHLIFE_COMPAT_SYMBOL(UnmapViewOfFile);
     LPVOID WINAPI MapViewOfFile(
-        HANDLE mapping, DWORD access, DWORD offset_high, DWORD offset_low, SIZE_T bytes);
+        HANDLE mapping, DWORD access, DWORD offset_high, DWORD offset_low, SIZE_T bytes)
+        BEACHLIFE_COMPAT_SYMBOL(MapViewOfFile);
     HANDLE WINAPI CreateFileMappingA(HANDLE file,
         LPSECURITY_ATTRIBUTES security,
         DWORD protect,
         DWORD size_high,
         DWORD size_low,
-        LPCSTR name);
-    BOOL WINAPI CloseHandle(HANDLE handle);
-    HFILE WINAPI OpenFile(LPCSTR path, LPOFSTRUCT info, UINT style);
-    void WINAPI Sleep(DWORD milliseconds);
-    DWORD WINAPI GetLastError(void);
-    void WINAPI SetLastError(DWORD error);
-    HANDLE WINAPI LocalFree(HANDLE memory);
-    LONG WINAPI InterlockedExchange(LONG* target, LONG value);
-    int WINAPI MulDiv(int number, int numerator, int denominator);
+        LPCSTR name) BEACHLIFE_COMPAT_SYMBOL(CreateFileMappingA);
+    BOOL WINAPI CloseHandle(HANDLE handle) BEACHLIFE_COMPAT_SYMBOL(CloseHandle);
+    HFILE WINAPI OpenFile(LPCSTR path, LPOFSTRUCT info, UINT style)
+        BEACHLIFE_COMPAT_SYMBOL(OpenFile);
+    void WINAPI Sleep(DWORD milliseconds) BEACHLIFE_COMPAT_SYMBOL(Sleep);
+    DWORD WINAPI GetLastError(void) BEACHLIFE_COMPAT_SYMBOL(GetLastError);
+    void WINAPI SetLastError(DWORD error) BEACHLIFE_COMPAT_SYMBOL(SetLastError);
+    HANDLE WINAPI LocalFree(HANDLE memory) BEACHLIFE_COMPAT_SYMBOL(LocalFree);
+    LONG WINAPI InterlockedExchange(LONG* target, LONG value)
+        BEACHLIFE_COMPAT_SYMBOL(InterlockedExchange);
+    int WINAPI MulDiv(int number, int numerator, int denominator) BEACHLIFE_COMPAT_SYMBOL(MulDiv);
     DWORD WINAPI FormatMessageA(DWORD flags,
         LPCVOID source,
         DWORD message,
         DWORD language,
         LPSTR buffer,
         DWORD size,
-        va_list* arguments);
+        va_list* arguments) BEACHLIFE_COMPAT_SYMBOL(FormatMessageA);
 
     // USER32
-    BOOL WINAPI PeekMessageA(LPMSG message, HWND window, UINT first, UINT last, UINT remove);
-    BOOL WINAPI TranslateMessage(const MSG* message);
-    LRESULT WINAPI DispatchMessageA(const MSG* message);
-    void WINAPI PostQuitMessage(int exit_code);
-    LRESULT WINAPI DefWindowProcA(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
-    ATOM WINAPI RegisterClassExA(const WNDCLASSEXA* window_class);
-    BOOL WINAPI UnregisterClassA(LPCSTR name, HINSTANCE instance);
+    BOOL WINAPI PeekMessageA(LPMSG message, HWND window, UINT first, UINT last, UINT remove)
+        BEACHLIFE_COMPAT_SYMBOL(PeekMessageA);
+    BOOL WINAPI TranslateMessage(const MSG* message) BEACHLIFE_COMPAT_SYMBOL(TranslateMessage);
+    LRESULT WINAPI DispatchMessageA(const MSG* message) BEACHLIFE_COMPAT_SYMBOL(DispatchMessageA);
+    void WINAPI PostQuitMessage(int exit_code) BEACHLIFE_COMPAT_SYMBOL(PostQuitMessage);
+    LRESULT WINAPI DefWindowProcA(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+        BEACHLIFE_COMPAT_SYMBOL(DefWindowProcA);
+    ATOM WINAPI RegisterClassExA(const WNDCLASSEXA* window_class)
+        BEACHLIFE_COMPAT_SYMBOL(RegisterClassExA);
+    BOOL WINAPI UnregisterClassA(LPCSTR name, HINSTANCE instance)
+        BEACHLIFE_COMPAT_SYMBOL(UnregisterClassA);
     HWND WINAPI CreateWindowExA(DWORD extended_style,
         LPCSTR class_name,
         LPCSTR title,
@@ -397,41 +414,48 @@ extern "C"
         HWND parent,
         HMENU menu,
         HINSTANCE instance,
-        LPVOID parameter);
-    BOOL WINAPI DestroyWindow(HWND window);
-    BOOL WINAPI ShowWindow(HWND window, int command);
-    BOOL WINAPI UpdateWindow(HWND window);
+        LPVOID parameter) BEACHLIFE_COMPAT_SYMBOL(CreateWindowExA);
+    BOOL WINAPI DestroyWindow(HWND window) BEACHLIFE_COMPAT_SYMBOL(DestroyWindow);
+    BOOL WINAPI ShowWindow(HWND window, int command) BEACHLIFE_COMPAT_SYMBOL(ShowWindow);
+    BOOL WINAPI UpdateWindow(HWND window) BEACHLIFE_COMPAT_SYMBOL(UpdateWindow);
     BOOL WINAPI SetWindowPos(
-        HWND window, HWND after, int x, int y, int width, int height, UINT flags);
-    BOOL WINAPI AdjustWindowRectEx(LPRECT rectangle, DWORD style, BOOL menu, DWORD extended_style);
-    BOOL WINAPI GetClientRect(HWND window, LPRECT rectangle);
-    BOOL WINAPI GetWindowRect(HWND window, LPRECT rectangle);
-    BOOL WINAPI ClientToScreen(HWND window, LPPOINT point);
-    HMENU WINAPI GetMenu(HWND window);
-    LONG WINAPI GetWindowLongA(HWND window, int index);
-    HDC WINAPI GetDC(HWND window);
-    int WINAPI ReleaseDC(HWND window, HDC context);
-    int WINAPI GetSystemMetrics(int index);
-    BOOL WINAPI SystemParametersInfoA(UINT action, UINT parameter, PVOID value, UINT flags);
-    SHORT WINAPI GetAsyncKeyState(int key);
+        HWND window, HWND after, int x, int y, int width, int height, UINT flags)
+        BEACHLIFE_COMPAT_SYMBOL(SetWindowPos);
+    BOOL WINAPI AdjustWindowRectEx(LPRECT rectangle, DWORD style, BOOL menu, DWORD extended_style)
+        BEACHLIFE_COMPAT_SYMBOL(AdjustWindowRectEx);
+    BOOL WINAPI GetClientRect(HWND window, LPRECT rectangle) BEACHLIFE_COMPAT_SYMBOL(GetClientRect);
+    BOOL WINAPI GetWindowRect(HWND window, LPRECT rectangle) BEACHLIFE_COMPAT_SYMBOL(GetWindowRect);
+    BOOL WINAPI ClientToScreen(HWND window, LPPOINT point) BEACHLIFE_COMPAT_SYMBOL(ClientToScreen);
+    HMENU WINAPI GetMenu(HWND window) BEACHLIFE_COMPAT_SYMBOL(GetMenu);
+    LONG WINAPI GetWindowLongA(HWND window, int index) BEACHLIFE_COMPAT_SYMBOL(GetWindowLongA);
+    HDC WINAPI GetDC(HWND window) BEACHLIFE_COMPAT_SYMBOL(GetDC);
+    int WINAPI ReleaseDC(HWND window, HDC context) BEACHLIFE_COMPAT_SYMBOL(ReleaseDC);
+    int WINAPI GetSystemMetrics(int index) BEACHLIFE_COMPAT_SYMBOL(GetSystemMetrics);
+    BOOL WINAPI SystemParametersInfoA(UINT action, UINT parameter, PVOID value, UINT flags)
+        BEACHLIFE_COMPAT_SYMBOL(SystemParametersInfoA);
+    SHORT WINAPI GetAsyncKeyState(int key) BEACHLIFE_COMPAT_SYMBOL(GetAsyncKeyState);
     HANDLE WINAPI LoadImageA(
-        HINSTANCE instance, LPCSTR name, UINT type, int width, int height, UINT flags);
-    HICON WINAPI LoadIconA(HINSTANCE instance, LPCSTR name);
-    HCURSOR WINAPI SetCursor(HCURSOR cursor);
-    BOOL WINAPI SetCursorPos(int x, int y);
-    BOOL WINAPI GetCursorPos(LPPOINT point);
-    BOOL WINAPI ClipCursor(const RECT* rectangle);
-    int WINAPI ShowCursor(BOOL show);
-    BOOL WINAPI SetRect(LPRECT rectangle, int left, int top, int right, int bottom);
-    int WINAPI MessageBoxA(HWND window, LPCSTR text, LPCSTR caption, UINT type);
+        HINSTANCE instance, LPCSTR name, UINT type, int width, int height, UINT flags)
+        BEACHLIFE_COMPAT_SYMBOL(LoadImageA);
+    HICON WINAPI LoadIconA(HINSTANCE instance, LPCSTR name) BEACHLIFE_COMPAT_SYMBOL(LoadIconA);
+    HCURSOR WINAPI SetCursor(HCURSOR cursor) BEACHLIFE_COMPAT_SYMBOL(SetCursor);
+    BOOL WINAPI SetCursorPos(int x, int y) BEACHLIFE_COMPAT_SYMBOL(SetCursorPos);
+    BOOL WINAPI GetCursorPos(LPPOINT point) BEACHLIFE_COMPAT_SYMBOL(GetCursorPos);
+    BOOL WINAPI ClipCursor(const RECT* rectangle) BEACHLIFE_COMPAT_SYMBOL(ClipCursor);
+    int WINAPI ShowCursor(BOOL show) BEACHLIFE_COMPAT_SYMBOL(ShowCursor);
+    BOOL WINAPI SetRect(LPRECT rectangle, int left, int top, int right, int bottom)
+        BEACHLIFE_COMPAT_SYMBOL(SetRect);
+    int WINAPI MessageBoxA(HWND window, LPCSTR text, LPCSTR caption, UINT type)
+        BEACHLIFE_COMPAT_SYMBOL(MessageBoxA);
 
     // GDI32
     HBITMAP WINAPI CreateDIBSection(
-        HDC context, const BITMAPINFO* info, UINT usage, void** bits, HANDLE section, DWORD offset);
-    int WINAPI AddFontResourceA(LPCSTR file);
-    BOOL WINAPI RemoveFontResourceA(LPCSTR file);
-    HGDIOBJ WINAPI GetStockObject(int index);
-    HDC WINAPI CreateCompatibleDC(HDC context);
+        HDC context, const BITMAPINFO* info, UINT usage, void** bits, HANDLE section, DWORD offset)
+        BEACHLIFE_COMPAT_SYMBOL(CreateDIBSection);
+    int WINAPI AddFontResourceA(LPCSTR file) BEACHLIFE_COMPAT_SYMBOL(AddFontResourceA);
+    BOOL WINAPI RemoveFontResourceA(LPCSTR file) BEACHLIFE_COMPAT_SYMBOL(RemoveFontResourceA);
+    HGDIOBJ WINAPI GetStockObject(int index) BEACHLIFE_COMPAT_SYMBOL(GetStockObject);
+    HDC WINAPI CreateCompatibleDC(HDC context) BEACHLIFE_COMPAT_SYMBOL(CreateCompatibleDC);
     int WINAPI StretchDIBits(HDC context,
         int x,
         int y,
@@ -444,9 +468,9 @@ extern "C"
         const void* bits,
         const BITMAPINFO* info,
         UINT usage,
-        DWORD operation);
-    int WINAPI SetMapMode(HDC context, int mode);
-    int WINAPI GetDeviceCaps(HDC context, int index);
+        DWORD operation) BEACHLIFE_COMPAT_SYMBOL(StretchDIBits);
+    int WINAPI SetMapMode(HDC context, int mode) BEACHLIFE_COMPAT_SYMBOL(SetMapMode);
+    int WINAPI GetDeviceCaps(HDC context, int index) BEACHLIFE_COMPAT_SYMBOL(GetDeviceCaps);
     HFONT WINAPI CreateFontA(int height,
         int width,
         int escapement,
@@ -460,12 +484,14 @@ extern "C"
         DWORD clip_precision,
         DWORD quality,
         DWORD pitch_and_family,
-        LPCSTR face);
-    HGDIOBJ WINAPI SelectObject(HDC context, HGDIOBJ object);
-    COLORREF WINAPI SetTextColor(HDC context, COLORREF colour);
-    COLORREF WINAPI SetBkColor(HDC context, COLORREF colour);
-    UINT WINAPI SetTextAlign(HDC context, UINT align);
-    BOOL WINAPI GetTextExtentPoint32A(HDC context, LPCSTR text, int length, LPSIZE size);
+        LPCSTR face) BEACHLIFE_COMPAT_SYMBOL(CreateFontA);
+    HGDIOBJ WINAPI SelectObject(HDC context, HGDIOBJ object) BEACHLIFE_COMPAT_SYMBOL(SelectObject);
+    COLORREF WINAPI SetTextColor(HDC context, COLORREF colour)
+        BEACHLIFE_COMPAT_SYMBOL(SetTextColor);
+    COLORREF WINAPI SetBkColor(HDC context, COLORREF colour) BEACHLIFE_COMPAT_SYMBOL(SetBkColor);
+    UINT WINAPI SetTextAlign(HDC context, UINT align) BEACHLIFE_COMPAT_SYMBOL(SetTextAlign);
+    BOOL WINAPI GetTextExtentPoint32A(HDC context, LPCSTR text, int length, LPSIZE size)
+        BEACHLIFE_COMPAT_SYMBOL(GetTextExtentPoint32A);
     BOOL WINAPI ExtTextOutA(HDC context,
         int x,
         int y,
@@ -473,18 +499,20 @@ extern "C"
         const RECT* rectangle,
         LPCSTR text,
         UINT length,
-        const INT* spacing);
-    DWORD WINAPI GetKerningPairsA(HDC context, DWORD count, LPKERNINGPAIR pairs);
-    BOOL WINAPI DeleteObject(HGDIOBJ object);
-    BOOL WINAPI DeleteDC(HDC context);
+        const INT* spacing) BEACHLIFE_COMPAT_SYMBOL(ExtTextOutA);
+    DWORD WINAPI GetKerningPairsA(HDC context, DWORD count, LPKERNINGPAIR pairs)
+        BEACHLIFE_COMPAT_SYMBOL(GetKerningPairsA);
+    BOOL WINAPI DeleteObject(HGDIOBJ object) BEACHLIFE_COMPAT_SYMBOL(DeleteObject);
+    BOOL WINAPI DeleteDC(HDC context) BEACHLIFE_COMPAT_SYMBOL(DeleteDC);
 
 // OLE32
 #ifdef __cplusplus
     HRESULT WINAPI CoCreateInstance(
-        REFCLSID class_id, LPUNKNOWN outer, DWORD context, REFIID interface_id, LPVOID* object);
+        REFCLSID class_id, LPUNKNOWN outer, DWORD context, REFIID interface_id, LPVOID* object)
+        BEACHLIFE_COMPAT_SYMBOL(CoCreateInstance);
 #endif
-    HRESULT WINAPI CoInitialize(LPVOID reserved);
-    void WINAPI CoUninitialize(void);
+    HRESULT WINAPI CoInitialize(LPVOID reserved) BEACHLIFE_COMPAT_SYMBOL(CoInitialize);
+    void WINAPI CoUninitialize(void) BEACHLIFE_COMPAT_SYMBOL(CoUninitialize);
 
 #ifdef __cplusplus
 }

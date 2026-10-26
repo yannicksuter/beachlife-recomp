@@ -1,9 +1,13 @@
+#include "compat_environment.h"
+#include "compat_process.h"
 #include "platform/compat/compat_files.h"
 #include "platform/compat/shell_link.h"
+#include "platform/path.h"
 #include "runtime/retail_files.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -12,13 +16,17 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#ifndef _WIN32
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 #include <vector>
 
 namespace
 {
+const char* executable_path = nullptr;
+std::string death_case;
 using Bytes = std::vector<unsigned char>;
 using beachlife::compat::shell::InvalidLink;
 using beachlife::compat::shell::parse;
@@ -220,15 +228,20 @@ void parser_checks()
 
 struct Fixture
 {
+    CompatProfileEnvironment environment;
     std::filesystem::path root;
     std::vector<beachlife::data::SourceEntry> entries;
     Fixture()
     {
-        char pattern[] = "/tmp/beachlife-shell-link-XXXXXX";
-        const auto* directory = mkdtemp(pattern);
-        require(directory, "create isolated generated fixture");
-        root = directory;
-        require(!setenv("XDG_DATA_HOME", root.c_str(), 1), "isolate per-user data lookup");
+        root = std::filesystem::temp_directory_path() /
+               ("beachlife-shell-link-" +
+                   std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        require(std::filesystem::create_directory(root), "create isolated generated fixture");
+        root = std::filesystem::canonical(root);
+        require(SDL_setenv_unsafe("BEACHLIFE_BOOT_USER_DIR",
+                    beachlife::platform::utf8(root / "user").c_str(),
+                    1) == 0,
+            "isolate per-user data lookup");
         add("Music/Links/Folder.lnk", relative_link(u"..\\Tracks"));
         add("Music/Links/Portable.lnk", local_link(true, true));
         add("Music/Links/Missing.lnk", relative_link(u"..\\Missing"));
@@ -257,6 +270,19 @@ struct Fixture
 
 void stops_loudly(const std::function<void()>& action, std::string_view api)
 {
+#ifdef _WIN32
+    if (!death_case.empty())
+    {
+        if (death_case == api)
+        {
+            action();
+            std::exit(0);
+        }
+        return;
+    }
+    require(compat_abort_child(executable_path, std::string(api).c_str(), std::string(api).c_str()),
+        "unsupported variants abort with the API named");
+#else
     int pipes[2];
     require(!pipe(pipes), "create diagnostic pipe");
     const auto pid = fork();
@@ -284,6 +310,7 @@ void stops_loudly(const std::function<void()>& action, std::string_view api)
     require(waitpid(pid, &status, 0) == pid && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT &&
                 message.find(api) != std::string::npos,
         "unsupported variants abort with the API named");
+#endif
 }
 
 void com_checks()
@@ -397,8 +424,16 @@ void com_checks()
 }
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    executable_path = argv[0];
+#ifdef _WIN32
+    compat_disable_abort_dialog();
+    if (argc > 1)
+    {
+        death_case = argv[1];
+    }
+#endif
     parser_checks();
     com_checks();
     std::puts("Generated ShellLink parser, COM ABI, VFS resolution and failure checks passed");

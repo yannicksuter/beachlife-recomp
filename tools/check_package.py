@@ -13,12 +13,15 @@ from check_launcher import check as check_launcher
 from check_iso import check as check_iso
 from check_runtime import check as check_runtime
 from check_startup import check as check_startup
+from check_boot_headless import check as check_boot_headless
 
 
 def smoke(path):
     manifest, files = inspect_package(path)
     info = manifest['build']
-    with tempfile.TemporaryDirectory(prefix='beachlife-smoke-') as temp:
+    boot = info.get('decomp_profile') in ('native-game', 'native-game-tweaks')
+    prefix = 'beachlife boot smoke ' if boot else 'beachlife-smoke-'
+    with tempfile.TemporaryDirectory(prefix=prefix) as temp:
         root = Path(temp)
         for name, (body, mode) in files.items():
             destination = root / name
@@ -30,9 +33,11 @@ def smoke(path):
         if info.get('capability') == 'launcher':
             check_launcher(executable)
             check_iso(executable)
-            if check_startup(executable) == 77:
+            if boot:
+                check_boot_headless(executable)
+            if check_startup(executable, boot=boot) == 77:
                 print('Game loading needs a usable graphics device; package launcher checks passed.')
-            if check_runtime(executable) == 77:
+            if check_runtime(executable, boot=boot) == 77:
                 print('Game rendering needs a usable graphics device; runtime presentation was not verified.')
     print(f'Package startup and identity verified: {Path(path).name}')
 

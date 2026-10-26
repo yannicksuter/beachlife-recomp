@@ -1,6 +1,8 @@
 #include "kernel_files.h"
 #include "data/game_path.h"
 #include "io.h"
+#include "native_kernel.h"
+#include "platform/path.h"
 #include "runtime/retail_files.h"
 
 #include <SDL3/SDL.h>
@@ -17,12 +19,12 @@
 #include <mutex>
 #include <stdexcept>
 #include <system_error>
-#include <unistd.h>
 
 namespace beachlife::compat::kernel
 {
 namespace fs = std::filesystem;
 namespace retail = runtime::retail_files;
+namespace host = beachlife::compat::native;
 
 namespace
 {
@@ -87,7 +89,7 @@ std::unique_ptr<File> open_read(const char* path)
     const auto status = fs::symlink_status(user, error);
     if (error && error != std::errc::no_such_file_or_directory)
     {
-        last_error = file_error(error.value());
+        last_error = file_error(error);
         return nullptr;
     }
     if (fs::exists(status))
@@ -97,7 +99,7 @@ std::unique_ptr<File> open_read(const char* path)
             last_error = ERROR_ACCESS_DENIED;
             return nullptr;
         }
-        file->user = std::fopen(user.c_str(), "rb");
+        file->user = host::open_file(user, "rb");
         if (!file->user)
         {
             last_error = file_error(errno);
@@ -135,13 +137,13 @@ std::optional<uint64_t> length(File& file)
 {
     if (file.user)
     {
-        const auto position = ::ftello(file.user);
-        if (position < 0 || ::fseeko(file.user, 0, SEEK_END) != 0)
+        const auto position = host::tell(file.user);
+        if (position < 0 || host::seek(file.user, 0, SEEK_END) != 0)
         {
             return std::nullopt;
         }
-        const auto size = ::ftello(file.user);
-        if (::fseeko(file.user, position, SEEK_SET) != 0 || size < 0)
+        const auto size = host::tell(file.user);
+        if (host::seek(file.user, position, SEEK_SET) != 0 || size < 0)
         {
             return std::nullopt;
         }
@@ -198,14 +200,25 @@ DWORD file_error(int error)
     }
 }
 
+DWORD file_error(const std::error_code& error)
+{
+#ifdef _WIN32
+    if (error.category() == std::system_category())
+    {
+        return static_cast<DWORD>(error.value());
+    }
+#endif
+    return file_error(error.value());
+}
+
 fs::path user_root()
 {
     // Checks and automation use their own profile so they never change the
     // player's options, progress or saves.
     if (const char* override = SDL_getenv("BEACHLIFE_BOOT_USER_DIR"))
     {
-        fs::create_directories(override);
-        return fs::weakly_canonical(fs::path(override));
+        fs::create_directories(beachlife::platform::utf8_path(override));
+        return fs::weakly_canonical(beachlife::platform::utf8_path(override));
     }
     std::unique_ptr<char, decltype(&SDL_free)> path(
         SDL_GetPrefPath("BeachLife", "BeachLife"), SDL_free);
@@ -213,7 +226,7 @@ fs::path user_root()
     {
         throw std::runtime_error("SDL_GetPrefPath failed");
     }
-    return fs::weakly_canonical(fs::path(path.get()));
+    return fs::weakly_canonical(beachlife::platform::utf8_path(path.get()));
 }
 
 std::string logical_path(const char* path)
@@ -224,14 +237,15 @@ std::string logical_path(const char* path)
     }
     std::string text(path);
     std::replace(text.begin(), text.end(), '\\', '/');
-    if (!text.empty() && text.front() == '/')
+    if (beachlife::platform::utf8_path(text).is_absolute())
     {
-        const auto root = user_root().generic_string();
-        if (text == root || text == root + '/')
+        auto root = beachlife::platform::utf8(user_root());
+        std::replace(root.begin(), root.end(), '\\', '/');
+        if (fold(text) == fold(root) || fold(text) == fold(root) + '/')
         {
             return ".";
         }
-        if (!text.starts_with(root + '/'))
+        if (!fold(text).starts_with(fold(root) + '/'))
         {
             unsupported("file path", "absolute paths outside the per-user folder");
         }
@@ -258,16 +272,16 @@ fs::path user_path(const char* path)
     }
     // Resolve existing components using Windows ASCII case rules. New names
     // use the normalized spelling so subsequent writes cannot fork by case.
-    for (const auto& part : fs::path(logical))
+    for (const auto& part : beachlife::platform::utf8_path(logical))
     {
-        const auto wanted = part.string();
+        const auto wanted = beachlife::platform::utf8(part);
         std::optional<fs::path> found;
         std::error_code error;
         if (fs::is_directory(current, error))
         {
             for (const auto& entry : fs::directory_iterator(current))
             {
-                if (fold(entry.path().filename().string()) != wanted)
+                if (fold(beachlife::platform::utf8(entry.path().filename())) != wanted)
                 {
                     continue;
                 }
@@ -324,28 +338,28 @@ bool write_file(const char* path, std::string_view bytes)
     // INI writes may create their parent folders. CreateDirectory itself
     // retains the Windows single-directory contract.
     fs::create_directories(destination.parent_path());
-    std::string temporary = destination.string() + ".XXXXXX";
-    const int descriptor = ::mkstemp(temporary.data());
+    auto temporary = destination;
+    const int descriptor = host::temporary_file(temporary);
     if (descriptor < 0)
     {
         last_error = file_error(errno);
         return false;
     }
     std::unique_ptr<std::FILE, decltype(&std::fclose)> file(
-        ::fdopen(descriptor, "wb"), std::fclose);
+        host::descriptor_stream(descriptor, "wb"), std::fclose);
     if (!file)
     {
-        ::close(descriptor);
-        ::unlink(temporary.c_str());
+        host::close_descriptor(descriptor);
+        fs::remove(temporary);
         last_error = ERROR_WRITE_FAULT;
         return false;
     }
     const bool written = std::fwrite(bytes.data(), 1, bytes.size(), file.get()) == bytes.size() &&
                          std::fflush(file.get()) == 0;
     const bool closed = std::fclose(file.release()) == 0;
-    if (!written || !closed || ::rename(temporary.c_str(), destination.c_str()) != 0)
+    if (!written || !closed || !host::replace_file(temporary, destination))
     {
-        ::unlink(temporary.c_str());
+        fs::remove(temporary);
         last_error = ERROR_WRITE_FAULT;
         return false;
     }
@@ -405,12 +419,12 @@ std::optional<uint64_t> seek_file(int descriptor, int64_t offset, int origin)
     uint64_t position;
     if (file.user)
     {
-        if (::fseeko(file.user, offset, origin) != 0)
+        if (host::seek(file.user, offset, origin) != 0)
         {
             last_error = file_error(errno);
             return std::nullopt;
         }
-        const auto value = ::ftello(file.user);
+        const auto value = host::tell(file.user);
         if (value < 0)
         {
             return std::nullopt;
@@ -473,12 +487,13 @@ int mapping_descriptor(HANDLE handle, bool writable, uint64_t& size)
     if (file.user)
     {
         if (std::fflush(file.user) != 0 ||
-            (size > *actual && ::ftruncate(::fileno(file.user), static_cast<off_t>(size)) != 0))
+            (size > *actual &&
+                host::resize_descriptor(host::file_descriptor(file.user), size) != 0))
         {
             last_error = file_error(errno);
             return -1;
         }
-        const int descriptor = ::dup(::fileno(file.user));
+        const int descriptor = host::duplicate_descriptor(host::file_descriptor(file.user));
         if (descriptor < 0)
         {
             last_error = file_error(errno);
@@ -526,13 +541,70 @@ int mapping_descriptor(HANDLE handle, bool writable, uint64_t& size)
         last_error = ERROR_READ_FAULT;
         return -1;
     }
-    const int descriptor = ::dup(::fileno(backing.get()));
+    const int descriptor = host::duplicate_descriptor(host::file_descriptor(backing.get()));
     if (descriptor < 0)
     {
         last_error = file_error(errno);
     }
     return descriptor;
 }
+
+#ifdef _WIN32
+FILE* stdio_stream(int descriptor)
+{
+    std::unique_ptr<File> file;
+    {
+        std::lock_guard lock(files_mutex);
+        const auto found = files.find(descriptor);
+        if (found == files.end())
+        {
+            errno = EBADF;
+            return nullptr;
+        }
+        file = std::move(found->second);
+        files.erase(found);
+    }
+    if (file->user)
+    {
+        return std::exchange(file->user, nullptr);
+    }
+    std::unique_ptr<FILE, decltype(&std::fclose)> stream(std::tmpfile(), std::fclose);
+    if (!stream)
+    {
+        return nullptr;
+    }
+    std::array<unsigned char, 256 * 1024> buffer;
+    for (;;)
+    {
+        const auto count = read_bytes(*file, buffer.data(), buffer.size());
+        if (!count)
+        {
+            break;
+        }
+        if (std::fwrite(buffer.data(), 1, count, stream.get()) != count)
+        {
+            return nullptr;
+        }
+    }
+    if (host::seek(stream.get(), 0, SEEK_SET) != 0)
+    {
+        return nullptr;
+    }
+    // Match fopen("rb"): the snapshot's construction needed write access,
+    // but the FILE exposed to retail must reject writes and retain EOF rules.
+    const int backing = host::duplicate_descriptor(host::file_descriptor(stream.get()));
+    if (backing < 0)
+    {
+        return nullptr;
+    }
+    FILE* result = host::descriptor_stream(backing, "rb");
+    if (!result)
+    {
+        host::close_descriptor(backing);
+    }
+    return result;
+}
+#endif
 
 } // namespace beachlife::compat::kernel
 
@@ -545,7 +617,7 @@ extern "C"
         return guard(
             [&]() -> DWORD
             {
-                const auto root = user_root().string();
+                const auto root = beachlife::platform::utf8(user_root());
                 if (!size || root.size() + 1 > size)
                 {
                     return static_cast<DWORD>(root.size() + 1);
@@ -576,7 +648,7 @@ extern "C"
                 {
                     return TRUE;
                 }
-                last_error = error ? file_error(error.value()) : ERROR_ALREADY_EXISTS;
+                last_error = error ? file_error(error) : ERROR_ALREADY_EXISTS;
                 return FALSE;
             },
             FALSE);
@@ -601,7 +673,7 @@ extern "C"
                 }
                 if (error)
                 {
-                    last_error = file_error(error.value());
+                    last_error = file_error(error);
                 }
                 else
                 {
@@ -639,7 +711,7 @@ extern "C"
                 }
                 if (error && error != std::errc::no_such_file_or_directory)
                 {
-                    last_error = file_error(error.value());
+                    last_error = file_error(error);
                     return INVALID_FILE_ATTRIBUTES;
                 }
                 const auto logical = logical_path(path);
@@ -771,18 +843,17 @@ extern "C"
                 {
                     host_flags |= O_APPEND;
                 }
-                const int descriptor =
-                    ::open(user_path(path).c_str(), host_flags | O_CLOEXEC, 0600);
+                const int descriptor = host::open_descriptor(user_path(path), host_flags);
                 if (descriptor < 0)
                 {
                     last_error = file_error(errno);
                     return -1;
                 }
-                file->user =
-                    ::fdopen(descriptor, file->readable ? (file->writable ? "r+b" : "rb") : "wb");
+                file->user = host::descriptor_stream(
+                    descriptor, file->readable ? (file->writable ? "r+b" : "rb") : "wb");
                 if (!file->user)
                 {
-                    ::close(descriptor);
+                    host::close_descriptor(descriptor);
                     last_error = file_error(errno);
                     return -1;
                 }

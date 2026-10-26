@@ -40,7 +40,7 @@ jobs:
     name: ${{ matrix.platform }}
     needs: policy
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +84,7 @@ jobs:
           GCC_VERSION: ${{ matrix.gcc }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y "g++-$GCC_VERSION" cmake ninja-build pkg-config \
+          sudo apt-get install -y "g++-$GCC_VERSION" clang llvm cmake ninja-build pkg-config \
             libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev \
             libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libx11-xcb-dev libegl-dev \
             libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
@@ -100,7 +100,10 @@ jobs:
           if [ "$TARGET_ARCH" = x86_64 ] && ! arch -x86_64 /usr/bin/true; then
             sudo softwareupdate --install-rosetta --agree-to-license
           fi
-          brew install cmake ninja
+          brew install cmake ninja llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          echo "CC=$(xcrun --find clang)" >> "$GITHUB_ENV"
+          echo "CXX=$(xcrun --find clang++)" >> "$GITHUB_ENV"
       - name: Prepare pinned dependencies
         run: python tools/setup_dependencies.py
       - name: Configure shared release preset
@@ -117,7 +120,8 @@ jobs:
             -DBEACHLIFE_BUILD_CHANNEL="$BUILD_CHANNEL" \
             -DBEACHLIFE_BUILD_PULL_REQUEST="$PR_NUMBER" \
             -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID" \
-            -DBEACHLIFE_PACKAGE_PLATFORM="$PACKAGE_PLATFORM"
+            -DBEACHLIFE_PACKAGE_PLATFORM="$PACKAGE_PLATFORM" \
+            -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
       - name: Build and test
         run: |
           cmake --build --preset release --parallel 3
@@ -128,6 +132,7 @@ jobs:
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
           test "$(lipo -archs build/release/beachlife.app/Contents/MacOS/beachlife)" = "$TARGET_ARCH"
+          test "$(lipo -archs build/release/beachlife_boot_link)" = "$TARGET_ARCH"
           codesign --force --sign - build/release/beachlife.app
           codesign --verify --deep --strict build/release/beachlife.app
       - name: Package and test extracted binaries
@@ -145,7 +150,7 @@ jobs:
     name: windows-x86_64
     needs: policy
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -172,7 +177,8 @@ jobs:
             -DLLVM_MINGW_ROOT="$LLVM_MINGW_ROOT" \
             -DBEACHLIFE_BUILD_CHANNEL="$BUILD_CHANNEL" \
             -DBEACHLIFE_BUILD_PULL_REQUEST="$PR_NUMBER" \
-            -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID"
+            -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID" \
+            -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
           cmake --build --preset release --parallel 3
           python -B -m unittest discover -s tests -p 'test_*.py'
       - name: Package native Windows binary and runtimes
@@ -345,12 +351,13 @@ jobs:
         run: python tools/release.py test --repository "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --sha "$SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --packages build/packages
 
   release:
-    name: Draft stable candidate
+    name: Publish stable release
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -361,7 +368,7 @@ jobs:
           path: build/packages
           merge-multiple: true
           skip-decompress: true
-      - name: Draft the CMake version using this stable run
+      - name: Publish the CMake version with the merged PR's title and body
         env:
           GH_TOKEN: ${{ github.token }}
         run: python tools/release.py stable --repository "$GITHUB_REPOSITORY" --sha "$SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --packages build/packages

@@ -2,6 +2,7 @@
 #include "data/game_path.h"
 #include "io.h"
 #include "kernel_files.h"
+#include "platform/path.h"
 
 #include <algorithm>
 #include <atomic>
@@ -106,7 +107,7 @@ std::vector<_finddata_t> enumerate(const char* input)
     }
     std::string text(input);
     std::replace(text.begin(), text.end(), '\\', '/');
-    const bool absolute = fs::path(text).is_absolute();
+    const bool absolute = beachlife::platform::utf8_path(text).is_absolute();
     const auto slash = text.find_last_of('/');
     const std::string directory = slash == std::string::npos ? "." : text.substr(0, slash);
     const std::string pattern = slash == std::string::npos ? text : text.substr(slash + 1);
@@ -165,7 +166,7 @@ std::vector<_finddata_t> enumerate(const char* input)
         std::set<std::string> user_names;
         for (const auto& entry : fs::directory_iterator(user_directory))
         {
-            const auto name = entry.path().filename().string();
+            const auto name = beachlife::platform::utf8(entry.path().filename());
             if (!matches(pattern, name))
             {
                 continue;
@@ -174,8 +175,14 @@ std::vector<_finddata_t> enumerate(const char* input)
             {
                 beachlife::compat::unsupported("_findfirst", "symbolic links in a user directory");
             }
+#ifdef _WIN32
+            struct _stat64 status;
+            const int stated = ::_wstat64(entry.path().c_str(), &status);
+#else
             struct stat status;
-            if (::stat(entry.path().c_str(), &status) != 0)
+            const int stated = ::stat(entry.path().c_str(), &status);
+#endif
+            if (stated != 0)
             {
                 throw std::system_error(errno, std::generic_category());
             }
