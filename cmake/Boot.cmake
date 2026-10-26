@@ -13,7 +13,7 @@ set(BEACHLIFE_BOOT_INVENTORY "" CACHE FILEPATH
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/game_tree.py" sources
         --tree "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp"
-        --compat "${CMAKE_SOURCE_DIR}/src/platform/compat/include" --compiling
+        --compat "${CMAKE_SOURCE_DIR}/src/platform/compat/include"
     OUTPUT_VARIABLE beachlife_boot_sources COMMAND_ERROR_IS_FATAL ANY)
 string(REPLACE "\n" ";" beachlife_boot_sources "${beachlife_boot_sources}")
 list(FILTER beachlife_boot_sources EXCLUDE REGEX "^$")

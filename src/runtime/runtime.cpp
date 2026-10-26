@@ -216,25 +216,47 @@ std::string lowercase(std::string text)
     return text;
 }
 
-constexpr std::pair<const char*, const char*> route_presets[] = {
-    // Past the intro screens, main menu "start", "play" on the first
-    // scenario, then close its Objectives dialog.
-    {"scenario1",
-        "425,335>mainmenu.ble;425,335>scenarioscreen.tga;694,556>scenario1.pis;608,402+300"},
-    // Main menu "sandbox", then "play" on the first sandbox island.
-    {"sandbox1", "425,335>mainmenu.ble;416,384>scenarioscreen.tga;694,556>sandscenario1.pis"},
-};
+// Where each of the 12 islands is clicked on the scenario and sandbox maps.
+constexpr int island_points[12][2] = {{200, 440},
+    {273, 381},
+    {324, 282},
+    {335, 196},
+    {71, 81},
+    {214, 256},
+    {136, 125},
+    {249, 144},
+    {328, 99},
+    {462, 297},
+    {355, 358},
+    {396, 260}};
+
+// "scenarioN" and "sandboxN" (N 1..12): past the intro screens, the main menu's
+// "start" or "sandbox", the island, "play", then close the Objectives dialog.
+std::string route_preset(const char* name)
+{
+    int number = 0;
+    char extra = 0;
+    const bool sandbox = std::sscanf(name, "sandbox%d%c", &number, &extra) == 1;
+    if ((!sandbox && std::sscanf(name, "scenario%d%c", &number, &extra) != 1) || number < 1 ||
+        number > 12)
+    {
+        return {};
+    }
+    const auto& point = island_points[number - 1];
+    return std::string("425,335>mainmenu.ble;") + (sandbox ? "416,384" : "425,335") +
+           ">scenarioscreen.tga;" + std::to_string(point[0]) + "," + std::to_string(point[1]) +
+           "+90;694,556>" + (sandbox ? "sandscenario" : "scenario") + std::to_string(number) +
+           ".pis;608,402+300";
+}
 
 GamePumpState::Route scripted_route()
 {
     GamePumpState::Route route;
     const char* text = SDL_getenv("BEACHLIFE_BOOT_ROUTE");
-    for (const auto& [name, steps] : route_presets)
+    const std::string preset = text ? route_preset(text) : std::string();
+    if (!preset.empty())
     {
-        if (text && SDL_strcasecmp(text, name) == 0)
-        {
-            text = steps;
-        }
+        text = preset.c_str();
     }
     for (const char* cursor = text; cursor && *cursor;)
     {
@@ -612,8 +634,9 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             SDL_setenv_unsafe("BEACHLIFE_BOOT_USER_DIR", temporary_profile.c_str(), 1);
         }
         // BEACHLIFE_BOOT_PROGRESS=all starts the test profile with every
-        // scenario available, as a player's progress file would: the game's
-        // sp.bin holds 12 little-endian states (4 training, 2 available).
+        // scenario and sandbox island available, as a player's progress file
+        // would: sp.bin holds 12 little-endian states; scenarios need bit 0
+        // clear, sandbox islands bit 2 or 3 set, so 4 opens both.
         const char* progress = SDL_getenv("BEACHLIFE_BOOT_PROGRESS");
         if (progress && SDL_strcmp(progress, "all") == 0)
         {
@@ -626,8 +649,7 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             }
             for (int index = 0; index < 12; ++index)
             {
-                const unsigned char state[4] = {
-                    static_cast<unsigned char>(index < 2 ? 4 : 2), 0, 0, 0};
+                const unsigned char state[4] = {4, 0, 0, 0};
                 std::fwrite(state, 1, sizeof(state), file);
             }
             std::fclose(file);

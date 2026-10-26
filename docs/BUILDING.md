@@ -494,14 +494,16 @@ switches drive the game without a player:
   dialog. A step `x,y>file` clicks one point until the game opens the file that
   marks the next screen, so it does not depend on timing; `x,y+N` clicks once,
   N frames after the previous step. Coordinates are the game's.
-  `BEACHLIFE_BOOT_ROUTE=sandbox1` starts the first sandbox island instead.
+  Presets `scenario1`…`scenario12` and `sandbox1`…`sandbox12` start each
+  scenario or sandbox island; beyond the first ones they need
+  `BEACHLIFE_BOOT_PROGRESS=all`.
 - `BEACHLIFE_BOOT_MONKEY="seed[,interval]"` clicks random game coordinates
   every interval frames (default 90) once the route is done, and logs each click
   so a failure reproduces from the seed.
 - `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames, and
   `BEACHLIFE_BOOT_WHEEL="frame:steps;..."` rolls the mouse wheel (positive is up).
 - `BEACHLIFE_BOOT_PROGRESS=all` starts the test profile with every scenario
-  available.
+  and sandbox island available.
 - `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
 - `BEACHLIFE_BOOT_TRACE_FILES=1` prints each file the game opens.
 - `BEACHLIFE_BOOT_ASSUME_FOCUS=1` accepts input without window focus; a route

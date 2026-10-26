@@ -640,6 +640,80 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 1)
         toolchain.assert_not_called()
 
+    def add_registration(self, address, **target_fields):
+        address = f'{address:08x}'
+        paths = [self.metadata / f'metadata.d/{address}.csv',
+                 self.metadata / f'targets/beachlife-uk-1.1.d/{address}.json',
+                 self.metadata / f'fixtures/game.d/fixture_{address}.cpp']
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        paths[0].write_text(f'address,type,size,symbol\n0x{address},function,4,?method_{address}@@YAXXZ\n')
+        paths[1].write_text(json.dumps({'functions': [
+            {'address': '0x' + address, 'size': 4, 'name': 'method_' + address}], **target_fields}))
+        paths[2].write_text('// generated retention fixture\n')
+        return paths
+
+    def test_registrations_reach_compiler_comparator_and_folded_symbol_lookup_in_order(self):
+        later = self.add_registration(0x1040)
+        earlier = self.add_registration(0x1020, source_compile_options={'helper.cpp': ['/GX']})
+        self.target['functions'] = [{'address': '0x1000', 'size': 4, 'name': 'base'}]
+        self.comparison_rows = [{'address': '0x1000', 'recomp': '0x2000', 'matching': 1},
+                                {'address': '0x1020', 'recomp': '0x2020', 'matching': 1}]
+        build = self.tool.build
+        compiled = []
+        def with_folded_symbol(folder, sources, *args, **kwargs):
+            compiled.extend(sources)
+            binary, pdb = build(folder, sources, *args, **kwargs)
+            binary.with_suffix('.map').write_text(' 0001:00000000 ?method_00001040@@YAXXZ 00002020 f\n')
+            return binary, pdb
+        self.tool.build = with_folded_symbol
+        with patch.object(matching, 'read_va', return_value=b'data'):
+            result = self.run_game()
+        self.assertEqual([row['address'] for row in result['functions']],
+                         ['0x1000', '0x00001020', '0x00001040'])
+        self.assertTrue(result['functions'][-1]['folded'])
+        self.assertEqual(compiled[-3:], [self.metadata / 'fixtures/game.cpp', earlier[2], later[2]])
+        self.assertEqual(result['source_compile_options'], {'helper.cpp': ['/GX']})
+        project = json.loads((self.args.output / 'game/reccmp-project.yml').read_text())
+        self.assertEqual(project['targets']['BEACHLIFE']['data-sources'],
+                         [str(self.metadata / 'metadata.csv'), str(earlier[0]), str(later[0])])
+        for path in [*earlier, *later]:
+            self.assertEqual(result['input_sha256'][str(path)], matching.digest(path))
+        effective_target = Path(result['target_config'])
+        self.assertEqual(result['input_sha256'][str(effective_target)], matching.digest(effective_target))
+        self.assertEqual([row['address'] for row in json.loads(effective_target.read_text())['functions']],
+                         ['0x1000', '0x00001020', '0x00001040'])
+
+    def test_registration_conflicts_and_target_overrides_fail_before_build(self):
+        paths = self.add_registration(0x1020)
+        cases = [({'functions': [{'address': '0x1020', 'name': 'duplicate', 'size': 4}]},
+                  {'functions': [{'address': '0x00001020', 'name': 'new', 'size': 4}]},
+                  'Duplicate function address'),
+                 ({'source_compile_options': {'helper.cpp': ['/GX']}},
+                  {'source_compile_options': {'helper.cpp': ['/Ob1']}}, 'Duplicate source_compile_options'),
+                 ({}, {'sha256': 'overridden'}, 'Unsupported matching target fragment')]
+        original = self.target.copy()
+        for base, fragment, error in cases:
+            self.target = original | base
+            paths[1].write_text(json.dumps(fragment))
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
+                self.run_game()
+            self.assertEqual(self.calls, [])
+
+    def test_duplicate_metadata_and_invalid_fragment_headers_fail_before_build(self):
+        paths = self.add_registration(0x1020)
+        for csv in ('address,type,size,symbol\n0x1020,function,4,?a\n0x00001020,function,4,?b\n',
+                    'address,symbol\n0x1020,?a\n'):
+            paths[0].write_text(csv)
+            with self.subTest(csv=csv), self.assertRaises(ValueError):
+                self.run_game()
+            self.assertEqual(self.calls, [])
+        paths[0].write_text('address,type,size,symbol\n0x1020,function,4,?a\n')
+        (self.metadata / 'metadata.csv').write_text('address,type,size,symbol\n0x00001020,function,4,?b\n')
+        with self.assertRaisesRegex(ValueError, 'Duplicate matching metadata address'):
+            self.run_game()
+        self.assertEqual(self.calls, [])
+
 
 if __name__ == '__main__':
     unittest.main()

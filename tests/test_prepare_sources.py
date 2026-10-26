@@ -297,6 +297,30 @@ class LocalDecompTests(unittest.TestCase):
         adaptations = self.write('patches/beachlife-decomp/series', b'native.patch\n')
         return common, native, reconstruction, adaptations
 
+    def test_failed_batch_reports_later_patch_without_publishing_partial_tree(self):
+        import contextlib
+        import io
+        self.patch('one.patch', 'first', 'second')
+        self.patch('two.patch', 'second', 'third')
+        self.patch('broken.patch', 'missing context', 'fourth')
+        series = self.write('patches/beachlife-decomp/series', b'one.patch\n')
+        self.prepare()
+        target = self.output / 'beachlife-decomp/src/value.cpp'
+        stamp = self.output / 'beachlife-decomp.json'
+        previous = stamp.read_bytes()
+        mtime = target.stat().st_mtime_ns
+
+        series.write_bytes(b'one.patch\ntwo.patch\nbroken.patch\n')
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors), self.assertRaises(subprocess.CalledProcessError):
+            self.prepare()
+        self.assertIn('Failed to apply patch: ' + str(series.parent / 'broken.patch'), errors.getvalue())
+        self.assertEqual(target.read_bytes(), b'second\n')
+        self.assertEqual(target.stat().st_mtime_ns, mtime)
+        self.assertEqual(stamp.read_bytes(), previous)
+        self.assertEqual({p.name for p in self.output.iterdir()},
+                         {'beachlife-decomp', 'beachlife-decomp.json'})
+
     def test_profiles_share_reconstruction_before_native_adaptation(self):
         import hashlib
         common, native, reconstruction, adaptations = self.profile_patches()
@@ -358,6 +382,81 @@ class LocalDecompTests(unittest.TestCase):
                 self.assertEqual(target.read_bytes(), value)
                 self.assertEqual(self.record()['identity']['profile'], after)
                 self.prepare(verify=True, decomp_profile=after)
+
+    def matching_patch(self, address, destination=None):
+        destination = destination or f'src/match_{address}.cpp'
+        body = (f'diff --git a/{destination} b/{destination}\n'
+                'new file mode 100644\n--- /dev/null\n'
+                f'+++ b/{destination}\n@@ -0,0 +1 @@\n+generated {address}\n')
+        return self.write(f'patches/beachlife-decomp/matching-series.d/{address}.patch', body.encode())
+
+    def test_parallel_matching_patches_merge_and_export_in_both_orders(self):
+        from prepare_sources import DECOMP_PROFILES, tree_manifest
+        self.prepare()
+        native = tree_manifest(self.output / 'beachlife-decomp')
+        for address in ('00402000', '00401000'):
+            self.git('checkout', '-qb', 'worker-' + address, self.first)
+            self.matching_patch(address)
+            self.commit()
+        exports = []
+        for order in (('00401000', '00402000'), ('00402000', '00401000')):
+            self.git('checkout', '-qb', 'merge-' + order[0], self.first)
+            for address in order:
+                self.git('-c', 'user.name=Yannick Suter', '-c', 'user.email=yannick.suter@gmail.com',
+                         'merge', '--no-ff', '-m', 'test: merge matching registration', 'worker-' + address)
+            self.output = self.root / ('merged-' + order[0])
+            self.prepare(decomp_profile='matching')
+            exports.append(tree_manifest(self.output / 'beachlife-decomp'))
+            self.assertEqual([p['path'].rsplit('/', 1)[-1] for p in self.record()['identity']['patches']],
+                             ['00401000.patch', '00402000.patch'])
+            for profile in DECOMP_PROFILES:
+                if profile != 'matching':
+                    self.prepare(decomp_profile=profile)
+                    self.assertEqual(tree_manifest(self.output / 'beachlife-decomp'), native)
+        self.assertEqual(exports[0], exports[1])
+        self.assertEqual(set(exports[0]) - set(native),
+                         {'src/match_00401000.cpp', 'src/match_00402000.cpp'})
+
+    def test_matching_patch_add_remove_and_change_invalidate_export(self):
+        self.prepare(decomp_profile='matching')
+        addition = self.matching_patch('00401000')
+        for action in ('add', 'change', 'remove'):
+            if action == 'change':
+                addition.write_text(addition.read_text().replace('+generated', '+changed'))
+            elif action == 'remove':
+                addition.unlink()
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(ValueError, 'stale'):
+                    self.prepare(verify=True, decomp_profile='matching')
+                self.prepare(decomp_profile='matching')
+                self.prepare(verify=True, decomp_profile='matching')
+
+    def test_matching_patches_reject_shared_edits_and_colliding_creations(self):
+        addition = self.matching_patch('00401000')
+        before = addition.read_bytes()
+        edit = self.patch('edit.patch', 'first', 'changed').read_bytes()
+        for body in (edit, before + edit, before.replace(b'100644', b'120000'),
+                     before.replace(b'src/match_00401000.cpp', b'../escape')):
+            addition.write_bytes(body)
+            with self.subTest(body=body), self.assertRaisesRegex(ValueError, 'only create text files'):
+                self.prepare(decomp_profile='matching')
+        addition.write_bytes(before)
+        self.matching_patch('00402000', 'src/match_00401000.cpp')
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.prepare(decomp_profile='matching')
+        self.assertFalse(self.output.joinpath('beachlife-decomp').exists())
+
+    def test_matching_patch_directory_rejects_symlinks_and_bad_names(self):
+        addition = self.matching_patch('00401000')
+        wrong = addition.with_name('unkeyed.patch')
+        addition.rename(wrong)
+        with self.assertRaisesRegex(ValueError, 'lowercase address'):
+            self.prepare(decomp_profile='matching')
+        wrong.rename(addition)
+        addition.unlink()
+        self.symlink(addition, self.repo / 'host.txt')
+        with self.assertRaisesRegex(ValueError, 'symlinked'):
+            self.prepare(decomp_profile='matching')
 
     def test_experimental_profile_is_opt_in_and_ordered(self):
         import hashlib

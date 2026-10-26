@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
@@ -66,7 +67,7 @@ def patch_paths(source, name, series_filename='series'):
     folder = Path(source) / 'patches' / name
     series = folder / series_filename
     no_symlinks(series, Path(source))
-    result = []
+    result, seen = [], set()
     if series.exists():
         if not series.is_file():
             raise ValueError(f'Invalid patch series: {series}')
@@ -80,9 +81,43 @@ def patch_paths(source, name, series_filename='series'):
                     or not path.is_file() or not path.resolve().is_relative_to(folder.resolve())):
                 raise ValueError(f'Invalid patch entry: {line}')
             no_symlinks(path, Path(source))
-            if path in result:
+            if path in seen:
                 raise ValueError(f'Duplicate patch entry: {line}')
+            seen.add(path)
             result.append(path)
+    return result
+
+
+def matching_patch_paths(source):
+    """Discover independent matching registrations without a shared series edit.
+
+    These patches only create files. Native profiles omit them, equivalent to
+    applying and immediately removing each addition before native adaptation.
+    """
+    folder = Path(source) / 'patches' / DECOMP / 'matching-series.d'
+    no_symlinks(folder, Path(source))
+    if not folder.exists():
+        return []
+    if not folder.is_dir():
+        raise ValueError(f'Invalid matching patch directory: {folder}')
+    result = sorted(folder.iterdir())
+    creation = re.compile(
+        r'a/([A-Za-z0-9_./-]+) b/\1\nnew file mode 100644\n'
+        r'(?:index 0+\.\.[0-9a-f]+\n)?--- /dev/null\n\+\+\+ b/\1\n'
+        r'@@ -0,0 \+1(?:,[1-9][0-9]*)? @@\n(?:\+[^\n]*\n)+'
+        r'(?:\\ No newline at end of file\n)?')
+    for path in result:
+        no_symlinks(path, Path(source))
+        if not path.is_file() or not re.fullmatch(r'[0-9a-f]{8}\.patch', path.name):
+            raise ValueError(f'Matching patches need an eight-digit lowercase address: {path}')
+        sections = re.split(r'^diff --git ', path.read_text(encoding='utf-8'), flags=re.M)
+        if sections[0] or len(sections) < 2:
+            raise ValueError(f'Matching patch must only create text files: {path}')
+        for section in sections[1:]:
+            match = creation.fullmatch(section)
+            if (not match or PurePosixPath(match[1]).is_absolute() or
+                    any(part in ('..', '.git') for part in PurePosixPath(match[1]).parts)):
+                raise ValueError(f'Matching patch must only create text files: {path}')
     return result
 
 
@@ -148,6 +183,11 @@ def decomp_inputs(source, revision, decomp_profile='native'):
         path = source / 'patches' / folder / filename
         series.append({'path': path.relative_to(source).as_posix(),
                        'sha256': sha256(path) if path.is_file() else None})
+    if decomp_profile == 'matching':
+        for path in matching_patch_paths(source):
+            if path.resolve() in seen:
+                raise ValueError(f'Duplicate patch entry across series: {path.name}')
+            patches.append(path)
     identity = {'name': DECOMP, 'commit': revision, 'subtree': 'decomp', 'tree': tree,
                 'profile': decomp_profile, 'series': series,
                 'patches': [{'path': p.relative_to(source).as_posix(), 'sha256': sha256(p)} for p in patches]}
@@ -178,6 +218,10 @@ def sync_tree(staged, destination):
 def export_tree(repository, revision, archive, staged):
     subprocess.run(['git', '--no-replace-objects', '-C', str(repository), '-c', 'core.autocrlf=false',
                     '-c', 'core.eol=lf', 'archive', revision, '-o', str(archive)], check=True)
+    extract_tree(archive, staged)
+
+
+def extract_tree(archive, staged):
     staged.mkdir()
     with tarfile.open(archive) as handle:
         for member in handle:
@@ -192,6 +236,40 @@ def export_tree(repository, revision, archive, staged):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(handle.extractfile(member).read())
                 target.chmod(member.mode & 0o777)
+
+
+def apply_patches(staged, archive, patches, expected_patches):
+    snapshots = []
+    for index, patch in enumerate(patches):
+        body = patch.read_bytes()
+        if hashlib.sha256(body).hexdigest() != expected_patches[index]['sha256']:
+            raise ValueError(f'Patch changed while preparing source: {patch}')
+        snapshot = staged.parent / f'patch-{index}.diff'
+        snapshot.write_bytes(body)
+        snapshots.append('../' + snapshot.name)
+    # A nested working directory otherwise makes Git silently skip patch paths
+    # outside its prefix. The temporary repository also confines patch paths.
+    init = ['git', '--no-replace-objects', 'init', '--quiet', '--template=', str(staged)]
+    command = ['git', '--no-replace-objects', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', 'apply']
+    subprocess.run(init, check=True)
+    try:
+        # Separate patch arguments preserve series order, including edits to the
+        # same file. Short relative names and bounded batches fit Windows argv.
+        for start in range(0, len(snapshots), 1024):
+            subprocess.run([*command, *snapshots[start:start + 1024]], cwd=staged, check=True)
+    except subprocess.CalledProcessError:
+        # Git may already have applied earlier patches in the batch. Replay the
+        # checked snapshots from the original archive to name the failing patch.
+        shutil.rmtree(staged)
+        extract_tree(archive, staged)
+        subprocess.run(init, check=True)
+        for patch, snapshot in zip(patches, snapshots):
+            try:
+                subprocess.run([*command, snapshot], cwd=staged, check=True)
+            except subprocess.CalledProcessError:
+                print(f'Failed to apply patch: {patch}', file=sys.stderr)
+                raise
+    shutil.rmtree(staged / '.git')
 
 
 def prepare(source, output, names=DEPENDENCIES, verify=False, decomp_revision=None,
@@ -249,21 +327,8 @@ def prepare(source, output, names=DEPENDENCIES, verify=False, decomp_revision=No
             export_tree(repository, revision, temporary / 'source.tar', staged)
             if source_files is not None and tree_manifest(staged) != source_files:
                 raise ValueError('The decomp archive differs from its committed blobs; check export attributes')
-            # A nested working directory otherwise makes Git silently skip patch
-            # paths outside that directory's prefix in the enclosing repository.
-            # A temporary repository also enforces Git's patch path confinement.
             if patches:
-                subprocess.run(['git', '--no-replace-objects', 'init', '--quiet', '--template=', str(staged)], check=True)
-            for index, patch in enumerate(patches):
-                body = patch.read_bytes()
-                if hashlib.sha256(body).hexdigest() != identity['patches'][index]['sha256']:
-                    raise ValueError(f'Patch changed while preparing source: {patch}')
-                snapshot = temporary / f'patch-{index}.diff'
-                snapshot.write_bytes(body)
-                subprocess.run(['git', '--no-replace-objects', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
-                                'apply', str(snapshot)], cwd=staged, check=True)
-            if patches:
-                shutil.rmtree(staged / '.git')
+                apply_patches(staged, temporary / 'source.tar', patches, identity['patches'])
             record = {'identity': identity, 'files': tree_manifest(staged)}
             if source_files is not None:
                 record['source_files'] = source_files
