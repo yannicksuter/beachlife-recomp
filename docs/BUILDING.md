@@ -462,7 +462,7 @@ with a generated, loud trap for every game function that is not decompiled
 yet. Calling a trap stops the game and names the function and its original
 address. That tells you what to decompile next. A boot build with traps is a
 development tool, never release gameplay. It supports Linux x86-64 and Windows
-x64 with the pinned LLVM-MinGW toolchain.
+x64 with the pinned LLVM-MinGW toolchain, plus macOS arm64 and x86_64.
 
 ```sh
 cmake --preset debug -B build/boot \
@@ -616,6 +616,52 @@ python3 tools/check_package.py build/artifacts/*.tar.gz
 Use `x86_64` for the Intel build. A package contains `beachlife.app` and a command-
 line wrapper. Ad-hoc signing enables the bundle's local signature checks; it is
 not Developer ID signing or notarization.
+
+### macOS boot game
+
+Install LLVM's symbol tools alongside CMake and Ninja. AppleClang remains the
+compiler; LLVM `nm`, `objdump` and `cxxfilt` inspect Mach-O objects and the selected
+SDK's libSystem/libc++ export stubs. Universal boot builds are not supported;
+use a separate directory for each architecture.
+
+```sh
+brew install cmake ninja llvm
+export PATH="$(brew --prefix llvm)/bin:$PATH"
+cmake --preset release -B build/boot-arm64 \
+  -DCMAKE_C_COMPILER="$(xcrun --find clang)" \
+  -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
+cmake --build build/boot-arm64 --parallel
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy BEACHLIFE_BOOT_QUIET=1 \
+  ctest --test-dir build/boot-arm64 --output-on-failure
+```
+
+Use `x86_64` and `build/boot-x86_64` for Intel; Apple Silicon needs Rosetta to run
+those tests. The default macOS deployment target is 15.0. Tool locations can be
+set with `BEACHLIFE_BOOT_NM`, `BEACHLIFE_BOOT_OBJDUMP` and
+`BEACHLIFE_BOOT_DEMANGLER`.
+
+The boot game lives in `beachlife.app/Contents/MacOS/beachlife`, with the same
+Resources layout as the launcher. Sign the completed app after resource copying.
+Retail content stays in the user's verified content store, and preferences/saves
+use SDL's Application Support location or `BEACHLIFE_BOOT_USER_DIR`. Tests use
+isolated profiles and canonical paths, including on case-insensitive APFS.
+
+Darwin stdio uses `funopen` over the compat descriptors. On ARM, the CPU capability
+adapter advertises the portable operations needed by the retail MMX startup
+check. Its profiling counter advances in nanoseconds (a fixed 1 GHz scale, so
+retail `/1000` values are microseconds); Intel retains RDTSC. The millisecond
+frame clock is unchanged. ARM game compilation disables floating-point
+contraction; retained x87 precision and alignment-sensitive raster operations
+still need native boundary-vector qualification.
+
+CTest includes `boot_link` (all game objects and static initializers),
+`compat_cpu` (counter and retail profiler), and `boot_headless` (generated invalid
+configuration through the retail entry). The last check requires three actual
+configuration reads and never skips for a missing GPU. GPU startup/runtime tests
+still skip with code 77 when unavailable. Native Metal presentation and gameplay
+with the user's retail data require separate macOS verification.
 
 ## Windows
 
