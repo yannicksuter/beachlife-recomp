@@ -1,0 +1,165 @@
+diff --git a/src/startup_game_update_pair.h b/src/startup_game_update_pair.h
+index 2e1f869be2bc52668e60d593c8c30ed8b066e53e..0344845198c8d8b20fd9276dfd8d99279c283acc 100644
+--- a/src/startup_game_update_pair.h
++++ b/src/startup_game_update_pair.h
+@@ -37,8 +37,6 @@ struct GameSoundNode
+ struct GameSoundIterator
+ {
+     GameSoundNode* node;
+-    GameSoundIterator();
+-    GameSoundIterator(const GameSoundIterator& other);
+     GameSoundIterator operator++(int);
+ };
+ struct GameSoundList
+@@ -116,4 +114,6 @@ public:
+     ~GameUpdatePair();
+ };
+ 
++extern const float game_sound_stop_fade; // 0x004f4d2c.
++extern const float game_sound_retry_delay;
+ #endif
+diff --git a/src/startup_pointer_list_operations.h b/src/startup_pointer_list_operations.h
+index 96b0dd1f05c7c2a7a85ffd669c487173a358e171..17876f214bf4bcfa05f5dbad62f9b840e7741e96 100644
+--- a/src/startup_pointer_list_operations.h
++++ b/src/startup_pointer_list_operations.h
+@@ -63,4 +63,6 @@ unsigned int PointerListDistance(const Iterator& first, const Iterator& last);
+ template <class Node, class Link>
+ void ClearPointerList(Link* head);
+ 
++template <class T>
++void DeleteNullablePointerListValue(T* value); // 0x004d2d50.
+ #endif
+diff --git a/src/startup_screen_panel13c_entry.h b/src/startup_screen_panel13c_entry.h
+index 7fed7d4c03f9ed9752562660e4c74a85f58e67b9..c630034f91e6156e263555a3153ea7fe954eda14 100644
+--- a/src/startup_screen_panel13c_entry.h
++++ b/src/startup_screen_panel13c_entry.h
+@@ -6,6 +6,7 @@
+ // establishes the final two pointer types; no additional lifetime is supplied.
+ struct ScreenLoadPanel13cEntry
+ {
++    ~ScreenLoadPanel13cEntry(); // 0x004cd930.
+     char* name_00;
+     char* directory_04;
+     char* owned_08; // ID3v1 artist; copied by 0x004ce850.
+@@ -29,4 +30,6 @@ struct ScreenLoadPanel13cEntry
+     }
+ };
+ 
++ScreenLoadPanel13cEntry** FindAndDeleteMarkedEntry(ScreenLoadPanel13cEntry** first,
++    ScreenLoadPanel13cEntry** last, unsigned char predicate, void* category); // 0x004cea40.
+ #endif
+diff --git a/src/startup_screen_panel13c_owner.h b/src/startup_screen_panel13c_owner.h
+index 02706ffde0dab74033d70d27198725b8825392ee..58663ad0de81f0e08cf0495a137552b43930aa50 100644
+--- a/src/startup_screen_panel13c_owner.h
++++ b/src/startup_screen_panel13c_owner.h
+@@ -2,6 +2,7 @@
+ #define STARTUP_SCREEN_PANEL13C_OWNER_H
+ 
+ struct WindowAudioState;
++struct ScreenListBoxSelectionRange;
+ #include "startup_screen_panel13c_entry.h"
+ 
+ // Observed 0x38-byte MP3 stream scanner that AddEntry allocates. Names are
+@@ -43,20 +44,6 @@ void ReadPanel13cEntryTag(ScreenLoadPanel13cEntry* entry);
+ // lifetimes remain dependencies before native owning composition.
+ struct ScreenLoadPanel13cOwner
+ {
+-    void TogglePause();                                 // 0x004ce080.
+-    void SetCurrentEntry(int index);                    // 0x004cdb60.
+-    void SetEntryWord10(int index, unsigned int value); // 0x004cdbd0.
+-    void SetRepeat(int index, unsigned char enabled);   // 0x004cdbf0.
+-    const char* ReadTitle(int index);                   // 0x004cdc40.
+-    const char* ReadArtist(int index);                  // 0x004cdc60.
+-    bool UpdatePlayback();                              // 0x004cdb00.
+-    void MarkForDeletion(int index);                    // 0x004cde40.
+-    unsigned char ReadRepeat(int index);                // 0x004cdc30.
+-    bool IsPlaying();
+-    void StopPlayback();
+-    void StartPlayback();
+-    void AdvanceTrack();
+-    void NextTrack();
+     WindowAudioState* audio_00;
+     ScreenLoadPanel13cEntry** entries_begin_04;
+     ScreenLoadPanel13cEntry** entries_end_08;
+@@ -73,15 +60,40 @@ struct ScreenLoadPanel13cOwner
+     explicit ScreenLoadPanel13cOwner(WindowAudioState* audio);
+ 
+     // Actual indexed accessors and append/search methods. Bodies remain separate.
++    bool UpdatePlayback();                     // 0x004cdb00.
+     int EntryCount();                          // Actual 0x004cdb40: entries_end_08 - entries_begin_04.
+     const char* ReadEntryName(int index);      // 0x004cdba0, entry+00
+     const char* ReadEntryDirectory(int index); // 0x004cdbb0, entry+04
+     unsigned int ReadEntryWord10(int index);   // 0x004cdb90, entry+10
+     unsigned int ReadEntryWord18(int index);   // 0x004cdbc0, entry+18
+     // Actual 0x004ce0a0, RET 0x10: appends an existing file (see the source).
+-    bool AddEntry(const char* directory, const char* name, unsigned int word_10, unsigned int word_18);
++    bool AddEntry(
++        const char* directory, const char* name, unsigned int word_10, unsigned int word_18);
+     // Actual 0x004ce370, RET8: an entry with this directory and name exists.
+     bool ContainsEntry(const char* directory, const char* name);
++    void SetCurrentEntry(int index);                     // 0x004cdb60.
++    void SetEntryWord10(int index, unsigned int value);  // 0x004cdbd0.
++    void MoveEntryUp(int index);                         // 0x004cdf40.
++    void MoveEntryDown(int index);                       // 0x004cdf80.
++    bool Play(unsigned char resume);                     // 0x004cdfd0.
++    void StopPlayback();                                 // 0x004ce070.
++    void TogglePause();                                  // 0x004ce080.
++    void ClearEntries();                                 // 0x004ce410.
++    void NextTrack();                                    // 0x004ce560.
++    void AdvanceTrack();                                 // 0x004ce6b0.
++    void StartPlayback();                                // 0x004ce4b0.
++    void PreviousTrack();                                // 0x004ce570.
++    bool IsPlaying();                                    // 0x004cdb50.
++    void SetRepeat(int index, unsigned char enabled);    // 0x004cdbf0.
++    unsigned char ReadRepeat(int index);                 // 0x004cdc30.
++    const char* ReadTitle(int index);                    // 0x004cdc40.
++    const char* ReadArtist(int index);                   // 0x004cdc60.
++    void ShuffleAll();                                   // 0x004cdc80.
++    void ShuffleRows(ScreenListBoxSelectionRange* rows); // 0x004cdcc0.
++    void MarkForDeletion(int index);                     // 0x004cde40.
++    void DeleteMarked();                                 // 0x004cde60.
++    bool HasMatchingTimeKind();                          // 0x004ce7f0.
++    bool HasOtherTimeKind();                             // 0x004ce820.
+ 
+ private:
+     friend struct ScreenLoadPanel13c;
+diff --git a/src/window_audio.h b/src/window_audio.h
+index a42173ea431f99726e6dd63cb5b72ea9e9356e77..70abfafe47536b74171c28039e0752fa9f3bc357 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -10,6 +10,10 @@ struct WindowSoundBank;
+ // constructor. These descriptive fields do not establish a native owner ABI.
+ struct WindowAudioState
+ {
++    float NearDistance() const;
++    float FarDistance() const;
++    int PlaySoundAtPosition(const char* name, const WindowAudioVector* position, unsigned int flags, int voice);
++    int PlaySoundAtPosition(const char* name, float level, const WindowAudioVector* position, unsigned int flags, int voice);
+     bool PlayStream(const char* path);                           // 0x004cfe20.
+     void SetStreamVolume(float level);                           // 0x004cffa0.
+     void SetEffectsVolume(float level);                          // 0x004cf530.
+diff --git a/src/window_audio_initialization.h b/src/window_audio_initialization.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ede919b8f4970f165bc3f19f25377eeda0a897c
+--- /dev/null
++++ b/src/window_audio_initialization.h
+@@ -0,0 +1,19 @@
++#ifndef WINDOW_AUDIO_INITIALIZATION_H
++#define WINDOW_AUDIO_INITIALIZATION_H
++
++struct WindowAudioState;
++
++// Existing sole owner: window_activation_globals.cpp, 0x005baef4.
++extern WindowAudioState* window_audio_state;
++
++// Writable pointer slots initialized to the retail directory and extension strings.
++extern const char* window_audio_redist_directory; // 0x0058270c.
++extern const char* window_sound_directory;        // 0x00582710.
++extern const char* window_sound_header_extension; // 0x0058271c.
++extern const char* window_sound_bank_extension;   // 0x00582720.
++
++// Actual 16-byte 0x004ee6b0 support calls the CRT registration route with the
++// genuine shutdown thunk. No substitute support or Miles implementation here.
++int RegisterMilesShutdown();
++
++#endif

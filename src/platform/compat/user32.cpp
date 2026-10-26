@@ -13,6 +13,7 @@
 #include <deque>
 #include <limits>
 #include <mutex>
+#include <string>
 
 namespace
 {
@@ -30,6 +31,14 @@ std::mutex message_mutex;
 bool queue_enabled = false;
 bool text_input_enabled = false;
 bool system_key = false;
+bool events_installed = false;
+bool window_alive = false;
+bool keep_hidden = false;
+void (*prepare_frame)(void*) = nullptr;
+void* frame_context = nullptr;
+WNDCLASSEXA registered_class{};
+std::string class_name;
+int application_icon;
 
 int virtual_key(SDL_Scancode scan)
 {
@@ -158,7 +167,7 @@ bool SDLCALL watch_event(void*, SDL_Event* event)
         {
         case SDL_EVENT_TEXT_INPUT:
         {
-            if (!queue_enabled || event->text.windowID != current_id)
+            if (!queue_enabled || !window_alive || event->text.windowID != current_id)
             {
                 return true;
             }
@@ -177,17 +186,17 @@ bool SDLCALL watch_event(void*, SDL_Event* event)
             return true;
         }
         case SDL_EVENT_QUIT:
-            message.hwnd = nullptr;
-            message.message = WM_QUIT;
+            message.message = WM_CLOSE;
             break;
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-            message.message = 0x10;
+            message.message = WM_CLOSE;
             id = event->window.windowID;
             break;
         case SDL_EVENT_WINDOW_FOCUS_GAINED:
         case SDL_EVENT_WINDOW_FOCUS_LOST:
-            message.message = 0x1c; // WM_ACTIVATEAPP
-            message.wParam = event->type == SDL_EVENT_WINDOW_FOCUS_GAINED;
+            message.message = WM_ACTIVATEAPP;
+            message.wParam = event->type == SDL_EVENT_WINDOW_FOCUS_GAINED ||
+                             SDL_getenv("BEACHLIFE_BOOT_ASSUME_FOCUS");
             id = event->window.windowID;
             break;
         case SDL_EVENT_WINDOW_EXPOSED:
@@ -240,7 +249,7 @@ bool SDLCALL watch_event(void*, SDL_Event* event)
         {
             return true;
         }
-        if (queue_enabled)
+        if (queue_enabled && window_alive)
         {
             messages.push_back(message);
         }
@@ -254,11 +263,11 @@ bool SDLCALL watch_event(void*, SDL_Event* event)
 
 void start_events()
 {
-    static const bool installed = SDL_AddEventWatch(watch_event, nullptr);
-    if (!installed)
+    if (!events_installed && !SDL_AddEventWatch(watch_event, nullptr))
     {
         unsupported("USER32 event queue", SDL_GetError());
     }
+    events_installed = true;
 }
 
 SDL_Window* window(HWND handle, const char* api)
@@ -351,6 +360,39 @@ void bind_window_procedure(HWND handle, WNDPROC procedure)
     start_text_input();
     std::lock_guard lock(message_mutex);
     queue_enabled = true;
+    window_alive = true;
+}
+
+WindowSession::WindowSession(HWND handle, void (*before_poll)(void*), void* context, bool hidden)
+{
+    bind_window(handle);
+    prepare_frame = before_poll;
+    frame_context = context;
+    keep_hidden = hidden;
+}
+
+WindowSession::~WindowSession()
+{
+    if (text_input_enabled)
+    {
+        SDL_StopTextInput(video(current_window)->window());
+    }
+    if (events_installed)
+    {
+        SDL_RemoveEventWatch(watch_event, nullptr);
+    }
+    std::lock_guard lock(message_mutex);
+    messages.clear();
+    pressed.fill(false);
+    current_window = nullptr;
+    current_id = 0;
+    window_procedure = nullptr;
+    registered_class = {};
+    class_name.clear();
+    queue_enabled = text_input_enabled = system_key = events_installed = window_alive = false;
+    keep_hidden = false;
+    prepare_frame = nullptr;
+    frame_context = nullptr;
 }
 } // namespace beachlife::compat
 
@@ -471,7 +513,7 @@ extern "C"
                 return FALSE;
             }
         }
-        if ((flags & 0x40) && !SDL_ShowWindow(target))
+        if ((flags & 0x40) && !keep_hidden && !SDL_ShowWindow(target))
         {
             return FALSE;
         }
@@ -527,6 +569,10 @@ extern "C"
             return FALSE;
         }
         const bool visible = !(SDL_GetWindowFlags(target) & SDL_WINDOW_HIDDEN);
+        if (keep_hidden)
+        {
+            return visible;
+        }
         bool ok = false;
         switch (command)
         {
@@ -810,26 +856,119 @@ extern "C"
         }
         return beachlife::compat::load_resource_cursor(instance, name, type, width, height, flags);
     }
-    HICON WINAPI LoadIconA(HINSTANCE, LPCSTR)
+    HICON WINAPI LoadIconA(HINSTANCE instance, LPCSTR name)
     {
-        unsupported("LoadIconA", "EXE icon resources are not exposed by the host");
+        if (instance == GetModuleHandleA(nullptr) && reinterpret_cast<std::uintptr_t>(name) == 104)
+        {
+            // Play has already applied the bundled retail application icon.
+            return reinterpret_cast<HICON>(&application_icon);
+        }
+        unsupported("LoadIconA", "only the application icon is available");
     }
-    ATOM WINAPI RegisterClassExA(const WNDCLASSEXA*)
+    ATOM WINAPI RegisterClassExA(const WNDCLASSEXA* definition)
     {
-        unsupported("RegisterClassExA", "Play owns the native window class");
+        if (!definition || definition->cbSize != sizeof(WNDCLASSEXA) || !definition->lpfnWndProc ||
+            reinterpret_cast<std::uintptr_t>(definition->lpszClassName) <= 0xffff)
+        {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return 0;
+        }
+        if (!class_name.empty())
+        {
+            SetLastError(1410); // ERROR_CLASS_ALREADY_EXISTS
+            return 0;
+        }
+        if (definition->cbClsExtra || definition->cbWndExtra || definition->lpszMenuName)
+        {
+            unsupported("RegisterClassExA", "class storage and menus");
+        }
+        class_name = definition->lpszClassName;
+        registered_class = *definition;
+        registered_class.lpszClassName = class_name.c_str();
+        return 1;
     }
-    BOOL WINAPI UnregisterClassA(LPCSTR, HINSTANCE)
+    BOOL WINAPI UnregisterClassA(LPCSTR name, HINSTANCE instance)
     {
-        unsupported("UnregisterClassA", "Play owns the native window class");
+        const bool matches = reinterpret_cast<std::uintptr_t>(name) <= 0xffff
+                                 ? reinterpret_cast<std::uintptr_t>(name) == 1
+                                 : class_name == name;
+        if (class_name.empty() || !matches || instance != registered_class.hInstance)
+        {
+            SetLastError(1411); // ERROR_CLASS_DOES_NOT_EXIST
+            return FALSE;
+        }
+        if (window_alive)
+        {
+            SetLastError(1412); // ERROR_CLASS_HAS_WINDOWS
+            return FALSE;
+        }
+        class_name.clear();
+        registered_class = {};
+        return TRUE;
     }
-    HWND WINAPI CreateWindowExA(
-        DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID)
+    HWND WINAPI CreateWindowExA(DWORD,
+        LPCSTR name,
+        LPCSTR title,
+        DWORD,
+        int,
+        int,
+        int,
+        int,
+        HWND parent,
+        HMENU menu,
+        HINSTANCE instance,
+        LPVOID parameter)
     {
-        unsupported("CreateWindowExA", "Play owns the Video and passes it as the HWND");
+        const bool matches = reinterpret_cast<std::uintptr_t>(name) <= 0xffff
+                                 ? reinterpret_cast<std::uintptr_t>(name) == 1
+                                 : class_name == name;
+        if (class_name.empty() || !matches || instance != registered_class.hInstance)
+        {
+            SetLastError(1407); // ERROR_CANNOT_FIND_WND_CLASS
+            return nullptr;
+        }
+        if (!current_window || window_alive || parent || menu || parameter)
+        {
+            unsupported("CreateWindowExA", "only Play's top-level window is available");
+        }
+        // Play selected the host size/fullscreen mode before loading. Retail
+        // geometry belongs to the renderer's logical 800x600 presentation.
+        if (title && !SDL_SetWindowTitle(window(current_window, "CreateWindowExA"),
+                         beachlife::compat::ansi_to_utf8(title).c_str()))
+        {
+            return nullptr;
+        }
+        beachlife::compat::bind_window_procedure(current_window, registered_class.lpfnWndProc);
+        MSG activation{};
+        activation.hwnd = current_window;
+        activation.message = WM_ACTIVATEAPP;
+        activation.wParam =
+            SDL_GetKeyboardFocus() == beachlife::compat::video(current_window)->window() ||
+            SDL_getenv("BEACHLIFE_BOOT_ASSUME_FOCUS");
+        std::lock_guard lock(message_mutex);
+        messages.push_back(activation);
+        return current_window;
     }
-    BOOL WINAPI DestroyWindow(HWND)
+    BOOL WINAPI DestroyWindow(HWND handle)
     {
-        unsupported("DestroyWindow", "Play owns the Video lifetime");
+        if (handle != current_window || !window_alive)
+        {
+            SetLastError(1400); // ERROR_INVALID_WINDOW_HANDLE
+            return FALSE;
+        }
+        {
+            std::lock_guard lock(message_mutex);
+            window_alive = false;
+            std::erase_if(messages,
+                [handle](const MSG& message)
+                {
+                    return message.hwnd == handle;
+                });
+        }
+        // Retire the Win32 window but retain Video for the retail loop's final
+        // Update/Render and renderer teardown. Play releases SDL afterwards.
+        window_procedure(handle, 2, 0, 0); // WM_DESTROY
+        return TRUE;
     }
     BOOL WINAPI PeekMessageA(LPMSG message, HWND handle, UINT first, UINT last, UINT remove)
     {
@@ -855,7 +994,16 @@ extern "C"
             std::lock_guard lock(message_mutex);
             queue_enabled = true;
         }
-        SDL_PumpEvents();
+        if (prepare_frame)
+        {
+            prepare_frame(frame_context);
+        }
+        // Watchers feed both this queue and DirectInput. Drain SDL's copy so
+        // it cannot fill up; return only one Win32 message to the retail loop.
+        SDL_Event event;
+        while (SDL_PollEvent(&event))
+        {
+        }
         std::lock_guard lock(message_mutex);
         for (auto it = messages.begin(); it != messages.end(); ++it)
         {
@@ -910,26 +1058,11 @@ extern "C"
     }
     void WINAPI PostQuitMessage(int exit_code)
     {
-        start_events();
-        {
-            std::lock_guard lock(message_mutex);
-            queue_enabled = true;
-        }
-        SDL_Event quit{};
-        quit.type = SDL_EVENT_QUIT;
-        if (!SDL_PushEvent(&quit))
-        {
-            unsupported("PostQuitMessage", SDL_GetError());
-        }
+        MSG quit{};
+        quit.message = WM_QUIT;
+        quit.wParam = static_cast<WPARAM>(exit_code);
         std::lock_guard lock(message_mutex);
-        for (auto it = messages.rbegin(); it != messages.rend(); ++it)
-        {
-            if (it->message == WM_QUIT)
-            {
-                it->wParam = static_cast<WPARAM>(exit_code);
-                break;
-            }
-        }
+        messages.push_back(quit);
     }
     LRESULT WINAPI DefWindowProcA(HWND handle, UINT message, WPARAM parameter, LPARAM)
     {
@@ -957,13 +1090,14 @@ extern "C"
         case 0x101:
         case 0x102:
         case 0x105:
+        case 0x106: // WM_SYSCHAR: Play's window has no menu bar
             return 0;
         case 0x104: // WM_SYSKEYDOWN
             if (parameter == 0x73)
             {
-                return DestroyWindow(handle); // Alt-F4
+                return window_procedure(handle, WM_CLOSE, 0, 0); // Alt-F4
             }
-            unsupported("DefWindowProcA", "system menu keyboard commands");
+            return 0; // There is no host menu to activate with Alt/F10.
         default:
             unsupported("DefWindowProcA", "unimplemented default window message");
         }

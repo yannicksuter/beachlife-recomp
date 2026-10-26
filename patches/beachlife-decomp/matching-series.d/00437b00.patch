@@ -1,0 +1,129 @@
+diff --git a/fixtures/game.d/fixture_00437b00.cpp b/fixtures/game.d/fixture_00437b00.cpp
+new file mode 100644
+index 0000000..35e5ad6
+--- /dev/null
++++ b/fixtures/game.d/fixture_00437b00.cpp
+@@ -0,0 +1,6 @@
++#include "startup_world_repairs.h"
++// Compile/link retention only; never execute this image.
++extern "C" __declspec(dllexport) CircularListIterator Fixture_00437b00(WorldRepairList* list, CircularListIterator position, WorldRepairEntry* const& value)
++{
++    return list->Insert(position, value);
++}
+diff --git a/metadata.d/00437b00.csv b/metadata.d/00437b00.csv
+new file mode 100644
+index 0000000..d423d30
+--- /dev/null
++++ b/metadata.d/00437b00.csv
+@@ -0,0 +1,3 @@
++address,type,size,symbol
++0x00437b00,function,38,?Insert@WorldRepairList@@QAE?AUCircularListIterator@@U2@ABQAUWorldRepairEntry@@@Z
++0x00437d20,function,189,?CreateNode@WorldRepairList@@QAEPAU?$WorldRepairNode@UWorldRepairEntry@@@@ABQAUWorldRepairEntry@@@Z
+diff --git a/src/match_00437b00.cpp b/src/match_00437b00.cpp
+new file mode 100644
+index 0000000..f790f4f
+--- /dev/null
++++ b/src/match_00437b00.cpp
+@@ -0,0 +1,80 @@
++#include "startup_building_status.h"
++#include "startup_world_repairs.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++
++#include <new>
++
++template <class Node, class Value>
++Node* AllocatePointerListNode_00437b00(const Value& value, Value Node::* payload)
++{
++    const unsigned int block_size = (sizeof(Node) + 7u) & ~7u;
++    const unsigned int bucket_index = (block_size - 1) / 8;
++    PoolChunkLink* block;
++    {
++        AcquirePoolLock(&pool_lock_word);
++        PoolLockGuard guard;
++        block = pool_chunk_buckets[bucket_index];
++        if (block)
++        {
++            pool_chunk_buckets[bucket_index] = block->next;
++        }
++        else
++        {
++            int count = 20;
++            // Restore the storage-provider element type before any arithmetic.
++            unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
++            block = reinterpret_cast<PoolChunkLink*>(chunk);
++            if (count != 1)
++            {
++                PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
++                pool_chunk_buckets[bucket_index] = next;
++                for (int index = 1;; ++index)
++                {
++                    PoolChunkLink* current = next;
++                    if (count - 1 == index)
++                    {
++                        current->next = 0;
++                        break;
++                    }
++                    next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
++                    current->next = next;
++                }
++            }
++        }
++    }
++    // Default initialization begins the complete native object lifetime without
++    // initializing its links; payload construction still follows guard cleanup.
++    Node* result = ::new (static_cast<void*>(block)) Node;
++    try
++    {
++        ::new (&(result->*payload)) Value(value);
++    }
++    catch (...)
++    {
++        ReturnPool(result, block_size);
++        throw;
++    }
++    return result;
++}
++
++// FUNCTION: BEACHLIFE 0x00437d20
++WorldRepairNode<WorldRepairEntry>* WorldRepairList::CreateNode(WorldRepairEntry* const& value)
++{
++    return AllocatePointerListNode_00437b00(value, &WorldRepairNode<WorldRepairEntry>::entry);
++}
++// FUNCTION: BEACHLIFE 0x00437b00
++CircularListIterator WorldRepairList::Insert(CircularListIterator position, WorldRepairEntry* const& value)
++{
++    CircularListNode* node = CreateNode(value);
++    CircularListNode* previous = position.node->previous;
++    node->next = position.node;
++    node->previous = previous;
++    previous->next = node;
++    position.node->previous = node;
++    CircularListIterator result;
++    result.node = node;
++    return result;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00437b00.json b/targets/beachlife-uk-1.1.d/00437b00.json
+new file mode 100644
+index 0000000..c7385b5
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00437b00.json
+@@ -0,0 +1,16 @@
++{
++  "functions": [
++    {
++      "address": "0x00437b00",
++      "size": 38,
++      "name": "WorldRepairList::Insert",
++      "name_status": "Descriptive; complete audited original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00437b00.cpp": [
++      "/Ob1",
++      "/GX"
++    ]
++  }
++}

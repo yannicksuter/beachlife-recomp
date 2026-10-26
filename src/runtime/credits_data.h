@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 namespace beachlife::runtime
@@ -35,6 +36,9 @@ class CreditsData
         "983c098f69314c142ac8fd0d74fa34d098a49bd59f1aed88fb67a525c4b7f9e9";
 
     static CreditsData read(const data::FileSource& source);
+    // Optional until the retail credits consumer requests its first row. An
+    // unavailable source leaves the publication boundary unbound, never zero-filled.
+    static std::optional<CreditsData> read_if_available(const data::FileSource& source);
     const std::array<CreditsRow, row_count>& rows() const noexcept
     {
         return rows_;

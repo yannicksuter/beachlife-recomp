@@ -277,7 +277,8 @@ int main(int argc, char** argv)
 {
     try
     {
-        expect(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"), "Cannot select SDL's dummy driver.");
+        expect(SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "dummy", SDL_HINT_OVERRIDE),
+            "Cannot select SDL's dummy driver.");
         expect(SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "128"),
             "Cannot set audio block size.");
         expect(SDL_InitSubSystem(SDL_INIT_AUDIO), "Cannot initialize the host audio subsystem.");

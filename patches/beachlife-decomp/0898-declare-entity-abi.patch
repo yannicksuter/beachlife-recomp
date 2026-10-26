@@ -1,0 +1,263 @@
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 33271b5..fe21328 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -288,7 +288,8 @@ struct VariableEntity
+     explicit VariableEntity(const char* name); // 0x00453770.
+     ~VariableEntity();                         // 0x00453810.
+     const char* StaffName();                   // 0x0048f0f0.
+-    virtual void Destroy(unsigned int flags);  // 0x00454200.
++    // Scalar deleting entry point returns the original object in EAX.
++    virtual void* Destroy(unsigned int flags); // 0x00454200.
+     virtual bool Unknown04(unsigned int state) = 0;
+     virtual bool Unknown08(unsigned int state) = 0;
+     virtual bool Unknown0c() = 0; // Base body 0x00453850.
+@@ -330,9 +331,16 @@ struct VariableEntity
+     unsigned char kind_2c;
+     unsigned char movement_2d;
+     unsigned char unknown_2e[2];
+-    float x_30; // World position; the overlay markers scale it to the map.
+-    float y_34;
+-    float z_38;
++    union
++    {
++        ScreenWorldPosition position_30;
++        struct
++        {
++            float x_30; // World position; the overlay markers scale it to the map.
++            float y_34;
++            float z_38;
++        };
++    };
+     unsigned int state_3c;
+     unsigned char visible_40;
+     unsigned char unknown_41[3];
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 55340dd..4131e08 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -25,7 +25,7 @@ struct WorldStaticEntity : VariableEntity
+     void SetFootprintY(unsigned char size);             // 0x004910a0.
+     explicit WorldStaticEntity(const char* name);       // 0x00490fd0.
+     ~WorldStaticEntity();                               // 0x00491030.
+-    virtual void Destroy(unsigned int flags);           // 0x00491010.
++    virtual void* Destroy(unsigned int flags);          // 0x00491010.
+     virtual bool Unknown0c();                           // 0x00491040.
+     virtual bool Unknown14(ScreenModeCommand* command); // 0x00491070.
+     virtual void Unknown48(GameFileReader* file);       // 0x00491140.
+@@ -54,7 +54,7 @@ struct WorldMovingEntity : VariableEntity
+     void NotifyRouteTransition(ScreenPoint* start, ScreenPoint* end, unsigned int flags);                      // 0x00485ca0.
+     explicit WorldMovingEntity(const char* name);                                                              // 0x00482770.
+     ~WorldMovingEntity();                                                                                      // 0x004828b0.
+-    virtual void Destroy(unsigned int flags);                                                                  // 0x00482890.
++    virtual void* Destroy(unsigned int flags);                                                                 // 0x00482890.
+     virtual bool Unknown0c();                                                                                  // 0x00483a80.
+     virtual bool Unknown14(ScreenModeCommand* command);                                                        // 0x00484120.
+     virtual void Unknown20(ScreenModeCommand command);                                                         // Folded 0x004859c0.
+@@ -113,7 +113,7 @@ struct WorldPedestrianEntity : WorldMovingEntity
+     WorldScriptValue ReadPerformerValue(unsigned int kind, unsigned int data);                                 // 0x004533b0.
+     explicit WorldPedestrianEntity(const char* name);                                                          // 0x0047c350.
+     ~WorldPedestrianEntity();                                                                                  // 0x0047c390.
+-    virtual void Destroy(unsigned int flags);                                                                  // 0x0047c370.
++    virtual void* Destroy(unsigned int flags);                                                                 // 0x0047c370.
+     virtual bool Unknown0c();                                                                                  // 0x0047c3a0.
+     virtual bool Unknown14(ScreenModeCommand* command);                                                        // 0x0047c580.
+     virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                  // 0x0047c590.
+@@ -132,7 +132,7 @@ struct WorldStaffEntity : WorldPedestrianEntity
+     void AddThought(unsigned int flags);                                                                                                          // 0x004907e0.
+     explicit WorldStaffEntity(const char* name);                                                                                                  // 0x0048e930.
+     ~WorldStaffEntity();                                                                                                                          // 0x0048eb10.
+-    virtual void Destroy(unsigned int flags);                                                                                                     // 0x0048eaf0.
++    virtual void* Destroy(unsigned int flags);                                                                                                    // 0x0048eaf0.
+     virtual bool Unknown0c();                                                                                                                     // 0x0048eb20.
+     virtual bool Unknown14(ScreenModeCommand* command);                                                                                           // 0x0048ee00.
+     virtual void ReadText(const char* key, unsigned short* output);                                                                               // 0x0048f8d0.
+@@ -211,7 +211,7 @@ struct WorldSceneryEntity : WorldStaticEntity
+     void SetPlacementName(const char* name);                        // 0x0041c8a0.
+     explicit WorldSceneryEntity(const char* name);                  // 0x0041c0d0.
+     ~WorldSceneryEntity();                                          // 0x0041c840.
+-    virtual void Destroy(unsigned int flags);                       // 0x0041c810.
++    virtual void* Destroy(unsigned int flags);                      // 0x0041c810.
+     virtual bool Unknown04(unsigned int state);                     // 0x0041c9c0.
+     virtual bool Unknown08(unsigned int state);                     // 0x0041c9f0.
+     virtual bool Unknown0c();                                       // 0x0041d6e0.
+@@ -282,7 +282,7 @@ struct WorldBuildingEntity : WorldStaticEntity
+     ~WorldBuildingEntity();                                          // 0x00456d00.
+     void ActivateBuilding();                                         // 0x00460900.
+     explicit WorldBuildingEntity(const char* name);                  // 0x00456580.
+-    virtual void Destroy(unsigned int flags);                        // 0x00456ce0.
++    virtual void* Destroy(unsigned int flags);                       // 0x00456ce0.
+     virtual bool Unknown04(unsigned int state);                      // 0x00457230.
+     virtual bool Unknown08(unsigned int state);                      // 0x00457250.
+     virtual bool Unknown0c();                                        // 0x00458020.
+@@ -471,7 +471,7 @@ struct WorldGuestEntity : WorldPedestrianEntity
+     void DrawDesire(ScreenPoint* position);                                                                                                      // 0x0047bd00.
+     ~WorldGuestEntity();                                                                                                                         // 0x00469f40.
+     explicit WorldGuestEntity(const char* name);                                                                                                 // 0x00466f00.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x00467b00.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x00467b00.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0046e330.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0046e3a0.
+     virtual bool Unknown0c();                                                                                                                    // 0x0046a040.
+@@ -596,7 +596,7 @@ struct WorldVehicleEntity : WorldMovingEntity
+     float IdleVehicle();                                                                    // 0x00496680.
+     ~WorldVehicleEntity();                                                                  // 0x00494b60.
+     explicit WorldVehicleEntity(const char* name);                                          // 0x004946a0.
+-    virtual void Destroy(unsigned int flags);                                               // 0x00494b40.
++    virtual void* Destroy(unsigned int flags);                                              // 0x00494b40.
+     virtual bool Unknown04(unsigned int state);                                             // 0x004974b0.
+     virtual bool Unknown08(unsigned int state);                                             // 0x00497a40.
+     virtual bool Unknown0c();                                                               // 0x00494e20.
+@@ -662,7 +662,7 @@ struct WorldObjectEntity : WorldStaticEntity
+     void CopyPosition(ScreenWorldPosition position);                                                           // 0x00441f60.
+     ~WorldObjectEntity();                                                                                      // 0x00491600.
+     explicit WorldObjectEntity(const char* name);                                                              // 0x00491260.
+-    virtual void Destroy(unsigned int flags);                                                                  // 0x004915e0.
++    virtual void* Destroy(unsigned int flags);                                                                 // 0x004915e0.
+     virtual bool Unknown04(unsigned int state);                                                                // Folded 0x00491ef0.
+     virtual bool Unknown08(unsigned int state);                                                                // 0x00491f10.
+     virtual bool Unknown0c();                                                                                  // 0x00491fc0.
+@@ -702,7 +702,7 @@ struct WorldCleanerEntity : WorldStaffEntity
+     ~WorldCleanerEntity();                                                                                                                       // 0x00464da0.
+     void UpdateFeedback();                                                                                                                       // 0x00466510.
+     explicit WorldCleanerEntity(const char* name);                                                                                               // 0x00464b30.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x00464d80.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x00464d80.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x00465340.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x00465920.
+     virtual bool Unknown0c();                                                                                                                    // 0x004659a0.
+@@ -743,7 +743,7 @@ struct WorldSecurityEntity : WorldStaffEntity
+     void ChooseCrimeAction();                                                                                                                    // 0x0048ae60.
+     bool FindCrime(ScreenWorldPosition* position);                                                                                               // 0x0048abd0.
+     explicit WorldSecurityEntity(const char* name);                                                                                              // 0x00489140.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x004893e0.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x004893e0.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x00489520.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x00486fc0.
+     virtual bool Unknown0c();                                                                                                                    // 0x00489eb0.
+@@ -793,7 +793,7 @@ struct WorldSharkEntity : WorldMovingEntity
+     void SetEventIndex(unsigned int index);                                                                                                      // 0x0048b770.
+     explicit WorldSharkEntity(const char* name);                                                                                                 // 0x0048b5c0.
+     ~WorldSharkEntity();                                                                                                                         // 0x0048b680.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x0048b660.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x0048b660.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0048b690.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0048b750.
+     virtual bool Unknown0c();                                                                                                                    // 0x0048b7d0.
+@@ -830,7 +830,7 @@ struct WorldEntity14 : WorldPedestrianEntity
+     void SetOwner(unsigned int owner);                                                                                                           // 0x00462cc0.
+     void SetVariant(unsigned int variant);                                                                                                       // 0x004637c0.
+     explicit WorldEntity14(const char* name);                                                                                                    // 0x00462c00.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x00462c40.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x00462c40.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // Folded 0x00491ef0.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x004638d0.
+     virtual bool Unknown0c();                                                                                                                    // 0x00462de0.
+@@ -856,7 +856,7 @@ struct WorldEntity15 : WorldPedestrianEntity
+     void SetOwner(unsigned int owner);                                                                                                           // 0x0048c350.
+     void SetVariant(unsigned int variant);                                                                                                       // 0x0048ccb0.
+     explicit WorldEntity15(const char* name);                                                                                                    // 0x0048c210.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x0048c2b0.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x0048c2b0.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0048ce00.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0048ce20.
+     virtual bool Unknown0c();                                                                                                                    // 0x0048c3a0.
+@@ -884,7 +884,7 @@ struct WorldEntity16 : WorldPedestrianEntity
+     void SetOwner(unsigned int owner);                                                                                                           // 0x0049b0b0.
+     void SetVariant(unsigned int variant);                                                                                                       // 0x0049b980.
+     explicit WorldEntity16(const char* name);                                                                                                    // 0x0049afa0.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x0049b010.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x0049b010.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0049ba50.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0049ba90.
+     virtual bool Unknown0c();                                                                                                                    // 0x0049b150.
+@@ -912,7 +912,7 @@ struct WorldEntity17 : WorldPedestrianEntity
+     void SetVariant(unsigned int variant);                                                                                                       // 0x004644b0.
+     explicit WorldEntity17(const char* name);                                                                                                    // 0x00463bc0.
+     ~WorldEntity17();                                                                                                                            // 0x00463c50.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x00463c30.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x00463c30.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x00464670.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x004646b0.
+     virtual bool Unknown0c();                                                                                                                    // 0x00463d10.
+@@ -938,7 +938,7 @@ struct WorldEntity18 : WorldPedestrianEntity
+     void SetOwner(unsigned int owner);                                                                                                           // 0x0049c280.
+     void SetVariant(unsigned int variant);                                                                                                       // 0x0049db10.
+     explicit WorldEntity18(const char* name);                                                                                                    // 0x0049c1e0.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x0049c200.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x0049c200.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0049dbf0.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0049dc30.
+     virtual bool Unknown0c();                                                                                                                    // 0x0049c2f0.
+@@ -966,7 +966,7 @@ struct WorldEntity20 : WorldPedestrianEntity
+     void SetOwner(unsigned int owner);                                                                                                           // 0x00452d20.
+     void SetVariant(unsigned int variant);                                                                                                       // 0x004532e0.
+     explicit WorldEntity20(const char* name);                                                                                                    // 0x00452c80.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x00452ca0.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x00452ca0.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0048ce00.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x004533d0.
+     virtual bool Unknown0c();                                                                                                                    // 0x00452d90.
+@@ -989,7 +989,7 @@ struct WorldEntity19 : WorldStaffEntity
+ {
+     explicit WorldEntity19(const char* name);           // 0x0049ad10.
+     ~WorldEntity19();                                   // 0x0049adc0.
+-    virtual void Destroy(unsigned int flags);           // 0x0049ada0.
++    virtual void* Destroy(unsigned int flags);          // 0x0049ada0.
+     virtual bool Unknown04(unsigned int state);         // Folded 0x00491ef0.
+     virtual bool Unknown08(unsigned int state);         // 0x0049aef0.
+     virtual bool Unknown0c();                           // 0x0049add0.
+@@ -1005,7 +1005,7 @@ struct WorldServiceStaffEntity : WorldStaffEntity
+ {
+     ~WorldServiceStaffEntity();                                     // 0x0048e920.
+     explicit WorldServiceStaffEntity(const char* name);             // 0x0048d240.
+-    virtual void Destroy(unsigned int flags);                       // 0x0048e900.
++    virtual void* Destroy(unsigned int flags);                      // 0x0048e900.
+     virtual bool Unknown04(unsigned int state);                     // 0x0048e1a0.
+     virtual bool Unknown08(unsigned int state);                     // 0x0048e200.
+     virtual bool Unknown0c();                                       // 0x0049add0.
+@@ -1035,7 +1035,7 @@ struct WorldLifeguardEntity : WorldStaffEntity
+     void UpdateFeedback();                                                                                                                       // 0x0047cfc0.
+     void EndRescue();                                                                                                                            // 0x0047f6b0.
+     explicit WorldLifeguardEntity(const char* name);                                                                                             // 0x0047c610.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x0047c8f0.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x0047c8f0.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0047c9a0.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0047ca60.
+     virtual bool Unknown0c();                                                                                                                    // 0x0047cb90.
+@@ -1088,7 +1088,7 @@ struct WorldLifeguardEntity : WorldStaffEntity
+ struct WorldMechanicEntity : WorldStaffEntity
+ {
+     explicit WorldMechanicEntity(const char* name);                                                                                              // 0x00480630.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x00480850.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x00480850.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x00481170.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x00481220.
+     virtual bool Unknown0c();                                                                                                                    // 0x00480900.
+@@ -1128,7 +1128,7 @@ struct WorldMechanicEntity : WorldStaffEntity
+ struct WorldRepresentativeEntity : WorldStaffEntity
+ {
+     explicit WorldRepresentativeEntity(const char* name);                                                                                        // 0x00486ba0.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x00486e70.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x00486e70.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x00486f10.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x00486fc0.
+     virtual bool Unknown0c();                                                                                                                    // 0x004870d0.
+@@ -1188,7 +1188,7 @@ struct WorldBuilderEntity : WorldStaffEntity
+     void UpdateConditions();                                                                                                                     // 0x004561b0.
+     void SetBuilderIndex(unsigned int index);                                                                                                    // 0x00454750.
+     explicit WorldBuilderEntity(const char* name);                                                                                               // 0x00454260.
+-    virtual void Destroy(unsigned int flags);                                                                                                    // 0x004544d0.
++    virtual void* Destroy(unsigned int flags);                                                                                                   // 0x004544d0.
+     virtual bool Unknown04(unsigned int state);                                                                                                  // 0x004554d0.
+     virtual bool Unknown08(unsigned int state);                                                                                                  // 0x00455590.
+     virtual bool Unknown0c();                                                                                                                    // 0x00454760.
+@@ -1309,4 +1309,8 @@ inline const WorldBuilderEntity* VariableEntity::AsBuilder() const
+     return static_cast<const WorldBuilderEntity*>(this);
+ }
+ 
++extern unsigned int world_representative_count;
++extern unsigned int world_cleaner_count;
++extern unsigned int world_security_count;
++
+ #endif

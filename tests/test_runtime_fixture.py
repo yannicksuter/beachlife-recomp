@@ -107,6 +107,38 @@ class RuntimeFixtureTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 check_runtime.check('production-test')
 
+    def test_boot_parser_rejection_requires_retail_reads_and_clean_early_exit(self):
+        reads = check_runtime.BOOT_CONFIGURATION_READ * 3
+        rejected = subprocess.CompletedProcess([], 0, '', reads)
+        check_runtime.rejected_configuration(rejected, boot=True)
+        with self.assertRaises(AssertionError):
+            check_runtime.rejected_configuration(rejected, boot=False)
+        for status, output, errors in [
+            (0, '', ''),
+            (1, '', reads),
+            (-11, '', reads),
+            (0, 'Game runtime: 1 frames\n', reads),
+            (0, check_runtime.CONFIGURATION_COMPLETED, reads),
+            (0, '', reads + 'Frame 0: opened beachlife.ini\n'),
+            (0, '', reads + 'Beach Life: The selected executable is not a supported credits-data source.\n'),
+        ]:
+            with self.subTest(status=status, output=output, errors=errors), self.assertRaises(AssertionError):
+                check_runtime.rejected_configuration(
+                    subprocess.CompletedProcess([], status, output, errors), boot=True)
+
+    def test_boot_production_input_and_profile_are_separate_from_host_fixture(self):
+        host = b'host fixture'.ljust(1242, b'\r')
+        self.assertEqual(check_runtime.production_configuration(host, False), host)
+        retail = check_runtime.production_configuration(host, True)
+        self.assertEqual(len(retail), 1242)
+        self.assertTrue(retail.startswith(b"'bFixture' 123\r\n"))
+        self.assertNotEqual(retail, host)
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory)/'profile'
+            environment = check_runtime.production_environment(True, profile)
+            self.assertEqual(environment['BEACHLIFE_BOOT_USER_DIR'], str(profile))
+            self.assertEqual(environment['BEACHLIFE_BOOT_TRACE_FILES'], '1')
+
     def test_unavailable_gpu_precedes_cache_creation(self):
         def run(command, **kwargs):
             return subprocess.CompletedProcess(command, 1, '', 'Cannot start the game: no GPU')
@@ -129,11 +161,14 @@ class RuntimeFixtureTests(unittest.TestCase):
         files, expected = content_files(configuration=configuration)
         header, cabinet = files['data1.hdr'], files['data2.cab']
         self.assertEqual(expected['Data/Script/GameParameters.pis'], configuration)
-        self.assertEqual(len(expected), 6)
-        self.assertEqual(struct.unpack_from('<I', header, DESCRIPTOR + 0x28)[0], 7)
+        self.assertEqual(expected['BeachLife.exe'], b'test')
+        self.assertEqual(files['BeachLife.exe'], b'test')
+        self.assertNotIn('Setup.exe', expected)
+        self.assertEqual(len(expected), 7)
+        self.assertEqual(struct.unpack_from('<I', header, DESCRIPTOR + 0x28)[0], 8)
         # The compressed group includes the new entry; loose/support ranges move
         # without changing their ownership. Decode its independent raw-deflate payload.
-        for group, bounds in [(1, (1, 4)), (2, (5, 5)), (3, (6, 6))]:
+        for group, bounds in [(1, (1, 4)), (2, (5, 6)), (3, (7, 7))]:
             offset = DESCRIPTOR + 0x280 + group * 0x40 + 12 + 0x16
             self.assertEqual(struct.unpack_from('<2I', header, offset), bounds)
         entry = RECORDS + 4 * 0x57

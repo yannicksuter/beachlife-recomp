@@ -1,0 +1,378 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 3fc022d9a22f3a9adb0dd9a3a2113309b60f49b4..830696ee8d56e5bd1ed321299c882b2cf7382861 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4652,3 +4652,12 @@ typedef char SharedScreenManager_word_54Offset[(offsetof(ScreenManager, word_54)
+ #include "startup_screen_manager.h"
+ 
+ typedef char SharedScreenManager_word_148Offset[(offsetof(ScreenManager, word_148) == 0x148) ? 1 : -1];
++
++// Shared screen-manager fields and the dialog group consumed by active screens.
++typedef char Decl5ManagerSize[(sizeof(ScreenManager) == 0x198) ? 1 : -1];
++typedef char Decl5DialogSize[(sizeof(ScreenDialog) == 0x80) ? 1 : -1];
++typedef char Decl5DialogGroup[(offsetof(ScreenDialog, group_7c) == 0x7c) ? 1 : -1];
++typedef char Decl5ManagerHeight[(offsetof(ScreenManager, height_a8) == 0xa8) ? 1 : -1];
++typedef char Decl5ManagerSurface[(offsetof(ScreenManager, surface_b0) == 0xb0) ? 1 : -1];
++typedef char Decl5ManagerTicker[(offsetof(ScreenManager, ticker_repetitions_cc) == 0xcc) ? 1 : -1];
++typedef char Decl5ManagerMode[(offsetof(ScreenManager, word_124) == 0x124) ? 1 : -1];
+diff --git a/src/startup_list.h b/src/startup_list.h
+index 0707978b4c478cebb7e3dd8b5b7842918f3870d9..1caa20ff9df63091a02067ac56e2076e93d1eed0 100644
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -36,6 +36,8 @@ struct CircularList
+ {
+     CircularListNode* head;
+ 
++    bool Empty() const;
++    ActiveScreenEntry* Front();
+     CircularListIterator Erase(CircularListIterator position); // 0x004209d0; hidden result, RET8.
+     CircularListIterator End() const;
+     CircularListIterator Begin() const;
+diff --git a/src/startup_screen_dialog.h b/src/startup_screen_dialog.h
+index 6e8813501881c141296b92dac6e518a39f075581..56ac60aa43c6751da15483545fc379a0e81ae2d8 100644
+--- a/src/startup_screen_dialog.h
++++ b/src/startup_screen_dialog.h
+@@ -28,6 +28,7 @@ struct ScreenDialog : ScreenItem
+     int word_70;
+     unsigned int word_74;
+     ScreenChildRing children;
++    unsigned int group_7c;
+ 
+     virtual void MarkPrepared();
+     virtual void ApplyPosition(int dx, int dy);
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 693a35054eb44097529bc6d01cfc50466b18b421..0c3c17b44420cc71f3674149f16909ee84e9e0d2 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -21,6 +21,8 @@ struct ScreenRectangle;
+ struct ScreenRequestRenderer;
+ struct ScreenManager;
+ struct ScreenLoadPanel13c;
++struct ScreenLoadPanel140;
++struct ScreenModeController;
+ struct GameSaveRecord;
+ 
+ // Observed screen-manager and placement pointers at original x86+0x48/+0x54.
+@@ -77,6 +79,7 @@ struct ScreenRequestGamePrefix
+     // Actual 0x004e4000; complete progress/FILE body remains a dependency.
+     void LoadScenarioProgress();
+     void PopulateLoadGameMenu();
++    void PopulateSaveGameMenu();
+     void PopulateSaveList(ScreenListBoxPrefix* list, unsigned int row_word, unsigned char clear);
+     void RefreshSaveRecords();
+     void Activate();
+@@ -86,82 +89,103 @@ struct ScreenRequestGamePrefix
+ // meanings remain unqualified; mode values are retained as descriptive words.
+ struct ScreenManager
+ {
+-    void UpdateTrackedEntity(); // 0x004b2080.
+-    void SetFeatureAvailability(unsigned char key, bool enabled);
+-    unsigned char IsPointerOverCurrentScreen();                                                                          // 0x004b21a0.
+-    void SetInputEnabled(unsigned char enabled);                                                                         // 0x004aedd0.
+-    bool RequestNamedScreen(const char* name, const char* text, ScreenRequestContext* context, unsigned char flag);      // 0x004b15f0.
+-    bool RequestMessageScreen(const char* name, const char* message, ScreenRequestContext* context, unsigned char flag); // 0x004b1620.
+-    void ToggleTrackedEntity(unsigned int id);                                                                           // 0x004b2150.
+-    void SavePauseState();                                                                                               // 0x004b1200.
+-    void RestorePauseState();                                                                                            // 0x004b1230.
+-    void ShowTickerMessage(const char* key, int mode);                                                                   // 0x004af350.
+-    void ShowTickerMessage(const unsigned short* text, int mode);                                                        // 0x004af380.
+-    unsigned char HasActiveScreen();                                                                                     // 0x004b1950.
+-    unsigned int ActiveScreenCount();                                                                                    // 0x004b1b70.
+-    void ShowCameraControls();                                                                                           // 0x004b0fe0.
+-    void HideCameraControls();                                                                                           // 0x004b0ff0.
+-    void DisableNamedItems(const char* name);                                                                            // 0x004b1db0.
+-    void EnableNamedItems(const char* name);                                                                             // 0x004b1de0.
+-    void SetDisplaySize(int width, int height);                                                                          // 0x004af320.
+-    void SetProgressDialog(const char* name);                                                                            // 0x004b0e10.
+-    void SetNamedItemState(const char* name, unsigned int value);                                                        // 0x004b1e10.
+-    void ReplaceButtonResource(const char* name, const char* resource);                                                  // 0x004b1e50.
+-    void SetFeatureState(const char* name, unsigned char enabled);                                                       // 0x004b1e90.
+-    bool ToggleScreen(const char* name, ScreenRequestContext* context, unsigned char flag);                              // 0x004b15b0.
+-    bool CloseScreen(const char* name);                                                                                  // 0x004b17e0.
+-    unsigned char CanShowTickerMessage();                                                                                // 0x004af490.
+-    void ClosePause();                                                                                                   // 0x004ae970.
+-    void RequestCameraCapture();
+-    void DisableOverlay();
+-    unsigned char SelectionInputEnabled();
++    unsigned char CanShowTickerMessage();                         // 0x004af490.
++    void ShowTickerMessage(const unsigned short* text, int mode); // 0x004af380.
++    void ShowTickerMessage(const char* key, int mode);            // 0x004af350.
++
+     ScreenRequestRenderer* renderer;
+     ScreenFontData* fonts_04[10];
+     ScreenFontRenderer* fonts_2c[10];
+     unsigned int word_54;
+-    unsigned char unknown_58[0x20];
++    unsigned int word_58;
++    unsigned int word_5c;
++    unsigned int word_60;
++    int word_64;
++    unsigned int word_68;
++    unsigned int word_6c;
++    unsigned int word_70;
++    unsigned int word_74;
+     unsigned int word_78;
+-    unsigned char unknown_7c[0x0c];
++    unsigned int word_7c;
++    unsigned int word_80;
++    int word_84;
+     ScreenChildLink* items_head;
+     ScreenChildLink* registry;
+     ScreenItem* item_90;
+-    ScreenRequestContext* word_94;
++    union
++    {
++        ScreenRequestContext* word_94;
++        ScreenRequestContext* request_context_94;
++    };
+     int word_98;
+     unsigned char byte_9c;
+     unsigned char unknown_9d[3];
++    // Screen size applied by Update when byte_9c is set.
+     int pending_width_a0;
+     int pending_height_a4;
+-    unsigned char unknown_a8[0x10];
+-    unsigned int surface_b8;
++    unsigned int height_a8;
++    int surface_ac;
++    int surface_b0;
++    int surface_b4;
++    int surface_b8;
+     CircularList active;
+-    void LoadScreen(const char* path);
+     unsigned char byte_c0;
+     unsigned char unknown_c1[3];
+     const char* word_c4;
+     const char* word_c8;
+-    unsigned char unknown_cc[4];
+-    ScreenTextItem* ticker_item_d0;
+-    unsigned char ticker_enabled_d4;
++    int ticker_repetitions_cc;
++    union
++    {
++        ScreenItem* item_d0;
++        ScreenTextItem* ticker_item_d0;
++    };
++    union
++    {
++        unsigned char flag_d4;
++        unsigned char ticker_enabled_d4;
++    };
+     unsigned char unknown_d5[3];
+-    ScreenRectangle ticker_rectangle_d8;
+-    ScreenRectangle overlay_rectangle_e8;
++    union
++    {
++        ScreenRectangle rectangle_d8;
++        ScreenRectangle ticker_rectangle_d8;
++    }; // Ticker clip rectangle.
++    union
++    {
++        ScreenRectangle overlay_rectangle_e8;
++        struct
++        {
++            int overlay_x_e8;
++            int overlay_y_ec;
++            int overlay_right_f0;
++            int overlay_bottom_f4;
++        };
++    };
+     unsigned char byte_f8;
+     unsigned char byte_f9;
+-    unsigned char unknown_fa[2];
++    unsigned char byte_fa;
++    unsigned char unknown_fb;
+     ScreenItem* word_fc;
+     ScreenItem* word_100;
+     ScreenDialogResource* word_104;
+-    unsigned char unknown_108[0x1a];
++    // Overlay detail outline and colour; +11a..+122 hold further words,
++    // including marker colours read by 0x004b08d0.
++    ScreenRectangle detail_rectangle_108;
++    unsigned short detail_colour_118;
++    unsigned short guest_colour_11a;
++    unsigned short staff_colour_11c;
++    unsigned short building_colour_11e;
++    unsigned short entity_colour_120;
+     unsigned char selection_input_122;
+     unsigned char byte_123;
+-    unsigned char unknown_124[4];
++    ScreenModeController* word_124;
+     int mode;
+     int previous_mode;
+     ScreenManagerAuxiliaryState* auxiliary_130;
+     ScreenItem* item_134;
+     float value_138;
+     ScreenLoadPanel13c* panel_13c;
+-    unsigned char unknown_140[4];
++    ScreenLoadPanel140* panel_140;
+     unsigned char byte_144;
+     unsigned char unknown_145[3];
+     int word_148;
+@@ -177,38 +201,130 @@ struct ScreenManager
+     ScreenDialogResource* overlay_resource_164;
+     ScreenItem* item_168;
+     unsigned char unknown_16c;
++    // Observed name starts at +16d; this preserves storage to the known +190 word.
++    // The original unchecked copy does not establish a safe string capacity.
+     char layout_name_16d[0x23];
+     ScreenManagerOwner190* word_190;
+     unsigned char saved_pause_194;
++    unsigned char unknown_195[3];
+ 
+-    ScreenRequestContext* CurrentContext();
+-
+-    void ClearItemReference(ScreenItem* item);
+-
++    // Actual 0x004aedb0 and 0x004aedc0; unchecked ten-slot publications.
++    void SetNamedItemFlag(const char* name, unsigned char value); // 0x004b1e10.
++    void SetInputEnabled(unsigned char enabled);                  // 0x004aedd0.
+     void SetFontData(unsigned int index, ScreenFontData* data);
+-
+     void SetFontRenderer(unsigned int index, ScreenFontRenderer* renderer);
+ 
++    // Actual 0x004b24b0 returns AL1; the constructor ignores that result.
++    bool InitializeSurfaces();
++    // Actual 0x004b0be0: real resource/renderer/Button initialization.
++    void InitializeOverlay();
++    void ConfigureRadar(int x, int y, const char* image); // 0x004afc90.
++    void SetProgressDialog(const char* name);             // 0x004b0e10.
++    // Actual 0x004b30b0, receiver ignored. Descriptive spelling of the
++    // observed registration cleanup; no original base class is inferred.
+     void ClearRegistration();
++
++    // Actual loader 0x004aedf0; complete source retained in its separate proposal.
++    void LoadScreen(const char* path);
++    void RenderScreens(); // Actual 0x004af9a0.
++    // Actual 0x004b1b90, RET0; returns the borrowed context at +94.
++    ScreenRequestContext* CurrentContext();
++    void RenderPointer(); // Actual 0x004b2740.
++    // Actual 0x004b0640, RET0: overlay detail drawn after surface b0.
++    void RenderOverlayDetail();
++    // Actual 0x004b08d0, RET0: scaled world markers inside item fc; body separate.
++    void RenderOverlayMarkers();
++    // Actual 0x004b0f30; complete progress-overlay method remains separate.
++    void RenderProgressOverlay();
++    void DisableOverlay(); // 0x004b0fe0.
++    // Real callees 0x004b1ed0, 0x004b2600 and 0x004b0e40; not implemented here.
++    void SetFeatureAvailability(unsigned char key, bool enabled);
++    void RefreshAfterLoad();
++    void LayoutAfterLoad();
++    // Actual 0x004b0d80, RET0; updates the existing overlay and surface.
++    void UpdateOverlayPosition();
++    void ApplyScreenLayout();   // 0x004b2470.
++    void ApplyLoadedScenario(); // 0x004af230.
++    // Actual 0x004ae2f0; first exact kind-22 name in the all-items chain.
++    ScreenListBoxPrefix* FindListBox(const char* name);
++    // Actual 0x004af720 and 0x004ae9e0.
++    void Update(float delta);
++    // Actual 0x004aeb20, 0x004b2d60, 0x004b2240, 0x004b0120 and 0x004b04b0;
++    // Update's children. UpdateActiveScreens has separate existing source.
++    void ApplyPendingMode();
++    void UpdateActiveScreens(float elapsed);
++    void UpdateTrackedEntity();                                                // 0x004b2080.
++    void ShowCameraControls();                                                 // 0x004b0fe0.
++    void HideCameraControls();                                                 // 0x004b0ff0.
++    unsigned int ActiveScreenCount();                                          // 0x004b1b70.
++    void CloseAllScreens();                                                    // 0x004b1910.
++    unsigned char HasActiveScreen();                                           // 0x004b1950.
++    unsigned char SelectionInputEnabled();                                     // 0x004b2190.
++    unsigned char IsPointerOverCurrentScreen();                                // 0x004b21a0.
++    void DrawPlacementTile(int x, int y, unsigned short colour);               // 0x004b2ae0.
++    void UpdateModeScreens(float elapsed);                                     // 0x004af4a0.
++    unsigned char IsPointerOverScreen(unsigned char flag);                     // 0x004b21c0.
++    void SetFeatureState(const char* name, unsigned char enabled);             // 0x004b1e90.
++    void SetScreenState(const char* name, int state, float speed, int offset); // 0x004b1980.
++    void UpdatePointerInput();
++    // Actual 0x004b0270 (overlay, byte +f8) and 0x004b10e0 (panel, byte +15c), RET12.
++    void HandleOverlayInput(int x, int y, unsigned int buttons);
++    void HandleMapInput(int x, int y, unsigned int buttons); // 0x004b0340.
++    void HandlePanelInput(int x, int y, unsigned int buttons);
++    void LayoutOverlayDetail();
++    void PrepareWorldOverlay(); // 0x004af220.
++    void UpdateOverlayState();
+     void SetMode(int value);
+-    // CloseActiveScreens remains an excluded boundary; ReleaseOwner190 is selected separately.
++    void SetWord(unsigned int index, unsigned int value); // 0x004b1be0.
++    void SetDisplaySize(int width, int height);           // 0x004af320.
++    void ClearItemReference(ScreenItem* item);
++    float ReadItemThreshold();
++    void ShowItemText(ScreenItem* item, int x, int y, const char* text);
++    bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
++    void SavePauseState();                                        // 0x004b1200.
++    void RestorePauseState();                                     // 0x004b1230.
++    void DisableNamedItems(const char* name);                     // 0x004b1db0.
++    void SetNamedItemState(const char* name, unsigned int value); // 0x004b1e10.
++    void EnableNamedItems(const char* name);                      // 0x004b1de0.
++    // Actual 0x004b17e0; existing complete named-entry source is separate.
++    bool CloseScreen(const char* name);
++    bool CloseScreenById(unsigned int id);                                                  // 0x004b1650.
++    bool CloseContextScreens(ScreenRequestContext* context);                                // 0x004b1750.
++    void ToggleTrackedEntity(unsigned int id);                                              // 0x004b2150.
++    bool ToggleScreen(const char* name, ScreenRequestContext* context, unsigned char flag); // 0x004b15b0.
++    bool IsScreenOpen(const char* name);                                                    // 0x004b19d0.
++    int ReadScreenWord74(const char* name);                                                 // 0x004b1a10.
++    void WriteScreenWord74(const char* name, int value);                                    // 0x004b1a60.
++    void ApplyScreenWord(const char* name, unsigned int value);                             // 0x004b1ab0.
++    void ReplaceButtonResource(const char* name, const char* resource);                     // 0x004b1e50.
++    void ToggleBuildList();                                                                 // 0x004ae6a0.
++    void BeginBuildingPlacement();                                                          // 0x004b1ba0.
++    void ToggleOptions();                                                                   // 0x004ae520.
++    void ToggleMusicPanel();                                                                // 0x004ae610.
++    void ToggleSceneryPanel();                                                              // 0x004ae780.
++    void RequestCameraCapture();                                                            // 0x004b2180.
++    void ToggleRadarSize();                                                                 // 0x004b0050.
++    void ToggleProgress();                                                                  // 0x004b1010.
++    void ClosePause();                                                                      // 0x004ae970.
++    bool CanScrollWorld();                                                                  // 0x004ae980.
++    // Actual 0x004b1890; marks all live active entries closing, RET0.
+     void CloseActiveScreens();
++    void RefreshScreenContents(); // 0x004b1b00.
++    bool RequestMessageScreen(const char* name, const char* message,
++        ScreenRequestContext* context, unsigned char flag); // 0x004b1620.
++    bool RequestNamedScreen(const char* name, const char* text,
++        ScreenRequestContext* context, unsigned char flag); // 0x004b15f0.
++    void ToggleLoadGamePanel();                             // 0x004ae360.
++    void ToggleSaveGamePanel();                             // 0x004ae440.
++    // Actual 0x004b11d0; destroy/release the captured owner, then clear +190.
+     void ReleaseOwner190();
+-    bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+     void SavePlacement(const ScreenRectangle& rectangle, int group);
+-    void UpdateModeScreens(float elapsed);
+-    float ReadItemThreshold();
+-    ScreenListBoxPrefix* FindListBox(const char* name);
+     void StartCredits();
+-    void ShowItemText(ScreenItem* item, int x, int y, const char* text);
+-    void PrepareActiveScreens(unsigned char prepare_surface);
++    void PrepareNamedScreen(const char* name, unsigned char prepare);
++    void ScreenSelect();
+     void ActivateScreens();
++    void PrepareActiveScreens(unsigned char prepare_surface);
+     void SetTickerRectangle(ScreenRectangle rectangle);
+-    void RenderProgressOverlay();
+-    void HandleOverlayInput(int x, int y, unsigned int buttons);
+-    void HandleMapInput(int x, int y, unsigned int buttons);
+-    void HandlePanelInput(int x, int y, unsigned int buttons);
+-    void PrepareNamedScreen(const char* name, unsigned char prepare);
+ };
+ 
+ extern ScreenRequestGamePrefix* screen_request_game;
+diff --git a/src/startup_screen_overlay_globals.h b/src/startup_screen_overlay_globals.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d6a6b623e70b0c0fd290a26e530ab8f2ba9b3f4
+--- /dev/null
++++ b/src/startup_screen_overlay_globals.h
+@@ -0,0 +1,13 @@
++#ifndef STARTUP_SCREEN_OVERLAY_GLOBALS_H
++#define STARTUP_SCREEN_OVERLAY_GLOBALS_H
++
++// Actual writable pointer objects. Preserve live loads; definitions and writers
++// remain dependencies rather than freezing their initial strings as literals.
++extern const char* screen_progress_panel_name; // 0x0057fb7c
++extern const char* screen_overlay_button_name; // 0x0057fb88
++extern const char* screen_overlay_button_text; // 0x0057fb8c
++
++// Actual action-name string at 0x0057e110, not a function pointer or callback.
++extern const char screen_progress_toggle_action_name[];
++
++#endif

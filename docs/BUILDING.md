@@ -466,9 +466,20 @@ development tool, never release gameplay. It currently supports Linux x86-64.
 ```sh
 cmake --preset debug -B build/boot \
   -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
-cmake --build build/boot --target beachlife_boot_link
+cmake --build build/boot
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  ctest --test-dir build/boot --output-on-failure
 ./build/boot/beachlife_boot_link
 ```
+
+The dummy drivers keep CTest headless; the two GPU integration tests report a
+skip. To execute them without a visible window on a machine with a usable GPU,
+run CTest with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy` instead.
+Boot configurations check retail parser rejection with a deliberately mistyped
+token, requiring both its configuration reads and the original zero-status fatal
+exit. Native configurations retain the fixed-identity rejection check. Both
+profiles also check cache repair, online/offline previews and the separate
+generated configuration-owner lifecycle; they do not qualify full gameplay.
 
 `BEACHLIFE_ENABLE_BOOT_GAME` selects the `native-game` profile: the
 `native-experimental` series followed by `game-series`. `build/boot/boot/traps.json`
@@ -480,6 +491,21 @@ The decompiled game compiles against `src/platform/compat`: the subset of the
 Windows, DirectInput and Miles APIs the retail executable imports, implemented
 on SDL3, so decompiled code keeps its original API calls. An API that is declared
 there but not implemented yet becomes a trap like missing game code.
+
+Every target compiling prepared game source, including the subsystem libraries,
+uses the shared compile environment in `cmake/GameCompile.cmake`. Boot builds
+add the compatibility headers, MSVC prelude and two-byte `wchar_t` ABI to those
+targets. These settings stay private to game-source targets and do not propagate
+to host consumers or fixture executables. Harness link providers stay unchanged.
+The default native presets keep their portable source profile without the boot
+compatibility flags.
+
+The opt-in `reconstructed_screen_mode6_owner` and `reconstructed_game_mode_progress`
+fixtures still require the `native-experimental` profile: they assert aggregate,
+prefix-only class layouts that the unified game tree replaced with full owners
+and real constructors/destructors. Their libraries build in the boot configuration,
+but these old fixtures cannot use the unified declarations unchanged. Keep running
+them in the separate experimental configuration above.
 
 Boot checks run headless: `--headless` opens the game window on SDL's offscreen
 driver with silent audio, so nothing appears on screen and no input focus is
@@ -494,11 +520,16 @@ switches drive the game without a player:
   dialog. A step `x,y>file` clicks one point until the game opens the file that
   marks the next screen, so it does not depend on timing; `x,y+N` clicks once,
   N frames after the previous step. Coordinates are the game's.
-  `BEACHLIFE_BOOT_ROUTE=sandbox1` starts the first sandbox island instead.
+  Presets `scenario1`…`scenario12` and `sandbox1`…`sandbox12` start each
+  scenario or sandbox island; beyond the first ones they need
+  `BEACHLIFE_BOOT_PROGRESS=all`.
 - `BEACHLIFE_BOOT_MONKEY="seed[,interval]"` clicks random game coordinates
   every interval frames (default 90) once the route is done, and logs each click
   so a failure reproduces from the seed.
-- `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames.
+- `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames, and
+  `BEACHLIFE_BOOT_WHEEL="frame:steps;..."` rolls the mouse wheel (positive is up).
+- `BEACHLIFE_BOOT_PROGRESS=all` starts the test profile with every scenario
+  and sandbox island available.
 - `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
 - `BEACHLIFE_BOOT_TRACE_FILES=1` prints each file the game opens.
 - `BEACHLIFE_BOOT_ASSUME_FOCUS=1` accepts input without window focus; a route
@@ -507,6 +538,32 @@ switches drive the game without a player:
 ```sh
 BEACHLIFE_BOOT_ROUTE=scenario1 ./build/boot/beachlife --play --headless \
   --frames 4000 --screenshot world.png
+```
+
+The boot build calls the decompiled WinMain and WindowProcedure. Play prepares
+the files and window; compat returns that window to retail CreateWindowExA.
+Retail owns configuration loading, dispatches at most one message per frame,
+then updates and renders with its profiler timing. Automation injects SDL input
+before PeekMessageA; DirectInput still receives the same events. The frame limit
+requests WM_CLOSE, whose retail handler posts WM_QUIT. Video stays alive through
+the final retail frame and renderer teardown. Host window geometry and hidden
+mode remain Play's choices.
+
+Player-visible changes that are not in the original game live in
+`patches/beachlife-decomp-tweaks/`, applied after the faithful series when the
+boot build is configured with `-DBEACHLIFE_ENABLE_TWEAKS=ON`. Each tweak stays
+off until the player enables it under Advanced > Gameplay options in the
+launcher; checks can enable one with its environment variable:
+
+| Tweak | Setting | Check override |
+|---|---|---|
+| Skip intro: start at the main menu (no movie, logo or title screen) | `tweaks.skip_intro` | `BEACHLIFE_TWEAK_SKIP_INTRO=1` |
+| Mouse wheel zooms the camera (up in, down out) | `tweaks.wheel_zoom` | `BEACHLIFE_TWEAK_WHEEL_ZOOM=1` |
+
+```sh
+BEACHLIFE_BOOT_ROUTE=scenario1 BEACHLIFE_TWEAK_SKIP_INTRO=1 \
+  BEACHLIFE_TWEAK_WHEEL_ZOOM=1 BEACHLIFE_BOOT_WHEEL="2500:1;2800:-1" \
+  ./build/boot/beachlife --play --headless --frames 4000 --screenshot zoom.png
 ```
 
 `game-series` is written from a local merge tree. `tools/game_tree.py init`
@@ -1994,8 +2051,14 @@ writable format. No original table, text or executable is bundled or executed.
 A single game-thread binding owns publication; uninitialized, duplicate and
 foreign-thread access is rejected. Both libraries are available with
 reconstructed tests disabled and the experimental option remains off by default.
+The boot session binds verified records when available. Missing, unreadable or
+unsupported credits data leaves the table unbound and fails only when the credits
+consumer requests its first row, so unrelated startup does not depend on it.
+No placeholder rows are published, and verified records remain bound through
+game teardown.
 
-The optional Linux generated-input fixture exercises malformed mappings, row
+The optional Linux generated-input fixture exercises optional missing/rejected
+data, malformed mappings, row
 and format preservation, binding lifetime and actual reconstructed BLE text
 lookup. Preparation retains the required executable through the existing worker;
 completed prepared mounts work with the ISO disconnected. Older caches need one
@@ -2333,3 +2396,63 @@ executed.
 | `ScreenDialogResourceFrame::LoadAllData` | `0x00416f10` | 195 | no (relocations) | 98.53% |
 | `WindowAudioState::Initialize3DProvider` | `0x004d0370` | 196 | no (relocations) | 76.56% |
 | `ScreenManager::HandleOverlayInput` | `0x004b0270` | 197 | no (relocations) | 85.29% |
+| `EmptyStaticInitializer432f00` | `0x00432f00` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f10` | `0x00432f10` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f20` | `0x00432f20` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f30` | `0x00432f30` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f40` | `0x00432f40` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f50` | `0x00432f50` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f60` | `0x00432f60` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f70` | `0x00432f70` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer437ee0` | `0x00437ee0` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer49ad00` | `0x0049ad00` | 1 | yes | 66.67% |
+| `VariableEntity::CanSelectAtPointer` | `0x00453750` | 3 | yes | 40.00% |
+| `RejectWorldPointerSelection` | `0x0048c200` | 3 | yes | 80.00% |
+| `AcceptWorldStateExit` | `0x0048e880` | 3 | yes | 40.00% |
+| `LoadGameController::ScriptPath` | `0x004e8de0` | 3 | yes | 80.00% |
+| `WorldSceneryEntity::EntityName` | `0x0041c830` | 4 | yes | 80.00% |
+| `ScreenTerrainCell::Objects` | `0x004452d0` | 4 | yes | 80.00% |
+| `ScreenTerrainRouteNode::Bounds` | `0x004456c0` | 4 | yes | 80.00% |
+| `ScreenTerrainRouteNode::Next` | `0x004456d0` | 4 | yes | 80.00% |
+| `VariableEntity::EntityName` | `0x00453760` | 4 | yes | 80.00% |
+| `VariableEntity::StaffName` | `0x0048f0f0` | 4 | yes | 80.00% |
+| `WorldSubsystem3c::Controller` | `0x004dae90` | 4 | yes | 80.00% |
+| `WorldCursorNames::FirstName` | `0x00432de0` | 5 | yes | 85.71% |
+| `WindowDeactivationState::UpdatePower` | `0x0043f0c0` | 5 | no (relocations) | 66.67% |
+| `WorldSharkEntity::Unknown3c` | `0x0048b8d0` | 5 | no (relocations) | 66.67% |
+| `WorldEntity19::Unknown08` | `0x0049aef0` | 5 | yes | 40.00% |
+| `ScreenMode10Controller::Enter` | `0x004a7110` | 5 | yes | 80.00% |
+| `ScreenLoadPanel13cOwner::NextTrack` | `0x004ce560` | 5 | no (relocations) | 66.67% |
+| `WorldCursorNames::SecondName` | `0x00432dd0` | 6 | yes | 85.71% |
+| `WorldCursorNames::CursorValue` | `0x00432df0` | 6 | yes | 80.00% |
+| `ScreenRequestGamePrefix::ScenarioDirectory` | `0x004e3d60` | 6 | no (relocations) | 80.00% |
+| `ExitGameController::ScriptPath` | `0x004e8370` | 6 | no (relocations) | 80.00% |
+| `WorldSubsystem4c::MessageCounts` | `0x00424700` | 7 | yes | 80.00% |
+| `VariableEntity::GuestValue467d70` | `0x00467d70` | 7 | yes | 80.00% |
+| `ScreenManager::SelectionInputEnabled` | `0x004b2190` | 7 | yes | 80.00% |
+| `ScreenLoadPanel13c::StartPlayback` | `0x004c2470` | 7 | no (relocations) | 80.00% |
+| `ScreenLoadPanel13c::StopPlayback` | `0x004c2480` | 7 | no (relocations) | 80.00% |
+| `ScreenLoadPanel13cOwner::IsPlaying` | `0x004cdb50` | 7 | no (relocations) | 80.00% |
+| `WindowAudioState::EffectsVolume` | `0x004cf680` | 7 | yes | 80.00% |
+| `InputState::ReadSecondButtonTransition` | `0x004eab00` | 7 | yes | 80.00% |
+| `InputState::ReadDeltaX` | `0x004eab10` | 7 | yes | 80.00% |
+| `InputState::ReadWheel` | `0x004eab30` | 7 | yes | 80.00% |
+| `OverlayMapPrefix::LockMap` | `0x0041aa20` | 8 | yes | 33.33% |
+| `OverlayMapPrefix::UnlockMap` | `0x0041aa30` | 8 | yes | 80.00% |
+| `VariableTransport::StartDay` | `0x0042d100` | 8 | yes | 88.89% |
+| `ClearEntitySelection` | `0x00490c20` | 8 | yes | 80.00% |
+| `ScreenManager::DisableOverlay` | `0x004b0fe0` | 8 | yes | 80.00% |
+| `ScreenManager::RequestCameraCapture` | `0x004b2180` | 8 | yes | 33.33% |
+| `WindowDeactivationState::CurrentZoom` | `0x0043f3b0` | 9 | no (relocations) | 85.71% |
+| `VariableEntity::Unknown28` | `0x00453a40` | 9 | no (relocations) | 80.00% |
+| `VariableEntity::SetKind` | `0x004539f0` | 10 | yes | 85.71% |
+| `VariableEntity::SetEntityId` | `0x00453a00` | 10 | yes | 85.71% |
+| `VariableEntity::SetMovementMode` | `0x00453a10` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetFootprintX` | `0x00491090` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetFootprintY` | `0x004910a0` | 10 | yes | 85.71% |
+| `VariableEntity::SetFlag5a` | `0x004910b0` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetRepairAssigned` | `0x004910c0` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetRepairActive` | `0x00491110` | 10 | yes | 85.71% |
+| `VariableEntity::SetCleaningRequested` | `0x00491120` | 10 | yes | 85.71% |
+| `VariableEntity::SetRepairRequested` | `0x00491130` | 10 | yes | 85.71% |
+| `ScreenRequestGamePrefix::ScenarioNameCount` | `0x004e3d40` | 10 | yes | 88.89% |

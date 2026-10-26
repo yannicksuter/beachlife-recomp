@@ -15,6 +15,8 @@ namespace beachlife::runtime::jpeg
 {
 namespace
 {
+OpenFunction open_function = nullptr;
+
 struct Output
 {
     std::FILE* file;
@@ -33,6 +35,11 @@ void write_bytes(void* context, void* bytes, int count)
 }
 } // namespace
 
+void set_open_function(OpenFunction open) noexcept
+{
+    open_function = open;
+}
+
 Result write_rgb420_file(const char* path,
     const unsigned char* pixels,
     std::uint32_t width,
@@ -48,7 +55,7 @@ Result write_rgb420_file(const char* path,
 
     // The original writer requests read/write access and CREATE_ALWAYS. This
     // is the corresponding host stdio boundary; sharing/path rules differ.
-    std::FILE* file = std::fopen(path, "w+b");
+    std::FILE* file = open_function ? open_function(path, "w+b") : std::fopen(path, "w+b");
     if (!file)
     {
         return Result::open_failed;

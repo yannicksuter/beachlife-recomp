@@ -18,9 +18,9 @@ def identity(source, config, git="git"):
     if result["channel"] not in ("dev", "test", "release"):
         raise ValueError("Unknown build channel")
     result["decomp_profile"] = result.get("decomp_profile", "native")
-    if result["decomp_profile"] not in ("native", "native-experimental", "native-game"):
+    if result["decomp_profile"] not in ("native", "native-experimental", "native-game", "native-game-tweaks"):
         raise ValueError("Unknown native reconstructed source profile")
-    if result["decomp_profile"] in ("native-experimental", "native-game") and result["channel"] == "release":
+    if result["decomp_profile"] in ("native-experimental", "native-game", "native-game-tweaks") and result["channel"] == "release":
         raise ValueError("Experimental reconstructed code requires a dev or test build")
     for field in ("pull_request", "run_id"):
         if not re.fullmatch(r"\d+", str(result[field])):

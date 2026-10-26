@@ -1,6 +1,5 @@
 """Exercise loading readiness/repair and optional generated normal Play on a GPU."""
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -8,19 +7,22 @@ import tempfile
 
 from content_fixture import content_files, iso_files
 from check_runtime import (CONFIGURATION_COMPLETED, SKIP, UNAVAILABLE, generated_configuration,
-                           resource_directory, unsupported_configuration)
+                           parse_arguments, production_configuration, production_environment,
+                           rejected_configuration, resource_directory)
 
 
-def check(executable, fixture=None, resources=None):
+def check(executable, fixture=None, resources=None, *, boot=False):
     executable = str(Path(executable).resolve())
     with tempfile.TemporaryDirectory(prefix='beachlife-startup-') as directory:
         root = Path(directory)
         configuration = generated_configuration(fixture, root)
-        cabinet, expected = content_files(configuration=configuration)
-        original = iso_files(cabinet)
-
         def exercise(binary, base, generated=False):
             base.mkdir()
+            retail = boot and not generated
+            cabinet, expected = content_files(
+                configuration=production_configuration(configuration, retail))
+            original = iso_files(cabinet)
+            environment = production_environment(retail, base/'profile')
             image, config, cache = base/'source.iso', base/'launcher.cfg', base/'cache'
             image.write_bytes(original)
             command = [binary, '--play', '--smoke-test', '--frames', '1',
@@ -29,7 +31,7 @@ def check(executable, fixture=None, resources=None):
                 command += ['--resources', resource_directory(executable, resources)]
 
             def run(*args, ready=True, first=False):
-                result = subprocess.run([*command, *args], env=dict(os.environ),
+                result = subprocess.run([*command, *args], env=environment,
                                         capture_output=True, text=True, timeout=40)
                 if first and result.returncode != 0 and any(reason in result.stderr for reason in UNAVAILABLE):
                     # Device creation still precedes all slow setup/cache work.
@@ -46,7 +48,7 @@ def check(executable, fixture=None, resources=None):
                         assert 'Game configuration: loaded through VFS.' in result.stdout, result
                         assert 'Game runtime:' in result.stdout and ' 1 frames' in result.stdout, result
                     else:
-                        unsupported_configuration(result)
+                        rejected_configuration(result, retail)
                 else:
                     assert result.returncode == 1 and 'Game data:' not in result.stdout and result.stderr, result
                     assert 'Game runtime:' not in result.stdout and CONFIGURATION_COMPLETED not in result.stdout, result
@@ -83,10 +85,11 @@ def check(executable, fixture=None, resources=None):
             return SKIP
         if fixture is not None and exercise(str(Path(fixture).resolve()), root/'generated', generated=True) == SKIP:
             return SKIP
-    print('Production rejection, warm/offline readiness, repair and invalid-source gating passed.' +
+    print(('Retail parser rejection' if boot else 'Production rejection') +
+          ', warm/offline readiness, repair and invalid-source gating passed.' +
           (' Generated normal-Play lifecycle passed.' if fixture is not None else ''))
     return 0
 
 
 if __name__ == '__main__':
-    sys.exit(check(*sys.argv[1:]))
+    sys.exit(check(**parse_arguments()))

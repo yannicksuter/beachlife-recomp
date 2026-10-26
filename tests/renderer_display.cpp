@@ -166,7 +166,7 @@ void platform_geometry(display::SoftwareDisplay& service, SDL_Window* window)
     const std::unique_ptr<void, decltype(&SDL_free)> mode_storage(modes, SDL_free);
     require(modes != nullptr && count >= 0, "real mode enumeration failed");
     const auto reported = service.enumerate_modes();
-    require(reported.size() == static_cast<std::size_t>(count), "service invented display modes");
+    require(reported.size() >= static_cast<std::size_t>(count), "physical display modes were lost");
     observed_modes = reported.size();
     for (int index = 0; index < count; ++index)
     {
@@ -175,6 +175,22 @@ void platform_geometry(display::SoftwareDisplay& service, SDL_Window* window)
                     mode.pixel_format == modes[index]->format &&
                     mode.refresh_rate == modes[index]->refresh_rate,
             "service changed an actual display mode");
+    }
+    for (const auto size :
+        std::array<std::array<int, 2>, 4>{{{640, 480}, {800, 600}, {1024, 768}, {1280, 960}}})
+    {
+        require(std::any_of(reported.begin(),
+                    reported.end(),
+                    [&](const display::DisplayMode& mode)
+                    {
+                        return mode.width == size[0] && mode.height == size[1];
+                    }),
+            "a supported logical framebuffer is missing from the resolution selector");
+        const std::vector<std::byte> pixels(static_cast<std::size_t>(size[0]) * size[1] * 2);
+        const auto frame = display::convert_rgb555(pixels, size[0], size[1], size[0] * 2);
+        require(frame.width == size[0] && frame.height == size[1] &&
+                    frame.pixels.size() == static_cast<std::size_t>(size[0]) * size[1],
+            "advertised logical framebuffer cannot be converted for presentation");
     }
 
     // This pinned SDL dummy backend has no border callback. The service must

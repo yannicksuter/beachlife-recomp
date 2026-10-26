@@ -1,0 +1,148 @@
+diff --git a/src/startup_application.h b/src/startup_application.h
+index 9e32e69f215655be0d97fb13d905af7e76ac5231..94a112a3f5e34827562973f124c88f24674933f2 100644
+--- a/src/startup_application.h
++++ b/src/startup_application.h
+@@ -11,6 +11,6 @@
+ 
+ extern StartupProfiler* profiler;
+ void StartupFatal(const char* format, ...);
+-LRESULT CALLBACK GameWindowProc(HWND, UINT, WPARAM, LPARAM);
++LRESULT CALLBACK WindowProcedure(HWND, UINT, WPARAM, LPARAM);
+ 
+ #endif
+diff --git a/src/startup_application_globals.cpp b/src/startup_application_globals.cpp
+index 8b5ed93bc89836f4329abc2f4feb64f0838358da..230115a4beb182d80b9b25ea71261aa3723c9029 100644
+--- a/src/startup_application_globals.cpp
++++ b/src/startup_application_globals.cpp
+@@ -12,3 +12,5 @@ char* window_name = application_window_name;
+ char* mutex_name = application_mutex_name;
+ // GLOBAL: BEACHLIFE 0x005baeb8
+ bool windowed;
++// GLOBAL: BEACHLIFE 0x005baeb9
++bool application_active;
+diff --git a/src/startup_application_state.h b/src/startup_application_state.h
+index 60cad3ea38ccb03144e5ecdef4bcfa000addcf76..2cadf8ab6f5af439b5b588f03adb19cb120c8ef0 100644
+--- a/src/startup_application_state.h
++++ b/src/startup_application_state.h
+@@ -4,5 +4,6 @@
+ extern char* window_name;
+ extern char* mutex_name;
+ extern bool windowed;
++extern bool application_active;
+ 
+ #endif
+diff --git a/src/window_procedure.cpp b/src/window_procedure.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2edd180756fc1deee9ea187b580c27dd771f7945
+--- /dev/null
++++ b/src/window_procedure.cpp
+@@ -0,0 +1,40 @@
++#include "startup_application.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004a0710
++LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM word, LPARAM parameter)
++{
++    switch (message)
++    {
++    case WM_CLOSE:
++        DestroyWindow(window);
++        PostQuitMessage(0);
++        return 0;
++    case WM_ERASEBKGND:
++        return 0;
++    case WM_ACTIVATEAPP:
++        application_active = word != 0;
++        if (!windowed && screen_request_game)
++        {
++            if (application_active)
++                screen_request_game->Activate();
++            else
++                screen_request_game->Deactivate();
++        }
++        break;
++    case WM_SYSCOMMAND:
++        switch (word)
++        {
++        case SC_SIZE:
++        case SC_MOVE:
++        case SC_MAXIMIZE:
++        case SC_KEYMENU:
++        case SC_MONITORPOWER:
++            if (!screen_request_renderer->software_mode)
++                return 1;
++            break;
++        }
++        break;
++    }
++    return DefWindowProcA(window, message, word, parameter);
++}
+diff --git a/src/winmain.cpp b/src/winmain.cpp
+index 9631903bc71cd07fc4ee889478a4fcdc23301b41..a36a49ea3b8ff58e0b5764312fcd554588f9cdf5 100644
+--- a/src/winmain.cpp
++++ b/src/winmain.cpp
+@@ -21,6 +21,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
+ 
+     int capabilities;
+     // The retail entrypoint contains this inline CPUID feature probe.
++#ifndef BEACHLIFE_COMPAT
+     __asm {
+         pushfd
+         pop eax
+@@ -45,6 +46,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
+     cpu_done:
+         mov capabilities, eax
+     }
++#else
++    capabilities = beachlife_cpu_capabilities();
++#endif
+ 
+     bool mmx;
+     if (capabilities & 0x800000)
+@@ -65,7 +69,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
+         WNDCLASSEXA window_class;
+         window_class.cbSize = sizeof(window_class);
+         window_class.lpszClassName = window_name;
+-        window_class.lpfnWndProc = GameWindowProc;
++        window_class.lpfnWndProc = WindowProcedure;
+         window_class.style = CS_HREDRAW | CS_VREDRAW;
+         window_class.hInstance = instance;
+         window_class.hIcon = LoadIconA(instance, MAKEINTRESOURCEA(104));
+diff --git a/src/winmain_native.cpp b/src/winmain_native.cpp
+deleted file mode 100644
+index 546bef5526f1c810c136b341714fd389ad4d603c..0000000000000000000000000000000000000000
+--- a/src/winmain_native.cpp
++++ /dev/null
+@@ -1,32 +0,0 @@
+-#include "runtime/game_host.h"
+-#include "startup_frame_clock.h"
+-#include "startup_screen_manager.h"
+-#include "startup_timer.h"
+-
+-// Native adaptation of WinMain (retail 0x004a07e0) for the boot build. Play
+-// has already done what the retail entry does before the Game exists: the
+-// single-instance mutex, the CPU check, gameparameters.pis, the window class
+-// and window, and COM. The Game receives Play's window. Each retail frame
+-// handles at most one window message and then updates and renders; here the
+-// host handles the pending SDL events instead. Like the retail loop, the frame
+-// that receives the quit request still updates and renders once.
+-int beachlife_boot_main(beachlife::runtime::GameHost& host)
+-{
+-    ScreenRequestGamePrefix* game = new ScreenRequestGamePrefix(nullptr, &host.video);
+-    bool running = true;
+-    while (running)
+-    {
+-        running = host.pump_events(host.context);
+-        profiler->Reset();
+-        profiler->Start();
+-        game->Update();
+-        profiler->Stop();
+-        startup_frame_clock->value_24 = static_cast<int>(profiler->elapsed) / 1000;
+-        profiler->Start();
+-        game->Render();
+-        profiler->Stop();
+-        startup_frame_clock->value_20 = static_cast<int>(profiler->elapsed) / 1000;
+-    }
+-    delete game;
+-    return 0;
+-}

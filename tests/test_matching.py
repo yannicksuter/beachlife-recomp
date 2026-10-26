@@ -18,6 +18,29 @@ spec.loader.exec_module(matching)
 
 
 class MatchingInputTests(unittest.TestCase):
+    def test_unpacked_source_keeps_its_identity_without_disabling_other_icf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            ordinary, distinct = folder / 'ordinary.cpp', folder / 'distinct.cpp'
+            for source in (ordinary, distinct):
+                source.write_text('void function() {}\n')
+            target = {'source_compile_options': {'distinct.cpp': ['/Gy-']}}
+            options = matching.game_source_compile_options(target, [ordinary, distinct])
+            tool = matching.Toolchain.__new__(matching.Toolchain)
+            tool.compiler = folder
+            with patch.object(tool, 'native', side_effect=str), \
+                    patch.object(tool, 'run', return_value=''), \
+                    patch.object(tool, 'response') as response:
+                tool.build(folder / 'game', [ordinary, distinct], 'fixture', source_flags=options)
+            ordinary_flags, distinct_flags, link_flags = [call.args[1] for call in response.call_args_list]
+            self.assertIn('/O2', ordinary_flags)
+            self.assertIn('/Gy', ordinary_flags)
+            self.assertIn('/Ox', distinct_flags)
+            for flag in ('/O2', '/Gy', '/Gy-'):
+                self.assertNotIn(flag, distinct_flags)
+            self.assertIn('/opt:icf', link_flags)
+            self.assertEqual(options, {distinct: ['/Gy-']})
+
     def test_identity_rejects_missing_changed_and_truncated_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'generated.exe'
@@ -639,6 +662,110 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
                 matching.main()
         self.assertEqual(raised.exception.code, 1)
         toolchain.assert_not_called()
+
+    def add_registration(self, address, **target_fields):
+        address = f'{address:08x}'
+        paths = [self.metadata / f'metadata.d/{address}.csv',
+                 self.metadata / f'targets/beachlife-uk-1.1.d/{address}.json',
+                 self.metadata / f'fixtures/game.d/fixture_{address}.cpp']
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        paths[0].write_text(f'address,type,size,symbol\n0x{address},function,4,?method_{address}@@YAXXZ\n')
+        paths[1].write_text(json.dumps({'functions': [
+            {'address': '0x' + address, 'size': 4, 'name': 'method_' + address}], **target_fields}))
+        paths[2].write_text('// generated retention fixture\n')
+        return paths
+
+    def test_registrations_reach_compiler_comparator_and_folded_symbol_lookup_in_order(self):
+        later = self.add_registration(0x1040)
+        earlier = self.add_registration(0x1020, source_compile_options={'helper.cpp': ['/GX']})
+        self.target['functions'] = [{'address': '0x1000', 'size': 4, 'name': 'base'}]
+        self.comparison_rows = [{'address': '0x1000', 'recomp': '0x2000', 'matching': 1},
+                                {'address': '0x1020', 'recomp': '0x2020', 'matching': 1}]
+        build = self.tool.build
+        compiled = []
+        def with_folded_symbol(folder, sources, *args, **kwargs):
+            compiled.extend(sources)
+            binary, pdb = build(folder, sources, *args, **kwargs)
+            binary.with_suffix('.map').write_text(' 0001:00000000 ?method_00001040@@YAXXZ 00002020 f\n')
+            return binary, pdb
+        self.tool.build = with_folded_symbol
+        with patch.object(matching, 'read_va', return_value=b'data'):
+            result = self.run_game()
+        self.assertEqual([row['address'] for row in result['functions']],
+                         ['0x1000', '0x00001020', '0x00001040'])
+        self.assertTrue(result['functions'][-1]['folded'])
+        self.assertEqual(compiled[-3:], [self.metadata / 'fixtures/game.cpp', earlier[2], later[2]])
+        self.assertEqual(result['source_compile_options'], {'helper.cpp': ['/GX']})
+        project = json.loads((self.args.output / 'game/reccmp-project.yml').read_text())
+        self.assertEqual(project['targets']['BEACHLIFE']['data-sources'],
+                         [str(self.metadata / 'metadata.csv'), str(earlier[0]), str(later[0])])
+        for path in [*earlier, *later]:
+            self.assertEqual(result['input_sha256'][str(path)], matching.digest(path))
+        effective_target = Path(result['target_config'])
+        self.assertEqual(result['input_sha256'][str(effective_target)], matching.digest(effective_target))
+        self.assertEqual([row['address'] for row in json.loads(effective_target.read_text())['functions']],
+                         ['0x1000', '0x00001020', '0x00001040'])
+
+    def test_registration_conflicts_and_target_overrides_fail_before_build(self):
+        paths = self.add_registration(0x1020)
+        cases = [({'functions': [{'address': '0x1020', 'name': 'duplicate', 'size': 4}]},
+                  {'functions': [{'address': '0x00001020', 'name': 'new', 'size': 4}]},
+                  'Duplicate function address'),
+                 ({'source_compile_options': {'helper.cpp': ['/GX']}},
+                  {'source_compile_options': {'helper.cpp': ['/Ob1']}}, 'Duplicate source_compile_options'),
+                 ({}, {'sha256': 'overridden'}, 'Unsupported matching target fragment')]
+        original = self.target.copy()
+        for base, fragment, error in cases:
+            self.target = original | base
+            paths[1].write_text(json.dumps(fragment))
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
+                self.run_game()
+            self.assertEqual(self.calls, [])
+
+    def test_duplicate_metadata_and_invalid_fragment_headers_fail_before_build(self):
+        paths = self.add_registration(0x1020)
+        for csv in ('address,type,size,symbol\n0x1020,function,4,?a\n0x00001020,function,4,?b\n',
+                    'address,symbol\n0x1020,?a\n'):
+            paths[0].write_text(csv)
+            with self.subTest(csv=csv), self.assertRaises(ValueError):
+                self.run_game()
+            self.assertEqual(self.calls, [])
+        paths[0].write_text('address,type,size,symbol\n0x1020,function,4,?a\n')
+        (self.metadata / 'metadata.csv').write_text('address,type,size,symbol\n0x00001020,function,4,?b\n')
+        with self.assertRaisesRegex(ValueError, 'Duplicate matching metadata address'):
+            self.run_game()
+        self.assertEqual(self.calls, [])
+
+    def test_shared_callee_registrations_merge_once_and_conflicts_fail(self):
+        anchor = {'address': '0x1080', 'size': 8, 'name': 'Helper::Exit', 'symbol': '?Exit@Helper@@QAEXXZ',
+                  'header': 'helper.h', 'kind': 'void-member', 'return_type': 'void', 'parameters': []}
+        for address in (0x1020, 0x1040):
+            paths = self.add_registration(address, comparison_anchors=[anchor])
+            paths[0].write_text(paths[0].read_text() + '0x1080,function,8,?Exit@Helper@@QAEXXZ\n')
+        rows = matching.game_metadata_rows(self.metadata)
+        self.assertEqual([row['address'] for row in rows], ['0x00001020', '0x1080', '0x00001040'])
+        target = {}
+        matching.merge_target_fragments(self.metadata, target)
+        self.assertEqual(target['comparison_anchors'], [anchor])
+        paths[0].write_text(paths[0].read_text().replace(',8,', ',12,'))
+        with self.assertRaisesRegex(ValueError, 'Duplicate matching metadata address'):
+            matching.game_metadata_rows(self.metadata)
+
+    def test_matched_body_supersedes_identical_anchor_only(self):
+        anchor = {'address': '0x00001020', 'size': 4, 'name': 'Helper::Exit', 'symbol': '?method_00001020@@YAXXZ',
+                  'header': 'helper.h', 'kind': 'void-member', 'return_type': 'void', 'parameters': []}
+        self.add_registration(0x1020)
+        later = self.add_registration(0x1040, comparison_anchors=[anchor])
+        later[0].write_text(later[0].read_text() + '0x00001020,function,4,?method_00001020@@YAXXZ\n')
+        target = {'functions': []}
+        matching.merge_target_fragments(self.metadata, target)
+        self.assertEqual(target['comparison_anchors'], [])
+        later[1].write_text(json.dumps({'functions': [{'address': '0x00001040', 'size': 4, 'name': 'method_00001040'}],
+                                        'comparison_anchors': [anchor | {'size': 8}]}))
+        target = {'functions': []}
+        matching.merge_target_fragments(self.metadata, target)
+        self.assertEqual(target['comparison_anchors'], [anchor | {'size': 8}])
 
 
 if __name__ == '__main__':

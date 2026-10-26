@@ -1340,8 +1340,41 @@ class Launcher
     float draw_advanced(ImDrawList* draw, float left, float y, float available)
     {
         const float pad = dp(24), ix = left + pad, iw = available - 2 * pad;
-        PanelScope diagnostics(draw, {left, y}, available);
+        PanelScope tweaks(draw, {left, y}, available);
         float iy = y + pad;
+        iy += section(draw,
+            {ix, iy},
+            iw,
+            Icon::Sliders,
+            color::lagoon,
+            "Gameplay options",
+            "Optional changes that are not in the original game. Each one is off by default.");
+        ImVec2 at = setting_row(draw,
+            iy,
+            ix,
+            iw,
+            true,
+            "Skip intro",
+            "Starts directly at the main menu, without the startup movie, the logo and the "
+            "title screen.",
+            dp(ui::toggle_size.y));
+        switch_control(draw, "skip_intro", &settings_.tweaks.skip_intro, at);
+        at = setting_row(draw,
+            iy,
+            ix,
+            iw,
+            false,
+            "Mouse wheel zoom",
+            "Rolling the wheel up zooms in and down zooms out, like Page Up and Page Down. While "
+            "placing a building the wheel still rotates it.",
+            dp(ui::toggle_size.y));
+        switch_control(draw, "wheel_zoom", &settings_.tweaks.wheel_zoom, at);
+        iy += pad - row_spacing();
+        tweaks.end(iy);
+        y = iy + dp(18);
+
+        PanelScope diagnostics(draw, {left, y}, available);
+        iy = y + pad;
         iy += section(draw,
             {ix, iy},
             iw,
@@ -1349,7 +1382,7 @@ class Launcher
             color::lagoon,
             "Diagnostics & analytics",
             "Local tools for investigating problems. No usage data is collected or sent.");
-        ImVec2 at = setting_row(draw,
+        at = setting_row(draw,
             iy,
             ix,
             iw,

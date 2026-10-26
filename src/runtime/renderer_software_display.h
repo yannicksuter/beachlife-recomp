@@ -64,8 +64,8 @@ class DrawingContext
 
 // Borrows the existing game window; never opens another window/GPU or changes
 // the launcher. Calls must run on SDL's main thread and the construction thread.
-// Failures throw a host error; no invented mode, geometry or successful API
-// result is substituted. Fullscreen/DirectDraw surface emulation is not exposed.
+// Failures throw a host error. Mode enumeration includes the logical framebuffer
+// sizes supported by the host's display emulation.
 class SoftwareDisplay
 {
   public:

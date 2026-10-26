@@ -33,6 +33,23 @@
 #include <utility>
 #include <vector>
 
+// Optional gameplay tweaks (patches/beachlife-decomp-tweaks) ask the host
+// whether the player enabled them; all are off by default.
+namespace
+{
+bool wheel_zoom_tweak = false, skip_intro_tweak = false;
+} // namespace
+
+extern "C" int beachlife_tweak_wheel_zoom(void)
+{
+    return wheel_zoom_tweak;
+}
+
+extern "C" int beachlife_tweak_skip_intro(void)
+{
+    return skip_intro_tweak;
+}
+
 namespace beachlife::runtime
 {
 namespace
@@ -97,6 +114,14 @@ struct GamePumpState
         double x, y;
     };
     std::vector<Click> clicks;
+    // BEACHLIFE_BOOT_WHEEL="frame:steps;..." rolls the mouse wheel (positive
+    // is up) at those frames.
+    struct Wheel
+    {
+        std::uint64_t frame;
+        float steps;
+    };
+    std::vector<Wheel> wheels;
     // BEACHLIFE_BOOT_SHOTS="frame,..." also saves <screenshot>-<frame>.png.
     std::vector<std::uint64_t> shots;
     // BEACHLIFE_BOOT_ROUTE drives the menus without anyone at the mouse. A
@@ -191,25 +216,47 @@ std::string lowercase(std::string text)
     return text;
 }
 
-constexpr std::pair<const char*, const char*> route_presets[] = {
-    // Past the intro screens, main menu "start", "play" on the first
-    // scenario, then close its Objectives dialog.
-    {"scenario1",
-        "425,335>mainmenu.ble;425,335>scenarioscreen.tga;694,556>scenario1.pis;608,402+300"},
-    // Main menu "sandbox", then "play" on the first sandbox island.
-    {"sandbox1", "425,335>mainmenu.ble;416,384>scenarioscreen.tga;694,556>sandscenario1.pis"},
-};
+// Where each of the 12 islands is clicked on the scenario and sandbox maps.
+constexpr int island_points[12][2] = {{200, 440},
+    {273, 381},
+    {324, 282},
+    {335, 196},
+    {71, 81},
+    {214, 256},
+    {136, 125},
+    {249, 144},
+    {328, 99},
+    {462, 297},
+    {355, 358},
+    {396, 260}};
+
+// "scenarioN" and "sandboxN" (N 1..12): past the intro screens, the main menu's
+// "start" or "sandbox", the island, "play", then close the Objectives dialog.
+std::string route_preset(const char* name)
+{
+    int number = 0;
+    char extra = 0;
+    const bool sandbox = std::sscanf(name, "sandbox%d%c", &number, &extra) == 1;
+    if ((!sandbox && std::sscanf(name, "scenario%d%c", &number, &extra) != 1) || number < 1 ||
+        number > 12)
+    {
+        return {};
+    }
+    const auto& point = island_points[number - 1];
+    return std::string("425,335>mainmenu.ble;") + (sandbox ? "416,384" : "425,335") +
+           ">scenarioscreen.tga;" + std::to_string(point[0]) + "," + std::to_string(point[1]) +
+           "+90;694,556>" + (sandbox ? "sandscenario" : "scenario") + std::to_string(number) +
+           ".pis;608,402+300";
+}
 
 GamePumpState::Route scripted_route()
 {
     GamePumpState::Route route;
     const char* text = SDL_getenv("BEACHLIFE_BOOT_ROUTE");
-    for (const auto& [name, steps] : route_presets)
+    const std::string preset = text ? route_preset(text) : std::string();
+    if (!preset.empty())
     {
-        if (text && SDL_strcasecmp(text, name) == 0)
-        {
-            text = steps;
-        }
+        text = preset.c_str();
     }
     for (const char* cursor = text; cursor && *cursor;)
     {
@@ -316,6 +363,26 @@ std::vector<std::uint64_t> scripted_shots()
     return shots;
 }
 
+std::vector<GamePumpState::Wheel> scripted_wheels()
+{
+    std::vector<GamePumpState::Wheel> wheels;
+    const char* text = SDL_getenv("BEACHLIFE_BOOT_WHEEL");
+    for (const char* cursor = text; cursor && *cursor;)
+    {
+        unsigned long long frame = 0;
+        float steps = 0;
+        int used = 0;
+        if (std::sscanf(cursor, "%llu:%f%n", &frame, &steps, &used) != 2)
+        {
+            break;
+        }
+        wheels.push_back({frame, steps});
+        cursor += used;
+        cursor += *cursor == ';';
+    }
+    return wheels;
+}
+
 std::vector<GamePumpState::Click> scripted_clicks()
 {
     std::vector<GamePumpState::Click> clicks;
@@ -355,12 +422,24 @@ void click(platform::Video& video, double x, double y, bool down)
     SDL_PushEvent(&event);
 }
 
-bool game_pump(void* context)
+void prepare_game_frame(void* context)
 {
     auto& state = *static_cast<GamePumpState*>(context);
     ++state.frames;
     advance_route(state);
     advance_monkey(state);
+    for (const auto& scripted : state.wheels)
+    {
+        if (scripted.frame == state.frames)
+        {
+            SDL_Event event{};
+            event.type = SDL_EVENT_MOUSE_WHEEL;
+            event.wheel.windowID = SDL_GetWindowID(state.video->window());
+            event.wheel.y = scripted.steps;
+            event.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+            SDL_PushEvent(&event);
+        }
+    }
     for (const auto& scripted : state.clicks)
     {
         if (scripted.frame == state.frames || scripted.frame + 2 == state.frames)
@@ -382,21 +461,13 @@ bool game_pump(void* context)
             state.video->save_next(file);
         }
     }
-    if (state.limit && state.frames > state.limit + 1)
+    if (state.limit && state.frames == state.limit + 1)
     {
-        return false;
+        SDL_Event event{};
+        event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+        event.window.windowID = SDL_GetWindowID(state.video->window());
+        SDL_PushEvent(&event);
     }
-    bool running = true;
-    SDL_Event event;
-    while (SDL_PollEvent(&event))
-    {
-        ImGui_ImplSDL3_ProcessEvent(&event);
-        if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
-        {
-            running = false;
-        }
-    }
-    return running;
 }
 
 bool leaves(const SDL_Event& event)
@@ -552,28 +623,29 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
                 }
             }
             temporary_profile = parent / std::to_string(SDL_GetCurrentThreadID());
-            SDL_setenv_unsafe("BEACHLIFE_BOOT_USER_DIR", temporary_profile.c_str(), 1);
+            SDL_setenv_unsafe(
+                "BEACHLIFE_BOOT_USER_DIR", platform::utf8(temporary_profile).c_str(), 1);
         }
         // BEACHLIFE_BOOT_PROGRESS=all starts the test profile with every
-        // scenario available, as a player's progress file would: the game's
-        // sp.bin holds 12 little-endian states (4 training, 2 available).
+        // scenario and sandbox island available, as a player's progress file
+        // would: sp.bin holds 12 little-endian states; scenarios need bit 0
+        // clear, sandbox islands bit 2 or 3 set, so 4 opens both.
         const char* progress = SDL_getenv("BEACHLIFE_BOOT_PROGRESS");
         if (progress && SDL_strcmp(progress, "all") == 0)
         {
-            const std::filesystem::path profile = SDL_getenv("BEACHLIFE_BOOT_USER_DIR");
+            const auto profile = platform::utf8_path(SDL_getenv("BEACHLIFE_BOOT_USER_DIR"));
             std::filesystem::create_directories(profile);
-            std::FILE* file = std::fopen((profile / "sp.bin").c_str(), "wb");
+            SDL_IOStream* file = SDL_IOFromFile(platform::utf8(profile / "sp.bin").c_str(), "wb");
             if (!file)
             {
                 throw std::runtime_error("Cannot write the test progress file");
             }
             for (int index = 0; index < 12; ++index)
             {
-                const unsigned char state[4] = {
-                    static_cast<unsigned char>(index < 2 ? 4 : 2), 0, 0, 0};
-                std::fwrite(state, 1, sizeof(state), file);
+                const unsigned char state[4] = {4, 0, 0, 0};
+                SDL_WriteIO(file, state, sizeof(state));
             }
-            std::fclose(file);
+            SDL_CloseIO(file);
         }
     }
     if (!SDL_Init(SDL_INIT_VIDEO))
@@ -640,12 +712,15 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
                 throw std::runtime_error("Loading completed without mounted game data.");
             }
             game_source = source;
-            game_configuration = configuration(std::move(source));
-            if (!game_configuration)
+            if (!game_entry)
             {
-                throw std::runtime_error("Loading completed without a game configuration.");
+                game_configuration = configuration(std::move(source));
+                if (!game_configuration)
+                {
+                    throw std::runtime_error("Loading completed without a game configuration.");
+                }
+                std::puts("Game configuration: loaded through VFS.");
             }
-            std::puts("Game configuration: loaded through VFS.");
         };
     }
     if (!start_game(
@@ -665,11 +740,17 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             static_cast<std::uint64_t>(options.frames),
             options.screenshot,
             scripted_clicks(),
+            scripted_wheels(),
             scripted_shots(),
             scripted_route(),
             SDL_getenv("BEACHLIFE_BOOT_TRACE_FILES") != nullptr,
             scripted_monkey()};
-        GameHost host{video, game_pump, &pump, game_source};
+        GameHost host{
+            video, prepare_game_frame, &pump, game_source, options.hidden || options.headless};
+        wheel_zoom_tweak =
+            settings.tweaks.wheel_zoom || SDL_getenv("BEACHLIFE_TWEAK_WHEEL_ZOOM") != nullptr;
+        skip_intro_tweak =
+            settings.tweaks.skip_intro || SDL_getenv("BEACHLIFE_TWEAK_SKIP_INTRO") != nullptr;
         retail_files::set_open_observer(game_file_opened, &pump);
         struct ObserverReset
         {
@@ -839,7 +920,7 @@ int detail::run_with_configuration(const Options& options, ConfigurationFactory 
     catch (const std::exception& error)
     {
         std::fprintf(stderr, "Beach Life: %s\n", error.what());
-        if (!options.hidden)
+        if (!options.hidden && !options.headless)
         {
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Beach Life", error.what(), nullptr);
         }

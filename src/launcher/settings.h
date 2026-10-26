@@ -63,6 +63,14 @@ struct UpdateSettings
     bool operator==(const UpdateSettings&) const = default;
 };
 
+// Optional changes that are not in the original game; each is off by default.
+struct TweakSettings
+{
+    bool skip_intro = false; // start at the main menu: no movie, logo or front screen
+    bool wheel_zoom = false; // the mouse wheel zooms the camera in and out
+    bool operator==(const TweakSettings&) const = default;
+};
+
 // Local troubleshooting aids; no usage data is collected or sent.
 struct DiagnosticsSettings
 {
@@ -87,6 +95,7 @@ struct Settings
     int scale = 100;
     DisplaySettings display;
     DiagnosticsSettings diagnostics;
+    TweakSettings tweaks;
     UpdateSettings updates;
     ContentBinding content;
     bool operator==(const Settings&) const = default;

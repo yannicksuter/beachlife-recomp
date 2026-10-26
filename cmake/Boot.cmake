@@ -13,7 +13,7 @@ set(BEACHLIFE_BOOT_INVENTORY "" CACHE FILEPATH
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/game_tree.py" sources
         --tree "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp"
-        --compat "${CMAKE_SOURCE_DIR}/src/platform/compat/include" --compiling
+        --compat "${CMAKE_SOURCE_DIR}/src/platform/compat/include"
     OUTPUT_VARIABLE beachlife_boot_sources COMMAND_ERROR_IS_FATAL ANY)
 string(REPLACE "\n" ";" beachlife_boot_sources "${beachlife_boot_sources}")
 list(FILTER beachlife_boot_sources EXCLUDE REGEX "^$")
@@ -42,6 +42,14 @@ target_link_libraries(beachlife_compat PRIVATE SDL3::SDL3 freetype beachlife_ret
 target_compile_features(beachlife_compat PRIVATE cxx_std_20)
 set_target_properties(beachlife_compat PROPERTIES CXX_EXTENSIONS OFF)
 if(BUILD_TESTING)
+    add_executable(compat_window_tests tests/compat_window.cpp)
+    target_include_directories(compat_window_tests PRIVATE "${beachlife_compat_include}"
+        "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(compat_window_tests PRIVATE beachlife_compat SDL3::SDL3)
+    target_compile_features(compat_window_tests PRIVATE cxx_std_20)
+    add_test(NAME compat_window COMMAND compat_window_tests)
+    set_tests_properties(compat_window PROPERTIES
+        ENVIRONMENT "SDL_VIDEODRIVER=dummy;BEACHLIFE_BOOT_QUIET=1" TIMEOUT 15)
     add_executable(compat_cursor_tests tests/compat_cursor.cpp src/runtime/retail_cursor.cpp)
     target_include_directories(compat_cursor_tests PRIVATE "${beachlife_compat_include}"
         "${CMAKE_SOURCE_DIR}/src")
@@ -107,16 +115,9 @@ if(NOT MSVC)
         src/platform/compat/miles_audio.cpp src/platform/compat/miles.cpp
         PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
 endif()
-set(beachlife_game_compile_options -w -fshort-wchar -include "${beachlife_compat_include}/msvc_prelude.h")
-
 add_library(beachlife_boot_game OBJECT ${beachlife_boot_sources})
-target_include_directories(beachlife_boot_game PRIVATE "${BEACHLIFE_DECOMP_SOURCE}"
-    "${beachlife_compat_include}")
 target_link_libraries(beachlife_boot_game PRIVATE beachlife_runtime)
-target_compile_features(beachlife_boot_game PRIVATE cxx_std_20)
-target_compile_options(beachlife_boot_game PRIVATE ${beachlife_game_compile_options})
-set_target_properties(beachlife_boot_game PROPERTIES CXX_EXTENSIONS OFF)
-add_dependencies(beachlife_boot_game verify_reconstructed_source)
+target_compile_options(beachlife_boot_game PRIVATE -w)
 
 set(beachlife_boot_dir "${CMAKE_BINARY_DIR}/boot")
 file(GENERATE OUTPUT "${beachlife_boot_dir}/objects.txt"
@@ -140,16 +141,14 @@ add_custom_command(
 # The game tree plus its traps; Play links this when the boot build is enabled.
 # Host services the tree calls: resource files, the retail cursor and photo export.
 set(beachlife_boot_host beachlife_runtime beachlife_resource_files beachlife_jpeg_export
-    beachlife_resource_pool_host beachlife_compat)
+    beachlife_resource_pool_host beachlife_credits_data beachlife_compat)
 add_library(beachlife_boot STATIC $<TARGET_OBJECTS:beachlife_boot_game>
     "${beachlife_boot_dir}/traps.cpp" src/runtime/boot_trap.cpp src/runtime/retail_cursor.cpp
     src/runtime/boot_session.cpp)
 target_link_libraries(beachlife_boot PUBLIC ${beachlife_boot_host})
 # Class traps include the tree headers of classes whose virtuals are missing.
-target_include_directories(beachlife_boot PRIVATE "${BEACHLIFE_DECOMP_SOURCE}"
-    "${beachlife_compat_include}")
-target_compile_options(beachlife_boot PRIVATE ${beachlife_game_compile_options})
-target_compile_features(beachlife_boot PRIVATE cxx_std_20)
+beachlife_game_compile_environment(beachlife_boot)
+target_compile_options(beachlife_boot PRIVATE -w)
 
 # Links every tree object (not only referenced archive members), proving that
 # the whole tree resolves with its traps.
@@ -157,10 +156,8 @@ add_executable(beachlife_boot_link src/runtime/boot_link.cpp
     $<TARGET_OBJECTS:beachlife_boot_game> "${beachlife_boot_dir}/traps.cpp"
     src/runtime/boot_trap.cpp src/runtime/retail_cursor.cpp)
 target_link_libraries(beachlife_boot_link PRIVATE ${beachlife_boot_host})
-target_include_directories(beachlife_boot_link PRIVATE "${BEACHLIFE_DECOMP_SOURCE}"
-    "${beachlife_compat_include}")
-target_compile_options(beachlife_boot_link PRIVATE ${beachlife_game_compile_options})
-target_compile_features(beachlife_boot_link PRIVATE cxx_std_20)
+beachlife_game_compile_environment(beachlife_boot_link)
+target_compile_options(beachlife_boot_link PRIVATE -w)
 
 # Play runs the decompiled entry instead of its placeholder frame. Whole
 # archive: retail static initializers live in files nothing references, and

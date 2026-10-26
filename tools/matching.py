@@ -14,12 +14,12 @@ if __package__:
     from .matching_imports import (coff_import_symbols, stdcall_export_names,
                                   stdcall_import_library, validate_stdcall_imports,
                                   vc6_exception_abi_object)
-    from .prepare_sources import prepare
+    from .prepare_sources import no_symlinks, prepare
 else:
     from matching_imports import (coff_import_symbols, stdcall_export_names,
                                  stdcall_import_library, validate_stdcall_imports,
                                  vc6_exception_abi_object)
-    from prepare_sources import prepare
+    from prepare_sources import no_symlinks, prepare
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / 'decomp/targets/beachlife-uk-1.1.json'
@@ -164,9 +164,17 @@ class Toolchain:
             if obj in objects:
                 raise ValueError('Matching source basenames must be unique.')
             objects.append(obj)
-            flags = ['/nologo', '/c', '/O2', '/Ob0', '/Zi', '/Gd', '/Gy',
+            options = list((source_flags or {}).get(source, ()))
+            packaged = '/Gy-' not in options
+            # VC6 does not accept /Gy-, and /O2 implicitly enables /Gy.
+            # /Ox retains speed optimization without packaging functions into
+            # COMDATs, so an audited identity can remain distinct under /OPT:ICF.
+            if not packaged:
+                options.remove('/Gy-')
+            flags = ['/nologo', '/c', '/O2' if packaged else '/Ox', '/Ob0', '/Zi', '/Gd',
+                     *(['/Gy'] if packaged else []),
                      '/Fdcompile.pdb', '/Fo' + obj, *extra_compile,
-                     *(source_flags or {}).get(source, ()), self.native(source)]
+                     *options, self.native(source)]
             self.response(folder / 'compile.rsp', flags)
             command = [str(self.compiler / 'CL.EXE'), '@compile.rsp']
             logs.append(self.run(command if os.name == 'nt' else ['wine', *command], folder))
@@ -331,6 +339,95 @@ def prepare_game_source(args):
         args.source = args.decomp_root / 'src'
 
 
+def registration_files(metadata, directory, pattern):
+    """Keep legacy inputs first, then address-keyed additions in filename order."""
+    folder = metadata / directory
+    no_symlinks(folder, metadata)
+    if not folder.exists():
+        return []
+    if not folder.is_dir():
+        raise ValueError(f'Invalid matching registration directory: {folder}')
+    files = sorted(folder.iterdir())
+    for path in files:
+        no_symlinks(path, metadata)
+        if not path.is_file() or not re.fullmatch(pattern, path.name):
+            raise ValueError(f'Invalid matching registration file: {path}')
+    return files
+
+
+def game_metadata_paths(metadata):
+    return [metadata / 'metadata.csv',
+            *registration_files(metadata, 'metadata.d', r'[0-9a-f]{8}\.csv')]
+
+
+def game_metadata_rows(metadata):
+    rows, seen = [], {}
+    paths = game_metadata_paths(metadata)
+    for index, path in enumerate(paths):
+        with path.open(newline='') as stream:
+            reader = csv.DictReader(stream)
+            if index and reader.fieldnames != ['address', 'type', 'size', 'symbol']:
+                raise ValueError(f'Matching metadata fragment needs address,type,size,symbol: {path}')
+            for row in reader:
+                address = int(row['address'], 16)
+                if len(paths) > 1 and address in seen:
+                    # Parallel registrations can each name a callee they share;
+                    # only the same identity may appear twice.
+                    if (seen[address]['type'], seen[address]['size'], seen[address]['symbol']) != (
+                            row['type'], row['size'], row['symbol']):
+                        raise ValueError(f'Duplicate matching metadata address: {row["address"]}')
+                    continue
+                seen[address] = row
+                rows.append(row)
+    return rows
+
+
+def merge_target_fragments(metadata, target):
+    lists = ('functions', 'library_functions', 'unclassified_functions', 'comparison_anchors')
+    mappings = ('source_compile_options', 'stdcall_imports', 'runtime_stdcall_imports')
+    for path in registration_files(metadata, 'targets/beachlife-uk-1.1.d', r'[0-9a-f]{8}\.json'):
+        fragment = json.loads(path.read_text())
+        if not isinstance(fragment, dict) or not fragment or set(fragment) - set(lists + mappings):
+            raise ValueError(f'Unsupported matching target fragment: {path}')
+        for key, value in fragment.items():
+            if key in lists:
+                if not isinstance(value, list) or not isinstance(target.get(key, []), list):
+                    raise ValueError(f'{key} must be a list in matching target fragment: {path}')
+                existing = target.setdefault(key, [])
+                if key == 'comparison_anchors':
+                    # A callee anchor shared by parallel registrations is kept
+                    # once; a different anchor at its address still fails later.
+                    value = [item for item in value if item not in existing]
+                existing.extend(value)
+            else:
+                if not isinstance(value, dict) or not isinstance(target.get(key, {}), dict):
+                    raise ValueError(f'{key} must be a mapping in matching target fragment: {path}')
+                existing = target.setdefault(key, {})
+                if existing.keys() & value.keys():
+                    raise ValueError(f'Duplicate {key} entries in matching target fragment: {path}')
+                existing.update(value)
+    drop_superseded_anchors(metadata, target)
+
+
+def drop_superseded_anchors(metadata, target):
+    """Let a matched body replace an anchor that a parallel registration kept for it."""
+    anchors = target.get('comparison_anchors')
+    if not isinstance(anchors, list) or not anchors:
+        return
+    def identity(item):
+        if isinstance(item, dict) and re.fullmatch(r'0x[0-9a-fA-F]{1,8}', str(item.get('address'))):
+            return int(item['address'], 16), item.get('size')
+        return None
+    credited = {identity(item) for key in ('functions', 'library_functions', 'unclassified_functions')
+                for item in (target.get(key) if isinstance(target.get(key), list) else [])} - {None}
+    symbols = {(int(row['address'], 16), row['symbol']) for row in game_metadata_rows(metadata)}
+    def superseded(item):
+        # Only the same address, extent and symbol; anything else still fails validation.
+        key = identity(item)
+        return key in credited and (key[0], item.get('symbol')) in symbols
+    target['comparison_anchors'] = [item for item in anchors if not superseded(item)]
+
+
 def game_source_compile_options(target, sources):
     """Resolve qualified options to unique game or support source files."""
     configured = target.get('source_compile_options', {})
@@ -348,8 +445,8 @@ def game_source_compile_options(target, sources):
                 name not in available):
             raise ValueError('Compiler options must name an existing game or support source basename.')
         if (not isinstance(flags, list) or any(not isinstance(flag, str) for flag in flags) or
-                len(flags) != len(set(flags)) or any(flag not in ('/GX', '/Ob1') for flag in flags)):
-            raise ValueError('Source compiler options must be unique entries from /GX and /Ob1.')
+                len(flags) != len(set(flags)) or any(flag not in ('/GX', '/Ob1', '/Gy-') for flag in flags)):
+            raise ValueError('Source compiler options must be unique entries from /GX, /Ob1 and /Gy-.')
         result[available[name]] = flags.copy()
     return result
 
@@ -433,8 +530,7 @@ def comparison_anchor_specs(metadata, target):
               for item in credited]
     names = {item['name'] for item in credited}
     symbols = set()
-    with (metadata / 'metadata.csv').open(newline='') as stream:
-        rows = list(csv.DictReader(stream))
+    rows = game_metadata_rows(metadata)
     keys = {'address', 'size', 'name', 'symbol', 'header', 'kind', 'return_type', 'parameters'}
     for item in specs:
         if (not isinstance(item, dict) or set(item) != keys or
@@ -530,6 +626,8 @@ def game_target(metadata):
     target = json.loads(path.read_text())
     if not isinstance(target, dict) or 'functions' not in target:
         raise ValueError('The matching target requires a functions list.')
+    merge_target_fragments(metadata, target)
+    game_metadata_rows(metadata)
     seen = set()
     for key in ('functions', 'library_functions', 'unclassified_functions'):
         items = target.get(key, [])
@@ -595,10 +693,17 @@ def game(tool, args):
     entry = metadata / 'fixtures/game.cpp'
     if not entry.is_file():
         raise ValueError('Prepared source has no comparison retention fixture.')
+    fixtures = registration_files(metadata, 'fixtures/game.d', r'fixture_[0-9a-f]{8}\.cpp')
     folder = tool.output / 'game'
+    # Report consumers use one fingerprinted target, including fragment entries.
+    # Keep the legacy target path and bytes unchanged when no fragments exist.
+    if registration_files(metadata, 'targets/beachlife-uk-1.1.d', r'[0-9a-f]{8}\.json'):
+        folder.mkdir(parents=True, exist_ok=True)
+        target_path = folder / 'target.json'
+        save(target_path, target)
     anchors, anchor_records = generate_comparison_anchors(
         metadata, source, folder, comparison_anchor_specs(metadata, target))
-    inputs = set([*sources, *anchors, *source.rglob('*.h'),
+    inputs = set([target_path, *sources, *anchors, *source.rglob('*.h'),
                   *(path for path in metadata.rglob('*') if path.is_file()),
                   ROOT / 'tools/matching_imports.py', ROOT / 'tools/prepare_sources.py',
                   Path(__file__).resolve()])
@@ -650,7 +755,7 @@ def game(tool, args):
     source_flags = {support / 'operator_delete.cpp': ['/O1']}
     for path, flags in compile_options.items():
         source_flags.setdefault(path, []).extend(flags)
-    binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, entry], 'BeachLife', link_flags,
+    binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, entry, *fixtures], 'BeachLife', link_flags,
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
                              '/I' + tool.native(source)],
                             source_flags=source_flags)
@@ -670,7 +775,7 @@ def game(tool, args):
         'filename': 'BeachLife.exe', 'source-root': [str(source), str(support)] +
         ([str(anchors[0].parent)] if anchors else []),
         'hash': {'sha256': target['sha256']},
-        'data-sources': [str(metadata / 'metadata.csv')],
+        'data-sources': [str(path) for path in game_metadata_paths(metadata)],
         'report': {'ignore-functions': ['fixture_entry'] +
                    [item['name'] for item in anchor_records]}}}})
     save(folder / 'reccmp-user.yml', {'targets': {'BEACHLIFE': {'path': str(original)}}})
@@ -692,9 +797,8 @@ def game(tool, args):
         parts = line.split()
         if len(parts) >= 3 and parts[1].startswith('?') and re.fullmatch(r'[0-9a-fA-F]{8}', parts[2]):
             rebuilt.setdefault(parts[1], int(parts[2], 16))
-    with (metadata / 'metadata.csv').open(newline='') as stream:
-        symbol_at = {int(row['address'], 16): row['symbol'] for row in csv.DictReader(stream)
-                     if row.get('type') == 'function' and row.get('symbol')}
+    symbol_at = {int(row['address'], 16): row['symbol'] for row in game_metadata_rows(metadata)
+                 if row.get('type') == 'function' and row.get('symbol')}
     def compare_functions(items):
         functions = []
         for item in items:

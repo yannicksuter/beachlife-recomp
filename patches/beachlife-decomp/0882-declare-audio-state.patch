@@ -1,0 +1,287 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index de16d48..7c70ad3 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4492,3 +4492,37 @@ typedef char SharedWorldEntity15_action_state_f4Offset[(offsetof(WorldEntity15,
+ typedef char SharedWorldEntity15_resource_104Offset[(offsetof(WorldEntity15, resource_104) == 0x104) ? 1 : -1];
+ typedef char SharedWorldEntity15_action_point_108Offset[(offsetof(WorldEntity15, action_point_108) == 0x108) ? 1 : -1];
+ typedef char SharedWorldEntity15_flag_114Offset[(offsetof(WorldEntity15, flag_114) == 0x114) ? 1 : -1];
++
++#include "window_audio.h"
++
++typedef char SharedWindowAudioStateSize[(sizeof(WindowAudioState) == 0xf8) ? 1 : -1];
++typedef char SharedWindowAudioVectorSize[(sizeof(WindowAudioVector) == 0xc) ? 1 : -1];
++typedef char SharedWindowAudioState_voices_74Offset[(offsetof(WindowAudioState, voices_74) == 0x74) ? 1 : -1];
++typedef char SharedWindowAudioState_voices_b4Offset[(offsetof(WindowAudioState, voices_b4) == 0xb4) ? 1 : -1];
++typedef char SharedWindowAudioState_position_e0Offset[(offsetof(WindowAudioState, position_e0) == 0xe0) ? 1 : -1];
++typedef char SharedWindowAudioState_bank_f4Offset[(offsetof(WindowAudioState, bank_f4) == 0xf4) ? 1 : -1];
++
++#include "startup_game_update_pair.h"
++
++typedef char SharedGameObjectSoundSize[(sizeof(GameObjectSound) == 0x30) ? 1 : -1];
++typedef char SharedGamePointSoundSize[(sizeof(GamePointSound) == 0x40) ? 1 : -1];
++typedef char SharedGameSoundNodeSize[(sizeof(GameSoundNode) == 0xc) ? 1 : -1];
++typedef char SharedGameSoundIteratorSize[(sizeof(GameSoundIterator) == 0x4) ? 1 : -1];
++typedef char SharedGameSoundListSize[(sizeof(GameSoundList) == 0x4) ? 1 : -1];
++typedef char SharedGamePointSoundListSize[(sizeof(GamePointSoundList) == 0x4) ? 1 : -1];
++typedef char SharedGameObjectSoundListSize[(sizeof(GameObjectSoundList) == 0x4) ? 1 : -1];
++typedef char SharedGameUpdatePairSize[(sizeof(GameUpdatePair) == 0xc) ? 1 : -1];
++typedef char SharedGameUpdatePair_point_sounds_04Offset[(offsetof(GameUpdatePair, point_sounds_04) == 0x4) ? 1 : -1];
++typedef char SharedGameUpdatePair_object_sounds_08Offset[(offsetof(GameUpdatePair, object_sounds_08) == 0x8) ? 1 : -1];
++
++#include "miles_imports.h"
++
++// Retain the shared audio imports until their individual methods are registered.
++extern "C" __declspec(dllexport) FARPROC FixtureAudioStreamImports[] = {
++    reinterpret_cast<FARPROC>(AIL_start_3D_sample),
++    reinterpret_cast<FARPROC>(AIL_open_stream),
++    reinterpret_cast<FARPROC>(AIL_set_stream_loop_count),
++    reinterpret_cast<FARPROC>(AIL_start_stream),
++    reinterpret_cast<FARPROC>(AIL_close_stream),
++    reinterpret_cast<FARPROC>(AIL_set_stream_volume)
++};
+diff --git a/src/miles_imports.h b/src/miles_imports.h
+index 76dc071..73b7304 100644
+--- a/src/miles_imports.h
++++ b/src/miles_imports.h
+@@ -48,4 +48,9 @@ extern "C" __declspec(dllimport) int __stdcall AIL_stream_status(void* stream);
+ extern "C" __declspec(dllimport) int __stdcall AIL_sample_volume(void* sample);
+ extern "C" __declspec(dllimport) int __stdcall AIL_3D_sample_volume(void* sample);
+ 
++extern "C" __declspec(dllimport) void __stdcall AIL_start_3D_sample(void* sample);
++extern "C" __declspec(dllimport) void* __stdcall AIL_open_stream(void* driver, const char* path, int memory);
++extern "C" __declspec(dllimport) void __stdcall AIL_set_stream_loop_count(void* stream, unsigned int count);
++extern "C" __declspec(dllimport) void __stdcall AIL_start_stream(void* stream);
++
+ #endif
+diff --git a/src/startup_game_update_pair.h b/src/startup_game_update_pair.h
+index 817d97a..2e1f869 100644
+--- a/src/startup_game_update_pair.h
++++ b/src/startup_game_update_pair.h
+@@ -1,6 +1,83 @@
+ #ifndef STARTUP_GAME_UPDATE_PAIR_H
+ #define STARTUP_GAME_UPDATE_PAIR_H
+ 
++#include "startup_sound_position.h"
++
++struct GameObjectSound
++{
++    unsigned int object_id;
++    float volume_04;
++    char name_08[0x20];
++    unsigned char playing_28;
++    // Nonzero: keep playing while loud music runs.
++    unsigned char ignores_music_29;
++    unsigned char unknown_2a[2];
++    int voice_2c;
++};
++
++struct GamePointSound
++{
++    char name_00[0x20];
++    WindowAudioVector position_20;
++    float volume_2c;
++    int limit_30;
++    int voice_34;
++    unsigned char retrying_38;
++    unsigned char unknown_39[3];
++    float retry_delay_3c;
++};
++
++struct GameSoundNode
++{
++    GameSoundNode* next;
++    GameSoundNode* previous;
++    void* sound;
++};
++
++struct GameSoundIterator
++{
++    GameSoundNode* node;
++    GameSoundIterator();
++    GameSoundIterator(const GameSoundIterator& other);
++    GameSoundIterator operator++(int);
++};
++struct GameSoundList
++{
++    GameSoundNode* head;
++    GameSoundIterator Erase(GameSoundIterator position);
++};
++struct GameSoundAllocator
++{
++    GameSoundAllocator();
++    ~GameSoundAllocator();
++};
++struct GamePointSoundListBase : GameSoundList
++{
++    GamePointSoundListBase(const GameSoundAllocator& allocator, GameSoundNode* initial);
++    ~GamePointSoundListBase();
++};
++struct GameObjectSoundListBase : GameSoundList
++{
++    explicit GameObjectSoundListBase(const GameSoundAllocator& allocator);
++    ~GameObjectSoundListBase();
++};
++struct GamePointSoundList : GamePointSoundListBase
++{
++    explicit GamePointSoundList(const GameSoundAllocator& allocator = GameSoundAllocator());
++    ~GamePointSoundList();
++    GameSoundIterator Insert(GameSoundIterator position, GamePointSound* const& sound);
++    static void FreeNode(GameSoundNode* node);
++    void Clear();
++};
++struct GameObjectSoundList : GameObjectSoundListBase
++{
++    explicit GameObjectSoundList(const GameSoundAllocator& allocator = GameSoundAllocator());
++    ~GameObjectSoundList();
++    GameSoundIterator Insert(GameSoundIterator position, GameObjectSound* const& sound);
++    static void FreeNode(GameSoundNode* node);
++    void Clear();
++};
++
+ struct GameUpdatePair;
+ extern GameUpdatePair* game_update_pair;
+ 
+@@ -10,13 +87,33 @@ struct GameUpdatePairRegistration
+     ~GameUpdatePairRegistration();
+ };
+ 
+-// Borrowed scheduler call boundary; complete storage and lifetime are separate.
+ struct GameUpdatePair : GameUpdatePairRegistration
+ {
+-    void RemoveObjectSound(unsigned int id); // 0x004d2910.
++    void AddObjectSound(const char* name, unsigned int id, float volume, unsigned int limit); // 0x004d2840.
++    void RemoveObjectSound(unsigned int id);                                                  // 0x004d2910.
++    unsigned char enabled_00;
++    unsigned char unknown_01[3];
++    GamePointSoundList point_sounds_04;
++    GameObjectSoundList object_sounds_08;
++
++    // Actual 0x004d2510, RET4.
++    explicit GameUpdatePair(unsigned char enabled);
++
++    // Actual 0x004d2760; calls 0x004d2990 then 0x004d2bd0 with the same float.
++    void AddPointSound(const char* name, const WindowAudioVector* position, float volume, int limit, int voice); // 0x004d2780.
+     void Update(float delta);
++    // Actual 0x004d2990 (sounds attached to world objects, list at +8) and
++    // 0x004d2bd0 (sounds at fixed points, list at +4); RET4 each.
+     void UpdateObjectSounds(float delta);
+     void UpdatePointSounds(float delta);
++    void ClearFlaggedPointSounds(); // 0x004d2d00.
++
++    // Native host ownership exposes ordinary destruction without inventing a Game
++    // friend implementation. This changes access only, not layout or cleanup.
++public:
++    // The real enclosing Game directly calls ordinary cleanup 0x004d2630.
++    friend struct ScreenRequestGamePrefix;
++    ~GameUpdatePair();
+ };
+ 
+ #endif
+diff --git a/src/startup_sound_position.h b/src/startup_sound_position.h
+new file mode 100644
+index 0000000..cad1504
+--- /dev/null
++++ b/src/startup_sound_position.h
+@@ -0,0 +1,13 @@
++#ifndef STARTUP_SOUND_POSITION_H
++#define STARTUP_SOUND_POSITION_H
++
++// Same observed value type used by the original positional-sound records.
++// Keep it independent of the still-borrowed WindowAudioState declaration.
++struct WindowAudioVector
++{
++    float x;
++    float y;
++    float z;
++};
++
++#endif
+diff --git a/src/window_audio.h b/src/window_audio.h
+index 8296c67..a42173e 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -1,6 +1,8 @@
+ #ifndef WINDOW_AUDIO_H
+ #define WINDOW_AUDIO_H
+ 
++#include "startup_sound_position.h"
++
+ struct WindowSoundVoice;
+ struct WindowSoundBank;
+ 
+@@ -8,8 +10,15 @@ struct WindowSoundBank;
+ // constructor. These descriptive fields do not establish a native owner ABI.
+ struct WindowAudioState
+ {
+-    void StopStream();     // 0x004cff80.
+-    bool IsStreamPaused(); // 0x004cff10.
++    bool PlayStream(const char* path);                           // 0x004cfe20.
++    void SetStreamVolume(float level);                           // 0x004cffa0.
++    void SetEffectsVolume(float level);                          // 0x004cf530.
++    bool HasSound(const char* name);                             // 0x004cf690.
++    int FindVoice(const char* name);                             // 0x004cfd00.
++    void RestartVoice(int voice);                                // 0x004cfd80.
++    void SetListenerPosition(const WindowAudioVector* position); // 0x004cfa70.
++    void StopStream();                                           // 0x004cff80.
++    bool IsStreamPaused();                                       // 0x004cff10.
+     float EffectsVolume();
+     unsigned char enabled;
+     unsigned char enabled_3d;
+@@ -20,13 +29,21 @@ struct WindowAudioState
+     float stream_volume_10;
+     void* samples_14[16];
+     void* samples_54[8];
+-    WindowSoundVoice* voices_74[24];
++    WindowSoundVoice* voices_74[16];
++    WindowSoundVoice* voices_b4[8];
+     int volume_d4;
+     float scale_d8;
+     void* listener_dc;
+-    float position_x_e0;
+-    float position_y_e4;
+-    float position_z_e8;
++    union
++    {
++        WindowAudioVector position_e0;
++        struct
++        {
++            float position_x_e0;
++            float position_y_e4;
++            float position_z_e8;
++        };
++    };
+     float value_ec;
+     float value_f0;
+     WindowSoundBank* bank_f4;
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+index 49c3fe0..0beeb78 100644
+--- a/src/window_sound_bank.h
++++ b/src/window_sound_bank.h
+@@ -56,6 +56,7 @@ struct WindowSoundBank
+     // Actual constructor 0x004d1bc0/RET8 and ordinary destructor 0x004d1d30.
+     WindowSoundBank(const char* header_path, const char* bank_path);
+     ~WindowSoundBank();
++    bool HasSound(const char* name); // 0x004d1e50.
+     void ReleaseSample(const char* name);
+     void* FindSample(const char* name, unsigned int* bytes);
+     void LoadIndex(const char* header_path, const char* bank_path); // 0x004d2140, RET8.
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 851ae4c..d251671 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2970,7 +2970,13 @@
+         "AIL_enumerate_3D_providers": 12,
+         "AIL_open_3D_provider": 4,
+         "AIL_open_3D_listener": 4,
+-        "AIL_set_3D_position": 16
++        "AIL_set_3D_position": 16,
++        "AIL_start_3D_sample": 4,
++        "AIL_open_stream": 12,
++        "AIL_set_stream_loop_count": 8,
++        "AIL_start_stream": 4,
++        "AIL_close_stream": 4,
++        "AIL_set_stream_volume": 8
+       }
+     },
+     "USER32.dll": {
