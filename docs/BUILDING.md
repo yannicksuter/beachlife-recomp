@@ -530,6 +530,10 @@ switches drive the game without a player:
   so a failure reproduces from the seed.
 - `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames, and
   `BEACHLIFE_BOOT_WHEEL="frame:steps;..."` rolls the mouse wheel (positive is up).
+  An optional button in `frame:x,y,button` uses SDL numbering (1 left, 3 right).
+- `BEACHLIFE_BOOT_KEYS="frame:scancode,hold;..."` presses an SDL scancode name
+  for `hold` frames. For example, `800:P,2;1000:P,2` pauses and resumes;
+  overlapping entries hold modifier keys for shortcuts.
 - `BEACHLIFE_BOOT_PROGRESS=all` starts the test profile with every scenario
   and sandbox island available.
 - `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
