@@ -2804,6 +2804,7 @@ Outcome play_settings(const Options& options)
 Outcome run(const Options& options)
 {
     fs::path restart;
+    std::string restart_error;
     Outcome outcome;
     try
     {
@@ -2815,6 +2816,14 @@ Outcome run(const Options& options)
         outcome.preview_screen = launcher.preview_screen();
         outcome.settings = launcher.settings();
         outcome.config = launcher.config();
+#ifdef _WIN32
+        // Windows lets only the foreground process bring a new window to the front:
+        // start the updated launcher while this window still is, not after it closed.
+        if (!restart.empty() && options.argv)
+        {
+            restart_error = restart_launcher(restart, options.argc, options.argv);
+        }
+#endif
     }
     catch (const std::exception& error)
     {
@@ -2830,8 +2839,12 @@ Outcome run(const Options& options)
     {
         return outcome;
     }
+#ifdef _WIN32
+    const std::string& error = restart_error;
+#else
     // An update replaced the program files; the old window and SDL are gone.
     const std::string error = restart_launcher(restart, options.argc, options.argv);
+#endif
     if (error.empty())
     {
         return outcome;

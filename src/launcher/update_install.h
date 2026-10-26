@@ -81,8 +81,9 @@ std::filesystem::path installed_launcher(const std::filesystem::path& base);
 
 // Starts `program` (the updated launcher) with this run's command line. On Linux
 // and macOS it replaces the running process and returns only on failure; on
-// Windows it starts a new process and the caller exits. Returns the reason on
-// failure, else empty.
+// Windows it starts a new process, allowed to take the foreground, and the caller
+// exits (call it while this launcher's window is still in front). Returns the
+// reason on failure, else empty.
 std::string restart_launcher(const std::filesystem::path& program, int argc, char** argv);
 
 } // namespace beachlife::launcher
