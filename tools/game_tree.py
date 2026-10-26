@@ -539,7 +539,10 @@ def traps(args):
     for symbol, name in zip(names, demangled):
         match = re.match(r'(?:vtable|typeinfo|typeinfo name) for (\w+)$', name)
         if match and args.tree and match.group(1) not in classes:
-            ast_compiler = args.compiler if 'clang' in Path(args.compiler).name else 'clang++'
+            # AppleClang may be selected through /usr/bin/c++; its basename
+            # must not silently switch the AST to a different PATH compiler.
+            ast_compiler = args.compiler if args.target_system in ('Darwin', 'Windows') \
+                or 'clang' in Path(args.compiler).name else 'clang++'
             classes[match.group(1)] = class_traps(args.tree, match.group(1), defined, inline,
                                                 ast_compiler, args.compiler_arg)
     for traps_of_class in classes.values():
