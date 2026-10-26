@@ -1151,8 +1151,7 @@ class Launcher
                  Icon::Info,
                  color::lagoon,
                  "Used by Play's game window",
-                 "Play opens the game window with these settings. The game code is not "
-                 "reconstructed yet.") +
+                 "Play opens the game window with these settings.") +
              dp(18);
         const float pad = dp(24), ix = left + pad, iw = available - 2 * pad,
                     spacing = row_spacing(), field = dp(44);
