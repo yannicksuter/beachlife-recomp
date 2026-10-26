@@ -4,9 +4,10 @@
 if(NOT BEACHLIFE_ENABLE_BOOT_GAME)
     return()
 endif()
-if(NOT (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Windows)$" AND CMAKE_SIZEOF_VOID_P EQUAL 8
-        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$"))
-    message(FATAL_ERROR "The boot build currently supports Linux and Windows x86-64 only")
+if(NOT (CMAKE_SIZEOF_VOID_P EQUAL 8 AND
+        ((CMAKE_SYSTEM_NAME MATCHES "^(Linux|Windows)$" AND BEACHLIFE_ARCH STREQUAL "x86_64")
+         OR (APPLE AND BEACHLIFE_ARCH MATCHES "^(arm64|x86_64)$"))))
+    message(FATAL_ERROR "The boot build supports Linux/Windows x86-64 and macOS arm64/x86-64")
 endif()
 if(WIN32 AND NOT (MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
     message(FATAL_ERROR "Windows boot builds require the pinned LLVM-MinGW toolchain")
@@ -33,6 +34,7 @@ add_library(beachlife_compat STATIC src/platform/compat/support.cpp src/platform
     src/platform/compat/kernel_files.cpp src/platform/compat/kernel_find.cpp
     src/platform/compat/kernel_ini.cpp src/platform/compat/kernel_mapping.cpp
     src/platform/compat/kernel_message.cpp src/platform/compat/kernel_system.cpp
+    src/platform/compat/kernel_cpu.cpp
     src/platform/compat/kernel_stdio.cpp
     src/platform/compat/kernel_wide_format.cpp
     src/platform/compat/user32.cpp src/platform/compat/gdi32.cpp src/platform/compat/gdi_dib.cpp
@@ -140,11 +142,42 @@ if(BEACHLIFE_BOOT_INVENTORY)
 endif()
 get_filename_component(beachlife_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
 find_program(beachlife_demangler NAMES llvm-cxxfilt c++filt HINTS "${beachlife_compiler_dir}" REQUIRED)
+set(beachlife_boot_nm "${CMAKE_NM}")
+set(beachlife_boot_inspection)
+if(APPLE)
+    # Stock Apple nm has a different flag dialect. LLVM also reads SDK .tbd
+    # exports and both Mach-O relocation formats. CI installs these explicitly.
+    find_program(BEACHLIFE_BOOT_NM NAMES llvm-nm REQUIRED)
+    find_program(BEACHLIFE_BOOT_OBJDUMP NAMES llvm-objdump REQUIRED)
+    find_program(BEACHLIFE_BOOT_DEMANGLER NAMES llvm-cxxfilt REQUIRED)
+    set(beachlife_boot_nm "${BEACHLIFE_BOOT_NM}")
+    set(beachlife_demangler "${BEACHLIFE_BOOT_DEMANGLER}")
+    set(beachlife_boot_sdk "${CMAKE_OSX_SYSROOT}")
+    if(NOT IS_DIRECTORY "${beachlife_boot_sdk}")
+        if(NOT beachlife_boot_sdk)
+            set(beachlife_boot_sdk macosx)
+        endif()
+        execute_process(COMMAND xcrun --sdk "${beachlife_boot_sdk}" --show-sdk-path
+            OUTPUT_VARIABLE beachlife_boot_sdk OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND_ERROR_IS_FATAL ANY)
+    endif()
+    list(APPEND beachlife_boot_inspection
+        --target-arch "${BEACHLIFE_ARCH}" --sysroot "${beachlife_boot_sdk}"
+        --objdump "${BEACHLIFE_BOOT_OBJDUMP}"
+        --compiler-arg=-arch "--compiler-arg=${BEACHLIFE_ARCH}"
+        --compiler-arg=-isysroot "--compiler-arg=${beachlife_boot_sdk}"
+        "--compiler-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND beachlife_boot_inspection --readelf "${CMAKE_READELF}")
+endif()
+if(CMAKE_CXX_COMPILER_TARGET)
+    list(APPEND beachlife_boot_inspection "--compiler-arg=--target=${CMAKE_CXX_COMPILER_TARGET}")
+endif()
 add_custom_command(
     OUTPUT "${beachlife_boot_dir}/traps.cpp" "${beachlife_boot_dir}/traps.json"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/game_tree.py" traps
         --objects "${beachlife_boot_dir}/objects.txt" ${beachlife_boot_inventory}
-        --compiler "${CMAKE_CXX_COMPILER}" --nm "${CMAKE_NM}"
+        --compiler "${CMAKE_CXX_COMPILER}" --nm "${beachlife_boot_nm}" ${beachlife_boot_inspection}
         --demangler "${beachlife_demangler}" --target-system "${CMAKE_SYSTEM_NAME}"
         --host $<TARGET_FILE:beachlife_compat> $<TARGET_FILE:beachlife_resource_pool_host>
         --tree "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp"
@@ -174,6 +207,23 @@ add_executable(beachlife_boot_link src/runtime/boot_link.cpp
 target_link_libraries(beachlife_boot_link PRIVATE ${beachlife_boot_host})
 beachlife_game_compile_environment(beachlife_boot_link)
 target_compile_options(beachlife_boot_link PRIVATE -w)
+if(BUILD_TESTING)
+    add_test(NAME boot_link COMMAND beachlife_boot_link)
+    add_test(NAME boot_headless
+        COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_boot_headless.py"
+            "$<TARGET_FILE:beachlife>")
+    set_tests_properties(boot_headless PROPERTIES TIMEOUT 90)
+    add_executable(compat_cpu_tests tests/compat_cpu.cpp
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_profiler_constructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_profiler_globals.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_profiler_registration_destructor.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_timer_pair.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_timer_capture.cpp"
+        "${BEACHLIFE_DECOMP_SOURCE}/startup_timer_elapsed.cpp")
+    beachlife_game_compile_environment(compat_cpu_tests)
+    target_link_libraries(compat_cpu_tests PRIVATE beachlife_compat)
+    add_test(NAME compat_cpu COMMAND compat_cpu_tests)
+endif()
 
 # Play runs the decompiled entry instead of its placeholder frame. Whole
 # archive: retail static initializers live in files nothing references, and

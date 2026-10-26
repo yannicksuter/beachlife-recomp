@@ -14,5 +14,10 @@ function(beachlife_game_compile_environment target)
         target_compile_definitions(${target} PRIVATE BEACHLIFE_COMPAT=1)
         target_compile_options(${target} PRIVATE
             -fshort-wchar -include "${compat_include}/msvc_prelude.h")
+        if(APPLE AND BEACHLIFE_ARCH STREQUAL "arm64")
+            # Preserve the recovered separate multiply/add operations on ARM.
+            # This does not emulate x87's retained extended precision.
+            target_compile_options(${target} PRIVATE -ffp-contract=off)
+        endif()
     endif()
 endfunction()

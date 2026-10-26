@@ -267,14 +267,37 @@ def sources(args):
 
 
 def symbols(command, paths):
-    out = subprocess.run([command[0], *command[1:], *map(str, paths)], check=True, text=True,
-                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout
-    return {line.split()[0] for line in out.splitlines()
-            if line and not line.endswith(':') and len(line.split()) >= 2}
-
-
-def system_symbols(compiler='c++', nm='nm', target_system='Linux'):
     names = set()
+    # Darwin's argument limit is much smaller than Linux's. The whole game
+    # has over a thousand objects, often under a long prepared-source path.
+    for start in range(0, len(paths), 128):
+        out = subprocess.check_output([*command, *map(str, paths[start:start + 128])], text=True)
+        names.update(line.split()[0] for line in out.splitlines()
+                     if line and not line.endswith(':') and len(line.split()) >= 2)
+    return names
+
+
+def system_symbols(compiler='c++', nm='nm', target_system='Linux', *, arch=None,
+                   sysroot=None, compiler_args=()):
+    names = set()
+    if target_system == 'Darwin':
+        if not sysroot or arch not in ('arm64', 'x86_64'):
+            raise ValueError('Darwin traps require an explicit SDK and target architecture')
+        library_dir = Path(sysroot) / 'usr/lib'
+        paths = [library_dir / 'libSystem.tbd', library_dir / 'libc++.tbd']
+        if not all(path.is_file() for path in paths):
+            raise ValueError(f'Cannot locate libSystem/libc++ stubs in {sysroot}')
+        # libSystem reexports its system shards. LLVM nm reads TAPI stubs,
+        # including inlined sublibraries, without the host dyld shared cache.
+        paths += sorted((library_dir / 'system').glob('*.tbd'))
+        if (library_dir / 'libc++abi.tbd').is_file():
+            paths.append(library_dir / 'libc++abi.tbd')
+        runtime = subprocess.check_output(
+            [compiler, *compiler_args, '--print-libgcc-file-name'], text=True).strip()
+        if not Path(runtime).is_file():
+            raise ValueError(f'Cannot locate Darwin compiler runtime: {runtime}')
+        paths.append(Path(runtime))
+        return symbols([nm, '-P', '--defined-only', '--extern-only', f'--arch={arch}'], paths)
     if target_system == 'Windows':
         # Inspect the target CRT/import libraries, never the Linux build host.
         # LLVM-MinGW uses libc++, UCRT and compiler-rt (not libstdc++/libgcc).
@@ -299,15 +322,23 @@ def system_symbols(compiler='c++', nm='nm', target_system='Linux'):
     return {name.split('@')[0] for name in names}
 
 
-def called(objects, target_system='Linux'):
+def called(objects, target_system='Linux', *, readelf='readelf', objdump='llvm-objdump'):
     """Symbols referenced by a call relocation (functions, never data)."""
     # COFF REL32 is shared by calls and data references. Only header-declared
     # C functions (and demangled C++ functions) are safe trap candidates there.
     if target_system == 'Windows':
         return set()
     result = set()
+    if target_system == 'Darwin':
+        for start in range(0, len(objects), 128):
+            out = subprocess.check_output([objdump, '-r', *map(str, objects[start:start + 128])], text=True)
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) == 3 and parts[1] in ('X86_64_RELOC_BRANCH', 'ARM64_RELOC_BRANCH26'):
+                    result.add(parts[2])
+        return result
     for obj in objects:
-        out = subprocess.run(['readelf', '-rW', str(obj)], text=True, stdout=subprocess.PIPE).stdout
+        out = subprocess.check_output([readelf, '-rW', str(obj)], text=True)
         for line in out.splitlines():
             parts = line.split()
             if len(parts) >= 5 and parts[2] == 'R_X86_64_PLT32':
@@ -418,7 +449,7 @@ def header_inline_methods(tree):
     return names
 
 
-def class_traps(tree, name, defined, inline=frozenset(), compiler='clang++'):
+def class_traps(tree, name, defined, inline=frozenset(), compiler='clang++', compiler_args=()):
     """C++ trap definitions for every declared, undefined method of a class.
 
     Defining the class's methods here makes the compiler emit its vtable and
@@ -427,11 +458,11 @@ def class_traps(tree, name, defined, inline=frozenset(), compiler='clang++'):
     if not header:
         return None
     src = Path(tree) / 'src'
-    out = subprocess.run([compiler, '-std=c++20', '-fsyntax-only', '-w', f'-I{src}', f'-I{ROOT / "src"}',
+    out = subprocess.run([compiler, *compiler_args, '-std=c++20', '-fsyntax-only', '-w', f'-I{src}', f'-I{ROOT / "src"}',
                           '-fshort-wchar', '-include', str(COMPAT / 'msvc_prelude.h'), f'-I{COMPAT}',
                           '-x', 'c++', str(header), '-Xclang', '-ast-dump=json',
                           '-Xclang', f'-ast-dump-filter={name}'],
-                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout
+                         stdout=subprocess.PIPE, check=True, text=True).stdout
     decoder, index, record = json.JSONDecoder(), 0, None
     while index < len(out):
         while index < len(out) and out[index].isspace():
@@ -475,12 +506,24 @@ def traps(args):
     undefined = symbols([args.nm, '-P', '-u'], objects) - defined
     if args.host:
         undefined -= symbols([args.nm, '-P', '--defined-only'], [Path(p) for p in args.host])
-    undefined -= system_symbols(args.compiler, args.nm, args.target_system) | SYSTEM_STATIC
+    # Keep raw linker identities for asm labels and AST comparisons. Only
+    # classification/demangling removes Mach-O's one external-symbol prefix.
+    def canonical(symbol):
+        return symbol[1:] if args.target_system == 'Darwin' and symbol.startswith('_') else symbol
+    undefined -= system_symbols(args.compiler, args.nm, args.target_system,
+                                arch=args.target_arch, sysroot=args.sysroot,
+                                compiler_args=args.compiler_arg)
+    if args.target_system != 'Darwin':
+        undefined -= SYSTEM_STATIC
     declarations = declared_functions(args.tree)
-    calls = called(objects, args.target_system) | (declarations & undefined)
+    calls = called(objects, args.target_system, readelf=args.readelf, objdump=args.objdump)
+    calls |= {symbol for symbol in undefined if canonical(symbol) in declarations}
     names = sorted(undefined)
-    demangled = subprocess.run([args.demangler], input='\n'.join(names), text=True,
+    demangled = subprocess.run([args.demangler, '--no-strip-underscore'],
+                               input='\n'.join(map(canonical, names)), text=True,
                                stdout=subprocess.PIPE, check=True).stdout.splitlines()
+    if len(demangled) != len(names):
+        raise ValueError('Demangler returned an incomplete symbol list')
     index = inventory_index(args.inventory)
     by_address = {row['address']: row for row in index.values()}
     hints = header_addresses(args.tree)
@@ -497,7 +540,8 @@ def traps(args):
         match = re.match(r'(?:vtable|typeinfo|typeinfo name) for (\w+)$', name)
         if match and args.tree and match.group(1) not in classes:
             ast_compiler = args.compiler if 'clang' in Path(args.compiler).name else 'clang++'
-            classes[match.group(1)] = class_traps(args.tree, match.group(1), defined, inline, ast_compiler)
+            classes[match.group(1)] = class_traps(args.tree, match.group(1), defined, inline,
+                                                ast_compiler, args.compiler_arg)
     for traps_of_class in classes.values():
         for method in (traps_of_class or {}).get('methods', []):
             covered |= symbol_family(method['symbol'])
@@ -517,7 +561,7 @@ def traps(args):
         class_name = re.match(r'(?:vtable|typeinfo|typeinfo name) for (\w+)$', name)
         if symbol in covered or (class_name and classes.get(class_name.group(1))):
             continue  # defined by the class traps below
-        if symbol.startswith('_Z') and '(' in name:
+        if canonical(symbol).startswith('_Z') and '(' in name:
             row = index.get(qualified(name))
             hint = hints.get(qualified(name))
             if not row and hint:
@@ -525,8 +569,8 @@ def traps(args):
             functions.append({'symbol': symbol, 'name': name,
                               'address': row['address'] if row else None,
                               'inventory_name': row['name'] if row else None})
-        elif not symbol.startswith('_Z') and symbol in calls:
-            services.append({'symbol': symbol, 'name': symbol})
+        elif not canonical(symbol).startswith('_Z') and symbol in calls:
+            services.append({'symbol': symbol, 'name': canonical(symbol)})
         else:
             unresolved.append({'symbol': symbol, 'name': name})
     class_methods = []
@@ -598,7 +642,12 @@ def main():
     command.add_argument('--compiler', default='clang++', help='target C++ compiler')
     command.add_argument('--nm', default='nm', help='target object symbol reader')
     command.add_argument('--demangler', default='c++filt')
-    command.add_argument('--target-system', default='Linux', choices=('Linux', 'Windows'))
+    command.add_argument('--target-system', default='Linux', choices=('Linux', 'Windows', 'Darwin'))
+    command.add_argument('--target-arch', choices=('arm64', 'x86_64'))
+    command.add_argument('--sysroot', help='target SDK path (required for Darwin)')
+    command.add_argument('--compiler-arg', action='append', default=[], help='target compiler option')
+    command.add_argument('--readelf', default='readelf', help='ELF relocation reader')
+    command.add_argument('--objdump', default='llvm-objdump', help='Mach-O relocation reader')
     command.add_argument('--objects', required=True, help='file listing the tree object files')
     command.add_argument('--host', nargs='*', help='host libraries that resolve symbols')
     command.add_argument('--inventory', help='progress inventory JSON for addresses')

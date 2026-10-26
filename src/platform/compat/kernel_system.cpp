@@ -2,7 +2,6 @@
 #include "native_kernel.h"
 
 #include <cerrno>
-#include <cpuid.h>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -160,16 +159,6 @@ std::shared_ptr<Mutex> named_mutex(const char* name, bool initial_owner, bool& e
 #endif
 }
 } // namespace
-
-int beachlife_cpu_capabilities()
-{
-    unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
-    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
-    {
-        return 0;
-    }
-    return static_cast<int>((eax & 0xf00) | (edx & 0xfffff0ff));
-}
 
 extern "C"
 {

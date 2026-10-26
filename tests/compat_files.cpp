@@ -1,4 +1,5 @@
 #include "platform/compat/compat_files.h"
+#include "compat_environment.h"
 #include "data/folder_source.h"
 #include "io.h"
 #include "msvcrt.h"
@@ -35,6 +36,7 @@ void check(bool condition, const char* detail)
 
 struct Fixture
 {
+    CompatProfileEnvironment environment;
     fs::path root;
     Fixture()
     {
@@ -45,6 +47,7 @@ struct Fixture
         {
             throw std::runtime_error("Cannot create fixture");
         }
+        root = fs::canonical(root);
         SDL_setenv_unsafe("BEACHLIFE_BOOT_USER_DIR",
             beachlife::platform::utf8(root / "user-\xc3\xa9").c_str(),
             1);
@@ -205,6 +208,29 @@ int main()
               fs::file_size(beachlife::compat::kernel::user_path("saves/stdio.dat")) == 0 &&
               !fs::exists(fixture.root / "retail/saves"),
         "the preferences text-mode truncate stays inside the user folder");
+    stream = beachlife_crt_fopen("Saves/append.dat", "wb");
+    check(stream && std::fwrite("first", 1, 5, stream) == 5 && std::fclose(stream) == 0,
+        "create a buffered binary append fixture");
+    stream = beachlife_crt_fopen("saves/APPEND.dat", "ab+");
+    check(stream && beachlife_crt_fseek(stream, 0, SEEK_SET) == 0 &&
+              std::fwrite("last", 1, 4, stream) == 4 && beachlife_crt_ftell(stream) == 9 &&
+              std::fflush(stream) == 0 && beachlife_crt_fseek(stream, 0, SEEK_SET) == 0 &&
+              std::fread(buffer.data(), 1, 10, stream) == 9 && std::feof(stream) &&
+              std::memcmp(buffer.data(), "firstlast", 9) == 0 && std::fclose(stream) == 0,
+        "append writes stay at EOF after seek, and buffered update reads preserve position");
+    stream = beachlife_crt_fopen("saves/append.dat", "wb");
+    check(stream && std::fwrite("!", 1, 1, stream) == 1 &&
+              beachlife_crt_fseek(stream, 0, SEEK_SET) == 0 && std::fgetc(stream) == EOF,
+        "write-only stdio rejects reads");
+#ifndef _WIN32
+    // Wine's UCRT returns EOF for this operation without setting a stream error.
+    check(stream && std::ferror(stream), "POSIX write-only streams report a read error");
+#endif
+    if (stream)
+    {
+        std::clearerr(stream);
+        check(std::fclose(stream) == 0, "close a stream after clearing its deliberate read error");
+    }
     // Exercise the separate native mapping backend while keeping retail handles
     // opaque. Closing the mapping must not invalidate a surviving mapped view.
     OFSTRUCT info{};

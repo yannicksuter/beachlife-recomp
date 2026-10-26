@@ -1,3 +1,4 @@
+#include "compat_environment.h"
 #include "compat_process.h"
 #include "platform/compat/compat_files.h"
 #include "platform/compat/shell_link.h"
@@ -227,6 +228,7 @@ void parser_checks()
 
 struct Fixture
 {
+    CompatProfileEnvironment environment;
     std::filesystem::path root;
     std::vector<beachlife::data::SourceEntry> entries;
     Fixture()
@@ -235,6 +237,7 @@ struct Fixture
                ("beachlife-shell-link-" +
                    std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         require(std::filesystem::create_directory(root), "create isolated generated fixture");
+        root = std::filesystem::canonical(root);
         require(SDL_setenv_unsafe("BEACHLIFE_BOOT_USER_DIR",
                     beachlife::platform::utf8(root / "user").c_str(),
                     1) == 0,
