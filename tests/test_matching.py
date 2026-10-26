@@ -18,6 +18,29 @@ spec.loader.exec_module(matching)
 
 
 class MatchingInputTests(unittest.TestCase):
+    def test_unpacked_source_keeps_its_identity_without_disabling_other_icf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            ordinary, distinct = folder / 'ordinary.cpp', folder / 'distinct.cpp'
+            for source in (ordinary, distinct):
+                source.write_text('void function() {}\n')
+            target = {'source_compile_options': {'distinct.cpp': ['/Gy-']}}
+            options = matching.game_source_compile_options(target, [ordinary, distinct])
+            tool = matching.Toolchain.__new__(matching.Toolchain)
+            tool.compiler = folder
+            with patch.object(tool, 'native', side_effect=str), \
+                    patch.object(tool, 'run', return_value=''), \
+                    patch.object(tool, 'response') as response:
+                tool.build(folder / 'game', [ordinary, distinct], 'fixture', source_flags=options)
+            ordinary_flags, distinct_flags, link_flags = [call.args[1] for call in response.call_args_list]
+            self.assertIn('/O2', ordinary_flags)
+            self.assertIn('/Gy', ordinary_flags)
+            self.assertIn('/Ox', distinct_flags)
+            for flag in ('/O2', '/Gy', '/Gy-'):
+                self.assertNotIn(flag, distinct_flags)
+            self.assertIn('/opt:icf', link_flags)
+            self.assertEqual(options, {distinct: ['/Gy-']})
+
     def test_identity_rejects_missing_changed_and_truncated_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'generated.exe'

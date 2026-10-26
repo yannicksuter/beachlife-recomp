@@ -164,9 +164,17 @@ class Toolchain:
             if obj in objects:
                 raise ValueError('Matching source basenames must be unique.')
             objects.append(obj)
-            flags = ['/nologo', '/c', '/O2', '/Ob0', '/Zi', '/Gd', '/Gy',
+            options = list((source_flags or {}).get(source, ()))
+            packaged = '/Gy-' not in options
+            # VC6 does not accept /Gy-, and /O2 implicitly enables /Gy.
+            # /Ox retains speed optimization without packaging functions into
+            # COMDATs, so an audited identity can remain distinct under /OPT:ICF.
+            if not packaged:
+                options.remove('/Gy-')
+            flags = ['/nologo', '/c', '/O2' if packaged else '/Ox', '/Ob0', '/Zi', '/Gd',
+                     *(['/Gy'] if packaged else []),
                      '/Fdcompile.pdb', '/Fo' + obj, *extra_compile,
-                     *(source_flags or {}).get(source, ()), self.native(source)]
+                     *options, self.native(source)]
             self.response(folder / 'compile.rsp', flags)
             command = [str(self.compiler / 'CL.EXE'), '@compile.rsp']
             logs.append(self.run(command if os.name == 'nt' else ['wine', *command], folder))
@@ -437,8 +445,8 @@ def game_source_compile_options(target, sources):
                 name not in available):
             raise ValueError('Compiler options must name an existing game or support source basename.')
         if (not isinstance(flags, list) or any(not isinstance(flag, str) for flag in flags) or
-                len(flags) != len(set(flags)) or any(flag not in ('/GX', '/Ob1') for flag in flags)):
-            raise ValueError('Source compiler options must be unique entries from /GX and /Ob1.')
+                len(flags) != len(set(flags)) or any(flag not in ('/GX', '/Ob1', '/Gy-') for flag in flags)):
+            raise ValueError('Source compiler options must be unique entries from /GX, /Ob1 and /Gy-.')
         result[available[name]] = flags.copy()
     return result
 
