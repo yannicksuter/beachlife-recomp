@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -112,8 +113,17 @@ struct GamePumpState
     {
         std::uint64_t frame;
         double x, y;
+        Uint8 button = SDL_BUTTON_LEFT;
     };
     std::vector<Click> clicks;
+    // BEACHLIFE_BOOT_KEYS="frame:scancode,hold;..." presses SDL scancode
+    // names for the given number of frames. Entries may overlap for chords.
+    struct Key
+    {
+        std::uint64_t frame, hold;
+        SDL_Scancode scancode;
+    };
+    std::vector<Key> keys;
     // BEACHLIFE_BOOT_WHEEL="frame:steps;..." rolls the mouse wheel (positive
     // is up) at those frames.
     struct Wheel
@@ -383,6 +393,35 @@ std::vector<GamePumpState::Wheel> scripted_wheels()
     return wheels;
 }
 
+std::vector<GamePumpState::Key> scripted_keys()
+{
+    std::vector<GamePumpState::Key> keys;
+    const char* text = SDL_getenv("BEACHLIFE_BOOT_KEYS");
+    for (const char* cursor = text; cursor && *cursor;)
+    {
+        unsigned long long frame = 0, hold = 0;
+        char name[80]{};
+        int used = 0;
+        if (std::sscanf(cursor, "%llu:%79[^,;],%llu%n", &frame, name, &hold, &used) != 3 || !hold)
+        {
+            throw std::runtime_error("Invalid BEACHLIFE_BOOT_KEYS entry");
+        }
+        const auto scancode = SDL_GetScancodeFromName(name);
+        if (scancode == SDL_SCANCODE_UNKNOWN)
+        {
+            throw std::runtime_error(std::string("Unknown scripted scancode: ") + name);
+        }
+        keys.push_back({frame, hold, scancode});
+        cursor += used;
+        cursor += *cursor == ';';
+    }
+    if (!keys.empty())
+    {
+        SDL_setenv_unsafe("BEACHLIFE_BOOT_ASSUME_FOCUS", "1", 1);
+    }
+    return keys;
+}
+
 std::vector<GamePumpState::Click> scripted_clicks()
 {
     std::vector<GamePumpState::Click> clicks;
@@ -396,16 +435,29 @@ std::vector<GamePumpState::Click> scripted_clicks()
         {
             break;
         }
-        clicks.push_back({frame, x, y});
         cursor += used;
+        unsigned button = SDL_BUTTON_LEFT;
+        if (*cursor == ',')
+        {
+            used = 0;
+            if (std::sscanf(cursor, ",%u%n", &button, &used) != 1 || button < 1 || button > 5)
+            {
+                throw std::runtime_error("Invalid scripted mouse button");
+            }
+            cursor += used;
+        }
+        clicks.push_back({frame, x, y, static_cast<Uint8>(button)});
         cursor += *cursor == ';';
     }
     return clicks;
 }
 
-void click(platform::Video& video, double x, double y, bool down)
+void click(platform::Video& video, double x, double y, bool down, Uint8 button = SDL_BUTTON_LEFT)
 {
-    const auto point = video.presentation_transform().to_window(x, y);
+    // GetCursorPos floors the inverse mapping. Aim inside the requested pixel
+    // so SDL's float coordinates cannot round its boundary into a neighbour.
+    const auto point =
+        video.presentation_transform().to_window(std::floor(x) + 0.5, std::floor(y) + 0.5);
     SDL_Window* window = video.window();
     if (down)
     {
@@ -414,7 +466,7 @@ void click(platform::Video& video, double x, double y, bool down)
     SDL_Event event{};
     event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
     event.button.windowID = SDL_GetWindowID(window);
-    event.button.button = SDL_BUTTON_LEFT;
+    event.button.button = button;
     event.button.down = down;
     event.button.clicks = 1;
     event.button.x = static_cast<float>(point.x);
@@ -428,6 +480,20 @@ void prepare_game_frame(void* context)
     ++state.frames;
     advance_route(state);
     advance_monkey(state);
+    for (const auto& scripted : state.keys)
+    {
+        if (scripted.frame == state.frames || scripted.frame + scripted.hold == state.frames)
+        {
+            const bool down = scripted.frame == state.frames;
+            SDL_Event event{};
+            event.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+            event.key.windowID = SDL_GetWindowID(state.video->window());
+            event.key.scancode = scripted.scancode;
+            event.key.key = SDL_GetKeyFromScancode(scripted.scancode, SDL_KMOD_NONE, false);
+            event.key.down = down;
+            SDL_PushEvent(&event);
+        }
+    }
     for (const auto& scripted : state.wheels)
     {
         if (scripted.frame == state.frames)
@@ -444,7 +510,11 @@ void prepare_game_frame(void* context)
     {
         if (scripted.frame == state.frames || scripted.frame + 2 == state.frames)
         {
-            click(*state.video, scripted.x, scripted.y, scripted.frame == state.frames);
+            click(*state.video,
+                scripted.x,
+                scripted.y,
+                scripted.frame == state.frames,
+                scripted.button);
         }
     }
     if (state.limit && state.frames == state.limit && !state.screenshot.empty())
@@ -749,6 +819,7 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             static_cast<std::uint64_t>(options.frames),
             options.screenshot,
             scripted_clicks(),
+            scripted_keys(),
             scripted_wheels(),
             scripted_shots(),
             scripted_route(),

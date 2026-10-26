@@ -2,8 +2,8 @@
 
 These packages contain the first graphical launcher and the game window. The
 launcher selects and remembers a game source; Play opens the game window and
-runs the game loop. The game code itself, game-content inspection and language
-detection remain under development.
+runs the experimental decompiled game. The game, game-content inspection and
+language detection remain under development.
 
 Download the archive matching your OS and CPU from the GitHub releases page: a
 published release, or a pull request's test build (a prerelease). Extract the
@@ -115,5 +115,5 @@ icon and font have separate notices in the package. Windows uses the original
 icon in the executable; macOS uses it in the app bundle. Linux window icons
 depend on desktop support. The source icon is 32×32 pixels.
 
-See [RELEASES](RELEASES.md) for candidate promotion and [BUILDING](BUILDING.md)
+See [RELEASES](RELEASES.md) for release promotion and [BUILDING](BUILDING.md)
 for building the same executable yourself.

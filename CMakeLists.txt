@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
 endif()
-project(beachlife_recomp VERSION 0.0.2 LANGUAGES C CXX)
+project(beachlife_recomp VERSION 0.0.3 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")
@@ -20,9 +20,6 @@ option(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME
     "Enable behavior-tested reconstructed code that is still being byte matched" OFF)
 set(BEACHLIFE_DECOMP_PROFILE native)
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
-    if(BEACHLIFE_BUILD_CHANNEL STREQUAL "release")
-        message(FATAL_ERROR "Experimental reconstructed code requires a dev or test build")
-    endif()
     set(BEACHLIFE_DECOMP_PROFILE native-experimental)
 endif()
 option(BEACHLIFE_ENABLE_BOOT_GAME

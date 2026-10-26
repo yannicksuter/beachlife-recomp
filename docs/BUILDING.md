@@ -204,7 +204,7 @@ ctest --test-dir build/experimental -L reconstructed --output-on-failure
 ```
 
 The `release` preset selects compiler optimization; the build channel remains
-`dev`. The option defaults to `OFF` and is rejected with the `release` channel.
+`dev`. The option defaults to `OFF`.
 It selects the `native-experimental` prepared-source profile, applying
 `reconstruction-series`, then `native-pre-series`, then `experimental-series`,
 then the native portability `series`. Ordinary native and matching builds ignore `experimental-series`.
@@ -460,8 +460,8 @@ as described below. Hosted CI and hardware qualification remain separate checks.
 The boot build compiles all decompiled game source as one tree and links it
 with a generated, loud trap for every game function that is not decompiled
 yet. Calling a trap stops the game and names the function and its original
-address. That tells you what to decompile next. A boot build with traps is a
-development tool, never release gameplay. It supports Linux x86-64 and Windows
+address. That tells you what to decompile next. CI packages and releases ship
+this build as the experimental game; it is not complete gameplay. It supports Linux x86-64 and Windows
 x64 with the pinned LLVM-MinGW toolchain, plus macOS arm64 and x86_64.
 
 ```sh
@@ -530,6 +530,10 @@ switches drive the game without a player:
   so a failure reproduces from the seed.
 - `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames, and
   `BEACHLIFE_BOOT_WHEEL="frame:steps;..."` rolls the mouse wheel (positive is up).
+  An optional button in `frame:x,y,button` uses SDL numbering (1 left, 3 right).
+- `BEACHLIFE_BOOT_KEYS="frame:scancode,hold;..."` presses an SDL scancode name
+  for `hold` frames. For example, `800:P,2;1000:P,2` pauses and resumes;
+  overlapping entries hold modifier keys for shortcuts.
 - `BEACHLIFE_BOOT_PROGRESS=all` starts the test profile with every scenario
   and sandbox island available.
 - `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.

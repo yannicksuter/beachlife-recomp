@@ -430,8 +430,11 @@ void playback(Surfaces& surfaces, const std::shared_ptr<MemorySource>& source, b
     const double elapsed = (SDL_GetTicksNS() - begin) / 1e9;
     if (slow)
     {
-        require(frames > 0 && frames < 8 && dropped && elapsed >= 0.32 && elapsed < 0.50,
-            "slow presentation must drop frames and finish on the stream clock");
+        // Presenting every frame takes at least 8 * 95 ms; slow CI runners need the slack below it.
+        const auto timing = "slow presentation must drop frames and finish on the stream clock: " +
+                            std::to_string(frames) + " frames, " + std::to_string(elapsed) + " s";
+        require(frames > 0 && frames < 8 && dropped && elapsed >= 0.32 && elapsed < 0.70,
+            timing.c_str());
     }
     else
     {

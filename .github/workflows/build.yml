@@ -40,7 +40,7 @@ jobs:
     name: ${{ matrix.platform }}
     needs: policy
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +84,7 @@ jobs:
           GCC_VERSION: ${{ matrix.gcc }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y "g++-$GCC_VERSION" cmake ninja-build pkg-config \
+          sudo apt-get install -y "g++-$GCC_VERSION" clang llvm cmake ninja-build pkg-config \
             libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev \
             libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libx11-xcb-dev libegl-dev \
             libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
@@ -100,7 +100,10 @@ jobs:
           if [ "$TARGET_ARCH" = x86_64 ] && ! arch -x86_64 /usr/bin/true; then
             sudo softwareupdate --install-rosetta --agree-to-license
           fi
-          brew install cmake ninja
+          brew install cmake ninja llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          echo "CC=$(xcrun --find clang)" >> "$GITHUB_ENV"
+          echo "CXX=$(xcrun --find clang++)" >> "$GITHUB_ENV"
       - name: Prepare pinned dependencies
         run: python tools/setup_dependencies.py
       - name: Configure shared release preset
@@ -117,7 +120,8 @@ jobs:
             -DBEACHLIFE_BUILD_CHANNEL="$BUILD_CHANNEL" \
             -DBEACHLIFE_BUILD_PULL_REQUEST="$PR_NUMBER" \
             -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID" \
-            -DBEACHLIFE_PACKAGE_PLATFORM="$PACKAGE_PLATFORM"
+            -DBEACHLIFE_PACKAGE_PLATFORM="$PACKAGE_PLATFORM" \
+            -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
       - name: Build and test
         run: |
           cmake --build --preset release --parallel 3
@@ -128,6 +132,7 @@ jobs:
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
           test "$(lipo -archs build/release/beachlife.app/Contents/MacOS/beachlife)" = "$TARGET_ARCH"
+          test "$(lipo -archs build/release/beachlife_boot_link)" = "$TARGET_ARCH"
           codesign --force --sign - build/release/beachlife.app
           codesign --verify --deep --strict build/release/beachlife.app
       - name: Package and test extracted binaries
@@ -145,7 +150,7 @@ jobs:
     name: windows-x86_64
     needs: policy
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -172,7 +177,8 @@ jobs:
             -DLLVM_MINGW_ROOT="$LLVM_MINGW_ROOT" \
             -DBEACHLIFE_BUILD_CHANNEL="$BUILD_CHANNEL" \
             -DBEACHLIFE_BUILD_PULL_REQUEST="$PR_NUMBER" \
-            -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID"
+            -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID" \
+            -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
           cmake --build --preset release --parallel 3
           python -B -m unittest discover -s tests -p 'test_*.py'
       - name: Package native Windows binary and runtimes
@@ -285,193 +291,6 @@ jobs:
           ./build/data-tests/system_usage_tests.exe --sample
           exit $LASTEXITCODE
 
-  # Development artifacts only: deliberately independent of Native build gate
-  # and the beachlife-* release artifact namespace/five-package contract.
-  boot:
-    name: boot-${{ matrix.platform }}
-    needs: policy
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux-x86_64
-            runner: ubuntu-26.04
-          - platform: windows-x86_64
-            runner: ubuntu-26.04
-          - platform: macos-arm64
-            runner: macos-15
-            arch: arm64
-          - platform: macos-x86_64
-            runner: macos-15
-            arch: x86_64
-    defaults:
-      run:
-        shell: bash
-    env:
-      SDL_VIDEODRIVER: dummy
-      SDL_AUDIODRIVER: dummy
-      BEACHLIFE_BOOT_QUIET: '1'
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ env.SOURCE_SHA }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Install Linux boot tools
-        if: matrix.platform == 'linux-x86_64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y g++-15 clang llvm cmake ninja-build pkg-config \
-            libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev \
-            libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libx11-xcb-dev libegl-dev \
-            libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
-            libudev-dev libdbus-1-dev libvulkan-dev
-          echo 'CC=gcc-15' >> "$GITHUB_ENV"
-          echo 'CXX=g++-15' >> "$GITHUB_ENV"
-      - name: Prepare pinned Windows cross compiler
-        if: matrix.platform == 'windows-x86_64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
-          toolchain=$(python tools/setup_windows_toolchain.py "$RUNNER_TEMP/llvm-mingw")
-          echo "LLVM_MINGW_ROOT=$toolchain" >> "$GITHUB_ENV"
-      - name: Select macOS boot toolchain
-        if: runner.os == 'macOS'
-        env:
-          TARGET_ARCH: ${{ matrix.arch }}
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app
-          if [ "$TARGET_ARCH" = x86_64 ] && ! arch -x86_64 /usr/bin/true; then
-            sudo softwareupdate --install-rosetta --agree-to-license
-          fi
-          brew install cmake ninja llvm
-          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
-          echo "CC=$(xcrun --find clang)" >> "$GITHUB_ENV"
-          echo "CXX=$(xcrun --find clang++)" >> "$GITHUB_ENV"
-      - name: Prepare pinned dependencies
-        run: python tools/setup_dependencies.py
-      - name: Configure boot game
-        env:
-          TARGET_ARCH: ${{ matrix.arch }}
-          TARGET_PLATFORM: ${{ matrix.platform }}
-          PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
-        run: |
-          args=()
-          if [ "$RUNNER_OS" = macOS ]; then
-            args+=(-DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0)
-          elif [ "$TARGET_PLATFORM" = windows-x86_64 ]; then
-            args+=(-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/llvm-mingw-x86_64.cmake
-                   -DLLVM_MINGW_ROOT="$LLVM_MINGW_ROOT")
-          fi
-          cmake --preset release -B build/boot "${args[@]}" \
-            -DBEACHLIFE_BUILD_CHANNEL=dev \
-            -DBEACHLIFE_BUILD_PULL_REQUEST="$PR_NUMBER" -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID" \
-            -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
-      - name: Build boot game and fixtures
-        run: cmake --build build/boot --parallel 3 2>&1 | tee build/boot-build.log
-      - name: Run native CTest including headless retail parser
-        if: matrix.platform != 'windows-x86_64'
-        run: ctest --test-dir build/boot --output-on-failure --no-tests=error
-      - name: Check and sign boot app
-        if: runner.os == 'macOS'
-        env:
-          TARGET_ARCH: ${{ matrix.arch }}
-        run: |
-          test "$(lipo -archs build/boot/beachlife.app/Contents/MacOS/beachlife)" = "$TARGET_ARCH"
-          test "$(lipo -archs build/boot/beachlife_boot_link)" = "$TARGET_ARCH"
-          codesign --force --sign - build/boot/beachlife.app
-          codesign --verify --deep --strict build/boot/beachlife.app
-      - name: Assemble boot artifact
-        env:
-          TARGET_PLATFORM: ${{ matrix.platform }}
-        run: |
-          args=()
-          if [ "$TARGET_PLATFORM" = windows-x86_64 ]; then
-            args+=(--toolchain "$LLVM_MINGW_ROOT")
-          fi
-          python tools/package_build.py --build-dir build/boot --output-dir build/boot-artifacts "${args[@]}"
-          if [ "$TARGET_PLATFORM" = windows-x86_64 ]; then
-            python tools/boot_test_bundle.py export build/boot build/boot-tests build/boot-artifacts/*.zip
-          else
-            python tools/check_package.py build/boot-artifacts/*.tar.gz
-          fi
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: boot-${{ matrix.platform }}
-          path: build/boot-artifacts/
-          if-no-files-found: error
-          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: matrix.platform == 'windows-x86_64'
-        with:
-          name: boot-windows-tests
-          path: build/boot-tests/
-          if-no-files-found: error
-          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always()
-        with:
-          name: boot-diagnostics-${{ matrix.platform }}
-          path: |
-            build/boot-build.log
-            build/boot/boot/traps.json
-            build/boot/Testing/Temporary/
-            build/boot/CMakeFiles/CMakeConfigureLog.yaml
-          if-no-files-found: warn
-          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
-
-  boot-windows-test:
-    name: Windows boot CTest
-    needs: boot
-    # Other boot matrix failures must not hide Windows execution evidence.
-    if: ${{ !cancelled() }}
-    runs-on: windows-2025
-    timeout-minutes: 20
-    env:
-      SDL_VIDEODRIVER: dummy
-      SDL_AUDIODRIVER: dummy
-      BEACHLIFE_BOOT_QUIET: '1'
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ env.SOURCE_SHA }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: boot-windows-tests
-          path: build/boot-tests
-      - name: Relocate CTest commands to native Windows paths
-        run: python tools/boot_test_bundle.py configure build/boot-tests
-      - name: Run boot CTest on Windows
-        run: ctest --test-dir build/boot-tests --output-on-failure --no-tests=error
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: boot-windows-x86_64
-          path: build/boot-artifacts
-      - name: Check extracted Windows boot artifact
-        shell: pwsh
-        run: |
-          $package = @(Get-ChildItem build/boot-artifacts/*.zip)
-          if ($package.Count -ne 1) { throw 'Expected one boot archive' }
-          python tools/check_package.py $package[0].FullName
-          exit $LASTEXITCODE
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always()
-        with:
-          name: boot-diagnostics-windows-native
-          path: build/boot-tests/Testing/Temporary/
-          if-no-files-found: warn
-          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
-
   verify:
     name: Native build gate
     if: always()
@@ -532,12 +351,13 @@ jobs:
         run: python tools/release.py test --repository "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --sha "$SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --packages build/packages
 
   release:
-    name: Draft stable candidate
+    name: Publish stable release
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/stable'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -548,7 +368,7 @@ jobs:
           path: build/packages
           merge-multiple: true
           skip-decompress: true
-      - name: Draft the CMake version using this stable run
+      - name: Publish the CMake version with the merged PR's title and body
         env:
           GH_TOKEN: ${{ github.token }}
         run: python tools/release.py stable --repository "$GITHUB_REPOSITORY" --sha "$SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --packages build/packages

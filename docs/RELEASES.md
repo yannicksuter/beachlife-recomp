@@ -3,7 +3,7 @@
 `main` is development. `stable` is the default release branch and receives
 promotions through PRs from this repository's `main`. Published releases and
 test prereleases are public so the launcher's updater can retrieve them.
-Draft candidates remain unpublished until the owner approves publication.
+Merging a promotion PR publishes the new version as the latest release.
 
 ## One version source
 
@@ -38,23 +38,21 @@ builds its exact head SHA and produces these package artifacts:
 | macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, CLI/window smoke |
 | macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta CLI/window smoke |
 
-A separate boot matrix builds the experimental decompiled game on Linux x86_64,
-Windows x86_64, macOS arm64 and macOS x86_64. Its `boot-*` artifacts use the `dev`
-channel, including on stable pushes. Windows uses the same pinned cross compiler
-and runs the exported CTest suite on a native Windows runner. Boot tests need no
-retail files; GPU-dependent checks may skip, while the generated headless retail
-parser check must pass. These artifacts are development evidence only: they are
-outside the five-package set, Native build gate, promotion and publication jobs.
+Every package, including stable releases, contains the experimental decompiled
+game (`BEACHLIFE_ENABLE_BOOT_GAME`, profile `native-game`). It is not complete
+gameplay: code not decompiled yet links as a loud trap that stops the game. Its
+tests need no retail files; GPU-dependent checks may skip, while the generated
+headless retail parser check must pass.
 
 PR artifacts expire after seven days; stable/manual artifacts after fourteen.
-A test or draft release retains attached archives independently of that Actions
-retention. Fork PRs receive build checks/artifacts without release privileges.
+A test or published release retains attached archives independently of that
+Actions retention. Fork PRs receive build checks/artifacts without release privileges.
 Manual dispatch produces development artifacts and does not publish a release.
 
 ## Promote main to stable
 
 1. Synchronize `main` with `stable`, finish the changes and raise the CMake version
-   if a new candidate is needed. Commit and push `main`.
+   if a new release is needed. Commit and push `main`.
 2. Open a PR with base `stable` and head `main`. The promotion policy rejects
    other source branches/repositories. Keep the branch up to date with `stable`.
 3. Wait for every build/test and `Native build gate`. The gate also checks the
@@ -64,9 +62,9 @@ Manual dispatch produces development artifacts and does not publish a release.
    inspect the build before merging.
 5. Merge using a merge commit. The push to `stable` runs the same matrix again
    at the actual merged SHA; it does not rename the PR artifacts.
-6. Actions creates draft `v<version>`, attaches that stable run's packages and
-   SHA256SUMS, and generates release notes. Review this candidate, then publish
-   the draft when ready. Publishing uses the existing assets without rebuilding.
+6. Actions publishes `v<version>` as the latest release with that stable run's
+   packages and SHA256SUMS. The release takes the merged PR's title and body, so
+   write them as release notes before merging.
 7. Synchronize development after promotion: fetch, fast-forward `main` to stable
    when possible, and push it. If main has advanced, merge stable into main and
    resolve the changes before the next promotion.
@@ -79,13 +77,9 @@ against GitHub's SHA-256 digest (or SHA256SUMS) and every file against
 SOURCE-MANIFEST.json. Keep these names, SHA256SUMS and the manifest format
 stable. Drafts stay invisible to the launcher until they are published.
 
-A candidate is a **draft GitHub release**, not an automatically numbered RC.
-Numbered prereleases would need an explicit additional CMake version field and
-promotion policy. The owner controls final publication.
-
 Existing tags, published releases and drafts are preserved. Another stable
 commit with the same CMake version still builds artifacts but does not replace
-the existing candidate. Increase the version for a new candidate.
+the existing release. Increase the version for a new release.
 The pipeline checks the paginated release inventory, including drafts, as well
 as existing tags; GitHub's release-by-tag endpoint alone does not find drafts.
 
@@ -115,12 +109,12 @@ team copied from another repository.
 
 Packages contain only declared native outputs, documentation and runtime
 notices. SOURCE-MANIFEST.json records build identity, dependency information and
-payload hashes. SHA256SUMS covers the release archives. The current launcher
-has no game module or bundled retail data. It includes the declared header,
-font and dependency notices. Window smoke uses software rendering and requires
-no game files or GPU. Future libraries/resources must be
+payload hashes. SHA256SUMS covers the release archives. Packages contain the
+launcher and the experimental decompiled game, but no retail data. They include
+the declared header, font and dependency notices. Window smoke uses software
+rendering and requires no game files or GPU. Future libraries/resources must be
 added explicitly to the packaging contract and its checks.
 
 For local reproduction see [BUILDING](BUILDING.md); for startup see
-[INSTALL](INSTALL.md). The initial candidate verifies distribution of the
-launcher, not a playable game or qualified game graphics backend.
+[INSTALL](INSTALL.md). A release verifies distribution of the launcher and the
+experimental game, not complete gameplay or a qualified game graphics backend.
