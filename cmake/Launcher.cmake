@@ -201,9 +201,14 @@ if(BUILD_TESTING)
         set_target_properties(runtime_configuration_tests PROPERTIES WIN32_EXECUTABLE TRUE)
     endif()
     add_dependencies(runtime_configuration_tests beachlife)
+    set(beachlife_runtime_test_options)
+    if(BEACHLIFE_ENABLE_BOOT_GAME)
+        list(APPEND beachlife_runtime_test_options --boot)
+    endif()
     add_test(NAME game_startup
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_startup.py"
-            "$<TARGET_FILE:beachlife>" "$<TARGET_FILE:runtime_configuration_tests>" "${BEACHLIFE_RESOURCE_DIR}")
+            "$<TARGET_FILE:beachlife>" "$<TARGET_FILE:runtime_configuration_tests>" "${BEACHLIFE_RESOURCE_DIR}"
+            ${beachlife_runtime_test_options})
     set_tests_properties(game_startup PROPERTIES SKIP_RETURN_CODE 77)
     # The work behind the game window's loading screen, without a window.
     add_executable(startup_work_tests tests/startup_work.cpp src/runtime/startup.cpp)
@@ -229,7 +234,8 @@ if(BUILD_TESTING)
     # On a real GPU: game files, window, device, loop and clean exit; skipped where no GPU device exists.
     add_test(NAME game_runtime
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/check_runtime.py"
-            "$<TARGET_FILE:beachlife>" "$<TARGET_FILE:runtime_configuration_tests>" "${BEACHLIFE_RESOURCE_DIR}")
+            "$<TARGET_FILE:beachlife>" "$<TARGET_FILE:runtime_configuration_tests>" "${BEACHLIFE_RESOURCE_DIR}"
+            ${beachlife_runtime_test_options})
     set_tests_properties(game_runtime PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME launcher_updates
         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_SOURCE_DIR}/tests/launcher_update_fixture.py"

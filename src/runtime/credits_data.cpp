@@ -122,6 +122,20 @@ CreditsData CreditsData::read(const data::FileSource& source)
     return read_verified(source, supported_sha256);
 }
 
+std::optional<CreditsData> CreditsData::read_if_available(const data::FileSource& source)
+{
+    try
+    {
+        return read(source);
+    }
+    catch (const std::runtime_error&)
+    {
+        // I/O, revision and layout failures belong to this optional resource.
+        // Allocation failures still propagate; there is no substitute table.
+        return std::nullopt;
+    }
+}
+
 CreditsData CreditsData::read_verified(
     const data::FileSource& source, std::string_view expected_sha256)
 {

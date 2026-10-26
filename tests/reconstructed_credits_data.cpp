@@ -152,6 +152,10 @@ std::vector<unsigned char> generated_image()
 void run(const fs::path& root)
 {
     Generated generated(root);
+    const data::FolderSource missing(root, {});
+    expect(!runtime::CreditsData::read_if_available(missing),
+        "missing credits data rejected unrelated startup");
+    rejects(RequireCreditsData);
     auto bytes = generated_image();
     write(root / "BeachLife.exe", bytes);
     const data::FolderSource executable(root, {{"BeachLife.exe", bytes.size()}});
@@ -161,6 +165,9 @@ void run(const fs::path& root)
         {
             runtime::CreditsData::read(executable);
         });
+    expect(!runtime::CreditsData::read_if_available(executable),
+        "an unsupported credits revision rejected unrelated startup");
+    rejects(RequireCreditsData);
     const auto input = runtime::CreditsDataTestAccess::read(executable, digest(bytes));
 
     // Same decoder, with independently hashed malformed generated layouts.

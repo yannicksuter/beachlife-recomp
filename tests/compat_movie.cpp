@@ -489,11 +489,15 @@ int main(int argc, char** argv)
         loud_case(argv[0], "--broken");
     }
     const char* driver = std::getenv("SDL_VIDEODRIVER");
-    require(SDL_SetHint(SDL_HINT_VIDEO_DRIVER, driver ? driver : "dummy"), "select video driver");
+    require(SDL_SetHintWithPriority(
+                SDL_HINT_VIDEO_DRIVER, driver ? driver : "dummy", SDL_HINT_OVERRIDE),
+        "select video driver");
     require(SDL_Init(SDL_INIT_VIDEO), "initialize SDL video");
     const auto audio_path = std::filesystem::temp_directory_path() /
                             ("beachlife-movie-" + std::to_string(getpid()) + ".raw");
-    require(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "disk"), "select disk audio");
+    // Capture decoded samples even when the suite requests dummy audio globally.
+    require(SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "disk", SDL_HINT_OVERRIDE),
+        "select disk audio");
     require(SDL_SetHint(SDL_HINT_AUDIO_DISK_OUTPUT_FILE, audio_path.c_str()),
         "set generated audio output");
     auto source = std::make_shared<MemorySource>();

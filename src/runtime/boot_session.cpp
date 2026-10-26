@@ -13,6 +13,7 @@
 #include "startup_screen_credits_data.h"
 
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -37,10 +38,15 @@ int run_boot_game(GameHost& host)
     compat::DirectorySession directories(entries);
     compat::ResourceCursorSession cursor_resources;
     retail_cursor::Session cursors(compat::retail_cursor_provider());
-    // Retail credits use initialized PE data. Publish the verified records on
-    // the game thread and keep them alive through WinMain's owner teardown.
-    const auto credits_data = CreditsData::read(*host.source);
-    CreditsDataBinding credits(credits_data);
+    // Only the credits screen needs these PE records. Missing or unsupported
+    // data must not reject unrelated startup; RequireCreditsData() rejects its
+    // first actual use when there is no binding. Never publish placeholder rows.
+    const auto credits_data = CreditsData::read_if_available(*host.source);
+    std::optional<CreditsDataBinding> credits;
+    if (credits_data)
+    {
+        credits.emplace(*credits_data);
+    }
     // The retail installer creates an empty Data\Temp folder (listed in
     // data1.hdr); the game keeps its map cache there. Writes go to the
     // per-user folder, so recreate the folder there as the installer did.

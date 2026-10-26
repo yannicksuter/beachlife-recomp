@@ -466,9 +466,20 @@ development tool, never release gameplay. It currently supports Linux x86-64.
 ```sh
 cmake --preset debug -B build/boot \
   -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
-cmake --build build/boot --target beachlife_boot_link
+cmake --build build/boot
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  ctest --test-dir build/boot --output-on-failure
 ./build/boot/beachlife_boot_link
 ```
+
+The dummy drivers keep CTest headless; the two GPU integration tests report a
+skip. To execute them without a visible window on a machine with a usable GPU,
+run CTest with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy` instead.
+Boot configurations check retail parser rejection with a deliberately mistyped
+token, requiring both its configuration reads and the original zero-status fatal
+exit. Native configurations retain the fixed-identity rejection check. Both
+profiles also check cache repair, online/offline previews and the separate
+generated configuration-owner lifecycle; they do not qualify full gameplay.
 
 `BEACHLIFE_ENABLE_BOOT_GAME` selects the `native-game` profile: the
 `native-experimental` series followed by `game-series`. `build/boot/boot/traps.json`
@@ -480,6 +491,21 @@ The decompiled game compiles against `src/platform/compat`: the subset of the
 Windows, DirectInput and Miles APIs the retail executable imports, implemented
 on SDL3, so decompiled code keeps its original API calls. An API that is declared
 there but not implemented yet becomes a trap like missing game code.
+
+Every target compiling prepared game source, including the subsystem libraries,
+uses the shared compile environment in `cmake/GameCompile.cmake`. Boot builds
+add the compatibility headers, MSVC prelude and two-byte `wchar_t` ABI to those
+targets. These settings stay private to game-source targets and do not propagate
+to host consumers or fixture executables. Harness link providers stay unchanged.
+The default native presets keep their portable source profile without the boot
+compatibility flags.
+
+The opt-in `reconstructed_screen_mode6_owner` and `reconstructed_game_mode_progress`
+fixtures still require the `native-experimental` profile: they assert aggregate,
+prefix-only class layouts that the unified game tree replaced with full owners
+and real constructors/destructors. Their libraries build in the boot configuration,
+but these old fixtures cannot use the unified declarations unchanged. Keep running
+them in the separate experimental configuration above.
 
 Boot checks run headless: `--headless` opens the game window on SDL's offscreen
 driver with silent audio, so nothing appears on screen and no input focus is
@@ -2025,8 +2051,14 @@ writable format. No original table, text or executable is bundled or executed.
 A single game-thread binding owns publication; uninitialized, duplicate and
 foreign-thread access is rejected. Both libraries are available with
 reconstructed tests disabled and the experimental option remains off by default.
+The boot session binds verified records when available. Missing, unreadable or
+unsupported credits data leaves the table unbound and fails only when the credits
+consumer requests its first row, so unrelated startup does not depend on it.
+No placeholder rows are published, and verified records remain bound through
+game teardown.
 
-The optional Linux generated-input fixture exercises malformed mappings, row
+The optional Linux generated-input fixture exercises optional missing/rejected
+data, malformed mappings, row
 and format preservation, binding lifetime and actual reconstructed BLE text
 lookup. Preparation retains the required executable through the existing worker;
 completed prepared mounts work with the ISO disconnected. Older caches need one
