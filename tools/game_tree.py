@@ -619,6 +619,13 @@ def traps(args):
           f'{len(services)} host services, {len(unresolved)} unresolved')
     for entry in unresolved:
         print(f'  unresolved (data or vtable; needs real decompiled source): {entry["name"]}')
+    if args.require_complete and (functions or services or unresolved):
+        # Keep the diagnostic JSON, but never leave a compilable output from a
+        # failed release generation that an incremental build could reuse.
+        Path(args.output).unlink(missing_ok=True)
+        print('Release game requires zero game traps, host-service traps and unresolved symbols.',
+              file=sys.stderr)
+        return 1
     return 1 if unresolved and args.strict else 0
 
 
@@ -658,6 +665,7 @@ def main():
     command.add_argument('--output', required=True, help='generated C++ file')
     command.add_argument('--json', required=True, help='generated trap list')
     command.add_argument('--strict', action='store_true', help='fail on unresolved data symbols')
+    command.add_argument('--require-complete', action='store_true', help='fail if any trap or unresolved symbol remains')
     args = parser.parse_args()
     return {'init': init, 'check': check, 'patches': patches, 'merge': merge, 'rebase': rebase,
             'sources': sources,

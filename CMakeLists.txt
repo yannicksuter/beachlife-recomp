@@ -38,6 +38,10 @@ if(BEACHLIFE_ENABLE_TWEAKS)
     endif()
     set(BEACHLIFE_DECOMP_PROFILE native-game-tweaks)
 endif()
+if(BEACHLIFE_BUILD_CHANNEL STREQUAL "release" AND
+        NOT BEACHLIFE_DECOMP_PROFILE STREQUAL "native-game-tweaks")
+    message(FATAL_ERROR "Release builds require the decompiled game and gameplay options")
+endif()
 
 if(WIN32)
     set(BEACHLIFE_SYSTEM windows)
