@@ -204,6 +204,10 @@ class SdlGpuVideo : public Video
 
     void present(const Frame& frame, ImDrawData* overlay) override
     {
+        if (!overlay)
+        {
+            overlay = host_overlay();
+        }
         const auto width = static_cast<Uint32>(frame.width),
                    height = static_cast<Uint32>(frame.height);
         if (frame.pixels.size() != static_cast<std::size_t>(width) * height)

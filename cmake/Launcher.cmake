@@ -78,7 +78,7 @@ add_library(beachlife_launcher_core STATIC
     src/launcher/content_service.cpp
     src/launcher/release_notes.cpp
     src/launcher/update_check.cpp src/launcher/update_install.cpp src/launcher/update_service.cpp
-    src/platform/http_client.cpp)
+    src/platform/game_log.cpp src/platform/http_client.cpp)
 target_include_directories(beachlife_launcher_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_compile_features(beachlife_launcher_core PUBLIC cxx_std_20)
 set_target_properties(beachlife_launcher_core PROPERTIES CXX_EXTENSIONS OFF)

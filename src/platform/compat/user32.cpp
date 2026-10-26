@@ -9,6 +9,7 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <limits>
@@ -1104,6 +1105,10 @@ extern "C"
     }
     int WINAPI MessageBoxA(HWND handle, LPCSTR text, LPCSTR caption, UINT type)
     {
+        // The game's own messages, its fatal errors among them, also reach the game log.
+        std::fprintf(
+            stderr, "Beach Life game message: %s: %s\n", caption ? caption : "", text ? text : "");
+        std::fflush(stderr);
         SDL_Window* target = handle ? window(handle, "MessageBoxA") : nullptr;
         if (type & ~UINT(0x3ff))
         {

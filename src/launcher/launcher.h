@@ -45,5 +45,9 @@ Outcome run(const Options& options);
 // without opening the launcher. Settings that cannot be read are an error and
 // are never overwritten.
 Outcome play_settings(const Options& options);
+// Where game session logs go: a logs folder beside the game (its package folder,
+// or the folder holding a local build's program or app), so that they travel with
+// it; the settings file's folder when the game's folder is read-only.
+std::filesystem::path game_log_folder(const std::filesystem::path& settings_file);
 
 } // namespace beachlife::launcher

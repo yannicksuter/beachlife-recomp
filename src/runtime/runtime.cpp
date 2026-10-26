@@ -811,44 +811,6 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
     {
         return 0;
     }
-    if (game_entry && game_result)
-    {
-        SDL_SetWindowTitle(video.window(), "Beach Life");
-        GamePumpState pump{&video,
-            0,
-            static_cast<std::uint64_t>(options.frames),
-            options.screenshot,
-            scripted_clicks(),
-            scripted_keys(),
-            scripted_wheels(),
-            scripted_shots(),
-            scripted_route(),
-            SDL_getenv("BEACHLIFE_BOOT_TRACE_FILES") != nullptr,
-            scripted_monkey()};
-        GameHost host{
-            video, prepare_game_frame, &pump, game_source, options.hidden || options.headless};
-        wheel_zoom_tweak =
-            settings.tweaks.wheel_zoom || SDL_getenv("BEACHLIFE_TWEAK_WHEEL_ZOOM") != nullptr;
-        skip_intro_tweak =
-            settings.tweaks.skip_intro || SDL_getenv("BEACHLIFE_TWEAK_SKIP_INTRO") != nullptr;
-        retail_files::set_open_observer(game_file_opened, &pump);
-        struct ObserverReset
-        {
-            ~ObserverReset()
-            {
-                retail_files::set_open_observer(nullptr, nullptr);
-            }
-        } observer_reset;
-        return game_entry(host);
-    }
-    if (!options.preview_screen.empty())
-    {
-        frame.width = preview->width;
-        frame.height = preview->height;
-        frame.pixels = std::move(preview->pixels);
-        SDL_SetWindowTitle(video.window(), "Beach Life - Image preview");
-    }
-
     // The performance overlay, when the Display settings show it.
     std::unique_ptr<FpsOverlay> fps_overlay;
     if (settings.display.fps_overlay)
@@ -882,6 +844,74 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
         }
         font_density = pixel_density;
     };
+    if (game_entry && game_result)
+    {
+        SDL_SetWindowTitle(video.window(), "Beach Life");
+        GamePumpState pump{&video,
+            0,
+            static_cast<std::uint64_t>(options.frames),
+            options.screenshot,
+            scripted_clicks(),
+            scripted_keys(),
+            scripted_wheels(),
+            scripted_shots(),
+            scripted_route(),
+            SDL_getenv("BEACHLIFE_BOOT_TRACE_FILES") != nullptr,
+            scripted_monkey()};
+        GameHost host{
+            video, prepare_game_frame, &pump, game_source, options.hidden || options.headless};
+        wheel_zoom_tweak =
+            settings.tweaks.wheel_zoom || SDL_getenv("BEACHLIFE_TWEAK_WHEEL_ZOOM") != nullptr;
+        skip_intro_tweak =
+            settings.tweaks.skip_intro || SDL_getenv("BEACHLIFE_TWEAK_SKIP_INTRO") != nullptr;
+        retail_files::set_open_observer(game_file_opened, &pump);
+        // The performance overlay over each frame the game presents.
+        std::uint64_t overlay_frames = 0;
+        if (fps_overlay)
+        {
+            video.set_host_overlay(
+                [&]() -> ImDrawData*
+                {
+                    const auto [pixel_width, pixel_height] = window_pixels();
+                    const float pixel_density =
+                        std::max(1.0f, SDL_GetWindowPixelDensity(video.window()));
+                    if (pixel_density != font_density ||
+                        fps_overlay->needs_fonts(pixel_width, pixel_height, pixel_density))
+                    {
+                        build_fonts(pixel_width, pixel_height, pixel_density);
+                    }
+                    video.new_overlay_frame();
+                    ImGui_ImplSDL3_NewFrame();
+                    ImGui::NewFrame();
+                    fps_overlay->draw(pixel_width, pixel_height, pixel_density);
+                    ImGui::Render();
+                    if (const auto rate =
+                            frame_rate.sample(++overlay_frames, std::chrono::steady_clock::now()))
+                    {
+                        fps_overlay->set_rate(*rate);
+                    }
+                    return ImGui::GetDrawData();
+                });
+        }
+        struct ObserverReset
+        {
+            platform::Video& video;
+            ~ObserverReset()
+            {
+                retail_files::set_open_observer(nullptr, nullptr);
+                video.set_host_overlay({});
+            }
+        } observer_reset{video};
+        return game_entry(host);
+    }
+    if (!options.preview_screen.empty())
+    {
+        frame.width = preview->width;
+        frame.height = preview->height;
+        frame.pixels = std::move(preview->pixels);
+        SDL_SetWindowTitle(video.window(), "Beach Life - Image preview");
+    }
+
     {
         const auto [width, height] = window_pixels();
         build_fonts(width, height, std::max(1.0f, SDL_GetWindowPixelDensity(video.window())));
