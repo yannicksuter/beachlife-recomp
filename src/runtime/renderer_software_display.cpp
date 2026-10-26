@@ -1,5 +1,7 @@
 #include "renderer_software_display.h"
 
+#include <algorithm>
+#include <array>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -174,11 +176,28 @@ std::vector<DisplayMode> SoftwareDisplay::enumerate_modes() const
     }
     const std::unique_ptr<void, decltype(&SDL_free)> storage(modes, SDL_free);
     std::vector<DisplayMode> result;
-    result.reserve(static_cast<std::size_t>(count));
+    result.reserve(static_cast<std::size_t>(count) + 4);
     for (int index = 0; index < count; ++index)
     {
         const SDL_DisplayMode& mode = *modes[index];
         result.push_back({mode.w, mode.h, mode.format, mode.refresh_rate});
+    }
+    // The host renders and scales these logical framebuffers even when the
+    // display has no corresponding exclusive mode, including offscreen runs.
+    // Expose that capability to the game's resolution selector as well.
+    constexpr std::array<std::array<int, 2>, 4> logical_modes{
+        {{640, 480}, {800, 600}, {1024, 768}, {1280, 960}}};
+    for (const auto& size : logical_modes)
+    {
+        if (std::none_of(result.begin(),
+                result.end(),
+                [&](const DisplayMode& mode)
+                {
+                    return mode.width == size[0] && mode.height == size[1];
+                }))
+        {
+            result.push_back({size[0], size[1], SDL_PIXELFORMAT_RGB565, 0.0f});
+        }
     }
     return result;
 }

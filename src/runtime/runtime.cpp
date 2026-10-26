@@ -919,7 +919,7 @@ int detail::run_with_configuration(const Options& options, ConfigurationFactory 
     catch (const std::exception& error)
     {
         std::fprintf(stderr, "Beach Life: %s\n", error.what());
-        if (!options.hidden)
+        if (!options.hidden && !options.headless)
         {
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Beach Life", error.what(), nullptr);
         }

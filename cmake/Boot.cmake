@@ -148,7 +148,7 @@ add_custom_command(
 # The game tree plus its traps; Play links this when the boot build is enabled.
 # Host services the tree calls: resource files, the retail cursor and photo export.
 set(beachlife_boot_host beachlife_runtime beachlife_resource_files beachlife_jpeg_export
-    beachlife_resource_pool_host beachlife_compat)
+    beachlife_resource_pool_host beachlife_credits_data beachlife_compat)
 add_library(beachlife_boot STATIC $<TARGET_OBJECTS:beachlife_boot_game>
     "${beachlife_boot_dir}/traps.cpp" src/runtime/boot_trap.cpp src/runtime/retail_cursor.cpp
     src/runtime/boot_session.cpp)

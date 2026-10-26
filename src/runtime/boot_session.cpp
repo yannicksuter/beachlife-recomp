@@ -5,10 +5,12 @@
 #include "platform/compat/kernel_files.h"
 #include "platform/compat/user32_cursor.h"
 #include "platform/compat/user32_host.h"
+#include "runtime/credits_data.h"
 #include "runtime/jpeg_export.h"
 #include "runtime/resource_files.h"
 #include "runtime/retail_cursor.h"
 #include "runtime/retail_files.h"
+#include "startup_screen_credits_data.h"
 
 #include <filesystem>
 #include <stdexcept>
@@ -35,6 +37,10 @@ int run_boot_game(GameHost& host)
     compat::DirectorySession directories(entries);
     compat::ResourceCursorSession cursor_resources;
     retail_cursor::Session cursors(compat::retail_cursor_provider());
+    // Retail credits use initialized PE data. Publish the verified records on
+    // the game thread and keep them alive through WinMain's owner teardown.
+    const auto credits_data = CreditsData::read(*host.source);
+    CreditsDataBinding credits(credits_data);
     // The retail installer creates an empty Data\Temp folder (listed in
     // data1.hdr); the game keeps its map cache there. Writes go to the
     // per-user folder, so recreate the folder there as the installer did.
