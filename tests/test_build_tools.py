@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import build_version
 import bump_version
 import format_sources
+import macos_package
 import package_build as packages
 import release
 from project_version import read_version
@@ -87,7 +88,7 @@ def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corr
     version = '0.1.0+g' + sha[:12]
     info = {'project_version': '0.1.0', 'build_version': version, 'commit': sha, 'dirty': False,
             'channel': channel, 'run_id': 7, 'platform': platform, 'system': system, 'architecture': architecture,
-            'capability': 'launcher', 'decomp_profile': profile}
+            'capability': 'launcher', 'decomp_profile': profile, 'commit_time': 1700000000}
     data = {name: b'fixture' for name in packages.payload_names(info)}
     manifest = {'format': 1, 'build': info, 'files': {
         name: {'sha256': packages.digest(body), 'bytes': len(body), 'mode': 0o644} for name, body in data.items()}}
@@ -114,6 +115,36 @@ def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corr
     return path
 
 
+class UniversalMacTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    @staticmethod
+    def merge(slices, output):
+        output.write_bytes(b'+'.join(path.read_bytes() for path in slices))
+
+    def test_the_two_mac_builds_become_one_self_contained_app(self):
+        arm64 = fixture_archive(self.root, 'macos-arm64')
+        x86_64 = fixture_archive(self.root, 'macos-x86_64')
+        app = macos_package.stage(arm64, x86_64, self.root / 'stage', merge=self.merge)
+        self.assertEqual((app / 'Contents/MacOS/beachlife').read_bytes(), b'fixture+fixture')
+        self.assertEqual((app / 'Contents/Resources/PACKAGE').read_text(), 'macos-universal\n')
+        self.assertTrue((app / 'Contents/Resources/docs/INSTALL.md').is_file())
+        archive = macos_package.pack(self.root / 'stage', self.root / 'out')
+        self.assertEqual(archive.name, 'beachlife-0.1.0+gaaaaaaaaaaaa-macos-universal.tar.gz')
+        manifest, files = packages.inspect_package(archive)
+        self.assertEqual(manifest['build']['architecture'], 'universal')
+        self.assertTrue(all(name.startswith('Beach Life.app/') for name in files if name != 'SOURCE-MANIFEST.json'))
+
+    def test_builds_of_different_commits_are_not_joined(self):
+        arm64 = fixture_archive(self.root, 'macos-arm64')
+        x86_64 = fixture_archive(self.root, 'macos-x86_64', sha='b' * 40)
+        with self.assertRaisesRegex(ValueError, 'different builds'):
+            macos_package.stage(arm64, x86_64, self.root / 'stage', merge=self.merge)
+
+
 class PackageTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -123,7 +154,13 @@ class PackageTests(unittest.TestCase):
     def test_complete_matrix_and_wrong_provenance(self):
         for target in packages.TARGETS:
             fixture_archive(self.root, target)
-        self.assertEqual(len(packages.verify_set(self.root, '0.1.0', 'a' * 40, 'test', 7)), 6)
+        with self.assertRaisesRegex(ValueError, 'one disk image'):
+            packages.verify_set(self.root, '0.1.0', 'a' * 40, 'test', 7)
+        (self.root / 'beachlife-0.1.0+gaaaaaaaaaaaa-macos-universal.dmg').write_bytes(b'image')
+        released = packages.verify_set(self.root, '0.1.0', 'a' * 40, 'test', 7)
+        self.assertEqual([path.name for path in released][-2:],
+                         ['beachlife-0.1.0+gaaaaaaaaaaaa-windows-x86_64.zip', 'SHA256SUMS'])
+        self.assertEqual(len(released), 6)
         for version, sha, channel, run in [('0.2.0', 'a' * 40, 'test', 7), ('0.1.0', 'b' * 40, 'test', 7),
                                           ('0.1.0', 'a' * 40, 'release', 7), ('0.1.0', 'a' * 40, 'test', 8)]:
             with self.assertRaises(ValueError):

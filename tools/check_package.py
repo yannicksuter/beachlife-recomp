@@ -1,10 +1,12 @@
 """Validate and run a package extracted outside its build directory."""
 import argparse
 import json
+import platform
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from package_build import inspect_package, verify_set
+from package_build import MAC_APP, inspect_package, verify_set
 from project_version import read_version
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
@@ -29,7 +31,18 @@ def smoke(path):
             destination.write_bytes(body)
             destination.chmod(mode)
         executable = root / ('beachlife.exe' if info['system'] == 'windows' else 'beachlife')
-        check(executable, info)
+        if info.get('architecture') == 'universal':
+            # Each half reports its own architecture; Rosetta runs the Intel one.
+            executable = root / MAC_APP / 'Contents/MacOS/beachlife'
+            native = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
+            other = 'x86_64' if native == 'arm64' else 'arm64'
+            check(executable, {**info, 'architecture': native})
+            if native == 'arm64':
+                reported = json.loads(subprocess.check_output(
+                    ['arch', '-' + other, str(executable), '--build-info'], text=True))
+                assert reported == {**info, 'architecture': other}, (reported, info)
+        else:
+            check(executable, info)
         if info.get('capability') == 'launcher':
             check_launcher(executable)
             check_iso(executable)

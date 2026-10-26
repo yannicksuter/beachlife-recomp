@@ -35,8 +35,7 @@ builds its exact head SHA and produces these package artifacts:
 | Linux x86_64 | tar.gz | GCC build, CTest, extracted CLI/window smoke |
 | Steam Deck x86_64 | tar.gz | GCC build, CTest, runtime ABI bounds, CLI/window smoke |
 | Windows x86_64 | ZIP | Pinned LLVM-MinGW build/import checks, CLI/window smoke on Windows |
-| macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, CLI/window smoke |
-| macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta CLI/window smoke |
+| macOS universal | tar.gz with app, and a DMG | Native arm64 and cross x86_64 builds with CTest, joined into one signed app; smoke on Apple silicon and under Rosetta |
 
 Every package uses the optimized `release` preset with
 `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, `BEACHLIFE_ENABLE_BOOT_GAME=ON` and
@@ -44,7 +43,7 @@ Every package uses the optimized `release` preset with
 optional gameplay settings; both settings remain off until enabled by the player.
 The build fails if any generated game trap, host-service trap or unresolved
 symbol remains. The package manifest records all three zero counts, and the
-Native build gate requires `native-game-tweaks` and zero traps on all five targets.
+Native build gate requires `native-game-tweaks` and zero traps on all four packages.
 
 CTest and extracted-package checks use generated fixtures without retail data.
 They enter the real game's parser and verify its rejection of invalid input;
@@ -65,7 +64,7 @@ Manual dispatch produces development artifacts and does not publish a release.
 2. Open a PR with base `stable` and head `main`. The promotion policy rejects
    other source branches/repositories. Keep the branch up to date with `stable`.
 3. Wait for every build/test and `Native build gate`. The gate also checks the
-   complete five-package set, game/tweaks profile, zero trap counts, and each
+   complete package set (four packages and the Mac disk image), game/tweaks profile, zero trap counts, and each
    archive's version, SHA, channel and run ID.
 4. Actions publishes `test-pr<N>-<sha>` as a prerelease, never the latest release.
    Each successful new head replaces older test builds for that PR. Download and
@@ -117,7 +116,13 @@ team copied from another repository.
 
 ## macOS signing and notarization
 
-The macOS jobs sign `beachlife.app` with `tools/sign_macos.py`. With these
+The two macOS builds are packaged on their own runners and joined by the
+`macos-universal` job (`tools/macos_package.py`) into one self-contained
+`Beach Life.app`: documentation and licences live inside it, and
+`Contents/Resources/PACKAGE` names it for the updater, which replaces the whole
+app. That job packages the app as `macos-universal.tar.gz` for updates and as
+`macos-universal.dmg` for installing. It signs the app and the disk image with
+`tools/sign_macos.py`. With these
 repository secrets the app gets the Developer ID signature with the hardened
 runtime, is notarized by Apple and has its ticket stapled; without them (fork
 PRs, local builds) it is signed ad hoc as before:

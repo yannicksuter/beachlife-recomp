@@ -17,7 +17,10 @@ from project_version import ROOT, read_version
 from prepare_sources import prepare
 from game_release import GAME_PROFILES, require_release_game, trap_counts, validate_counts
 
-TARGETS = ("linux-x86_64", "steamdeck-x86_64", "windows-x86_64", "macos-arm64", "macos-x86_64")
+# The released packages. The two Mac builds are packaged on their own runners and
+# then joined into one self-contained universal app (tools/macos_package.py).
+TARGETS = ("linux-x86_64", "steamdeck-x86_64", "windows-x86_64", "macos-universal")
+MAC_BUILD_TARGETS = ("macos-arm64", "macos-x86_64")
 DOCUMENTS = ("README.md", "docs/BUILDING.md", "docs/RELEASES.md", "docs/INSTALL.md", "LICENSES/README.md",
              "LICENSES/unshield.txt", "LICENSES/zlib.txt", "LICENSES/RSA-MD5.txt")
 WINDOWS_DLLS = ("libc++.dll", "libunwind.dll", "libwinpthread-1.dll")
@@ -25,8 +28,9 @@ WINDOWS_NOTICES = ("LICENSE.TXT", "x86_64-w64-mingw32/share/mingw32/COPYING.winp
                    "x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt")
 MAC_FILES = ("beachlife.app/Contents/MacOS/beachlife", "beachlife.app/Contents/Info.plist",
              "beachlife.app/Contents/Resources/beachlife.icns")
-# Written by signing: the seal, and the notarization ticket that stapling adds.
-MAC_SIGNING = ("beachlife.app/Contents/_CodeSignature/CodeResources", "beachlife.app/Contents/CodeResources")
+# The universal app holds everything of the package and names it for the updater.
+MAC_APP = "Beach Life.app"
+MAC_PACKAGE_ID = MAC_APP + "/Contents/Resources/PACKAGE"
 LAUNCHER_RESOURCES = ("header.jpg", "logo.png", "Roboto-Medium.ttf")
 LAUNCHER_NOTICES = ("assets/launcher/README.md", "LICENSES/Apache-2.0.txt",
                     "LICENSES/SDL.txt", "LICENSES/ImGui.txt", "LICENSES/stb.txt", "LICENSES/FreeType.txt",
@@ -94,7 +98,23 @@ def check_steam_abi(report):
     return {"libraries": sorted(needed), "symbols": sorted(versions)}
 
 
+def mac_signing(info):
+    """Written by signing: the seal, and the notarization ticket that stapling adds."""
+    app = MAC_APP if info["architecture"] == "universal" else "beachlife.app"
+    return (app + "/Contents/_CodeSignature/CodeResources", app + "/Contents/CodeResources")
+
+
+def universal_name(name):
+    """Where a file of a per-architecture Mac package goes in the universal app."""
+    if name.startswith("beachlife.app/"):
+        return MAC_APP + name[len("beachlife.app"):]
+    return MAC_APP + "/Contents/Resources/" + name
+
+
 def payload_names(info):
+    if info["system"] == "macos" and info["architecture"] == "universal":
+        flat = payload_names({**info, "architecture": "arm64"}) - {"beachlife"}
+        return {universal_name(name) for name in flat} | {MAC_PACKAGE_ID}
     names = set(DOCUMENTS)
     if info["system"] == "macos":
         names.update(MAC_FILES)
@@ -176,11 +196,11 @@ def package(build, output, source=ROOT, toolchain=None):
     if system == "macos":
         actual = {p.relative_to(build).as_posix() for p in (build / "beachlife.app").rglob('*') if not p.is_dir()}
         allowed = {name for name in payload_names(info) if name.startswith('beachlife.app/')}
-        if actual - allowed - set(MAC_SIGNING):
+        if actual - allowed - set(mac_signing(info)):
             raise ValueError("Unexpected files in the application bundle")
         for name in MAC_FILES:
             copy(build, name)
-        for name in MAC_SIGNING:
+        for name in mac_signing(info):
             if (build / name).exists():
                 copy(build, name)
         data["beachlife"], modes["beachlife"] = MAC_WRAPPER, 0o755
@@ -230,12 +250,18 @@ def package(build, output, source=ROOT, toolchain=None):
         manifest["runtime_requirements"] = abi
     data["SOURCE-MANIFEST.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
     modes["SOURCE-MANIFEST.json"] = 0o644
+    return write_archive(output, info, data, modes)
+
+
+def write_archive(output, info, data, modes):
+    """Writes a package's files (manifest included) as its .zip or .tar.gz."""
+    target = info["platform"] + "-" + info["architecture"]
     stem = f'beachlife-{info["build_version"]}-{target}'
     output.mkdir(parents=True, exist_ok=True)
-    destination = output / (stem + (".zip" if system == "windows" else ".tar.gz"))
+    destination = output / (stem + (".zip" if info["system"] == "windows" else ".tar.gz"))
     with tempfile.TemporaryDirectory(dir=output) as temp:
         archive = Path(temp) / destination.name
-        if system == "windows":
+        if info["system"] == "windows":
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as handle:
                 for name, body in sorted(data.items()):
                     handle.writestr(name, body)
@@ -284,13 +310,13 @@ def inspect_package(path):
         validate_counts(manifest.get('game_traps'), complete=info['channel'] != 'dev')
     if info['channel'] == 'release':
         require_release_game(profile, manifest.get('game_traps'))
-    if manifest.get("format") != 1 or info["platform"] + '-' + info["architecture"] not in TARGETS:
+    if manifest.get("format") != 1 or info["platform"] + '-' + info["architecture"] not in TARGETS + MAC_BUILD_TARGETS:
         raise ValueError("Unsupported package format or target")
     if info["system"] != ("linux" if info["platform"] == "steamdeck" else info["platform"]):
         raise ValueError("Package target system mismatch")
     expected = payload_names(info)
     if info["system"] == "macos":
-        expected.update(name for name in MAC_SIGNING if name in files)
+        expected.update(name for name in mac_signing(info) if name in files)
     if set(files) != expected | {"SOURCE-MANIFEST.json"} or set(manifest["files"]) != expected:
         raise ValueError("Archive does not match the declared payload")
     for name in expected:
@@ -331,6 +357,11 @@ def verify_set(directory, version, sha, channel, run_id=None):
         raise ValueError("Package reconstructed source profiles differ")
     for profile, counts in games:
         require_release_game(profile, counts)
+    # The Mac disk image installs the same universal app; it is checksummed, not unpacked.
+    images = sorted(p for p in Path(directory).iterdir() if p.name.endswith('.dmg'))
+    if [p.name for p in images] != [f'beachlife-{version}+g{sha[:12]}-macos-universal.dmg']:
+        raise ValueError(f"Expected one disk image for this build, found {[p.name for p in images]}")
+    paths = sorted(paths + images)
     checksums = Path(directory) / 'SHA256SUMS'
     checksums.write_text(''.join(f'{digest(p.read_bytes())}  {p.name}\n' for p in paths))
     return [*paths, checksums]
