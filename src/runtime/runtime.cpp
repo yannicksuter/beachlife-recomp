@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -453,7 +454,10 @@ std::vector<GamePumpState::Click> scripted_clicks()
 
 void click(platform::Video& video, double x, double y, bool down, Uint8 button = SDL_BUTTON_LEFT)
 {
-    const auto point = video.presentation_transform().to_window(x, y);
+    // GetCursorPos floors the inverse mapping. Aim inside the requested pixel
+    // so SDL's float coordinates cannot round its boundary into a neighbour.
+    const auto point =
+        video.presentation_transform().to_window(std::floor(x) + 0.5, std::floor(y) + 0.5);
     SDL_Window* window = video.window();
     if (down)
     {
