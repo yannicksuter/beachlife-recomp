@@ -51,7 +51,7 @@ int main(int argc, char** argv)
         std::puts("Beach Life - native launcher\n"
                   "Usage: beachlife [--launcher] [--source image.iso]\n"
                   "                 [--config file] [--page "
-                  "play|files|display|appearance|advanced|about]\n"
+                  "play|files|gameplay|display|appearance|advanced|about]\n"
                   "                 [--cache-directory folder]\n"
                   "                 [--screenshot file.png] [--smoke-test]\n"
                   "       beachlife --play [--source image.iso] [--config file]\n"
@@ -149,6 +149,10 @@ int main(int argc, char** argv)
                 else if (value == "files")
                 {
                     options.page = beachlife::launcher::PageFiles;
+                }
+                else if (value == "gameplay")
+                {
+                    options.page = beachlife::launcher::PageGameplay;
                 }
                 else if (value == "display")
                 {

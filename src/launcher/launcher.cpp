@@ -41,9 +41,9 @@ using ui::Font;
 using ui::Icon;
 
 constexpr std::array<const char*, PageCount> pages = {
-    "Play", "Game files", "Display", "Appearance", "Advanced", "About"};
+    "Play", "Game files", "Gameplay", "Display", "Appearance", "Advanced", "About"};
 constexpr std::array<Icon, PageCount> page_icons = {
-    Icon::Play, Icon::Disc, Icon::Monitor, Icon::Sliders, Icon::Gear, Icon::Info};
+    Icon::Play, Icon::Disc, Icon::Sun, Icon::Monitor, Icon::Sliders, Icon::Gear, Icon::Info};
 constexpr const char* times = "\xC3\x97"; // multiplication sign
 
 void require(bool condition, const char* message)
@@ -845,6 +845,8 @@ class Launcher
             const char* description =
                 page_ == PageFiles
                     ? "Choose the original files that belong to your copy of Beach Life."
+                : page_ == PageGameplay ? "Optional changes that are not in the original game. "
+                                          "Each one is off by default."
                 : page_ == PageDisplay  ? "How the game window opens and how its picture is drawn."
                 : page_ == PageAdvanced ? "Troubleshooting options. The defaults suit most players."
                                         : "Make the launcher comfortable on your screen.";
@@ -856,6 +858,10 @@ class Launcher
         if (page_ == PageFiles)
         {
             y = draw_files(draw, left, y, available);
+        }
+        else if (page_ == PageGameplay)
+        {
+            y = draw_gameplay(draw, left, y, available);
         }
         else if (page_ == PageDisplay)
         {
@@ -1337,7 +1343,7 @@ class Launcher
         return iy;
     }
 
-    float draw_advanced(ImDrawList* draw, float left, float y, float available)
+    float draw_gameplay(ImDrawList* draw, float left, float y, float available)
     {
         const float pad = dp(24), ix = left + pad, iw = available - 2 * pad;
         PanelScope tweaks(draw, {left, y}, available);
@@ -1348,7 +1354,7 @@ class Launcher
             Icon::Sliders,
             color::lagoon,
             "Gameplay options",
-            "Optional changes that are not in the original game. Each one is off by default.");
+            "Each option changes the game only after you switch it on.");
         ImVec2 at = setting_row(draw,
             iy,
             ix,
@@ -1371,10 +1377,14 @@ class Launcher
         switch_control(draw, "wheel_zoom", &settings_.tweaks.wheel_zoom, at);
         iy += pad - row_spacing();
         tweaks.end(iy);
-        y = iy + dp(18);
+        return iy;
+    }
 
+    float draw_advanced(ImDrawList* draw, float left, float y, float available)
+    {
+        const float pad = dp(24), ix = left + pad, iw = available - 2 * pad;
         PanelScope diagnostics(draw, {left, y}, available);
-        iy = y + pad;
+        float iy = y + pad;
         iy += section(draw,
             {ix, iy},
             iw,
@@ -1382,7 +1392,7 @@ class Launcher
             color::lagoon,
             "Diagnostics & analytics",
             "Local tools for investigating problems. No usage data is collected or sent.");
-        at = setting_row(draw,
+        ImVec2 at = setting_row(draw,
             iy,
             ix,
             iw,

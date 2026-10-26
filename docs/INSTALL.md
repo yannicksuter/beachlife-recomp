@@ -35,10 +35,10 @@ inputs show a specific status. The original installer is never run.
 **Display** holds the window mode, window size, display, scaling, VSync and,
 on Windows, the graphics API (DirectX 12 or Vulkan). Play's game window uses
 them.
-**Advanced → Gameplay options** offers **Skip intro** (start at the main menu)
-and **Mouse wheel zoom** (up zooms in, down zooms out). Both are off by default.
-Save changes or press Play to apply them.
-**Advanced** also has a Diagnostics & analytics section: a log window for the game
+**Gameplay** offers **Skip intro** (start at the main menu) and **Mouse wheel
+zoom** (up zooms in, down zooms out). Both are off by default. Save changes or
+press Play to apply them.
+**Advanced** has a Diagnostics & analytics section: a log window for the game
 (saved for later) and the settings file's location. No usage data is collected
 or sent.
 

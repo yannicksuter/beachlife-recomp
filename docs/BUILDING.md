@@ -577,8 +577,7 @@ Player-visible changes that are not in the original game live in
 `patches/beachlife-decomp-tweaks/`, applied after the faithful series when the
 game build is configured with `-DBEACHLIFE_ENABLE_TWEAKS=ON` (already enabled by
 the release preset). Each tweak stays
-off until the player enables it under Advanced > Gameplay options in the
-launcher; checks can enable one with its environment variable:
+off until the player enables it on the launcher's Gameplay page; checks can enable one with its environment variable:
 
 | Tweak | Setting | Check override |
 |---|---|---|
@@ -822,7 +821,7 @@ For an actual desktop screenshot (then exit), use:
 ./build/debug/beachlife --screenshot build/launcher.png --config build/preview.cfg
 ```
 
-`--page files|display|appearance|advanced|about` selects another page. `--source path.iso`
+`--page files|gameplay|display|appearance|advanced|about` selects another page. `--source path.iso`
 preselects a disc image without saving it automatically. Screenshot and smoke
 runs never check for updates; `--update-preview STATE` shows a made-up update
 state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,

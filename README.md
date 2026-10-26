@@ -14,7 +14,7 @@ Select your own supported English ISO in the launcher and press **Play** to
 prepare its files, then enter the intro, menus and game. Prepared files work
 with the ISO disconnected. The original executable is never launched.
 
-Under **Advanced → Gameplay options**, **Skip intro** starts at the main menu
+On the **Gameplay** page, **Skip intro** starts at the main menu
 and **Mouse wheel zoom** controls the camera. Both are off by default. Display,
 interface and update settings remain available in the launcher. The independent
 [data tool](docs/DATA.md) can inspect and prepare the same local content.
