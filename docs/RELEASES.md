@@ -41,9 +41,9 @@ builds its exact head SHA and produces these package artifacts:
 A separate boot matrix builds the experimental decompiled game on Linux x86_64,
 Windows x86_64, macOS arm64 and macOS x86_64. Its `boot-*` artifacts use the `dev`
 channel, including on stable pushes. Windows uses the same pinned cross compiler
-and runs the exported CTest suite on a native Windows runner. Boot tests need no
-retail files; GPU-dependent checks may skip, while the generated headless retail
-parser check must pass. These artifacts are development evidence only: they are
+and is built only; its tests are not run. Boot tests need no retail files;
+GPU-dependent checks may skip, while the generated headless retail parser check
+must pass. These artifacts are development evidence only: they are
 outside the five-package set, Native build gate, promotion and publication jobs.
 
 PR artifacts expire after seven days; stable/manual artifacts after fourteen.
