@@ -314,7 +314,9 @@ class LocalDecompTests(unittest.TestCase):
         errors = io.StringIO()
         with contextlib.redirect_stderr(errors), self.assertRaises(subprocess.CalledProcessError):
             self.prepare()
-        self.assertIn('Failed to apply patch: ' + str(series.parent / 'broken.patch'), errors.getvalue())
+        # The tool reports the resolved path (/private/var on macOS, long names on Windows).
+        self.assertIn('Failed to apply patch: ' + str((series.parent / 'broken.patch').resolve()),
+                      errors.getvalue())
         self.assertEqual(target.read_bytes(), b'second\n')
         self.assertEqual(target.stat().st_mtime_ns, mtime)
         self.assertEqual(stamp.read_bytes(), previous)
