@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -150,9 +151,23 @@ class Video
         return result;
     }
 
+    // The host's overlay for frames presented without one (the game's own flips),
+    // built on demand at each such present; none when unset.
+    void set_host_overlay(std::function<ImDrawData*()> overlay)
+    {
+        host_overlay_ = std::move(overlay);
+    }
+
+  protected:
+    ImDrawData* host_overlay() const
+    {
+        return host_overlay_ ? host_overlay_() : nullptr;
+    }
+
   private:
     int game_width_ = 0, game_height_ = 0;
     bool game_fullscreen_ = false;
+    std::function<ImDrawData*()> host_overlay_;
 };
 
 // Opens the window and the GPU device on the requested API. An API that is not

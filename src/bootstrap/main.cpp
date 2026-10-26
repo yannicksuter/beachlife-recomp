@@ -2,6 +2,7 @@
 #include "data/game_path.h"
 #include "data/iso9660.h"
 #include "launcher/launcher.h"
+#include "platform/game_log.h"
 #include "runtime/runtime.h"
 #if BEACHLIFE_BOOT_GAME
 #include "runtime/boot_session.h"
@@ -10,7 +11,9 @@
 #include <SDL3/SDL_main.h>
 
 #include <cstdio>
+#include <ctime>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -214,6 +217,21 @@ int main(int argc, char** argv)
         game.config = outcome.config;
         game.prepare_only = outcome.prepare_only;
         game.preview_screen = play ? preview_screen : outcome.preview_screen;
+        // Real play sessions keep a log beside the game, to find out why one
+        // stopped; checks do not, unless BEACHLIFE_GAME_LOG names a folder.
+        std::optional<beachlife::platform::GameLog> log;
+        const char* log_folder = SDL_getenv("BEACHLIFE_GAME_LOG");
+        if ((log_folder && *log_folder) || (!frames && !headless && !options.smoke))
+        {
+            char started[32] = "";
+            const std::time_t now = std::time(nullptr);
+            std::strftime(started, sizeof started, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+            log.emplace(log_folder && *log_folder
+                            ? beachlife::launcher::path_from_utf8(log_folder)
+                            : beachlife::launcher::game_log_folder(game.config),
+                std::string("Beach Life ") + beachlife::build::version + " on " +
+                    SDL_GetPlatform() + ", game session started " + started);
+        }
         const auto result = beachlife::runtime::run(game);
         if (play)
         {

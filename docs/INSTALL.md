@@ -39,8 +39,16 @@ them.
 zoom** (up zooms in, down zooms out). Both are off by default. Save changes or
 press Play to apply them.
 **Advanced** has a Diagnostics & analytics section: a log window for the game
-(saved for later) and the settings file's location. No usage data is collected
-or sent.
+(saved for later), the settings file's location and the game log. No usage data
+is collected or sent.
+
+Each game session writes `game.log` in a `logs` folder beside the game (the
+folder holding `beachlife.exe`, `beachlife.app` or `beachlife`); the session
+before it stays as `game-previous.log`. It records the game's own messages and,
+if the game stops unexpectedly, what stopped it with the call stack. The
+launcher mentions such a stop at its next start, and **Advanced → Game log →
+Open folder** opens the logs. When the game's folder cannot be written, the logs
+go beside the launcher settings instead. They stay on your computer.
 
 Click **Save changes** to remember the path, display, diagnostics, update and
 interface settings, or **Revert** to restore the saved values. Preferences live
