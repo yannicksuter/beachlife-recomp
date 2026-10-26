@@ -55,19 +55,33 @@ class VersionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_version.identity(self.root, {**config, 'channel': 'test'})
 
-    def test_identity_records_native_profile(self):
+    def test_experimental_identity_cannot_be_a_release(self):
         config = {'project_version': '0.1.0', 'channel': 'dev', 'pull_request': '0',
                   'run_id': '0', 'decomp_profile': 'native-experimental'}
         with patch.object(build_version, 'git_output', side_effect=['a' * 40, '', '1']):
             self.assertEqual(build_version.identity(self.root, config)['decomp_profile'],
                              'native-experimental')
+        with self.assertRaisesRegex(ValueError, 'require the decompiled game and gameplay options'):
+            build_version.identity(self.root, {**config, 'channel': 'release'})
         for profile in ('matching', 'unknown', None):
             with self.subTest(profile=profile), self.assertRaisesRegex(ValueError, 'Unknown native'):
                 build_version.identity(self.root, {**config, 'decomp_profile': profile})
 
+    def test_release_identity_requires_game_and_tweaks(self):
+        config = {'project_version': '0.1.0', 'channel': 'release', 'pull_request': '0',
+                  'run_id': '7', 'decomp_profile': 'native-game-tweaks'}
+        with patch.object(build_version, 'git_output', side_effect=['a' * 40, '', '1']):
+            info = build_version.identity(self.root, config)
+        self.assertEqual(info['channel'], 'release')
+        self.assertEqual(info['decomp_profile'], 'native-game-tweaks')
+        for profile in ('native', 'native-experimental', 'native-game'):
+            with self.subTest(profile=profile), self.assertRaisesRegex(
+                    ValueError, 'require the decompiled game and gameplay options'):
+                build_version.identity(self.root, {**config, 'decomp_profile': profile})
+
 
 def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corrupt=False,
-                    profile='native'):
+                    profile='native-game-tweaks', game_traps='complete'):
     platform, architecture = target.rsplit('-', 1)
     system = 'linux' if platform == 'steamdeck' else platform
     version = '0.1.0+g' + sha[:12]
@@ -77,6 +91,9 @@ def fixture_archive(root, target, sha='a' * 40, channel='test', extra=None, corr
     data = {name: b'fixture' for name in packages.payload_names(info)}
     manifest = {'format': 1, 'build': info, 'files': {
         name: {'sha256': packages.digest(body), 'bytes': len(body), 'mode': 0o644} for name, body in data.items()}}
+    if profile in packages.GAME_PROFILES and game_traps is not None:
+        manifest['game_traps'] = ({'functions': 0, 'host_services': 0, 'unresolved': 0}
+                                  if game_traps == 'complete' else game_traps)
     data['SOURCE-MANIFEST.json'] = json.dumps(manifest).encode()
     if extra:
         data[extra] = b'unexpected'
@@ -128,6 +145,31 @@ class PackageTests(unittest.TestCase):
         fixture_archive(self.root, 'linux-x86_64', profile='native-experimental')
         with self.assertRaisesRegex(ValueError, 'source profiles differ'):
             packages.verify_set(self.root, '0.1.0', 'a' * 40, 'test', 7)
+
+    def test_game_packages_require_valid_empty_trap_counts(self):
+        complete = {'functions': 0, 'host_services': 0, 'unresolved': 0}
+        for channel in ('test', 'release'):
+            archive = fixture_archive(self.root, 'linux-x86_64', channel=channel)
+            self.assertEqual(packages.inspect_package(archive)[0]['game_traps'], complete)
+            for counts in (None, {}, {**complete, 'functions': -1},
+                           {**complete, 'functions': False},
+                           *({**complete, kind: 1} for kind in complete)):
+                with self.subTest(channel=channel, counts=counts):
+                    archive = fixture_archive(self.root, 'linux-x86_64', channel=channel,
+                                              game_traps=counts)
+                    with self.assertRaises(ValueError):
+                        packages.inspect_package(archive)
+        archive = fixture_archive(self.root, 'linux-x86_64', channel='dev',
+                                  game_traps={**complete, 'functions': 1})
+        self.assertEqual(packages.inspect_package(archive)[0]['game_traps']['functions'], 1)
+
+    def test_gate_requires_the_game_and_options_on_every_platform(self):
+        for profile in ('native', 'native-game'):
+            for target in packages.TARGETS:
+                fixture_archive(self.root, target, profile=profile)
+            with self.subTest(profile=profile), self.assertRaisesRegex(
+                    ValueError, 'require the decompiled game and gameplay options'):
+                packages.verify_set(self.root, '0.1.0', 'a' * 40, 'test', 7)
 
     def test_symlink_input_is_rejected(self):
         (self.root / 'real').write_text('data')

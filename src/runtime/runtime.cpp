@@ -813,7 +813,7 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
     }
     if (game_entry && game_result)
     {
-        SDL_SetWindowTitle(video.window(), "Beach Life - boot build");
+        SDL_SetWindowTitle(video.window(), "Beach Life");
         GamePumpState pump{&video,
             0,
             static_cast<std::uint64_t>(options.frames),

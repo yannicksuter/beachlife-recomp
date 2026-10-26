@@ -209,6 +209,11 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         report.write_text(json.dumps({'data': self.comparison_rows}))
         return ''
 
+    @staticmethod
+    def fingerprint_key(path):
+        # Reports use repository-relative paths when TMPDIR is in the build tree.
+        return str(path.relative_to(matching.ROOT) if path.is_relative_to(matching.ROOT) else path)
+
     def run_game(self):
         (self.metadata / 'targets/beachlife-uk-1.1.json').write_text(json.dumps(self.target))
         with contextlib.redirect_stdout(io.StringIO()):
@@ -225,7 +230,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(result['unclassified_functions'], [])
         self.assertEqual(result['link_abi_support'], [])
         self.assertEqual(result['sdk_headers_sha256'], self.sdk_spec['headers_sha256'])
-        self.assertIn(str(self.sdk_pin), result['input_sha256'])
+        self.assertIn(self.fingerprint_key(self.sdk_pin), result['input_sha256'])
         self.assertFalse((self.args.output / 'game/abi').exists())
 
     def test_comparator_error_rejects_even_complete_matching_rows(self):
@@ -330,7 +335,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(self.build_arguments[2], {
             self.metadata / 'support/operator_delete.cpp': ['/O1'], support: ['/Ob1']})
         self.assertEqual(result['source_compile_options'], self.target['source_compile_options'])
-        self.assertEqual(result['input_sha256'][str(support)], matching.digest(support))
+        self.assertEqual(result['input_sha256'][self.fingerprint_key(support)], matching.digest(support))
         self.assertEqual(result['link_abi_support'], [])
         self.assertFalse((self.args.output / 'game/abi').exists())
 
@@ -585,8 +590,8 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(self.calls, ['runtime_library', 'build', 'compare'])
         self.assertEqual(result['source_compile_options'], {})
         self.assertEqual(self.build_arguments[1][:2], ['/MD', '/G6'])
-        self.assertIn(str(self.source / 'helper.cpp'), result['input_sha256'])
-        self.assertIn(str(self.metadata / 'targets/beachlife-uk-1.1.json'), result['input_sha256'])
+        self.assertIn(self.fingerprint_key(self.source / 'helper.cpp'), result['input_sha256'])
+        self.assertIn(self.fingerprint_key(self.metadata / 'targets/beachlife-uk-1.1.json'), result['input_sha256'])
 
     def test_partial_unclassified_match_fails_after_saving_separate_results(self):
         self.register_generated_functions()
@@ -701,7 +706,7 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(project['targets']['BEACHLIFE']['data-sources'],
                          [str(self.metadata / 'metadata.csv'), str(earlier[0]), str(later[0])])
         for path in [*earlier, *later]:
-            self.assertEqual(result['input_sha256'][str(path)], matching.digest(path))
+            self.assertEqual(result['input_sha256'][self.fingerprint_key(path)], matching.digest(path))
         effective_target = Path(result['target_config'])
         self.assertEqual(result['input_sha256'][str(effective_target)], matching.digest(effective_target))
         self.assertEqual([row['address'] for row in json.loads(effective_target.read_text())['functions']],

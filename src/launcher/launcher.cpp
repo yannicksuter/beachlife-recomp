@@ -41,9 +41,9 @@ using ui::Font;
 using ui::Icon;
 
 constexpr std::array<const char*, PageCount> pages = {
-    "Play", "Game files", "Display", "Appearance", "Advanced", "About"};
+    "Play", "Game files", "Gameplay", "Display", "Appearance", "Advanced", "About"};
 constexpr std::array<Icon, PageCount> page_icons = {
-    Icon::Play, Icon::Disc, Icon::Monitor, Icon::Sliders, Icon::Gear, Icon::Info};
+    Icon::Play, Icon::Disc, Icon::Sun, Icon::Monitor, Icon::Sliders, Icon::Gear, Icon::Info};
 constexpr const char* times = "\xC3\x97"; // multiplication sign
 
 void require(bool condition, const char* message)
@@ -245,6 +245,11 @@ class Launcher
                 running = false;
             }
             ImGui::Render();
+            // Everything is laid out in window points. On high-density screens (Retina) SDL
+            // scales points to pixels; the ImGui backend leaves geometry to this scale.
+            const auto framebuffer = ImGui::GetIO().DisplayFramebufferScale;
+            require(SDL_SetRenderScale(renderer_, framebuffer.x, framebuffer.y),
+                "Cannot scale the launcher");
             require(SDL_SetRenderDrawColor(renderer_, 7, 18, 31, 255), "Cannot set the background");
             require(SDL_RenderClear(renderer_), "Cannot clear the launcher");
             render_backdrop();
@@ -472,10 +477,7 @@ class Launcher
                 (a.y - art_min_.y) / art_size_.y * height,
                 (b.x - a.x) / art_size_.x * width,
                 (b.y - a.y) / art_size_.y * height};
-            const SDL_FRect target{a.x * io.DisplayFramebufferScale.x,
-                a.y * io.DisplayFramebufferScale.y,
-                (b.x - a.x) * io.DisplayFramebufferScale.x,
-                (b.y - a.y) * io.DisplayFramebufferScale.y};
+            const SDL_FRect target{a.x, a.y, b.x - a.x, b.y - a.y};
             require(
                 SDL_RenderTexture(renderer_, texture, &source, &target), "Cannot draw the artwork");
         };
@@ -845,6 +847,8 @@ class Launcher
             const char* description =
                 page_ == PageFiles
                     ? "Choose the original files that belong to your copy of Beach Life."
+                : page_ == PageGameplay ? "Optional changes that are not in the original game. "
+                                          "Each one is off by default."
                 : page_ == PageDisplay  ? "How the game window opens and how its picture is drawn."
                 : page_ == PageAdvanced ? "Troubleshooting options. The defaults suit most players."
                                         : "Make the launcher comfortable on your screen.";
@@ -856,6 +860,10 @@ class Launcher
         if (page_ == PageFiles)
         {
             y = draw_files(draw, left, y, available);
+        }
+        else if (page_ == PageGameplay)
+        {
+            y = draw_gameplay(draw, left, y, available);
         }
         else if (page_ == PageDisplay)
         {
@@ -1143,8 +1151,7 @@ class Launcher
                  Icon::Info,
                  color::lagoon,
                  "Used by Play's game window",
-                 "Play opens the game window with these settings. The game code is not "
-                 "reconstructed yet.") +
+                 "Play opens the game window with these settings.") +
              dp(18);
         const float pad = dp(24), ix = left + pad, iw = available - 2 * pad,
                     spacing = row_spacing(), field = dp(44);
@@ -1337,7 +1344,7 @@ class Launcher
         return iy;
     }
 
-    float draw_advanced(ImDrawList* draw, float left, float y, float available)
+    float draw_gameplay(ImDrawList* draw, float left, float y, float available)
     {
         const float pad = dp(24), ix = left + pad, iw = available - 2 * pad;
         PanelScope tweaks(draw, {left, y}, available);
@@ -1348,7 +1355,7 @@ class Launcher
             Icon::Sliders,
             color::lagoon,
             "Gameplay options",
-            "Optional changes that are not in the original game. Each one is off by default.");
+            "Each option changes the game only after you switch it on.");
         ImVec2 at = setting_row(draw,
             iy,
             ix,
@@ -1371,10 +1378,14 @@ class Launcher
         switch_control(draw, "wheel_zoom", &settings_.tweaks.wheel_zoom, at);
         iy += pad - row_spacing();
         tweaks.end(iy);
-        y = iy + dp(18);
+        return iy;
+    }
 
+    float draw_advanced(ImDrawList* draw, float left, float y, float available)
+    {
+        const float pad = dp(24), ix = left + pad, iw = available - 2 * pad;
         PanelScope diagnostics(draw, {left, y}, available);
-        iy = y + pad;
+        float iy = y + pad;
         iy += section(draw,
             {ix, iy},
             iw,
@@ -1382,7 +1393,7 @@ class Launcher
             color::lagoon,
             "Diagnostics & analytics",
             "Local tools for investigating problems. No usage data is collected or sent.");
-        at = setting_row(draw,
+        ImVec2 at = setting_row(draw,
             iy,
             ix,
             iw,
@@ -2794,6 +2805,7 @@ Outcome play_settings(const Options& options)
 Outcome run(const Options& options)
 {
     fs::path restart;
+    std::string restart_error;
     Outcome outcome;
     try
     {
@@ -2805,6 +2817,14 @@ Outcome run(const Options& options)
         outcome.preview_screen = launcher.preview_screen();
         outcome.settings = launcher.settings();
         outcome.config = launcher.config();
+#ifdef _WIN32
+        // Windows lets only the foreground process bring a new window to the front:
+        // start the updated launcher while this window still is, not after it closed.
+        if (!restart.empty() && options.argv)
+        {
+            restart_error = restart_launcher(restart, options.argc, options.argv);
+        }
+#endif
     }
     catch (const std::exception& error)
     {
@@ -2820,8 +2840,12 @@ Outcome run(const Options& options)
     {
         return outcome;
     }
+#ifdef _WIN32
+    const std::string& error = restart_error;
+#else
     // An update replaced the program files; the old window and SDL are gone.
     const std::string error = restart_launcher(restart, options.argc, options.argv);
+#endif
     if (error.empty())
     {
         return outcome;

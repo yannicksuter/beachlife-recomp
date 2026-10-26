@@ -84,7 +84,7 @@ exports:
                 args = argparse.Namespace(objects=root/'objects.txt', nm='llvm-nm', host=[],
                     compiler='clang++', target_system='Darwin', target_arch=arch, sysroot=str(sdk),
                     compiler_arg=[target], readelf='readelf', objdump='llvm-objdump',
-                    tree=root, demangler='llvm-cxxfilt', inventory=None, strict=False,
+                    tree=root, demangler='llvm-cxxfilt', inventory=None, strict=False, require_complete=False,
                     output=root/'traps.cpp', json=root/'traps.json')
                 with patch.object(game_tree, 'COMPAT', compat), \
                      patch.object(game_tree.subprocess, 'check_output', side_effect=inspect), \
@@ -106,6 +106,35 @@ exports:
                 self.assertIn('beachlife_compat_MissingCompat', definitions)
                 self.assertIn('__ZTV9NeedsBody', definitions)
                 self.assertNotIn('__ZN9NeedsBody5readyEv', definitions)
+                args.require_complete = True
+                with patch.object(game_tree, 'COMPAT', compat), \
+                     patch.object(game_tree.subprocess, 'check_output', side_effect=inspect), \
+                     contextlib.redirect_stdout(io.StringIO()), \
+                     contextlib.redirect_stderr(io.StringIO()) as errors:
+                    self.assertEqual(game_tree.traps(args), 1)
+                self.assertIn('Release game requires zero', errors.getvalue())
+                self.assertFalse(args.output.exists())
+                self.assertEqual(json.loads(args.json.read_text()), traps)
+                # Resolving the actual missing bodies and data allows the same
+                # release invocation to succeed, with no generated trap entries.
+                (src/'complete.cpp').write_text('''
+#include "missing.h"
+void MissingHostFunction() {}
+void MissingCompat() {}
+int missing_data = 0;
+void MissingGameFunction(int) {}
+NeedsBody::~NeedsBody() {}
+int NeedsBody::tick(int value) { return value; }
+''')
+                complete = root/'complete.o'
+                subprocess.run(['clang++', target, '-c', str(src/'complete.cpp'), '-o', str(complete)], check=True)
+                args.host = [str(complete)]
+                with patch.object(game_tree, 'COMPAT', compat), \
+                     patch.object(game_tree.subprocess, 'check_output', side_effect=inspect), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(game_tree.traps(args), 0)
+                self.assertEqual(json.loads(args.json.read_text()),
+                                 {'functions': [], 'host_services': [], 'unresolved': []})
 
     def test_failed_inspection_is_fatal(self):
         with tempfile.TemporaryDirectory() as temp:
