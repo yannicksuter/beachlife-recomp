@@ -422,7 +422,7 @@ void click(platform::Video& video, double x, double y, bool down)
     SDL_PushEvent(&event);
 }
 
-bool game_pump(void* context)
+void prepare_game_frame(void* context)
 {
     auto& state = *static_cast<GamePumpState*>(context);
     ++state.frames;
@@ -461,21 +461,13 @@ bool game_pump(void* context)
             state.video->save_next(file);
         }
     }
-    if (state.limit && state.frames > state.limit + 1)
+    if (state.limit && state.frames == state.limit + 1)
     {
-        return false;
+        SDL_Event event{};
+        event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+        event.window.windowID = SDL_GetWindowID(state.video->window());
+        SDL_PushEvent(&event);
     }
-    bool running = true;
-    SDL_Event event;
-    while (SDL_PollEvent(&event))
-    {
-        ImGui_ImplSDL3_ProcessEvent(&event);
-        if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
-        {
-            running = false;
-        }
-    }
-    return running;
 }
 
 bool leaves(const SDL_Event& event)
@@ -719,12 +711,15 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
                 throw std::runtime_error("Loading completed without mounted game data.");
             }
             game_source = source;
-            game_configuration = configuration(std::move(source));
-            if (!game_configuration)
+            if (!game_entry)
             {
-                throw std::runtime_error("Loading completed without a game configuration.");
+                game_configuration = configuration(std::move(source));
+                if (!game_configuration)
+                {
+                    throw std::runtime_error("Loading completed without a game configuration.");
+                }
+                std::puts("Game configuration: loaded through VFS.");
             }
-            std::puts("Game configuration: loaded through VFS.");
         };
     }
     if (!start_game(
@@ -749,7 +744,8 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             scripted_route(),
             SDL_getenv("BEACHLIFE_BOOT_TRACE_FILES") != nullptr,
             scripted_monkey()};
-        GameHost host{video, game_pump, &pump, game_source};
+        GameHost host{
+            video, prepare_game_frame, &pump, game_source, options.hidden || options.headless};
         wheel_zoom_tweak =
             settings.tweaks.wheel_zoom || SDL_getenv("BEACHLIFE_TWEAK_WHEEL_ZOOM") != nullptr;
         skip_intro_tweak =

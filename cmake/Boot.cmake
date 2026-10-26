@@ -42,6 +42,14 @@ target_link_libraries(beachlife_compat PRIVATE SDL3::SDL3 freetype beachlife_ret
 target_compile_features(beachlife_compat PRIVATE cxx_std_20)
 set_target_properties(beachlife_compat PROPERTIES CXX_EXTENSIONS OFF)
 if(BUILD_TESTING)
+    add_executable(compat_window_tests tests/compat_window.cpp)
+    target_include_directories(compat_window_tests PRIVATE "${beachlife_compat_include}"
+        "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(compat_window_tests PRIVATE beachlife_compat SDL3::SDL3)
+    target_compile_features(compat_window_tests PRIVATE cxx_std_20)
+    add_test(NAME compat_window COMMAND compat_window_tests)
+    set_tests_properties(compat_window PROPERTIES
+        ENVIRONMENT "SDL_VIDEODRIVER=dummy;BEACHLIFE_BOOT_QUIET=1" TIMEOUT 15)
     add_executable(compat_cursor_tests tests/compat_cursor.cpp src/runtime/retail_cursor.cpp)
     target_include_directories(compat_cursor_tests PRIVATE "${beachlife_compat_include}"
         "${CMAKE_SOURCE_DIR}/src")

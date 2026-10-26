@@ -4,6 +4,11 @@
 
 #include <cstring>
 
+namespace
+{
+thread_local unsigned int initialization_count = 0;
+}
+
 namespace beachlife::compat::movie
 {
 HRESULT create_stream_instance(REFIID iid, LPVOID* output);
@@ -11,12 +16,24 @@ HRESULT create_stream_instance(REFIID iid, LPVOID* output);
 
 extern "C"
 {
-    HRESULT WINAPI CoInitialize(LPVOID)
+    HRESULT WINAPI CoInitialize(LPVOID reserved)
     {
-        return S_OK;
+        if (reserved)
+        {
+            return static_cast<HRESULT>(0x80070057); // E_INVALIDARG
+        }
+        // The supported in-process interfaces are host implementations and
+        // need no Windows apartment, but retain COM's per-thread nesting.
+        return initialization_count++ ? 1 : S_OK; // S_FALSE on repeated initialization
     }
 
-    void WINAPI CoUninitialize(void) {}
+    void WINAPI CoUninitialize(void)
+    {
+        if (initialization_count)
+        {
+            --initialization_count;
+        }
+    }
 
     HRESULT WINAPI CoCreateInstance(
         REFCLSID clsid, LPUNKNOWN outer, DWORD context, REFIID iid, LPVOID* output)

@@ -3,6 +3,10 @@
 // conventions only matter on 32-bit Windows and have no effect here.
 #pragma once
 
+#define BEACHLIFE_COMPAT 1
+// Host equivalent of the entry's x86 CPUID instruction sequence.
+int beachlife_cpu_capabilities();
+
 #if !defined(_WIN32)
 #define __stdcall
 #define __cdecl

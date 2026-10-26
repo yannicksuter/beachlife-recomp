@@ -514,6 +514,15 @@ BEACHLIFE_BOOT_ROUTE=scenario1 ./build/boot/beachlife --play --headless \
   --frames 4000 --screenshot world.png
 ```
 
+The boot build calls the decompiled WinMain and WindowProcedure. Play prepares
+the files and window; compat returns that window to retail CreateWindowExA.
+Retail owns configuration loading, dispatches at most one message per frame,
+then updates and renders with its profiler timing. Automation injects SDL input
+before PeekMessageA; DirectInput still receives the same events. The frame limit
+requests WM_CLOSE, whose retail handler posts WM_QUIT. Video stays alive through
+the final retail frame and renderer teardown. Host window geometry and hidden
+mode remain Play's choices.
+
 Player-visible changes that are not in the original game live in
 `patches/beachlife-decomp-tweaks/`, applied after the faithful series when the
 boot build is configured with `-DBEACHLIFE_ENABLE_TWEAKS=ON`. Each tweak stays
@@ -524,6 +533,12 @@ launcher; checks can enable one with its environment variable:
 |---|---|---|
 | Skip intro: start at the main menu (no movie, logo or title screen) | `tweaks.skip_intro` | `BEACHLIFE_TWEAK_SKIP_INTRO=1` |
 | Mouse wheel zooms the camera (up in, down out) | `tweaks.wheel_zoom` | `BEACHLIFE_TWEAK_WHEEL_ZOOM=1` |
+
+```sh
+BEACHLIFE_BOOT_ROUTE=scenario1 BEACHLIFE_TWEAK_SKIP_INTRO=1 \
+  BEACHLIFE_TWEAK_WHEEL_ZOOM=1 BEACHLIFE_BOOT_WHEEL="2500:1;2800:-1" \
+  ./build/boot/beachlife --play --headless --frames 4000 --screenshot zoom.png
+```
 
 `game-series` is written from a local merge tree. `tools/game_tree.py init`
 creates it under `build/game-tree/work` from the current series. Commit merged

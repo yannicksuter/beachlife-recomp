@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <vector>
 
-int beachlife_boot_main(beachlife::runtime::GameHost& host);
+int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int show);
 
 namespace beachlife::runtime
 {
@@ -46,8 +46,9 @@ int run_boot_game(GameHost& host)
         {
             return beachlife_crt_fopen(path, mode);
         });
-    // The retail HWND is Play's Video (see winmain_native.cpp).
-    compat::bind_window(reinterpret_cast<HWND>(&host.video));
-    return beachlife_boot_main(host);
+    compat::WindowSession window(
+        reinterpret_cast<HWND>(&host.video), host.prepare_frame, host.context, host.hidden);
+    char command[] = "";
+    return WinMain(GetModuleHandleA(nullptr), nullptr, command, 1);
 }
 } // namespace beachlife::runtime

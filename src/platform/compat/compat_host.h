@@ -11,7 +11,7 @@ class Video;
 namespace beachlife::compat
 {
 // In the boot build the game's main window handle is Play's Video: the
-// native WinMain passes &video where the retail code passes its HWND.
+// compat CreateWindowExA returns &video where retail expects its HWND.
 inline platform::Video* video(HWND window)
 {
     return reinterpret_cast<platform::Video*>(window);

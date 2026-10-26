@@ -156,12 +156,15 @@ def windows_only(path, compat=None, seen=None):
     """True when the file or a local header it includes needs the Windows SDK.
 
     With a compat directory, SDK headers it provides and MSVC keywords no
-    longer count; inline assembly always does."""
+    longer count. The compat prelude selects host CPU intrinsics in guarded
+    assembly blocks; unguarded inline assembly still needs MSVC."""
     seen = set() if seen is None else seen
     if path in seen or not path.is_file():
         return False
     seen.add(path)
     text = path.read_text(encoding='utf-8', errors='replace')
+    if compat:
+        text = re.sub(r'#ifndef BEACHLIFE_COMPAT\n.*?#else\n', '', text, flags=re.S)
     if INLINE_ASM.search(text):
         return True
     if compat:
