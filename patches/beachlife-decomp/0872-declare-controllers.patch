@@ -1,0 +1,134 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 3e742e9..6b5b96d 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4428,3 +4428,12 @@ typedef char Decl2RoutesWorldRouteReferencereverse_04Offset[(offsetof(WorldRoute
+ typedef char Decl2RoutesWorldRouteReferenceindex_08Offset[(offsetof(WorldRouteReference, index_08) == 0x8) ? 1 : -1];
+ typedef char Decl2RoutesWorldRouteReferenceword_08Offset[(offsetof(WorldRouteReference, word_08) == 0x8) ? 1 : -1];
+ typedef char Decl2RoutesWorldSubsystem18route_finder_00Offset[(offsetof(WorldSubsystem18, route_finder_00) == 0x0) ? 1 : -1];
++
++#include "startup_game_won.h"
++
++typedef char Decl2GuiGameWonListNodeSize[(sizeof(GameWonListNode) == 0xc) ? 1 : -1];
++typedef char Decl2GuiGameWonListSize[(sizeof(GameWonList) == 0x4) ? 1 : -1];
++typedef char Decl2GuiGameWonControllerSize[(sizeof(GameWonController) == 0x94) ? 1 : -1];
++typedef char Decl2GuiGameWonControllerlist_90Offset[(offsetof(GameWonController, list_90) == 0x90) ? 1 : -1];
++typedef char Decl2GuiScreenManagerword_78Offset[(offsetof(ScreenManager, word_78) == 0x78) ? 1 : -1];
++typedef char Decl2GuiScreenManagerpanel_13cOffset[(offsetof(ScreenManager, panel_13c) == 0x13c) ? 1 : -1];
+diff --git a/src/startup_game_won.h b/src/startup_game_won.h
+new file mode 100644
+index 0000000..91a2b67
+--- /dev/null
++++ b/src/startup_game_won.h
+@@ -0,0 +1,57 @@
++#ifndef STARTUP_GAME_WON_H
++#define STARTUP_GAME_WON_H
++
++#include "startup_controller.h"
++#include "startup_list.h"
++
++struct ScreenItem;
++
++struct GameWonListNode : CircularListNode
++{
++    ScreenItem* item;
++};
++
++struct GameWonListAllocator
++{
++    GameWonListAllocator();
++    ~GameWonListAllocator();
++};
++
++struct GameWonListBase
++{
++    CircularListNode* head;
++    explicit GameWonListBase(const GameWonListAllocator& allocator);
++    ~GameWonListBase();
++};
++
++struct GameWonList : GameWonListBase
++{
++    explicit GameWonList(const GameWonListAllocator& allocator = GameWonListAllocator());
++    ~GameWonList();
++    GameWonListNode* CreateNode(ScreenItem* const& item);
++    CircularListIterator Insert(CircularListIterator position, ScreenItem* const& item);
++    void Clear();
++};
++
++struct GameWonController : ControllerState
++{
++    float elapsed; // 0x88.
++    int stage;     // 0x8c.
++    GameWonList list_90;
++
++    // Actual 0x004e8380, RET4: Game passes "GameWon".
++    explicit GameWonController(const char* name);
++    virtual ~GameWonController();                          // 0x004e8470, deleting wrapper.
++    virtual int Update();                                  // 0x004e8580.
++    virtual void RenderBeforeScreens();                    // 0x00437d10.
++    virtual void RenderAfterScreens();                     // 0x004e8630.
++    virtual void Enter();                                  // 0x004e86a0.
++    virtual void Exit();                                   // 0x004e8760.
++    virtual const char* ScriptPath();                      // 0x004e8780.
++    virtual void ControllerSlot1c();                       // 0x00437d10.
++    virtual void ScreenSizeChanged(int width, int height); // 0x004e8fa0, RET8.
++    void ShowStage();                                      // 0x004e87a0.
++    virtual void ControllerSlot24();                       // 0x00437d10.
++};
++
++#endif
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 5de9146..a0549b7 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -20,6 +20,7 @@ struct ScreenRectangle;
+ struct ScreenRequestContext;
+ struct ScreenRequestRenderer;
+ struct ScreenManager;
++struct ScreenLoadPanel13c;
+ struct GameSaveRecord;
+ 
+ // Observed screen-manager and placement pointers at original x86+0x48/+0x54.
+@@ -97,6 +98,7 @@ struct ScreenManager
+     void ShowTickerMessage(const unsigned short* text, int mode);                                                        // 0x004af380.
+     unsigned char HasActiveScreen();                                                                                     // 0x004b1950.
+     unsigned int ActiveScreenCount();                                                                                    // 0x004b1b70.
++    void ShowCameraControls();                                                                                           // 0x004b0fe0.
+     void HideCameraControls();                                                                                           // 0x004b0ff0.
+     void DisableNamedItems(const char* name);                                                                            // 0x004b1db0.
+     void EnableNamedItems(const char* name);                                                                             // 0x004b1de0.
+@@ -115,7 +117,9 @@ struct ScreenManager
+     ScreenRequestRenderer* renderer;
+     ScreenFontData* fonts_04[10];
+     ScreenFontRenderer* fonts_2c[10];
+-    unsigned char unknown_54[0x34];
++    unsigned char unknown_54[0x24];
++    unsigned int word_78;
++    unsigned char unknown_7c[0x0c];
+     ScreenChildLink* items_head;
+     ScreenChildLink* registry;
+     ScreenItem* item_90;
+@@ -154,7 +158,8 @@ struct ScreenManager
+     ScreenManagerAuxiliaryState* auxiliary_130;
+     ScreenItem* item_134;
+     float value_138;
+-    unsigned char unknown_13c[8];
++    ScreenLoadPanel13c* panel_13c;
++    unsigned char unknown_140[4];
+     unsigned char byte_144;
+     unsigned char unknown_145[7];
+     int layout_x_14c;
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index a7a5918..a308e3f 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -9,6 +9,8 @@ struct ScreenRequestRenderer;
+ 
+ struct OverlayMapPrefix
+ {
++    void PrepareScreenSize();                                                       // 0x0041b610.
++    void DrawTile(int x, int y, unsigned int colour);                               // 0x00418fe0.
+     void UpdateView();                                                              // 0x0041ab10.
+     void SetWordBc(unsigned int value);                                             // 0x00418fd0.
+     void SetDepthSlant(int value);                                                  // 0x00418950.
