@@ -1,11 +1,15 @@
 # Boot build: the one merged game tree, linked with a loud trap for every
 # function that is not decompiled yet. Trap hits choose the next work; a
-# trap-backed build is never release gameplay. Linux x86-64 for now.
+# trap-backed build is never release gameplay.
 if(NOT BEACHLIFE_ENABLE_BOOT_GAME)
     return()
 endif()
-if(NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8))
-    message(FATAL_ERROR "The boot build currently supports Linux x86-64 only")
+if(NOT (CMAKE_SYSTEM_NAME MATCHES "^(Linux|Windows)$" AND CMAKE_SIZEOF_VOID_P EQUAL 8
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$"))
+    message(FATAL_ERROR "The boot build currently supports Linux and Windows x86-64 only")
+endif()
+if(WIN32 AND NOT (MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+    message(FATAL_ERROR "Windows boot builds require the pinned LLVM-MinGW toolchain")
 endif()
 
 set(BEACHLIFE_BOOT_INVENTORY "" CACHE FILEPATH
@@ -21,6 +25,9 @@ list(FILTER beachlife_boot_sources EXCLUDE REGEX "^$")
 # The Windows, DirectX and Miles API subset the retail game imports, on SDL3.
 # Only the decompiled game sees its headers and MSVC prelude.
 set(beachlife_compat_include "${CMAKE_SOURCE_DIR}/src/platform/compat/include")
+add_library(beachlife_compat_native STATIC src/platform/compat/native_kernel.cpp)
+target_compile_features(beachlife_compat_native PRIVATE cxx_std_20)
+set_target_properties(beachlife_compat_native PROPERTIES CXX_EXTENSIONS OFF)
 add_library(beachlife_compat STATIC src/platform/compat/support.cpp src/platform/compat/kernel32.cpp
     src/platform/compat/kernel_strings.cpp
     src/platform/compat/kernel_files.cpp src/platform/compat/kernel_find.cpp
@@ -38,7 +45,8 @@ add_library(beachlife_compat STATIC src/platform/compat/support.cpp src/platform
     src/platform/compat/miles_audio.cpp src/platform/compat/miles.cpp)
 target_include_directories(beachlife_compat PRIVATE "${beachlife_compat_include}"
     "${CMAKE_SOURCE_DIR}/src" "${BEACHLIFE_PREPARED}/dr-libs" "${BEACHLIFE_PREPARED}/pl-mpeg")
-target_link_libraries(beachlife_compat PRIVATE SDL3::SDL3 freetype beachlife_retail_files)
+target_link_libraries(beachlife_compat PRIVATE SDL3::SDL3 freetype beachlife_retail_files
+    beachlife_compat_native)
 target_compile_features(beachlife_compat PRIVATE cxx_std_20)
 set_target_properties(beachlife_compat PROPERTIES CXX_EXTENSIONS OFF)
 if(BUILD_TESTING)
@@ -118,6 +126,10 @@ endif()
 add_library(beachlife_boot_game OBJECT ${beachlife_boot_sources})
 target_link_libraries(beachlife_boot_game PRIVATE beachlife_runtime)
 target_compile_options(beachlife_boot_game PRIVATE -w)
+# SDL owns the application's Windows entry point. Play calls the retail entry
+# as an ordinary function; give that definition and its caller a private name.
+set_property(SOURCE "${BEACHLIFE_DECOMP_SOURCE}/winmain.cpp" src/runtime/boot_session.cpp
+    APPEND PROPERTY COMPILE_DEFINITIONS WinMain=beachlife_retail_WinMain)
 
 set(beachlife_boot_dir "${CMAKE_BINARY_DIR}/boot")
 file(GENERATE OUTPUT "${beachlife_boot_dir}/objects.txt"
@@ -126,10 +138,14 @@ set(beachlife_boot_inventory)
 if(BEACHLIFE_BOOT_INVENTORY)
     set(beachlife_boot_inventory --inventory "${BEACHLIFE_BOOT_INVENTORY}")
 endif()
+get_filename_component(beachlife_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+find_program(beachlife_demangler NAMES llvm-cxxfilt c++filt HINTS "${beachlife_compiler_dir}" REQUIRED)
 add_custom_command(
     OUTPUT "${beachlife_boot_dir}/traps.cpp" "${beachlife_boot_dir}/traps.json"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/game_tree.py" traps
         --objects "${beachlife_boot_dir}/objects.txt" ${beachlife_boot_inventory}
+        --compiler "${CMAKE_CXX_COMPILER}" --nm "${CMAKE_NM}"
+        --demangler "${beachlife_demangler}" --target-system "${CMAKE_SYSTEM_NAME}"
         --host $<TARGET_FILE:beachlife_compat> $<TARGET_FILE:beachlife_resource_pool_host>
         --tree "${BEACHLIFE_DECOMP_PREPARED}/beachlife-decomp"
         --output "${beachlife_boot_dir}/traps.cpp" --json "${beachlife_boot_dir}/traps.json"

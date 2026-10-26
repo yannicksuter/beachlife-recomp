@@ -174,7 +174,7 @@ if(BUILD_TESTING)
         add_executable(compat_miles_tests tests/compat_miles.cpp)
         target_include_directories(compat_miles_tests PRIVATE src src/platform/compat/include)
         target_compile_features(compat_miles_tests PRIVATE cxx_std_20)
-        target_link_libraries(compat_miles_tests PRIVATE beachlife_compat beachlife_retail_files)
+        target_link_libraries(compat_miles_tests PRIVATE beachlife_compat beachlife_retail_files SDL3::SDL3)
         add_test(NAME compat_miles
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/check_compat_miles.py"
                 "$<TARGET_FILE:compat_miles_tests>")

@@ -1,6 +1,7 @@
 #include "io.h"
 #include "kernel_files.h"
 #include "msvcrt.h"
+#include "native_kernel.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -25,6 +26,7 @@ struct Stream
     }
 };
 
+#ifndef _WIN32
 ssize_t read_stream(void* cookie, char* buffer, std::size_t bytes)
 {
     auto& stream = *static_cast<Stream*>(cookie);
@@ -75,6 +77,7 @@ int close_stream(void* cookie)
     stream->descriptor = -1;
     return result;
 }
+#endif
 } // namespace
 
 namespace
@@ -144,6 +147,16 @@ extern "C"
                 {
                     return nullptr;
                 }
+#ifdef _WIN32
+                FILE* result = stdio_stream(stream->descriptor);
+                stream->descriptor = -1;
+                if (result && stream->text && !beachlife::compat::native::text_mode(result))
+                {
+                    std::fclose(result);
+                    return nullptr;
+                }
+                return result;
+#else
                 const char cookie_mode[] = {*mode, update ? '+' : '\0', '\0'};
                 // A real host FILE preserves stdio buffering, element counts,
                 // fgets/fgetc, seek, error and EOF semantics. Only opening is
@@ -156,18 +169,19 @@ extern "C"
                     stream.release();
                 }
                 return result;
+#endif
             },
             static_cast<FILE*>(nullptr));
     }
 
     int beachlife_crt_fseek(FILE* stream, int32_t offset, int origin)
     {
-        return std::fseek(stream, offset, origin);
+        return beachlife::compat::native::seek(stream, offset, origin);
     }
 
     int32_t beachlife_crt_ftell(FILE* stream)
     {
-        const auto position = ::ftello(stream);
+        const auto position = beachlife::compat::native::tell(stream);
         if (position < 0 || position > INT32_MAX)
         {
             if (position > INT32_MAX)
@@ -186,7 +200,7 @@ extern "C"
             errno = EINVAL;
             return -1;
         }
-        const auto position = ::ftello(stream);
+        const auto position = beachlife::compat::native::tell(stream);
         if (position < 0)
         {
             return -1;

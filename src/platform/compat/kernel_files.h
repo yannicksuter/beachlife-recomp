@@ -2,6 +2,7 @@
 
 #include "kernel_internal.h"
 
+#include <cstdio>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -18,10 +19,15 @@ std::filesystem::path user_path(const char* path);
 std::optional<std::vector<unsigned char>> read_file(const char* path);
 bool write_file(const char* path, std::string_view bytes);
 DWORD file_error(int error);
+DWORD file_error(const std::error_code& error);
 std::optional<DWORD> manifest_attributes(std::string_view path);
 // Returns no value for another kernel handle type, false for a failed close.
 std::optional<bool> close_file_handle(HANDLE handle);
 std::optional<uint64_t> seek_file(int descriptor, int64_t offset, int origin);
+#ifdef _WIN32
+// Takes ownership of a virtual descriptor and returns a genuine host FILE.
+FILE* stdio_stream(int descriptor);
+#endif
 int mapping_descriptor(HANDLE file, bool writable, uint64_t& size);
 std::optional<bool> close_mapping_handle(HANDLE handle);
 } // namespace beachlife::compat::kernel

@@ -21,5 +21,6 @@ struct IAMMultiMediaStream : IMultiMediaStream
 };
 extern "C"
 {
-    extern const GUID CLSID_AMMultiMediaStream, IID_IAMMultiMediaStream;
+    extern const GUID CLSID_AMMultiMediaStream BEACHLIFE_COMPAT_SYMBOL(CLSID_AMMultiMediaStream),
+        IID_IAMMultiMediaStream BEACHLIFE_COMPAT_SYMBOL(IID_IAMMultiMediaStream);
 }

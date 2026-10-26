@@ -32,5 +32,7 @@ int beachlife_cpu_capabilities();
 #define wcsrchr beachlife_msvc_wcsrchr
 #define wcstod beachlife_msvc_wcstod
 #define swprintf beachlife_msvc_swprintf
+#undef _itow
 #define _itow beachlife_msvc_itow
+#undef _wtol
 #define _wtol beachlife_msvc_wtol

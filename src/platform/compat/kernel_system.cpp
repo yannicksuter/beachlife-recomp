@@ -1,4 +1,5 @@
 #include "kernel_files.h"
+#include "native_kernel.h"
 
 #include <cerrno>
 #include <cpuid.h>
@@ -9,13 +10,16 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <sys/file.h>
 #include <thread>
+#ifndef _WIN32
+#include <sys/file.h>
 #include <unistd.h>
+#endif
 
 namespace
 {
 using namespace beachlife::compat::kernel;
+#ifndef _WIN32
 struct Descriptor
 {
     int value;
@@ -31,16 +35,28 @@ struct Descriptor
         }
     }
 };
+#endif
 struct Mutex
 {
+#ifdef _WIN32
+    void* native = nullptr;
+#else
     int descriptor = -1;
+#endif
     std::thread::id owner;
     ~Mutex()
     {
+#ifdef _WIN32
+        if (native)
+        {
+            beachlife::compat::native::close_handle(native);
+        }
+#else
         if (descriptor >= 0)
         {
             ::close(descriptor);
         }
+#endif
     }
 };
 struct MutexHandle
@@ -64,6 +80,16 @@ std::shared_ptr<Mutex> named_mutex(const char* name, bool initial_owner, bool& e
     {
         beachlife::compat::unsupported("CreateMutexA", "Windows session or global namespaces");
     }
+#ifdef _WIN32
+    auto object = std::make_shared<Mutex>();
+    object->native = beachlife::compat::native::create_mutex(name, initial_owner, last_error);
+    if (!object->native)
+    {
+        return nullptr;
+    }
+    existed = last_error == ERROR_ALREADY_EXISTS;
+    return object;
+#else
     if (const auto found = named_mutexes.find(key); found != named_mutexes.end())
     {
         if (auto object = found->second.lock())
@@ -131,6 +157,7 @@ std::shared_ptr<Mutex> named_mutex(const char* name, bool initial_owner, bool& e
     }
     named_mutexes[key] = object;
     return object;
+#endif
 }
 } // namespace
 
@@ -186,6 +213,17 @@ extern "C"
                 {
                     return nullptr;
                 }
+#ifdef _WIN32
+                if (!name)
+                {
+                    object->native = beachlife::compat::native::create_mutex(
+                        nullptr, owner != FALSE, last_error);
+                    if (!object->native)
+                    {
+                        return nullptr;
+                    }
+                }
+#endif
                 if (!name && owner)
                 {
                     object->owner = std::this_thread::get_id();
@@ -213,6 +251,10 @@ extern "C"
                     return FALSE;
                 }
                 auto& mutex = *found->second->object;
+#ifdef _WIN32
+                return beachlife::compat::native::release_mutex(mutex.native, last_error) ? TRUE
+                                                                                          : FALSE;
+#else
                 if (mutex.owner != std::this_thread::get_id())
                 {
                     last_error = ERROR_NOT_OWNER;
@@ -220,6 +262,7 @@ extern "C"
                 }
                 mutex.owner = {};
                 return TRUE;
+#endif
             },
             FALSE);
     }

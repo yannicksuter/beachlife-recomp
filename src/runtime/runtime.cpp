@@ -605,7 +605,16 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
     if (options.headless)
     {
         // Nothing on screen and no sound: tests and automation.
-        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "offscreen");
+        const char* headless_driver = "dummy";
+        for (int index = 0; index < SDL_GetNumVideoDrivers(); ++index)
+        {
+            if (SDL_strcmp(SDL_GetVideoDriver(index), "offscreen") == 0)
+            {
+                headless_driver = "offscreen";
+                break;
+            }
+        }
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, headless_driver);
         SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
         if (!SDL_getenv("BEACHLIFE_BOOT_USER_DIR"))
         {

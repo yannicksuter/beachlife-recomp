@@ -3,12 +3,14 @@
 #include "io.h"
 #include "msvcrt.h"
 #include "platform/compat/kernel_files.h"
+#include "platform/path.h"
 #include "runtime/retail_files.h"
 #include "windows.h"
 
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -36,14 +38,16 @@ struct Fixture
     fs::path root;
     Fixture()
     {
-        char pattern[] = "/tmp/beachlife-compat-files-XXXXXX";
-        const char* directory = ::mkdtemp(pattern);
-        if (!directory)
+        root = fs::temp_directory_path() /
+               ("beachlife-compat-files-" +
+                   std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        if (!fs::create_directory(root))
         {
             throw std::runtime_error("Cannot create fixture");
         }
-        root = directory;
-        ::setenv("XDG_DATA_HOME", root.c_str(), 1);
+        SDL_setenv_unsafe("BEACHLIFE_BOOT_USER_DIR",
+            beachlife::platform::utf8(root / "user-\xc3\xa9").c_str(),
+            1);
         fs::create_directories(root / "retail/Data");
         fs::create_directories(root / "retail/Data/Scenario/Test");
         std::ofstream(root / "retail/Data/Asset.bin", std::ios::binary).put('!');
@@ -153,8 +157,9 @@ int main()
               std::memcmp(buffer.data(), "save", 4) == 0 && _close(descriptor) == 0,
         "CRT descriptors write and read per-user files");
     const auto root_size = GetCurrentDirectoryA(0, nullptr);
-    check(root_size > 1 && GetCurrentDirectoryA(buffer.size(), buffer.data()) == root_size - 1 &&
-              fs::path(buffer.data()) == beachlife::compat::kernel::user_root(),
+    check(
+        root_size > 1 && GetCurrentDirectoryA(buffer.size(), buffer.data()) == root_size - 1 &&
+            beachlife::platform::utf8_path(buffer.data()) == beachlife::compat::kernel::user_root(),
         "current directory identifies the virtual user working folder");
     check(GetFileAttributesA("SAVES/test.SAV") == FILE_ATTRIBUTE_ARCHIVE &&
               GetFileAttributesA("Saves") == FILE_ATTRIBUTE_DIRECTORY,
@@ -169,6 +174,15 @@ int main()
               beachlife_crt_fseek(stream, 0, SEEK_SET) == 0 && !std::feof(stream) &&
               std::fgetc(stream) == '!' && std::fclose(stream) == 0,
         "stdio reads through the VFS with normal buffering, seek and EOF behavior");
+    stream = beachlife_crt_fopen("DATA/asset.BIN", "rb");
+    check(stream && std::fwrite("?", 1, 1, stream) == 0 && std::ferror(stream),
+        "read-only VFS stdio rejects writes");
+    if (stream)
+    {
+        // UCRT's fclose reports a stream's existing error flag too.
+        std::clearerr(stream);
+        check(std::fclose(stream) == 0, "close read-only VFS stdio after clearing its error");
+    }
     stream = beachlife_crt_fopen("sAVes/stdio.dat", "w+b");
     check(stream && std::fwrite("header\n\0tail", 1, 12, stream) == 12 &&
               std::fflush(stream) == 0 && beachlife_crt_ftell(stream) == 12,
@@ -191,6 +205,74 @@ int main()
               fs::file_size(beachlife::compat::kernel::user_path("saves/stdio.dat")) == 0 &&
               !fs::exists(fixture.root / "retail/saves"),
         "the preferences text-mode truncate stays inside the user folder");
+    // Exercise the separate native mapping backend while keeping retail handles
+    // opaque. Closing the mapping must not invalidate a surviving mapped view.
+    OFSTRUCT info{};
+    const HFILE mapped_file = OpenFile("saves/mapped.bin", &info, OF_CREATE | OF_READWRITE);
+    HANDLE mapping =
+        CreateFileMappingA(reinterpret_cast<HANDLE>(static_cast<intptr_t>(mapped_file)),
+            nullptr,
+            PAGE_READWRITE,
+            0,
+            65536,
+            nullptr);
+    auto* view = static_cast<char*>(MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, 65536));
+    check(mapped_file != HFILE_ERROR && mapping && view, "create a writable user-file mapping");
+    if (view)
+    {
+        std::memcpy(view, "mapped", 6);
+        check(CloseHandle(mapping), "close mapping while the view stays alive");
+        check(std::memcmp(view, "mapped", 6) == 0 && UnmapViewOfFile(view),
+            "mapped view survives its mapping handle");
+    }
+    check(CloseHandle(reinterpret_cast<HANDLE>(static_cast<intptr_t>(mapped_file))),
+        "close mapped file");
+    stream = beachlife_crt_fopen("saves/mapped.bin", "rb");
+    check(stream && std::fread(buffer.data(), 1, 6, stream) == 6 &&
+              std::memcmp(buffer.data(), "mapped", 6) == 0 && std::fclose(stream) == 0,
+        "shared mapping writes persist in the user file");
+    mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, 65536, nullptr);
+    view = static_cast<char*>(MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, 0));
+    check(mapping && view && view[0] == 0 && view[65535] == 0, "anonymous mapping is zero filled");
+    if (view)
+    {
+        check(UnmapViewOfFile(view), "unmap anonymous memory");
+    }
+    check(CloseHandle(mapping), "close anonymous mapping");
+    const HFILE copy_file = OpenFile("DATA/asset.BIN", &info, OF_READ);
+    mapping = CreateFileMappingA(reinterpret_cast<HANDLE>(static_cast<intptr_t>(copy_file)),
+        nullptr,
+        PAGE_READONLY,
+        0,
+        0,
+        nullptr);
+    view = static_cast<char*>(MapViewOfFile(mapping, FILE_MAP_COPY, 0, 0, 0));
+    check(mapping && view && view[0] == '!', "map VFS bytes with private copy access");
+    if (view)
+    {
+        view[0] = '?';
+        check(UnmapViewOfFile(view), "unmap a modified private copy");
+    }
+    view = static_cast<char*>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
+    check(view && view[0] == '!', "copy-on-write leaves the backing file unchanged");
+    if (view)
+    {
+        check(UnmapViewOfFile(view), "unmap the original view");
+    }
+    check(CloseHandle(mapping) &&
+              CloseHandle(reinterpret_cast<HANDLE>(static_cast<intptr_t>(copy_file))),
+        "close VFS mapping handles");
+    const auto mutex_name = "beachlife-compat-test-" + fixture.root.filename().string();
+    HANDLE mutex = CreateMutexA(nullptr, TRUE, mutex_name.c_str());
+    check(mutex && GetLastError() == ERROR_SUCCESS, "create a named owned mutex");
+    HANDLE second = CreateMutexA(nullptr, FALSE, mutex_name.c_str());
+    check(
+        second && GetLastError() == ERROR_ALREADY_EXISTS, "named mutex detects an existing owner");
+    check(ReleaseMutex(mutex) && CloseHandle(second) && CloseHandle(mutex),
+        "release and close mutex handles");
+    mutex = CreateMutexA(nullptr, FALSE, mutex_name.c_str());
+    check(mutex && GetLastError() == ERROR_SUCCESS && CloseHandle(mutex),
+        "last close releases the mutex name");
     check(DeleteFileA("sAVes/TEST.sav") && !DeleteFileA("saves/test.sav") &&
               GetLastError() == ERROR_FILE_NOT_FOUND,
         "deletion reports a genuine missing user file");

@@ -273,18 +273,38 @@ def symbols(command, paths):
             if line and not line.endswith(':') and len(line.split()) >= 2}
 
 
-def system_symbols():
+def system_symbols(compiler='c++', nm='nm', target_system='Linux'):
     names = set()
+    if target_system == 'Windows':
+        # Inspect the target CRT/import libraries, never the Linux build host.
+        # LLVM-MinGW uses libc++, UCRT and compiler-rt (not libstdc++/libgcc).
+        libraries = ('libc++.dll.a', 'libc++.a', 'libc++abi.a', 'libunwind.dll.a', 'libmingw32.a',
+                     'libmingwex.a', 'libmsvcrt.a', 'libucrt.a', 'libkernel32.a')
+        paths = []
+        for library in libraries:
+            path = subprocess.check_output([compiler, f'-print-file-name={library}'], text=True).strip()
+            if Path(path).is_file():
+                paths.append(Path(path))
+        path = subprocess.check_output([compiler, '--print-libgcc-file-name'], text=True).strip()
+        if Path(path).is_file():
+            paths.append(Path(path))
+        if not paths:
+            raise ValueError('Cannot locate the target Windows runtime libraries')
+        return symbols([nm, '-P', '--defined-only'], paths)
     for library in ('libc.so.6', 'libm.so.6', 'libstdc++.so.6', 'libgcc_s.so.1'):
-        path = subprocess.run(['c++', f'-print-file-name={library}'], text=True,
+        path = subprocess.run([compiler, f'-print-file-name={library}'], text=True,
                               stdout=subprocess.PIPE, check=True).stdout.strip()
         if Path(path).is_file():
-            names |= symbols(['nm', '-D', '-P', '--defined-only'], [path])
+            names |= symbols([nm, '-D', '-P', '--defined-only'], [path])
     return {name.split('@')[0] for name in names}
 
 
-def called(objects):
+def called(objects, target_system='Linux'):
     """Symbols referenced by a call relocation (functions, never data)."""
+    # COFF REL32 is shared by calls and data references. Only header-declared
+    # C functions (and demangled C++ functions) are safe trap candidates there.
+    if target_system == 'Windows':
+        return set()
     result = set()
     for obj in objects:
         out = subprocess.run(['readelf', '-rW', str(obj)], text=True, stdout=subprocess.PIPE).stdout
@@ -398,7 +418,7 @@ def header_inline_methods(tree):
     return names
 
 
-def class_traps(tree, name, defined, inline=frozenset()):
+def class_traps(tree, name, defined, inline=frozenset(), compiler='clang++'):
     """C++ trap definitions for every declared, undefined method of a class.
 
     Defining the class's methods here makes the compiler emit its vtable and
@@ -407,7 +427,8 @@ def class_traps(tree, name, defined, inline=frozenset()):
     if not header:
         return None
     src = Path(tree) / 'src'
-    out = subprocess.run(['clang++', '-std=c++20', '-fsyntax-only', '-w', f'-I{src}', f'-I{ROOT / "src"}',
+    out = subprocess.run([compiler, '-std=c++20', '-fsyntax-only', '-w', f'-I{src}', f'-I{ROOT / "src"}',
+                          '-fshort-wchar', '-include', str(COMPAT / 'msvc_prelude.h'), f'-I{COMPAT}',
                           '-x', 'c++', str(header), '-Xclang', '-ast-dump=json',
                           '-Xclang', f'-ast-dump-filter={name}'],
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True).stdout
@@ -449,15 +470,16 @@ def symbol_family(symbol):
 
 def traps(args):
     """Emit one loud trap per game function the tree does not define yet."""
-    objects = [Path(line) for line in Path(args.objects).read_text().split() if line]
-    defined = symbols(['nm', '-P', '--defined-only'], objects)
-    undefined = symbols(['nm', '-P', '-u'], objects) - defined
+    objects = [Path(line) for line in Path(args.objects).read_text().splitlines() if line.strip()]
+    defined = symbols([args.nm, '-P', '--defined-only'], objects)
+    undefined = symbols([args.nm, '-P', '-u'], objects) - defined
     if args.host:
-        undefined -= symbols(['nm', '-P', '--defined-only'], [Path(p) for p in args.host])
-    undefined -= system_symbols() | SYSTEM_STATIC
-    calls = called(objects) | (declared_functions(args.tree) & undefined)
+        undefined -= symbols([args.nm, '-P', '--defined-only'], [Path(p) for p in args.host])
+    undefined -= system_symbols(args.compiler, args.nm, args.target_system) | SYSTEM_STATIC
+    declarations = declared_functions(args.tree)
+    calls = called(objects, args.target_system) | (declarations & undefined)
     names = sorted(undefined)
-    demangled = subprocess.run(['c++filt'], input='\n'.join(names), text=True,
+    demangled = subprocess.run([args.demangler], input='\n'.join(names), text=True,
                                stdout=subprocess.PIPE, check=True).stdout.splitlines()
     index = inventory_index(args.inventory)
     by_address = {row['address']: row for row in index.values()}
@@ -474,12 +496,20 @@ def traps(args):
     for symbol, name in zip(names, demangled):
         match = re.match(r'(?:vtable|typeinfo|typeinfo name) for (\w+)$', name)
         if match and args.tree and match.group(1) not in classes:
-            classes[match.group(1)] = class_traps(args.tree, match.group(1), defined, inline)
+            ast_compiler = args.compiler if 'clang' in Path(args.compiler).name else 'clang++'
+            classes[match.group(1)] = class_traps(args.tree, match.group(1), defined, inline, ast_compiler)
     for traps_of_class in classes.values():
         for method in (traps_of_class or {}).get('methods', []):
             covered |= symbol_family(method['symbol'])
     functions, services, unresolved = [], [], []
     for symbol, name in zip(names, demangled):
+        if name.startswith('beachlife_compat_'):
+            service = name.removeprefix('beachlife_compat_')
+            if service in declarations:
+                services.append({'symbol': symbol, 'name': service})
+            else:
+                unresolved.append({'symbol': symbol, 'name': name})
+            continue
         # beachlife_ C functions are host services (CRT, tweaks) the runtime defines.
         if name.startswith(('beachlife::', 'beachlife_', 'std::', '__gnu_cxx::', 'ImGui', 'SDL_',
                             '_GLOBAL_OFFSET_TABLE_', '__dso_handle')):
@@ -529,7 +559,7 @@ def traps(args):
     for number, entry in enumerate(services, 1):
         label = f'beachlife_service_{number:05d}'
         lines += [f'[[noreturn]] void {label}() __asm__("{entry["symbol"]}");',
-                  f'[[noreturn]] void {label}() {{ beachlife::boot::missing_service("{entry["symbol"]}"); }}']
+                  f'[[noreturn]] void {label}() {{ beachlife::boot::missing_service("{entry["name"]}"); }}']
     lines += ['}', '']
     for method in class_methods:
         address = int(method['address'], 16) if method['address'] else 0
@@ -565,6 +595,10 @@ def main():
     command.add_argument('--compat', help='compat SDK headers; files using only those compile')
     command.add_argument('--compiling', action='store_true', help='leave out files that do not compile yet')
     command = commands.add_parser('traps')
+    command.add_argument('--compiler', default='clang++', help='target C++ compiler')
+    command.add_argument('--nm', default='nm', help='target object symbol reader')
+    command.add_argument('--demangler', default='c++filt')
+    command.add_argument('--target-system', default='Linux', choices=('Linux', 'Windows'))
     command.add_argument('--objects', required=True, help='file listing the tree object files')
     command.add_argument('--host', nargs='*', help='host libraries that resolve symbols')
     command.add_argument('--inventory', help='progress inventory JSON for addresses')

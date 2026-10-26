@@ -1,6 +1,8 @@
 #include "amstream.h"
 #include "compat_movie_fixture.h"
+#include "compat_process.h"
 #include "ddstream.h"
+#include "platform/path.h"
 #include "platform/video.h"
 #include "runtime/retail_files.h"
 
@@ -14,8 +16,10 @@
 #include <cstring>
 #include <fstream>
 #include <memory>
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace
 {
@@ -141,7 +145,7 @@ class TestVideo final : public platform::Video
 
 void skip_path()
 {
-    setenv("BEACHLIFE_BOOT_SKIP_MOVIE", "1", 1);
+    SDL_setenv_unsafe("BEACHLIFE_BOOT_SKIP_MOVIE", "1", 1);
     IDirectDraw* draw = reinterpret_cast<IDirectDraw*>(1);
     require(DirectDrawCreate(nullptr, &draw, nullptr) == DDERR_UNSUPPORTED && !draw,
         "skip must fail DirectDraw creation and clear its output");
@@ -168,11 +172,11 @@ void skip_path()
     require(FAILED(stream->OpenFile(path, 0)), "retail OpenFile must clear ready on skip");
     stream->Release();
     // Only the exact value 1 disables playback.
-    setenv("BEACHLIFE_BOOT_SKIP_MOVIE", "true", 1);
+    SDL_setenv_unsafe("BEACHLIFE_BOOT_SKIP_MOVIE", "true", 1);
     require(
         DirectDrawCreate(nullptr, &draw, nullptr) == DD_OK && draw, "non-1 switch must not skip");
     draw->Release();
-    unsetenv("BEACHLIFE_BOOT_SKIP_MOVIE");
+    SDL_unsetenv_unsafe("BEACHLIFE_BOOT_SKIP_MOVIE");
 }
 
 DDSURFACEDESC offscreen(int width, int height)
@@ -464,6 +468,10 @@ void playback(Surfaces& surfaces, const std::shared_ptr<MemorySource>& source, b
 
 void loud_case(const char* executable, const char* argument)
 {
+#ifdef _WIN32
+    require(compat_abort_child(executable, argument, "Beach Life"),
+        "unsupported movie operation must stop loudly");
+#else
     const pid_t child = fork();
     require(child >= 0, "fork failed");
     if (child == 0)
@@ -475,13 +483,17 @@ void loud_case(const char* executable, const char* argument)
     require(
         waitpid(child, &status, 0) == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT,
         "unsupported movie operation must stop loudly");
+#endif
 }
 } // namespace
 
 int main(int argc, char** argv)
 {
-    setenv("BEACHLIFE_BOOT_QUIET", "1", 1);
-    unsetenv("BEACHLIFE_BOOT_SKIP_MOVIE");
+#ifdef _WIN32
+    compat_disable_abort_dialog();
+#endif
+    SDL_setenv_unsafe("BEACHLIFE_BOOT_QUIET", "1", 1);
+    SDL_unsetenv_unsafe("BEACHLIFE_BOOT_SKIP_MOVIE");
     if (argc == 1)
     {
         skip_path();
@@ -493,12 +505,14 @@ int main(int argc, char** argv)
                 SDL_HINT_VIDEO_DRIVER, driver ? driver : "dummy", SDL_HINT_OVERRIDE),
         "select video driver");
     require(SDL_Init(SDL_INIT_VIDEO), "initialize SDL video");
-    const auto audio_path = std::filesystem::temp_directory_path() /
-                            ("beachlife-movie-" + std::to_string(getpid()) + ".raw");
+    const auto audio_path =
+        std::filesystem::temp_directory_path() /
+        ("beachlife-movie-" + std::to_string(SDL_GetCurrentThreadID()) + ".raw");
     // Capture decoded samples even when the suite requests dummy audio globally.
     require(SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "disk", SDL_HINT_OVERRIDE),
         "select disk audio");
-    require(SDL_SetHint(SDL_HINT_AUDIO_DISK_OUTPUT_FILE, audio_path.c_str()),
+    require(
+        SDL_SetHint(SDL_HINT_AUDIO_DISK_OUTPUT_FILE, beachlife::platform::utf8(audio_path).c_str()),
         "set generated audio output");
     auto source = std::make_shared<MemorySource>();
     files::Session vfs(source);
