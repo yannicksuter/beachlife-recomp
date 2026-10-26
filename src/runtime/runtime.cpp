@@ -623,7 +623,8 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
                 }
             }
             temporary_profile = parent / std::to_string(SDL_GetCurrentThreadID());
-            SDL_setenv_unsafe("BEACHLIFE_BOOT_USER_DIR", temporary_profile.c_str(), 1);
+            SDL_setenv_unsafe(
+                "BEACHLIFE_BOOT_USER_DIR", platform::utf8(temporary_profile).c_str(), 1);
         }
         // BEACHLIFE_BOOT_PROGRESS=all starts the test profile with every
         // scenario and sandbox island available, as a player's progress file
@@ -632,9 +633,9 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
         const char* progress = SDL_getenv("BEACHLIFE_BOOT_PROGRESS");
         if (progress && SDL_strcmp(progress, "all") == 0)
         {
-            const std::filesystem::path profile = SDL_getenv("BEACHLIFE_BOOT_USER_DIR");
+            const auto profile = platform::utf8_path(SDL_getenv("BEACHLIFE_BOOT_USER_DIR"));
             std::filesystem::create_directories(profile);
-            std::FILE* file = std::fopen((profile / "sp.bin").c_str(), "wb");
+            SDL_IOStream* file = SDL_IOFromFile(platform::utf8(profile / "sp.bin").c_str(), "wb");
             if (!file)
             {
                 throw std::runtime_error("Cannot write the test progress file");
@@ -642,9 +643,9 @@ int run_game(const Options& options, detail::ConfigurationFactory configuration)
             for (int index = 0; index < 12; ++index)
             {
                 const unsigned char state[4] = {4, 0, 0, 0};
-                std::fwrite(state, 1, sizeof(state), file);
+                SDL_WriteIO(file, state, sizeof(state));
             }
-            std::fclose(file);
+            SDL_CloseIO(file);
         }
     }
     if (!SDL_Init(SDL_INIT_VIDEO))
