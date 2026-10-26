@@ -1,15 +1,16 @@
 # Pull requests and releases
 
 `main` is development. `stable` is the default release branch and receives
-promotions through PRs from this repository's `main`. The repository stays
-private. Actions artifacts and releases require repository access.
+promotions through PRs from this repository's `main`. Published releases and
+test prereleases are public so the launcher's updater can retrieve them.
+Draft candidates remain unpublished until the owner approves publication.
 
 ## One version source
 
 The root `CMakeLists.txt` declares the port's version:
 
 ```cmake
-project(beachlife_recomp VERSION 0.1.0 LANGUAGES C CXX)
+project(beachlife_recomp VERSION 0.0.1 LANGUAGES C CXX)
 ```
 
 This version is independent of the retail game's version. Update it on `main`:
@@ -31,11 +32,11 @@ builds its exact head SHA and produces these package artifacts:
 
 | Target | Archive | Build/startup validation |
 | --- | --- | --- |
-| Linux x86_64 | tar.gz | GCC build, CTest, extracted-package smoke |
-| Steam Deck x86_64 | tar.gz | GCC build, CTest, runtime ABI bounds, package smoke |
-| Windows x86_64 | ZIP | Pinned LLVM-MinGW build/import checks, package smoke on Windows |
-| macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, package smoke |
-| macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta smoke |
+| Linux x86_64 | tar.gz | GCC build, CTest, extracted CLI/window smoke |
+| Steam Deck x86_64 | tar.gz | GCC build, CTest, runtime ABI bounds, CLI/window smoke |
+| Windows x86_64 | ZIP | Pinned LLVM-MinGW build/import checks, CLI/window smoke on Windows |
+| macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, CLI/window smoke |
+| macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta CLI/window smoke |
 
 PR artifacts expire after seven days; stable/manual artifacts after fourteen.
 A test or draft release retains attached archives independently of that Actions
@@ -61,6 +62,14 @@ Manual dispatch produces development artifacts and does not publish a release.
 7. Synchronize development after promotion: fetch, fast-forward `main` to stable
    when possible, and push it. If main has advanced, merge stable into main and
    resolve the changes before the next promotion.
+
+The launcher updates itself from this repository's public release list: the
+Release channel reads published `v<version>` releases, the Test channel the
+`test-pr<N>-<sha>` prereleases. It downloads the
+`beachlife-<version>-<platform>-<arch>` archive for its own package, checks it
+against GitHub's SHA-256 digest (or SHA256SUMS) and every file against
+SOURCE-MANIFEST.json. Keep these names, SHA256SUMS and the manifest format
+stable. Drafts stay invisible to the launcher until they are published.
 
 A candidate is a **draft GitHub release**, not an automatically numbered RC.
 Numbered prereleases would need an explicit additional CMake version field and
@@ -90,7 +99,7 @@ an up-to-date branch and these checks from GitHub Actions:
 
 Keep the default Actions token read-only. Only publication/cleanup jobs receive
 contents-write. The release jobs depend on the complete aggregate gate,
-including the Windows execution checks. Preserve repository privacy. A personal
+including the Windows execution checks. A personal
 repository uses its available owner/admin roles rather than an organization
 team copied from another repository.
 
@@ -98,10 +107,12 @@ team copied from another repository.
 
 Packages contain only declared native outputs, documentation and runtime
 notices. SOURCE-MANIFEST.json records build identity, dependency information and
-payload hashes. SHA256SUMS covers the release archives. The current bootstrap
-has no game module or bundled game assets. Future libraries/resources must be
+payload hashes. SHA256SUMS covers the release archives. The current launcher
+has no game module or bundled retail data. It includes the declared header,
+font and dependency notices. Window smoke uses software rendering and requires
+no game files or GPU. Future libraries/resources must be
 added explicitly to the packaging contract and its checks.
 
 For local reproduction see [BUILDING](BUILDING.md); for startup see
 [INSTALL](INSTALL.md). The initial candidate verifies distribution of the
-bootstrap, not a playable game or qualified graphics backend.
+launcher, not a playable game or qualified game graphics backend.

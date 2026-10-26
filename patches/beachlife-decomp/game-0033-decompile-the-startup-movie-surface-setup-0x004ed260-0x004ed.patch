@@ -1,0 +1,60 @@
+diff --git a/src/startup_movie_surfaces.cpp b/src/startup_movie_surfaces.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..59778bc32e56d5f325435d0aa12e71069a78c8c7
+--- /dev/null
++++ b/src/startup_movie_surfaces.cpp
+@@ -0,0 +1,54 @@
++#include <windows.h>
++#include <ddraw.h>
++#include <string.h>
++
++#include "startup_direct_draw4.h"
++#include "startup_movie.h"
++#include "surface_error_sink.h"
++
++// FUNCTION: BEACHLIFE 0x004ed260
++void StartupMovie::CreatePrimarySurface()
++{
++    DDSURFACEDESC2 description;
++    memset(&description, 0, sizeof(description));
++    description.dwSize = sizeof(description);
++    description.dwFlags = DDSD_CAPS | DDSD_BACKBUFFERCOUNT;
++    description.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE | DDSCAPS_FLIP | DDSCAPS_COMPLEX;
++    description.dwBackBufferCount = 1;
++    HRESULT result = direct_draw4->CreateSurface(&description, &primary, 0);
++    if (result != DD_OK)
++    {
++        ready = 0;
++        IgnoreSurfaceError(result);
++        return;
++    }
++    if (windowed)
++    {
++        IDirectDrawClipper* clipper;
++        direct_draw4->CreateClipper(0, &clipper, 0);
++        clipper->SetHWnd(0, static_cast<HWND>(window));
++        primary->SetClipper(clipper);
++        clipper->Release();
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004ed310
++void StartupMovie::AttachBackBuffer()
++{
++    DDSCAPS2 caps;
++    memset(&caps, 0, sizeof(caps));
++    caps.dwCaps = DDSCAPS_BACKBUFFER;
++    HRESULT result = primary->GetAttachedSurface(&caps, &back_buffer);
++    if (result != DD_OK)
++    {
++        IgnoreSurfaceError(result);
++    }
++    // The retail code adds the reference before it checks the result.
++    back_buffer->AddRef();
++    if (result != DD_OK)
++    {
++        ready = 0;
++        return;
++    }
++    back_buffer->QueryInterface(IID_IDirectDrawSurface, reinterpret_cast<void**>(&stream_surface_28));
++}

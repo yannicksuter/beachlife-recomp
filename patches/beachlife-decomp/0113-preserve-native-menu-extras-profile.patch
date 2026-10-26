@@ -1,0 +1,141 @@
+Restore the unchanged native source projection before native adapters.
+
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 79da08dc31466b11ce9345e5fcc19313a200def8..b08f149ea33566730c4ef9deafde970afce576b9 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -991,21 +991,3 @@ extern "C" __declspec(dllexport) void FixtureMenuExitConfirm(unsigned int value)
+     MenuExitConfirm(value);
+     fixture_menu_exit_completed = 1;
+ }
+-
+-#include "startup_gui_show_extras.h"
+-
+-typedef void (*MenuShowExtrasAction)(unsigned int);
+-
+-volatile unsigned int fixture_menu_extras_input;
+-MenuShowExtrasAction volatile fixture_menu_extras_callback;
+-volatile unsigned int fixture_menu_extras_completed;
+-
+-// Compile/link retention only. This helper and its comparison image are never
+-// executed: the callback reaches comparison-only screen-manager anchors.
+-extern "C" __declspec(dllexport) void FixtureMenuShowExtras(unsigned int value)
+-{
+-    fixture_menu_extras_input = value;
+-    fixture_menu_extras_callback = &MenuShowExtras;
+-    MenuShowExtras(value);
+-    fixture_menu_extras_completed = 1;
+-}
+diff --git b/metadata.csv a/metadata.csv
+index 2d633f9267d12366d0b851e1a65cd40c1aa8a71e..51e27e8778651d10a0e534667b3bd894c93b952d 100644
+--- b/metadata.csv
++++ a/metadata.csv
+@@ -75,8 +75,3 @@ address,type,size,symbol
+ 0x0049fdd0,function,323,?DrawGlyphDirect@ScreenFontRenderer@@QAEXPBEHPAGHHHHHHHPBG@Z
+ 0x00411a60,function,97,?ConvertColour@ScreenRequestRenderer@@QAEIHHH@Z
+ 0x004a1c10,function,9,?MenuExitConfirm@@YAXI@Z
+-0x004a2f50,function,42,?MenuShowExtras@@YAXI@Z
+-0x004b1890,function,120,?CloseActiveScreens@ScreenManager@@QAEXXZ
+-0x004b1320,function,651,?RequestScreen@ScreenManager@@QAE_NPBDPAUScreenRequestContext@@E@Z
+-0x004b11d0,function,43,?ReleaseOwner190@ScreenManager@@QAEXXZ
+-0x0057e488,string,13,
+diff --git b/src/startup_gui_show_extras.cpp a/src/startup_gui_show_extras.cpp
+deleted file mode 100644
+index d520f620a9840b65b697c0d343780a0f865f9551..0000000000000000000000000000000000000000
+--- b/src/startup_gui_show_extras.cpp
++++ /dev/null
+@@ -1,10 +0,0 @@
+-#include "startup_gui_show_extras.h"
+-#include "startup_screen_manager.h"
+-
+-// FUNCTION: BEACHLIFE 0x004a2f50
+-void MenuShowExtras(unsigned int)
+-{
+-    screen_manager->CloseActiveScreens();
+-    screen_manager->RequestScreen("ExtrasScreen", 0, 0);
+-    screen_manager->ReleaseOwner190();
+-}
+diff --git b/src/startup_gui_show_extras.h a/src/startup_gui_show_extras.h
+deleted file mode 100644
+index fa95fd5a590162a1a67620a3b310be35ebb0a39d..0000000000000000000000000000000000000000
+--- b/src/startup_gui_show_extras.h
++++ /dev/null
+@@ -1,7 +0,0 @@
+-#ifndef STARTUP_GUI_SHOW_EXTRAS_H
+-#define STARTUP_GUI_SHOW_EXTRAS_H
+-
+-// The observed cdecl action caller passes one word; this callback ignores it.
+-void MenuShowExtras(unsigned int value);
+-
+-#endif
+diff --git b/src/startup_screen_manager.h a/src/startup_screen_manager.h
+index 6cf1e62f73d025e58fe96843b06782534cc4df3d..ca4efab10dc53d315eaa586699f22e1f17d4669c 100644
+--- b/src/startup_screen_manager.h
++++ a/src/startup_screen_manager.h
+@@ -37,9 +37,6 @@ struct ScreenManager
+     int previous_mode;
+ 
+     void ClearRegistration();
+-    // Actual 0x004b1890 and 0x004b11d0, both RET0; bodies are not reconstructed here.
+-    void CloseActiveScreens();
+-    void ReleaseOwner190();
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+     void SavePlacement(const ScreenRectangle& rectangle, int group);
+ };
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index df381749fa5656127d206243fb54168485ca7bc0..536b31a287cb20ad3dfbea83bd643306abde35f0 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -517,11 +517,6 @@
+       "address": "0x004a1c10",
+       "size": 9,
+       "name": "MenuExitConfirm"
+-    },
+-    {
+-      "address": "0x004a2f50",
+-      "size": 42,
+-      "name": "MenuShowExtras"
+     }
+   ],
+   "library_functions": [
+@@ -762,40 +757,6 @@
+       "parameters": [
+         "const char*"
+       ]
+-    },
+-    {
+-      "address": "0x004b1890",
+-      "size": 120,
+-      "name": "ScreenManager::CloseActiveScreens",
+-      "symbol": "?CloseActiveScreens@ScreenManager@@QAEXXZ",
+-      "header": "startup_screen_manager.h",
+-      "kind": "void-member",
+-      "return_type": "void",
+-      "parameters": []
+-    },
+-    {
+-      "address": "0x004b1320",
+-      "size": 651,
+-      "name": "ScreenManager::RequestScreen",
+-      "symbol": "?RequestScreen@ScreenManager@@QAE_NPBDPAUScreenRequestContext@@E@Z",
+-      "header": "startup_screen_manager.h",
+-      "kind": "false-member",
+-      "return_type": "bool",
+-      "parameters": [
+-        "const char*",
+-        "ScreenRequestContext*",
+-        "unsigned char"
+-      ]
+-    },
+-    {
+-      "address": "0x004b11d0",
+-      "size": 43,
+-      "name": "ScreenManager::ReleaseOwner190",
+-      "symbol": "?ReleaseOwner190@ScreenManager@@QAEXXZ",
+-      "header": "startup_screen_manager.h",
+-      "kind": "void-member",
+-      "return_type": "void",
+-      "parameters": []
+     }
+   ]
+ }

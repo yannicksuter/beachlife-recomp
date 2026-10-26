@@ -1,0 +1,187 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 718f949..4f6d467 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2886,3 +2886,10 @@ extern "C" __declspec(dllexport) void FixtureMatch3_73(ScreenTabItem* receiver)
+ {
+     receiver->ScreenTabItem::MarkPrepared();
+ }
++
++#include "startup_screen_radio_group.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch3_74(ScreenRadioGroup* receiver, ScreenItem* item)
++{
++    receiver->ScreenRadioGroup::Unresolved10(item);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 1f55bd5..5cb90c4 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -315,3 +315,4 @@ address,type,size,symbol
+ 0x004b2e80,function,44,?DeactivateActiveScreen@@YAXPAUActiveScreenEntry@@@Z
+ 0x004c0a80,function,44,?Unresolved08@ScreenTabItem@@UAEXXZ
+ 0x004c0af0,function,44,?MarkPrepared@ScreenTabItem@@UAEXXZ
++0x004c71e0,function,44,?Unresolved10@ScreenRadioGroup@@UAEXPAUScreenItem@@@Z
+diff --git a/src/startup_screen_radio_child_insert.cpp b/src/startup_screen_radio_child_insert.cpp
+new file mode 100644
+index 0000000..54353f8
+--- /dev/null
++++ b/src/startup_screen_radio_child_insert.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_radio_group.h"
++
++// FUNCTION: BEACHLIFE 0x004c72b0
++ScreenChildIterator ScreenRadioChildRing::Insert(ScreenChildIterator position, ScreenRadioItem* const& item)
++{
++    ScreenChildNode* node = CreateNode(item);
++    ScreenChildNode* previous = position.node->previous;
++    node->next = position.node;
++    node->previous = previous;
++    previous->next = node;
++    position.node->previous = node;
++    ScreenChildIterator result;
++    result.node = node;
++    return result;
++}
+diff --git a/src/startup_screen_radio_child_node.cpp b/src/startup_screen_radio_child_node.cpp
+new file mode 100644
+index 0000000..18bf3a3
+--- /dev/null
++++ b/src/startup_screen_radio_child_node.cpp
+@@ -0,0 +1,59 @@
++#include "startup_screen_radio_group.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c72e0
++ScreenChildNode* ScreenRadioChildRing::CreateNode(ScreenRadioItem* const& item)
++{
++    const unsigned int block_size = screen_child_node_slot_bytes;
++    const unsigned int bucket_index = (block_size - 1u) / 8u;
++    PoolChunkLink* block;
++    {
++        AcquirePoolLock(&pool_lock_word);
++        PoolLockGuard guard;
++        block = pool_chunk_buckets[bucket_index];
++        if (block)
++        {
++            pool_chunk_buckets[bucket_index] = block->next;
++        }
++        else
++        {
++            int count = 20;
++            // Restore the actual storage-provider array type before arithmetic.
++            unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
++            block = reinterpret_cast<PoolChunkLink*>(chunk);
++            if (count != 1)
++            {
++                PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
++                pool_chunk_buckets[bucket_index] = next;
++                for (int index = 1;; ++index)
++                {
++                    PoolChunkLink* current = next;
++                    if (count - 1 == index)
++                    {
++                        current->next = 0;
++                        break;
++                    }
++                    next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
++                    current->next = next;
++                }
++            }
++        }
++    }
++    // Begin the complete node lifetime before constructing its pointer payload.
++    ScreenChildNode* result = ::new (static_cast<void*>(block)) ScreenChildNode;
++    try
++    {
++        new (&result->item) ScreenItem*(item);
++    }
++    catch (...)
++    {
++        ReturnPool(result, block_size);
++        throw;
++    }
++    return result;
++}
+diff --git a/src/startup_screen_radio_group.h b/src/startup_screen_radio_group.h
+index 0e703c4..1904f8d 100644
+--- a/src/startup_screen_radio_group.h
++++ b/src/startup_screen_radio_group.h
+@@ -3,9 +3,18 @@
+ 
+ #include "startup_screen_children.h"
+ #include "startup_screen_item.h"
++#include "startup_screen_radio_item.h"
+ 
+ struct ScreenDialogResource;
+ 
++// The radio list has a distinct typed insertion target at 0x004c72b0.
++// Read operations use the same observed three-pointer child-node prefix.
++struct ScreenRadioChildRing : ScreenChildRing
++{
++    ScreenChildIterator Insert(ScreenChildIterator position, ScreenRadioItem* const& item);
++    ScreenChildNode* CreateNode(ScreenRadioItem* const& item);
++};
++
+ // Observed complete 0x50-byte x86 kind20 object and actual 21-slot table.
+ // The owner constructor/destructor and differing virtual bodies remain real
+ // source dependencies. This declaration supplies no native lifetime or provider.
+@@ -13,7 +22,7 @@ struct ScreenDialogResource;
+ struct ScreenRadioGroup : ScreenItem
+ {
+     char* variable_name_44;
+-    ScreenChildRing children;
++    ScreenRadioChildRing children;
+     ScreenDialogResource* resource_4c;
+ 
+     // Actual 0x004c6ba0, RET24; rectangle and two borrowed constructor strings.
+diff --git a/src/startup_screen_radio_group_forwarders.cpp b/src/startup_screen_radio_group_forwarders.cpp
+index e9db922..0c18490 100644
+--- a/src/startup_screen_radio_group_forwarders.cpp
++++ b/src/startup_screen_radio_group_forwarders.cpp
+@@ -6,3 +6,9 @@ void ScreenRadioGroup::Unresolved1c()
+ {
+     DrawScreenChildren(children);
+ }
++
++// FUNCTION: BEACHLIFE 0x004c71e0
++void ScreenRadioGroup::Unresolved10(ScreenItem* item)
++{
++    children.Insert(children.End(), static_cast<ScreenRadioItem*>(item));
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index a24ad69..b9fc05c 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1496,6 +1496,12 @@
+       "size": 44,
+       "name": "ScreenTabItem::MarkPrepared",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004c71e0",
++      "size": 44,
++      "name": "ScreenRadioGroup::Unresolved10",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -1655,6 +1661,13 @@
+     ],
+     "startup_screen_release_owner190.cpp": [
+       "/Ob1"
++    ],
++    "startup_screen_radio_child_insert.cpp": [
++      "/Ob1"
++    ],
++    "startup_screen_radio_child_node.cpp": [
++      "/GX",
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

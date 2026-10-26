@@ -1,0 +1,149 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 445dc6b..3fc022d 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4636,3 +4636,19 @@ typedef char SharedWorldSubsystem4c_messages_d4Offset[(offsetof(WorldSubsystem4c
+ typedef char SharedWorldSubsystem44_indices_00Offset[(offsetof(WorldSubsystem44, indices_00) == 0x0) ? 1 : -1];
+ typedef char SharedWorldSubsystem44_records_28Offset[(offsetof(WorldSubsystem44, records_28) == 0x28) ? 1 : -1];
+ typedef char SharedWorldSubsystem44_offset_60Offset[(offsetof(WorldSubsystem44, offset_60) == 0x60) ? 1 : -1];
++
++#include "startup_screen_modes.h"
++
++typedef char SharedScreenModeSurfaceNodeSize[(sizeof(ScreenModeSurfaceNode) == 0xc) ? 1 : -1];
++typedef char SharedScreenModeNodeListSize[(sizeof(ScreenModeNodeList) == 0x4) ? 1 : -1];
++typedef char SharedScreenMode2ControllerSize[(sizeof(ScreenMode2Controller) == 0x10) ? 1 : -1];
++typedef char SharedScreenMode2Controller_elapsed_08Offset[(offsetof(ScreenMode2Controller, elapsed_08) == 0x8) ? 1 : -1];
++typedef char SharedScreenMode2Controller_list_0cOffset[(offsetof(ScreenMode2Controller, list_0c) == 0xc) ? 1 : -1];
++
++#include "startup_screen_manager.h"
++
++typedef char SharedScreenManager_word_54Offset[(offsetof(ScreenManager, word_54) == 0x54) ? 1 : -1];
++
++#include "startup_screen_manager.h"
++
++typedef char SharedScreenManager_word_148Offset[(offsetof(ScreenManager, word_148) == 0x148) ? 1 : -1];
+diff --git a/src/startup_game_won.h b/src/startup_game_won.h
+index 91a2b67..5f470be 100644
+--- a/src/startup_game_won.h
++++ b/src/startup_game_won.h
+@@ -54,4 +54,6 @@ struct GameWonController : ControllerState
+     virtual void ControllerSlot24();                       // 0x00437d10.
+ };
+ 
++static const unsigned int game_won_node_bytes = (sizeof(GameWonListNode) + 7u) & ~7u;
++
+ #endif
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 1fa413f..177d9c8 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -110,6 +110,8 @@ struct ScreenDialogResource
+ 
+     void DrawBuilding(const ScreenWorldPosition* position, unsigned int width, unsigned int height, unsigned char invalid); // 0x00413250.
+ 
++    int CurrentFrameValue(); // 0x00412b00.
++
+     ScreenDialogResource();
+ 
+     // Actual 0x00412ae0 ownership body is a separate source dependency.
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 4e4a1dd..693a350 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -86,6 +86,7 @@ struct ScreenRequestGamePrefix
+ // meanings remain unqualified; mode values are retained as descriptive words.
+ struct ScreenManager
+ {
++    void UpdateTrackedEntity(); // 0x004b2080.
+     void SetFeatureAvailability(unsigned char key, bool enabled);
+     unsigned char IsPointerOverCurrentScreen();                                                                          // 0x004b21a0.
+     void SetInputEnabled(unsigned char enabled);                                                                         // 0x004aedd0.
+@@ -117,7 +118,8 @@ struct ScreenManager
+     ScreenRequestRenderer* renderer;
+     ScreenFontData* fonts_04[10];
+     ScreenFontRenderer* fonts_2c[10];
+-    unsigned char unknown_54[0x24];
++    unsigned int word_54;
++    unsigned char unknown_58[0x20];
+     unsigned int word_78;
+     unsigned char unknown_7c[0x0c];
+     ScreenChildLink* items_head;
+@@ -161,7 +163,8 @@ struct ScreenManager
+     ScreenLoadPanel13c* panel_13c;
+     unsigned char unknown_140[4];
+     unsigned char byte_144;
+-    unsigned char unknown_145[7];
++    unsigned char unknown_145[3];
++    int word_148;
+     int layout_x_14c;
+     int layout_y_150;
+     int layout_right_154;
+diff --git a/src/startup_screen_mode_list.h b/src/startup_screen_mode_list.h
+new file mode 100644
+index 0000000..b23ec18
+--- /dev/null
++++ b/src/startup_screen_mode_list.h
+@@ -0,0 +1,26 @@
++#ifndef STARTUP_SCREEN_MODE_LIST_H
++#define STARTUP_SCREEN_MODE_LIST_H
++
++#include "startup_list.h"
++
++struct ScreenModeSurfaceNode : CircularListNode
++{
++    int surface;
++};
++static const unsigned int screen_mode_surface_slot_bytes = (sizeof(ScreenModeSurfaceNode) + 7u) & ~7u;
++
++struct ScreenModePoolAllocator
++{
++    ScreenModePoolAllocator();
++    ~ScreenModePoolAllocator();
++};
++
++struct ScreenModeNodeList : ScreenModePoolAllocator
++{
++    CircularListNode* head;
++    CircularListIterator Insert(CircularListIterator position, const int& surface);
++    ~ScreenModeNodeList();
++    explicit ScreenModeNodeList(const ScreenModePoolAllocator& = ScreenModePoolAllocator());
++};
++
++#endif
+diff --git a/src/startup_screen_modes.h b/src/startup_screen_modes.h
+index d896b09..4b3776f 100644
+--- a/src/startup_screen_modes.h
++++ b/src/startup_screen_modes.h
+@@ -3,6 +3,7 @@
+ 
+ #include "startup_screen_mode_controller.h"
+ #include "startup_screen_renderer.h"
++#include "startup_screen_mode_list.h"
+ 
+ // VTABLE: BEACHLIFE 0x004f4548
+ struct ScreenMode6Controller : ScreenModeController
+@@ -230,4 +231,24 @@ struct ScreenMode8Controller : ScreenModeController
+     ScreenPoint tile_20;
+ };
+ 
++struct ScreenMode2Controller : ScreenModeController
++{
++    virtual ~ScreenMode2Controller();
++    explicit ScreenMode2Controller(ScreenManager* owner); // 0x004a61d0, 16 bytes.
++    void Enter();
++    void Exit();
++    void Update(float elapsed);
++    void RenderScreens();
++    void RenderPointer();
++    unsigned char HandleThreeWords(unsigned int word0, unsigned int word1, unsigned int word2);
++    unsigned char HandleFourWords(
++        unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
++
++    void SaveCapture(int surface); // 0x004a6c20.
++    void Capture(int surface);     // 0x004a64e0.
++
++    float elapsed_08;
++    ScreenModeNodeList list_0c;
++};
++
+ #endif

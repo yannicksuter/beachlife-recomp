@@ -1,0 +1,118 @@
+Reconstruct the complete RadioItem flag02 setter with a borrowed matching receiver.
+
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 45f498554e3ed14508eca57d5971b278d7232cd2..320748f09398339c68fe431637ffaa2152c6d57d 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1062,3 +1062,33 @@
+     game->SetByteA4(value);
+     fixture_game_mode_completed = 1;
+ }
++
++#include "startup_screen_radio_item.h"
++
++typedef char RadioFlag02BaseSize[(sizeof(ScreenItem) == 0x44) ? 1 : -1];
++typedef char RadioFlag02Size[(sizeof(ScreenRadioItem) == 0x58) ? 1 : -1];
++typedef char RadioFlag02FlagsOffset[(offsetof(ScreenRadioItem, flags_44) == 0x44) ? 1 : -1];
++typedef char RadioFlag02ValueOffset[(offsetof(ScreenRadioItem, value_48) == 0x48) ? 1 : -1];
++typedef char RadioFlag02ResourceOffset[(offsetof(ScreenRadioItem, resource_4c) == 0x4c) ? 1 : -1];
++typedef char RadioFlag02NameOffset[(offsetof(ScreenRadioItem, owned_name_50) == 0x50) ? 1 : -1];
++typedef char RadioFlag02WordOffset[(offsetof(ScreenRadioItem, word_54) == 0x54) ? 1 : -1];
++typedef char RadioFlag02PreparedOffset[(offsetof(ScreenRadioItem, preparation_flag) == 0x43) ? 1 : -1];
++
++ScreenRadioItem* volatile fixture_radio_flag02_owner;
++ScreenItem* volatile fixture_radio_flag02_base;
++volatile unsigned int fixture_radio_flag02_before;
++volatile unsigned int fixture_radio_flag02_after;
++volatile unsigned char fixture_radio_flag02_prepared;
++
++// Compile/link retention only. A nonnull live genuine RadioItem is a borrowed
++// precondition; this helper constructs nothing and never writes any vptr.
++// The helper and its comparison-only linked image must never be executed.
++extern "C" __declspec(dllexport) void FixtureRadioFlag02(ScreenRadioItem* item)
++{
++    fixture_radio_flag02_owner = item;
++    fixture_radio_flag02_base = item;
++    fixture_radio_flag02_before = item->flags_44;
++    item->SetFlag02();
++    fixture_radio_flag02_after = item->flags_44;
++    fixture_radio_flag02_prepared = item->preparation_flag;
++}
+diff --git a/metadata.csv b/metadata.csv
+index 364e12e470f61ce5952691c88382302fd425967a..1965521ab8d5a63c35ac5bf4712d01f9d85b6e49 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -85,3 +85,4 @@
+ 0x0057e4b4,string,15,
+ 0x004a32e0,function,45,?MenuPlaySandbox@@YAXI@Z
+ 0x004e4000,function,243,?LoadScenarioProgress@ScreenRequestGamePrefix@@QAEXXZ
++0x004c6a40,function,22,?SetFlag02@ScreenRadioItem@@QAEXXZ
+diff --git a/src/startup_screen_radio_item.h b/src/startup_screen_radio_item.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..3715c0487bf5b71d4ec479117bbc900058d36794
+--- /dev/null
++++ b/src/startup_screen_radio_item.h
+@@ -0,0 +1,28 @@
++#ifndef STARTUP_SCREEN_RADIO_ITEM_H
++#define STARTUP_SCREEN_RADIO_ITEM_H
++
++#include "startup_screen_item.h"
++
++struct ScreenDialogResource;
++
++// Matching-only borrowed-receiver projection: flags_44, x86 size 0x58 and
++// inherited slot18 are the only class ABI used here. The current matching base
++// stays unchanged. Unused derived overrides are intentionally omitted; this is
++// not the complete 21-slot RadioItem table or a constructed/native owner.
++struct ScreenRadioItem : ScreenItem
++{
++    unsigned int flags_44;
++    int value_48;
++    ScreenDialogResource* resource_4c;
++    char* owned_name_50;
++    unsigned int word_54;
++
++    // Genuine declarations only; neither lifetime method is defined or used.
++    ScreenRadioItem(ScreenRectangle initial, const char* resource_name,
++        const char* name, unsigned int word54, int value);
++    ~ScreenRadioItem();
++
++    void SetFlag02();
++};
++
++#endif
+diff --git a/src/startup_screen_radio_item_set_flag02.cpp b/src/startup_screen_radio_item_set_flag02.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..299eb3daca352c8ddd34947b5959983553b39abe
+--- /dev/null
++++ b/src/startup_screen_radio_item_set_flag02.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_radio_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c6a40
++void ScreenRadioItem::SetFlag02()
++{
++    unsigned int flags = flags_44;
++    if ((flags & 2) == 0)
++    {
++        flags_44 = (flags & ~4u) | 2;
++        MarkPrepared();
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index c1ce8db6073d1b9180920cd4a713ccedd0baee2b..520af3de83421df212fdff8f816b0ec2c5358f25 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -537,6 +537,12 @@
+       "address": "0x004e3db0",
+       "size": 18,
+       "name": "ScreenRequestGamePrefix::SetByteA4"
++    },
++    {
++      "address": "0x004c6a40",
++      "size": 22,
++      "name": "ScreenRadioItem::SetFlag02",
++      "name_status": "descriptive real kind21 helper; borrowed x86 prefix and slot18 only"
+     }
+   ],
+   "library_functions": [

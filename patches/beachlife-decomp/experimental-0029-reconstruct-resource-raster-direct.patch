@@ -1,0 +1,169 @@
+diff --git a/src/startup_resource_rasters.h b/src/startup_resource_rasters.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_rasters.h
+@@ -0,0 +1,10 @@
++#ifndef STARTUP_RESOURCE_RASTERS_H
++#define STARTUP_RESOURCE_RASTERS_H
++
++// Actual 0x004018d0 cdecl: twelve argument words and RET0. The existing
++// surface address has unsigned-short storage; direct pixels occupy four bytes.
++void ResourceRaster1Direct(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom);
++
++#endif
+diff --git a/src/startup_resource_raster1_direct.cpp b/src/startup_resource_raster1_direct.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_resource_raster1_direct.cpp
+@@ -0,0 +1,149 @@
++#include "startup_resource_rasters.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004018d0
++void ResourceRaster1Direct(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom)
++{
++    unsigned char* row = reinterpret_cast<unsigned char*>(destination) + y * static_cast<int>(stride) * 4;
++
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        if (height <= 0)
++            return;
++        row += x * 4;
++        do
++        {
++            unsigned char* output = row;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = static_cast<signed char>(*source++);
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet = 0;
++                    do
++                    {
++                        unsigned int pixel = static_cast<unsigned int>(palette[*source++]) - 0x10000u;
++                        memcpy(output, &pixel, sizeof(pixel));
++                        output += 4;
++                    } while (--count != 0);
++                }
++                column -= packet;
++                output -= static_cast<int>(packet) * 4;
++            }
++            row += static_cast<int>(stride) * 4;
++        } while (--height != 0);
++        return;
++    }
++
++    if (left > 0)
++    {
++        for (int rows = top; rows > 0; --rows)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                int packet = static_cast<signed char>(*source++);
++                if (packet > 0)
++                {
++                    column += packet;
++                    source += packet;
++                }
++                else
++                    column -= packet;
++            }
++        }
++
++        int rows = bottom - top;
++        if (rows <= 0)
++            return;
++        row += x * 4;
++        do
++        {
++            unsigned char* output = row;
++            int remaining_left = left;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = static_cast<signed char>(*source++);
++                if (packet > 0)
++                {
++                    int count = packet;
++                    source += count;
++                    column += count;
++                    packet = 0;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            --remaining_left;
++                    } while (--count != 0);
++                }
++                packet = static_cast<signed char>(-packet);
++                while (remaining_left != 0 && packet != 0)
++                {
++                    --remaining_left;
++                    ++column;
++                    --packet;
++                }
++                column += packet;
++                output += static_cast<int>(packet) * 4;
++            }
++            row += static_cast<int>(stride) * 4;
++        } while (--rows != 0);
++        return;
++    }
++
++    for (int rows = top; rows > 0; --rows)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            int packet = static_cast<signed char>(*source++);
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
++            else
++                column -= packet;
++        }
++    }
++
++    int rows = bottom - top;
++    if (rows <= 0)
++        return;
++    row += x * 4;
++    do
++    {
++        unsigned char* output = row;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = static_cast<signed char>(*source++);
++            if (packet > 0)
++            {
++                int count = packet;
++                packet = 0;
++                do
++                {
++                    if (column < right)
++                    {
++                        unsigned int pixel = static_cast<unsigned int>(palette[*source]) - 0x10000u;
++                        memcpy(output, &pixel, sizeof(pixel));
++                        output += 4;
++                    }
++                    ++source;
++                    ++column;
++                } while (--count != 0);
++            }
++            if (column < right)
++                output -= static_cast<int>(packet) * 4;
++            column -= packet;
++        }
++        row += static_cast<int>(stride) * 4;
++    } while (--rows != 0);
++}

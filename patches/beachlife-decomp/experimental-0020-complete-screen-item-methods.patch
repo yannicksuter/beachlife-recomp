@@ -1,0 +1,416 @@
+diff --git a/src/startup_screen_frame_item.h b/src/startup_screen_frame_item.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_frame_item.h
+@@ -0,0 +1,33 @@
++#ifndef STARTUP_SCREEN_FRAME_ITEM_H
++#define STARTUP_SCREEN_FRAME_ITEM_H
++
++#include "startup_screen_item.h"
++#include "startup_screen_children.h"
++
++// Data refinement of D222's actual 0x50-byte x86 Frame prefix. Every differing
++// entry in its observed 21-slot table is declared; the actual bodies/lifetime
++// remain dependencies before a constructed native object can be qualified.
++// VTABLE: BEACHLIFE 0x004f4b60
++struct ScreenFrameItem : ScreenItem
++{
++    unsigned int word_44;
++    unsigned int word_48;
++    ScreenChildRing children;
++
++    // Real 486-byte constructor at 0x004c73d0, explicitly unresolved here.
++    ScreenFrameItem(ScreenRectangle initial, unsigned int value);
++    ~ScreenFrameItem() override;
++    void Unresolved04(float elapsed) override;
++    void Unresolved0c() override;
++    void Unresolved10(ScreenItem* item) override;
++    void MarkPrepared() override;
++    void Unresolved1c() override;
++    void Unresolved24(unsigned char enabled) override;
++    bool TestRectangle(int x, int y) override;
++    bool HandleTimedCoordinates(int x, int y, int value) override;
++    bool HandleTimedEvent(int x, int y, int value) override;
++
++    void SetRectangle(const ScreenRectangle& bounds);
++};
++
++#endif
+diff --git a/src/startup_screen_frame_rectangle.cpp b/src/startup_screen_frame_rectangle.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_frame_rectangle.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_frame_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c7840
++void ScreenFrameItem::SetRectangle(const ScreenRectangle& bounds)
++{
++    rectangle = bounds;
++}
+diff --git a/src/startup_screen_item.h b/src/startup_screen_item.h
+--- a/src/startup_screen_item.h
++++ b/src/startup_screen_item.h
+@@ -9,27 +9,36 @@
+     int bottom;
+ };
+ 
+-// Observed common prefix through preparation_flag; subtype tails differ.
+-// The complete original class, integer discriminator type and names are unknown.
+-// Unresolved slots reserve observed ordinals, not recovered callable signatures
+-// or a claim that those original methods were pure. Later slots remain unknown.
++// Observed common prefix and 21 base slots; subtype tails and later slots differ.
++// Original names, complete class and ignored-argument semantic types are unknown.
+ // VTABLE: BEACHLIFE 0x004f462c
+ struct ScreenItem
+ {
+     virtual ~ScreenItem();
+-    virtual void Unresolved04() = 0;
+-    virtual void Unresolved08() = 0;
+-    virtual void Unresolved0c() = 0;
+-    // The one-item argument is observed; the original implementation is unresolved.
+-    virtual void Unresolved10(ScreenItem* item) = 0;
++    virtual void Unresolved04(float elapsed);
++    virtual void Unresolved08();
++    virtual void Unresolved0c();
++    // Actual empty base method shares its original RET4 body with slot04.
++    virtual void Unresolved10(ScreenItem* item);
+     virtual void ApplyPosition(int dx, int dy);
+     virtual void MarkPrepared();
+-    virtual void Unresolved1c() = 0;
+-    virtual void Unresolved20() = 0;
++    virtual void Unresolved1c();
++    virtual unsigned char Unresolved20();
+     // Observed low-byte argument at original slot+0x24.
+     virtual void Unresolved24(unsigned char enabled);
+-    virtual void Unresolved28() = 0;
++    virtual void Unresolved28();
+     virtual void MoveRectangle(int dx, int dy);
++    virtual unsigned char ReadState40();
++    virtual bool TestRectangle(int x, int y);
++    virtual bool HandleInput38(int x, int y, int value);
++    // Actual targets 0x004adb00 and 0x004adc30; real source closure remains pending.
++    virtual bool HandleTimedCoordinates(int x, int y, int value);
++    virtual bool HandleTimedEvent(int x, int y, int value);
++    virtual unsigned char ReadState41();
++    virtual unsigned char ReadState42();
++    // One ignored argument word; its original semantic type is unresolved.
++    virtual void Unresolved4c(unsigned int value);
++    virtual void SetOwnedText(const char* text);
+ 
+     ScreenRectangle rectangle;
+     ScreenRectangle saved_rectangle;
+diff --git a/src/startup_screen_item_defaults.cpp b/src/startup_screen_item_defaults.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_item_defaults.cpp
+@@ -0,0 +1,41 @@
++#include "startup_screen_item.h"
++
++// FUNCTION: BEACHLIFE 0x0049dbe0
++void ScreenItem::Unresolved04(float)
++{
++}
++
++// Same original RET4 address 0x0049dbe0, with the observed slot10 pointer argument.
++void ScreenItem::Unresolved10(ScreenItem*)
++{
++}
++
++// FUNCTION: BEACHLIFE 0x00437d10
++void ScreenItem::Unresolved08()
++{
++}
++
++// Same original RET0 address 0x00437d10, distinct virtual slots.
++void ScreenItem::Unresolved1c()
++{
++}
++
++void ScreenItem::Unresolved28()
++{
++}
++
++// FUNCTION: BEACHLIFE 0x004d3890
++void ScreenItem::Unresolved0c()
++{
++}
++
++// FUNCTION: BEACHLIFE 0x004a70a0
++bool ScreenItem::HandleInput38(int, int, int)
++{
++    return false;
++}
++
++// FUNCTION: BEACHLIFE 0x004a1160
++void ScreenItem::Unresolved4c(unsigned int)
++{
++}
+diff --git a/src/startup_screen_item_hit.cpp b/src/startup_screen_item_hit.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_item_hit.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_item.h"
++
++// FUNCTION: BEACHLIFE 0x004adad0
++bool ScreenItem::TestRectangle(int x, int y)
++{
++    if (x > rectangle.right || x < rectangle.left || y > rectangle.bottom || y < rectangle.top)
++    {
++        return false;
++    }
++    state_40 = 1;
++    return true;
++}
+diff --git a/src/startup_screen_item_state.cpp b/src/startup_screen_item_state.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_item_state.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_item.h"
++
++// FUNCTION: BEACHLIFE 0x004a1150
++unsigned char ScreenItem::Unresolved20()
++{
++    return state_30;
++}
++
++// FUNCTION: BEACHLIFE 0x004adac0
++unsigned char ScreenItem::ReadState40()
++{
++    return state_40;
++}
++
++// FUNCTION: BEACHLIFE 0x004adcc0
++unsigned char ScreenItem::ReadState41()
++{
++    return state_41;
++}
++
++// FUNCTION: BEACHLIFE 0x004adcd0
++unsigned char ScreenItem::ReadState42()
++{
++    return state_42;
++}
+diff --git a/src/startup_screen_item_text.cpp b/src/startup_screen_item_text.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_item_text.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_item.h"
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004adcf0
++void ScreenItem::SetOwnedText(const char* text)
++{
++    owned_text = static_cast<char*>(::operator new(strlen(text) + 1));
++    strcpy(owned_text, text);
++}
+diff --git a/src/startup_screen_item_timed_coordinates.cpp b/src/startup_screen_item_timed_coordinates.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_item_timed_coordinates.cpp
+@@ -0,0 +1,58 @@
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++#include "startup_frame_clock.h"
++#include "startup_input_motion.h"
++
++// FUNCTION: BEACHLIFE 0x004adb00
++bool ScreenItem::HandleTimedCoordinates(int x, int y, int value)
++{
++    if (owned_text)
++    {
++        float delta = startup_frame_clock->delta_seconds;
++        if (TestRectangle(x, y))
++        {
++            float threshold = screen_manager->ReadItemThreshold();
++            if (!(elapsed_24 >= threshold))
++            {
++                if (x == last_x && y == last_y)
++                {
++                    elapsed_24 = delta + elapsed_24;
++                }
++                else
++                {
++                    elapsed_24 = 0.0f;
++                }
++            }
++            if ((value == 1 || value == 2 || value == 3) && elapsed_24 >= threshold)
++            {
++                screen_manager->ClearItemReference(this);
++                elapsed_24 = 7.0f;
++            }
++            if (elapsed_24 >= 7.0f)
++            {
++                screen_manager->ClearItemReference(this);
++                last_y = y;
++                last_x = x;
++                return false;
++            }
++            if (elapsed_24 >= threshold)
++            {
++                const char* text = owned_text;
++                screen_manager->ShowItemText(this, x, y, text);
++                float elapsed = delta + elapsed_24;
++                last_y = y;
++                last_x = x;
++                elapsed_24 = elapsed;
++                return false;
++            }
++        }
++        else
++        {
++            screen_manager->ClearItemReference(this);
++            elapsed_24 = 0.0f;
++        }
++    }
++    last_y = y;
++    last_x = x;
++    return false;
++}
+diff --git a/src/startup_screen_item_timed_event.cpp b/src/startup_screen_item_timed_event.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_item_timed_event.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_item.h"
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x004f4628
++const float screen_item_event_limit = 7.0f;
++
++// FUNCTION: BEACHLIFE 0x004adc30
++bool ScreenItem::HandleTimedEvent(int, int, int value)
++{
++    if (owned_text && ReadState40())
++    {
++        float threshold = screen_manager->ReadItemThreshold();
++        if ((value == 1 || value == 2) && !(threshold > elapsed_24))
++        {
++            screen_manager->ClearItemReference(this);
++            elapsed_24 = screen_item_event_limit;
++        }
++    }
++    return false;
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -39,7 +39,9 @@
+     float value_138;
+ 
+     void ClearRegistration();
+     void ClearItemReference(ScreenItem* item);
++    float ReadItemThreshold();
++    void ShowItemText(ScreenItem* item, int x, int y, const char* text);
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+     void SavePlacement(const ScreenRectangle& rectangle, int group);
+ };
+diff --git a/src/startup_screen_manager_auxiliary.h b/src/startup_screen_manager_auxiliary.h
+--- a/src/startup_screen_manager_auxiliary.h
++++ b/src/startup_screen_manager_auxiliary.h
+@@ -20,6 +20,7 @@
+ 
+     void ClearState();
+     void SetText(const char* text);
++    void Position(int x, int y);
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_manager_auxiliary_position.cpp b/src/startup_screen_manager_auxiliary_position.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_manager_auxiliary_position.cpp
+@@ -0,0 +1,34 @@
++#include "startup_screen_manager_auxiliary.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004c12a0
++void ScreenManagerAuxiliaryState::Position(int x, int y)
++{
++    if (!state_04)
++    {
++        y_20 = y;
++        state_04 = 1;
++        x_1c = x;
++        ScreenRequestRenderer* renderer = screen_request_renderer;
++        unsigned int screen_height = renderer->height;
++        unsigned int height = height_18;
++        unsigned int screen_width = renderer->width;
++        y_20 = y + 25;
++        if (static_cast<unsigned int>(y_20) + height > screen_height)
++        {
++            y_20 = y - static_cast<int>(height) - 2;
++        }
++        unsigned int width = width_14;
++        if (static_cast<unsigned int>(x) + width > screen_width)
++        {
++            x_1c = static_cast<int>(screen_width - width);
++        }
++        ScreenRectangle bounds;
++        bounds.left = x_1c;
++        bounds.top = y_20;
++        bounds.right = x_1c + static_cast<int>(width);
++        bounds.bottom = y_20 + static_cast<int>(height);
++        frame_24->SetRectangle(bounds);
++    }
++}
+diff --git a/src/startup_screen_manager_text.cpp b/src/startup_screen_manager_text.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_manager_text.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_manager_auxiliary.h"
++
++// FUNCTION: BEACHLIFE 0x004af670
++void ScreenManager::ShowItemText(ScreenItem* item, int x, int y, const char* text)
++{
++    item_134 = item;
++    auxiliary_130->SetText(text);
++    auxiliary_130->Position(x, y);
++}
+diff --git a/src/startup_screen_manager_threshold.cpp b/src/startup_screen_manager_threshold.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_manager_threshold.cpp
+@@ -0,0 +1,17 @@
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x004f4688
++const float screen_item_positive_threshold = 0.05f;
++
++// GLOBAL: BEACHLIFE 0x004f4680
++const float screen_item_other_threshold = 1.5f;
++
++// FUNCTION: BEACHLIFE 0x004af6f0
++float ScreenManager::ReadItemThreshold()
++{
++    if (value_138 > 0.0f)
++    {
++        return screen_item_positive_threshold;
++    }
++    return screen_item_other_threshold;
++}
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -58,12 +58,12 @@
+         for (unsigned int j = 0; j != sizeof(unknown_31); ++j)
+             unknown_31[j] = 0;
+     }
+-    virtual void Unresolved04() { _purecall(); }
++    virtual void Unresolved04(float) { _purecall(); }
+     virtual void Unresolved08() { _purecall(); }
+     virtual void Unresolved0c() { _purecall(); }
+     virtual void Unresolved10(ScreenItem*) { _purecall(); }
+     virtual void Unresolved1c() { _purecall(); }
+-    virtual void Unresolved20() { _purecall(); }
++    virtual unsigned char Unresolved20() { return static_cast<unsigned char>(_purecall()); }
+     virtual void Unresolved24(unsigned char) { _purecall(); }
+     virtual void Unresolved28() { _purecall(); }
+ };

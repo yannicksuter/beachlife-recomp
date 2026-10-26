@@ -1,0 +1,222 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 4ba3f0f..72cd60b 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -698,8 +698,6 @@ extern "C" __declspec(dllexport) void FixtureTiffPaletteByte(unsigned short valu
+     fixture_tiff_palette_completed = 1;
+ }
+ 
+-InputState* volatile fixture_input_receiver;
+-
+ extern "C" void fixture_entry()
+ {
+     FixtureTiffPaletteByte(0x7fff);
+@@ -759,16 +757,16 @@ extern "C" void fixture_entry()
+     fixture_selection.SelectPendingController(1);
+     WindowActivationTarget fixture_activation = { 0 };
+     fixture_activation.Deactivate();
+-    InputState* fixture_input = fixture_input_receiver;
+-    fixture_config_offset = fixture_input->IsStateTwo(0);
+-    fixture_config_offset = fixture_input->IsStateOne(0);
+-    fixture_input->ResetTransition();
+-    fixture_input->SetCursorIdentifier(1, 0);
+-    fixture_input->ApplyCurrentCursor();
+-    fixture_config_offset = fixture_input->ReadValue134();
+-    fixture_config_offset = fixture_input->ReadValue138();
+-    fixture_config_offset = fixture_input->ReadKeyboardState();
+-    fixture_input->ReadFirstButtonTransition();
++    InputState fixture_input = { 0 };
++    fixture_config_offset = fixture_input.IsStateTwo(0);
++    fixture_config_offset = fixture_input.IsStateOne(0);
++    fixture_input.ResetTransition();
++    fixture_input.SetCursorIdentifier(1, 0);
++    fixture_input.ApplyCurrentCursor();
++    fixture_config_offset = fixture_input.ReadValue134();
++    fixture_config_offset = fixture_input.ReadValue138();
++    fixture_config_offset = fixture_input.ReadKeyboardState();
++    fixture_input.ReadFirstButtonTransition();
+     ScreenPlacementStore fixture_placement = { 0 };
+     CircularListNode fixture_placement_end = { 0 };
+     fixture_placement_end.next = &fixture_placement_end;
+@@ -823,7 +821,7 @@ extern "C" void fixture_entry()
+     fixture_dialog_position = dialog->rectangle.left;
+     FrameClock fixture_frame_clock(0);
+     fixture_frame_clock.Update(1000);
+-    startup_input_state = fixture_input;
++    startup_input_state = &fixture_input;
+     startup_frame_clock = &fixture_frame_clock;
+     InputMotionState fixture_input_motion = { 0 };
+     fixture_config_offset = fixture_input_motion.Update();
+@@ -3298,10 +3296,3 @@ extern "C" __declspec(dllexport) StartupMovie* FixtureMatch4_54(void* memory, vo
+ {
+     return new (memory) StartupMovie(p0, p1, p2, p3, p4, p5, p6);
+ }
+-
+-#include "startup_input_state.h"
+-// Borrowed typed receiver; compile/link retention only, never executed.
+-extern "C" __declspec(dllexport) InputState* FixtureMatch4_55(void* memory, int p0, int p1, unsigned char p2)
+-{
+-    return new (memory) InputState(p0, p1, p2);
+-}
+diff --git b/metadata.csv a/metadata.csv
+index 33ce7c9..55e3c43 100644
+--- b/metadata.csv
++++ a/metadata.csv
+@@ -380,4 +380,3 @@ address,type,size,symbol
+ 0x00416ce0,function,82,??0ScreenDialogResourceFrame@@QAE@XZ
+ 0x004ed1c0,function,145,?Initialize@StartupMovie@@QAEXXZ
+ 0x004ed0d0,function,82,??0StartupMovie@@QAE@PAXHHHHEE@Z
+-0x004ea940,function,83,??0InputState@@QAE@HHE@Z
+diff --git b/src/startup_input_constructor.cpp a/src/startup_input_constructor.cpp
+deleted file mode 100644
+index 5f05d0c..0000000
+--- b/src/startup_input_constructor.cpp
++++ /dev/null
+@@ -1,21 +0,0 @@
+-#include "startup_input_motion.h"
+-#include "startup_input_state.h"
+-#include <string.h>
+-
+-// FUNCTION: BEACHLIFE 0x004ea940
+-InputState::InputState(int width, int height, unsigned char windowed)
+-{
+-    startup_input_state = this;
+-    width_14 = width;
+-    height_18 = height;
+-    windowed_1c = windowed;
+-    direct_input = 0;
+-    keyboard_device = 0;
+-    mouse_device = 0;
+-    unknown_120 = 0;
+-    unknown_124 = 0;
+-    delta_x_128 = 0;
+-    delta_y_12c = 0;
+-    window_handle = 0;
+-    memset(states, 0, sizeof(states));
+-}
+diff --git b/src/startup_input_state.h a/src/startup_input_state.h
+index 2c89f17..844c919 100644
+--- b/src/startup_input_state.h
++++ a/src/startup_input_state.h
+@@ -1,90 +1,50 @@
+ #ifndef STARTUP_INPUT_STATE_H
+ #define STARTUP_INPUT_STATE_H
+ 
+-struct IDirectInput8A;
+ struct IDirectInputDeviceA;
+ 
+-// Observed 20-byte buffered event record (DirectInput 8 object-data layout);
+-// the pinned VC6 SDK declares a shorter 16-byte record.
+-struct InputMouseEvent
+-{
+-    unsigned int offset;
+-    unsigned int data;
+-    unsigned int time_stamp;
+-    unsigned int sequence;
+-    unsigned int app_data;
+-};
+-
+-// Descriptive observed class; Game requests0x614 original x86 bytes.
+-// Constructor4ea940 initializes only the explicitly stored fields and the
+-// 256 state bytes at+1d; native layout and full device lifetime remain separate.
++// Descriptive observed prefix only; the original class and complete size are
++// unknown. The state producer accesses 256 bytes beginning at offset 0x1d.
+ struct InputState
+ {
+-    IDirectInput8A* direct_input;
++    unsigned char unknown_00[4];
+     // Shared public device ABI prefix; creation requests IDirectInput8A.
+     IDirectInputDeviceA* keyboard_device;
+-    IDirectInputDeviceA* mouse_device;
+-    void* window_handle; // HWND of the game window.
++    unsigned char unknown_08[8];
+     void* resource_instance;
+-    int width_14;
+-    int height_18;
+-    unsigned char windowed_1c;
++    unsigned char unknown_14[9];
+     unsigned char states[256];
+     unsigned char unknown_11d[3];
+     unsigned int unknown_120;
+     unsigned int unknown_124;
+-    int delta_x_128;
++    unsigned char unknown_128[4];
+     int delta_y_12c;
+-    int wheel_130;
++    unsigned char unknown_130[4];
+     int unknown_134;
+     int unknown_138;
+-    unsigned char unknown_13c[4];
+-    unsigned char wheel_present_140;
++    unsigned char unknown_13c[5];
+     unsigned char system_cursor_141;
+     unsigned char unknown_142[2];
+     int cursor_identifier;
+-    unsigned char relative_148;
+-    unsigned char unknown_149[3];
+-    int clip_rectangle_14c[4];
+-    InputMouseEvent mouse_events[60];
+-    unsigned long mouse_event_count;
++    unsigned char unknown_148[0x4c8];
+     unsigned char unknown_610;
+     unsigned char unknown_611;
+ 
+-    // Actual 0x004ea940, RET12; no API/device creation or local EH.
+-    InputState(int width, int height, unsigned char windowed);
+-    void SetScreenSize(int width, int height); // 0x004ea9a0.
+-    ~InputState();                             // Actual 0x004ea9c0; real cleanup is a separate source gate.
+-
+     unsigned int ReadFirstButtonTransition() const;
+-    unsigned int ReadSecondButtonTransition() const; // 0x004eab00.
+-    int ReadWheel() const;                           // 0x004eab30.
+-    // Actual 0x004eaa50: DirectInput 8 creation, then keyboard and mouse devices.
+-    bool Initialize(void* instance, void* window);
+-    // Actual 0x004eab60 and 0x004eac60: create keyboard and mouse devices.
+-    unsigned char CreateKeyboard(void* window);
+-    unsigned char CreateMouse(void* window);
+-    // Actual 0x004eb330: stores +0x141 and hides the Windows cursor when zero.
+-    void SetSystemCursor(unsigned char visible);
+-    // Actual 0x004eb0b0: ShowCursor(FALSE) until the display count is negative.
+-    void HideSystemCursor();
+-    void ShowSystemCursor();                     // 0x004eb090.
+-    void SetRelativeMode(unsigned char enabled); // 0x004eb0d0.
+     unsigned char ReadKeyboardState();
+-    // Actual 0x004ead80: buffered mouse events.
+-    unsigned char ReadMouseEvents();
+-    // Actual 0x004eaab0: keyboard then mouse; false when the keyboard read fails.
+-    bool Poll();
+     unsigned char IsStateTwo(int index) const;
+     unsigned char IsStateOne(int index) const;
+     void ResetTransition();
+     void SetCursorIdentifier(int identifier, int unused);
+     void ApplyCurrentCursor();
+-    // Actual 0x004eab20: returns delta_y_12c; body separate.
+     int ReadDeltaY() const;
+-    int ReadDeltaX() const; // 0x004eab10.
++    void SetSystemCursor(unsigned char visible);
++    void HideSystemCursor();
++
+     int ReadValue134() const;
+     int ReadValue138() const;
++    bool Poll();
++    unsigned char ReadMouseEvents();
+ };
+ 
+ #endif
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 374b903..44ec698 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -1844,12 +1844,6 @@
+       "size": 82,
+       "name": "StartupMovie::StartupMovie",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+-    },
+-    {
+-      "address": "0x004ea940",
+-      "size": 83,
+-      "name": "InputState::InputState",
+-      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

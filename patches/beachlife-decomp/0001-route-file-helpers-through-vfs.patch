@@ -1,0 +1,107 @@
+Route reconstructed read-only stdio through the explicit thread-local VFS session.
+
+The native bridge owns mounted sources and file handles. Fixed-width size/result
+conversions preserve VC6's low-32-bit fpos result and unsigned allocation/read
+counts on LP64 hosts. The retail unchecked read behavior, signed BLE loop and
+period terminator remain unchanged. Loader qualification excludes invalid
+allocation/index domains and short BLE reads.
+
+--- a/src/file_size.cpp
++++ b/src/file_size.cpp
+@@ -1,22 +1,24 @@
+-#include <stdio.h>
++#include "runtime/retail_files.h"
++
++namespace files = beachlife::runtime::retail_files;
+ 
+ // Descriptive name; the original symbol and signed return declaration are unknown.
+ // FUNCTION: BEACHLIFE 0x004ec150
+-long GetFileSize(const char* filename)
++std::int32_t GetFileSize(const char* filename)
+ {
+-    FILE* file = fopen(filename, "rb");
++    files::File* file = files::open(filename, "rb");
+     if (!file)
+         return 0;
+-    if (fseek(file, 0, SEEK_END) == 0)
++    if (files::seek(file, 0, files::SeekOrigin::end) == 0)
+     {
+-        fpos_t position;
+-        if (fgetpos(file, &position) == 0)
++        files::Position position;
++        if (files::position(file, &position) == 0)
+         {
+-            long result = (long)position;
+-            fclose(file);
++            std::int32_t result = files::low_position(position);
++            files::close(file);
+             return result;
+         }
+     }
+-    fclose(file);
++    files::close(file);
+     return 0;
+ }
+--- a/src/file_loader.cpp
++++ b/src/file_loader.cpp
+@@ -1,18 +1,20 @@
+-#include <stdio.h>
++#include "runtime/retail_files.h"
+ 
+-long GetFileSize(const char* filename);
++namespace files = beachlife::runtime::retail_files;
++
++std::int32_t GetFileSize(const char* filename);
+ 
+ // Descriptive name; the original symbol and allocation spelling are unknown.
+ // FUNCTION: BEACHLIFE 0x004ec1c0
+ char* LoadFile(const char* filename)
+ {
+-    long size = GetFileSize(filename);
++    std::int32_t size = GetFileSize(filename);
+     if (size)
+     {
+-        char* buffer = new char[size + 1];
+-        FILE* file = fopen(filename, "rb");
+-        fread(buffer, 1, size, file);
+-        fclose(file);
++        char* buffer = new char[static_cast<std::uint32_t>(size) + 1u];
++        files::File* file = files::open(filename, "rb");
++        files::read(buffer, 1, static_cast<std::uint32_t>(size), file);
++        files::close(file);
+         buffer[size] = '.';
+         return buffer;
+     }
+--- a/src/ble_loader.cpp
++++ b/src/ble_loader.cpp
+@@ -1,20 +1,22 @@
+-#include <stdio.h>
++#include "runtime/retail_files.h"
+ 
+-long GetFileSize(const char* filename);
++namespace files = beachlife::runtime::retail_files;
++
++std::int32_t GetFileSize(const char* filename);
+ 
+ // Descriptive name; the original symbol and allocation spelling are unknown.
+ // FUNCTION: BEACHLIFE 0x004ec220
+ char* LoadBleFile(const char* filename)
+ {
+-    long size = GetFileSize(filename);
++    std::int32_t size = GetFileSize(filename);
+     if (size)
+     {
+-        char* buffer = new char[size + 1];
+-        FILE* file = fopen(filename, "rb");
+-        fread(buffer, 1, size, file);
+-        fclose(file);
++        char* buffer = new char[static_cast<std::uint32_t>(size) + 1u];
++        files::File* file = files::open(filename, "rb");
++        files::read(buffer, 1, static_cast<std::uint32_t>(size), file);
++        files::close(file);
+ 
+-        for (int index = 0; index < size; ++index)
++        for (std::int32_t index = 0; index < size; ++index)
+             buffer[index] = ~buffer[index];
+         buffer[size] = '.';
+         return buffer;

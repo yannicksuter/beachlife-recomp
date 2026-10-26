@@ -1,0 +1,289 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -240,8 +240,55 @@
+     }
+ }
+ 
++// Generated comparison-only prefixes; no retail parser/renderer lifetime.
++typedef char gui_rect_renderer_width_offset_check[offsetof(ScreenRequestRenderer, width) == 4 ? 1 : -1];
++typedef char gui_rect_renderer_height_offset_check[offsetof(ScreenRequestRenderer, height) == 8 ? 1 : -1];
++extern "C"
++{
++    char fixture_gui_rectangle_input[] = "C10,20,110,220)";
++    GuiParserState fixture_gui_rectangle_reader = { 0, 0, fixture_gui_rectangle_input };
++    ScreenRequestRenderer fixture_gui_rectangle_renderer = { 0 };
++    volatile int fixture_gui_rectangle_null[4];
++    volatile unsigned int fixture_gui_rectangle_null_cursor;
++    volatile int fixture_gui_rectangle_parent[4];
++    volatile unsigned int fixture_gui_rectangle_parent_cursor;
++
++    // The parent is the real constructed generated subtype below. This image
++    // never executes; all retail helper calls remain their actual sources.
++    void fixture_gui_rectangle_calls(const ScreenItem* parent)
++    {
++        fixture_gui_rectangle_renderer.width = 800;
++        fixture_gui_rectangle_renderer.height = 600;
++        screen_request_renderer = &fixture_gui_rectangle_renderer;
++        ScreenRectangle rectangle;
++        fixture_gui_rectangle_reader.cursor = 0;
++        fixture_gui_rectangle_reader.ReadRectangle(rectangle, 0);
++        fixture_gui_rectangle_null[0] = rectangle.left;
++        fixture_gui_rectangle_null[1] = rectangle.top;
++        fixture_gui_rectangle_null[2] = rectangle.right;
++        fixture_gui_rectangle_null[3] = rectangle.bottom;
++        fixture_gui_rectangle_null_cursor = fixture_gui_rectangle_reader.cursor;
++        fixture_gui_rectangle_reader.cursor = 0;
++        fixture_gui_rectangle_reader.ReadRectangle(rectangle, parent);
++        fixture_gui_rectangle_parent[0] = rectangle.left;
++        fixture_gui_rectangle_parent[1] = rectangle.top;
++        fixture_gui_rectangle_parent[2] = rectangle.right;
++        fixture_gui_rectangle_parent[3] = rectangle.bottom;
++        fixture_gui_rectangle_parent_cursor = fixture_gui_rectangle_reader.cursor;
++        screen_request_renderer = 0;
++    }
++
++    void fixture_gui_rectangle()
++    {
++        ScreenRectangle bounds = { 0, 0, 800, 600 };
++        GeneratedScreenItem parent(bounds);
++        fixture_gui_rectangle_calls(&parent);
++    }
++}
++
+ extern "C" void fixture_entry()
+ {
++    fixture_gui_rectangle();
+     fixture_gui_text();
+     fixture_gui_whitespace();
+     fixture_gui_integer();
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -50,3 +50,6 @@
+ 0x004ab270,function,186,?ReadInteger@GuiParserState@@QAEXAAH_N@Z
+ 0x004ab0f0,function,34,?SkipWhitespace@GuiParserState@@QAEXXZ
+ 0x004ab1d0,function,154,?ReadText@GuiParserState@@QAEXPAD@Z
++0x004aad30,function,950,?ReadRectangle@GuiParserState@@QAEXAAUScreenRectangle@@PBUScreenItem@@@Z
++0x005a88b0,global,4,?screen_request_renderer@@3PAUScreenRequestRenderer@@A
++0x0057f268,string,106,
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -2,6 +2,8 @@
+ #define BEACHLIFE_STARTUP_GUI_PARSER_H
+ 
+ struct ScreenManager;
++struct ScreenRectangle;
++struct ScreenItem;
+ 
+ // Observed parser prefix only. Its complete layout and lifetime are unresolved.
+ struct GuiParserState
+@@ -13,6 +15,7 @@
+     void ReadInteger(int& value, bool consume_delimiter);
+     void SkipWhitespace();
+     void ReadText(char* text);
++    void ReadRectangle(ScreenRectangle& rectangle, const ScreenItem* parent);
+ };
+ 
+ #endif
+diff --git a/src/startup_gui_rectangle.cpp b/src/startup_gui_rectangle.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_gui_rectangle.cpp
+@@ -0,0 +1,168 @@
++#include "startup_gui_parser.h"
++#include "startup_screen_item.h"
++#include "startup_screen_renderer.h"
++
++void StartupFatal(const char* format, ...);
++
++// GLOBAL: BEACHLIFE 0x005a88b0
++ScreenRequestRenderer* screen_request_renderer = 0;
++
++// FUNCTION: BEACHLIFE 0x004aad30
++void GuiParserState::ReadRectangle(ScreenRectangle& rectangle, const ScreenItem* parent)
++{
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    unsigned char flags = 0;
++    while (buffer[cursor] == 'T' || buffer[cursor] == 'B' || buffer[cursor] == 'L' || buffer[cursor] == 'R'
++           || buffer[cursor] == 'S' || buffer[cursor] == 'C' || buffer[cursor] == 'Y')
++    {
++        if (buffer[cursor] == 'T')
++        {
++            flags |= 1;
++        }
++        else if (buffer[cursor] == 'B')
++        {
++            flags |= 2;
++        }
++        else if (buffer[cursor] == 'L')
++        {
++            flags |= 4;
++        }
++        else if (buffer[cursor] == 'R')
++        {
++            flags |= 8;
++        }
++        else if (buffer[cursor] == 'S')
++        {
++            flags |= 16;
++        }
++        else if (buffer[cursor] == 'C')
++        {
++            flags |= 32;
++        }
++        else if (buffer[cursor] == 'Y')
++        {
++            flags |= 64;
++        }
++        ++cursor;
++    }
++
++    rectangle.left = 0;
++    while (buffer[cursor] != ' ' && buffer[cursor] != ',' && buffer[cursor] != ')')
++    {
++        rectangle.left = rectangle.left * 10 + static_cast<signed char>(buffer[cursor]) - '0';
++        ++cursor;
++    }
++    SkipWhitespace();
++    if (flags & 8)
++    {
++        rectangle.left = screen_request_renderer->width - rectangle.left;
++    }
++    if (buffer[cursor] == ',')
++    {
++        ++cursor;
++    }
++
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    rectangle.top = 0;
++    while (buffer[cursor] != ' ' && buffer[cursor] != ',' && buffer[cursor] != ')')
++    {
++        rectangle.top = rectangle.top * 10 + static_cast<signed char>(buffer[cursor]) - '0';
++        ++cursor;
++    }
++    SkipWhitespace();
++    if (buffer[cursor] == ',')
++    {
++        ++cursor;
++    }
++    if (flags & 2)
++    {
++        rectangle.top = screen_request_renderer->height - rectangle.top;
++    }
++
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    rectangle.right = 0;
++    while (buffer[cursor] != ' ' && buffer[cursor] != ',' && buffer[cursor] != ')')
++    {
++        rectangle.right = rectangle.right * 10 + static_cast<signed char>(buffer[cursor]) - '0';
++        ++cursor;
++    }
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (buffer[cursor] == ',')
++    {
++        ++cursor;
++    }
++    if (flags & 8)
++    {
++        rectangle.right = screen_request_renderer->width - rectangle.right;
++    }
++    if (flags & 16)
++    {
++        rectangle.right = screen_request_renderer->width - rectangle.right;
++    }
++
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    rectangle.bottom = 0;
++    while (buffer[cursor] != ' ' && buffer[cursor] != ',' && buffer[cursor] != ')')
++    {
++        rectangle.bottom = rectangle.bottom * 10 + static_cast<signed char>(buffer[cursor]) - '0';
++        ++cursor;
++    }
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (buffer[cursor] == ',')
++    {
++        ++cursor;
++    }
++    if (flags & 2)
++    {
++        rectangle.bottom = screen_request_renderer->height - rectangle.bottom;
++    }
++
++    if (flags & 32)
++    {
++        unsigned int width = rectangle.right - rectangle.left;
++        rectangle.left = (screen_request_renderer->width >> 1) - (width >> 1);
++        rectangle.right = rectangle.left + width;
++    }
++    if (flags & 64)
++    {
++        unsigned int height = rectangle.bottom - rectangle.top;
++        rectangle.top = (screen_request_renderer->height >> 1) - (height >> 1);
++        rectangle.bottom = rectangle.top + height;
++    }
++
++    if (parent)
++    {
++        ScreenRectangle bounds;
++        bounds = parent->GetRectangle();
++        if (bounds.right != bounds.left && bounds.bottom != bounds.top)
++        {
++            rectangle.left += bounds.left;
++            rectangle.top += bounds.top;
++            rectangle.right += bounds.left;
++            rectangle.bottom += bounds.top;
++            if (rectangle.right > bounds.right || rectangle.bottom > bounds.bottom)
++            {
++                StartupFatal("GUIManager::Read_in_bounds - Child object is not in the bounds \r\nof the parent object at file offset - %u", cursor);
++            }
++        }
++    }
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -46,4 +46,7 @@
+     void PositionSurface(int surface, ScreenPoint position);
+ };
+ 
++// Observed renderer pointer published by its constructor; lifetime is unresolved.
++extern ScreenRequestRenderer* screen_request_renderer;
++
+ #endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -466,6 +466,12 @@
+       "size": 154,
+       "name": "GuiParserState::ReadText",
+       "name_status": "descriptive parser prefix and method; original class and declaration unknown"
++    },
++    {
++      "address": "0x004aad30",
++      "size": 950,
++      "name": "GuiParserState::ReadRectangle",
++      "name_status": "descriptive application rectangle reader and observed parser prefix; original class, declaration and complete lifetimes unknown"
+     }
+   ],
+   "library_functions": [

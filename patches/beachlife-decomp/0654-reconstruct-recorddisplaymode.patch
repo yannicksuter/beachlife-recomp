@@ -1,0 +1,92 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index a1706a0..ae75bd4 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3598,3 +3598,10 @@ extern "C" __declspec(dllexport) void FixtureMatch5_24(ScreenManager* receiver)
+ {
+     receiver->ScreenManager::ActivateScreens();
+ }
++
++#include "startup_renderer_display.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) SurfaceResult SURFACE_STDCALL FixtureMatch5_26(SurfaceDescription* p0, void* p1)
++{
++    return RecordDisplayMode(p0, p1);
++}
+diff --git a/metadata.csv b/metadata.csv
+index ec882cf..2a804f5 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -430,3 +430,4 @@ address,type,size,symbol
+ 0x004a0f10,function,116,?Unresolved24@ScreenButtonPrefix@@UAEXE@Z
+ 0x0049ea70,function,118,?Unknown50@GameFileReader@@UAEXPAIH@Z
+ 0x004ae8f0,function,119,?ActivateScreens@ScreenManager@@QAEXXZ
++0x00411ad0,function,121,?RecordDisplayMode@@YGHPAUSurfaceDescription@@PAX@Z
+diff --git a/src/startup_renderer_display.h b/src/startup_renderer_display.h
+new file mode 100644
+index 0000000..c1ea801
+--- /dev/null
++++ b/src/startup_renderer_display.h
+@@ -0,0 +1,13 @@
++#ifndef STARTUP_RENDERER_DISPLAY_H
++#define STARTUP_RENDERER_DISPLAY_H
++
++#include "startup_directdraw_surface.h"
++
++// Actual 0x00411ad0, stdcall/RET8. Four resolution flags in caller-owned storage.
++// This genuine callback body is a separate source dependency, never a provider.
++SurfaceResult SURFACE_STDCALL RecordDisplayMode(SurfaceDescription* description, void* context);
++
++// Actual 0x004ea170; genuine fatal routine calls the CRT exit(0).
++void StartupFatal(const char* format, ...);
++
++#endif
+diff --git a/src/startup_renderer_display_mode_callback.cpp b/src/startup_renderer_display_mode_callback.cpp
+new file mode 100644
+index 0000000..515a60e
+--- /dev/null
++++ b/src/startup_renderer_display_mode_callback.cpp
+@@ -0,0 +1,26 @@
++#include "startup_renderer_display.h"
++
++// FUNCTION: BEACHLIFE 0x00411ad0
++SurfaceResult SURFACE_STDCALL RecordDisplayMode(SurfaceDescription* description, void* context)
++{
++    switch (description->width)
++    {
++    case 640:
++        if (description->height == 480)
++            static_cast<unsigned char*>(context)[0] = 1;
++        break;
++    case 800:
++        if (description->height == 600)
++            static_cast<unsigned char*>(context)[1] = 1;
++        break;
++    case 1024:
++        if (description->height == 768)
++            static_cast<unsigned char*>(context)[2] = 1;
++        break;
++    case 1280:
++        if (description->height == 960)
++            static_cast<unsigned char*>(context)[3] = 1;
++        break;
++    }
++    return 1;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 360df81..1d92efb 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2066,6 +2066,12 @@
+       "size": 119,
+       "name": "ScreenManager::ActivateScreens",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x00411ad0",
++      "size": 121,
++      "name": "RecordDisplayMode",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

@@ -1,0 +1,188 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 88df6d8ab850088ec24554226c80bbf8f88bead9..d0e49aab7175540242d41e7f377f014b9b352179 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4678,3 +4678,12 @@ typedef char Decl5SoundActionSize[(sizeof(WorldActionSoundData) == 4) ? 1 : -1];
+ typedef char Decl5BranchExpressionSize[(sizeof(WorldExpressionBranchData) == 0x20) ? 1 : -1];
+ typedef char Decl5SwitchExpressionSize[(sizeof(WorldExpressionSwitchData) == 0x0c) ? 1 : -1];
+ typedef char Decl5SwitchCaseSize[(sizeof(WorldExpressionSwitchData::Case) == 0x10) ? 1 : -1];
++
++typedef char Decl5TransportSize[(sizeof(VariableTransport) == 0x6c) ? 1 : -1];
++typedef char Decl5TransportRecordSize[(sizeof(WorldTransportRecord) == 0x5b4) ? 1 : -1];
++typedef char Decl5TransportNodeSize[(sizeof(WorldTransportNode) == 0x0c) ? 1 : -1];
++typedef char Decl5GuestRecordSize[(sizeof(VariableGuestState) == 0x3ac) ? 1 : -1];
++typedef char Decl5TransportWeights[(offsetof(VariableTransport, weights_0c) == 0x0c) ? 1 : -1];
++typedef char Decl5TransportCounts[(offsetof(VariableTransport, male_5c) == 0x5c) ? 1 : -1];
++typedef char Decl5CleaningRequestSize[(sizeof(WorldCleaningRequest) == 0x10) ? 1 : -1];
++typedef char Decl5CleaningAssignmentSize[(sizeof(WorldCleaningAssignment) == 8) ? 1 : -1];
+diff --git a/src/startup_list.h b/src/startup_list.h
+index 1caa20ff9df63091a02067ac56e2076e93d1eed0..0a1925f205c31bff81e7eaa2a756e7a075066dca 100644
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -3,6 +3,10 @@
+ 
+ #include "startup_active_screen.h"
+ 
++struct WorldTransportRecord;
++struct WorldTransportNode;
++struct WorldCleaningRequest;
++struct WorldCleaningAssignment;
+ struct SavedScreenPlacement;
+ struct SavedScreenPlacementNode;
+ 
+@@ -36,13 +40,21 @@ struct CircularList
+ {
+     CircularListNode* head;
+ 
++    void Clear();
++    void ReleaseStorage(); // 0x004b2f10.
+     bool Empty() const;
+-    ActiveScreenEntry* Front();
++    ActiveScreenEntry* Front() const;
+     CircularListIterator Erase(CircularListIterator position); // 0x004209d0; hidden result, RET8.
+     CircularListIterator End() const;
+     CircularListIterator Begin() const;
+     CircularListIterator Insert(CircularListIterator position, ActiveScreenEntry* const& entry);
+     CircularListIterator Insert(CircularListIterator position, SavedScreenPlacement* const& placement);
++    CircularListIterator Insert(CircularListIterator position, WorldTransportRecord* const& record);
++    CircularListIterator Insert(CircularListIterator position, WorldCleaningRequest* const& record);
++    CircularListIterator Insert(CircularListIterator position, WorldCleaningAssignment* const& record);
++    CircularListValueNode* CreateNode(WorldCleaningRequest* const& record);
++    CircularListValueNode* CreateNode(WorldCleaningAssignment* const& record);
++    WorldTransportNode* CreateNode(WorldTransportRecord* const& record);
+     CircularListValueNode* CreateNode(ActiveScreenEntry* const& entry);
+     SavedScreenPlacementNode* CreateNode(SavedScreenPlacement* const& placement);
+ };
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index fe21328c984ce15b798a0fa8be002aca0bad36bd..05c79b1f47bceea1f90c5c2ca2796721f5b36e17 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -41,14 +41,53 @@ struct TickerHistoryMessage
+     char* key_10;
+ };
+ 
++struct WorldTransportArrival
++{
++    unsigned char set_happiness;
++    unsigned char unknown_01[3];
++    unsigned int count;
++    unsigned int guests[20];
++};
++
++struct WorldTransportRecord
++{
++    int kind_00;
++    unsigned int random_04[20];
++    char names_54[20][64];
++    unsigned int counts_554[20];
++    int count_5a4;
++    float time_5a8;
++    unsigned int day_5ac;
++    int repeat_5b0;
++};
++
++struct WorldTransportNode : CircularListNode
++{
++    WorldTransportRecord* record;
++};
++
+ struct VariableTransport
+ {
++    VariableTransport(); // 0x0042c8e0.
+     CircularList scheduled_00;
+     CircularListNode* cursor_04;
+-    void StartDay();
++    CircularList pending_08;
++    float weights_0c[20];
++    unsigned int male_5c;
++    unsigned int female_60;
++    unsigned int last_count_64;
++    unsigned int previous_total_68;
++    ~VariableTransport();                 // 0x0042c9e0.
++    void LoadState(GameFileReader* file); // 0x0042d650.
++    void SaveState(GameFileReader* file); // 0x0042d3a0.
++
+     // Actual 0x0042d160/RET8 and 0x0042d2f0/RET4, x87 results.
+     float FindNext(unsigned char mode, unsigned int* value);
++    unsigned char TakeArrival(WorldTransportArrival* arrival); // 0x0042cc20.
+     float ScheduleAt(unsigned int index);
++    void StartDay();                                   // 0x0042d100.
++    void RecordDeparture(VariableEntity* guest);       // 0x0042d110.
++    void Schedule(const WorldTransportRecord* record); // 0x0042cb10.
+ };
+ 
+ struct VariableBuilding
+@@ -148,8 +187,33 @@ struct VariableScenery
+ 
+ struct VariableGuestState
+ {
+-    unsigned char unknown_00[0x1c4];
++    unsigned int id_00;
++    char name_04[0xc0];
++    char resource_c4[0x100];
+     unsigned int word_1c4;
++    float value_1c8;
++    unsigned char unknown_1cc[0xc];
++    float group_value_1d8;
++    unsigned int preview_1dc;
++    unsigned char unknown_1e0[9];
++    unsigned char min_days_1e9;
++    unsigned char max_days_1ea;
++    unsigned char unknown_1eb;
++    float value_1ec;
++    unsigned char unknown_1f0[0x10];
++    float ranges_200[34][2];
++    float hours_310[2];
++    float hours_318[2];
++    unsigned char unknown_320[0x68];
++    float value_388;
++    float value_38c;
++    float start_bladder_390;
++    float start_fight_394;
++    float start_flirt_398;
++    float start_drunk_39c;
++    float start_ill_3a0;
++    float start_sunburn_3a4;
++    float start_vandalise_3a8;
+ };
+ 
+ // Three retail 0x74-byte event records followed by the current event state.
+@@ -482,7 +546,9 @@ struct VariableCatalog
+     VariableCrimeDefinition* Crime(unsigned int index); // 0x00449380.
+     unsigned char unknown_00[0x0c];
+     unsigned int building_count_0c;
+-    unsigned char unknown_10[0x24];
++    unsigned char unknown_10[8];
++    unsigned int guest_count_18;
++    unsigned char unknown_1c[0x18];
+     unsigned int scenery_count_34;
+ 
+     const char* FeatureTypeName(unsigned int index);             // 0x00448fc0.
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 1712d6f67914b2c6a47be66b3369541834ea3601..a4b6a77802dba63306c5c1ed783e9464eff16065 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -337,6 +337,23 @@ struct WorldSubsystemScript
+     ~WorldSubsystemScript(); // 0x004d5500.
+ };
+ 
++struct WorldCleaningRequest
++{
++    int id_00;
++    unsigned int count_04;
++    float time_08;
++    unsigned char flag_0c;
++    unsigned char unknown_0d[3];
++};
++
++struct WorldCleaningAssignment
++{
++    int id_00;
++    unsigned char flag_04;
++    unsigned char flag_05;
++    unsigned char unknown_06[2];
++};
++
+ struct WorldCleaningManager
+ {
+     unsigned int ClaimRequest(unsigned int id, unsigned int cleaner); // 0x00420360.

@@ -1,0 +1,93 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index b27ab89..a386f17 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2660,3 +2660,10 @@ extern "C" __declspec(dllexport) void FixtureMatch3_40(ScreenFrameItem* receiver
+ {
+     receiver->ScreenFrameItem::Unresolved10(item);
+ }
++
++#include "startup_screen_renderer.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch3_41(ScreenRequestRenderer* receiver)
++{
++    receiver->ScreenRequestRenderer::UnlockPixels();
++}
+diff --git a/metadata.csv b/metadata.csv
+index a36e689..7d63321 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -266,3 +266,4 @@ address,type,size,symbol
+ 0x004c70c0,function,36,?MarkPrepared@ScreenRadioGroup@@UAEXXZ
+ 0x004c7860,function,36,?MarkPrepared@ScreenFrameItem@@UAEXXZ
+ 0x004c7960,function,36,?Unresolved10@ScreenFrameItem@@UAEXPAUScreenItem@@@Z
++0x0040e2e0,function,37,?UnlockPixels@ScreenRequestRenderer@@QAEXXZ
+diff --git a/src/startup_directdraw_surface.h b/src/startup_directdraw_surface.h
+index 4036a2a..1a030fc 100644
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -34,6 +34,8 @@ typedef SurfaceResult(SURFACE_STDCALL* SurfaceStatusMethod)(DirectDrawSurface7Pr
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(DirectDrawSurface7Prefix*,
+     SurfaceApiRectangle*, SurfaceDescription*, unsigned int, void*);
+ 
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceUnlockMethod)(DirectDrawSurface7Prefix*, SurfaceApiRectangle*);
++
+ struct DirectDrawSurface7VtablePrefix
+ {
+     void* unused_00[2];
+@@ -43,6 +45,8 @@ struct DirectDrawSurface7VtablePrefix
+     SurfaceLockMethod Lock;
+     void* unused_68;
+     SurfaceStatusMethod Restore;
++    void* unused_70[4];
++    SurfaceUnlockMethod Unlock;
+ };
+ 
+ struct DirectDrawSurface7Prefix
+diff --git a/src/startup_renderer_surface_unlock.cpp b/src/startup_renderer_surface_unlock.cpp
+new file mode 100644
+index 0000000..d998dd6
+--- /dev/null
++++ b/src/startup_renderer_surface_unlock.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e2e0
++void ScreenRequestRenderer::UnlockPixels()
++{
++    if (!software_mode)
++    {
++        DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++        surface->vtable->Unlock(surface, 0);
++    }
++    pixels_locked = 0;
++}
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 83728b3..18a34d7 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -73,6 +73,7 @@ struct ScreenRequestRenderer
+     void CleanupSurface(int surface);
+     void PositionSurface(int surface, ScreenPoint position);
+     void PositionSurface(int surface, int x, int y);
++    void UnlockPixels();
+ };
+ 
+ // Observed renderer pointer published by its constructor; lifetime is unresolved.
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index fc86279..c388945 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1304,6 +1304,12 @@
+       "size": 36,
+       "name": "ScreenFrameItem::Unresolved10",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x0040e2e0",
++      "size": 37,
++      "name": "ScreenRequestRenderer::UnlockPixels",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

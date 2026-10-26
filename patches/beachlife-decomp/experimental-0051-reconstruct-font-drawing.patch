@@ -1,0 +1,332 @@
+diff --git a/src/startup_font_draw_text.cpp b/src/startup_font_draw_text.cpp
+new file mode 100644
+index 0000000..b56cead
+--- /dev/null
++++ b/src/startup_font_draw_text.cpp
+@@ -0,0 +1,86 @@
++#include "startup_screen_text.h"
++#include "startup_screen_font_data.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x0049f780
++void ScreenFontRenderer::DrawText(int x, int y, const unsigned short* text)
++{
++    ScreenFontData* data = data_1c;
++    const unsigned short* cursor = text;
++    const unsigned short* line_start = text;
++    const unsigned short* word_start = text;
++    unsigned int line_characters = 0;
++    unsigned int word_characters = 0;
++    int line_width = x;
++    bool stopped = false;
++    bool forced_break = false;
++    unsigned int height = data->unknown_10804[0];
++    int adjustment = static_cast<int>(height * -1.2f);
++
++    if (static_cast<int>(height - adjustment) > rectangle.height)
++    {
++        DrawTextLine(x, y, text);
++        return;
++    }
++
++    unsigned short scratch[256];
++    while (*cursor != 0 && !stopped)
++    {
++        unsigned int current = *cursor;
++        unsigned short advance = static_cast<unsigned short>(
++            data->glyphs[current][2] - data->glyphs[current][0]);
++        unsigned int next = cursor[1];
++        if (next != 0)
++        {
++            advance = static_cast<unsigned short>(
++                advance + data->kerning[current * 255 + next]);
++        }
++        line_width += advance;
++
++        if (cursor != text)
++        {
++            if (current != ' ' && cursor[-1] == ' ')
++            {
++                word_start = cursor;
++                word_characters = 0;
++            }
++            if (current == '~')
++            {
++                ++cursor;
++                forced_break = true;
++                word_start = cursor;
++                word_characters = 0;
++            }
++        }
++        if (*cursor != ' ' && cursor[-1] != '~')
++            ++word_characters;
++
++        if ((line_width > rectangle.width && line_characters > word_characters)
++            || forced_break)
++        {
++            forced_break = false;
++            memset(scratch, 0, sizeof(scratch));
++            unsigned int copy_bytes = (line_characters - word_characters) * 2;
++            memcpy(scratch, line_start, copy_bytes);
++            DrawTextLine(x, y, scratch);
++
++            height = data_1c->unknown_10804[0];
++            adjustment = static_cast<int>(height * -1.2f);
++            y += 2 - adjustment;
++            cursor = word_start;
++            line_characters = 0;
++            word_characters = 0;
++            line_start = cursor;
++            line_width = x;
++            if (static_cast<int>(height + y) > rectangle.height)
++                stopped = true;
++        }
++        else
++        {
++            ++cursor;
++            ++line_characters;
++        }
++    }
++    if (!stopped)
++        DrawTextLine(x, y, line_start);
++}
+diff --git a/src/startup_font_draw_line.cpp b/src/startup_font_draw_line.cpp
+new file mode 100644
+index 0000000..4643e81
+--- /dev/null
++++ b/src/startup_font_draw_line.cpp
+@@ -0,0 +1,182 @@
++#include "startup_screen_text.h"
++#include "startup_screen_font_data.h"
++#include "startup_screen_renderer.h"
++#include "tga_image.h"
++
++void ScreenFontRenderer::DrawTextLine(int x, int y, const unsigned short* text)
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    unsigned int alignment = word_18;
++    ScreenFontData* data = data_1c;
++    const unsigned short* cursor = text;
++
++    if (alignment == 1 || alignment == 2)
++    {
++        unsigned int measured_width = 0;
++        for (const unsigned short* measure = text; *measure != 0; ++measure)
++        {
++            unsigned int current = *measure;
++            unsigned short advance = static_cast<unsigned short>(
++                data->glyphs[current][2] - data->glyphs[current][0]);
++            unsigned int next = measure[1];
++            if (next != 0)
++            {
++                advance = static_cast<unsigned short>(advance + data->kerning[current * 255 + next]);
++            }
++            measured_width += advance;
++        }
++        unsigned int offset = static_cast<unsigned int>(rectangle.width) - measured_width;
++        if (alignment == 2)
++        {
++            offset >>= 1;
++        }
++        x += static_cast<int>(offset);
++    }
++
++    RenderRectangle left_clip = renderer->clip_rectangle;
++    RenderRectangle top_clip = renderer->clip_rectangle;
++    RenderRectangle right_clip = renderer->clip_rectangle;
++    int clip_right = left_clip.x + right_clip.width;
++    RenderRectangle bottom_clip = renderer->clip_rectangle;
++    int clip_bottom = top_clip.y + bottom_clip.height;
++
++    TgaImage* image = data->image;
++    const unsigned char* source = image->pixels;
++    int source_stride = image->width;
++    const unsigned short* palette = image->converted_palette;
++
++    if (renderer->unscaled_clip_5c != 0)
++    {
++        unsigned short* destination = renderer->AccessPixels();
++        if (destination == 0)
++        {
++            return;
++        }
++        int destination_stride = static_cast<int>(renderer->SurfacePitch() >> 1);
++        ScreenPoint position = renderer->SurfacePosition();
++
++        while (*cursor != 0)
++        {
++            int destination_y = rectangle.y + y - position.y;
++            int destination_x = rectangle.x + x - position.x;
++            unsigned int current = *cursor;
++            int source_top = data->glyphs[current][1];
++            int source_left = data->glyphs[current][0];
++            int source_right = data->glyphs[current][2];
++            int source_bottom = data->glyphs[current][3];
++
++            bool rejected = false;
++            if (destination_x > clip_right)
++            {
++                rejected = true;
++            }
++            if (destination_y > clip_bottom)
++            {
++                rejected = true;
++            }
++            if (source_right - source_left + destination_x < left_clip.x)
++            {
++                rejected = true;
++            }
++            if (source_bottom - source_top + destination_y >= top_clip.y && !rejected)
++            {
++                if (destination_x < left_clip.x)
++                {
++                    int difference = left_clip.x - destination_x;
++                    destination_x += difference;
++                    source_left += difference;
++                }
++                if (source_right - source_left + destination_x > clip_right)
++                {
++                    source_right = source_left - destination_x + clip_right;
++                }
++                if (destination_y < top_clip.y)
++                {
++                    int difference = top_clip.y - destination_y;
++                    destination_y += difference;
++                    source_top += difference;
++                }
++                if (source_bottom - source_top + destination_y > clip_bottom)
++                {
++                    source_bottom = source_top - destination_y + clip_bottom;
++                }
++                DrawGlyphSurface(source, source_stride, destination, destination_stride, source_left, source_top, destination_x, destination_y, source_right - source_left, source_bottom - source_top, palette);
++            }
++
++            current = *cursor;
++            x += static_cast<int>(data->glyphs[current][2]) - data->glyphs[current][0];
++            unsigned int next = cursor[1];
++            if (next != 0)
++            {
++                x += data->kerning[current * 255 + next];
++            }
++            ++cursor;
++        }
++        renderer->UnlockPixels();
++        return;
++    }
++
++    bool has_text = *cursor != 0;
++    unsigned short* destination = renderer->pixels_1c;
++    int destination_stride = static_cast<int>(renderer->width);
++    if (has_text)
++    {
++        do
++        {
++            int destination_x = rectangle.x + x;
++            int destination_y = rectangle.y + y;
++            unsigned int current = *cursor;
++            int source_top = data->glyphs[current][1];
++            int source_right = data->glyphs[current][2];
++            int source_left = data->glyphs[current][0];
++            int source_bottom = data->glyphs[current][3];
++
++            bool rejected = false;
++            if (destination_x > clip_right)
++            {
++                rejected = true;
++            }
++            if (destination_y > clip_bottom)
++            {
++                rejected = true;
++            }
++            if (source_right - source_left + destination_x < left_clip.x)
++            {
++                rejected = true;
++            }
++            if (source_bottom - source_top + destination_y >= top_clip.y && !rejected)
++            {
++                if (destination_x < left_clip.x)
++                {
++                    int difference = left_clip.x - destination_x;
++                    destination_x += difference;
++                    source_left += difference;
++                }
++                if (source_right - source_left + destination_x > clip_right)
++                {
++                    source_right = source_left - destination_x + clip_right;
++                }
++                if (destination_y < top_clip.y)
++                {
++                    int difference = top_clip.y - destination_y;
++                    destination_y += difference;
++                    source_top += difference;
++                }
++                if (source_bottom - source_top + destination_y > clip_bottom)
++                {
++                    source_bottom = source_top - destination_y + clip_bottom;
++                }
++                DrawGlyphDirect(source, source_stride, destination, destination_stride, source_left, source_top, destination_x, destination_y, source_right - source_left, source_bottom - source_top, palette);
++            }
++
++            current = *cursor;
++            x += static_cast<int>(data->glyphs[current][2]) - data->glyphs[current][0];
++            unsigned int next = cursor[1];
++            if (next != 0)
++            {
++                x += data->kerning[current * 255 + next];
++            }
++            ++cursor;
++        } while (*cursor != 0);
++    }
++}
+diff --git a/src/startup_font_draw_settings.cpp b/src/startup_font_draw_settings.cpp
+new file mode 100644
+index 0000000..5754ef9
+--- /dev/null
++++ b/src/startup_font_draw_settings.cpp
+@@ -0,0 +1,28 @@
++#include "startup_screen_text.h"
++
++// FUNCTION: BEACHLIFE 0x0049f9e0
++void ScreenFontRenderer::SetRectangle(int x, int y, int width, int height)
++{
++    rectangle.x = x;
++    rectangle.y = y;
++    rectangle.width = width;
++    rectangle.height = height;
++}
++
++// FUNCTION: BEACHLIFE 0x0049fa00
++void ScreenFontRenderer::SetWord10(unsigned int value)
++{
++    word_10 = value;
++}
++
++// FUNCTION: BEACHLIFE 0x0049fa10
++void ScreenFontRenderer::SetState14(unsigned char value)
++{
++    state_14 = value;
++}
++
++// FUNCTION: BEACHLIFE 0x0049fa20
++void ScreenFontRenderer::SetWord18(unsigned int value)
++{
++    word_18 = value;
++}
+diff --git a/src/startup_renderer_surface_unlock.cpp b/src/startup_renderer_surface_unlock.cpp
+new file mode 100644
+index 0000000..d998dd6
+--- /dev/null
++++ b/src/startup_renderer_surface_unlock.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x0040e2e0
++void ScreenRequestRenderer::UnlockPixels()
++{
++    if (!software_mode)
++    {
++        DirectDrawSurface7Prefix* surface = surfaces[current_surface]->surface;
++        surface->vtable->Unlock(surface, 0);
++    }
++    pixels_locked = 0;
++}

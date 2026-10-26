@@ -1,0 +1,92 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index f8356a7..c7defab 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3679,3 +3679,11 @@ extern "C" __declspec(dllexport) void FixtureMatch5_43(WindowSoundBank* receiver
+ {
+     receiver->WindowSoundBank::ReleaseSample(p0);
+ }
++
++#include "startup_screen_renderer.h"
++#include <new>
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) unsigned char FixtureMatch5_44(ScreenRequestRenderer* receiver, int p0, int p1, int p2)
++{
++    return receiver->ScreenRequestRenderer::ResizeSurface(p0, p1, p2);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 74fa1c9..4169983 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -440,3 +440,4 @@ address,type,size,symbol
+ 0x004c7700,function,133,?HandleTimedCoordinates@ScreenFrameItem@@UAE_NHHH@Z
+ 0x004c51b0,function,137,?Unresolved24@ScreenListBoxPrefix@@UAEXE@Z
+ 0x004d1fe0,function,137,?ReleaseSample@WindowSoundBank@@QAEXPBD@Z
++0x0040e3d0,function,139,?ResizeSurface@ScreenRequestRenderer@@QAEEHHH@Z
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 4eae076..ceb6884 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -85,6 +85,7 @@ struct ScreenRequestRenderer
+     unsigned char SurfaceLost(int surface);
+     void RestoreSurface(int surface);
+     void RecreateSurface(int index);
++    unsigned char ResizeSurface(int index, int requested_width, int requested_height);
+     void InitializeSurface(int width, int height, ScreenSurfacePosition* entry, unsigned char mode);
+     void DrawTga(const ScreenPoint& destination, const ScreenRectangle& bounds, TgaImage* image, int mode, unsigned int flags, unsigned int extra);
+     bool ClipRectangle(int& destination_x, int& destination_y, int& source_left, int& source_top, int& source_right, int& source_bottom);
+diff --git a/src/startup_surface_resize.cpp b/src/startup_surface_resize.cpp
+new file mode 100644
+index 0000000..1794f9b
+--- /dev/null
++++ b/src/startup_surface_resize.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_renderer.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x0040e3d0
++unsigned char ScreenRequestRenderer::ResizeSurface(
++    int index, int requested_width, int requested_height)
++{
++    unsigned char changed = 0;
++    if (software_mode)
++    {
++        ScreenSurfacePosition* entry = surfaces[index];
++        if (entry->width != static_cast<unsigned int>(requested_width) || entry->height != static_cast<unsigned int>(requested_height))
++        {
++            delete[] entry->pixels;
++            InitializeSurface(requested_width, requested_height, entry, 0);
++            changed = 1;
++        }
++    }
++    else
++    {
++        ScreenSurfacePosition* entry = surfaces[index];
++        if (entry->width != static_cast<unsigned int>(requested_width) || entry->height != static_cast<unsigned int>(requested_height))
++        {
++            DirectDrawSurface7Prefix* surface = entry->surface;
++            surface->vtable->Release(surface);
++            InitializeSurface(requested_width, requested_height, surfaces[index], 0);
++            changed = 1;
++        }
++    }
++    return changed;
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 683ce3a..27a5a11 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2126,6 +2126,12 @@
+       "size": 137,
+       "name": "WindowSoundBank::ReleaseSample",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x0040e3d0",
++      "size": 139,
++      "name": "ScreenRequestRenderer::ResizeSurface",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [

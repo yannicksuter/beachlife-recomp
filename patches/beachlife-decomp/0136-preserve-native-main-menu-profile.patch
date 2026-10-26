@@ -1,0 +1,1111 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -39,15 +39,9 @@
+ #include "startup_config_scan.h"
+ #include "startup_timer.h"
+ #include "startup_input_state.h"
+-// Keep the real audio member name independent of the Windows SDK macro.
+-#ifdef PlaySound
+-#undef PlaySound
+-#endif
+ #include "window_activation.h"
+ #include "window_audio.h"
+ #include "startup_controller.h"
+-#include "startup_main_menu.h"
+-#include "startup_intro.h"
+ #include "startup_config_decimal.h"
+ #include "startup_config_owner.h"
+ extern "C" int __cdecl _purecall();
+@@ -219,7 +213,7 @@
+ typedef char save_manager_previous_check[offsetof(ScreenManager, previous_mode) == 0x12c ? 1 : -1];
+ typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x130 ? 1 : -1];
+ typedef char save_game_placement_check[offsetof(ScreenRequestGamePrefix, placement) == 0x54 ? 1 : -1];
+-typedef char save_game_prefix_size_check[sizeof(ScreenRequestGamePrefix) == 0xc8 ? 1 : -1];
++typedef char save_game_prefix_size_check[sizeof(ScreenRequestGamePrefix) == 0xa8 ? 1 : -1];
+ typedef char save_rectangle_size_check[sizeof(ScreenRectangle) == 16 ? 1 : -1];
+ 
+ // Called after the actual writer creates group5 in the existing fixture store.
+@@ -691,10 +685,15 @@
+         owner->Append("generated", false, 7, 1.0f, 0);
+         owner->~StartupConfig();
+     }
+-    MainMenuController fixture_controller("matching MainMenu");
+-    fixture_controller.MainMenuController::Exit();
++    ControllerState fixture_controller;
++    fixture_controller.Exit();
+     ControllerSelectionState fixture_selection = { 0 };
+     fixture_selection.SelectPendingController(1);
++    WindowAudioState fixture_audio = { 0 };
++    fixture_audio.MuteDigitalDriver();
++    fixture_audio.UnmuteDigitalDriver();
++    fixture_audio.PauseAudioStream();
++    fixture_audio.ResumeAudioStream();
+     WindowActivationTarget fixture_activation = { 0 };
+     fixture_activation.Deactivate();
+     InputState fixture_input = { 0 };
+@@ -1156,10 +1155,10 @@
+ 
+ #include "window_activation.h"
+ 
+-typedef char AudioClearSize[(sizeof(WindowAudioState) == 0xf8) ? 1 : -1];
++typedef char AudioClearSize[(sizeof(WindowAudioState) == 0x10) ? 1 : -1];
+ typedef char AudioClearEnabledOffset[(offsetof(WindowAudioState, enabled) == 0) ? 1 : -1];
+ typedef char AudioClearDriverOffset[(offsetof(WindowAudioState, digital_driver) == 4) ? 1 : -1];
+-typedef char AudioClearProviderOffset[(offsetof(WindowAudioState, provider_08) == 8) ? 1 : -1];
++typedef char AudioClearOpaqueOffset[(offsetof(WindowAudioState, unknown_08) == 8) ? 1 : -1];
+ typedef char AudioClearStreamOffset[(offsetof(WindowAudioState, stream) == 12) ? 1 : -1];
+ 
+ WindowAudioState* volatile fixture_audio_clear_receiver;
+@@ -1400,56 +1399,3 @@
+     fixture_clip_source_after[3] = source->bottom;
+     fixture_clip_completed = 1;
+ }
+-
+-// The full audio declaration has genuine owner constructors. Retain old
+-// methods through a borrowed live owner, never an invented aggregate owner.
+-extern "C" __declspec(dllexport) void FixtureBorrowedAudioMethods(WindowAudioState* owner)
+-{
+-    owner->MuteDigitalDriver();
+-    owner->UnmuteDigitalDriver();
+-    owner->PauseAudioStream();
+-    owner->ResumeAudioStream();
+-}
+-
+-typedef char MainMenuBaseSize[sizeof(ControllerState) == 0x88 ? 1 : -1];
+-typedef char MainMenuBaseName[offsetof(ControllerState, name) == 4 ? 1 : -1];
+-typedef char MainMenuActive[offsetof(ControllerState, active) == 0x84 ? 1 : -1];
+-typedef char MainMenuSize[sizeof(MainMenuController) == 0x8c ? 1 : -1];
+-typedef char MainMenuFirstEntry[offsetof(MainMenuController, first_entry) == 0x88 ? 1 : -1];
+-typedef char MainMenuIntroSize[sizeof(IntroController) == 0x9c ? 1 : -1];
+-typedef char MainMenuSelectionSize[sizeof(ControllerSelectionState) == 0x2c ? 1 : -1];
+-typedef char MainMenuFirstSelectionByte[offsetof(FirstControllerSelectionPrefix, unknown_9c) == 0x9c ? 1 : -1];
+-typedef char MainMenuPlacementLanguage[offsetof(ScreenPlacementStore, menu_script_variant_3c) == 0x3c ? 1 : -1];
+-typedef char MainMenuReturnFlag[offsetof(ScreenRequestGamePrefix, flag_c4) == 0xc4 ? 1 : -1];
+-
+-volatile unsigned char fixture_main_menu_first;
+-volatile unsigned char fixture_main_menu_active;
+-volatile char fixture_main_menu_name;
+-volatile int fixture_main_menu_update;
+-volatile unsigned char fixture_main_menu_exit;
+-
+-// Compile/link retention only. The ordinary constructor and destructor are
+-// genuine, including compiler-written vptrs. Never execute the linked image.
+-extern "C" __declspec(dllexport) void FixtureMainMenuConstruction()
+-{
+-    MainMenuController owner("matching MainMenu");
+-    fixture_main_menu_first = owner.first_entry;
+-    fixture_main_menu_active = owner.active;
+-    fixture_main_menu_name = owner.name[0];
+-    fixture_main_menu_update = owner.Update();
+-    owner.MainMenuController::Exit();
+-    fixture_main_menu_exit = owner.active;
+-}
+-
+-volatile unsigned char fixture_intro_exit_before;
+-volatile unsigned char fixture_intro_exit_after;
+-
+-// A genuine live Intro is borrowed; this does not construct its unresolved
+-// lifetime or instantiate its table. Qualified dispatch retains the real
+-// shared 0x004e8f30 body under its grounded Intro receiver.
+-extern "C" __declspec(dllexport) void FixtureBorrowedIntroExit(IntroController* owner)
+-{
+-    fixture_intro_exit_before = owner->active;
+-    owner->IntroController::Exit();
+-    fixture_intro_exit_after = owner->active;
+-}
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -95,8 +95,3 @@
+ 0x004c53a0,function,39,?MarkPrepared@ScreenListBoxPrefix@@UAEXXZ
+ 0x0040e230,function,10,?SelectSurface@ScreenRequestRenderer@@QAEXH@Z
+ 0x004b2eb0,function,91,?ClipScreenRectangles@@YAXPAUScreenRectangle@@0@Z
+-0x004e8f30,function,8,?Exit@MainMenuController@@UAEXXZ
+-0x004e8df0,function,32,??0MainMenuController@@QAE@PBD@Z
+-0x004e41e0,function,100,?SetScreenSize@ScreenRequestGamePrefix@@QAEXHH@Z
+-0x004ae9e0,function,279,?SetMode@ScreenManager@@QAEXH@Z
+-0x004f4e04,float,4,
+diff --git a/msvcrt.def b/msvcrt.def
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -13,5 +13,3 @@
+     _ftol
+     _purecall
+     memmove
+-    sprintf
+-    _stricmp
+diff --git a/src/miles_imports.h b/src/miles_imports.h
+--- a/src/miles_imports.h
++++ b/src/miles_imports.h
+@@ -5,42 +5,4 @@
+ extern "C" __declspec(dllimport) void __stdcall AIL_set_digital_master_volume(void* driver, int volume);
+ extern "C" __declspec(dllimport) void __stdcall AIL_pause_stream(void* stream, int pause);
+ 
+-extern "C" __declspec(dllimport) void __stdcall AIL_init_sample(void* sample);
+-extern "C" __declspec(dllimport) void __stdcall AIL_set_named_sample_file(
+-    void* sample, const char* extension, const void* data, unsigned int bytes, int block);
+-extern "C" __declspec(dllimport) void __stdcall AIL_set_sample_loop_count(void* sample, unsigned int count);
+-extern "C" __declspec(dllimport) void __stdcall AIL_start_sample(void* sample);
+-extern "C" __declspec(dllimport) void __stdcall AIL_set_sample_volume(void* sample, int volume);
+-
+-// Constructor imports: observed x86 argument widths and used return values.
+-extern "C" __declspec(dllimport) void __stdcall AIL_set_redist_directory(const char* directory);
+-extern "C" __declspec(dllimport) int __stdcall AIL_startup();
+-extern "C" __declspec(dllimport) void* __stdcall AIL_open_digital_driver(
+-    unsigned int frequency, int bits, int channels, unsigned int flags);
+-extern "C" __declspec(dllimport) void* __stdcall AIL_allocate_sample_handle(void* driver);
+-extern "C" __declspec(dllimport) void* __stdcall AIL_allocate_3D_sample_handle(void* provider);
+-extern "C" __declspec(dllimport) void __stdcall AIL_set_stream_volume(void* stream, int volume);
+-extern "C" __declspec(dllimport) void __stdcall AIL_set_3D_sample_volume(void* sample, int volume);
+-
+-// Provider initializer imports, same observed x86 opaque-handle projection.
+-extern "C" __declspec(dllimport) int __stdcall AIL_enumerate_3D_providers(
+-    unsigned int* cursor, void** provider, const char** name);
+-extern "C" __declspec(dllimport) int __stdcall AIL_open_3D_provider(void* provider);
+-extern "C" __declspec(dllimport) void* __stdcall AIL_open_3D_listener(void* provider);
+-extern "C" __declspec(dllimport) void __stdcall AIL_set_3D_position(void* listener, float x, float y, float z);
+-
+-// Genuine no-argument shutdown import used by the cdecl exit callback.
+-extern "C" __declspec(dllimport) void __stdcall AIL_shutdown();
+-
+-// Destructor imports: actual zero/one-word stdcall boundaries, results ignored.
+-extern "C" __declspec(dllimport) void __stdcall AIL_end_3D_sample(void* sample);
+-extern "C" __declspec(dllimport) void __stdcall AIL_end_sample(void* sample);
+-extern "C" __declspec(dllimport) void __stdcall AIL_close_stream(void* stream);
+-extern "C" __declspec(dllimport) void __stdcall AIL_close_3D_provider(void* provider);
+-extern "C" __declspec(dllimport) void __stdcall AIL_close_digital_driver(void* driver);
+-
+-// Update compares the actual status return word with 2.
+-extern "C" __declspec(dllimport) int __stdcall AIL_sample_status(void* sample);
+-extern "C" __declspec(dllimport) int __stdcall AIL_3D_sample_status(void* sample);
+-
+ #endif
+diff --git a/src/startup_controller.h b/src/startup_controller.h
+--- a/src/startup_controller.h
++++ b/src/startup_controller.h
+@@ -1,31 +1,14 @@
+ #ifndef STARTUP_CONTROLLER_H
+ #define STARTUP_CONTROLLER_H
+ 
+-// Observed common controller fields and all ten original virtual slots. Names and return types
+-// where callers discard results are descriptive. No complete game hierarchy or
+-// native lifetime is established by these declarations.
+-// VTABLE: BEACHLIFE 0x004f424c
++// Descriptive observed prefix only; the original class, hierarchy and total size
++// are unknown. The initial Intro vtable and other data entries share Exit's body.
+ struct ControllerState
+ {
+-    explicit ControllerState(const char* name);
+-    virtual ~ControllerState();
+-    virtual int Update() = 0;
+-    virtual void RenderBeforeScreens() = 0;
+-    virtual void RenderAfterScreens() = 0;
+-    virtual void Enter() = 0;
+-    virtual void Exit() = 0;
+-    virtual const char* ScriptPath() = 0;
+-    // Actual observed slot1c has an empty RET0 in Intro/MainMenu.
+-    virtual void ControllerSlot1c() = 0;
+-    // Actual slot20: two dimension words, selected target 0x004e8fa0/RET8.
+-    virtual void ScreenSizeChanged(int width, int height) = 0;
++    unsigned char unknown_00[0x84];
++    unsigned char active;
+ 
+-    // Actual current-controller call 0x004e46fa: no arguments, result ignored.
+-    virtual void ControllerSlot24() = 0;
+-
+-    char name[128];
+-    unsigned char active;
+-    unsigned char unknown_85[3];
++    void Exit();
+ };
+ 
+ #endif
+diff --git a/src/startup_controller_constructor.cpp b/src/startup_controller_constructor.cpp
+deleted file mode 100644
+--- a/src/startup_controller_constructor.cpp
++++ /dev/null
+@@ -1,9 +0,0 @@
+-#include "startup_controller.h"
+-#include <string.h>
+-
+-// FUNCTION: BEACHLIFE 0x0049edf0
+-ControllerState::ControllerState(const char* controller_name)
+-{
+-    strcpy(name, controller_name);
+-    active = 0;
+-}
+diff --git a/src/startup_controller_destructor.cpp b/src/startup_controller_destructor.cpp
+deleted file mode 100644
+--- a/src/startup_controller_destructor.cpp
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#include "startup_controller.h"
+-
+-// FUNCTION: BEACHLIFE 0x0049ee50
+-ControllerState::~ControllerState()
+-{
+-}
+diff --git a/src/startup_controller_exit.cpp b/src/startup_controller_exit.cpp
+--- a/src/startup_controller_exit.cpp
++++ b/src/startup_controller_exit.cpp
+@@ -1,7 +1,7 @@
+-#include "startup_intro.h"
++#include "startup_controller.h"
+ 
+-// FUNCTION: BEACHLIFE 0x004e8f30 FOLDED
+-void IntroController::Exit()
++// FUNCTION: BEACHLIFE 0x004e8f30
++void ControllerState::Exit()
+ {
+     active = 0;
+ }
+diff --git a/src/startup_controller_selection.cpp b/src/startup_controller_selection.cpp
+--- a/src/startup_controller_selection.cpp
++++ b/src/startup_controller_selection.cpp
+@@ -6,7 +6,7 @@
+     switch (selection)
+     {
+     case 0:
+-        pending = first_controller;
++        pending = &first_controller->controller;
+         first_controller->unknown_9c = 0;
+         break;
+     case 1:
+diff --git a/src/startup_controller_selection.h b/src/startup_controller_selection.h
+--- a/src/startup_controller_selection.h
++++ b/src/startup_controller_selection.h
+@@ -3,16 +3,15 @@
+ 
+ #include "startup_controller.h"
+ 
+-// Only this selected controller is observed with the extra byte at x86+0x9c.
+-// Its concrete class, constructors and remaining overrides are unresolved.
+-struct FirstControllerSelectionPrefix : ControllerState
++// Only the first controller is observed with this extra byte; no hierarchy is inferred.
++struct FirstControllerSelectionPrefix
+ {
+-    unsigned char unknown_88[0x14];
++    ControllerState controller;
++    unsigned char unknown_85[0x17];
+     unsigned char unknown_9c;
+ };
+ 
+-// A live, ordinary first subobject of the observed game prefix. This does not
+-// identify the original source-level inheritance or complete game lifetime.
++// Observed pointer prefix only; the original complete game class is unknown.
+ struct ControllerSelectionState
+ {
+     void* instance;
+diff --git a/src/startup_game_menu_return_clear.cpp b/src/startup_game_menu_return_clear.cpp
+deleted file mode 100644
+--- a/src/startup_game_menu_return_clear.cpp
++++ /dev/null
+@@ -1,7 +0,0 @@
+-#include "startup_screen_manager.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e3be0
+-void ScreenRequestGamePrefix::ClearMenuReturnFlag()
+-{
+-    flag_c4 = 0;
+-}
+diff --git a/src/startup_game_menu_return_read.cpp b/src/startup_game_menu_return_read.cpp
+deleted file mode 100644
+--- a/src/startup_game_menu_return_read.cpp
++++ /dev/null
+@@ -1,7 +0,0 @@
+-#include "startup_screen_manager.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e3bd0
+-unsigned char ScreenRequestGamePrefix::ReadMenuReturnFlag()
+-{
+-    return flag_c4;
+-}
+diff --git a/src/startup_intro.h b/src/startup_intro.h
+deleted file mode 100644
+--- a/src/startup_intro.h
++++ /dev/null
+@@ -1,34 +0,0 @@
+-#ifndef STARTUP_INTRO_H
+-#define STARTUP_INTRO_H
+-
+-#include "startup_controller.h"
+-
+-// Observed Intro state through original x86+0x9b. Complete construction and
+-// destruction bodies preserve the original inline-name/state ownership.
+-// Original table 0x004f4db0 is provenance only in this borrowed declaration.
+-// This project selects Exit only; it does not construct Intro or emit its table.
+-struct IntroController : ControllerState
+-{
+-    int stage;
+-    float elapsed;
+-    unsigned int word_90;
+-    int saved_value_134;
+-    int saved_value_138;
+-
+-    explicit IntroController(const char* name);
+-    virtual ~IntroController();
+-    virtual int Update();
+-    virtual void RenderBeforeScreens();
+-    virtual void RenderAfterScreens();
+-    virtual void Enter();
+-    virtual void Exit();
+-    virtual const char* ScriptPath();
+-    virtual void ControllerSlot1c();
+-    virtual void ScreenSizeChanged(int width, int height);
+-    virtual void ControllerSlot24();
+-};
+-
+-extern const float intro_duration;
+-extern const float intro_voice_level;
+-
+-#endif
+diff --git a/src/startup_main_menu.h b/src/startup_main_menu.h
+deleted file mode 100644
+--- a/src/startup_main_menu.h
++++ /dev/null
+@@ -1,29 +0,0 @@
+-#ifndef STARTUP_MAIN_MENU_H
+-#define STARTUP_MAIN_MENU_H
+-
+-#include "startup_controller.h"
+-
+-// Observed MainMenu controller byte at original x86+0x88. Method bodies are
+-// supplied in separate source packets; declarations alone do not establish
+-// complete native ownership or the full game hierarchy.
+-// VTABLE: BEACHLIFE 0x004f4e08
+-struct MainMenuController : ControllerState
+-{
+-    unsigned char first_entry;
+-
+-    explicit MainMenuController(const char* name);
+-    virtual ~MainMenuController(); // Ordinary0x004e8e30; deleting wrapper0x004e8e10.
+-    virtual int Update();
+-    virtual void RenderBeforeScreens();
+-    virtual void RenderAfterScreens();
+-    virtual void Enter();
+-    virtual void Exit();
+-    virtual const char* ScriptPath();
+-    virtual void ControllerSlot1c();
+-    virtual void ScreenSizeChanged(int width, int height);
+-    virtual void ControllerSlot24();
+-};
+-
+-extern const float main_menu_voice_level;
+-
+-#endif
+diff --git a/src/startup_main_menu_constructor.cpp b/src/startup_main_menu_constructor.cpp
+deleted file mode 100644
+--- a/src/startup_main_menu_constructor.cpp
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#include "startup_main_menu.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e8df0
+-MainMenuController::MainMenuController(const char* name)
+-    : ControllerState(name)
+-    , first_entry(1)
+-{
+-}
+diff --git a/src/startup_main_menu_destructor.cpp b/src/startup_main_menu_destructor.cpp
+deleted file mode 100644
+--- a/src/startup_main_menu_destructor.cpp
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#include "startup_main_menu.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e8e30
+-MainMenuController::~MainMenuController()
+-{
+-    if (active)
+-        active = 0;
+-}
+diff --git a/src/startup_main_menu_enter.cpp b/src/startup_main_menu_enter.cpp
+deleted file mode 100644
+--- a/src/startup_main_menu_enter.cpp
++++ /dev/null
+@@ -1,33 +0,0 @@
+-#include "startup_main_menu.h"
+-#include "startup_screen_manager.h"
+-#include "window_activation.h"
+-
+-// GLOBAL: BEACHLIFE 0x004f4e04
+-const float main_menu_voice_level = 0.8f;
+-
+-// FUNCTION: BEACHLIFE 0x004e8e60
+-void MainMenuController::Enter()
+-{
+-    active = 1;
+-
+-    int voice = window_audio_state->PlaySound("waves_loop", 2, 0.0f);
+-    window_audio_state->SetSoundLevel(voice, main_menu_voice_level);
+-
+-    screen_request_game->SetScreenSize(800, 600);
+-    ScreenRequestGamePrefix* game = screen_request_game;
+-    const char* path = ScriptPath();
+-    game->LoadControllerScreen(path);
+-    screen_manager->SetMode(6);
+-
+-    if (first_entry == 0 && screen_request_game->ReadMenuReturnFlag() == 0)
+-    {
+-        screen_request_game->LoadScenarioProgress();
+-        screen_manager->RequestScreen("ScenarioScreen", 0, 0);
+-    }
+-    else
+-    {
+-        screen_manager->RequestScreen("MainMenu", 0, 0);
+-        first_entry = 0;
+-        screen_request_game->ClearMenuReturnFlag();
+-    }
+-}
+diff --git a/src/startup_main_menu_path.cpp b/src/startup_main_menu_path.cpp
+deleted file mode 100644
+--- a/src/startup_main_menu_path.cpp
++++ /dev/null
+@@ -1,23 +0,0 @@
+-#include "startup_main_menu.h"
+-#include "startup_screen_manager.h"
+-#include "startup_screen_placement.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e8f40
+-const char* MainMenuController::ScriptPath()
+-{
+-    switch (screen_request_game->placement->menu_script_variant_3c)
+-    {
+-    case 1:
+-        return "data/script/gui/MainMenu_fre.PIS";
+-    case 2:
+-        return "data/script/gui/MainMenu_ita.PIS";
+-    case 3:
+-        return "data/script/gui/MainMenu_ger.PIS";
+-    case 4:
+-        return "data/script/gui/MainMenu_spa.PIS";
+-    case 5:
+-        return "data/script/gui/MainMenu_pol.PIS";
+-    default:
+-        return "data/script/gui/MainMenu.PIS";
+-    }
+-}
+diff --git a/src/startup_main_menu_shared.cpp b/src/startup_main_menu_shared.cpp
+deleted file mode 100644
+--- a/src/startup_main_menu_shared.cpp
++++ /dev/null
+@@ -1,32 +0,0 @@
+-#include "startup_main_menu.h"
+-
+-// Genuine typed projections of original shared bodies. The existing physical
+-// 0x004d3890 IgnoreSurfaceError row and 0x004e8f30 Intro Exit row remain primary.
+-// No duplicate original-byte credit follows from these receiver spellings.
+-void MainMenuController::RenderBeforeScreens()
+-{
+-}
+-
+-// Actual shared 0x00437d10 RET0. No competing address annotation: unchanged
+-// /opt:icf can fold this with the separately retained 0x004d3890 RET0 body.
+-void MainMenuController::RenderAfterScreens()
+-{
+-}
+-
+-void MainMenuController::Exit()
+-{
+-    active = 0;
+-}
+-
+-void MainMenuController::ControllerSlot1c()
+-{
+-}
+-
+-// Actual shared Intro/MainMenu slot20 target 0x004e8fa0, RET8.
+-void MainMenuController::ScreenSizeChanged(int, int)
+-{
+-}
+-
+-void MainMenuController::ControllerSlot24()
+-{
+-}
+diff --git a/src/startup_main_menu_update.cpp b/src/startup_main_menu_update.cpp
+deleted file mode 100644
+--- a/src/startup_main_menu_update.cpp
++++ /dev/null
+@@ -1,7 +0,0 @@
+-#include "startup_main_menu.h"
+-
+-// FUNCTION: BEACHLIFE 0x004e8e50
+-int MainMenuController::Update()
+-{
+-    return 0;
+-}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -20,13 +20,8 @@
+     ScreenPlacementStore* placement;
+     unsigned char unknown_58[0x4c];
+     unsigned char byte_a4;
+-    unsigned char unknown_a5[0x1f];
+-    unsigned char flag_c4;
+ 
+     bool LoadControllerScreen(const char* path);
+-    void SetScreenSize(int width, int height);
+-    unsigned char ReadMenuReturnFlag();
+-    void ClearMenuReturnFlag();
+     // Actual 0x004e3db0, RET4: stores the byte at +a4, then calls 0x004e4000.
+     void SetByteA4(unsigned char value);
+     // Actual 0x004e4000; complete progress/FILE body remains a dependency.
+@@ -48,7 +43,6 @@
+     int previous_mode;
+ 
+     void ClearRegistration();
+-    void SetMode(int value);
+     // Actual 0x004b1890 and 0x004b11d0, both RET0; bodies are not reconstructed here.
+     void CloseActiveScreens();
+     void ReleaseOwner190();
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -20,8 +20,6 @@
+ {
+     unsigned char unknown_00[0x28];
+     CircularList saved;
+-    unsigned char unknown_2c[0x10];
+-    unsigned int menu_script_variant_3c;
+ 
+     bool FindPlacement(int group, int* x, int* y);
+     void WritePlacement(int x, int y, int group);
+diff --git a/src/startup_screen_text_key.h b/src/startup_screen_text_key.h
+deleted file mode 100644
+--- a/src/startup_screen_text_key.h
++++ /dev/null
+@@ -1,18 +0,0 @@
+-#ifndef STARTUP_SCREEN_TEXT_KEY_H
+-#define STARTUP_SCREEN_TEXT_KEY_H
+-
+-// Exact existing borrowed-key declaration, isolated from the unrelated font owner.
+-struct ScreenTextKey
+-{
+-    const char* text;
+-
+-    explicit ScreenTextKey(const char* value)
+-        : text(value)
+-    {
+-    }
+-
+-    // Actual empty cleanup alias at 0x00437d10; no allocation is owned here.
+-    ~ScreenTextKey() { }
+-};
+-
+-#endif
+diff --git a/src/window_audio.h b/src/window_audio.h
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -1,58 +1,19 @@
+ #ifndef WINDOW_AUDIO_H
+ #define WINDOW_AUDIO_H
+ 
+-struct WindowSoundVoice;
+-struct WindowSoundBank;
+-
+-// Actual startup allocation is 0xf8 bytes on x86. No vptr is stored by the
+-// constructor. These descriptive fields do not establish a native owner ABI.
++// Descriptive minimum prefix; original class name and full layout are unknown.
+ struct WindowAudioState
+ {
+     unsigned char enabled;
+-    unsigned char enabled_3d;
+-    unsigned char unknown_02[2];
+     void* digital_driver;
+-    void* provider_08;
++    unsigned char unknown_08[4];
+     void* stream;
+-    float stream_volume_10;
+-    void* samples_14[16];
+-    void* samples_54[8];
+-    WindowSoundVoice* voices_74[16];
+-    WindowSoundVoice* voices_b4[8];
+-    int volume_d4;
+-    float scale_d8;
+-    void* listener_dc;
+-    float position_x_e0;
+-    float position_y_e4;
+-    float position_z_e8;
+-    float value_ec;
+-    float value_f0;
+-    WindowSoundBank* bank_f4;
+-
+-    // Actual 0x004cefd0, RET12.
+-    WindowAudioState(unsigned char enable, const char* provider_name, const char* bank_name);
+-    // Actual ordinary destructor 0x004cf330, RET0; caller frees outer storage.
+-    ~WindowAudioState();
+-    // Actual 0x004d0370, RET4; its caller discards the return register.
+-    void Initialize3DProvider(const char* provider_name);
+-    // Actual 0x004d0540, RET0; registration cleanup, not owner destruction.
+-    void ClearRegistration();
+-
+-    // Existing R287 declaration for the real 0x004cf710, RET12.
+-    int PlaySound(const char* name, unsigned int flags, float fade);
+-    // Actual 0x004d0040, RET20; full owner lifetime remains separate.
+-    int PlaySoundWithParameters(const char* name, int volume, unsigned int flags, float fade, float scale);
+-
+-    // Existing genuine declarations from the game/update and Variable sources.
+-    void Update(float delta);
+-    // Actual 0x004d0440, RET4; source remains a separate dependency.
+-    void UpdateVoiceFades(float delta);
+-    void SetSoundLevel(int voice, float level);
+ 
+     void MuteDigitalDriver();
+     void UnmuteDigitalDriver();
+     void PauseAudioStream();
+     void ResumeAudioStream();
++    void ClearRegistration();
+ };
+ 
+ #endif
+diff --git a/src/window_audio_play_sound.cpp b/src/window_audio_play_sound.cpp
+deleted file mode 100644
+--- a/src/window_audio_play_sound.cpp
++++ /dev/null
+@@ -1,9 +0,0 @@
+-#include "window_audio.h"
+-
+-// FUNCTION: BEACHLIFE 0x004cf710
+-int WindowAudioState::PlaySound(const char* name, unsigned int flags, float fade)
+-{
+-    float scale = scale_d8;
+-    int volume = volume_d4;
+-    return PlaySoundWithParameters(name, volume, flags, fade, scale);
+-}
+diff --git a/src/window_audio_playback.cpp b/src/window_audio_playback.cpp
+deleted file mode 100644
+--- a/src/window_audio_playback.cpp
++++ /dev/null
+@@ -1,84 +0,0 @@
+-#include "window_audio.h"
+-#include "window_sound_bank.h"
+-#include "window_sound_voice.h"
+-#include "miles_imports.h"
+-#include <new>
+-#include <stdio.h>
+-#include <string.h>
+-
+-// FUNCTION: BEACHLIFE 0x004d0040
+-int WindowAudioState::PlaySoundWithParameters(const char* name, int volume, unsigned int flags, float fade, float scale)
+-{
+-    int result = -1;
+-    if (enabled)
+-    {
+-        int index;
+-        for (index = 0; index < 16; ++index)
+-        {
+-            if (voices_74[index] == 0)
+-                break;
+-        }
+-        if (index == 16)
+-            return result;
+-
+-        void* sample = samples_14[index];
+-        AIL_init_sample(sample);
+-        result = index;
+-        if (sample)
+-        {
+-            char filename[64];
+-            sprintf(filename, "%s%s", name, window_sound_wave_extension);
+-            unsigned int bytes;
+-            void* data = bank_f4->FindSample(filename, &bytes);
+-            if (data)
+-            {
+-                WindowSoundVoice* voice = new WindowSoundVoice;
+-                if (voice)
+-                {
+-                    voice->name = 0;
+-                    voice->data_04 = 0;
+-                    voice->word_08 = 0;
+-                    voice->bytes_0c = 0;
+-                    voice->word_10 = 0;
+-                    voice->byte_2c = 0;
+-                    voice->word_30 = -1;
+-                }
+-                voices_74[index] = voice;
+-                voice->data_04 = data;
+-                voice->bytes_0c = bytes;
+-                voice->name = static_cast<char*>(::operator new(strlen(filename) + 1));
+-                strcpy(voice->name, filename);
+-
+-                unsigned int format = voice->word_08;
+-                unsigned int sample_bytes = voice->bytes_0c;
+-                void* sample_data = voice->data_04;
+-                const char* extension = window_sound_wave_extension;
+-                if (format)
+-                    extension = window_sound_mp3_extension;
+-                AIL_set_named_sample_file(sample, extension, sample_data, sample_bytes, 0);
+-
+-                float target_volume = static_cast<float>(volume);
+-                voice->scale_14 = scale;
+-                voice->volume_18 = target_volume;
+-                int initial_volume;
+-                if (fade > 0.0f)
+-                {
+-                    voice->word_10 = 1;
+-                    voice->fade_28 = fade;
+-                    voice->fade_24 = fade;
+-                    voice->word_1c = 0;
+-                    voice->word_20 = 0;
+-                    initial_volume = 0;
+-                }
+-                else
+-                    initial_volume = volume;
+-
+-                if (flags & 2)
+-                    AIL_set_sample_loop_count(sample, 0);
+-                AIL_start_sample(sample);
+-                AIL_set_sample_volume(sample, initial_volume);
+-            }
+-        }
+-    }
+-    return result;
+-}
+diff --git a/src/window_audio_set_sound_level.cpp b/src/window_audio_set_sound_level.cpp
+deleted file mode 100644
+--- a/src/window_audio_set_sound_level.cpp
++++ /dev/null
+@@ -1,35 +0,0 @@
+-#include "miles_imports.h"
+-#include "window_audio.h"
+-#include "window_sound_voice.h"
+-
+-// FUNCTION: BEACHLIFE 0x004cfb00
+-void WindowAudioState::SetSoundLevel(int voice, float level)
+-{
+-    if (voice < 0)
+-        return;
+-
+-    // The original keeps this product on the x87 stack through both clamps.
+-    long double adjusted = static_cast<long double>(level) * static_cast<long double>(scale_d8);
+-    if (!(adjusted >= 0.0L))
+-        adjusted = 0.0L;
+-    else if (adjusted > 1.0L)
+-        adjusted = 1.0L;
+-
+-    int volume = static_cast<int>(adjusted * 127.0L);
+-    if (volume < 3)
+-        volume = 0;
+-
+-    WindowSoundVoice* current = voice < 16 ? voices_74[voice] : voices_b4[voice - 16];
+-    if (!current)
+-        return;
+-
+-    if (voice >= 16)
+-    {
+-        AIL_set_3D_sample_volume(samples_54[voice - 16], volume);
+-        return;
+-    }
+-
+-    AIL_set_sample_volume(samples_14[voice], volume);
+-    // Reload after the SDK call; copy the original argument, not the clamp.
+-    voices_74[voice]->scale_14 = level;
+-}
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+deleted file mode 100644
+--- a/src/window_sound_bank.h
++++ /dev/null
+@@ -1,83 +0,0 @@
+-#ifndef WINDOW_SOUND_BANK_H
+-#define WINDOW_SOUND_BANK_H
+-
+-#include "startup_screen_text_key.h"
+-#include <stdio.h>
+-
+-struct WindowSoundBank;
+-
+-// Actual bank record, distinct from the 52-byte playback voice allocation.
+-struct WindowSoundRecord
+-{
+-    char name[32];
+-    unsigned int bytes_20;
+-    int offset_24;
+-    void* cached_28;
+-    unsigned char unknown_2c[4];
+-    unsigned int references_30;
+-};
+-
+-struct WindowSoundBucket
+-{
+-    const char* key;
+-    WindowSoundRecord* value;
+-    unsigned char unavailable;
+-    unsigned char unknown_09[3];
+-
+-    // Actual 0x004d24e0 initializes only key; other fields remain untouched.
+-    WindowSoundBucket();
+-    // Actual empty 0x00437d10 cleanup; no pointed-to record ownership.
+-    ~WindowSoundBucket();
+-    // Actual 0x004d24f0 copies key/value/unavailable, not opaque bytes.
+-    WindowSoundBucket& operator=(const WindowSoundBucket& other);
+-};
+-
+-struct WindowSoundIterator
+-{
+-    WindowSoundBucket* bucket;
+-    WindowSoundBank* lookup;
+-
+-    // The actual 0x00437d10 RET0 cleanup, shared with the text iterator/key.
+-    ~WindowSoundIterator() { }
+-};
+-
+-// Actual 32-byte x86 bank allocation. Destruction/loading remain real dependencies.
+-struct WindowSoundBank
+-{
+-    int end_index;
+-    int capacity_04;
+-    WindowSoundBucket* buckets;
+-    unsigned char unknown_0c[4];
+-    int bucket_count;
+-    unsigned int word_14;
+-    FILE* stream_18;
+-    unsigned int cached_bytes_1c;
+-
+-    // Actual constructor 0x004d1bc0/RET8 and ordinary destructor 0x004d1d30.
+-    WindowSoundBank(const char* header_path, const char* bank_path);
+-    ~WindowSoundBank();
+-    void* FindSample(const char* name, unsigned int* bytes);
+-    void LoadIndex(const char* header_path, const char* bank_path); // 0x004d2140, RET8.
+-
+-    // Descriptive names for the actual selected support/EH callees. These
+-    // declarations do not infer the original container template or add bodies.
+-    WindowSoundBank* InitializeStorageBase(); // 0x004d38b0, real return-this.
+-    void DestroyStorageBase();                // 0x004d3890, real empty cleanup.
+-    void ReleaseBucketStorage();              // 0x0049f560, actual array cleanup.
+-    void ReleaseIndexStorage();               // 0x004d22a0, array then base cleanup.
+-    void ResetBuckets();                      // 0x004d23d0, unavailable bytes/word14.
+-
+-    // These are the same physical 0x004d2310/0x004d2450 bodies already supplied
+-    // for text lookup. A coherent typed composition is required before linking;
+-    // this packet does not add duplicate implementations or cast owner layouts.
+-    WindowSoundIterator BeginSound(); // 0x004d23f0, RET4 hidden iterator result.
+-    WindowSoundIterator FindSoundKey(const ScreenTextKey& key);
+-    WindowSoundIterator EndSound();
+-};
+-
+-// Actual pointer slots 0x00582714 and 0x00582718. Initial original backing is
+-// ".wav" and ".mp3" respectively; this packet supplies no global definition.
+-extern const char* window_sound_wave_extension;
+-extern const char* window_sound_mp3_extension;
+-
+-#endif
+diff --git a/src/window_sound_end.cpp b/src/window_sound_end.cpp
+deleted file mode 100644
+--- a/src/window_sound_end.cpp
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#include "window_sound_bank.h"
+-
+-// FUNCTION: BEACHLIFE 0x004d2450
+-WindowSoundIterator WindowSoundBank::EndSound()
+-{
+-    WindowSoundIterator end = { buckets + end_index, this };
+-    return end;
+-}
+diff --git a/src/window_sound_extensions.cpp b/src/window_sound_extensions.cpp
+deleted file mode 100644
+--- a/src/window_sound_extensions.cpp
++++ /dev/null
+@@ -1,12 +0,0 @@
+-#include "window_sound_bank.h"
+-
+-// Observed writable original backing and pointer initializers. Descriptive
+-// source ownership, not recovery of an original translation-unit name.
+-// GLOBAL: BEACHLIFE 0x00582734
+-char window_sound_wave_backing[5] = ".wav";
+-// GLOBAL: BEACHLIFE 0x00581558
+-char window_sound_mp3_backing[5] = ".mp3";
+-// GLOBAL: BEACHLIFE 0x00582714
+-const char* window_sound_wave_extension = window_sound_wave_backing;
+-// GLOBAL: BEACHLIFE 0x00582718
+-const char* window_sound_mp3_extension = window_sound_mp3_backing;
+diff --git a/src/window_sound_find_key.cpp b/src/window_sound_find_key.cpp
+deleted file mode 100644
+--- a/src/window_sound_find_key.cpp
++++ /dev/null
+@@ -1,31 +0,0 @@
+-#include "window_sound_bank.h"
+-#include <string.h>
+-
+-// FUNCTION: BEACHLIFE 0x004d2310
+-WindowSoundIterator WindowSoundBank::FindSoundKey(const ScreenTextKey& key)
+-{
+-    WindowSoundIterator end = EndSound();
+-    const char* cursor = key.text;
+-    unsigned int hash = 0;
+-    while (*cursor != 0)
+-    {
+-        hash = hash * 5 + static_cast<signed char>(*cursor);
+-        ++cursor;
+-    }
+-
+-    int first = static_cast<int>(hash % static_cast<unsigned int>(bucket_count));
+-    int index = first;
+-    do
+-    {
+-        if (buckets[index].unavailable == 0
+-            && _stricmp(buckets[index].key, key.text) == 0)
+-        {
+-            WindowSoundIterator found = { buckets + index, this };
+-            return found;
+-        }
+-        ++index;
+-        if (index >= bucket_count)
+-            index = 0;
+-    } while (index != first);
+-    return end;
+-}
+diff --git a/src/window_sound_find_sample.cpp b/src/window_sound_find_sample.cpp
+deleted file mode 100644
+--- a/src/window_sound_find_sample.cpp
++++ /dev/null
+@@ -1,37 +0,0 @@
+-#include "window_sound_bank.h"
+-#include <new>
+-
+-// FUNCTION: BEACHLIFE 0x004d1ee0
+-void* WindowSoundBank::FindSample(const char* name, unsigned int* bytes)
+-{
+-    WindowSoundIterator found = { 0, 0 };
+-    *bytes = 0;
+-    found = FindSoundKey(ScreenTextKey(name));
+-    if (found.bucket != EndSound().bucket)
+-    {
+-        WindowSoundRecord* record = found.bucket->value;
+-        if (record->cached_28 == 0)
+-        {
+-            void* data = ::operator new(record->bytes_20);
+-            int offset = record->offset_24;
+-            record->cached_28 = data;
+-            fseek(stream_18, offset, SEEK_SET);
+-
+-            FILE* stream = stream_18;
+-            unsigned int length = record->bytes_20;
+-            void* destination = record->cached_28;
+-            fread(destination, 1, length, stream);
+-
+-            unsigned int loaded_bytes = record->bytes_20;
+-            unsigned int previous_bytes = cached_bytes_1c;
+-            cached_bytes_1c = previous_bytes + loaded_bytes;
+-        }
+-
+-        unsigned int size = record->bytes_20;
+-        void* result = record->cached_28;
+-        *bytes = size;
+-        ++record->references_30;
+-        return result;
+-    }
+-    return 0;
+-}
+diff --git a/src/window_sound_voice.h b/src/window_sound_voice.h
+deleted file mode 100644
+--- a/src/window_sound_voice.h
++++ /dev/null
+@@ -1,24 +0,0 @@
+-#ifndef WINDOW_SOUND_VOICE_H
+-#define WINDOW_SOUND_VOICE_H
+-
+-// Actual 0x34-byte x86 allocation in PlaySoundWithParameters. No owner methods
+-// are invented; the bank data and external sample have separate lifetimes.
+-struct WindowSoundVoice
+-{
+-    char* name;
+-    void* data_04;
+-    unsigned int word_08;
+-    unsigned int bytes_0c;
+-    unsigned int word_10;
+-    float scale_14;
+-    float volume_18;
+-    float word_1c;
+-    float word_20;
+-    float fade_24;
+-    float fade_28;
+-    unsigned char byte_2c;
+-    unsigned char unknown_2d[3];
+-    int word_30;
+-};
+-
+-#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -242,7 +242,7 @@
+     {
+       "address": "0x004e8f30",
+       "size": 8,
+-      "name": "IntroController::Exit",
++      "name": "ControllerState::Exit",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
+     },
+     {
+@@ -597,11 +597,6 @@
+       "size": 91,
+       "name": "ClipScreenRectangles",
+       "name_status": "Descriptive complete cdecl clipping helper; ordered destination/source adjustments and actual renderer-global capture proven"
+-    },
+-    {
+-      "name": "MainMenuController::MainMenuController",
+-      "address": "0x004e8df0",
+-      "size": 32
+     }
+   ],
+   "library_functions": [
+@@ -676,9 +671,6 @@
+     ],
+     "startup_screen_list_box_clear.cpp": [
+       "/Ob1"
+-    ],
+-    "window_sound_find_sample.cpp": [
+-      "/GX"
+     ]
+   },
+   "stdcall_imports": {
+@@ -686,13 +678,7 @@
+       "export_names": "decorated",
+       "symbols": {
+         "AIL_set_digital_master_volume": 8,
+-        "AIL_pause_stream": 8,
+-        "AIL_init_sample": 4,
+-        "AIL_set_named_sample_file": 20,
+-        "AIL_set_sample_loop_count": 8,
+-        "AIL_start_sample": 4,
+-        "AIL_set_sample_volume": 8,
+-        "AIL_set_3D_sample_volume": 8
++        "AIL_pause_stream": 8
+       }
+     },
+     "USER32.dll": {
+@@ -898,31 +884,6 @@
+       "kind": "void-member",
+       "return_type": "void",
+       "parameters": []
+-    },
+-    {
+-      "address": "0x004e41e0",
+-      "size": 100,
+-      "name": "ScreenRequestGamePrefix::SetScreenSize",
+-      "symbol": "?SetScreenSize@ScreenRequestGamePrefix@@QAEXHH@Z",
+-      "header": "startup_screen_manager.h",
+-      "kind": "void-member",
+-      "return_type": "void",
+-      "parameters": [
+-        "int",
+-        "int"
+-      ]
+-    },
+-    {
+-      "address": "0x004ae9e0",
+-      "size": 279,
+-      "name": "ScreenManager::SetMode",
+-      "symbol": "?SetMode@ScreenManager@@QAEXH@Z",
+-      "header": "startup_screen_manager.h",
+-      "kind": "void-member",
+-      "return_type": "void",
+-      "parameters": [
+-        "int"
+-      ]
+     }
+   ]
+ }

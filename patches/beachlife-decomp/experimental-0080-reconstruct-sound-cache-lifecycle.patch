@@ -1,0 +1,83 @@
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+index 6f1b8c1c1820170869c8f638fcf48e158fb04b3b..89c9b2462d807d28864dd928f871de97694eba7e 100644
+--- a/src/window_sound_bank.h
++++ b/src/window_sound_bank.h
+@@ -13,7 +13,7 @@
+     unsigned int bytes_20;
+     int offset_24;
+     void* cached_28;
+-    unsigned char unknown_2c[4];
++    float idle_seconds_2c;
+     unsigned int references_30;
+ };
+ 
+@@ -57,6 +57,8 @@
+     WindowSoundBank(const char* header_path, const char* bank_path);
+     ~WindowSoundBank();
+     void* FindSample(const char* name, unsigned int* bytes);
++    void ReleaseSample(const char* name);                           // 0x004d1fe0, RET4; separate real body.
++    void UpdateCache(float delta);                                  // 0x004d2070, RET4; separate real body.
+     void LoadIndex(const char* header_path, const char* bank_path); // 0x004d2140, RET8.
+ 
+     // Descriptive names for the actual selected support/EH callees. These
+diff --git a/src/window_sound_release_sample.cpp b/src/window_sound_release_sample.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7af35d74103cafa91615dbca9cf02e907da06a7d
+--- /dev/null
++++ b/src/window_sound_release_sample.cpp
+@@ -0,0 +1,14 @@
++#include "window_sound_bank.h"
++
++// FUNCTION: BEACHLIFE 0x004d1fe0
++void WindowSoundBank::ReleaseSample(const char* name)
++{
++    WindowSoundIterator found = { 0, 0 };
++    found = FindSoundKey(ScreenTextKey(name));
++    if (found.bucket != EndSound().bucket)
++    {
++        WindowSoundRecord* record = found.bucket->value;
++        if (--record->references_30 == 0)
++            record->idle_seconds_2c = 0.0f;
++    }
++}
+diff --git a/src/window_sound_update_cache.cpp b/src/window_sound_update_cache.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5f493d09a120367208f22101685cbf1342895b3
+--- /dev/null
++++ b/src/window_sound_update_cache.cpp
+@@ -0,0 +1,35 @@
++#include "window_sound_bank.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d2070
++void WindowSoundBank::UpdateCache(float delta)
++{
++    WindowSoundIterator current = { 0, 0 };
++    current = BeginSound();
++    while (current.bucket != EndSound().bucket)
++    {
++        WindowSoundRecord* record = current.bucket->value;
++        void* cached = record->cached_28;
++        if (cached != 0 && record->references_30 == 0)
++        {
++            // FST stores the member, but FCOMP observes the retained sum.
++            long double idle_seconds = static_cast<long double>(delta) + static_cast<long double>(record->idle_seconds_2c);
++            record->idle_seconds_2c = static_cast<float>(idle_seconds);
++            if (idle_seconds > 5.0L)
++            {
++                ::operator delete(cached);
++                unsigned int bytes = record->bytes_20;
++                record->cached_28 = 0;
++                cached_bytes_1c -= bytes;
++            }
++        }
++
++        do
++        {
++            ++current.bucket;
++            if (current.bucket == current.lookup->EndSound().bucket)
++                break;
++        } while (current.bucket->unavailable != 0);
++    }
++}

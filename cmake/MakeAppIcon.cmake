@@ -1,0 +1,15 @@
+set(ICONSET "${OUTPUT}.iconset")
+file(MAKE_DIRECTORY "${ICONSET}")
+foreach(size 16 32 128 256 512)
+    foreach(scale 1 2)
+        math(EXPR pixels "${size} * ${scale}")
+        set(suffix "")
+        if(scale EQUAL 2)
+            set(suffix "@2x")
+        endif()
+        execute_process(COMMAND "${SIPS}" -z "${pixels}" "${pixels}" "${SOURCE}"
+            --out "${ICONSET}/icon_${size}x${size}${suffix}.png"
+            OUTPUT_QUIET COMMAND_ERROR_IS_FATAL ANY)
+    endforeach()
+endforeach()
+execute_process(COMMAND "${ICONUTIL}" -c icns "${ICONSET}" -o "${OUTPUT}" COMMAND_ERROR_IS_FATAL ANY)

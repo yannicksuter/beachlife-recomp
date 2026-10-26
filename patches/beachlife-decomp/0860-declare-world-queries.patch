@@ -1,0 +1,106 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 25a3549..5000d45 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4321,3 +4321,17 @@ extern "C" __declspec(dllexport) unsigned int FixtureMatch6_59(ScreenRequestGame
+ {
+     return item->ScreenRequestGamePrefix::ScenarioNameCount();
+ }
++
++#include "startup_variable_state.h"
++
++typedef char Decl2WorldVariableWorldPrefixSize[(sizeof(VariableWorldPrefix) == 0x34408) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixtotal_00Offset[(offsetof(VariableWorldPrefix, total_00) == 0x0) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixbuilding_ids_10Offset[(offsetof(VariableWorldPrefix, building_ids_10) == 0x10) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixguest_ids_7e0Offset[(offsetof(VariableWorldPrefix, guest_ids_7e0) == 0x7e0) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixentity_ids_1f50Offset[(offsetof(VariableWorldPrefix, entity_ids_1f50) == 0x1f50) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixbuildings_12120Offset[(offsetof(VariableWorldPrefix, buildings_12120) == 0x12120) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixguests_128f0Offset[(offsetof(VariableWorldPrefix, guests_128f0) == 0x128f0) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixentities_14060Offset[(offsetof(VariableWorldPrefix, entities_14060) == 0x14060) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixnext_id_24230Offset[(offsetof(VariableWorldPrefix, next_id_24230) == 0x24230) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixmatches_24234Offset[(offsetof(VariableWorldPrefix, matches_24234) == 0x24234) ? 1 : -1];
++typedef char Decl2WorldVariableWorldPrefixkeylines_34404Offset[(offsetof(VariableWorldPrefix, keylines_34404) == 0x34404) ? 1 : -1];
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 8d9b0b2..a74c941 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -396,36 +396,63 @@ struct VariableWeather
+     void RefreshForScreenSize();
+ };
+ 
+-// Observed inline building, guest and entity pointer tables. Complete world
+-// ownership and lifetime remain separate from this borrowed matching view.
++// Shared world owner, entity tables and query scratch storage.
+ typedef VariableEntity* VariableEntityPointer;
+ 
+-struct VariableWorldPrefix
++struct VariableWorldPrefix;
++
++struct VariableWorldRegistration
+ {
+-    VariableEntityPointer* CollectStaff(unsigned int* count); // 0x0042f990.
+-    unsigned char unknown_00[4];
++    explicit VariableWorldRegistration(VariableWorldPrefix* owner);
++    ~VariableWorldRegistration(); // 0x004303a0.
++};
++
++struct VariableWorldPrefix : VariableWorldRegistration
++{
++    VariableWorldPrefix(); // 0x0042e720.
++    unsigned int total_00;
+     unsigned int buildings_04;
+     unsigned int guests_08;
+     unsigned int entities_0c;
+-    unsigned char unknown_10[0x12110];
+-    // Inline building table; the guest (+0x128f0) and entity (+0x14060) tables
+-    // follow this prefix.
++    unsigned int building_ids_10[500];
++    unsigned int guest_ids_7e0[1500];
++    unsigned int entity_ids_1f50[0x4074];
+     VariableEntity* buildings_12120[500];
+     VariableEntity* guests_128f0[1500];
+     VariableEntity* entities_14060[0x4074];
+-    unsigned char unknown_24230[0x101d4];
++    unsigned int next_id_24230;
++    VariableEntity* matches_24234[16500];
+     unsigned char keylines_34404;
+ 
++    void SortLastBuilding();                                            // 0x0042f070.
++    VariableEntity* CreateEntity(const char* name, unsigned char type); // 0x0042e850.
++    bool RemoveEntity(unsigned int id);                                 // 0x0042ee10.
++    void ClearStaffSelection();                                         // 0x0042f7e0.
+     // Actual 0x0042fab0, RET4; low-byte flag, real world owner required.
+     void SetKeylines(unsigned char enabled);
+ 
+-    VariableEntity** FindNamed(const char* name, unsigned int* count); // 0x0042efe0, RET8.
+-    unsigned int HasNamed(const char* name);                           // 0x0042f000, RET4, EAX test.
+-    VariableEntity** ByType(unsigned char type, unsigned int* count);  // 0x0042f020, RET8.
+-    VariableEntity** AllStaff(unsigned int* count);                    // 0x0042f0e0, RET4.
+-    unsigned int CountType(unsigned char type);                        // 0x0042f0f0, RET4.
+-    void CountMatches(unsigned int& result, const void* key, bool (*predicate)(const VariableEntity*, const void*));
+-    VariableEntity* FindObject(unsigned int id);
++    VariableEntity* FindObject(unsigned int id);                                                                                            // 0x0042ef60.
++    VariableEntity** FindNamed(const char* name, unsigned int* count);                                                                      // 0x0042efe0, RET8.
++    unsigned int HasNamed(const char* name);                                                                                                // 0x0042f000, RET4, EAX test.
++    VariableEntity** ByType(unsigned char type, unsigned int* count);                                                                       // 0x0042f020, RET8.
++    VariableEntity** Nearby(int x, int y, unsigned int distance, unsigned int* count);                                                      // 0x0042f120.
++    VariableEntity** AllStaff(unsigned int* count);                                                                                         // 0x0042f0e0, RET4.
++    VariableEntity** CollectStaff(unsigned int* count);                                                                                     // 0x0042f990.
++    VariableEntity** SelectedBuildings(unsigned int* count);                                                                                // 0x0042f230.
++    VariableEntity** Selected(unsigned int* count);                                                                                         // 0x0042f360.
++    unsigned int FindIndex(unsigned int id);                                                                                                // 0x0042f820.
++    VariableEntity** FindMatches(unsigned int* count, const void* key, bool (*predicate)(VariableEntity*, const void*));                    // 0x0042f890.
++    void ClearSelectionForType(unsigned char type);                                                                                         // 0x0042f6d0.
++    VariableEntity** InRectangle(unsigned char type, unsigned int* count, const ScreenWorldPosition* low, const ScreenWorldPosition* high); // 0x0042f510.
++    void ClearSelection();                                                                                                                  // 0x0042f770.
++    unsigned int CountType(unsigned char type);                                                                                             // 0x0042f0f0, RET4.
++
++    void CountMatches(unsigned int& result, const void* key,
++        bool (*predicate)(const VariableEntity*, const void*)); // 0x0042f9f0
++
++    ~VariableWorldPrefix();               // 0x0042e780.
++    void LoadState(GameFileReader* file); // 0x0042fd30.
++    void SaveState(GameFileReader* file); // 0x0042fb20.
+ };
+ 
+ // These declarations name the existing original roots; they define no storage.

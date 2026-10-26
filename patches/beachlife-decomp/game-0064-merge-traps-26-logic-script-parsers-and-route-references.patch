@@ -1,0 +1,897 @@
+diff --git a/src/startup_world_script_action_destructor.cpp b/src/startup_world_script_action_destructor.cpp
+index 9b206f50c2ae0596ade4292f2bbd2eb3ba49d7aa..292a9d3ccd8c4eb5b45bf5eee35d55823e4391f1 100644
+--- a/src/startup_world_script_action_destructor.cpp
++++ b/src/startup_world_script_action_destructor.cpp
+@@ -19,7 +19,7 @@ WorldSubsystem20::Action::~Action() noexcept(false)
+         break;
+     case 2:
+     case 11:
+-        ReleaseOwnedAllocation(static_cast<WorldActionStateData*>(data_08)->name_00);
++        ReleaseOwnedAllocation(*static_cast<const char**>(data_08));
+         ::operator delete(data_08);
+         break;
+     case 3:
+diff --git a/src/startup_world_script_parse_create.cpp b/src/startup_world_script_parse_create.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c87e0c68550e788579c7002917c3a4e5a4642edc
+--- /dev/null
++++ b/src/startup_world_script_parse_create.cpp
+@@ -0,0 +1,154 @@
++#include "startup_world_script_actions.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004dee60
++int WorldSubsystem20::ParseCreateAction()
++{
++    WorldActionCreateData* data = new (std::nothrow) WorldActionCreateData;
++    if (data)
++    {
++        data->word_30 = -1;
++        data->name_04 = 0;
++        data->model_08 = 0;
++        for (unsigned int index = 0; index < 5; ++index)
++            data->values_1c[index] = -1.0f;
++        data->word_38 = 0;
++    }
++    data->count_18 = 1;
++    data->flag_3c = 0;
++    char token[52];
++    int count = ReadToken(token);
++    if (std::strcmp(token, "Building") == 0)
++        data->kind_00 = 2;
++    else if (std::strcmp(token, "Guest") == 0)
++        data->kind_00 = 3;
++    else if (std::strcmp(token, "Scenery") == 0)
++        data->kind_00 = 1;
++    else
++        StartupFatal("WorldScript::CreateCommand - Unhandled creation message");
++    count += ReadToken(token);
++    char* name = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
++    data->name_04 = name;
++    std::strcpy(name, token);
++    count += ReadToken(token);
++    if (_stricmp(token, "Random") == 0)
++    {
++        data->x_0c = -1;
++        data->y_10 = -1;
++    }
++    else
++    {
++        data->x_0c = std::atoi(token);
++        count += ReadToken(token);
++        data->y_10 = std::atoi(token);
++    }
++    if (data->kind_00 == 2)
++    {
++        count += ReadToken(token);
++        data->rotation_14 = std::atoi(token);
++    }
++    count += ReadToken(token);
++    if (data->kind_00 == 1)
++    {
++        if (data->x_0c > -1)
++        {
++            data->rotation_14 = std::atoi(token);
++            count += ReadToken(token);
++        }
++        else
++            data->rotation_14 = 0;
++        while (std::strcmp(token, ";") != 0)
++        {
++            if (std::strcmp(token, "Number") == 0)
++            {
++                count += ReadToken(token);
++                data->count_18 = std::atoi(token);
++                count += ReadToken(token);
++            }
++            else
++            {
++                char* model = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
++                data->model_08 = model;
++                std::strcpy(model, token);
++                count += ReadToken(token);
++            }
++        }
++    }
++    if (data->kind_00 == 3)
++    {
++        while (std::strcmp(token, ";") != 0)
++        {
++            if (std::strcmp(token, "Number") == 0)
++            {
++                count += ReadToken(token);
++                data->count_18 = std::atoi(token);
++            }
++            else
++                StartupFatal("Invalid Extra command in worldscript create guest command %s", token);
++            count += ReadToken(token);
++        }
++    }
++    if (data->kind_00 == 2)
++    {
++        while (std::strcmp(token, ";") != 0)
++        {
++            if (std::strcmp(token, "Prices") == 0)
++            {
++                count += ReadToken(token);
++                float* price = data->values_1c;
++                while (std::strcmp(token, ";") != 0)
++                {
++                    if (std::strcmp(token, "BeerType") == 0)
++                    {
++                        count += ReadToken(token);
++                        if (_stricmp(token, "Grimleys") == 0)
++                            data->word_30 = 0;
++                        else if (_stricmp(token, "Capehorn") == 0)
++                            data->word_30 = 1;
++                        else if (_stricmp(token, "Smileys") == 0)
++                            data->word_30 = 2;
++                        else if (_stricmp(token, "Thumpers") == 0)
++                            data->word_30 = 3;
++                        else if (_stricmp(token, "Smashers") == 0)
++                            data->word_30 = 4;
++                        count += ReadToken(token);
++                        data->value_34 = static_cast<float>(std::atof(token));
++                    }
++                    *price++ = static_cast<float>(std::atof(token));
++                    count += ReadToken(token);
++                }
++            }
++            else if (std::strcmp(token, "BeerType") == 0)
++            {
++                count += ReadToken(token);
++                if (_stricmp(token, "Grimleys") == 0)
++                    data->word_30 = 0;
++                else if (_stricmp(token, "Capehorn") == 0)
++                    data->word_30 = 1;
++                else if (_stricmp(token, "Smileys") == 0)
++                    data->word_30 = 2;
++                else if (_stricmp(token, "Thumpers") == 0)
++                    data->word_30 = 3;
++                else if (_stricmp(token, "Smashers") == 0)
++                    data->word_30 = 4;
++                count += ReadToken(token);
++                data->value_34 = static_cast<float>(std::atof(token));
++            }
++            else if (std::strcmp(token, "Age") == 0)
++            {
++                count += ReadToken(token);
++                data->word_38 = std::atoi(token);
++            }
++            else if (std::strcmp(token, "Broken") == 0)
++                data->flag_3c = 1;
++            else
++                StartupFatal("Invalid Extra command in worldscript create building command %s", token);
++            count += ReadToken(token);
++        }
++    }
++    AppendAction(new (std::nothrow) Action { 0, 12, data });
++    return count;
++}
+diff --git a/src/startup_world_script_parse_disaster.cpp b/src/startup_world_script_parse_disaster.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a36fa8048a014808764087576da49d45a498ccb
+--- /dev/null
++++ b/src/startup_world_script_parse_disaster.cpp
+@@ -0,0 +1,97 @@
++#include "startup_world_script_actions.h"
++#include "startup_variable_state.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e0930
++int WorldSubsystem20::ParseDisasterAction()
++{
++    WorldEventRecord* data = new (std::nothrow) WorldEventRecord;
++    if (data)
++    {
++        data->value_30 = 0.5f;
++        data->data_34 = 0;
++    }
++    char token[64];
++    int count = ReadToken(token);
++    if (std::strcmp(token, "Sharks") == 0)
++        data->kind_00 = 0;
++    else if (std::strcmp(token, "WaterContamination") == 0)
++        data->kind_00 = 1;
++    else if (std::strcmp(token, "BeerShortage") == 0)
++        data->kind_00 = 2;
++    else if (std::strcmp(token, "Lightning") == 0)
++        data->kind_00 = 3;
++    else if (std::strcmp(token, "Strike") == 0)
++        data->kind_00 = 4;
++    else
++        StartupFatal("Invalid Disaster Scripted - %s", token);
++    count += ReadToken(token);
++    while (std::strcmp(token, ";") != 0)
++    {
++        if (std::strcmp(token, "Day") == 0)
++        {
++            count += ReadToken(token);
++            data->day_1c = std::atoi(token);
++        }
++        else if (std::strcmp(token, "Time") == 0)
++        {
++            count += ReadToken(token);
++            data->time_18 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "Duration") == 0)
++        {
++            count += ReadToken(token);
++            data->duration_14 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "Scale") == 0)
++        {
++            count += ReadToken(token);
++            data->count_20 = std::atoi(token);
++        }
++        else if (std::strcmp(token, "Rect") == 0)
++        {
++            count += ReadToken(token);
++            data->bounds_04.left = std::atoi(token);
++            count += ReadToken(token);
++            data->bounds_04.top = std::atoi(token);
++            count += ReadToken(token);
++            data->bounds_04.right = std::atoi(token);
++            count += ReadToken(token);
++            data->bounds_04.bottom = std::atoi(token);
++        }
++        else if (std::strcmp(token, "DisasterValue") == 0)
++        {
++            count += ReadToken(token);
++            data->value_24 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "BeerType") == 0)
++        {
++            count += ReadToken(token);
++            data->catalog_index_28 = variable_catalog->FindUnlock(token);
++        }
++        else if (std::strcmp(token, "ReplacementBeer") == 0)
++        {
++            count += ReadToken(token);
++            data->replacement_2c = variable_catalog->FindUnlock(token);
++        }
++        else if (std::strcmp(token, "ReplacementStrength") == 0)
++        {
++            count += ReadToken(token);
++            data->value_30 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "Target") == 0)
++        {
++            count += ReadToken(token);
++            data->data_34 = ::operator new(std::strlen(token) + 1, std::nothrow);
++            std::strcpy(static_cast<char*>(data->data_34), token);
++        }
++        else
++            StartupFatal("WorldScript::DisasterEventCommand - Invalid Command Type %s", token);
++        count += ReadToken(token);
++    }
++    AppendAction(new (std::nothrow) Action { 0, 22, data });
++    return count;
++}
+diff --git a/src/startup_world_script_parse_interface.cpp b/src/startup_world_script_parse_interface.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5b9938f9d6ad7e271fc46c5d7473a6ae5eaa7c43
+--- /dev/null
++++ b/src/startup_world_script_parse_interface.cpp
+@@ -0,0 +1,55 @@
++#include "startup_world_script_actions.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e19b0
++int WorldSubsystem20::ParsePlaySoundAction()
++{
++    const char** data = new (std::nothrow) const char*(0);
++    char token[52];
++    int count = ReadToken(token);
++    char* name = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
++    *data = name;
++    std::strcpy(name, token);
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 11, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004e1aa0
++int WorldSubsystem20::ParseMoveCameraAction()
++{
++    WorldActionPositionData* data = new (std::nothrow) WorldActionPositionData;
++    char token[64];
++    int count = ReadToken(token);
++    data->position_00.x = static_cast<float>(std::atof(token));
++    count += ReadToken(token);
++    data->position_00.y = static_cast<float>(std::atof(token));
++    data->position_00.z = 0.0f;
++    count += ReadToken(token);
++    data->duration_0c = static_cast<float>(std::atof(token));
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 24, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004e1ba0
++int WorldSubsystem20::ParseShowMenuAction()
++{
++    WorldActionNamedData* data = new (std::nothrow) WorldActionNamedData { 0, 0 };
++    char token[128];
++    int count = ReadToken(token);
++    char* name = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
++    data->name_00 = name;
++    std::strcpy(name, token);
++    count += ReadToken(token);
++    if (std::strcmp(token, ";") != 0)
++    {
++        char* text = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
++        data->text_04 = text;
++        std::strcpy(text, token);
++    }
++    AppendAction(new (std::nothrow) Action { 0, 25, data });
++    return count;
++}
+diff --git a/src/startup_world_script_parse_routes.cpp b/src/startup_world_script_parse_routes.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3eff42bfec7cc2b6b0a07a92c55d273430bd3250
+--- /dev/null
++++ b/src/startup_world_script_parse_routes.cpp
+@@ -0,0 +1,93 @@
++#include "startup_world_script_actions.h"
++#include <bit>
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e01d0
++int WorldSubsystem20::ParseBoatEntryAction()
++{
++    WorldActionEndpointData* data = new (std::nothrow) WorldActionEndpointData;
++    char token[52];
++    int count = ReadToken(token);
++    data->position_00.x = static_cast<float>(std::atof(token));
++    count += ReadToken(token);
++    data->position_00.y = static_cast<float>(std::atof(token));
++    data->position_00.z = 0.0f;
++    count += ReadToken(token);
++    data->heading_14 = std::atoi(token);
++    count += ReadToken(token);
++    // Retail writes float bits into the endpoint's two trailing coordinates.
++    data->tile_0c.x = std::bit_cast<int>(static_cast<float>(std::atof(token)));
++    count += ReadToken(token);
++    data->tile_0c.y = std::bit_cast<int>(static_cast<float>(std::atof(token)));
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 18, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004e0310
++int WorldSubsystem20::ParseBoatExitAction()
++{
++    WorldActionEndpointData* data = new (std::nothrow) WorldActionEndpointData;
++    char token[52];
++    int count = ReadToken(token);
++    data->position_00.x = static_cast<float>(std::atof(token));
++    count += ReadToken(token);
++    data->position_00.y = static_cast<float>(std::atof(token));
++    data->position_00.z = 0.0f;
++    count += ReadToken(token);
++    data->heading_14 = std::atoi(token);
++    count += ReadToken(token);
++    // Retail writes float bits into the endpoint's two trailing coordinates.
++    data->tile_0c.x = std::bit_cast<int>(static_cast<float>(std::atof(token)));
++    count += ReadToken(token);
++    data->tile_0c.y = std::bit_cast<int>(static_cast<float>(std::atof(token)));
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 19, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004dff10
++int WorldSubsystem20::ParseBoatPointAction()
++{
++    WorldActionPositionData* data = new (std::nothrow) WorldActionPositionData;
++    if (data)
++        data->word_0c = 0;
++    char token[52];
++    int count = ReadToken(token);
++    data->position_00.x = static_cast<float>(std::atof(token));
++    count += ReadToken(token);
++    data->position_00.y = static_cast<float>(std::atof(token));
++    data->position_00.z = 0.0f;
++    count += ReadToken(token);
++    while (std::strcmp(token, ";") != 0)
++    {
++        if (_stricmp(token, "Unload") == 0)
++            data->word_0c = 1;
++        else if (_stricmp(token, "Destroy") == 0)
++            data->word_0c = 2;
++        count += ReadToken(token);
++    }
++    AppendAction(new (std::nothrow) Action { 0, 17, data });
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004e00b0
++int WorldSubsystem20::ParseCircuitPointAction()
++{
++    WorldActionEntryData* data = new (std::nothrow) WorldActionEntryData;
++    char token[52];
++    int count = ReadToken(token);
++    if (_stricmp(token, "Jetski") == 0)
++        data->kind_08 = 0;
++    else if (_stricmp(token, "PowerBoat") == 0)
++        data->kind_08 = 1;
++    count += ReadToken(token);
++    data->first_00 = static_cast<unsigned int>(std::atoi(token));
++    count += ReadToken(token);
++    data->second_04 = static_cast<unsigned int>(std::atoi(token));
++    count += ReadToken(token);
++    AppendAction(new (std::nothrow) Action { 0, 21, data });
++    return count;
++}
+diff --git a/src/startup_world_script_parse_transport.cpp b/src/startup_world_script_parse_transport.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..bd90f248d1675fc4482afb7e98057d2e6df019c0
+--- /dev/null
++++ b/src/startup_world_script_parse_transport.cpp
+@@ -0,0 +1,87 @@
++#include "startup_world_script_actions.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e0450
++int WorldSubsystem20::ParseBoatEventAction()
++{
++    WorldActionTransportData* data = new (std::nothrow) WorldActionTransportData;
++    if (data)
++    {
++        for (unsigned int index = 0; index < 20; ++index)
++        {
++            data->random_560[index] = 0;
++            data->names_10[index][0] = 0;
++            data->counts_510[index] = 0;
++        }
++        data->count_5b0 = 0;
++    }
++    unsigned int guestIndex = 0;
++    data->repeat_08 = 1;
++    char token[64];
++    int count = ReadToken(token);
++    while (std::strcmp(token, ";") != 0)
++    {
++        if (std::strcmp(token, "Now") == 0)
++            data->repeat_08 = 3;
++        else if (std::strcmp(token, "Day") == 0)
++        {
++            data->repeat_08 = 0;
++            count += ReadToken(token);
++            data->day_04 = std::atoi(token);
++        }
++        else if (std::strcmp(token, "Day+") == 0)
++        {
++            data->repeat_08 = 2;
++            count += ReadToken(token);
++            data->day_04 = std::atoi(token);
++        }
++        else if (std::strcmp(token, "Time") == 0)
++        {
++            count += ReadToken(token);
++            data->time_00 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "Guests") == 0)
++        {
++            count += ReadToken(token);
++            data->kind_0c = 2;
++            while (std::strcmp(token, ";") != 0)
++            {
++                std::strcpy(data->names_10[guestIndex], token);
++                count += ReadToken(token);
++                if (std::strcmp(token, "Random") == 0)
++                {
++                    count += ReadToken(token);
++                    data->random_560[guestIndex] = 1;
++                }
++                else
++                    data->random_560[guestIndex] = 0;
++                data->counts_510[guestIndex] = std::atoi(token);
++                ++guestIndex;
++                count += ReadToken(token);
++            }
++            continue;
++        }
++        else if (std::strcmp(token, "Random") == 0)
++        {
++            data->kind_0c = 0;
++            count += ReadToken(token);
++            data->count_5b0 = std::atoi(token);
++        }
++        else if (std::strcmp(token, "Performance") == 0)
++        {
++            data->kind_0c = 3;
++            count += ReadToken(token);
++            data->count_5b0 = std::atoi(token);
++        }
++        else
++        {
++            data->kind_0c = 1;
++            data->count_5b0 = std::atoi(token);
++        }
++        count += ReadToken(token);
++    }
++    AppendAction(new (std::nothrow) Action { 0, 20, data });
++    return count;
++}
+diff --git a/src/startup_world_script_parse_weather.cpp b/src/startup_world_script_parse_weather.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..600ec37b801ae8cf7471410f8ed564210cc917f5
+--- /dev/null
++++ b/src/startup_world_script_parse_weather.cpp
+@@ -0,0 +1,138 @@
++#include "startup_world_script_actions.h"
++#include "startup_variable_state.h"
++#include "startup_game_file.h"
++#include <bit>
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e1010
++int WorldSubsystem20::ParseWeatherAction()
++{
++    WorldWeatherEvent* data = new (std::nothrow) WorldWeatherEvent;
++    if (data)
++        std::memset(data->values_0c, 0, sizeof(data->values_0c));
++    char token[64];
++    int count = ReadToken(token);
++    if (std::strcmp(token, "Normal") == 0)
++        data->kind_00 = 1;
++    else if (std::strcmp(token, "Overcast") == 0)
++        data->kind_00 = 2;
++    else if (std::strcmp(token, "LightRain") == 0)
++        data->kind_00 = 3;
++    else if (std::strcmp(token, "HeavyRain") == 0)
++        data->kind_00 = 4;
++    else if (std::strcmp(token, "ThunderStorm") == 0)
++        data->kind_00 = 5;
++    else if (std::strcmp(token, "HeatWave") == 0)
++        data->kind_00 = 0;
++    count += ReadToken(token);
++    while (std::strcmp(token, ";") != 0)
++    {
++        if (std::strcmp(token, "Day") == 0)
++        {
++            count += ReadToken(token);
++            data->day_08 = std::atoi(token);
++        }
++        else if (std::strcmp(token, "Time") == 0)
++        {
++            count += ReadToken(token);
++            data->time_04 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "Alcohol") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[1] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "Amusement") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[2] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "HeadAche") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[4] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "Meals") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[5] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "PartyFun") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[6] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "Snacks") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[8] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "SoftDrinks") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[9] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "SportsFun") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[11] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "Sunbathing") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[12] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "SwimmingFun") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[13] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "WaterSportsFun") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[15] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "StrollAround") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[16] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "Vandalise") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[18] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "Fight") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[19] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "Flirt") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[20] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "Umbrellas") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[21] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "SunTanLotion") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[22] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "HardSex") == 0)
++        {
++            count += ReadToken(token);
++            data->values_0c[23] = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else
++            StartupFatal("WorldScript::WeatherEventCommand - Invalid Command Type %s", token);
++        count += ReadToken(token);
++    }
++    AppendAction(new (std::nothrow) Action { 0, 23, data });
++    return count;
++}
+diff --git a/tests/world_script_parser.cpp b/tests/world_script_parser.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3da54b71d43287c619ce25747ee214e1decb3280
+--- /dev/null
++++ b/tests/world_script_parser.cpp
+@@ -0,0 +1,218 @@
++#include "startup_world_script_actions.h"
++#include "startup_variable_state.h"
++#include "startup_game_file.h"
++#include <bit>
++#include <cassert>
++#include <cstdarg>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++// Keep the tokenizer, dispatcher, payloads and destructors real. Capture the
++// append boundary and substitute numeric operands for the missing decoder.
++struct CapturedAction
++{
++    WorldSubsystem20::Action* action;
++    WorldActionBranchData* parent;
++    bool otherwise;
++    unsigned int phase;
++};
++
++static std::vector<CapturedAction> captured;
++
++void WorldSubsystem20::AppendAction(Action* action)
++{
++    captured.push_back({ action, word_04, word_04 && word_04->parsing_else_1c != 0, word_358 });
++}
++
++WorldScriptOperand WorldSubsystem20::ParseOperand(const char* token)
++{
++    char* end;
++    long value = std::strtol(token, &end, 10);
++    assert(*end == 0);
++    return { 2, static_cast<unsigned int>(value) };
++}
++
++VariableCatalog* variable_catalog = 0;
++
++unsigned int VariableCatalog::FindUnlock(const char*)
++{
++    throw std::runtime_error("Unexpected catalog lookup");
++}
++
++void StartupFatal(const char* format, ...)
++{
++    char message[512];
++    va_list arguments;
++    va_start(arguments, format);
++    std::vsnprintf(message, sizeof(message), format, arguments);
++    va_end(arguments);
++    throw std::runtime_error(message);
++}
++
++static void ClearActions()
++{
++    for (const CapturedAction& entry : captured)
++        delete entry.action;
++    captured.clear();
++}
++
++static void Parse(WorldSubsystem20& parser, std::string body, unsigned int phase = 0)
++{
++    body += " End sentinel ";
++    parser.cursor_00 = body.data();
++    int count = parser.ParseStateActions(phase);
++    assert(count == parser.cursor_00 - body.data());
++    assert(std::strcmp(parser.cursor_00, " sentinel ") == 0);
++    assert(parser.word_04 == 0);
++    for (WorldActionBranchData* saved : world_script_state_words)
++        assert(saved == 0);
++}
++
++static void TestActions()
++{
++    WorldSubsystem20 parser;
++    Parse(parser,
++        "LoadScript visitor visitor.lgc; "
++        "Function pausegame; "
++        "Message UnknownMessage 1 2 3 Time 1.5 MaxTime 4; "
++        "Add 1 2; Minus 3 4; Divide 5 6; Multiply 7 8; Set 9 10; "
++        "ChangeState Finish Time 2.5; "
++        "Path 4 5 3 ne; Grass 8 9 2 sw; "
++        "Area Beach 2 1 2 3 4 10 11 12 13 14 15 16 17; "
++        "BoatPoint 1.25 2.5 Unload Destroy; "
++        "BoatEntry 3.5 4.5 6 5.25 6.25; "
++        "BoatExit 7.5 8.5 2 9.25 10.25; "
++        "CircuitPoint powerboat -2 5; "
++        "BoatEvent Day+ 2 Time 12.5 Guests visitor Random 3 family 4; "
++        "Disaster Sharks Day 2 Time 3.5 Duration 4.5 Scale 5 "
++        "Rect 1 2 3 4 DisasterValue 0.75 Target visitor; "
++        "Weather HeavyRain Day 2 Time 7.5 Alcohol 0.25 "
++        "HeadAche 0.5 SunTanLotion 0.75 HardSex 1.0; "
++        "PlaySound bell.wav; MoveCamera 1.25 2.5 3.75; "
++        "ShowMenu greeting portrait; ShowMenu plain;");
++    const unsigned int kinds[] = { 15, 0, 1, 6, 7, 8, 9, 10, 2, 13, 14, 16, 17, 18, 19, 21, 20, 22, 23, 11, 24, 25, 25 };
++    assert(captured.size() == sizeof(kinds) / sizeof(kinds[0]));
++    for (unsigned int index = 0; index < captured.size(); ++index)
++    {
++        assert(captured[index].action->kind_04 == kinds[index]);
++        assert(captured[index].action->next == 0);
++        assert(captured[index].parent == 0);
++    }
++    auto* script = static_cast<WorldActionNamedData*>(captured[0].action->data_08);
++    assert(std::strcmp(script->name_00, "visitor") == 0);
++    assert(std::strcmp(script->text_04, "visitor.lgc") == 0);
++    assert(*static_cast<unsigned int*>(captured[1].action->data_08) == 0);
++    auto* message = static_cast<WorldActionCommandData*>(captured[2].action->data_08);
++    assert(message->word_00 == 0);
++    assert(message->operands_04[2].data == 3);
++    assert(message->operands_04[5].kind == 0x110);
++    assert(message->minimum_34 == 1.5f && message->maximum_38 == 4.0f);
++    auto* arithmetic = static_cast<WorldActionArithmeticData*>(captured[7].action->data_08);
++    assert(arithmetic->left_00.data == 9 && arithmetic->right_08.data == 10);
++    auto* state = static_cast<WorldActionStateData*>(captured[8].action->data_08);
++    assert(std::strcmp(state->name_00, "Finish") == 0 && state->delay_04 == 2.5f);
++    auto* path = static_cast<WorldActionStripData*>(captured[9].action->data_08);
++    assert(path->point_00.x == 4 && path->point_00.y == 5);
++    assert(path->direction_08 == 1 && path->count_0c == 3);
++    auto* area = static_cast<WorldActionRouteData*>(captured[11].action->data_08);
++    assert(area->kind_00 == 1 && area->count_04 == 2);
++    assert(area->points_08[1].x == 3 && area->points_08[1].y == 4);
++    assert(area->words_0c[0] == 10 && area->words_0c[7] == 17);
++    auto* boat = static_cast<WorldActionPositionData*>(captured[12].action->data_08);
++    assert(boat->word_0c == 2 && boat->position_00.z == 0.0f);
++    auto* entry = static_cast<WorldActionEndpointData*>(captured[13].action->data_08);
++    assert(entry->heading_14 == 6);
++    assert(std::bit_cast<float>(entry->tile_0c.x) == 5.25f);
++    auto* circuit = static_cast<WorldActionEntryData*>(captured[15].action->data_08);
++    assert(circuit->kind_08 == 1 && circuit->first_00 == 0xfffffffeu);
++    auto* transport = static_cast<WorldActionTransportData*>(captured[16].action->data_08);
++    assert(transport->repeat_08 == 2 && transport->day_04 == 2);
++    assert(transport->kind_0c == 2 && transport->time_00 == 12.5f);
++    assert(transport->count_5b0 == 0 && transport->random_560[0] == 1);
++    assert(transport->counts_510[0] == 3 && transport->counts_510[1] == 4);
++    assert(transport->names_10[2][0] == 0);
++    auto* disaster = static_cast<WorldEventRecord*>(captured[17].action->data_08);
++    assert(disaster->kind_00 == 0 && disaster->duration_14 == 4.5f);
++    assert(disaster->value_30 == 0.5f && disaster->bounds_04.bottom == 4);
++    assert(std::strcmp(static_cast<char*>(disaster->data_34), "visitor") == 0);
++    auto* weather = static_cast<WorldWeatherEvent*>(captured[18].action->data_08);
++    assert(weather->kind_00 == 4 && weather->time_04 == 7.5f);
++    assert(std::bit_cast<float>(weather->values_0c[1]) == 0.25f);
++    assert(std::bit_cast<float>(weather->values_0c[23]) == 1.0f);
++    assert(weather->values_0c[0] == 0 && weather->values_0c[25] == 0);
++    assert(std::strcmp(*static_cast<const char**>(captured[19].action->data_08), "bell.wav") == 0);
++    auto* camera = static_cast<WorldActionPositionData*>(captured[20].action->data_08);
++    assert(camera->position_00.y == 2.5f && camera->duration_0c == 3.75f);
++    auto* menu = static_cast<WorldActionNamedData*>(captured[21].action->data_08);
++    assert(std::strcmp(menu->text_04, "portrait") == 0);
++    assert(static_cast<WorldActionNamedData*>(captured[22].action->data_08)->text_04 == 0);
++    ClearActions();
++}
++
++static void TestNestedBranches()
++{
++    WorldSubsystem20 parser;
++    Parse(parser,
++        "If (1 != \"visitor\") Function PauseGame; "
++        "Else If (2 >= 3) Function LockMap; End "
++        "Function ResumeGame; End Function NoLitter;",
++        2);
++    assert(captured.size() == 6);
++    auto* outer = static_cast<WorldActionBranchData*>(captured[0].action->data_08);
++    auto* inner = static_cast<WorldActionBranchData*>(captured[2].action->data_08);
++    assert(outer->comparison_18 == 6 && inner->comparison_18 == 6);
++    assert(outer->right_10.kind == 0x36);
++    assert(std::strcmp(reinterpret_cast<const char*>(outer->right_10.data), "visitor") == 0);
++    assert(captured[1].parent == outer && !captured[1].otherwise);
++    assert(captured[2].parent == outer && captured[2].otherwise);
++    assert(captured[3].parent == inner && !captured[3].otherwise);
++    assert(captured[4].parent == outer && captured[4].otherwise);
++    assert(captured.back().parent == 0);
++    for (const CapturedAction& action : captured)
++        assert(action.phase == 2);
++    ClearActions();
++    Parse(parser, "If (1) Function Debug; End");
++    auto* unary = static_cast<WorldActionBranchData*>(captured[0].action->data_08);
++    assert(unary->right_10.kind == 0x110);
++    ClearActions();
++}
++
++static void TestCreation()
++{
++    WorldSubsystem20 parser;
++    Parse(parser,
++        "Create Scenery palm Random Number 3 palm_a; "
++        "Create Scenery bench 4 5 6 bench_a; "
++        "Create Guest visitor Random Number 2; "
++        "Create Building bar 4 5 6 Prices 1.25 BeerType Smileys 0.8 ; Age 7 Broken; "
++        "Create Building cafe 8 9 2 BeerType Thumpers 0.6;");
++    assert(captured.size() == 5);
++    auto* scenery = static_cast<WorldActionCreateData*>(captured[0].action->data_08);
++    assert(scenery->kind_00 == 1 && scenery->x_0c == -1 && scenery->y_10 == -1);
++    assert(scenery->rotation_14 == 0 && scenery->count_18 == 3);
++    assert(std::strcmp(scenery->model_08, "palm_a") == 0);
++    auto* bench = static_cast<WorldActionCreateData*>(captured[1].action->data_08);
++    assert(bench->rotation_14 == 6 && bench->count_18 == 1);
++    auto* guest = static_cast<WorldActionCreateData*>(captured[2].action->data_08);
++    assert(guest->kind_00 == 3 && guest->count_18 == 2 && guest->model_08 == 0);
++    auto* building = static_cast<WorldActionCreateData*>(captured[3].action->data_08);
++    assert(building->word_30 == 2 && building->value_34 == 0.8f);
++    assert(building->values_1c[0] == 1.25f && building->values_1c[1] == 0.8f);
++    assert(building->values_1c[2] == -1.0f);
++    assert(building->word_38 == 7 && building->flag_3c == 1);
++    auto* cafe = static_cast<WorldActionCreateData*>(captured[4].action->data_08);
++    assert(cafe->word_30 == 3 && cafe->value_34 == 0.6f);
++    ClearActions();
++}
++
++int main()
++{
++    TestActions();
++    TestNestedBranches();
++    TestCreation();
++    std::puts("World script parser fixtures passed");
++}

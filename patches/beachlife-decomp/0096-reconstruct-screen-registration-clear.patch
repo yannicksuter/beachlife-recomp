@@ -1,0 +1,91 @@
+diff --git a/src/startup_screen_registration_clear.cpp b/src/startup_screen_registration_clear.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_registration_clear.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004b30b0
++void ScreenManager::ClearRegistration()
++{
++    screen_manager = 0;
++}
+diff --git a/src/startup_intro_globals.cpp b/src/startup_intro_globals.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_intro_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x005baed8
++ScreenManager* screen_manager;
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -36,10 +36,12 @@
+     int mode;
+     int previous_mode;
+ 
++    void ClearRegistration();
+     bool RequestScreen(const char* name, ScreenRequestContext* context, unsigned char flag);
+     void SavePlacement(const ScreenRectangle& rectangle, int group);
+ };
+ 
+ extern ScreenRequestGamePrefix* screen_request_game;
++extern ScreenManager* screen_manager;
+ 
+ #endif
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -604,8 +604,25 @@
+     fixture_palette_cleanup_completed = 1;
+ }
+ 
++// Comparison-only genuine typed prefixes. This image is never executed.
++ScreenManager fixture_registration_receiver = { 0 };
++ScreenManager fixture_registration_other = { 0 };
++ScreenManager* volatile fixture_registration_receiver_seen;
++ScreenManager* volatile fixture_registration_after[2];
++
++extern "C" __declspec(dllexport) void FixtureClearRegistration(
++    ScreenManager* receiver, ScreenManager* published, unsigned int index)
++{
++    fixture_registration_receiver_seen = receiver;
++    screen_manager = published;
++    receiver->ClearRegistration();
++    fixture_registration_after[index] = screen_manager;
++}
++
+ extern "C" void fixture_entry()
+ {
++    FixtureClearRegistration(&fixture_registration_receiver, 0, 0);
++    FixtureClearRegistration(&fixture_registration_receiver, &fixture_registration_other, 1);
+     fixture_surface_position_call();
+     fixture_surface_pitch_call();
+     fixture_resource_lookup_call();
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -66,3 +66,5 @@
+ 0x004e3c90,function,18,?LoadControllerScreen@ScreenRequestGamePrefix@@QAE_NPBD@Z
+ 0x004aedf0,function,1067,?LoadScreen@ScreenManager@@QAEXPBD@Z
+ 0x0040dee0,function,10,?SetWord60@ScreenRequestRenderer@@QAEXI@Z
++0x004b30b0,function,11,?ClearRegistration@ScreenManager@@QAEXXZ
++0x005baed8,global,4,?screen_manager@@3PAUScreenManager@@A
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -700,6 +700,12 @@
+       "size": 11,
+       "name": "ScreenDialogPaletteModifiers::~ScreenDialogPaletteModifiers",
+       "name_status": "descriptive palette registration cleanup; original class, source spelling and provenance unclassified"
++    },
++    {
++      "address": "0x004b30b0",
++      "size": 11,
++      "name": "ScreenManager::ClearRegistration",
++      "name_status": "descriptive unconditional registration pointer clear; original code origin unclassified; full owner lifetime remains separate"
+     }
+   ],
+   "runtime_stdcall_imports": {

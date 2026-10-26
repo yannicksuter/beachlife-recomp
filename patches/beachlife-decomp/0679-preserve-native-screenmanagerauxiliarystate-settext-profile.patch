@@ -1,0 +1,300 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 966acba..48db434 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -3696,12 +3696,3 @@ extern "C" __declspec(dllexport) void FixtureMatch5_45(WindowAudioState* receive
+ {
+     receiver->WindowAudioState::SetSoundLevel(p0, p1);
+ }
+-
+-#include "startup_screen_manager_auxiliary.h"
+-#include "startup_screen_manager.h"
+-#include "startup_screen_text.h"
+-// Borrowed typed receiver; compile/link retention only, never executed.
+-extern "C" __declspec(dllexport) void FixtureMatch5_46(ScreenManagerAuxiliaryState* receiver, const char* p0)
+-{
+-    receiver->ScreenManagerAuxiliaryState::SetText(p0);
+-}
+diff --git b/src/startup_font_count_wrapped_lines.cpp a/src/startup_font_count_wrapped_lines.cpp
+deleted file mode 100644
+index 0ee9bb3..0000000
+--- b/src/startup_font_count_wrapped_lines.cpp
++++ /dev/null
+@@ -1,52 +0,0 @@
+-#include "startup_screen_text.h"
+-#include "startup_screen_font_data.h"
+-
+-// FUNCTION: BEACHLIFE 0x0049faa0
+-unsigned int ScreenFontRenderer::CountWrappedLines(const unsigned short* text,
+-    unsigned int width, unsigned int spacing)
+-{
+-    ScreenFontData* data = data_1c;
+-    const unsigned short* cursor = text;
+-    const unsigned short* word_start = text;
+-    unsigned int line_characters = 0;
+-    unsigned int word_characters = 0;
+-    unsigned int line_width = spacing;
+-    unsigned int breaks = 0;
+-
+-    while (*cursor != 0)
+-    {
+-        unsigned int current = *cursor;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = cursor[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
+-        line_width += advance;
+-
+-        if (cursor != text && current != ' ' && cursor[-1] == ' ')
+-        {
+-            word_start = cursor;
+-            word_characters = 0;
+-        }
+-        if (current != ' ')
+-            ++word_characters;
+-
+-        if (line_width > width && line_characters > word_characters)
+-        {
+-            ++breaks;
+-            cursor = word_start;
+-            line_characters = 0;
+-            word_characters = 0;
+-            line_width = spacing;
+-        }
+-        else
+-        {
+-            ++cursor;
+-            ++line_characters;
+-        }
+-    }
+-    return breaks + 1;
+-}
+diff --git b/src/startup_font_measure_text.cpp a/src/startup_font_measure_text.cpp
+deleted file mode 100644
+index 542562f..0000000
+--- b/src/startup_font_measure_text.cpp
++++ /dev/null
+@@ -1,24 +0,0 @@
+-#include "startup_screen_text.h"
+-#include "startup_screen_font_data.h"
+-
+-// FUNCTION: BEACHLIFE 0x0049fa30
+-unsigned int ScreenFontRenderer::MeasureText(const unsigned short* text)
+-{
+-    ScreenFontData* data = data_1c;
+-    unsigned int width = 0;
+-    while (*text != 0)
+-    {
+-        unsigned int current = *text;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = text[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
+-        width += advance;
+-        ++text;
+-    }
+-    return width;
+-}
+diff --git b/src/startup_font_measure_wrapped_text.cpp a/src/startup_font_measure_wrapped_text.cpp
+deleted file mode 100644
+index ff94e62..0000000
+--- b/src/startup_font_measure_wrapped_text.cpp
++++ /dev/null
+@@ -1,96 +0,0 @@
+-#include "startup_screen_text.h"
+-#include "startup_screen_font_data.h"
+-#include <string.h>
+-
+-// FUNCTION: BEACHLIFE 0x0049fbc0
+-unsigned int ScreenFontRenderer::MeasureWrappedText(const unsigned short* text,
+-    unsigned int width, unsigned int spacing)
+-{
+-    ScreenFontData* data = data_1c;
+-    const unsigned short* cursor = text;
+-    const unsigned short* line_start = text;
+-    const unsigned short* word_start = text;
+-    unsigned int line_characters = 0;
+-    unsigned int word_characters = 0;
+-    unsigned int line_width = spacing;
+-    unsigned int maximum_width = 0;
+-    unsigned short scratch[256];
+-
+-    while (*cursor != 0)
+-    {
+-        unsigned int current = *cursor;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = cursor[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
+-        line_width += advance;
+-
+-        if (cursor != text && current != ' ' && cursor[-1] == ' ')
+-        {
+-            word_start = cursor;
+-            word_characters = 0;
+-        }
+-        if (current != ' ')
+-            ++word_characters;
+-
+-        if (line_width > width && line_characters > word_characters)
+-        {
+-            memset(scratch, 0, sizeof(scratch));
+-            unsigned int copy_bytes = (line_characters - word_characters) * 2;
+-            memcpy(scratch, line_start, copy_bytes);
+-
+-            const unsigned short* copied = scratch;
+-            unsigned int copied_width = 0;
+-            while (*copied != 0)
+-            {
+-                current = *copied;
+-                advance = static_cast<unsigned short>(
+-                    data->glyphs[current][2] - data->glyphs[current][0]);
+-                next = copied[1];
+-                if (next != 0)
+-                {
+-                    advance = static_cast<unsigned short>(
+-                        advance + data->kerning[current * 255 + next]);
+-                }
+-                copied_width += advance;
+-                ++copied;
+-            }
+-            if (copied_width > maximum_width)
+-                maximum_width = copied_width;
+-
+-            cursor = word_start;
+-            line_start = cursor;
+-            line_characters = 0;
+-            word_characters = 0;
+-            line_width = spacing;
+-        }
+-        else
+-        {
+-            ++cursor;
+-            ++line_characters;
+-        }
+-    }
+-
+-    unsigned int remaining_width = 0;
+-    while (*line_start != 0)
+-    {
+-        unsigned int current = *line_start;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = line_start[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
+-        remaining_width += advance;
+-        ++line_start;
+-    }
+-    if (remaining_width > maximum_width)
+-        return remaining_width;
+-    return maximum_width;
+-}
+diff --git b/src/startup_screen_item_defaults.cpp a/src/startup_screen_item_defaults.cpp
+index aa64b2b..b09c138 100644
+--- b/src/startup_screen_item_defaults.cpp
++++ a/src/startup_screen_item_defaults.cpp
+@@ -34,7 +34,6 @@ void ScreenItem::Unresolved0c()
+ }
+ 
+ // Same original RET4 address 0x0049dbe0, with the observed slot10 pointer argument.
+-// FUNCTION: BEACHLIFE 0x0049dbe0 FOLDED
+ void ScreenItem::Unresolved10(ScreenItem* item)
+ {
+     IgnoreScreenWord(item);
+diff --git b/src/startup_screen_manager_auxiliary_text.cpp a/src/startup_screen_manager_auxiliary_text.cpp
+deleted file mode 100644
+index bbfc9cb..0000000
+--- b/src/startup_screen_manager_auxiliary_text.cpp
++++ /dev/null
+@@ -1,25 +0,0 @@
+-#include "startup_screen_manager_auxiliary.h"
+-#include "startup_screen_manager.h"
+-#include "startup_screen_text.h"
+-
+-// FUNCTION: BEACHLIFE 0x004c1170
+-void ScreenManagerAuxiliaryState::SetText(const char* text)
+-{
+-    text_08 = screen_text_lookup->LookupText(text);
+-    ScreenFontRenderer* font = screen_manager->fonts_2c[word_00];
+-    unsigned int width = font->MeasureText(text_08);
+-    if (width > 160)
+-    {
+-        text_width_0c = font->MeasureWrappedText(text_08, 160, 5) + 10;
+-        text_height_10 = font->CountWrappedLines(text_08, text_width_0c, 5) * 12;
+-        width_14 = text_width_0c;
+-        height_18 = text_height_10 + 6;
+-    }
+-    else
+-    {
+-        text_width_0c = width;
+-        text_height_10 = 15;
+-        width_14 = width + 10;
+-        height_18 = 21;
+-    }
+-}
+diff --git b/src/startup_screen_text.h a/src/startup_screen_text.h
+index 9cc785f..66452f0 100644
+--- b/src/startup_screen_text.h
++++ a/src/startup_screen_text.h
+@@ -27,9 +27,6 @@ struct ScreenFontRenderer
+ 
+     ScreenFontRenderer(ScreenFontData* data, ScreenTextLookup* lookup);
+ 
+-    unsigned int MeasureText(const unsigned short* text);
+-    unsigned int MeasureWrappedText(const unsigned short* text, unsigned int width, unsigned int spacing);
+-    unsigned int CountWrappedLines(const unsigned short* text, unsigned int width, unsigned int spacing);
+     void SetWord10(unsigned int value);
+ 
+     void SetState14(unsigned char value);
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 4e18927..3aa29f0 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -2138,12 +2138,6 @@
+       "size": 141,
+       "name": "WindowAudioState::SetSoundLevel",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+-    },
+-    {
+-      "address": "0x004c1170",
+-      "size": 142,
+-      "name": "ScreenManagerAuxiliaryState::SetText",
+-      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -3149,6 +3143,18 @@
+       "return_type": "void",
+       "parameters": []
+     },
++    {
++      "address": "0x004c1170",
++      "size": 142,
++      "name": "ScreenManagerAuxiliaryState::SetText",
++      "symbol": "?SetText@ScreenManagerAuxiliaryState@@QAEXPBD@Z",
++      "header": "startup_screen_manager_auxiliary.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "const char*"
++      ]
++    },
+     {
+       "address": "0x004c12a0",
+       "size": 131,

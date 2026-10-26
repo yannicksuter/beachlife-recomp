@@ -1,0 +1,795 @@
+diff --git a/src/startup_animation_sound_play_opinion.cpp b/src/startup_animation_sound_play_opinion.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e474128bebfd7b3ba691de9d8edfc284e66349b
+--- /dev/null
++++ b/src/startup_animation_sound_play_opinion.cpp
+@@ -0,0 +1,17 @@
++#include "startup_animation_sound.h"
++#include "startup_game_update_pair.h"
++#include "startup_screen_point.h"
++#include <cstdlib>
++
++// FUNCTION: BEACHLIFE 0x004d1b20
++void AnimationSoundLookup::PlayOpinion(unsigned int index, const ScreenWorldPosition* position)
++{
++    AnimationSoundGroup& group = groups_418[index];
++    if (!group.count_00)
++        return;
++    int sound = std::rand() % group.count_00;
++    WindowAudioVector point = { position->x, position->y, position->z };
++    int limit_index = group.word_04;
++    int limit = limit_index == -1 ? -1 : limits_51c[limit_index];
++    game_update_pair->AddPointSound(group.sounds_0c[sound], &point, group.volumes_08[sound], limit, limit_index);
++}
+diff --git a/src/startup_world_building_add_thought.cpp b/src/startup_world_building_add_thought.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2383e6ac934690edadc0bea70732b42b3ffa2fff
+--- /dev/null
++++ b/src/startup_world_building_add_thought.cpp
+@@ -0,0 +1,38 @@
++#include "startup_world_entities.h"
++#include "startup_world_deque_operations.h"
++#include "startup_owned_allocation.h"
++#include <new>
++#include <wchar.h>
++
++// FUNCTION: BEACHLIFE 0x0045c810
++void WorldBuildingEntity::AddThought(const unsigned short* text, unsigned int guest)
++{
++    auto& thoughts = thoughts_428;
++    if (static_cast<unsigned int>(WorldDequeDistance(thoughts.end, thoughts.begin)) >= 8)
++    {
++        VariableThought* oldest = *WorldDequeAdvance(thoughts.end, -1).current;
++        if (oldest)
++        {
++            ReleaseOwnedAllocation(oldest->data_00);
++            ::operator delete(oldest);
++        }
++        if (thoughts.end.current != thoughts.end.first)
++            --thoughts.end.current;
++        else
++        {
++            thoughts.FreeSlots(thoughts.end.first, 32 * sizeof(VariableThought*));
++            --thoughts.end.node;
++            thoughts.end.first = *thoughts.end.node;
++            thoughts.end.last = thoughts.end.first + 32;
++            thoughts.end.current = thoughts.end.last - 1;
++        }
++    }
++
++    VariableThought* thought = new (std::nothrow) VariableThought;
++    if (thought)
++        thought->data_00 = 0;
++    thought->target_04 = guest;
++    thought->data_00 = ::operator new((wcslen(text) + 1) * sizeof(unsigned short), std::nothrow);
++    wcscpy(static_cast<unsigned short*>(thought->data_00), text);
++    WorldDequePushFront(thoughts, thought);
++}
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 79dc047d832e61a4250c9dce6459b38e8fca2f71..12f951c7b26089d736e06ac90ea7571b80d90486 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -265,6 +265,8 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldSceneryEntity) == 0xf8);
+ 
+ struct WorldBuildingEntity : WorldStaticEntity
+ {
++    float FeatureRating(unsigned int feature, unsigned int gender); // 0x00460550.
++
+     void AddThought(const unsigned short* text, unsigned int guest); // 0x0045c810.
+     ScreenMapPosition ContentPosition(unsigned int index);           // 0x0045c790.
+     ScreenWorldPosition EntrancePosition();                          // 0x004571d0.
+diff --git a/src/startup_world_find_guest_feature.cpp b/src/startup_world_find_guest_feature.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7d4639110619dbb5ece8ea6ffb40933d8e30e55f
+--- /dev/null
++++ b/src/startup_world_find_guest_feature.cpp
+@@ -0,0 +1,111 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x00424900
++unsigned int WorldSubsystem4c::FindGuestFeature(unsigned int* feature, unsigned char* found,
++    unsigned int* broken, unsigned int* closed, unsigned int* beach_closed,
++    unsigned char* unavailable, unsigned int gender, unsigned int desire,
++    const ScreenPoint* tile, unsigned int previous, unsigned int guest)
++{
++    if (!counts_6c[desire])
++    {
++        if (desire != 10 || window_deactivation_state->CanBuild(variable_catalog->FindBuilding("SOUVSHOP")))
++            ++messages_d4[desire];
++        *found = 0;
++        *unavailable = 0;
++        *broken = 0;
++        *closed = 0;
++        *beach_closed = 0;
++        return 0;
++    }
++
++    *broken = 0;
++    bool selected = false;
++    unsigned char has_unavailable = 0;
++    float best_score = -1.0f;
++    // Retail only assigns these selection words when a candidate is chosen.
++    unsigned int selected_id;
++    unsigned int selected_feature;
++    for (unsigned int i = 0; i < counts_6c[desire]; ++i)
++    {
++        WorldBuildingEntity* building = variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding();
++        if (building->id_28 == previous)
++        {
++            if (!selected)
++                has_unavailable = 1;
++            continue;
++        }
++
++        bool accessible = FeatureUnavailable(data_04[desire][i].id_00, data_04[desire][i].index_04);
++        if (building->FlagAt00460370() && accessible)
++        {
++            ScreenPoint candidate = data_04[desire][i].tile_0c;
++            float distance = static_cast<float>(std::abs(tile->y - candidate.y) + std::abs(tile->x - candidate.x));
++            float rating = building->FeatureRating(data_04[desire][i].index_04, gender ? 1 : 0);
++            long double random = static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * -0.0009000000427477062f;
++            long double score = 1.0f - static_cast<long double>(distance) * 0.00390625f + random + rating + 0.0010000000474974513f;
++            if (score > best_score)
++            {
++                best_score = static_cast<float>(score);
++                selected_id = data_04[desire][i].id_00;
++                selected_feature = data_04[desire][i].index_04;
++                selected = true;
++            }
++            continue;
++        }
++
++        char key[256];
++        long double condition = static_cast<long double>(static_cast<int>(3u - building->power_state_33c)) * 0.33f;
++        // Retail compares the scaled condition with 3.0f.
++        if (condition == 3.0f)
++        {
++            if (!selected)
++                selected_id = data_04[desire][i].id_00;
++            ++*broken;
++            std::strcpy(key, "GUEST_THOUGHT_BROKEN_");
++            std::strcat(key, variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->building_60->name_04);
++        }
++        else if (building->FlagAt00460380())
++        {
++            if (!selected && !*broken)
++                selected_id = data_04[desire][i].id_00;
++            ++*closed;
++            std::strcpy(key, "GUEST_THOUGHT_CLOSED_");
++            std::strcat(key, variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->building_60->name_04);
++        }
++        else if (!accessible)
++        {
++            if (!selected && !*broken && !*closed)
++            {
++                selected_id = data_04[desire][i].id_00;
++                selected_feature = data_04[desire][i].index_04;
++            }
++            ++*beach_closed;
++            std::strcpy(key, "GUEST_THOUGHT_BEACH_CLOSED_");
++            building = variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding();
++            std::strcat(key, variable_catalog->FeatureKey(building->building_60->features_1fc[data_04[desire][i].index_04]));
++        }
++        else
++        {
++            has_unavailable = 1;
++            continue;
++        }
++
++        char number[2];
++        std::sprintf(number, "%d", std::rand() % 3 + 1);
++        std::strcat(key, number);
++        const unsigned short* text = screen_text_lookup->LookupText(key);
++        variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->AddThought(text, guest);
++    }
++    if (selected)
++    {
++        *found = 1;
++        *feature = selected_feature;
++        *unavailable = 0;
++        return selected_id;
++    }
++    *feature = selected_feature;
++    *unavailable = has_unavailable;
++    *found = 0;
++    return selected_id;
++}
+diff --git a/src/startup_world_guest_activity_duration.cpp b/src/startup_world_guest_activity_duration.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8c4b439f751de565fef2531b8d13db5a537c1113
+--- /dev/null
++++ b/src/startup_world_guest_activity_duration.cpp
+@@ -0,0 +1,35 @@
++#include "startup_world_entities.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0046b590
++void WorldGuestEntity::SetActivityDuration(unsigned int desire, float strength)
++{
++    switch (desire)
++    {
++    case 0:
++    case 1:
++    case 2:
++    case 3:
++    case 5:
++    case 6:
++    case 7:
++    case 8:
++    case 9:
++    case 10:
++    case 11:
++    case 14:
++    case 15:
++    case 17:
++    case 18:
++    case 19:
++    case 20:
++    {
++        unsigned int duration;
++        std::memcpy(&duration, guest_f4->unknown_320 + desire * sizeof(duration), sizeof(duration));
++        word_31c = static_cast<unsigned int>(static_cast<long long>(static_cast<long double>(duration) * strength));
++        break;
++    }
++    }
++    if (word_31c < 1)
++        word_31c = 1;
++}
+diff --git a/src/startup_world_guest_beach_walkpoints.cpp b/src/startup_world_guest_beach_walkpoints.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..094c55b125cacf691af931817afb22904c30cf9c
+--- /dev/null
++++ b/src/startup_world_guest_beach_walkpoints.cpp
+@@ -0,0 +1,132 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_game_file.h"
++#include <cmath>
++
++// FUNCTION: BEACHLIFE 0x00468ac0
++ScreenWorldPosition* WorldGuestEntity::FindBeachWalkpoints(ScreenWorldPosition position)
++{
++    static ScreenWorldPosition result[2];
++    ScreenTerrainGrid* terrain = screen_terrain_grid;
++    ScreenTerrainRouteNode* selected = terrain->routes_20;
++    while (selected && selected->disabled_2c)
++        selected = selected->Next();
++    if (!selected)
++        return 0;
++    unsigned int count;
++    ScreenPoint* points = selected->Points(&count);
++    auto neighbours_of = [&](ScreenPoint tile, ScreenPoint* neighbours)
++    {
++        for (int i = 0; i < 4; ++i)
++            terrain->Step(tile.x, tile.y, i * 2, &neighbours[i]);
++    };
++    auto unblocked = [&](ScreenPoint tile, const ScreenPoint* neighbours)
++    {
++        if (terrain->cells_0c[terrain->TileIndex(tile.x, tile.y)].flags_48 & 0x10)
++            return false;
++        for (int i = 0; i < 4; ++i)
++            if (terrain->cells_0c[terrain->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48 & 0x10)
++                return false;
++        return true;
++    };
++    unsigned int index = 0;
++    for (;;)
++    {
++        ScreenPoint neighbours[4];
++        neighbours_of(points[index], neighbours);
++        if (unblocked(points[index], neighbours))
++            break;
++        if (++index == count)
++        {
++            selected = selected->Next();
++            if (!selected)
++                StartupFatal("I hope This Never Happens ( Cant Get Sea Entry Point)");
++            points = selected->Points(&count);
++            index = 0;
++        }
++    }
++    ScreenPoint nearest = points[index++];
++    auto nearer = [&](ScreenPoint candidate, bool first_route)
++    {
++        ScreenPoint neighbours[4];
++        neighbours_of(candidate, neighbours);
++        ScreenWorldPosition candidate_position = terrain->TileOrigin(candidate.x, candidate.y);
++        float x = static_cast<float>(static_cast<long double>(candidate_position.x) - position.x);
++        float y = static_cast<float>(static_cast<long double>(candidate_position.y) - position.y);
++        float z = candidate_position.z;
++        ScreenWorldPosition nearest_position = terrain->TileOrigin(nearest.x, nearest.y);
++        long double nearest_x = static_cast<long double>(nearest_position.x) - position.x;
++        long double nearest_y = static_cast<long double>(nearest_position.y) - position.y;
++        long double nearest_z = nearest_position.z;
++        long double distance;
++        long double nearest_distance;
++        if (first_route)
++        {
++            distance = std::sqrt(static_cast<long double>(x) * x + static_cast<long double>(z) * z + static_cast<long double>(y) * y);
++            nearest_distance = std::sqrt(nearest_x * nearest_x + nearest_z * nearest_z + nearest_y * nearest_y);
++        }
++        else
++        {
++            distance = std::sqrt(static_cast<long double>(z) * z + static_cast<long double>(y) * y + static_cast<long double>(x) * x);
++            nearest_distance = std::sqrt(nearest_z * nearest_z + nearest_y * nearest_y + nearest_x * nearest_x);
++        }
++        return nearest_distance > distance && unblocked(candidate, neighbours);
++    };
++    for (; index < count; ++index)
++        if (nearer(points[index], true))
++            nearest = points[index];
++    for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
++    {
++        if (route->disabled_2c)
++            continue;
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (nearer(points[i], false))
++            {
++                nearest = points[i];
++                selected = route;
++            }
++        }
++    }
++    if (selected)
++    {
++        ScreenPoint lower = selected->Bounds()[0];
++        ScreenPoint upper = selected->Bounds()[3];
++        float width = static_cast<float>(upper.x - lower.x);
++        float height = static_cast<float>(upper.y - lower.y);
++        ScreenPoint tile;
++        bool first_attempt = true;
++        for (;;)
++        {
++            tile.x = lower.x + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * width);
++            tile.y = lower.y + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * height);
++            ScreenPoint neighbours[4];
++            for (int i = 0; i < 4; ++i)
++            {
++                terrain->Step(tile.x, tile.y, i * 2, &neighbours[i]);
++                // Retail retries check only one step in direction six.
++                if (first_attempt || i != 3)
++                    terrain->Step(neighbours[i].x, neighbours[i].y, i * 2, &neighbours[i]);
++            }
++            first_attempt = false;
++            unsigned int flags = terrain->cells_0c[terrain->TileIndex(tile.x, tile.y)].flags_48;
++            if (!(flags & 4) || (flags & 0x10))
++                continue;
++            bool valid = true;
++            for (int i = 0; i < 4; ++i)
++            {
++                if (!(terrain->cells_0c[terrain->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48 & 0xc))
++                {
++                    valid = false;
++                    break;
++                }
++            }
++            if (valid)
++                break;
++        }
++        result[0] = terrain->TilePosition(nearest.x, nearest.y, 4);
++        result[1] = terrain->TileOrigin(tile.x, tile.y);
++        return result;
++    }
++    return 0;
++}
+diff --git a/src/startup_world_guest_daily_checks.cpp b/src/startup_world_guest_daily_checks.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..65d1c7d3dd70f3dc918e28c56dff673b67ef2ed4
+--- /dev/null
++++ b/src/startup_world_guest_daily_checks.cpp
+@@ -0,0 +1,92 @@
++#include "startup_world_guest_action_helpers.h"
++#include <cstring>
++
++// FUNCTION: BEACHLIFE 0x0046ae10
++bool WorldGuestEntity::CheckIllness()
++{
++    if (!flag_364)
++        return false;
++
++    ScreenWorldPosition position = RandomWalkPosition();
++    walkpoints_22c[0].x = position.x;
++    walkpoints_22c[0].y = position.y;
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 56);
++    screen_mode_commands->QueueCommand(&command);
++    ShowThought(RandomGuestThought("GUEST_THOUGHT_NOT_WELL"));
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x0046af30
++bool WorldGuestEntity::CheckDeparture()
++{
++    float hour = window_deactivation_state->render_value_160;
++    if (!(happiness_264 > 0.25f))
++    {
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 41);
++        screen_mode_commands->QueueCommand(&command);
++        ShowThought(RandomGuestThought("GUEST_THOUGHT_THIS_IS_CRAP"));
++        unhappy_departure_3d0 = 1;
++        return true;
++    }
++
++    if ((!days_344 && !(MotionFloat(word_348) >= hour)) || flags_3d2[0])
++    {
++        if (!flags_3d2[0])
++        {
++            flags_3d2[0] = 1;
++            weather_values_16c[10] = 1.0f;
++            return false;
++        }
++        ShowThought(RandomGuestThought("GUEST_THOUGHT_GO_HOME"));
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 41);
++        screen_mode_commands->QueueCommand(&command);
++        return true;
++    }
++    return false;
++}
++
++// FUNCTION: BEACHLIFE 0x0046b1e0
++bool WorldGuestEntity::CheckBedtime()
++{
++    float hour = window_deactivation_state->render_value_160;
++    bool bedtime = !(hour_340 >= hour_33c) && hour > hour_340
++                && !(hour >= hour_33c) && window_deactivation_state->day_15c;
++    if (!bedtime)
++        bedtime = hour_340 > hour_33c
++               && (hour > hour_340 || (!(hour >= hour_33c) && window_deactivation_state->day_15c));
++    if (!bedtime || !days_344)
++        return false;
++
++    if (!--days_344)
++    {
++        long double departure = static_cast<long double>(std::rand()) * 3.0518509447574615e-5f;
++        word_348 = MotionWord(static_cast<float>(departure + departure + hour_33c + 1.0f));
++    }
++    if (word_338 == static_cast<unsigned int>(-1))
++    {
++        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 41);
++        screen_mode_commands->QueueCommand(&command);
++        unhappy_departure_3d0 = 1;
++        ShowThought(RandomGuestThought("GUEST_THOUGHT_NO_SPACE"));
++        return true;
++    }
++
++    last_activities_3b8[word_3bc] = 0;
++    last_ids_3b0[word_3bc] = word_338;
++    word_3bc = (word_3bc - 1) & 1;
++    char prefix[256];
++    std::strcpy(prefix, "GUEST_THOUGHT_HEAD_");
++    WorldBuildingEntity* building = variable_world->FindObject(word_338)->AsBuilding();
++    std::strcat(prefix, variable_catalog->FeatureKey(building->building_60->features_1fc[0]));
++    ShowThought(RandomGuestThought(prefix));
++
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 13);
++    screen_mode_commands->QueueCommand(&command);
++    word_390 = word_338;
++    word_394 = variable_world->FindObject(word_338)->AsBuilding()->building_60->id_00;
++    words_1f0[12] = 0;
++    flag_228 = 0;
++    command = MakeGuestCommand(id_28, id_28, 9, 1, word_338);
++    screen_mode_commands->QueueCommand(&command);
++    return true;
++}
+diff --git a/src/startup_world_scenery_availability.cpp b/src/startup_world_scenery_availability.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a60b4e4759cd00ff7eb60750b43e493fe4a256eb
+--- /dev/null
++++ b/src/startup_world_scenery_availability.cpp
+@@ -0,0 +1,23 @@
++#include "startup_world_guest_action_helpers.h"
++
++// FUNCTION: BEACHLIFE 0x0041ecc0
++void WorldSceneryEntity::SetVandalized(unsigned char value)
++{
++    if (byte_a0 == value)
++        return;
++    byte_a0 = value;
++    if (value)
++    {
++        word_a4 = 1;
++        word_ac = keyline_state_44->word_10;
++    }
++    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 84, 0, 0);
++    screen_mode_commands->QueueCommand(&command);
++}
++
++// FUNCTION: BEACHLIFE 0x0041f220
++unsigned int WorldSceneryEntity::AvailableSeats()
++{
++    word_9c = count_98;
++    return count_98 - word_94;
++}
+diff --git a/src/startup_world_script_parse_operand.cpp b/src/startup_world_script_parse_operand.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e92ca1c4d30e693e3a35c1cfb575e18bffabd0c
+--- /dev/null
++++ b/src/startup_world_script_parse_operand.cpp
+@@ -0,0 +1,159 @@
++#include "startup_world_subsystems.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004e1e00
++WorldScriptOperand WorldSubsystem20::ParseOperand(char* token)
++{
++    WorldScriptOperand result = { 0, 0 };
++    if (!_stricmp(token, "Me"))
++        result.kind = 0xe2;
++    else if (!_stricmp(token, "GuestCount"))
++        result.kind = 0xb9;
++    else if (!_stricmp(token, "BreakdownCount"))
++        result.kind = 0xba;
++    else if (!_stricmp(token, "VandalismCount"))
++        result.kind = 0xbb;
++    else if (!_stricmp(token, "CleanerCount"))
++        result.kind = 0xbd;
++    else if (!_stricmp(token, "MechanicCount"))
++        result.kind = 0xbe;
++    else if (!_stricmp(token, "SecurityCount"))
++        result.kind = 0xbf;
++    else if (!_stricmp(token, "LifeGuardCount"))
++        result.kind = 0xc0;
++    else if (!_stricmp(token, "RepCount"))
++        result.kind = 0xc1;
++    else if (!_stricmp(token, "ResortRating"))
++        result.kind = 0xec;
++    else if (!_stricmp(token, "GameDay"))
++        result.kind = 0xed;
++    else if (!_stricmp(token, "PlayerCash"))
++        result.kind = 0xee;
++    else if (!_stricmp(token, "GameTime"))
++        result.kind = 0xea;
++    else if (!_stricmp(token, "DemoTime"))
++        result.kind = 0xc5;
++    else if (!_stricmp(token, "SandBox"))
++        result.kind = 0xc7;
++    else if (!_stricmp(token, "LitterCount"))
++        result.kind = 0xc8;
++    else if (!_stricmp(token, "UnHappyLeavers"))
++        result.kind = 0xc9;
++    else if (!_stricmp(token, "ProfitToday"))
++        result.kind = 0xca;
++    else if (!_stricmp(token, "ConstructCount"))
++        result.kind = 0xcb;
++    else if (!_stricmp(token, "AllBuildingsOperating"))
++        result.kind = 0xcc;
++    else if (!_stricmp(token, "GuestPartyCount"))
++        result.kind = 0xcd;
++    else if (!_stricmp(token, "GuestTottyLevel"))
++        result.kind = 0xce;
++    else if (!_stricmp(token, "GuestBeautyLevel"))
++        result.kind = 0xcf;
++    else if (!_stricmp(token, "DiffConstructCount"))
++        result.kind = 0xd0;
++    else if (!_stricmp(token, "BuildTreeExist"))
++        result.kind = 0xd1;
++    else if (!_stricmp(token, "GuestsDrowned"))
++        result.kind = 0xd7;
++    else if (!_stricmp(token, "GuestsEaten"))
++        result.kind = 0xd6;
++    else if (!_stricmp(token, "FinesCollected"))
++        result.kind = 0xd8;
++    else if (!_stricmp(token, "GuestShagCount"))
++        result.kind = 0xd9;
++    else if (!_stricmp(token, "GuestPissedCount"))
++        result.kind = 0xda;
++    else if (!_stricmp(token, "WeatherDayOffset"))
++        result.kind = 0xdb;
++    else if (!_stricmp(token, "IncomeToday"))
++        result.kind = 0xdc;
++    else if (!_stricmp(token, "GuestSafetyLevel"))
++        result.kind = 0xdd;
++    else if (!_stricmp(token, "BarsBuilt"))
++        result.kind = 0xde;
++    else if (!_stricmp(token, "DisasterDayOffset"))
++        result.kind = 0xdf;
++    else if (token[0] == '"')
++    {
++        char* text = static_cast<char*>(::operator new(std::strlen(token) - 1, std::nothrow));
++        token[std::strlen(token) - 1] = 0;
++        std::strcpy(text, token + 1);
++        result = { 0x36, reinterpret_cast<std::uintptr_t>(text) };
++    }
++    else
++    {
++        unsigned int prefix = 0;
++        if (!std::strncmp(token, "RandDWORD", 9))
++        {
++            result.kind = 0xe3;
++            prefix = 9;
++        }
++        else if (!std::strncmp(token, "Random", 6))
++        {
++            result.kind = 0xe4;
++            prefix = 6;
++        }
++        else if (!std::strncmp(token, "Flag", 4))
++        {
++            result.kind = 0xbc;
++            prefix = 4;
++        }
++        else if (!std::strncmp(token, "Var", 3))
++        {
++            result.kind = 0xc2;
++            prefix = 3;
++        }
++        else if (!std::strncmp(token, "ScenarioObj", 11))
++        {
++            result.kind = 0xc6;
++            prefix = 11;
++        }
++        if (prefix)
++        {
++            unsigned int* value = new (std::nothrow) unsigned int;
++            *value = std::atoi(token + prefix);
++            result.data = reinterpret_cast<std::uintptr_t>(value);
++            return result;
++        }
++
++        if (!std::strncmp(token, "BeerActive", 10))
++        {
++            result.kind = 0xd2;
++            prefix = 10;
++        }
++        else if (!std::strncmp(token, "DefaultBeer", 11))
++        {
++            result.kind = 0xd3;
++            prefix = 11;
++        }
++        else if (!std::strncmp(token, "BuildingCount", 13))
++        {
++            result.kind = 0xd4;
++            prefix = 13;
++        }
++        else if (!std::strncmp(token, "EventActive", 11))
++        {
++            result.kind = 0xd5;
++            prefix = 11;
++        }
++        if (prefix)
++        {
++            char* text = static_cast<char*>(::operator new(std::strlen(token) - prefix + 1, std::nothrow));
++            std::strcpy(text, token + prefix);
++            result.data = reinterpret_cast<std::uintptr_t>(text);
++            return result;
++        }
++
++        if (token[0] < '0' || token[0] > '9')
++            StartupFatal("Data in world script has not been defined and is not a number : %s", token);
++        float* value = new (std::nothrow) float;
++        *value = static_cast<float>(std::atof(token));
++        result = { 0xe8, reinterpret_cast<std::uintptr_t>(value) };
++    }
++    return result;
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 2e58bb984079788bb0c57996f4537b39a688e6d8..1330544faf29beeb831966de71ccf016df079233 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -206,7 +206,7 @@ struct WorldSubsystem20
+     };
+     void AppendAction(Action* action); // 0x004e2490.
+ 
+-    WorldScriptOperand ParseOperand(const char* token); // 0x004e1e00.
++    WorldScriptOperand ParseOperand(char* token); // 0x004e1e00.
+ 
+     char* cursor_00;
+     WorldActionBranchData* word_04;
+diff --git a/tests/world_script_parser.cpp b/tests/world_script_parser.cpp
+index 3da54b71d43287c619ce25747ee214e1decb3280..638ae73e82b95206daf48bec4d330961ddd030c6 100644
+--- a/tests/world_script_parser.cpp
++++ b/tests/world_script_parser.cpp
+@@ -11,8 +11,8 @@
+ #include <string>
+ #include <vector>
+ 
+-// Keep the tokenizer, dispatcher, payloads and destructors real. Capture the
+-// append boundary and substitute numeric operands for the missing decoder.
++// Keep the tokenizer, operand decoder, dispatcher, payloads and destructors
++// real, and capture the append boundary.
+ struct CapturedAction
+ {
+     WorldSubsystem20::Action* action;
+@@ -28,14 +28,6 @@ void WorldSubsystem20::AppendAction(Action* action)
+     captured.push_back({ action, word_04, word_04 && word_04->parsing_else_1c != 0, word_358 });
+ }
+ 
+-WorldScriptOperand WorldSubsystem20::ParseOperand(const char* token)
+-{
+-    char* end;
+-    long value = std::strtol(token, &end, 10);
+-    assert(*end == 0);
+-    return { 2, static_cast<unsigned int>(value) };
+-}
+-
+ VariableCatalog* variable_catalog = 0;
+ 
+ unsigned int VariableCatalog::FindUnlock(const char*)
+@@ -108,11 +100,13 @@ static void TestActions()
+     assert(*static_cast<unsigned int*>(captured[1].action->data_08) == 0);
+     auto* message = static_cast<WorldActionCommandData*>(captured[2].action->data_08);
+     assert(message->word_00 == 0);
+-    assert(message->operands_04[2].data == 3);
++    assert(message->operands_04[2].kind == 0xe8);
++    assert(*reinterpret_cast<float*>(message->operands_04[2].data) == 3.0f);
+     assert(message->operands_04[5].kind == 0x110);
+     assert(message->minimum_34 == 1.5f && message->maximum_38 == 4.0f);
+     auto* arithmetic = static_cast<WorldActionArithmeticData*>(captured[7].action->data_08);
+-    assert(arithmetic->left_00.data == 9 && arithmetic->right_08.data == 10);
++    assert(*reinterpret_cast<float*>(arithmetic->left_00.data) == 9.0f);
++    assert(*reinterpret_cast<float*>(arithmetic->right_08.data) == 10.0f);
+     auto* state = static_cast<WorldActionStateData*>(captured[8].action->data_08);
+     assert(std::strcmp(state->name_00, "Finish") == 0 && state->delay_04 == 2.5f);
+     auto* path = static_cast<WorldActionStripData*>(captured[9].action->data_08);
+@@ -209,10 +203,67 @@ static void TestCreation()
+     ClearActions();
+ }
+ 
++static void TestOperands()
++{
++    WorldSubsystem20 parser;
++    Parse(parser, "Set Var7 3.25; Add Var7 gUeStCoUnT; Message UnknownMessage Me Flag3 RandDWORD8;");
++    auto* set = static_cast<WorldActionArithmeticData*>(captured[0].action->data_08);
++    assert(set->left_00.kind == 0xc2 && *reinterpret_cast<unsigned int*>(set->left_00.data) == 7);
++    assert(set->right_08.kind == 0xe8 && *reinterpret_cast<float*>(set->right_08.data) == 3.25f);
++    auto* add = static_cast<WorldActionArithmeticData*>(captured[1].action->data_08);
++    assert(add->right_08.kind == 0xb9);
++    auto* message = static_cast<WorldActionCommandData*>(captured[2].action->data_08);
++    assert(message->operands_04[0].kind == 0xe2);
++    assert(message->operands_04[1].kind == 0xbc && *reinterpret_cast<unsigned int*>(message->operands_04[1].data) == 3);
++    assert(message->operands_04[2].kind == 0xe3 && *reinterpret_cast<unsigned int*>(message->operands_04[2].data) == 8);
++    ClearActions();
++
++    char quoted[] = "\"visitor\"";
++    WorldScriptOperand operand = parser.ParseOperand(quoted);
++    assert(operand.kind == 0x36 && std::strcmp(quoted, "\"visitor") == 0);
++    quoted[1] = 'X';
++    assert(std::strcmp(reinterpret_cast<const char*>(operand.data), "visitor") == 0);
++    ReleaseWorldScriptOperand(&operand);
++    for (const char* input : { "BeerActiveSmileys", "DefaultBeerbar", "BuildingCountHOTEL", "EventActiveparty" })
++    {
++        std::string token = input;
++        operand = parser.ParseOperand(token.data());
++        const char* suffix = operand.kind == 0xd2 ? "Smileys" : operand.kind == 0xd3 ? "bar"
++                                                          : operand.kind == 0xd4     ? "HOTEL"
++                                                                                     : "party";
++        token.assign(token.size(), 'X');
++        assert(std::strcmp(reinterpret_cast<const char*>(operand.data), suffix) == 0);
++        ReleaseWorldScriptOperand(&operand);
++    }
++    char random[] = "Random-2";
++    operand = parser.ParseOperand(random);
++    assert(operand.kind == 0xe4 && *reinterpret_cast<unsigned int*>(operand.data) == 0xfffffffeu);
++    ReleaseWorldScriptOperand(&operand);
++    char objective[] = "ScenarioObj4";
++    operand = parser.ParseOperand(objective);
++    assert(operand.kind == 0xc6 && *reinterpret_cast<unsigned int*>(operand.data) == 4);
++    ReleaseWorldScriptOperand(&operand);
++    for (const char* input : { "var7", "-1", ".5", "UnknownOperand" })
++    {
++        std::string token = input;
++        bool rejected = false;
++        try
++        {
++            parser.ParseOperand(token.data());
++        }
++        catch (const std::runtime_error& error)
++        {
++            rejected = std::strstr(error.what(), "not a number") != 0;
++        }
++        assert(rejected);
++    }
++}
++
+ int main()
+ {
+     TestActions();
+     TestNestedBranches();
+     TestCreation();
++    TestOperands();
+     std::puts("World script parser fixtures passed");
+ }

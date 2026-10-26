@@ -1,0 +1,120 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -202,8 +202,47 @@
+     }
+ }
+ 
++#include "startup_gui_parser.h"
++#include <STDDEF.H>
++
++// Generated comparison-only storage; no complete retail parser lifetime.
++// Merge this fragment before fixture_entry and call fixture_gui_text first.
++// Neither the helper nor the linked comparison image is executed.
++typedef char gui_text_word_size_check[sizeof(unsigned int) == 4 ? 1 : -1];
++typedef char gui_text_byte_size_check[sizeof(char) == 1 ? 1 : -1];
++typedef char gui_text_manager_offset_check[offsetof(GuiParserState, manager) == 0 ? 1 : -1];
++typedef char gui_text_cursor_offset_check[offsetof(GuiParserState, cursor) == 4 ? 1 : -1];
++typedef char gui_text_buffer_offset_check[offsetof(GuiParserState, buffer) == 8 ? 1 : -1];
++typedef char gui_text_prefix_size_check[sizeof(GuiParserState) == 12 ? 1 : -1];
++
++extern "C"
++{
++    char fixture_gui_text_input[15] = " \tMenu{suffix)";
++    char fixture_gui_text_output[16] = { '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?' };
++    GuiParserState fixture_gui_text_reader = { 0, 0, fixture_gui_text_input };
++    volatile unsigned int fixture_gui_text_byte0;
++    volatile unsigned int fixture_gui_text_byte1;
++    volatile unsigned int fixture_gui_text_byte2;
++    volatile unsigned int fixture_gui_text_byte3;
++    volatile unsigned int fixture_gui_text_byte4;
++    volatile unsigned int fixture_gui_text_cursor;
++
++    void fixture_gui_text()
++    {
++        fixture_gui_text_reader.cursor = 0;
++        fixture_gui_text_reader.ReadText(fixture_gui_text_output);
++        fixture_gui_text_byte0 = static_cast<unsigned char>(fixture_gui_text_output[0]);
++        fixture_gui_text_byte1 = static_cast<unsigned char>(fixture_gui_text_output[1]);
++        fixture_gui_text_byte2 = static_cast<unsigned char>(fixture_gui_text_output[2]);
++        fixture_gui_text_byte3 = static_cast<unsigned char>(fixture_gui_text_output[3]);
++        fixture_gui_text_byte4 = static_cast<unsigned char>(fixture_gui_text_output[4]);
++        fixture_gui_text_cursor = fixture_gui_text_reader.cursor;
++    }
++}
++
+ extern "C" void fixture_entry()
+ {
++    fixture_gui_text();
+     fixture_gui_whitespace();
+     fixture_gui_integer();
+     fixture_child_link_construction();
+diff --git a/metadata.csv b/metadata.csv
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -49,3 +49,4 @@
+ 0x005bb02c,global,4,?screen_request_game@@3PAUScreenRequestGamePrefix@@A
+ 0x004ab270,function,186,?ReadInteger@GuiParserState@@QAEXAAH_N@Z
+ 0x004ab0f0,function,34,?SkipWhitespace@GuiParserState@@QAEXXZ
++0x004ab1d0,function,154,?ReadText@GuiParserState@@QAEXPAD@Z
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -12,6 +12,7 @@
+ 
+     void ReadInteger(int& value, bool consume_delimiter);
+     void SkipWhitespace();
++    void ReadText(char* text);
+ };
+ 
+ #endif
+diff --git a/src/startup_gui_text.cpp b/src/startup_gui_text.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_gui_text.cpp
+@@ -0,0 +1,29 @@
++#include "startup_gui_parser.h"
++
++// FUNCTION: BEACHLIFE 0x004ab1d0
++void GuiParserState::ReadText(char* text)
++{
++    unsigned int length = 0;
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++
++    while (buffer[cursor] != ')' && buffer[cursor] != '\r' && buffer[cursor] != ',' && buffer[cursor] != '('
++           && buffer[cursor] != '{')
++    {
++        text[length] = buffer[cursor];
++        ++length;
++        ++cursor;
++    }
++    text[length] = 0;
++
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
++    {
++        ++cursor;
++    }
++    if (buffer[cursor] == ',' || buffer[cursor] == ')')
++    {
++        ++cursor;
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -460,6 +460,12 @@
+       "size": 34,
+       "name": "GuiParserState::SkipWhitespace",
+       "name_status": "descriptive parser prefix and method; original class and declaration unknown"
++    },
++    {
++      "address": "0x004ab1d0",
++      "size": 154,
++      "name": "GuiParserState::ReadText",
++      "name_status": "descriptive parser prefix and method; original class and declaration unknown"
+     }
+   ],
+   "library_functions": [

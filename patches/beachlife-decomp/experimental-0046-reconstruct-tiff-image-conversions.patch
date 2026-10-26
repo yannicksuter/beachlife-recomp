@@ -1,0 +1,120 @@
+diff --git a/src/tiff_image_conversions.cpp b/src/tiff_image_conversions.cpp
+new file mode 100644
+index 0000000..1034af5
+--- /dev/null
++++ b/src/tiff_image_conversions.cpp
+@@ -0,0 +1,58 @@
++#include "tga_image.h"
++#include "tiff_read_context.h"
++
++// FUNCTION: BEACHLIFE 0x004eb790
++TgaImage* TiffConvertFourSamples(TgaImage* image)
++{
++    int width = image->width;
++    unsigned char* source = image->pixels;
++    int height = image->height;
++    TgaImage* result = new TgaImage(image->width, image->height, 24, 0);
++    unsigned char* destination = result->pixels;
++    for (int row = 0; row < height; ++row)
++    {
++        unsigned char* pixel = source;
++        for (int column = 0; column < width; ++column)
++        {
++            *destination++ = pixel[0];
++            *destination++ = pixel[1];
++            *destination++ = pixel[2];
++            pixel += 4;
++        }
++        source += width * 4;
++    }
++    return result;
++}
++
++// FUNCTION: BEACHLIFE 0x004eb840
++TgaImage* TiffExpandFourBits(TgaImage* image)
++{
++    int width = image->width;
++    unsigned char* source = image->pixels;
++    int height = image->height;
++    TgaImage* result = new TgaImage(width, height, 8, 1);
++    unsigned char* destination = result->pixels;
++    for (int offset = 0; offset < 24; offset += 3)
++    {
++        unsigned char* palette = image->palette;
++        unsigned char second = palette[offset + 1];
++        unsigned char first = palette[offset];
++        unsigned char third = palette[offset + 2];
++        unsigned char* output = result->palette + offset;
++        output[0] = first;
++        output[1] = second;
++        output[2] = third;
++    }
++
++    int count = static_cast<int>(static_cast<unsigned int>(height) * static_cast<unsigned int>(width));
++    unsigned char mask = 0xf0;
++    unsigned char shift = 4;
++    for (int index = 0; index < count; ++index)
++    {
++        unsigned char value = static_cast<unsigned char>((source[index / 2] & mask) >> shift);
++        shift ^= 4;
++        destination[index] = value;
++        mask = static_cast<unsigned char>(~mask);
++    }
++    return result;
++}
+diff --git a/src/tiff_read_context.h b/src/tiff_read_context.h
+new file mode 100644
+index 0000000..678a67f
+--- /dev/null
++++ b/src/tiff_read_context.h
+@@ -0,0 +1,50 @@
++#pragma once
++
++#include <stdio.h>
++
++struct TgaImage;
++
++// Descriptive C-style context; original malloc/zero span is 0xc0 bytes on x86.
++// Field names follow the loader and complete IFD producer. Child declarations
++// alone do not establish linked implementations or a complete TIFF codec.
++struct TiffReadContext
++{
++    FILE* file;                     // +0x00
++    char description[80];           // +0x04, tag 270, no appended terminator on read
++    unsigned short bits_per_sample; // +0x54, IFD tag 258 low word
++    unsigned char unknown_56[2];
++    unsigned int compression; // +0x58, IFD tag 259
++    unsigned int height;      // +0x5c, IFD tag 257
++    unsigned int width;       // +0x60, IFD tag 256
++    unsigned char unknown_64[4];
++    unsigned int rows_per_strip;      // +0x68, IFD tag 278
++    unsigned short samples_per_pixel; // +0x6c, IFD tag 277 low word
++    unsigned char unknown_6e[14];
++    unsigned int strip_count;                // +0x7c, IFD tag 273 count
++    unsigned int strip_offsets_position;     // +0x80, IFD tag 273 value
++    unsigned int strip_byte_counts_position; // +0x84, IFD tag 279
++    unsigned int palette_offset;             // +0x88, IFD tag 320
++    unsigned int* strip_offsets;             // +0x8c, scalar-allocated word storage
++    unsigned int* strip_byte_counts;         // +0x90, scalar-allocated word storage
++    unsigned int tile_width;                 // +0x94, IFD tag 322
++    unsigned int tile_height;                // +0x98, IFD tag 323
++    unsigned int tile_offsets_position;      // +0x9c, IFD tag 324
++    unsigned int tile_byte_counts_position;  // +0xa0, IFD tag 325
++    unsigned int* tile_offsets;              // +0xa4, scalar-allocated word storage
++    unsigned int* tile_byte_counts;          // +0xa8, scalar-allocated word storage
++    unsigned int word_ac;                    // +0xac, private tag 4096
++    unsigned int word_b0;                    // +0xb0, private tag 4097
++    unsigned int word_b4;                    // +0xb4, private tag 4098
++    unsigned int word_b8;                    // +0xb8, private tag 4099
++    unsigned int next_directory_offset;      // +0xbc, recorded but not followed
++};
++
++// All are actual cdecl children. The directory returns zero on its ordinary
++// paths; the loader ignores it. Decoder/palette return-register values are unused.
++int TiffReadDirectory(unsigned int offset, TiffReadContext* context);   // 0x004eb920
++void TiffDecodeStrips(TgaImage* image, TiffReadContext* context);       // 0x004eb4b0
++void TiffDecodeTiles(TgaImage* image, TiffReadContext* context);        // 0x004eb510
++void TiffDecodePackBits(TgaImage* image, TiffReadContext* context);     // 0x004eb610
++void TiffReadPalette(TiffReadContext* context, unsigned char* palette); // 0x004ebcf0
++TgaImage* TiffConvertFourSamples(TgaImage* image);                      // 0x004eb790
++TgaImage* TiffExpandFourBits(TgaImage* image);                          // 0x004eb840

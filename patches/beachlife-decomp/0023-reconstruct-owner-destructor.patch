@@ -1,0 +1,111 @@
+Reconstruct configuration-owner list release and its natural lifetime cleanup.
+Use the evidenced per-source exception/inlining options and actual CRT handler import.
+Preserve release order and unchecked nonempty-list behavior, including unwind metadata.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -14,6 +14,7 @@
+ volatile int fixture_config_read;
+ volatile int fixture_config_offset;
+ char fixture_config_byte;
++StartupConfig* volatile fixture_owner;
+ float GetGameVersion();
+ volatile float fixture_result;
+ long GetFileSize(const char*);
+@@ -63,6 +64,9 @@
+     }
+     fixture_config_token.AssignValue("7", 1);
+     fixture_config_tokens.ParseTokens("generated", 9);
++    StartupConfig* owner = fixture_owner;
++    if (owner)
++        owner->~StartupConfig();
+     fixture_result = GetGameVersion();
+     fixture_size = GetFileSize("generated.bin");
+     fixture_file = LoadFile("generated.bin");
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -8,3 +8,4 @@
+ 0x004f3350,float,4,
+ 0x004f3518,float,4,
+ 0x004f3f04,float,4,
++0x004ee6f6,library,6,___CxxFrameHandler
+--- a/msvcrt.def
++++ b/msvcrt.def
+@@ -9,3 +9,4 @@
+     ??2@YAPAXI@Z
+     vsprintf
+     exit
++    __CxxFrameHandler
+--- a/src/startup_config_owner.h
++++ b/src/startup_config_owner.h
+@@ -14,4 +14,20 @@
+     }
+ };
+ 
++struct StartupConfigNode
++{
++    char name[256];
++    bool flag;
++    int integer;
++    float number;
++    char* text;
++    StartupConfigNode* next;
++};
++
++struct StartupConfig : StartupConfigOwnerState
++{
++    StartupConfigNode* head;
++    ~StartupConfig();
++};
++
+ #endif
+--- /dev/null
++++ b/src/startup_config_owner_destructor.cpp
+@@ -0,0 +1,19 @@
++#include "startup_config_owner.h"
++
++// FUNCTION: BEACHLIFE 0x004ecc30
++StartupConfig::~StartupConfig()
++{
++    StartupConfigNode* node = head;
++    for (;;)
++    {
++        if (node->text)
++            delete[] node->text;
++        StartupConfigNode* next = node->next;
++        if (!next)
++            break;
++        StartupConfigNode* previous = node;
++        node = next;
++        delete previous;
++    }
++    delete node;
++}
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -208,6 +208,12 @@
+       "size": 242,
+       "name": "ConfigTokenBuffer::ParseTokens",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ecc30",
++      "size": 116,
++      "name": "StartupConfig::~StartupConfig",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [
+@@ -217,5 +223,11 @@
+       "name": "operator delete",
+       "name_status": "C++ deallocation boundary identified by call behavior and verified MSVCRT free import"
+     }
+-  ]
++  ],
++  "source_compile_options": {
++    "startup_config_owner_destructor.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  }
+ }

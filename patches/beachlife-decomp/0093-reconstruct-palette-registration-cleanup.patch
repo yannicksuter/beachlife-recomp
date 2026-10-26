@@ -1,0 +1,117 @@
+diff --git a/src/startup_screen_palette_modifiers.h b/src/startup_screen_palette_modifiers.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..17a53fa63809344ac5f637243d478c61f02c1187
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers.h
+@@ -0,0 +1,25 @@
++#ifndef STARTUP_SCREEN_PALETTE_MODIFIERS_H
++#define STARTUP_SCREEN_PALETTE_MODIFIERS_H
++
++// The actual owner is allocated as 0x680 bytes on x86. This initializer writes
++// twelve consecutive 64-word banks; the final 0x80 bytes remain unresolved.
++struct ScreenDialogPaletteModifiers
++{
++    unsigned short colours[12][64];
++    unsigned char unknown_600[0x80];
++
++    // Actual 0x00409810 and 0x00409860; source-level registration cleanup.
++    ScreenDialogPaletteModifiers();
++    ~ScreenDialogPaletteModifiers();
++
++    // Actual 0x00409870, RET0; callers do not consume the incidental EAX value.
++    void Load();
++};
++
++// Actual zero-initialized registration slot at 0x005a8840.
++extern ScreenDialogPaletteModifiers* screen_dialog_palette_modifiers;
++
++// Actual pointer slot at 0x004fc260. The loader captures it once before fopen.
++extern const char* screen_dialog_palette_file_path;
++
++#endif
+diff --git a/src/startup_screen_palette_modifiers_destructor.cpp b/src/startup_screen_palette_modifiers_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a756b035bef35a9de197df64c59d6f90a89797b6
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers_destructor.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_palette_modifiers.h"
++
++// FUNCTION: BEACHLIFE 0x00409860
++ScreenDialogPaletteModifiers::~ScreenDialogPaletteModifiers()
++{
++    screen_dialog_palette_modifiers = 0;
++}
+diff --git a/src/startup_screen_palette_modifiers_registration.cpp b/src/startup_screen_palette_modifiers_registration.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9569cb756fa8332ca7ea29ba86866eb9f6d1d542
+--- /dev/null
++++ b/src/startup_screen_palette_modifiers_registration.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_palette_modifiers.h"
++
++// GLOBAL: BEACHLIFE 0x005a8840
++ScreenDialogPaletteModifiers* screen_dialog_palette_modifiers = 0;
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index bf70319bd635a02cc2a7295bbf9dcbea6bdac990..bb57d53407a2f0066722f47a4dec893a7fa4e524 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -577,6 +577,31 @@
+     ScreenPoint position = fixture_position_renderer.SurfacePosition();
+     fixture_position_x = position.x;
+     fixture_position_y = position.y;
++}
++
++#include "startup_screen_palette_modifiers.h"
++
++typedef char FixturePointerWidth[(sizeof(void*) == 4) ? 1 : -1];
++typedef char FixtureWordWidth[(sizeof(unsigned short) == 2) ? 1 : -1];
++typedef char FixtureOwnerSize[(sizeof(ScreenDialogPaletteModifiers) == 0x680) ? 1 : -1];
++
++ScreenDialogPaletteModifiers* volatile fixture_palette_receiver;
++ScreenDialogPaletteModifiers* volatile fixture_palette_registration_before;
++ScreenDialogPaletteModifiers* volatile fixture_palette_registration_after;
++volatile unsigned int fixture_palette_cleanup_completed;
++
++// Comparison-only supplied-pointer contract: owner is a live complete object.
++// registered_owner is null or another live complete object. No owner is
++// constructed here; the exported helper and comparison image are never run.
++extern "C" __declspec(dllexport) void FixturePaletteCleanup(
++    ScreenDialogPaletteModifiers* owner, ScreenDialogPaletteModifiers* registered_owner)
++{
++    screen_dialog_palette_modifiers = registered_owner;
++    fixture_palette_receiver = owner;
++    fixture_palette_registration_before = screen_dialog_palette_modifiers;
++    owner->~ScreenDialogPaletteModifiers();
++    fixture_palette_registration_after = screen_dialog_palette_modifiers;
++    fixture_palette_cleanup_completed = 1;
+ }
+ 
+ extern "C" void fixture_entry()
+diff --git a/metadata.csv b/metadata.csv
+index c44d35c27c68d2ecba819cfc5a231274c63201f4..38e80d570e4dbd5764d6d84a5e5c1caaac1baf5f 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -61,3 +61,5 @@
+ 0x00417c30,function,221,?Find@ScreenDialogResourceLookup@@QAEPAUScreenDialogResource@@PBD@Z
+ 0x0040e2d0,function,13,?SurfacePitch@ScreenRequestRenderer@@QAEIXZ
+ 0x0040e310,function,27,?SurfacePosition@ScreenRequestRenderer@@QAE?AUScreenPoint@@XZ
++0x00409860,function,11,??1ScreenDialogPaletteModifiers@@QAE@XZ
++0x005a8840,global,4,?screen_dialog_palette_modifiers@@3PAUScreenDialogPaletteModifiers@@A
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 35ac0bc9b3196e68e70770579fe48bcc14538795..05b748ec66b9a9c933fafdad041f29f575c5512c 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -682,6 +682,12 @@
+       "size": 13,
+       "name": "ScreenDialogResourceLookup::Lookup",
+       "name_status": "descriptive resource lookup wrapper; original class, source spelling and provenance unclassified"
++    },
++    {
++      "address": "0x00409860",
++      "size": 11,
++      "name": "ScreenDialogPaletteModifiers::~ScreenDialogPaletteModifiers",
++      "name_status": "descriptive palette registration cleanup; original class, source spelling and provenance unclassified"
+     }
+   ],
+   "runtime_stdcall_imports": {

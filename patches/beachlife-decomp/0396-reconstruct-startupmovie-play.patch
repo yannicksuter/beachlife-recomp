@@ -1,0 +1,153 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 353fb7c..8ccb116 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -2709,3 +2709,10 @@ extern "C" __declspec(dllexport) void FixtureMatch3_47(ScreenRequestGamePrefix*
+ {
+     receiver->ScreenRequestGamePrefix::PopulateLoadGameMenu();
+ }
++
++#include "startup_movie.h"
++// Borrowed typed receiver; compile/link retention only, never executed.
++extern "C" __declspec(dllexport) void FixtureMatch3_48(StartupMovie* receiver, const char* path)
++{
++    receiver->StartupMovie::Play(path);
++}
+diff --git a/metadata.csv b/metadata.csv
+index 689641e..74aa013 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -279,3 +279,6 @@ address,type,size,symbol
+ 0x004ae2f0,function,102,?FindListBox@ScreenManager@@QAEPAUScreenListBoxPrefix@@PBD@Z
+ 0x004e4f90,function,367,?PopulateSaveList@ScreenRequestGamePrefix@@QAEXPAUScreenListBoxPrefix@@IE@Z
+ 0x004e4ed0,function,38,?PopulateLoadGameMenu@ScreenRequestGamePrefix@@QAEXXZ
++0x004ed390,function,183,?OpenStream@StartupMovie@@QAEXPBD@Z
++0x004ed450,function,370,?RenderStream@StartupMovie@@QAEXXZ
++0x004ed190,function,38,?Play@StartupMovie@@QAEXPBD@Z
+diff --git a/src/startup_movie.h b/src/startup_movie.h
+new file mode 100644
+index 0000000..40ac3dc
+--- /dev/null
++++ b/src/startup_movie.h
+@@ -0,0 +1,55 @@
++#ifndef STARTUP_MOVIE_H
++#define STARTUP_MOVIE_H
++
++struct IDirectDraw;
++struct IDirectDraw4;
++struct IDirectDrawSurface4;
++struct IDirectDrawSurface;
++struct IAMMultiMediaStream;
++
++// Actual 48-byte x86 temporary owner that WinMain's Game constructor builds to
++// play the startup movie. Names are descriptive.
++struct StartupMovie
++{
++    void* window;           // HWND for the cooperative level.
++    int value_04;           // Zero at the only caller; users not yet audited.
++    int value_08;           // Zero at the only caller; users not yet audited.
++    int width;              // Display mode width when not windowed.
++    int height;             // Display mode height when not windowed.
++    unsigned char windowed; // Nonzero: DDSCL_NORMAL and no mode change.
++    unsigned char ready;    // Cleared when DirectDraw setup fails.
++    unsigned char flag_16;  // Passed on by the destructor.
++    unsigned char unknown_17;
++    IDirectDraw* direct_draw;         // DirectDrawCreate result.
++    IDirectDraw4* direct_draw4;       // Queried IDirectDraw4.
++    IDirectDrawSurface4* primary;     // Primary flipping surface.
++    IDirectDrawSurface4* back_buffer; // Attached back buffer.
++    IDirectDrawSurface* stream_surface_28;
++    IAMMultiMediaStream* stream_2c;
++
++    // Actual 0x004ed0d0, RET 0x1c: stores the arguments and calls Initialize.
++    StartupMovie(void* window,
++        int value_04,
++        int value_08,
++        int width,
++        int height,
++        unsigned char windowed,
++        unsigned char flag_16);
++    // Actual 0x004ed130 (body separate).
++    ~StartupMovie();
++    // Actual 0x004ed190, RET4: opens and renders the movie while ready.
++    void Play(const char* path);
++    // Actual 0x004ed1c0: DirectDraw, cooperative level, display mode, surfaces.
++    void Initialize();
++    // Actual 0x004ed260 (primary flipping surface and clipper) and 0x004ed310
++    // (attached back buffer); both clear ready on failure. Bodies separate.
++    void CreatePrimarySurface();
++    void AttachBackBuffer();
++    // Actual 0x004ed390, RET4 (CoCreateInstance, wide path, stream open) and
++    // 0x004ed450 (renders the opened stream to the surfaces); both clear ready
++    // on failure. Bodies separate; descriptive names.
++    void OpenStream(const char* path);
++    void RenderStream();
++};
++
++#endif
+diff --git a/src/startup_movie_play.cpp b/src/startup_movie_play.cpp
+new file mode 100644
+index 0000000..0838464
+--- /dev/null
++++ b/src/startup_movie_play.cpp
+@@ -0,0 +1,14 @@
++#include "startup_movie.h"
++
++// FUNCTION: BEACHLIFE 0x004ed190
++void StartupMovie::Play(const char* path)
++{
++    if (ready)
++    {
++        OpenStream(path);
++        if (ready)
++        {
++            RenderStream();
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 0deeee0..57dd391 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -1346,6 +1346,12 @@
+       "size": 38,
+       "name": "ScreenRequestGamePrefix::PopulateLoadGameMenu",
+       "name_status": "Descriptive; complete audited original extent, excluding following alignment."
++    },
++    {
++      "address": "0x004ed190",
++      "size": 38,
++      "name": "StartupMovie::Play",
++      "name_status": "Descriptive; complete audited original extent, excluding following alignment."
+     }
+   ],
+   "library_functions": [
+@@ -2149,6 +2155,28 @@
+         "unsigned int",
+         "unsigned char"
+       ]
++    },
++    {
++      "address": "0x004ed390",
++      "size": 183,
++      "name": "StartupMovie::OpenStream",
++      "symbol": "?OpenStream@StartupMovie@@QAEXPBD@Z",
++      "header": "startup_movie.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "const char*"
++      ]
++    },
++    {
++      "address": "0x004ed450",
++      "size": 370,
++      "name": "StartupMovie::RenderStream",
++      "symbol": "?RenderStream@StartupMovie@@QAEXXZ",
++      "header": "startup_movie.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
+     }
+   ]
+ }

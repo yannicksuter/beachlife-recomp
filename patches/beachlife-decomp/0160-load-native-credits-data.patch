@@ -1,0 +1,126 @@
+diff --git a/src/startup_screen_credits_data.cpp b/src/startup_screen_credits_data.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_credits_data.cpp
+@@ -0,0 +1,63 @@
++#include "startup_screen_credits_data.h"
++#include "startup_screen_manager_owner190_rows.h"
++
++#include <algorithm>
++#include <climits>
++#include <cstddef>
++#include <exception>
++#include <mutex>
++#include <stdexcept>
++
++static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && sizeof(unsigned int) == 4);
++static_assert(sizeof(ScreenManagerOwner190Row) == 20);
++static_assert(offsetof(ScreenManagerOwner190Row, flag_0c) == 12);
++static_assert(offsetof(ScreenManagerOwner190Row, unknown_0d) == 13);
++static_assert(offsetof(ScreenManagerOwner190Row, word_10) == 16);
++
++// Sole native storage for both original symbols. No retail values are compiled
++// in. RequireCreditsData prevents the initial zero storage from being consumed.
++ScreenManagerOwner190Row screen_manager_owner190_rows[205];
++char screen_manager_owner190_key_format[16];
++
++namespace
++{
++std::mutex binding_mutex;
++CreditsDataBinding* binding = nullptr;
++} // namespace
++
++CreditsDataBinding::CreditsDataBinding(const beachlife::runtime::CreditsData& data)
++    : thread_(std::this_thread::get_id())
++{
++    std::lock_guard<std::mutex> lock(binding_mutex);
++    if (binding != nullptr)
++        throw std::logic_error("Credits data already has a live binding");
++
++    for (std::size_t index = 0; index < data.rows().size(); ++index)
++    {
++        const auto& row = data.rows()[index];
++        auto& target = screen_manager_owner190_rows[index];
++        target.font_index = row.font_index;
++        target.key_number = row.key_number;
++        target.word_08 = row.word_08;
++        target.flag_0c = row.flag_0c;
++        std::copy(row.unknown_0d.begin(), row.unknown_0d.end(), target.unknown_0d);
++        target.word_10 = row.word_10;
++    }
++    std::copy(data.format().begin(), data.format().end(), screen_manager_owner190_key_format);
++    binding = this;
++}
++
++CreditsDataBinding::~CreditsDataBinding()
++{
++    std::lock_guard<std::mutex> lock(binding_mutex);
++    if (binding != this || thread_ != std::this_thread::get_id())
++        std::terminate();
++    binding = nullptr;
++}
++
++void RequireCreditsData()
++{
++    std::lock_guard<std::mutex> lock(binding_mutex);
++    if (binding == nullptr || binding->thread_ != std::this_thread::get_id())
++        throw std::logic_error("Credits data is not initialized on this game thread");
++}
+diff --git a/src/startup_screen_credits_data.h b/src/startup_screen_credits_data.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_credits_data.h
+@@ -0,0 +1,28 @@
++#ifndef STARTUP_SCREEN_CREDITS_DATA_H
++#define STARTUP_SCREEN_CREDITS_DATA_H
++
++#include "runtime/credits_data.h"
++#include <thread>
++
++// Native data publication boundary, not an additional retail class. Construct
++// before any credits owner and retain until all credits items have been destroyed.
++// Only one binding may exist; every consumer runs on its creating game thread.
++class CreditsDataBinding
++{
++public:
++    explicit CreditsDataBinding(const beachlife::runtime::CreditsData& data);
++    ~CreditsDataBinding();
++    CreditsDataBinding(const CreditsDataBinding&) = delete;
++    CreditsDataBinding& operator=(const CreditsDataBinding&) = delete;
++    CreditsDataBinding(CreditsDataBinding&&) = delete;
++    CreditsDataBinding& operator=(CreditsDataBinding&&) = delete;
++
++private:
++    friend void RequireCreditsData();
++    std::thread::id thread_;
++};
++
++// The native AddNextEntry port calls this before its first row/format access.
++void RequireCreditsData();
++
++#endif
+diff --git a/src/startup_screen_manager_owner190_rows.h b/src/startup_screen_manager_owner190_rows.h
+new file mode 100644
+--- /dev/null
++++ b/src/startup_screen_manager_owner190_rows.h
+@@ -0,0 +1,20 @@
++#ifndef STARTUP_SCREEN_MANAGER_OWNER190_ROWS_H
++#define STARTUP_SCREEN_MANAGER_OWNER190_ROWS_H
++
++// Actual 20-byte row selected by an unsigned index below 205 at 0x00580170.
++// These are observed scalar fields, not inferred full owner or library types.
++struct ScreenManagerOwner190Row
++{
++    int font_index;
++    int key_number;
++    int word_08;
++    unsigned char flag_0c;
++    unsigned char unknown_0d[3];
++    unsigned int word_10;
++};
++
++// The real 205-row writable data owner remains a separate source dependency.
++extern ScreenManagerOwner190Row screen_manager_owner190_rows[205];
++extern char screen_manager_owner190_key_format[];
++
++#endif

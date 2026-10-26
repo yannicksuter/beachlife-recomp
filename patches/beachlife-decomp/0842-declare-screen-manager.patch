@@ -1,0 +1,121 @@
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index d68a310..fd39a47 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -32,6 +32,11 @@ struct GameScenarioNameRange
+ 
+ struct ScreenRequestGamePrefix
+ {
++    bool HasScenarioFlag04(unsigned int index); // 0x004e41a0.
++    int TimeHours(float value);                 // 0x004e5360.
++    bool SelectedSaveExists();                  // 0x004e4f60.
++    void SelectSaveForLoad();                   // 0x004e44b0.
++    void ResetScenarioProgress();               // 0x004e3d70.
+     unsigned int ScenarioNameCount();
+     const unsigned short* ScenarioDirectory();
+     ControllerSelectionState controller_selection;
+@@ -43,9 +48,11 @@ struct ScreenRequestGamePrefix
+     ScreenPlacementStore* placement;
+     unsigned char unknown_58[0xc];
+     GameScenarioNameRange scenario_names;
+-    unsigned int words_70[13];
++    unsigned int words_70[12];
++    unsigned int scenario_a0;
+     unsigned char byte_a4;
+-    unsigned char unknown_a5[0x13];
++    unsigned char unknown_a5[0xf];
++    unsigned int word_b4;
+     unsigned char save_info_enabled;
+     unsigned char unknown_b9[0xb];
+     unsigned char flag_c4;
+@@ -72,6 +79,27 @@ struct ScreenRequestGamePrefix
+ // meanings remain unqualified; mode values are retained as descriptive words.
+ struct ScreenManager
+ {
++    unsigned char IsPointerOverCurrentScreen();                                                                          // 0x004b21a0.
++    void SetInputEnabled(unsigned char enabled);                                                                         // 0x004aedd0.
++    bool RequestNamedScreen(const char* name, const char* text, ScreenRequestContext* context, unsigned char flag);      // 0x004b15f0.
++    bool RequestMessageScreen(const char* name, const char* message, ScreenRequestContext* context, unsigned char flag); // 0x004b1620.
++    void ToggleTrackedEntity(unsigned int id);                                                                           // 0x004b2150.
++    void SavePauseState();                                                                                               // 0x004b1200.
++    void RestorePauseState();                                                                                            // 0x004b1230.
++    void ShowTickerMessage(const char* key, int mode);                                                                   // 0x004af350.
++    void ShowTickerMessage(const unsigned short* text, int mode);                                                        // 0x004af380.
++    unsigned char HasActiveScreen();                                                                                     // 0x004b1950.
++    unsigned int ActiveScreenCount();                                                                                    // 0x004b1b70.
++    void HideCameraControls();                                                                                           // 0x004b0ff0.
++    void DisableNamedItems(const char* name);                                                                            // 0x004b1db0.
++    void EnableNamedItems(const char* name);                                                                             // 0x004b1de0.
++    void SetDisplaySize(int width, int height);                                                                          // 0x004af320.
++    void SetProgressDialog(const char* name);                                                                            // 0x004b0e10.
++    void SetNamedItemState(const char* name, unsigned int value);                                                        // 0x004b1e10.
++    void ReplaceButtonResource(const char* name, const char* resource);                                                  // 0x004b1e50.
++    void SetFeatureState(const char* name, unsigned char enabled);                                                       // 0x004b1e90.
++    bool ToggleScreen(const char* name, ScreenRequestContext* context, unsigned char flag);                              // 0x004b15b0.
++    bool CloseScreen(const char* name);                                                                                  // 0x004b17e0.
+     void RequestCameraCapture();
+     void DisableOverlay();
+     unsigned char SelectionInputEnabled();
+@@ -81,14 +109,22 @@ struct ScreenManager
+     unsigned char unknown_54[0x34];
+     ScreenChildLink* items_head;
+     ScreenChildLink* registry;
+-    unsigned char unknown_90[4];
++    ScreenItem* item_90;
+     ScreenRequestContext* word_94;
+     int word_98;
+-    unsigned char unknown_9c[0x1c];
++    unsigned char byte_9c;
++    unsigned char unknown_9d[3];
++    int pending_width_a0;
++    int pending_height_a4;
++    unsigned char unknown_a8[0x10];
+     unsigned int surface_b8;
+     CircularList active;
+     void LoadScreen(const char* path);
+-    unsigned char unknown_c0[0x10];
++    unsigned char byte_c0;
++    unsigned char unknown_c1[3];
++    const char* word_c4;
++    const char* word_c8;
++    unsigned char unknown_cc[4];
+     ScreenTextItem* ticker_item_d0;
+     unsigned char ticker_enabled_d4;
+     unsigned char unknown_d5[3];
+@@ -124,8 +160,9 @@ struct ScreenManager
+     ScreenDialogResource* overlay_resource_164;
+     ScreenItem* item_168;
+     unsigned char unknown_16c;
+-    unsigned char unknown_16d[0x23];
++    char layout_name_16d[0x23];
+     ScreenManagerOwner190* word_190;
++    unsigned char saved_pause_194;
+ 
+     ScreenRequestContext* CurrentContext();
+ 
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index 3154703..d929cdc 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -20,6 +20,7 @@ struct SavedScreenPlacementNode : CircularListNode
+ // Observed prefix only. Original complete class and field names are unknown.
+ struct ScreenPlacementStore
+ {
++    void GetScreenSize(int* out_width, int* out_height); // 0x004e6940.
+     unsigned char unknown_00[0x18];
+     ScreenPlacementMusicEntry** music_begin_18;
+     ScreenPlacementMusicEntry** music_end_1c;
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 0a57d46..0d43b6c 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -273,7 +273,8 @@ typedef char save_manager_registry_check[offsetof(ScreenManager, registry) == 0x
+ typedef char save_manager_active_check[offsetof(ScreenManager, active) == 0xbc ? 1 : -1];
+ typedef char save_manager_mode_check[offsetof(ScreenManager, mode) == 0x128 ? 1 : -1];
+ typedef char save_manager_previous_check[offsetof(ScreenManager, previous_mode) == 0x12c ? 1 : -1];
+-typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x194 ? 1 : -1];
++typedef char save_manager_saved_pause_check[offsetof(ScreenManager, saved_pause_194) == 0x194 ? 1 : -1];
++typedef char save_manager_prefix_size_check[sizeof(ScreenManager) == 0x198 ? 1 : -1];
+ typedef char save_game_placement_check[offsetof(ScreenRequestGamePrefix, placement) == 0x54 ? 1 : -1];
+ typedef char save_game_prefix_size_check[sizeof(ScreenRequestGamePrefix) == 0xc8 ? 1 : -1];
+ typedef char save_rectangle_size_check[sizeof(ScreenRectangle) == 16 ? 1 : -1];

@@ -1,0 +1,117 @@
+Select complete mode/progress source in the experimental native profile.
+
+diff --git a/src/startup_game_progress_path.cpp b/src/startup_game_progress_path.cpp
+new file mode 100644
+index 0000000..91e1186
+--- /dev/null
++++ b/src/startup_game_progress_path.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_manager.h"
++
++// GLOBAL: BEACHLIFE 0x00586348
++const char* startup_game_state_path = "sp.bin";
+diff --git a/src/startup_game_scenario_progress.cpp b/src/startup_game_scenario_progress.cpp
+new file mode 100644
+index 0000000..29bfadd
+--- /dev/null
++++ b/src/startup_game_scenario_progress.cpp
+@@ -0,0 +1,51 @@
++#include "startup_screen_manager.h"
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004e4000
++void ScreenRequestGamePrefix::LoadScenarioProgress()
++{
++    unsigned int* words = words_70;
++    for (int i = 0; i < 12; ++i)
++        words[i] = 1;
++    words[0] = 4;
++    words[1] = 4;
++    words[2] = 2;
++    scenario_a0 = 0;
++
++    FILE* file = fopen(startup_game_state_path, "rb");
++    if (file)
++    {
++        if (fread(words, 0x30, 1, file) != 1)
++        {
++            for (int i = 0; i < 12; ++i)
++                words[i] = 1;
++            words[0] = 4;
++            words[1] = 4;
++            words[2] = 2;
++            scenario_a0 = 0;
++        }
++        fclose(file);
++    }
++
++    if (byte_a4)
++    {
++        scenario_a0 = 0;
++        return;
++    }
++
++    int last = -1;
++    for (int i = 0; i < 12; ++i)
++    {
++        if (static_cast<unsigned char>(words[i]) & 0x08)
++            last = i;
++    }
++    if (last == -1)
++    {
++        scenario_a0 = 0;
++        return;
++    }
++
++    scenario_a0 = last + 1;
++    if (scenario_a0 > 11)
++        scenario_a0 = 11;
++}
+diff --git a/src/startup_game_set_byte_a4.cpp b/src/startup_game_set_byte_a4.cpp
+new file mode 100644
+index 0000000..1e13eb4
+--- /dev/null
++++ b/src/startup_game_set_byte_a4.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_manager.h"
++
++// FUNCTION: BEACHLIFE 0x004e3db0
++void ScreenRequestGamePrefix::SetByteA4(unsigned char value)
++{
++    byte_a4 = value;
++    LoadScenarioProgress();
++}
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -6,6 +6,7 @@
+ // Declaration feature test for fixtures shared with the unchanged default profile.
+ #define BEACHLIFE_DECOMP_FONT_PUBLICATION      1
+ #define BEACHLIFE_DECOMP_MAIN_ITEM_PUBLICATION 1
++#define BEACHLIFE_DECOMP_GAME_PROGRESS         1
+ 
+ struct ScreenItem;
+ struct ScreenFontData;
+@@ -26,6 +27,15 @@
+     ScreenManager* screens;
+     unsigned char unknown_4c[8];
+     ScreenPlacementStore* placement;
++    // Experimental extension: observed progress words and mode, not full lifetime.
++    unsigned char unknown_58[0x18];
++    unsigned int words_70[12];
++    unsigned int scenario_a0;
++    unsigned char byte_a4;
++
++    // Actual 0x004e3db0 and 0x004e4000; no full game lifetime is established.
++    void SetByteA4(unsigned char value);
++    void LoadScenarioProgress();
+ };
+ 
+ // Observed manager prefix only. Complete construction, destruction and field
+@@ -63,5 +73,6 @@
+ 
+ extern ScreenRequestGamePrefix* screen_request_game;
+ extern ScreenManager* screen_manager;
++extern const char* startup_game_state_path;
+ 
+ #endif

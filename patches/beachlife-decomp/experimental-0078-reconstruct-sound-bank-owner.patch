@@ -1,0 +1,564 @@
+diff --git a/src/sound_capacity.cpp b/src/sound_capacity.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/sound_capacity.cpp
+@@ -0,0 +1,16 @@
++// Descriptive names; original symbols and authorship are unknown.
++// GLOBAL: BEACHLIFE 0x004f4274
++const unsigned int hash_table_primes[28] = {
++    53u, 97u, 193u, 389u, 769u, 1543u, 3079u, 6151u, 12289u, 24593u, 49157u, 98317u, 196613u, 393241u, 786433u, 1572869u, 3145739u, 6291469u, 12582917u, 25165843u, 50331653u, 100663319u, 201326611u, 402653189u, 805306457u, 1610612741u, 3221225473u, 4294967291u
++};
++
++// FUNCTION: BEACHLIFE 0x0049ee60
++unsigned int SelectHashTableCapacity(unsigned int requested)
++{
++    for (unsigned int index = 0; index < 28; ++index)
++    {
++        if (hash_table_primes[index] >= requested)
++            return hash_table_primes[index];
++    }
++    return requested;
++}
+diff --git a/src/sound_capacity.h b/src/sound_capacity.h
+new file mode 100644
+--- /dev/null
++++ b/src/sound_capacity.h
+@@ -0,0 +1,7 @@
++#ifndef SOUND_CAPACITY_H
++#define SOUND_CAPACITY_H
++
++// Existing complete support body at 0x0049ee60; no duplicate implementation.
++unsigned int SelectHashTableCapacity(unsigned int requested);
++
++#endif
+diff --git a/src/sound_name_hash.h b/src/sound_name_hash.h
+new file mode 100644
+--- /dev/null
++++ b/src/sound_name_hash.h
+@@ -0,0 +1,7 @@
++#ifndef SOUND_NAME_HASH_H
++#define SOUND_NAME_HASH_H
++
++// Existing complete 0x004d2280 body; no duplicate implementation.
++unsigned int SoundNameHash(const char* name);
++
++#endif
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_bank.h
+@@ -0,0 +1,83 @@
++#ifndef WINDOW_SOUND_BANK_H
++#define WINDOW_SOUND_BANK_H
++
++#include "startup_screen_text.h"
++#include <stdio.h>
++
++struct WindowSoundBank;
++
++// Actual bank record, distinct from the 52-byte playback voice allocation.
++struct WindowSoundRecord
++{
++    char name[32];
++    unsigned int bytes_20;
++    int offset_24;
++    void* cached_28;
++    unsigned char unknown_2c[4];
++    unsigned int references_30;
++};
++
++struct WindowSoundBucket
++{
++    const char* key;
++    WindowSoundRecord* value;
++    unsigned char unavailable;
++    unsigned char unknown_09[3];
++
++    // Actual 0x004d24e0 initializes only key; other fields remain untouched.
++    WindowSoundBucket();
++    // Actual empty 0x00437d10 cleanup; no pointed-to record ownership.
++    ~WindowSoundBucket();
++    // Actual 0x004d24f0 copies key/value/unavailable, not opaque bytes.
++    WindowSoundBucket& operator=(const WindowSoundBucket& other);
++};
++
++struct WindowSoundIterator
++{
++    WindowSoundBucket* bucket;
++    WindowSoundBank* lookup;
++
++    // The actual 0x00437d10 RET0 cleanup, shared with the text iterator/key.
++    ~WindowSoundIterator() { }
++};
++
++// Actual 32-byte x86 bank allocation. Destruction/loading remain real dependencies.
++struct WindowSoundBank
++{
++    int end_index;
++    int capacity_04;
++    WindowSoundBucket* buckets;
++    unsigned char unknown_0c[4];
++    int bucket_count;
++    unsigned int word_14;
++    FILE* stream_18;
++    unsigned int cached_bytes_1c;
++
++    // Actual constructor 0x004d1bc0/RET8 and ordinary destructor 0x004d1d30.
++    WindowSoundBank(const char* header_path, const char* bank_path);
++    ~WindowSoundBank();
++    void* FindSample(const char* name, unsigned int* bytes);
++    void LoadIndex(const char* header_path, const char* bank_path); // 0x004d2140, RET8.
++
++    // Descriptive names for the actual selected support/EH callees. These
++    // declarations do not infer the original container template or add bodies.
++    WindowSoundBank* InitializeStorageBase(); // 0x004d38b0, real return-this.
++    void DestroyStorageBase();                // 0x004d3890, real empty cleanup.
++    void ReleaseBucketStorage();              // 0x0049f560, actual array cleanup.
++    void ReleaseIndexStorage();               // 0x004d22a0, array then base cleanup.
++    void ResetBuckets();                      // 0x004d23d0, unavailable bytes/word14.
++
++    // These are the same physical 0x004d2310/0x004d2450 bodies already supplied
++    // for text lookup. A coherent typed composition is required before linking;
++    // this packet does not add duplicate implementations or cast owner layouts.
++    WindowSoundIterator BeginSound(); // 0x004d23f0, RET4 hidden iterator result.
++    WindowSoundIterator FindSoundKey(const ScreenTextKey& key);
++    WindowSoundIterator EndSound();
++};
++
++// Actual pointer slots 0x00582714 and 0x00582718. Initial original backing is
++// ".wav" and ".mp3" respectively; this packet supplies no global definition.
++extern const char* window_sound_wave_extension;
++extern const char* window_sound_mp3_extension;
++
++#endif
+diff --git a/src/window_sound_bank_begin.cpp b/src/window_sound_bank_begin.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_bank_begin.cpp
+@@ -0,0 +1,22 @@
++#include "window_sound_bank.h"
++
++// FUNCTION: BEACHLIFE 0x004d23f0
++WindowSoundIterator WindowSoundBank::BeginSound()
++{
++    WindowSoundIterator result = EndSound();
++    int count = bucket_count;
++    if (count > 0)
++    {
++        WindowSoundBucket* entries = buckets;
++        for (int index = 0; index < count; ++index)
++        {
++            if (entries[index].unavailable == 0)
++            {
++                result.bucket = entries + index;
++                result.lookup = this;
++                break;
++            }
++        }
++    }
++    return result;
++}
+diff --git a/src/window_sound_bank_constructor.cpp b/src/window_sound_bank_constructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_bank_constructor.cpp
+@@ -0,0 +1,83 @@
++#include "window_sound_bank.h"
++#include "sound_capacity.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d1bc0
++WindowSoundBank::WindowSoundBank(const char* header_path, const char* bank_path)
++{
++    InitializeStorageBase();
++    try
++    {
++        end_index = 0;
++        capacity_04 = 0;
++        buckets = 0;
++        try
++        {
++            word_14 = 0;
++            int count = static_cast<int>(SelectHashTableCapacity(256));
++            bucket_count = count;
++            if (count > capacity_04)
++            {
++                if (capacity_04 == 0)
++                    capacity_04 = 1;
++                int capacity = capacity_04;
++                do
++                {
++                    capacity <<= 1;
++                } while (capacity <= count);
++                capacity_04 = capacity;
++                if (capacity > 0)
++                {
++                    WindowSoundBucket* replacement = new WindowSoundBucket[capacity];
++                    if (buckets != 0)
++                    {
++                        for (int index = 0; index < end_index; ++index)
++                            replacement[index] = buckets[index];
++                        if (buckets != 0)
++                            delete[] buckets;
++                    }
++                    buckets = replacement;
++                }
++                else
++                {
++                    if (buckets != 0)
++                        delete[] buckets;
++                    buckets = 0;
++                }
++            }
++            end_index = count;
++            ResetBuckets();
++        }
++        catch (...)
++        {
++            ReleaseBucketStorage();
++            throw;
++        }
++    }
++    catch (...)
++    {
++        DestroyStorageBase();
++        throw;
++    }
++
++    try
++    {
++        int count = end_index;
++        WindowSoundBucket* entry = buckets;
++        cached_bytes_1c = 0;
++        while (count > 0)
++        {
++            entry->unavailable = 1;
++            ++entry;
++            --count;
++        }
++        word_14 = 0;
++        LoadIndex(header_path, bank_path);
++    }
++    catch (...)
++    {
++        ReleaseIndexStorage();
++        throw;
++    }
++}
+diff --git a/src/window_sound_bank_destructor.cpp b/src/window_sound_bank_destructor.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_bank_destructor.cpp
+@@ -0,0 +1,60 @@
++#include "window_sound_bank.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d1d30
++WindowSoundBank::~WindowSoundBank()
++{
++    try
++    {
++        WindowSoundIterator current = { 0, 0 };
++        current = BeginSound();
++        while (current.bucket != EndSound().bucket)
++        {
++            WindowSoundRecord* record = current.bucket->value;
++            if (record != 0)
++            {
++                void* cached = record->cached_28;
++                if (cached != 0)
++                    ::operator delete(cached);
++                ::operator delete(record);
++            }
++
++            do
++            {
++                ++current.bucket;
++                if (current.bucket == current.lookup->EndSound().bucket)
++                    break;
++            } while (current.bucket->unavailable != 0);
++        }
++
++        int count = end_index;
++        WindowSoundBucket* entry = buckets;
++        while (count > 0)
++        {
++            entry->unavailable = 1;
++            ++entry;
++            --count;
++        }
++        FILE* stream = stream_18;
++        word_14 = 0;
++        fclose(stream);
++    }
++    catch (...)
++    {
++        ReleaseIndexStorage();
++        throw;
++    }
++
++    try
++    {
++        if (buckets != 0)
++            delete[] buckets;
++    }
++    catch (...)
++    {
++        DestroyStorageBase();
++        throw;
++    }
++    DestroyStorageBase();
++}
+diff --git a/src/window_sound_bank_load_index.cpp b/src/window_sound_bank_load_index.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_bank_load_index.cpp
+@@ -0,0 +1,55 @@
++#include "window_sound_bank.h"
++#include "sound_name_hash.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d2140
++void WindowSoundBank::LoadIndex(const char* header_path, const char* bank_path)
++{
++    stream_18 = fopen(bank_path, "rb");
++    FILE* header = fopen(header_path, "rb");
++    int offset;
++    unsigned int bytes;
++    while (fread(&offset, 1, 4, header) == 4)
++    {
++        WindowSoundRecord* record = new WindowSoundRecord;
++        if (record != 0)
++        {
++            record->bytes_20 = 0;
++            record->offset_24 = 0;
++            record->cached_28 = 0;
++            record->references_30 = 0;
++        }
++
++        record->offset_24 = offset;
++        fread(&bytes, 1, 4, header);
++        record->bytes_20 = bytes;
++        fread(record->name, 1, 32, header);
++
++        ScreenTextKey key(record->name);
++        unsigned int hash = SoundNameHash(key.text);
++        int count = bucket_count;
++        int first = static_cast<int>(hash % static_cast<unsigned int>(count));
++        WindowSoundBucket* table = buckets;
++        int index = first;
++        bool available = table[index].unavailable != 0;
++        while (!available)
++        {
++            ++index;
++            if (index >= count)
++                index = 0;
++            if (index == first)
++                break;
++            available = table[index].unavailable != 0;
++        }
++
++        if (available)
++        {
++            table[index].key = key.text;
++            buckets[index].value = record;
++            buckets[index].unavailable = 0;
++            ++word_14;
++        }
++    }
++    fclose(header);
++}
+diff --git a/src/window_sound_bucket_value.cpp b/src/window_sound_bucket_value.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_bucket_value.cpp
+@@ -0,0 +1,22 @@
++#include "window_sound_bank.h"
++
++// FUNCTION: BEACHLIFE 0x004d24e0
++WindowSoundBucket::WindowSoundBucket()
++    : key(0)
++{
++}
++
++// FUNCTION: BEACHLIFE 0x004d24f0
++WindowSoundBucket& WindowSoundBucket::operator=(const WindowSoundBucket& other)
++{
++    key = other.key;
++    value = other.value;
++    unavailable = other.unavailable;
++    return *this;
++}
++
++// Same physical empty cleanup at 0x00437d10 as the existing key/iterator/base
++// aliases. This typed bucket projection adds no original instruction credit.
++WindowSoundBucket::~WindowSoundBucket()
++{
++}
+diff --git a/src/window_sound_end.cpp b/src/window_sound_end.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_end.cpp
+@@ -0,0 +1,8 @@
++#include "window_sound_bank.h"
++
++// FUNCTION: BEACHLIFE 0x004d2450
++WindowSoundIterator WindowSoundBank::EndSound()
++{
++    WindowSoundIterator end = { buckets + end_index, this };
++    return end;
++}
+diff --git a/src/window_sound_find_key.cpp b/src/window_sound_find_key.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_find_key.cpp
+@@ -0,0 +1,36 @@
++#include "window_sound_bank.h"
++#include <string.h>
++#if !defined(_WIN32)
++#include <strings.h>
++// Native CRT spelling only; no replacement comparator.
++#define _stricmp strcasecmp
++#endif
++
++// FUNCTION: BEACHLIFE 0x004d2310
++WindowSoundIterator WindowSoundBank::FindSoundKey(const ScreenTextKey& key)
++{
++    WindowSoundIterator end = EndSound();
++    const char* cursor = key.text;
++    unsigned int hash = 0;
++    while (*cursor != 0)
++    {
++        hash = hash * 5 + static_cast<signed char>(*cursor);
++        ++cursor;
++    }
++
++    int first = static_cast<int>(hash % static_cast<unsigned int>(bucket_count));
++    int index = first;
++    do
++    {
++        if (buckets[index].unavailable == 0
++            && _stricmp(buckets[index].key, key.text) == 0)
++        {
++            WindowSoundIterator found = { buckets + index, this };
++            return found;
++        }
++        ++index;
++        if (index >= bucket_count)
++            index = 0;
++    } while (index != first);
++    return end;
++}
+diff --git a/src/window_sound_find_sample.cpp b/src/window_sound_find_sample.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_find_sample.cpp
+@@ -0,0 +1,37 @@
++#include "window_sound_bank.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d1ee0
++void* WindowSoundBank::FindSample(const char* name, unsigned int* bytes)
++{
++    WindowSoundIterator found = { 0, 0 };
++    *bytes = 0;
++    found = FindSoundKey(ScreenTextKey(name));
++    if (found.bucket != EndSound().bucket)
++    {
++        WindowSoundRecord* record = found.bucket->value;
++        if (record->cached_28 == 0)
++        {
++            void* data = ::operator new(record->bytes_20);
++            int offset = record->offset_24;
++            record->cached_28 = data;
++            fseek(stream_18, offset, SEEK_SET);
++
++            FILE* stream = stream_18;
++            unsigned int length = record->bytes_20;
++            void* destination = record->cached_28;
++            fread(destination, 1, length, stream);
++
++            unsigned int loaded_bytes = record->bytes_20;
++            unsigned int previous_bytes = cached_bytes_1c;
++            cached_bytes_1c = previous_bytes + loaded_bytes;
++        }
++
++        unsigned int size = record->bytes_20;
++        void* result = record->cached_28;
++        *bytes = size;
++        ++record->references_30;
++        return result;
++    }
++    return 0;
++}
+diff --git a/src/window_sound_index_release.cpp b/src/window_sound_index_release.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_index_release.cpp
+@@ -0,0 +1,17 @@
++#include "window_sound_bank.h"
++
++// FUNCTION: BEACHLIFE 0x004d22a0
++void WindowSoundBank::ReleaseIndexStorage()
++{
++    try
++    {
++        if (buckets != 0)
++            delete[] buckets;
++    }
++    catch (...)
++    {
++        DestroyStorageBase();
++        throw;
++    }
++    DestroyStorageBase();
++}
+diff --git a/src/window_sound_reset_buckets.cpp b/src/window_sound_reset_buckets.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_reset_buckets.cpp
+@@ -0,0 +1,15 @@
++#include "window_sound_bank.h"
++
++// FUNCTION: BEACHLIFE 0x004d23d0
++void WindowSoundBank::ResetBuckets()
++{
++    int count = end_index;
++    WindowSoundBucket* entry = buckets;
++    while (count > 0)
++    {
++        entry->unavailable = 1;
++        ++entry;
++        --count;
++    }
++    word_14 = 0;
++}
+diff --git a/src/window_sound_storage_helpers.cpp b/src/window_sound_storage_helpers.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/window_sound_storage_helpers.cpp
+@@ -0,0 +1,21 @@
++#include "window_sound_bank.h"
++
++// FUNCTION: BEACHLIFE 0x004d38b0
++WindowSoundBank* WindowSoundBank::InitializeStorageBase()
++{
++    return this;
++}
++
++// Actual shared empty RET0 at 0x004d3890. This typed cleanup projection adds
++// no original-byte credit to the existing error-sink/base/parser aliases.
++void WindowSoundBank::DestroyStorageBase()
++{
++}
++
++// FUNCTION: BEACHLIFE 0x0049f560
++void WindowSoundBank::ReleaseBucketStorage()
++{
++    WindowSoundBucket* storage = buckets;
++    if (storage != 0)
++        delete[] storage;
++}

@@ -1,0 +1,327 @@
+diff --git a/src/startup_resource_raster_405b20.cpp b/src/startup_resource_raster_405b20.cpp
+new file mode 100644
+index 0000000..909839e
+--- /dev/null
++++ b/src/startup_resource_raster_405b20.cpp
+@@ -0,0 +1,306 @@
++#include "startup_resource_rasters.h"
++#include "render_mask_setup.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00405b20
++void ResourceRasterAt00405b20(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom,
++    unsigned int flags, int frame_word)
++{
++    if ((y & 1) != 0)
++        flags += 8u;
++    unsigned char* first_row = reinterpret_cast<unsigned char*>(destination)
++                             + ((y / 2) * static_cast<int>(stride) + x / 2) * 4;
++    unsigned int frame = static_cast<unsigned int>(frame_word);
++    unsigned int depth = ((flags & 0xffffu) - frame * 8u) << 16;
++
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (int row = 0; row < height; ++row)
++        {
++            if ((frame++ & 0x80000000u) != 0)
++                depth -= 0x80000u;
++            else
++                depth += 0x100000u;
++            unsigned char* output = first_row + (row / 2) * static_cast<int>(stride) * 4;
++            bool sampled_row = (row & 1) == 0;
++            int column = 0;
++            while (column < width)
++            {
++                int packet = static_cast<signed char>(*source++);
++                if (packet > 0)
++                {
++                    int count = packet;
++                    do
++                    {
++                        if ((column & 1) != 0 && sampled_row)
++                        {
++                            unsigned int stored;
++                            memcpy(&stored, output, sizeof(stored));
++                            unsigned int stored_depth = stored & 0xffff0000u;
++                            if (stored_depth <= depth)
++                            {
++                                unsigned int payload = *source;
++                                unsigned int mode = payload & 0xc0u;
++                                unsigned short previous;
++                                memcpy(&previous, output, sizeof(previous));
++                                unsigned int colour = palette[payload - mode];
++                                unsigned int pixel = (frame != 0 && (frame & 0x80000000u) == 0
++                                                             ? stored_depth
++                                                             : depth)
++                                                   + colour;
++                                switch (mode)
++                                {
++                                case 0x40:
++                                {
++                                    unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                    unsigned int quarter = static_cast<unsigned int>(render_quarter_mask) >> 2;
++                                    pixel = stored_depth
++                                          + ((((colour >> 1) & half) + ((colour >> 2) & quarter)) & 0xffffu)
++                                          + ((previous >> 2) & quarter);
++                                    break;
++                                }
++                                case 0x80:
++                                {
++                                    unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                    pixel = stored_depth + ((colour >> 1) & half) + ((previous >> 1) & half);
++                                    break;
++                                }
++                                case 0xc0:
++                                {
++                                    unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                    unsigned int quarter = static_cast<unsigned int>(render_quarter_mask) >> 2;
++                                    pixel = stored_depth
++                                          + ((((previous >> 1) & half) + ((previous >> 2) & quarter)) & 0xffffu)
++                                          + ((colour >> 2) & quarter);
++                                    break;
++                                }
++                                }
++                                memcpy(output, &pixel, sizeof(pixel));
++                            }
++                            output += 4;
++                        }
++                        ++source;
++                        ++column;
++                    } while (--count != 0);
++                }
++                else if (packet < 0)
++                {
++                    int count = -packet;
++                    do
++                    {
++                        if ((column & 1) != 0 && sampled_row)
++                            output += 4;
++                        ++column;
++                    } while (--count != 0);
++                }
++            }
++        }
++        return;
++    }
++
++    for (int rows = top; rows > 0; --rows)
++    {
++        if ((frame++ & 0x80000000u) != 0)
++            depth -= 0x80000u;
++        else
++            depth += 0x100000u;
++        int column = 0;
++        while (column < width)
++        {
++            int packet = static_cast<signed char>(*source++);
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
++            else
++                column -= packet;
++        }
++    }
++    int rows = bottom - top;
++    if (left > 0)
++    {
++        for (int row = 0; row < rows; ++row)
++        {
++            bool sampled_row = (row & 1) != 0;
++            unsigned char* output = first_row + (row / 2) * static_cast<int>(stride) * 4;
++            if ((frame++ & 0x80000000u) != 0)
++                depth -= 0x80000u;
++            else
++                depth += 0x100000u;
++            int remaining_left = left;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = static_cast<signed char>(*source++);
++                unsigned char phase = static_cast<unsigned char>(column & 1);
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            --remaining_left;
++                        else if (phase != 0)
++                        {
++                            if (sampled_row)
++                            {
++                                unsigned int stored;
++                                memcpy(&stored, output, sizeof(stored));
++                                unsigned int stored_depth = stored & 0xffff0000u;
++                                if (stored_depth <= depth)
++                                {
++                                    unsigned int payload = *source;
++                                    unsigned int mode = payload & 0xc0u;
++                                    unsigned short previous;
++                                    memcpy(&previous, output, sizeof(previous));
++                                    unsigned int colour = palette[payload - mode];
++                                    unsigned int pixel = (frame != 0 && (frame & 0x80000000u) == 0
++                                                                 ? stored_depth
++                                                                 : depth)
++                                                       + colour;
++                                    switch (mode)
++                                    {
++                                    case 0x40:
++                                    {
++                                        unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                        unsigned int quarter = static_cast<unsigned int>(render_quarter_mask) >> 2;
++                                        pixel = stored_depth
++                                              + ((((colour >> 1) & half) + ((colour >> 2) & quarter)) & 0xffffu)
++                                              + ((previous >> 2) & quarter);
++                                        break;
++                                    }
++                                    case 0x80:
++                                    {
++                                        unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                        pixel = stored_depth + ((colour >> 1) & half) + ((previous >> 1) & half);
++                                        break;
++                                    }
++                                    case 0xc0:
++                                    {
++                                        unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                        unsigned int quarter = static_cast<unsigned int>(render_quarter_mask) >> 2;
++                                        pixel = stored_depth
++                                              + ((((previous >> 1) & half) + ((previous >> 2) & quarter)) & 0xffffu)
++                                              + ((colour >> 2) & quarter);
++                                        break;
++                                    }
++                                    }
++                                    memcpy(output, &pixel, sizeof(pixel));
++                                }
++                                phase = 0;
++                                output += 4;
++                            }
++                        }
++                        else if (sampled_row)
++                            phase = 1;
++                        ++source;
++                    } while (--count != 0);
++                }
++                else if (packet < 0)
++                {
++                    packet = static_cast<signed char>(-packet);
++                    while (remaining_left != 0 && packet != 0)
++                    {
++                        --remaining_left;
++                        ++column;
++                        packet = static_cast<signed char>(packet - 1);
++                    }
++                    output += (static_cast<int>(packet) / 2) * 4;
++                    column += packet;
++                }
++            }
++        }
++        return;
++    }
++
++    for (int row = 0; row < rows; ++row)
++    {
++        bool sampled_row = (row & 1) != 0;
++        unsigned char* output = first_row + (row / 2) * static_cast<int>(stride) * 4;
++        if ((frame++ & 0x80000000u) != 0)
++            depth -= 0x80000u;
++        else
++            depth += 0x100000u;
++        int column = 0;
++        while (column < width)
++        {
++            int packet = static_cast<signed char>(*source++);
++            unsigned char phase = static_cast<unsigned char>(column & 1);
++            if (packet > 0)
++            {
++                int count = packet;
++                do
++                {
++                    if (column < right)
++                    {
++                        if (phase != 0)
++                        {
++                            if (sampled_row)
++                            {
++                                unsigned int stored;
++                                memcpy(&stored, output, sizeof(stored));
++                                unsigned int stored_depth = stored & 0xffff0000u;
++                                if (stored_depth <= depth)
++                                {
++                                    unsigned int payload = *source;
++                                    unsigned int mode = payload & 0xc0u;
++                                    unsigned short previous;
++                                    memcpy(&previous, output, sizeof(previous));
++                                    unsigned int colour = palette[payload - mode];
++                                    unsigned int pixel = (frame != 0 && (frame & 0x80000000u) == 0
++                                                                 ? stored_depth
++                                                                 : depth)
++                                                       + colour;
++                                    switch (mode)
++                                    {
++                                    case 0x40:
++                                    {
++                                        unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                        unsigned int quarter = static_cast<unsigned int>(render_quarter_mask) >> 2;
++                                        pixel = stored_depth
++                                              + ((((colour >> 1) & half) + ((colour >> 2) & quarter)) & 0xffffu)
++                                              + ((previous >> 2) & quarter);
++                                        break;
++                                    }
++                                    case 0x80:
++                                    {
++                                        unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                        pixel = stored_depth + ((colour >> 1) & half) + ((previous >> 1) & half);
++                                        break;
++                                    }
++                                    case 0xc0:
++                                    {
++                                        unsigned int half = static_cast<unsigned int>(render_half_mask) >> 1;
++                                        unsigned int quarter = static_cast<unsigned int>(render_quarter_mask) >> 2;
++                                        pixel = stored_depth
++                                              + ((((previous >> 1) & half) + ((previous >> 2) & quarter)) & 0xffffu)
++                                              + ((colour >> 2) & quarter);
++                                        break;
++                                    }
++                                    }
++                                    memcpy(output, &pixel, sizeof(pixel));
++                                }
++                                phase = 0;
++                                output += 4;
++                            }
++                        }
++                        else if (sampled_row)
++                            phase = 1;
++                    }
++                    ++source;
++                    ++column;
++                } while (--count != 0);
++            }
++            else if (packet < 0)
++            {
++                if (column < right)
++                    output -= (packet / 2) * 4;
++                column -= packet;
++            }
++        }
++    }
++}
+diff --git a/src/startup_resource_rasters.h b/src/startup_resource_rasters.h
+index 1303999..7f1460d 100644
+--- a/src/startup_resource_rasters.h
++++ b/src/startup_resource_rasters.h
+@@ -24,4 +24,10 @@
+     int width, int height, int left, int top, int right, int bottom,
+     unsigned int flags, int frame_word);
+ 
++// Actual 0x00405b20 cdecl: half-resolution sampling, fourteen words and RET0.
++void ResourceRasterAt00405b20(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom,
++    unsigned int flags, int frame_word);
++
+ #endif

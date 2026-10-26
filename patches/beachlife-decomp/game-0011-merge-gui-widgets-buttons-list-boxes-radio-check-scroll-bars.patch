@@ -1,0 +1,3780 @@
+diff --git a/src/copy_trivial.h b/src/copy_trivial.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e9227c055df5d4f488fdd574845cb5623413bb2
+--- /dev/null
++++ b/src/copy_trivial.h
+@@ -0,0 +1,19 @@
++#ifndef COPY_TRIVIAL_H
++#define COPY_TRIVIAL_H
++
++#include <string.h>
++
++// Library inline trivial range copy: memmove of the byte span, returning the
++// destination end; equal bounds return the destination unchanged. Expanded
++// inline in some callers; 57 direct calls reach the out-of-line instance.
++// LIBRARY: BEACHLIFE 0x004450b0
++inline void* CopyTrivial(const void* first, const void* last, void* result)
++{
++    return last == first ? result
++                         : static_cast<char*>(memmove(result,
++                               first,
++                               static_cast<const char*>(last) - static_cast<const char*>(first)))
++                               + (static_cast<const char*>(last) - static_cast<const char*>(first));
++}
++
++#endif
+diff --git a/src/node_storage.h b/src/node_storage.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..943cbc2ea4cfa6f1d7915b41d51cc33f8b245cb0
+--- /dev/null
++++ b/src/node_storage.h
+@@ -0,0 +1,53 @@
++#ifndef NODE_STORAGE_H
++#define NODE_STORAGE_H
++
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_refill.h"
++#include "pool_return.h"
++
++#include <new>
++
++// Library inlines of the container storage front end observed expanded in
++// game methods: blocks above 128 bytes use the heap, smaller blocks the
++// locked size buckets. No separate retail bodies; no game-byte credit.
++inline const unsigned int& MaxUnsigned(const unsigned int& left, const unsigned int& right)
++{
++    return left < right ? right : left;
++}
++
++inline void* AllocateNodeStorage(unsigned int bytes)
++{
++    if (bytes > 128)
++    {
++        return ::operator new(bytes);
++    }
++    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
++    AcquirePoolLock(&pool_lock_word);
++    PoolLockGuard guard;
++    PoolChunkLink* result = *bucket;
++    if (result != 0)
++    {
++        *bucket = result->next;
++    }
++    else
++    {
++        result = static_cast<PoolChunkLink*>(RefillPool(bytes));
++    }
++    return result;
++}
++
++inline void ReleaseNodeStorage(void* storage, unsigned int bytes)
++{
++    if (bytes > 128)
++    {
++        ::operator delete(storage);
++    }
++    else
++    {
++        ReturnPool(storage, bytes);
++    }
++}
++
++#endif
+diff --git a/src/startup_list.h b/src/startup_list.h
+index a8241b69250cb661f340f552bedad7a0aac3ff24..6273e4a51573c6a7b93eb29301b670dc5749ba85 100644
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -17,7 +17,7 @@ struct CircularListIterator
+ {
+     CircularListNode* node;
+ 
+-    CircularListIterator() {}
++    CircularListIterator() { }
+     // Explicitly retain the implicit memberwise assignment on modern C++.
+     CircularListIterator& operator=(const CircularListIterator&) = default;
+     CircularListIterator(const CircularListIterator& other)
+@@ -34,8 +34,7 @@ struct CircularListValueNode : CircularListNode
+ };
+ 
+ // Preserve the observed eight-byte pool quantum on the native pointer ABI.
+-inline constexpr unsigned int circular_list_node_slot_bytes =
+-    (sizeof(CircularListValueNode) + 7u) & ~7u;
++inline constexpr unsigned int circular_list_node_slot_bytes = (sizeof(CircularListValueNode) + 7u) & ~7u;
+ static_assert(alignof(CircularListValueNode) <= 8);
+ static_assert(circular_list_node_slot_bytes >= sizeof(CircularListValueNode),
+     "native node does not fit its pool slot");
+diff --git a/src/startup_panel140_constructor.cpp b/src/startup_panel140_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..75b9772053ffdbf83f5fd53c00c5a86bcc785543
+--- /dev/null
++++ b/src/startup_panel140_constructor.cpp
+@@ -0,0 +1,9 @@
++#include "startup_screen_load_dependencies.h"
++
++// FUNCTION: BEACHLIFE 0x004c8760
++ScreenLoadPanel140::ScreenLoadPanel140()
++    : item_00(0)
++    , state_04(0)
++    , word_08(0)
++{
++}
+diff --git a/src/startup_screen_button.h b/src/startup_screen_button.h
+index 955bdff2427b5ec8addd874311ab3d2240e5432f..b7898788cfaffb18b7aed2233e31c532049c808a 100644
+--- a/src/startup_screen_button.h
++++ b/src/startup_screen_button.h
+@@ -17,7 +17,7 @@ struct ScreenButtonPrefix : ScreenItem
+     unsigned char flag_50;
+     unsigned char unknown_51[3];
+     char* text_54;
+-    unsigned char unknown_58[4];
++    float time_58; // Frame-clock time used by click/repeat handling.
+     ScreenButtonActionIdentity action_5c;
+     ScreenButtonActionIdentity action_60;
+     unsigned char flag_64;
+diff --git a/src/startup_screen_button_actions.h b/src/startup_screen_button_actions.h
+index bb19821107053636600a8c5e799ed07c68edba8b..975e21d8d5e79ebd37895c3977bd55280cd54950 100644
+--- a/src/startup_screen_button_actions.h
++++ b/src/startup_screen_button_actions.h
+@@ -1,10 +1,11 @@
+ #ifndef STARTUP_SCREEN_BUTTON_ACTIONS_H
+ #define STARTUP_SCREEN_BUTTON_ACTIONS_H
+ 
+-// Identity-only function pointer: this method never invokes an action.
+-// The original invoked return/pointee types are not established. Actual Button
+-// callers pass one word and use cdecl cleanup; do not invoke through this type.
+-typedef void (*ScreenButtonActionIdentity)();
++// Button update passes one word with cdecl caller cleanup; the result is
++// discarded. Void is descriptive, not proof of each original return type.
++// Actual definitions and writable table ownership need coherent qualification
++// before native invocation; no callback body or provider is supplied here.
++typedef void (*ScreenButtonActionIdentity)(unsigned int value);
+ 
+ // Actual 120 writable name/function pairs at 0x0057d7a8, eight bytes each on x86.
+ // No callback body or generated replacement table is provided by this atom.
+diff --git a/src/startup_screen_button_activation.cpp b/src/startup_screen_button_activation.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9943212b292a932c25c9736adac884dd14ceebc7
+--- /dev/null
++++ b/src/startup_screen_button_activation.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_button.h"
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x004a0f10
++void ScreenButtonPrefix::Unresolved24(unsigned char enabled)
++{
++    if (enabled == 0)
++    {
++        if (resource_name_70 != 0 && resource_74 != 0)
++        {
++            screen_dialog_resources->Release(resource_74);
++            resource_74 = 0;
++        }
++        word_44 = 0;
++        ScreenItem::Unresolved24(enabled);
++        return;
++    }
++
++    if (resource_name_70 != 0 && resource_74 == 0)
++    {
++        resource_74 = screen_dialog_resources->Find(resource_name_70);
++    }
++    MarkPrepared();
++    ScreenItem::Unresolved24(enabled);
++}
+diff --git a/src/startup_screen_button_constructor.cpp b/src/startup_screen_button_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0c69564abb0376f9773d505d87464c66de5b698a
+--- /dev/null
++++ b/src/startup_screen_button_constructor.cpp
+@@ -0,0 +1,97 @@
++#include "startup_screen_button.h"
++#include "startup_screen_button_constants.h"
++#include "startup_screen_dialog_resource.h"
++#include <new>
++#include <string.h>
++
++#if !defined(_WIN32)
++#include <strings.h>
++#define _stricmp strcasecmp
++#endif
++
++// FUNCTION: BEACHLIFE 0x004a0b40
++ScreenButtonPrefix::ScreenButtonPrefix(ScreenRectangle initial,
++    const char* first_name,
++    const char* second_name,
++    const char* first_action,
++    const char* second_action)
++    : ScreenItem(initial)
++{
++    word_4c = 0;
++    text_54 = 0;
++    value_6c = 0.75f;
++    resource_name_70 = 0;
++    resource_74 = 0;
++    action_5c = 0;
++    action_60 = 0;
++    flag_50 = 0;
++    word_48 = 3;
++
++    for (ScreenButtonActionRecord* action = screen_button_actions;
++        action != screen_button_actions + 120;
++        ++action)
++    {
++        if (_stricmp(action->name, first_action) == 0)
++        {
++            action_5c = action->action;
++        }
++    }
++    for (ScreenButtonActionRecord* action = screen_button_actions;
++        action != screen_button_actions + 120;
++        ++action)
++    {
++        if (_stricmp(action->name, second_action) == 0)
++        {
++            action_60 = action->action;
++        }
++    }
++
++    if (_stricmp(second_name, screen_button_no_text_name) != 0)
++    {
++        if (strncmp(second_name, screen_button_variable_prefix, 7) == 0)
++        {
++            text_54 = static_cast<char*>(::operator new(strlen(second_name) + 1 - 7));
++            strcpy(text_54, second_name + 7);
++            word_78 = 1;
++        }
++        else if (strncmp(second_name, screen_button_state_entry_variable_prefix, 14) == 0)
++        {
++            text_54 = static_cast<char*>(::operator new(strlen(second_name) + 1 - 14));
++            strcpy(text_54, second_name + 14);
++            word_78 = 0;
++            word_4c = 2;
++        }
++        else if (strncmp(second_name, screen_button_state_variable_prefix, 12) == 0)
++        {
++            text_54 = static_cast<char*>(::operator new(strlen(second_name) + 1 - 12));
++            strcpy(text_54, second_name + 12);
++            word_78 = 0;
++            word_4c = 1;
++        }
++        else
++        {
++            text_54 = static_cast<char*>(::operator new(strlen(second_name) + 1));
++            strcpy(text_54, second_name);
++            word_78 = 0;
++        }
++    }
++
++    word_44 = 0;
++    if (_stricmp(first_name, screen_dialog_none_name) != 0)
++    {
++        resource_name_70 = static_cast<char*>(::operator new(strlen(first_name) + 1));
++        strcpy(resource_name_70, first_name);
++        ScreenDialogResource* temporary = screen_dialog_resources->Find(resource_name_70);
++        rectangle.right = rectangle.left + temporary->record->frames[temporary->word_10]->width_0e;
++        rectangle.bottom = rectangle.top + temporary->record->frames[temporary->word_10]->height_10;
++        screen_dialog_resources->Release(temporary);
++        saved_rectangle.right = rectangle.right;
++        saved_rectangle.bottom = rectangle.bottom;
++    }
++    flag_64 = 0;
++    elapsed_68 = 0.0f;
++    flag_7c = 0;
++    flag_7d = 0;
++    kind_28 = 0;
++    flag_65 = 1;
++}
+diff --git a/src/startup_screen_button_destructor.cpp b/src/startup_screen_button_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2a2f2804cf50f45f8d0f6e8f0df99540affdccec
+--- /dev/null
++++ b/src/startup_screen_button_destructor.cpp
+@@ -0,0 +1,23 @@
++#include "startup_screen_button.h"
++#include "startup_screen_dialog_resource.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004a0e70
++ScreenButtonPrefix::~ScreenButtonPrefix()
++{
++    if (resource_name_70 != 0 && resource_74 != 0)
++    {
++        screen_dialog_resources->Release(resource_74);
++        resource_74 = 0;
++    }
++    word_44 = 0;
++    ScreenItem::Unresolved24(0);
++    if (text_54 != 0)
++    {
++        ::operator delete(text_54);
++    }
++    if (resource_name_70 != 0)
++    {
++        ::operator delete(resource_name_70);
++    }
++}
+diff --git a/src/startup_screen_button_hit.cpp b/src/startup_screen_button_hit.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d05c3b665a0429c145290a06798c5053a96a6b7d
+--- /dev/null
++++ b/src/startup_screen_button_hit.cpp
+@@ -0,0 +1,33 @@
++#include "startup_screen_button.h"
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x004a13a0
++bool ScreenButtonPrefix::TestRectangle(int x, int y)
++{
++    bool hit = false;
++    if (word_44 != 3 && state_30)
++    {
++        if (resource_name_70)
++        {
++            int local_x = x - rectangle.left;
++            if (local_x > 0)
++            {
++                ScreenDialogResource* resource = resource_74;
++                if (local_x < resource->record->frames[resource->word_10]->width_0e)
++                {
++                    int local_y = y - rectangle.top;
++                    if (local_y > 0 && local_y < resource->record->frames[resource->word_10]->height_10)
++                    {
++                        hit = resource->TestPixel(local_x, local_y);
++                    }
++                }
++            }
++        }
++        else
++        {
++            hit = ScreenItem::TestRectangle(x, y);
++        }
++    }
++    state_40 = hit;
++    return hit;
++}
+diff --git a/src/startup_screen_button_replace_resource.cpp b/src/startup_screen_button_replace_resource.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..837254bfb337375ad074490757b7e963bd4dbcf9
+--- /dev/null
++++ b/src/startup_screen_button_replace_resource.cpp
+@@ -0,0 +1,31 @@
++#include "startup_screen_button.h"
++#include "startup_screen_dialog_resource.h"
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004a15c0
++void ScreenButtonPrefix::ReplaceNamedResource(const char* name, const char* resource)
++{
++    bool found = false;
++    for (ScreenButtonActionRecord* action = screen_button_actions;
++        action != screen_button_actions + 120;
++        ++action)
++    {
++        if (strcmp(action->name, name) == 0 && action_5c == action->action)
++        {
++            found = true;
++        }
++    }
++
++    if (found && resource_name_70 != 0)
++    {
++        ::operator delete(resource_name_70);
++        resource_name_70 = static_cast<char*>(::operator new(strlen(resource) + 1));
++        strcpy(resource_name_70, resource);
++        if (state_30 != 0)
++        {
++            screen_dialog_resources->Release(resource_74);
++            resource_74 = screen_dialog_resources->Find(resource_name_70);
++        }
++    }
++}
+diff --git a/src/startup_screen_button_timed_coordinates.cpp b/src/startup_screen_button_timed_coordinates.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..9567978d5766a3da25de764a1c05c36db2270f54
+--- /dev/null
++++ b/src/startup_screen_button_timed_coordinates.cpp
+@@ -0,0 +1,84 @@
++#include "startup_frame_clock.h"
++#include "startup_input_motion.h"
++#include "startup_screen_button.h"
++
++// FUNCTION: BEACHLIFE 0x004a17a0
++bool ScreenButtonPrefix::HandleTimedCoordinates(int x, int y, int value)
++{
++    if (state_30 == 0)
++    {
++        return false;
++    }
++
++    ScreenItem::HandleTimedCoordinates(x, y, value);
++    state_41 = 0;
++    if (value == 3)
++    {
++        state_40 = 0;
++    }
++    else
++    {
++        TestRectangle(x, y);
++    }
++
++    switch (value)
++    {
++    case 0:
++        if (word_44 == 0)
++        {
++            if (ReadState40() != 0)
++            {
++                word_44 = 2;
++            }
++        }
++        else if (word_44 == 2)
++        {
++            if (ReadState40() == 0)
++            {
++                word_44 = 0;
++            }
++        }
++        break;
++    case 1:
++        if (ReadState40() != 0 && word_44 == 2)
++        {
++            word_44 = 4;
++            time_58 = startup_frame_clock->seconds;
++            value_6c = 0.75f;
++            flag_7d = 0;
++            return true;
++        }
++        break;
++    case 2:
++        if (word_44 == 1 && ReadState40() != 0)
++        {
++            if (flag_50 != 0)
++            {
++                if (startup_frame_clock->seconds - time_58 >= value_6c)
++                {
++                    action_5c(word_2c);
++                    float now = startup_frame_clock->seconds;
++                    state_42 = 1;
++                    time_58 = now;
++                    value_6c = 0.05f;
++                    state_41 = 1;
++                    return true;
++                }
++            }
++            else
++            {
++                time_58 = startup_frame_clock->seconds;
++            }
++            state_41 = 1;
++        }
++        break;
++    case 3:
++        if (word_44 == 2)
++        {
++            word_44 = 0;
++        }
++        break;
++    }
++
++    return false;
++}
+diff --git a/src/startup_screen_button_timed_event.cpp b/src/startup_screen_button_timed_event.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba5c421d4d8484da9aeab29008ac3ce41674697c
+--- /dev/null
++++ b/src/startup_screen_button_timed_event.cpp
+@@ -0,0 +1,23 @@
++#include "startup_frame_clock.h"
++#include "startup_input_motion.h"
++#include "startup_screen_button.h"
++
++// FUNCTION: BEACHLIFE 0x004a1940
++bool ScreenButtonPrefix::HandleTimedEvent(int x, int y, int value)
++{
++    if (state_30 == 0)
++    {
++        return false;
++    }
++
++    ScreenItem::HandleTimedEvent(x, y, value);
++    if (value == 1 && ReadState40() != 0 && word_44 == 2)
++    {
++        word_44 = 4;
++        time_58 = startup_frame_clock->seconds;
++        value_6c = 0.75f;
++        flag_7d = 1;
++        return true;
++    }
++    return false;
++}
+diff --git a/src/startup_screen_checkbox_constructor.cpp b/src/startup_screen_checkbox_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..81c15f4fd24fb401cdf122956c0776ab7b8da2e8
+--- /dev/null
++++ b/src/startup_screen_checkbox_constructor.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_checkbox.h"
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004c1650
++ScreenCheckBox::ScreenCheckBox(ScreenRectangle initial, const char* resource_name, const char* name)
++    : ScreenItem(initial)
++{
++    owned_name_44 = static_cast<char*>(::operator new(strlen(name) + 1));
++    strcpy(owned_name_44, name);
++    resource_48 = screen_dialog_resources->Find(resource_name);
++    kind_28 = 1;
++}
+diff --git a/src/startup_screen_checkbox_destructor.cpp b/src/startup_screen_checkbox_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3cf01b5812c4ce95d57f9f892354d9a1bf8a641f
+--- /dev/null
++++ b/src/startup_screen_checkbox_destructor.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_checkbox.h"
++#include "startup_screen_dialog_resource.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c1730
++ScreenCheckBox::~ScreenCheckBox()
++{
++    ScreenDialogResource* resource = resource_48;
++    screen_dialog_resources->Release(resource);
++    ::operator delete(owned_name_44);
++}
+diff --git a/src/startup_screen_checkbox_hit.cpp b/src/startup_screen_checkbox_hit.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..db76bc10531735362d48f5de7022e79ec3ff1240
+--- /dev/null
++++ b/src/startup_screen_checkbox_hit.cpp
+@@ -0,0 +1,26 @@
++#include "startup_screen_checkbox.h"
++#include "startup_screen_dialog_resource.h"
++
++// FUNCTION: BEACHLIFE 0x004c17a0
++bool ScreenCheckBox::TestRectangle(int x, int y)
++{
++    ScreenDialogResource* resource = resource_48;
++    bool hit = false;
++    if (resource != 0)
++    {
++        int local_x = x - rectangle.left;
++        if (local_x > 0)
++        {
++            if (local_x < resource->record->frames[resource->word_10]->width_0e)
++            {
++                int local_y = y - rectangle.top;
++                if (local_y > 0 && local_y < resource->record->frames[resource->word_10]->height_10)
++                {
++                    hit = resource->TestPixel(local_x, local_y);
++                }
++            }
++        }
++    }
++    state_40 = hit;
++    return hit;
++}
+diff --git a/src/startup_screen_checkbox_slot0c.cpp b/src/startup_screen_checkbox_slot0c.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..72e4b215f25d98364011103db44803af3c80e4e9
+--- /dev/null
++++ b/src/startup_screen_checkbox_slot0c.cpp
+@@ -0,0 +1,34 @@
++#include "startup_screen_checkbox.h"
++#include "startup_screen_dialog_resource.h"
++
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004c19b0
++void ScreenCheckBox::Unresolved0c()
++{
++    char description[80];
++    if (preparation_flag)
++    {
++        unsigned int selected = word_4c;
++        if (selected <= 1)
++        {
++            ScreenDialogResource* resource = resource_48;
++            ScreenDialogResourceRecord* record = resource->record;
++            unsigned int frame_index = resource->word_10;
++            int plane = static_cast<int>(selected);
++            if (record->frames[frame_index]->plane_count_0c <= selected)
++            {
++                ScreenDialogResourceFrame* frame = record->frames[frame_index];
++                const char* name = resource->name;
++                plane = static_cast<int>(frame->plane_count_0c) - 1;
++                sprintf(description, "%s %d", name, plane);
++            }
++            resource->word_18 = static_cast<unsigned int>(plane);
++        }
++
++        int y = rectangle.top;
++        int x = rectangle.left;
++        resource_48->Draw(x, y, 0, 999999.0f);
++        preparation_flag = 0;
++    }
++}
+diff --git a/src/startup_screen_image_list.h b/src/startup_screen_image_list.h
+index 8561f6558b63421d215a67688382684c4a73c67e..eadc63b710aa4d2f51fbaae7cc308217a7bb0fdf 100644
+--- a/src/startup_screen_image_list.h
++++ b/src/startup_screen_image_list.h
+@@ -1,32 +1,308 @@
+ #ifndef STARTUP_SCREEN_IMAGE_LIST_H
+ #define STARTUP_SCREEN_IMAGE_LIST_H
+ 
++#include "copy_trivial.h"
+ #include "startup_screen_item.h"
+ 
+-// Genuine "ImageList" object: original allocation 0x84 and table 0x004f46ac.
+-// Descriptive names only; the field tail, destructor and overriding slots are
+-// separate required children and are not supplied here.
++#include <algorithm>
++
++struct ScreenImageItem;
++
++// Element of vector_60, a 0x98-byte entry built by PopulateBuildings 0x004b3ec0:
++// owns the text at +0x08 (inline destructor, deleted through its scalar
++// deleting destructor 0x004b4cb0).
++struct ScreenImageListFrame
++{
++    const char* thumbnail_00;      // Thumbnail resource name.
++    int preview_frame_04;          // The catalog entry's preview frame.
++    char* text_08;                 // Tooltip key, e.g. BUILD_TIPTEXT_<NAME>.
++    unsigned int feature_0c;       // Catalog index reported when the frame is selected.
++    unsigned short count_10[0x40]; // Building count text when counted_94.
++    unsigned int colour_90;
++    unsigned char counted_94;
++    unsigned char unknown_95[3];
++
++    // Inline constructor expanded in PopulateBuildings.
++    ScreenImageListFrame()
++    {
++        thumbnail_00 = 0;
++        preview_frame_04 = 0;
++        text_08 = 0;
++        feature_0c = 0xffffffff;
++        counted_94 = 0;
++    }
++    ~ScreenImageListFrame()
++    {
++        if (text_08)
++        {
++            delete[] text_08;
++        }
++    }
++};
++
++// Element of range_78, a text label: empty destructor (scalar deleting
++// destructor 0x004b4ce0). The render slot 0x004b3a40 proves these fields; the
++// text capacity follows from font_80, its producer is separate.
++struct ScreenImageListMarker
++{
++    unsigned short text_00[0x40];
++    int font_80; // Index into the manager's fonts.
++    unsigned int colour_84;
++    int x_88;
++    int y_8c;
++    int width_90;
++
++    ~ScreenImageListMarker() { }
++};
++
++// Empty plain-data tag passed by reference to the growth insertion.
++struct ScreenImageListTrueType
++{
++};
++
++// Library delete functor used with std::for_each.
++template <class T>
++struct ScreenImageListDelete
++{
++    void operator()(T* item) const
++    {
++        delete item;
++    }
++};
++
++// Category names matched by the image-list constructor, 0x0057fd08:
++// BUILD_HOTEL_SMALL ... BUILD_BILLBOARD_SMALL.
++extern const char* image_list_categories[10];
++
++// Empty default-argument allocator of the vectors; its (empty) destructor is
++// the folded 0x00437d10 named by the constructor's unwind map.
++struct ScreenImageListAllocator
++{
++    ScreenImageListAllocator() { }
++    ~ScreenImageListAllocator() { }
++};
++
++// Pointer-vector member at +0x60; element type not yet proved. Its capacity
++// proxy is built by the folded out-of-line constructor 0x00437de0.
++struct ScreenImageListCapacity60
++{
++    ScreenImageListFrame** data;
++
++    ScreenImageListCapacity60(
++        const ScreenImageListAllocator& allocator, ScreenImageListFrame** value);
++    ~ScreenImageListCapacity60() { }
++    // Folded out-of-line 0x004b4eb0, RET8: frees count slots (pooled up to 128
++    // bytes); body separate.
++    void Deallocate(ScreenImageListFrame** storage, unsigned int count);
++};
++
++struct ScreenImageListVector60
++{
++    ScreenImageListFrame** begin;
++    ScreenImageListFrame** end;
++    ScreenImageListCapacity60 capacity;
++
++    explicit ScreenImageListVector60(
++        const ScreenImageListAllocator& allocator = ScreenImageListAllocator())
++        : begin(0)
++        , end(0)
++        , capacity(allocator, 0)
++    {
++    }
++    // Inline: frees the storage only. Out-of-line copy 0x004b4d90 serves the
++    // unwind funclets.
++    ~ScreenImageListVector60()
++    {
++        if (begin)
++        {
++            capacity.Deallocate(begin, static_cast<unsigned int>(capacity.data - begin));
++        }
++    }
++    // Folded out-of-line 0x004e80d0, RET8: erase(first, last); body separate.
++    ScreenImageListFrame** Erase(ScreenImageListFrame** first, ScreenImageListFrame** last);
++    // Library clear(): erase(begin, end) keeps the storage.
++    void Clear()
++    {
++        end = static_cast<ScreenImageListFrame**>(CopyTrivial(end, end, begin));
++    }
++    // Folded out-of-line 0x004c3a30, RET 0x14: library growth insertion of count
++    // copies, shared with other pointer-sized vectors; body separate.
++    void InsertOverflow(ScreenImageListFrame** position,
++        ScreenImageListFrame* const& value,
++        const ScreenImageListTrueType& plain,
++        unsigned int count,
++        bool at_end);
++    // Library push_back; PopulateBuildings also expands the growth path once.
++    void PushBack(ScreenImageListFrame* const& value)
++    {
++        if (end != capacity.data)
++        {
++            ::new (end) ScreenImageListFrame*(value);
++            ++end;
++        }
++        else
++        {
++            InsertOverflow(end, value, ScreenImageListTrueType(), 1, true);
++        }
++    }
++};
++
++// Pointer-vector member at +0x6c; element type not yet proved. Its capacity
++// proxy is built by the folded out-of-line constructor 0x00437de0.
++struct ScreenImageListCapacity6c
++{
++    ScreenItem** data;
++
++    ScreenImageListCapacity6c(const ScreenImageListAllocator& allocator, ScreenItem** value);
++    ~ScreenImageListCapacity6c() { }
++    // Folded out-of-line 0x004b4eb0, RET8: frees count slots (pooled up to 128
++    // bytes); body separate.
++    void Deallocate(ScreenItem** storage, unsigned int count);
++};
++
++struct ScreenImageListVector6c
++{
++    ScreenItem** begin;
++    ScreenItem** end;
++    ScreenImageListCapacity6c capacity;
++
++    explicit ScreenImageListVector6c(
++        const ScreenImageListAllocator& allocator = ScreenImageListAllocator())
++        : begin(0)
++        , end(0)
++        , capacity(allocator, 0)
++    {
++    }
++    // Inline: frees the storage only. Out-of-line copy 0x004b4d00 serves the
++    // unwind funclets.
++    ~ScreenImageListVector6c()
++    {
++        if (begin)
++        {
++            capacity.Deallocate(begin, static_cast<unsigned int>(capacity.data - begin));
++        }
++    }
++    // Folded out-of-line 0x004e80d0, RET8: erase(first, last); body separate.
++    ScreenItem** Erase(ScreenItem** first, ScreenItem** last);
++    // Library clear(): erase(begin, end) keeps the storage.
++    void Clear()
++    {
++        end = static_cast<ScreenItem**>(CopyTrivial(end, end, begin));
++    }
++};
++
++// Pointer-vector member at +0x78 with an inline empty construction.
++struct ScreenImageListCapacity78
++{
++    ScreenImageListMarker** data;
++
++    ScreenImageListCapacity78(ScreenImageListMarker** value)
++        : data(value)
++    {
++    }
++    ~ScreenImageListCapacity78() { }
++    // Folded out-of-line 0x004b4eb0, RET8; body separate.
++    void Deallocate(ScreenImageListMarker** storage, unsigned int count);
++};
++
++struct ScreenImageListRange78
++{
++    ScreenImageListMarker** begin;
++    ScreenImageListMarker** end;
++    ScreenImageListCapacity78 capacity;
++
++    ScreenImageListRange78()
++        : begin(0)
++        , end(0)
++        , capacity(0)
++    {
++    }
++    // Inline: frees the storage only. Out-of-line copy 0x004b4e20 serves the
++    // unwind funclets.
++    ~ScreenImageListRange78()
++    {
++        if (begin)
++        {
++            capacity.Deallocate(begin, static_cast<unsigned int>(capacity.data - begin));
++        }
++    }
++    // Folded out-of-line 0x004e80d0, RET8; body separate.
++    ScreenImageListMarker** Erase(ScreenImageListMarker** first, ScreenImageListMarker** last);
++    // Library clear(): erase(begin, end) keeps the storage.
++    void Clear()
++    {
++        end = static_cast<ScreenImageListMarker**>(CopyTrivial(end, end, begin));
++    }
++};
++
++// Genuine "ImageList" object: original allocation 0x84, kind 17 and table
++// 0x004f46ac (21 slots). Descriptive names only. The ordinary destructor and
++// the differing slots are separate required children.
+ // VTABLE: BEACHLIFE 0x004f46ac
+ struct ScreenImageList : ScreenItem
+ {
+-    unsigned char unknown_44[0x40];
++    int category_44; // Index of the name in image_list_categories.
++    int value_a_48;
++    int value_b_4c;
++    ScreenImageItem* image_50;
++    int selected_54; // Highlighted item index, -1 for none.
++    float timer_58;  // Refresh timer while flag_5c is set.
++    unsigned char flag_5c;
++    unsigned char unknown_5d[3];
++    ScreenImageListVector60 vector_60;
++    ScreenImageListVector6c vector_6c;
++    ScreenImageListRange78 range_78;
+ 
+-    // Actual 0x004b3120, RET 0x20; separate complete body required.
++    // Actual 0x004b3120, RET 0x20.
+     ScreenImageList(ScreenRectangle initial,
+         const char* name,
+         const char* second_name,
+         int value_a,
+         int value_b);
++    virtual ~ScreenImageList(); // Ordinary 0x004b3540; deleting wrapper 0x004b3520.
++
++    // Actual 0x004b36a0, RET4: selection reset in mode 10, the timed refresh and
++    // the item updates.
++    virtual void Unresolved04(float elapsed);
++    // Actual 0x004b3a40: draws the items, the selection highlight and the text
++    // markers when prepared.
++    virtual void Unresolved0c();
++    // Actual 0x004b3b40: marks the list, its items and the highlight prepared.
++    virtual void MarkPrepared();
++    // Actual 0x004b3be0, RET4: enabling refreshes and selects the first entry;
++    // disabling frees the frames, markers and items.
++    virtual void Unresolved24(unsigned char enabled);
++    // Actual 0x004b3db0: defaults the selection to 0, reports the selected
++    // frame's feature and sets the build mode.
++    virtual void Unresolved28();
++    // Actual 0x004b3b70, RET8: moves the list, its items and its text markers.
++    virtual void MoveRectangle(int dx, int dy);
++    // Actual 0x004b38b0, RET 0xc: passes the event to the items and selects the
++    // clicked one.
++    virtual bool HandleTimedCoordinates(int x, int y, int value);
+ 
+-    // Every differing retail vtable slot remains an explicit dependency.
+-    ~ScreenImageList() override;                                   // 0x004b3520 (deleting wrapper).
+-    void Unresolved04(float elapsed) override;                     // 0x004b36a0
+-    void Unresolved0c() override;                                  // 0x004b3a40
+-    void MarkPrepared() override;                                  // 0x004b3b40
+-    void Unresolved24(unsigned char enabled) override;             // 0x004b3be0
+-    void Unresolved28() override;                                  // 0x004b3db0
+-    void MoveRectangle(int dx, int dy) override;                   // 0x004b3b70
+-    bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004b38b0
++    // Actual 0x004b3ec0 (RET 0xc), 0x004b41e0, 0x004b4450 (RET8) and 0x004b4a80:
++    // refill the list for building, path and other scenery categories, and lay
++    // the items out; bodies separate. Descriptive names.
++    void PopulateBuildings(int kind, const char* thumbnail, const char* grey_thumbnail);
++    void PopulatePaths();
++    void PopulateScenery(int kind, const char* thumbnail);
++    void LayoutItems();
++    // Actual 0x004b46b0 (local EH): creates the image items for the frames;
++    // body separate. Descriptive name.
++    void BuildItems();
+ };
+ 
++// Thumbnail resources by list kind, 0x0057fd30: UI3_bp_thumb, UI3_bp_thumb_grey,
++// UI3_sc_thumb_furn, _path, _grass, _flower, _orn, _tree, _plant and _bill.
++extern const char* image_list_thumbnails[10];
++
++// Refresh interval of the image lists, 0x004f46a8 (2.0): the update compares the
++// timer with it and enabling passes it as elapsed time to force a refresh.
++extern const float image_list_refresh_interval;
++
++// Actual cdecl 0x004d2d50: frees one marker (a shared folded delete helper);
++// body separate.
++void DeleteImageListMarker(ScreenImageListMarker* marker);
++
+ #endif
+diff --git a/src/startup_screen_image_list_insert_overflow.cpp b/src/startup_screen_image_list_insert_overflow.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..252e3c5c37aae06ad1379fdd4d1b9dafc910c37d
+--- /dev/null
++++ b/src/startup_screen_image_list_insert_overflow.cpp
+@@ -0,0 +1,56 @@
++#include "node_storage.h"
++#include "pool_allocate.h"
++#include "pool_return.h"
++#include "startup_screen_image_list.h"
++
++// FUNCTION: BEACHLIFE 0x004c3a30
++void ScreenImageListVector60::InsertOverflow(ScreenImageListFrame** position,
++    ScreenImageListFrame* const& value,
++    const ScreenImageListTrueType& plain,
++    unsigned int count,
++    bool at_end)
++{
++    unsigned int size = static_cast<unsigned int>(end - begin);
++    unsigned int length = size + MaxUnsigned(size, count);
++    ScreenImageListFrame** storage;
++    if (length != 0)
++    {
++        unsigned int bytes = length * sizeof(ScreenImageListFrame*);
++        storage = static_cast<ScreenImageListFrame**>(
++            bytes > 128 ? ::operator new(bytes) : AllocatePoolBytes(bytes));
++    }
++    else
++    {
++        storage = 0;
++    }
++
++    ScreenImageListFrame** next = static_cast<ScreenImageListFrame**>(CopyTrivial(begin, position, storage));
++    for (unsigned int remaining = count; remaining != 0; --remaining)
++    {
++        // The reference is read on every iteration, including an aliased value.
++        ::new (next) ScreenImageListFrame*(value);
++        ++next;
++    }
++    if (!at_end)
++    {
++        next = static_cast<ScreenImageListFrame**>(CopyTrivial(position, end, next));
++    }
++
++    ScreenImageListFrame** old_begin = begin;
++    if (old_begin)
++    {
++        unsigned int bytes = static_cast<unsigned int>(capacity.data - old_begin) * sizeof(ScreenImageListFrame*);
++        if (bytes > 128)
++        {
++            ::operator delete(old_begin);
++        }
++        else
++        {
++            ReturnPool(old_begin, bytes);
++        }
++    }
++
++    end = next;
++    begin = storage;
++    capacity.data = storage + length;
++}
+diff --git a/src/startup_screen_image_list_paths.cpp b/src/startup_screen_image_list_paths.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..de5829689fe360cc678fa78e93b99a5d2eabc863
+--- /dev/null
++++ b/src/startup_screen_image_list_paths.cpp
+@@ -0,0 +1,75 @@
++#include "node_storage.h"
++#include "startup_screen_image_list.h"
++#include "startup_variable_state.h"
++#include "startup_world_cursor_names.h"
++
++#include <stdio.h>
++#include <string.h>
++
++#if !defined(_WIN32)
++// Retained MSVCRT import; a host CRT service is still required.
++extern "C" char* _strupr(char* text);
++#endif
++
++// FUNCTION: BEACHLIFE 0x004b41e0
++void ScreenImageList::PopulatePaths()
++{
++    {
++        unsigned int count = variable_catalog->scenery_count_34;
++        for (unsigned int index = 0; index < count; ++index)
++        {
++            VariableScenery* scenery = variable_catalog->Scenery(index);
++            if (scenery->list_kind_2c4 != 1)
++            {
++                continue;
++            }
++            char text[0x80];
++            sprintf(text, "SP_DESC_%s", scenery->name_04);
++            _strupr(text);
++            ScreenImageListFrame* frame = new ScreenImageListFrame;
++            if (scenery->flag_30c)
++            {
++                frame->thumbnail_00 = image_list_thumbnails[4];
++                frame->preview_frame_04 = scenery->preview_frame_300;
++            }
++            else
++            {
++                frame->thumbnail_00 = image_list_thumbnails[3];
++                frame->preview_frame_04 = world_cursor_names->FirstNameNumber();
++            }
++            frame->feature_0c = index;
++            frame->text_08 = new char[strlen(text) + 1];
++            strcpy(frame->text_08, text);
++
++            // Library push_back, expanded here with its growth and node storage.
++            ScreenImageListFrame** position = vector_60.end;
++            if (position != vector_60.capacity.data)
++            {
++                ::new (position) ScreenImageListFrame*(frame);
++                ++vector_60.end;
++            }
++            else
++            {
++                unsigned int minimum = 1;
++                unsigned int size = static_cast<unsigned int>(position - vector_60.begin);
++                unsigned int length = size + MaxUnsigned(size, minimum);
++                ScreenImageListFrame** storage = length ? static_cast<ScreenImageListFrame**>(
++                                                              AllocateNodeStorage(length * sizeof(ScreenImageListFrame*)))
++                                                        : 0;
++                ScreenImageListFrame** stored = static_cast<ScreenImageListFrame**>(
++                    CopyTrivial(vector_60.begin, position, storage));
++                *stored = frame;
++                position = stored + 1;
++                if (vector_60.begin)
++                {
++                    ReleaseNodeStorage(vector_60.begin,
++                        static_cast<unsigned int>(vector_60.capacity.data - vector_60.begin) * sizeof(ScreenImageListFrame*));
++                }
++                vector_60.begin = storage;
++                vector_60.end = position;
++                vector_60.capacity.data = storage + length;
++            }
++        }
++    }
++    flag_5c = 0;
++}
+diff --git a/src/startup_screen_image_list_scenery.cpp b/src/startup_screen_image_list_scenery.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..74055427e1f68829514f0846dae946515e5cb090
+--- /dev/null
++++ b/src/startup_screen_image_list_scenery.cpp
+@@ -0,0 +1,64 @@
++#include "node_storage.h"
++#include "startup_screen_image_list.h"
++#include "startup_variable_state.h"
++
++#include <stdio.h>
++#include <string.h>
++
++#if !defined(_WIN32)
++// Retained MSVCRT import; a host CRT service is still required.
++extern "C" char* _strupr(char* text);
++#endif
++
++// FUNCTION: BEACHLIFE 0x004b4450
++void ScreenImageList::PopulateScenery(int kind, const char* thumbnail)
++{
++    unsigned int count = variable_catalog->scenery_count_34;
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        VariableScenery* scenery = variable_catalog->Scenery(index);
++        if (scenery->list_kind_2c4 != kind)
++        {
++            continue;
++        }
++        char text[0x80];
++        sprintf(text, "SP_DESC_%s", scenery->name_04);
++        _strupr(text);
++        ScreenImageListFrame* frame = new ScreenImageListFrame;
++        frame->thumbnail_00 = thumbnail;
++        frame->preview_frame_04 = scenery->preview_frame_300;
++        frame->feature_0c = index;
++        frame->text_08 = new char[strlen(text) + 1];
++        strcpy(frame->text_08, text);
++
++        // Library push_back, expanded here with its growth and node storage.
++        ScreenImageListFrame** position = vector_60.end;
++        if (position != vector_60.capacity.data)
++        {
++            ::new (position) ScreenImageListFrame*(frame);
++            ++vector_60.end;
++        }
++        else
++        {
++            unsigned int minimum = 1;
++            unsigned int size = static_cast<unsigned int>(position - vector_60.begin);
++            unsigned int length = size + MaxUnsigned(size, minimum);
++            ScreenImageListFrame** storage = length ? static_cast<ScreenImageListFrame**>(
++                                                          AllocateNodeStorage(length * sizeof(ScreenImageListFrame*)))
++                                                    : 0;
++            ScreenImageListFrame** stored = static_cast<ScreenImageListFrame**>(
++                CopyTrivial(vector_60.begin, position, storage));
++            *stored = frame;
++            position = stored + 1;
++            if (vector_60.begin)
++            {
++                ReleaseNodeStorage(vector_60.begin,
++                    static_cast<unsigned int>(vector_60.capacity.data - vector_60.begin) * sizeof(ScreenImageListFrame*));
++            }
++            vector_60.begin = storage;
++            vector_60.end = position;
++            vector_60.capacity.data = storage + length;
++        }
++    }
++    flag_5c = 0;
++}
+diff --git a/src/startup_screen_initialize_overlay.cpp b/src/startup_screen_initialize_overlay.cpp
+index 4f24f772e03501dafb8982f22f017e2f9687cb2f..a44db7d107ff266272ea0b99fa5bb390cbc26657 100644
+--- a/src/startup_screen_initialize_overlay.cpp
++++ b/src/startup_screen_initialize_overlay.cpp
+@@ -24,7 +24,7 @@ void ScreenManager::InitializeOverlay()
+     layout_right_154 = panel->record->frames[panel->word_10]->height_10 + 9;
+     layout_bottom_158 = static_cast<int>(
+         static_cast<unsigned int>(top) + panel->record->frames[panel->word_10]->width_0e);
+-    ScreenPoint position = {9, top};
++    ScreenPoint position = { 9, top };
+     renderer->PositionSurface(surface_b8, position);
+ 
+     ScreenRectangle bounds;
+diff --git a/src/startup_screen_list_box.h b/src/startup_screen_list_box.h
+index 2114f5e10989b4681c1edafddd58d264abe3c47e..bb635c285d6c495b4c22f4201421843189713bdd 100644
+--- a/src/startup_screen_list_box.h
++++ b/src/startup_screen_list_box.h
+@@ -5,6 +5,10 @@
+ 
+ struct ScreenListBoxEntry;
+ 
++struct ScreenListBoxTrueType
++{
++};
++
+ // Observed three-pointer member at original +6c. Construction publishes null
+ // pointers; its real destructor releases only backing storage, not entries.
+ struct ScreenListBoxEntryRange
+@@ -16,12 +20,18 @@ struct ScreenListBoxEntryRange
+     ~ScreenListBoxEntryRange(); // Actual 0x004c5710; complete body remains separate.
+ };
+ 
+-// Distinct unsigned-word range at original +78, not an aliased entry vector.
++// Distinct signed-word range at original +78, not an aliased entry vector.
+ struct ScreenListBoxSelectionRange
+ {
+-    unsigned int* begin;
+-    unsigned int* end;
+-    unsigned int* capacity;
++    int* begin;
++    int* end;
++    int* capacity;
++
++    void InsertOverflow(int* position,
++        const int& value,
++        const ScreenListBoxTrueType& plain,
++        unsigned int count,
++        bool at_end); // Shared 0x004c3a30.
+ 
+     ~ScreenListBoxSelectionRange(); // Actual 0x004c39a0; complete body remains separate.
+ };
+@@ -46,13 +56,16 @@ struct ScreenListBoxPrefix : ScreenItem
+     unsigned int word_84;
+     unsigned int word_88; // Constructor leaves this untouched; destructor writes zero.
+     ScreenItem* owned_item_8c;
+-    unsigned char unknown_90[4];
++    float elapsed_90; // Original +0x90: double-click timer, advanced by slot04.
+     unsigned char state_94;
+     unsigned char state_95;
+     unsigned char unknown_96[2];
+ 
+-    ScreenListBoxPrefix(ScreenRectangle initial, ScreenRectangle inner,
+-        const char* name, unsigned int first_word, unsigned int second_word);
++    ScreenListBoxPrefix(ScreenRectangle initial,
++        ScreenRectangle inner,
++        const char* name,
++        unsigned int first_word,
++        unsigned int second_word);
+     ~ScreenListBoxPrefix() override;                               // Ordinary 0x004c4090, separate from wrapper4c4070.
+     void Unresolved04(float elapsed) override;                     // 0x004c4620
+     void Unresolved0c() override;                                  // 0x004c5240
+@@ -63,9 +76,20 @@ struct ScreenListBoxPrefix : ScreenItem
+     bool HandleInput38(int x, int y, int value) override;          // 0x004c55b0
+     bool HandleTimedCoordinates(int x, int y, int value) override; // 0x004c5440
+ 
++    void SelectRow(int row, unsigned char replace);        // 0x004c42b0.
++    bool TakeActivatedValue(int row, unsigned int* value); // 0x004c5150, RET8.
++    void UpdateScrollBar();                                // 0x004c5610.
++
+     void ClearEntries(); // Actual 0x004c41e0.
+-    void AddEntry(int row, int x, int width, int word_4, int word_5,
+-        int word_6, int word_7, const unsigned short* text, unsigned char flag);
++    void AddEntry(int row,
++        int x,
++        int width,
++        int word_4,
++        int word_5,
++        int word_6,
++        int word_7,
++        const unsigned short* text,
++        unsigned char flag);
+ };
+ 
+ #endif
+diff --git a/src/startup_screen_list_box_clear.cpp b/src/startup_screen_list_box_clear.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..7464541260b76b2b5c19efd3b45632e0b2790c2e
+--- /dev/null
++++ b/src/startup_screen_list_box_clear.cpp
+@@ -0,0 +1,36 @@
++#include "copy_trivial.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++
++// FUNCTION: BEACHLIFE 0x004c41e0
++void ScreenListBoxPrefix::ClearEntries()
++{
++    ScreenListBoxEntry** entry = entries.begin;
++    while (entry != entries.end)
++    {
++        ScreenListBoxEntry* row = *entry;
++        if (row->item->kind_28 != 0)
++        {
++            delete row;
++            if (entry + 1 != entries.end)
++            {
++                CopyTrivial(entry + 1, entries.end, entry);
++            }
++            --entries.end;
++        }
++        else
++        {
++            row->flag_8 = 0;
++            ++entry;
++        }
++    }
++    word_68 = 0;
++    word_64 = 0;
++    word_88 = 0;
++    if (owned_item_8c != 0)
++    {
++        delete owned_item_8c;
++        owned_item_8c = 0;
++    }
++    MarkPrepared();
++}
+diff --git a/src/startup_screen_list_box_click.cpp b/src/startup_screen_list_box_click.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..dbd6b5e7b5519f7662a0b0d0cc0211411e7e3b8b
+--- /dev/null
++++ b/src/startup_screen_list_box_click.cpp
+@@ -0,0 +1,58 @@
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++
++// FUNCTION: BEACHLIFE 0x004c5440
++bool ScreenListBoxPrefix::HandleTimedCoordinates(int x, int y, int value)
++{
++    bool handled = false;
++    state_95 = 0;
++    if (owned_item_8c != 0)
++    {
++        handled = owned_item_8c->HandleTimedCoordinates(x, y, value);
++    }
++    for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
++    {
++        if (handled)
++        {
++            break;
++        }
++        ScreenItem* item = (*entry)->item;
++        if (item->kind_28 == 0 && (*entry)->flag_8)
++        {
++            handled = item->HandleTimedCoordinates(x, y, value);
++        }
++    }
++    if (!handled && state_59)
++    {
++        if (value == 1 && TestRectangle(x, y))
++        {
++            bool plain = true;
++            unsigned int row = (y - GetRectangle().top) / word_5c + word_64;
++            if (startup_input_state->IsStateTwo(0x1d) || startup_input_state->IsStateTwo(0x9d))
++            {
++                plain = false;
++            }
++            SelectRow(row, plain);
++            if (plain)
++            {
++                if (!state_94)
++                {
++                    state_94 = 1;
++                    elapsed_90 = 0.0f;
++                    return true;
++                }
++                if (!(elapsed_90 < 0.25f))
++                {
++                    return true;
++                }
++                state_95 = 1;
++            }
++            state_94 = 0;
++            return true;
++        }
++        state_94 = 0;
++    }
++    return handled;
++}
+diff --git a/src/startup_screen_list_box_constructor.cpp b/src/startup_screen_list_box_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a673acc6a8f9658dde900b1e64a25d57d988b7d
+--- /dev/null
++++ b/src/startup_screen_list_box_constructor.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_list_box.h"
++
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004c3f00
++ScreenListBoxPrefix::ScreenListBoxPrefix(ScreenRectangle initial,
++    ScreenRectangle inner,
++    const char* name,
++    unsigned int first_word,
++    unsigned int second_word)
++    : ScreenItem(initial)
++    , rectangle_44(inner)
++    , state_58(0)
++    , state_59(1)
++    , word_5c(first_word)
++    , word_60(second_word)
++    , word_64(0)
++    , word_68(0)
++    , entries { 0, 0, 0 }
++    , selection { 0, 0, 0 }
++    , word_84(0)
++    , owned_item_8c(0)
++    , state_94(0)
++    , state_95(0)
++{
++    kind_28 = 22;
++    name_54 = static_cast<char*>(::operator new(strlen(name) + 1));
++    strcpy(name_54, name);
++    entries.end = entries.begin;
++    selection.end = selection.begin;
++}
+diff --git a/src/startup_screen_list_box_destructor.cpp b/src/startup_screen_list_box_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..81d7cc66a8c411f58c58bf5ad99fe3680fed82ea
+--- /dev/null
++++ b/src/startup_screen_list_box_destructor.cpp
+@@ -0,0 +1,45 @@
++#include "copy_trivial.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++
++#include <new>
++#include <stddef.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004c4090
++ScreenListBoxPrefix::~ScreenListBoxPrefix()
++{
++    ::operator delete(name_54);
++
++    ScreenListBoxEntry** current = entries.begin;
++    ScreenListBoxEntry** finish = entries.end;
++    while (current != finish)
++    {
++        ScreenListBoxEntry* entry = *current;
++        if (entry != 0)
++        {
++            entry->~ScreenListBoxEntry();
++            ::operator delete(entry);
++        }
++        ++current;
++    }
++    entries.end = static_cast<ScreenListBoxEntry**>(CopyTrivial(entries.end, entries.end, entries.begin));
++    word_68 = 0;
++    word_64 = 0;
++    word_88 = 0;
++
++    int* last = selection.end;
++    int* first = last;
++    int* destination = selection.begin;
++    // The original inline erase retains this unreachable memmove arm.
++    if (first != last)
++    {
++        ptrdiff_t count = last - first;
++        memmove(destination, first, static_cast<size_t>(count) * sizeof(unsigned int));
++        destination += count;
++    }
++    selection.end = destination;
++
++    delete owned_item_8c;
++    // Real selection, entries and ScreenItem destructors follow automatically.
++}
+diff --git a/src/startup_screen_list_box_input.cpp b/src/startup_screen_list_box_input.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..199b3049771991bf80bda6da26da2afc87fd2730
+--- /dev/null
++++ b/src/startup_screen_list_box_input.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_list_box.h"
++
++// FUNCTION: BEACHLIFE 0x004c55b0
++bool ScreenListBoxPrefix::HandleInput38(int x, int y, int value)
++{
++    bool handled = false;
++    if (owned_item_8c != 0)
++    {
++        if (TestRectangle(x, y) || owned_item_8c->TestRectangle(x, y))
++        {
++            handled = owned_item_8c->HandleInput38(x, y, value);
++        }
++    }
++    return handled;
++}
+diff --git a/src/startup_screen_list_box_mark_prepared.cpp b/src/startup_screen_list_box_mark_prepared.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d623192ab574ce3811613764f0946f82a4cab3f8
+--- /dev/null
++++ b/src/startup_screen_list_box_mark_prepared.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++
++// FUNCTION: BEACHLIFE 0x004c53a0
++void ScreenListBoxPrefix::MarkPrepared()
++{
++    ScreenItem::MarkPrepared();
++    for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
++    {
++        (*entry)->item->MarkPrepared();
++    }
++}
+diff --git a/src/startup_screen_list_box_move.cpp b/src/startup_screen_list_box_move.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..05b868800fb921a5b1e94a387b36bb6f1c4d1504
+--- /dev/null
++++ b/src/startup_screen_list_box_move.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++
++// FUNCTION: BEACHLIFE 0x004c53d0
++void ScreenListBoxPrefix::MoveRectangle(int dx, int dy)
++{
++    ScreenItem::MoveRectangle(dx, dy);
++    rectangle_44.left += dx;
++    rectangle_44.right += dx;
++    rectangle_44.top += dy;
++    rectangle_44.bottom += dy;
++    if (owned_item_8c != 0)
++    {
++        owned_item_8c->MoveRectangle(dx, dy);
++    }
++    for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
++    {
++        (*entry)->item->MoveRectangle(dx, dy);
++    }
++}
+diff --git a/src/startup_screen_list_box_scroll_bar.cpp b/src/startup_screen_list_box_scroll_bar.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0c6d8f43d10fad571bbd24ff2405880e27afcfa7
+--- /dev/null
++++ b/src/startup_screen_list_box_scroll_bar.cpp
+@@ -0,0 +1,23 @@
++#include "startup_screen_list_box.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004c5610
++void ScreenListBoxPrefix::UpdateScrollBar()
++{
++    if (word_88 > word_60)
++    {
++        if (owned_item_8c != 0)
++        {
++            static_cast<ScreenScrollBarPrefix*>(owned_item_8c)->SetItemCount(word_88);
++        }
++        else
++        {
++            owned_item_8c = new ScreenScrollBarPrefix(rectangle_44, word_64, word_88, word_60, 3);
++        }
++    }
++    else if (owned_item_8c != 0)
++    {
++        delete owned_item_8c;
++        owned_item_8c = 0;
++    }
++}
+diff --git a/src/startup_screen_list_box_select.cpp b/src/startup_screen_list_box_select.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5728b67813d8040522b4b934806d4e7222b3b269
+--- /dev/null
++++ b/src/startup_screen_list_box_select.cpp
+@@ -0,0 +1,46 @@
++#include "copy_trivial.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_find.h"
++#include "startup_screen_list_box_selection.h"
++
++// FUNCTION: BEACHLIFE 0x004c42b0
++void ScreenListBoxPrefix::SelectRow(int row, unsigned char replace)
++{
++    unsigned char replace_selection = 1;
++    if (state_58)
++    {
++        replace_selection = replace;
++    }
++    if (entries.begin == entries.end)
++    {
++        return;
++    }
++    int last_row = word_88 - 1;
++    if (row > last_row)
++    {
++        row = last_row;
++    }
++    if (replace_selection)
++    {
++        selection.end = static_cast<int*>(CopyTrivial(selection.end, selection.end, selection.begin));
++        PushBackSelection(selection, row);
++        return;
++    }
++    int* found = FindListBoxSelection(selection.begin, selection.end, row);
++    if (found != selection.end)
++    {
++        if (static_cast<unsigned int>(selection.end - selection.begin) > 1)
++        {
++            if (found + 1 != selection.end)
++            {
++                CopyTrivial(found + 1, selection.end, found);
++            }
++            --selection.end;
++        }
++    }
++    else
++    {
++        PushBackSelection(selection, row);
++    }
++    SortListBoxSelection(selection.begin, selection.end);
++}
+diff --git a/src/startup_screen_list_box_selection.h b/src/startup_screen_list_box_selection.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..fdeb361b6ba31ffecf561ef0b361bd5096852eaa
+--- /dev/null
++++ b/src/startup_screen_list_box_selection.h
+@@ -0,0 +1,105 @@
++#ifndef STARTUP_SCREEN_LIST_BOX_SELECTION_H
++#define STARTUP_SCREEN_LIST_BOX_SELECTION_H
++
++#include "startup_screen_list_box.h"
++
++#include <new>
++
++// Library inlines of the signed-word selection append and sort observed
++// expanded in SelectRow. The out-of-line helpers are library support (cdecl,
++// RET0, empty comparison object by value); their bodies are not supplied.
++struct ScreenListBoxLess
++{
++};
++
++const int& MedianListBoxSelection(const int& first,
++    const int& middle,
++    const int& last,
++    ScreenListBoxLess less); // 0x004c5940
++int* PartitionListBoxSelection(
++    int* first, int* last, int pivot, ScreenListBoxLess less); // 0x004c5980
++void IntrosortListBoxSelection(int* first,
++    int* last,
++    int* type,
++    int depth_limit,
++    ScreenListBoxLess less); // 0x004c57a0
++void PartialSortListBoxSelection(int* first,
++    int* middle,
++    int* last,
++    int* type,
++    ScreenListBoxLess less); // 0x004c5a40
++void LinearInsertListBoxSelection(
++    int* first, int* last, int value, ScreenListBoxLess less); // 0x004c5bb0
++void UnguardedLinearInsertListBoxSelection(
++    int* last, int value, ScreenListBoxLess less);                                 // 0x004c5c90
++void InsertionSortListBoxSelection(int* first, int* last, ScreenListBoxLess less); // 0x004c59d0
++
++inline void PushBackSelection(ScreenListBoxSelectionRange& range, const int& value)
++{
++    if (range.end != range.capacity)
++    {
++        new (range.end) int(value);
++        ++range.end;
++    }
++    else
++    {
++        range.InsertOverflow(range.end, value, ScreenListBoxTrueType(), 1, true);
++    }
++}
++
++inline int ListBoxSelectionLog2(int count)
++{
++    int depth;
++    for (depth = 0; count != 1; count >>= 1)
++    {
++        ++depth;
++    }
++    return depth;
++}
++
++inline void SortListBoxSelection(int* first, int* last)
++{
++    if (first == last)
++    {
++        return;
++    }
++    ScreenListBoxLess less;
++    int* end = last;
++    int depth_limit = ListBoxSelectionLog2(last - first) * 2;
++    while (last - first > 16)
++    {
++        if (depth_limit == 0)
++        {
++            PartialSortListBoxSelection(first, last, last, 0, less);
++            break;
++        }
++        --depth_limit;
++        int* cut = PartitionListBoxSelection(first,
++            last,
++            MedianListBoxSelection(*first, *(first + (last - first) / 2), *(last - 1), less),
++            less);
++        IntrosortListBoxSelection(cut, last, 0, depth_limit, less);
++        last = cut;
++    }
++    if (end - first > 16)
++    {
++        int* threshold = first + 16;
++        if (first != threshold)
++        {
++            for (int* insert = first + 1; insert != threshold; ++insert)
++            {
++                LinearInsertListBoxSelection(first, insert, *insert, less);
++            }
++        }
++        for (int* insert = threshold; insert != end; ++insert)
++        {
++            UnguardedLinearInsertListBoxSelection(insert, *insert, less);
++        }
++    }
++    else
++    {
++        InsertionSortListBoxSelection(first, end, less);
++    }
++}
++
++#endif
+diff --git a/src/startup_screen_list_box_selection_destructor.cpp b/src/startup_screen_list_box_selection_destructor.cpp
+index e8cbde06eb41116475da4d10caf2a5be2ec01c45..16e015f502cc6986c998ee275efd48e2288809ed 100644
+--- a/src/startup_screen_list_box_selection_destructor.cpp
++++ b/src/startup_screen_list_box_selection_destructor.cpp
+@@ -1,18 +1,22 @@
+-#include "startup_screen_list_box.h"
+ #include "pool_return.h"
++#include "startup_screen_list_box.h"
+ 
+ #include <new>
+ 
+ // FUNCTION: BEACHLIFE 0x004c39a0
+ ScreenListBoxSelectionRange::~ScreenListBoxSelectionRange()
+ {
+-    unsigned int* storage = begin;
++    int* storage = begin;
+     if (storage != 0)
+     {
+         unsigned int bytes = static_cast<unsigned int>((capacity - storage) * sizeof(unsigned int));
+         if (bytes > 128)
++        {
+             ::operator delete(storage);
++        }
+         else
++        {
+             ReturnPool(storage, bytes);
++        }
+     }
+ }
+diff --git a/src/startup_screen_list_box_unresolved0c.cpp b/src/startup_screen_list_box_unresolved0c.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d6d3b68620a9729ca90d4ba190d17888b60e5093
+--- /dev/null
++++ b/src/startup_screen_list_box_unresolved0c.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_list_box.h"
++
++// FUNCTION: BEACHLIFE 0x004c5240
++void ScreenListBoxPrefix::Unresolved0c()
++{
++    if (owned_item_8c != 0)
++    {
++        owned_item_8c->Unresolved0c();
++    }
++}
+diff --git a/src/startup_screen_list_box_unresolved1c.cpp b/src/startup_screen_list_box_unresolved1c.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..91e2d82170656decb16aab0a302c27fb5d4cfac6
+--- /dev/null
++++ b/src/startup_screen_list_box_unresolved1c.cpp
+@@ -0,0 +1,66 @@
++#include "startup_screen_image_item.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++#include "startup_screen_list_box_find.h"
++#include "startup_screen_renderer.h"
++
++// FUNCTION: BEACHLIFE 0x004c5250
++void ScreenListBoxPrefix::Unresolved1c()
++{
++    if (owned_item_8c != 0)
++    {
++        owned_item_8c->Unresolved1c();
++    }
++
++    for (unsigned int index = word_64; index < word_64 + word_68; ++index)
++    {
++        bool selected = false;
++        int* last = selection.end;
++        if (FindListBoxSelection(selection.begin, last, index) != last)
++        {
++            ScreenRectangle highlight;
++            highlight.left = rectangle.left;
++            highlight.right = rectangle.right;
++            highlight.top = (index - word_64) * word_5c;
++            highlight.top += GetRectangle().top;
++            highlight.bottom = word_5c + highlight.top;
++            ScreenRequestRenderer* renderer = screen_request_renderer;
++            unsigned int colour = renderer->ConvertColour(0x1a, 0xdb, 0x7b);
++            renderer->FillRectangle(highlight, colour);
++            selected = true;
++        }
++
++        for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
++        {
++            if ((*entry)->row != index)
++            {
++                continue;
++            }
++            ScreenItem* item = (*entry)->item;
++            switch (item->kind_28)
++            {
++            case 0:
++                if ((*entry)->flag_8)
++                {
++                    item->MarkPrepared();
++                    item->Unresolved0c();
++                }
++                break;
++            case 10:
++                if (selected)
++                {
++                    static_cast<ScreenImageItem*>(item)->ConfigureIcon(1);
++                }
++                else
++                {
++                    static_cast<ScreenImageItem*>(item)->ConfigureIcon(0);
++                }
++                item->Unresolved0c();
++                break;
++            default:
++                item->Unresolved1c();
++                break;
++            }
++        }
++    }
++}
+diff --git a/src/startup_screen_list_box_unresolved24.cpp b/src/startup_screen_list_box_unresolved24.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..42bddd9596903eb8f3da5fd4547c204c5fce39a1
+--- /dev/null
++++ b/src/startup_screen_list_box_unresolved24.cpp
+@@ -0,0 +1,25 @@
++#include "copy_trivial.h"
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++
++// FUNCTION: BEACHLIFE 0x004c51b0
++void ScreenListBoxPrefix::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    if (owned_item_8c != 0)
++    {
++        owned_item_8c->Unresolved24(enabled);
++    }
++    if (!enabled)
++    {
++        ScreenListBoxEntry** finish = entries.end;
++        for (ScreenListBoxEntry** current = entries.begin; current != finish; ++current)
++        {
++            delete *current;
++        }
++        entries.end = static_cast<ScreenListBoxEntry**>(CopyTrivial(entries.end, entries.end, entries.begin));
++        word_68 = 0;
++        word_64 = 0;
++        word_88 = 0;
++    }
++}
+diff --git a/src/startup_screen_list_box_update.cpp b/src/startup_screen_list_box_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b260387cb8f6580425a845e1078a3beb55730225
+--- /dev/null
++++ b/src/startup_screen_list_box_update.cpp
+@@ -0,0 +1,37 @@
++#include "startup_screen_list_box.h"
++#include "startup_screen_list_box_entry.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004c4620
++void ScreenListBoxPrefix::Unresolved04(float elapsed)
++{
++    if (owned_item_8c != 0)
++    {
++        owned_item_8c->Unresolved04(elapsed);
++        unsigned int position = static_cast<ScreenScrollBarPrefix*>(owned_item_8c)->position_48;
++        if (position != word_64)
++        {
++            word_64 = position;
++            for (unsigned int visible = 0; visible < word_68; ++visible)
++            {
++                for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
++                {
++                    ScreenListBoxEntry* row = *entry;
++                    if (row->row == visible + word_64)
++                    {
++                        int left = row->item->GetRectangle().left;
++                        row->item->SetRectanglePosition(left, word_5c * visible + rectangle.top);
++                    }
++                }
++            }
++        }
++    }
++    for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
++    {
++        (*entry)->item->Unresolved04(elapsed);
++    }
++    if (state_94)
++    {
++        elapsed_90 += elapsed;
++    }
++}
+diff --git a/src/startup_screen_load_dependencies.h b/src/startup_screen_load_dependencies.h
+index 4b6e8e4be977f3bf66de662829b00900ec15d91c..1e8eb511feea89e015cb64345ca8143508ac5cce 100644
+--- a/src/startup_screen_load_dependencies.h
++++ b/src/startup_screen_load_dependencies.h
+@@ -17,7 +17,9 @@ struct ScreenLoadPanel13c
+     ScreenListBoxPrefix* list_04; // The MP3 playlist list box.
+     int word_08;                  // Selection count last seen by Update.
+     unsigned char state_0c;
+-    unsigned char unknown_0d[0x0b];
++    unsigned char unknown_0d[3];
++    int mode_10; // Action handler 0x004c2940 writes this word.
++    unsigned char unknown_14[4];
+     unsigned int word_18;
+     unsigned char state_1c;
+     unsigned char unknown_1d[3];
+@@ -34,7 +36,7 @@ struct ScreenLoadPanel13c
+     void RefreshList(unsigned char keep); // 0x004c2d90, RET4.
+     void EnableControls();                // 0x004c26c0, RET0.
+ 
+-  private:
++private:
+     friend struct ScreenManager;
+     // Final lifetime is unresolved; no generated owning substitute.
+     ~ScreenLoadPanel13c();
+@@ -54,7 +56,7 @@ struct ScreenLoadPanel140
+     void Update();                          // 0x004c8770
+     void RefreshContents();                 // 0x004c8820, real content refresh; body separate.
+ 
+-  private:
++private:
+     friend struct ScreenManager;
+     ~ScreenLoadPanel140();
+ };
+diff --git a/src/startup_screen_manager_auxiliary_constructor.cpp b/src/startup_screen_manager_auxiliary_constructor.cpp
+index 5d9b7282c7fefd4633f1695f9280f212bf74ec7b..37a67041f5808cec1ff72f5baa3f00c5bb40cf60 100644
+--- a/src/startup_screen_manager_auxiliary_constructor.cpp
++++ b/src/startup_screen_manager_auxiliary_constructor.cpp
+@@ -7,6 +7,6 @@ ScreenManagerAuxiliaryState::ScreenManagerAuxiliaryState(unsigned int value)
+     state_04 = 0;
+     text_08 = 0;
+     word_00 = value;
+-    ScreenRectangle initial = {0, 0, 0, 0};
++    ScreenRectangle initial = { 0, 0, 0, 0 };
+     frame_24 = new ScreenFrameItem(initial, 7);
+ }
+diff --git a/src/startup_screen_manager_owner190_add_entry.cpp b/src/startup_screen_manager_owner190_add_entry.cpp
+index 0310ebe433d0b918d48eef632567eec8a6e46632..eb7d94bc4ccc170afd5bd7e80115f26398e94e25 100644
+--- a/src/startup_screen_manager_owner190_add_entry.cpp
++++ b/src/startup_screen_manager_owner190_add_entry.cpp
+@@ -35,7 +35,7 @@ void ScreenManagerOwner190::AddNextEntry()
+         {
+             int value_50 = row->word_08;
+             int font = row->font_index;
+-            ScreenRectangle rectangle = {0, 610, 800, 625};
++            ScreenRectangle rectangle = { 0, 610, 800, 625 };
+             item = ::new (pending) ScreenTextItem(rectangle, key, font, value_50, 4);
+         }
+         item->state_58 = 0;
+diff --git a/src/startup_screen_manager_surfaces.cpp b/src/startup_screen_manager_surfaces.cpp
+index 551462f8bc0c9052b8655e3334a383bb78fce8dd..6cc6e7e6f3d69a48bb1713c4475d06db504321bd 100644
+--- a/src/startup_screen_manager_surfaces.cpp
++++ b/src/startup_screen_manager_surfaces.cpp
+@@ -25,8 +25,7 @@ bool ScreenManager::InitializeSurfaces()
+         }
+     }
+ 
+-    int surface =
+-        renderer->CreateSurface(static_cast<int>(renderer->width), static_cast<int>(height_a8), 0);
++    int surface = renderer->CreateSurface(static_cast<int>(renderer->width), static_cast<int>(height_a8), 0);
+     renderer->PrepareSurface(surface);
+     surface_ac = surface;
+     ScreenPoint position;
+diff --git a/src/startup_screen_mode_list.h b/src/startup_screen_mode_list.h
+index af54cc6b53d557b05910054bdd3aa024856ce219..0b11a1efa651f2712b1f5bcea2a09f15352ec643 100644
+--- a/src/startup_screen_mode_list.h
++++ b/src/startup_screen_mode_list.h
+@@ -10,8 +10,8 @@
+ // the folded empty function 0x00437d10 used by the constructor's unwind map.
+ struct ScreenModePoolAllocator
+ {
+-    ScreenModePoolAllocator() {}
+-    ~ScreenModePoolAllocator() {}
++    ScreenModePoolAllocator() { }
++    ~ScreenModePoolAllocator() { }
+ };
+ 
+ // Observed head-only list member of ScreenMode2Controller (+0x0c): the
+diff --git a/src/startup_screen_modes.h b/src/startup_screen_modes.h
+index 843d48fc55b93dd0dd1035d27c6eb58221b95949..423a00dc4f09c7877e29ec8a01ee523ad1e1f75c 100644
+--- a/src/startup_screen_modes.h
++++ b/src/startup_screen_modes.h
+@@ -8,7 +8,7 @@
+ struct ScreenMode6Controller : ScreenModeController
+ {
+     explicit ScreenMode6Controller(ScreenManager* owner); // 0x004a7640, 8 bytes.
+-    ~ScreenMode6Controller(); // 0x004a7680; deleting wrapper 0x004a7660 is compiler-generated.
++    ~ScreenMode6Controller();                             // 0x004a7680; deleting wrapper 0x004a7660 is compiler-generated.
+     void Enter();
+     void Exit();
+     void Update(float elapsed);
+diff --git a/src/startup_screen_overlay_detail.cpp b/src/startup_screen_overlay_detail.cpp
+index 72b901d81bb020f6110906323d75b5b618b5a86d..9cff27c513fe9f7ed704eee5948a7610857ee93a 100644
+--- a/src/startup_screen_overlay_detail.cpp
++++ b/src/startup_screen_overlay_detail.cpp
+@@ -63,31 +63,23 @@ void ScreenManager::RenderOverlayDetail()
+         // Half size: the far edges move in by half the extent, rounded toward zero.
+         renderer->DrawLine(detail_rectangle_108.left,
+             detail_rectangle_108.top,
+-            detail_rectangle_108.right -
+-                (detail_rectangle_108.right - detail_rectangle_108.left) / 2,
++            detail_rectangle_108.right - (detail_rectangle_108.right - detail_rectangle_108.left) / 2,
+             detail_rectangle_108.top,
+             detail_colour_118);
+         renderer->DrawLine(detail_rectangle_108.left,
+-            detail_rectangle_108.bottom -
+-                (detail_rectangle_108.bottom - detail_rectangle_108.top) / 2,
+-            detail_rectangle_108.right -
+-                (detail_rectangle_108.right - detail_rectangle_108.left) / 2,
+-            detail_rectangle_108.bottom -
+-                (detail_rectangle_108.bottom - detail_rectangle_108.top) / 2,
++            detail_rectangle_108.bottom - (detail_rectangle_108.bottom - detail_rectangle_108.top) / 2,
++            detail_rectangle_108.right - (detail_rectangle_108.right - detail_rectangle_108.left) / 2,
++            detail_rectangle_108.bottom - (detail_rectangle_108.bottom - detail_rectangle_108.top) / 2,
+             detail_colour_118);
+         renderer->DrawLine(detail_rectangle_108.left,
+             detail_rectangle_108.top,
+             detail_rectangle_108.left,
+-            detail_rectangle_108.bottom -
+-                (detail_rectangle_108.bottom - detail_rectangle_108.top) / 2,
++            detail_rectangle_108.bottom - (detail_rectangle_108.bottom - detail_rectangle_108.top) / 2,
+             detail_colour_118);
+-        renderer->DrawLine(detail_rectangle_108.right -
+-                               (detail_rectangle_108.right - detail_rectangle_108.left) / 2,
++        renderer->DrawLine(detail_rectangle_108.right - (detail_rectangle_108.right - detail_rectangle_108.left) / 2,
+             detail_rectangle_108.top,
+-            detail_rectangle_108.right -
+-                (detail_rectangle_108.right - detail_rectangle_108.left) / 2,
+-            detail_rectangle_108.bottom -
+-                (detail_rectangle_108.bottom - detail_rectangle_108.top) / 2,
++            detail_rectangle_108.right - (detail_rectangle_108.right - detail_rectangle_108.left) / 2,
++            detail_rectangle_108.bottom - (detail_rectangle_108.bottom - detail_rectangle_108.top) / 2,
+             detail_colour_118);
+     }
+ }
+diff --git a/src/startup_screen_overlay_layout.cpp b/src/startup_screen_overlay_layout.cpp
+index 107928a95ef19ec888eddae9e54cc7c890cc97f6..1489efb5b2d1f1573b251ac7b078c206c319c91b 100644
+--- a/src/startup_screen_overlay_layout.cpp
++++ b/src/startup_screen_overlay_layout.cpp
+@@ -23,8 +23,6 @@ void ScreenManager::LayoutOverlayDetail()
+     {
+         view_height -= overlay_panel_narrow;
+     }
+-    detail_rectangle_108.right =
+-        static_cast<int>(view_width / map_width * width + detail_rectangle_108.left);
+-    detail_rectangle_108.bottom =
+-        static_cast<int>(view_height / map_height * height + detail_rectangle_108.top);
++    detail_rectangle_108.right = static_cast<int>(view_width / map_width * width + detail_rectangle_108.left);
++    detail_rectangle_108.bottom = static_cast<int>(view_height / map_height * height + detail_rectangle_108.top);
+ }
+diff --git a/src/startup_screen_overlay_position.cpp b/src/startup_screen_overlay_position.cpp
+index 12b8b79f7723ed6e4cfa181b7ec15f13c31596c3..bf392503892870827ffaaf7548f024cfc3bcc75d 100644
+--- a/src/startup_screen_overlay_position.cpp
++++ b/src/startup_screen_overlay_position.cpp
+@@ -24,6 +24,6 @@ void ScreenManager::UpdateOverlayPosition()
+     rectangle = item->GetRectangle();
+     item_160->SetRectanglePosition(rectangle.left, item_top);
+ 
+-    ScreenPoint position = {9, top};
++    ScreenPoint position = { 9, top };
+     renderer->PositionSurface(surface_b8, position);
+ }
+diff --git a/src/startup_screen_panel13c_add_entry.cpp b/src/startup_screen_panel13c_add_entry.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..063a88b5fc4f89723cc7df8fd184ea35bfd56049
+--- /dev/null
++++ b/src/startup_screen_panel13c_add_entry.cpp
+@@ -0,0 +1,88 @@
++#include "copy_trivial.h"
++#include "node_storage.h"
++#include "startup_screen_panel13c_owner.h"
++
++#include <stdio.h>
++#include <string.h>
++
++// Complete typed pointer-range allocation expansion; no new retail body.
++inline ScreenLoadPanel13cEntry** AllocatePanel13cEntries(unsigned int count)
++{
++    return count ? static_cast<ScreenLoadPanel13cEntry**>(
++                       AllocateNodeStorage(count * sizeof(ScreenLoadPanel13cEntry*)))
++                 : 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004ce0a0
++bool ScreenLoadPanel13cOwner::AddEntry(
++    const char* directory, const char* name, unsigned int word_10, unsigned int word_18)
++{
++    // Only files that exist are listed.
++    bool added;
++    char path[0x400];
++    sprintf(path, "%s%s", directory, name);
++    FILE* file = fopen(path, "rb");
++    if (file)
++    {
++        fclose(file);
++
++        // -1 asks for the stream's own word. The scanner is never released
++        // (original leak).
++        if (word_18 == 0xffffffffu)
++        {
++            ScreenLoadPanel13cFileInfo* info = new ScreenLoadPanel13cFileInfo;
++            info->Scan(directory, name);
++            if (!info->IsValid())
++            {
++                goto failed;
++            }
++            word_18 = info->word_0c;
++        }
++
++        ScreenLoadPanel13cEntry* entry = new ScreenLoadPanel13cEntry;
++        entry->name_00 = new char[strlen(name) + 1];
++        strcpy(entry->name_00, name);
++        entry->directory_04 = new char[strlen(directory) + 1];
++        strcpy(entry->directory_04, directory);
++        entry->word_10 = word_10;
++        entry->word_18 = word_18;
++
++        ScreenLoadPanel13cEntry** position = entries_end_08;
++        if (position != entries_limit_0c)
++        {
++            if (position)
++            {
++                *position = entry;
++            }
++            ++entries_end_08;
++            added = true;
++            ReadPanel13cEntryTag(entry);
++            goto finished;
++        }
++
++        // Inline append growth: double the capacity (at least one) in node storage.
++        const unsigned int& minimum = 1u;
++        const unsigned int count = static_cast<unsigned int>(position - entries_begin_04);
++        unsigned int capacity = count + MaxUnsigned(count, minimum);
++        ScreenLoadPanel13cEntry** storage = AllocatePanel13cEntries(capacity);
++        ScreenLoadPanel13cEntry** output = static_cast<ScreenLoadPanel13cEntry**>(
++            CopyTrivial(entries_begin_04, position, storage));
++        *output = entry;
++        ScreenLoadPanel13cEntry** new_end = output + 1;
++        if (entries_begin_04)
++        {
++            ReleaseNodeStorage(
++                entries_begin_04, (entries_limit_0c - entries_begin_04) * sizeof(*storage));
++        }
++        entries_begin_04 = storage;
++        entries_end_08 = new_end;
++        entries_limit_0c = storage + capacity;
++        added = true;
++        ReadPanel13cEntryTag(entry);
++        goto finished;
++    }
++failed:
++    added = false;
++finished:
++    return added;
++}
+diff --git a/src/startup_screen_panel13c_contains_entry.cpp b/src/startup_screen_panel13c_contains_entry.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3dcb6e023e24d8749784bd6f794a978b97600992
+--- /dev/null
++++ b/src/startup_screen_panel13c_contains_entry.cpp
+@@ -0,0 +1,20 @@
++#include "startup_screen_panel13c_owner.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004ce370
++bool ScreenLoadPanel13cOwner::ContainsEntry(const char* directory, const char* name)
++{
++    bool found = false;
++    ScreenLoadPanel13cEntry** end = entries_end_08;
++    for (ScreenLoadPanel13cEntry** it = entries_begin_04; it != end; ++it)
++    {
++        ScreenLoadPanel13cEntry* entry = *it;
++        if (strcmp(entry->directory_04, directory) == 0 && strcmp(entry->name_00, name) == 0)
++        {
++            found = true;
++            break;
++        }
++    }
++    return found;
++}
+diff --git a/src/startup_screen_panel13c_destructor.cpp b/src/startup_screen_panel13c_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..80645312df36010687ad8c315a3e67325afeb5a5
+--- /dev/null
++++ b/src/startup_screen_panel13c_destructor.cpp
+@@ -0,0 +1,14 @@
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_panel13c_owner.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c2450
++ScreenLoadPanel13c::~ScreenLoadPanel13c()
++{
++    ScreenLoadPanel13cOwner* released = owner_00;
++    if (released)
++    {
++        released->~ScreenLoadPanel13cOwner();
++        ::operator delete(released);
++    }
++}
+diff --git a/src/startup_screen_panel13c_entry_count.cpp b/src/startup_screen_panel13c_entry_count.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..36e65935a93a010a5b74d2c55478aa935eba76d3
+--- /dev/null
++++ b/src/startup_screen_panel13c_entry_count.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_panel13c_owner.h"
++
++// FUNCTION: BEACHLIFE 0x004cdb40
++int ScreenLoadPanel13cOwner::EntryCount()
++{
++    return entries_end_08 - entries_begin_04;
++}
+diff --git a/src/startup_screen_panel13c_file_info_buffer.cpp b/src/startup_screen_panel13c_file_info_buffer.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..926e6050db4ec27938766765d04c1bdfa6c1fd45
+--- /dev/null
++++ b/src/startup_screen_panel13c_file_info_buffer.cpp
+@@ -0,0 +1,124 @@
++#include "startup_screen_panel13c_owner.h"
++
++#include <string.h>
++
++namespace
++{
++// The original tables have 15/15/3/3 entries at 0x00582674, 0x005826b0,
++// 0x005826ec and 0x005826f8. Reserved indices read the following table or
++// the first DWORD of "%s\\%s". Keep those actual adjacent values here.
++const int bitrate_v1[16] = { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0 };
++const int bitrate_v2[16] = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 44100 };
++const int frequency_v1[4] = { 44100, 48000, 32000, 22050 };
++const int frequency_v2[4] = { 22050, 24000, 16000, 626815781 };
++} // namespace
++
++// FUNCTION: BEACHLIFE 0x004cecc0
++void ScreenLoadPanel13cFileInfo::ScanBytes(const unsigned char* bytes, int count)
++{
++    unsigned char* joined = 0;
++    const unsigned char* cursor;
++    if (word_28 > 0)
++    {
++        joined = new unsigned char[word_28 + static_cast<unsigned int>(count)];
++        memcpy(joined, bytes_24, word_28);
++        memcpy(joined + word_28, bytes, static_cast<unsigned int>(count));
++        count = static_cast<int>(static_cast<unsigned int>(count) + word_28);
++        cursor = joined;
++    }
++    else
++    {
++        cursor = bytes;
++    }
++
++    const unsigned char* end = cursor + count;
++    cursor += word_20;
++    while (cursor < end)
++    {
++        if (static_cast<int>(end - cursor) < 4)
++        {
++            word_28 = static_cast<unsigned int>(end - cursor);
++            memcpy(bytes_24, cursor, word_28);
++            word_20 = 0;
++            if (joined)
++            {
++                delete[] joined;
++            }
++            return;
++        }
++
++        if (cursor[0] != 0xff)
++        {
++            goto invalid_header;
++        }
++        {
++            unsigned char second = cursor[1];
++            if ((second & 0xf0) != 0xf0 && (second & 0xf0) != 0xe0)
++            {
++                goto invalid_header;
++            }
++
++            unsigned int third = cursor[2];
++            unsigned int frequency_index = (third >> 2) & 3;
++            unsigned char version_bit = second & 8;
++            int frequency = version_bit ? frequency_v1[frequency_index] : frequency_v2[frequency_index];
++            if (frequency == 0)
++            {
++                goto invalid_header;
++            }
++
++            unsigned int version = ((~static_cast<unsigned int>(second) >> 3) & 1) + 1;
++            unsigned int bitrate_index = third >> 4;
++            int bitrate = version_bit ? bitrate_v1[bitrate_index] : bitrate_v2[bitrate_index];
++            // The original LEA/SHL product wraps in 32 bits before signed IDIV.
++            unsigned int scaled = static_cast<unsigned int>(bitrate) * (version == 1 ? 144000U : 72000U);
++            unsigned int frame_bytes = static_cast<unsigned int>(static_cast<int>(scaled) / frequency);
++            frame_bytes += (third >> 1) & 1;
++            if (frame_bytes <= 1 || frame_bytes > 0x800)
++            {
++                goto invalid_header;
++            }
++
++            int frames = word_10;
++            if (frames == 0)
++            {
++                word_1c = (second >> 1) & 3;
++                word_04 = (cursor[1] & 8) ? frequency_v1[(cursor[2] >> 2) & 3]
++                                          : frequency_v2[(cursor[2] >> 2) & 3];
++                word_00 = (cursor[1] & 8) ? bitrate_v1[cursor[2] >> 4] : bitrate_v2[cursor[2] >> 4];
++                word_14 = ((~static_cast<unsigned int>(cursor[1]) >> 3) & 1) + 1;
++                word_08 = (cursor[3] & 0xc0) != 0xc0;
++            }
++            else
++            {
++                if (word_04 != frequency)
++                {
++                    goto invalid_header;
++                }
++                if (word_00 != 0 && word_00 != static_cast<unsigned int>(bitrate))
++                {
++                    word_00 = 0;
++                }
++            }
++
++            word_10 = static_cast<int>(static_cast<unsigned int>(frames) + 1U);
++            word_2c = static_cast<int>(static_cast<unsigned int>(word_2c) + frame_bytes);
++            bitrate = (cursor[1] & 8) ? bitrate_v1[cursor[2] >> 4] : bitrate_v2[cursor[2] >> 4];
++            word_18 = static_cast<int>(
++                static_cast<unsigned int>(word_18) + static_cast<unsigned int>(bitrate));
++            cursor += frame_bytes;
++            continue;
++        }
++
++    invalid_header:
++        word_30 = static_cast<int>(static_cast<unsigned int>(word_30) + 1U);
++        ++cursor;
++    }
++
++    word_20 = static_cast<unsigned int>(cursor - end);
++    word_28 = 0;
++    if (joined)
++    {
++        delete[] joined;
++    }
++}
+diff --git a/src/startup_screen_panel13c_file_info_constructor.cpp b/src/startup_screen_panel13c_file_info_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec57ab54e96da149dfc3ae93ac86d44eb3a93d4d
+--- /dev/null
++++ b/src/startup_screen_panel13c_file_info_constructor.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_panel13c_owner.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004ceb50
++ScreenLoadPanel13cFileInfo::ScreenLoadPanel13cFileInfo()
++{
++    word_00 = 0;
++    word_04 = 0;
++    word_08 = 0;
++    word_0c = 0;
++    word_10 = 0;
++    word_14 = 0;
++    word_18 = 0;
++    word_1c = -1;
++    word_20 = 0;
++    word_28 = 0;
++    word_2c = 0;
++    word_30 = 0;
++    state_34 = 0;
++    memset(bytes_24, 0, sizeof(bytes_24));
++}
+diff --git a/src/startup_screen_panel13c_file_info_scan.cpp b/src/startup_screen_panel13c_file_info_scan.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2f8e5c37030df02edbd1c5fb013c4b811b9d35ec
+--- /dev/null
++++ b/src/startup_screen_panel13c_file_info_scan.cpp
+@@ -0,0 +1,43 @@
++#include "startup_screen_panel13c_owner.h"
++
++#include <stdio.h>
++
++// FUNCTION: BEACHLIFE 0x004ceb90
++void ScreenLoadPanel13cFileInfo::Scan(const char* directory, const char* name)
++{
++    char path[0x400];
++    unsigned char buffer[0x1000];
++    sprintf(path, "%s\\%s", directory, name);
++    FILE* input = fopen(path, "rb");
++    if (input)
++    {
++        state_34 = 1;
++        int count = static_cast<int>(fread(buffer, 1, sizeof(buffer), input));
++        while (count > 0)
++        {
++            ScanBytes(buffer, count);
++            count = static_cast<int>(fread(buffer, 1, sizeof(buffer), input));
++        }
++        if (word_30 > word_2c)
++        {
++            state_34 = 0;
++        }
++        else
++        {
++            int frames = word_10;
++            int duration;
++            if (word_14 == 1)
++            {
++                duration = frames * 1152 / (word_04 / 1000);
++            }
++            else
++            {
++                duration = frames * 576 / (word_04 / 1000);
++            }
++            state_34 = 1;
++            word_0c = duration;
++            word_18 /= frames;
++        }
++        fclose(input);
++    }
++}
+diff --git a/src/startup_screen_panel13c_file_info_valid.cpp b/src/startup_screen_panel13c_file_info_valid.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..862e5a6a018df8bb28b853082f035a7943c90627
+--- /dev/null
++++ b/src/startup_screen_panel13c_file_info_valid.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_panel13c_owner.h"
++
++// FUNCTION: BEACHLIFE 0x004ceca0
++bool ScreenLoadPanel13cFileInfo::IsValid()
++{
++    bool valid = false;
++    if (state_34 && word_1c == 1)
++    {
++        valid = true;
++    }
++    return valid;
++}
+diff --git a/src/startup_screen_panel13c_owner.h b/src/startup_screen_panel13c_owner.h
+index 3838243790443a6385b0f6222d8c691d41ab7c6e..4059e72bd1d6d38f593eab6d654d41b327a7cba7 100644
+--- a/src/startup_screen_panel13c_owner.h
++++ b/src/startup_screen_panel13c_owner.h
+@@ -59,8 +59,8 @@ struct ScreenLoadPanel13cOwner
+     explicit ScreenLoadPanel13cOwner(WindowAudioState* audio);
+ 
+     // Actual indexed accessors and append/search methods. Bodies remain separate.
+-    int EntryCount();                     // Actual 0x004cdb40: entries_end_08 - entries_begin_04.
+-    const char* ReadEntryName(int index); // 0x004cdba0, entry+00
++    int EntryCount();                          // Actual 0x004cdb40: entries_end_08 - entries_begin_04.
++    const char* ReadEntryName(int index);      // 0x004cdba0, entry+00
+     const char* ReadEntryDirectory(int index); // 0x004cdbb0, entry+04
+     unsigned int ReadEntryWord10(int index);   // 0x004cdb90, entry+10
+     unsigned int ReadEntryWord18(int index);   // 0x004cdbc0, entry+18
+@@ -70,7 +70,7 @@ struct ScreenLoadPanel13cOwner
+     // Actual 0x004ce370, RET8: an entry with this directory and name exists.
+     bool ContainsEntry(const char* directory, const char* name);
+ 
+-  private:
++private:
+     friend struct ScreenLoadPanel13c;
+     // Actual destruction starts at 0x004cd9e0; no generated lifetime.
+     ~ScreenLoadPanel13cOwner();
+diff --git a/src/startup_screen_panel13c_owner_destructor.cpp b/src/startup_screen_panel13c_owner_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e236b5ddc25513eb82a84be359258d6e6a4554f4
+--- /dev/null
++++ b/src/startup_screen_panel13c_owner_destructor.cpp
+@@ -0,0 +1,68 @@
++#include "pool_return.h"
++#include "startup_screen_panel13c_entry.h"
++#include "startup_screen_panel13c_owner.h"
++
++#include <new>
++#include <stddef.h>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004cd9e0
++ScreenLoadPanel13cOwner::~ScreenLoadPanel13cOwner()
++{
++    ScreenLoadPanel13cEntry** last = entries_end_08;
++    ScreenLoadPanel13cEntry** position = entries_begin_04;
++    while (position != last)
++    {
++        ScreenLoadPanel13cEntry* entry = *position;
++        if (entry)
++        {
++            if (entry->name_00)
++            {
++                ::operator delete(entry->name_00);
++            }
++            if (entry->directory_04)
++            {
++                ::operator delete(entry->directory_04);
++            }
++            if (entry->owned_08)
++            {
++                ::operator delete(entry->owned_08);
++            }
++            if (entry->owned_0c)
++            {
++                ::operator delete(entry->owned_0c);
++            }
++            ::operator delete(entry);
++        }
++        ++position;
++    }
++
++    ScreenLoadPanel13cEntry** first = entries_end_08;
++    last = entries_end_08;
++    ScreenLoadPanel13cEntry** destination = entries_begin_04;
++    if (first == last)
++    {
++        entries_end_08 = destination;
++    }
++    else
++    {
++        ptrdiff_t count = last - first;
++        size_t bytes = static_cast<size_t>(count) * sizeof(*first);
++        entries_end_08 = static_cast<ScreenLoadPanel13cEntry**>(memmove(destination, first, bytes)) + count;
++    }
++
++    ScreenLoadPanel13cEntry** storage = entries_begin_04;
++    if (storage)
++    {
++        ptrdiff_t count = entries_limit_0c - storage;
++        unsigned int bytes = static_cast<unsigned int>(count * sizeof(*storage));
++        if (bytes > 128)
++        {
++            ::operator delete(storage);
++        }
++        else
++        {
++            ReturnPool(storage, bytes);
++        }
++    }
++}
+diff --git a/src/startup_screen_panel140_enable.cpp b/src/startup_screen_panel140_enable.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c3ba4e24937fe9a6bc7ec5e73fa3c3647deaf55
+--- /dev/null
++++ b/src/startup_screen_panel140_enable.cpp
+@@ -0,0 +1,34 @@
++#include "startup_screen_list_box.h"
++#include "startup_screen_load_dependencies.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++
++// GLOBAL: BEACHLIFE 0x0058170c
++const char* panel140_list_box_name_800 = "TickerListBox800";
++
++// GLOBAL: BEACHLIFE 0x00581710
++const char* panel140_list_box_name_640 = "TickerListBox640";
++
++// FUNCTION: BEACHLIFE 0x004c87d0
++void ScreenLoadPanel140::SetEnabled(unsigned char enabled)
++{
++    state_04 = enabled;
++    if (enabled)
++    {
++        const char* name;
++        if (screen_request_renderer->width >= 800)
++        {
++            name = panel140_list_box_name_800;
++        }
++        else
++        {
++            name = panel140_list_box_name_640;
++        }
++        item_00 = screen_manager->FindListBox(name);
++        if (item_00)
++        {
++            item_00->state_59 = 0;
++        }
++        RefreshContents();
++    }
++}
+diff --git a/src/startup_screen_panel140_update.cpp b/src/startup_screen_panel140_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..c7c88b7697d4f2cdc05d5d90593d8f803b36786f
+--- /dev/null
++++ b/src/startup_screen_panel140_update.cpp
+@@ -0,0 +1,33 @@
++#include "startup_screen_list_box.h"
++#include "startup_screen_load_dependencies.h"
++#include "startup_variable_state.h"
++
++// FUNCTION: BEACHLIFE 0x004c8770
++void ScreenLoadPanel140::Update()
++{
++    if (!state_04)
++    {
++        return;
++    }
++
++    RefreshContents();
++    // Act on the first row whose entry was activated.
++    bool activated = false;
++    for (unsigned int row = 0; row < word_08; ++row)
++    {
++        if (activated)
++        {
++            break;
++        }
++        unsigned int id;
++        activated = item_00->TakeActivatedValue(row, &id);
++        if (activated)
++        {
++            VariableEntity* object = variable_world->FindObject(id);
++            if (object)
++            {
++                object->Unknown50(1, 1);
++            }
++        }
++    }
++}
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index c302146a7114936649bbb2519dd468be5f0235ec..862c19e28cf96c9464180e7b14ba43c20fe8f72f 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -18,8 +18,7 @@ struct SavedScreenPlacementNode : CircularListNode
+ };
+ 
+ // Preserve the observed eight-byte pool quantum on the native pointer ABI.
+-inline constexpr unsigned int saved_placement_node_slot_bytes =
+-    (sizeof(SavedScreenPlacementNode) + 7u) & ~7u;
++inline constexpr unsigned int saved_placement_node_slot_bytes = (sizeof(SavedScreenPlacementNode) + 7u) & ~7u;
+ static_assert(alignof(SavedScreenPlacementNode) <= 8);
+ static_assert(saved_placement_node_slot_bytes >= sizeof(SavedScreenPlacementNode),
+     "native node does not fit its pool slot");
+diff --git a/src/startup_screen_placement_add_music.cpp b/src/startup_screen_placement_add_music.cpp
+index 81b2429f621a4c9e7d1bab4dec7b751e4ea92edf..bdf5144f6be4fb356cb236027b1312677b21953d 100644
+--- a/src/startup_screen_placement_add_music.cpp
++++ b/src/startup_screen_placement_add_music.cpp
+@@ -13,8 +13,7 @@
+ void ScreenPlacementStore::AddMusicEntry(
+     const char* directory, const char* name, unsigned int word_08, unsigned int word_0c)
+ {
+-    ScreenPlacementMusicEntry* entry =
+-        static_cast<ScreenPlacementMusicEntry*>(::operator new(sizeof(ScreenPlacementMusicEntry)));
++    ScreenPlacementMusicEntry* entry = static_cast<ScreenPlacementMusicEntry*>(::operator new(sizeof(ScreenPlacementMusicEntry)));
+     if (entry)
+     {
+         entry->name_00 = 0;
+diff --git a/src/startup_screen_placement_clear_music.cpp b/src/startup_screen_placement_clear_music.cpp
+index 121342b2a758f73b507921484cfa46d28fe72c22..15e2d6cbd7f46e39a9ebba655b7556e09b61dbf5 100644
+--- a/src/startup_screen_placement_clear_music.cpp
++++ b/src/startup_screen_placement_clear_music.cpp
+@@ -39,7 +39,6 @@ void ScreenPlacementStore::ClearMusicEntries()
+     {
+         ptrdiff_t count = last - first;
+         size_t bytes = static_cast<size_t>(count) * sizeof(*first);
+-        music_end_1c =
+-            static_cast<ScreenPlacementMusicEntry**>(memmove(destination, first, bytes)) + count;
++        music_end_1c = static_cast<ScreenPlacementMusicEntry**>(memmove(destination, first, bytes)) + count;
+     }
+ }
+diff --git a/src/startup_screen_radio_group_constructor.cpp b/src/startup_screen_radio_group_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e72194ac70110cee8cc54917686da9e45b49ec24
+--- /dev/null
++++ b/src/startup_screen_radio_group_constructor.cpp
+@@ -0,0 +1,27 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_radio_group.h"
++
++#include <new>
++#include <string.h>
++
++#if !defined(_WIN32)
++#include <strings.h>
++#define _stricmp strcasecmp
++#endif
++
++// FUNCTION: BEACHLIFE 0x004c6ba0
++ScreenRadioGroup::ScreenRadioGroup(
++    ScreenRectangle initial, const char* variable_name, const char* resource_name)
++    : ScreenItem(initial)
++    , children()
++    , resource_4c(0)
++{
++    kind_28 = 20;
++    variable_name_44 = static_cast<char*>(::operator new(strlen(variable_name) + 1));
++    strcpy(variable_name_44, variable_name);
++    if (_stricmp(resource_name, "none") != 0)
++    {
++        resource_4c = screen_dialog_resources->Find(resource_name);
++    }
++    children.Clear();
++}
+diff --git a/src/startup_screen_radio_group_destructor.cpp b/src/startup_screen_radio_group_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..061932a46fc2f454574591f6131202ff909542f0
+--- /dev/null
++++ b/src/startup_screen_radio_group_destructor.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_radio_group.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c6e00
++ScreenRadioGroup::~ScreenRadioGroup()
++{
++    children.Clear();
++    ::operator delete(variable_name_44);
++    ScreenDialogResource* resource = resource_4c;
++    if (resource != 0)
++    {
++        screen_dialog_resources->Release(resource);
++    }
++}
+diff --git a/src/startup_screen_radio_group_draw.cpp b/src/startup_screen_radio_group_draw.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..67c70ead9c56c650ae8659ef96ab436c3350a8b2
+--- /dev/null
++++ b/src/startup_screen_radio_group_draw.cpp
+@@ -0,0 +1,23 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_radio_group.h"
++
++// FUNCTION: BEACHLIFE 0x004c70f0
++void ScreenRadioGroup::Unresolved0c()
++{
++    if (preparation_flag)
++    {
++        ScreenDialogResource* resource = resource_4c;
++        if (resource)
++        {
++            resource->Draw(rectangle.left, rectangle.top, 0, 99999.0f);
++        }
++        preparation_flag = 0;
++    }
++
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->Unresolved0c();
++        node = node->next;
++    }
++}
+diff --git a/src/startup_screen_radio_group_forwarders.cpp b/src/startup_screen_radio_group_forwarders.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6a7d812b245b1e2b5eed86f0aef7edc7fc5482bb
+--- /dev/null
++++ b/src/startup_screen_radio_group_forwarders.cpp
+@@ -0,0 +1,31 @@
++#include "startup_screen_radio_group.h"
++
++// FUNCTION: BEACHLIFE 0x004c7080
++bool ScreenRadioGroup::HandleTimedCoordinates(int x, int y, int value)
++{
++    ScreenChildNode* node = children.head->next;
++    bool handled = false;
++    while (node != children.head && !handled)
++    {
++        handled = node->item->HandleTimedCoordinates(x, y, value);
++        node = node->next;
++    }
++    return handled;
++}
++
++// FUNCTION: BEACHLIFE 0x004c7140
++void ScreenRadioGroup::Unresolved1c()
++{
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->Unresolved1c();
++        node = node->next;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c71e0
++void ScreenRadioGroup::Unresolved10(ScreenItem* item)
++{
++    children.Insert(children.End(), item);
++}
+diff --git a/src/startup_screen_radio_group_geometry.cpp b/src/startup_screen_radio_group_geometry.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e218cdd83e4490542f5b95f3fd551b407ac941fe
+--- /dev/null
++++ b/src/startup_screen_radio_group_geometry.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_radio_group.h"
++
++// FUNCTION: BEACHLIFE 0x004c7160
++void ScreenRadioGroup::ApplyPosition(int dx, int dy)
++{
++    ScreenItem::ApplyPosition(dx, dy);
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->ApplyPosition(dx, dy);
++        node = node->next;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c71a0
++void ScreenRadioGroup::MoveRectangle(int dx, int dy)
++{
++    ScreenItem::MoveRectangle(dx, dy);
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->MoveRectangle(dx, dy);
++        node = node->next;
++    }
++}
+diff --git a/src/startup_screen_radio_group_prepare.cpp b/src/startup_screen_radio_group_prepare.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e3936258f102e5ae07229ef6fb87510153d35091
+--- /dev/null
++++ b/src/startup_screen_radio_group_prepare.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_radio_group.h"
++
++// FUNCTION: BEACHLIFE 0x004c70c0
++void ScreenRadioGroup::MarkPrepared()
++{
++    ScreenItem::MarkPrepared();
++    ScreenChildNode* node = children.head->next;
++    while (node != children.head)
++    {
++        node->item->MarkPrepared();
++        node = node->next;
++    }
++}
+diff --git a/src/startup_screen_radio_item_constructor.cpp b/src/startup_screen_radio_item_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f20e3ff63b5228aef51a183e1b1c0b582f1c32c9
+--- /dev/null
++++ b/src/startup_screen_radio_item_constructor.cpp
+@@ -0,0 +1,32 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_radio_item.h"
++
++#include <new>
++#include <string.h>
++
++#if !defined(_WIN32)
++#include <strings.h>
++#define _stricmp strcasecmp
++#endif
++
++// FUNCTION: BEACHLIFE 0x004c6740
++ScreenRadioItem::ScreenRadioItem(ScreenRectangle initial,
++    const char* resource_name,
++    const char* name,
++    unsigned int word54,
++    int value)
++    : ScreenItem(initial)
++{
++    owned_name_50 = 0;
++    flags_44 = 2;
++    value_48 = value;
++    word_54 = word54;
++    kind_28 = 21;
++    resource_4c = screen_dialog_resources->Find(resource_name);
++    resource_4c->word_08 = 3;
++    if (_stricmp(name, "None") != 0)
++    {
++        owned_name_50 = static_cast<char*>(::operator new(strlen(name) + 1));
++        strcpy(owned_name_50, name);
++    }
++}
+diff --git a/src/startup_screen_radio_item_coordinates.cpp b/src/startup_screen_radio_item_coordinates.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f8b1f3b67eab72b604c90233ee97a999696371d
+--- /dev/null
++++ b/src/startup_screen_radio_item_coordinates.cpp
+@@ -0,0 +1,38 @@
++#include "startup_screen_button_constants.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_radio_item.h"
++#include "startup_screen_text.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004c6990
++bool ScreenRadioItem::HandleTimedCoordinates(int x, int y, int value)
++{
++    if ((flags_44 & 0x14) != 0)
++    {
++        state_40 = 0;
++        return false;
++    }
++
++    ScreenItem::HandleTimedCoordinates(x, y, value);
++    bool handled = false;
++    switch (value)
++    {
++    case 0:
++        TestRectangle(x, y);
++        break;
++    case 1:
++        TestRectangle(x, y);
++        if (ReadState40() != 0 && (flags_44 & 8) != 0)
++        {
++            state_42 = 1;
++            handled = true;
++            window_audio_state->PlaySound(screen_button_click_sound, 1, 0.0f);
++        }
++        break;
++    case 3:
++        state_40 = 0;
++        break;
++    }
++    return handled;
++}
+diff --git a/src/startup_screen_radio_item_destructor.cpp b/src/startup_screen_radio_item_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5ee9a68bff761287161f2b5188ad07f84e9186f
+--- /dev/null
++++ b/src/startup_screen_radio_item_destructor.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_radio_item.h"
++
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004c6850
++ScreenRadioItem::~ScreenRadioItem()
++{
++    char* name = owned_name_50;
++    if (name != 0)
++    {
++        ::operator delete(name);
++    }
++    ScreenDialogResource* resource = resource_4c;
++    screen_dialog_resources->Release(resource);
++}
+diff --git a/src/startup_screen_radio_item_flags.cpp b/src/startup_screen_radio_item_flags.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b22ea5211e02b228a410d92b2bc972ff91e87bb
+--- /dev/null
++++ b/src/startup_screen_radio_item_flags.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_radio_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c6aa0
++void ScreenRadioItem::ClearFlag10()
++{
++    unsigned int flags = flags_44;
++    if ((flags & 0x10) != 0)
++    {
++        flags_44 = flags & ~0x10u;
++        MarkPrepared();
++    }
++}
+diff --git a/src/startup_screen_radio_item_remaining.cpp b/src/startup_screen_radio_item_remaining.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d108ce1d3b57323ea5c4f82af0f9d76e341f947
+--- /dev/null
++++ b/src/startup_screen_radio_item_remaining.cpp
+@@ -0,0 +1,77 @@
++#include "startup_screen_button_constants.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_radio_item.h"
++#include "startup_screen_text.h"
++#include "window_activation.h"
++
++// FUNCTION: BEACHLIFE 0x004c6920
++bool ScreenRadioItem::TestRectangle(int x, int y)
++{
++    bool hit = false;
++    x -= rectangle.left;
++    if (x > 0)
++    {
++        ScreenDialogResource* resource = resource_4c;
++        if (x < resource->record->frames[resource->word_10]->width_0e)
++        {
++            y -= rectangle.top;
++            if (y > 0 && y < resource->record->frames[resource->word_10]->height_10)
++            {
++                hit = resource->TestPixel(x, y);
++            }
++        }
++    }
++    state_40 = hit;
++    return hit;
++}
++
++// FUNCTION: BEACHLIFE 0x004c6ac0
++void ScreenRadioItem::Unresolved0c()
++{
++    if (preparation_flag != 0)
++    {
++        unsigned int flags = flags_44;
++        int state;
++        if ((flags & 0x10) != 0)
++        {
++            state = (flags & 4) != 0 ? 4 : 3;
++        }
++        else if ((flags & 4) != 0)
++        {
++            state = 2;
++        }
++        else
++        {
++            state = (flags & 8) >> 3;
++        }
++
++        ScreenDialogResource* resource = resource_4c;
++        resource->word_14 = state;
++        int top = rectangle.top;
++        int left = rectangle.left;
++        resource_4c->Draw(left, top, 0, 99999.0f);
++        preparation_flag = 0;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004c6b20
++void ScreenRadioItem::Unresolved1c()
++{
++    if (owned_name_50 != 0)
++    {
++        ScreenFontRenderer* font = screen_manager->fonts_2c[word_54];
++        font->SetWord18(2);
++        font->SetState14(0);
++        font->SetWord10(0xffffffffu);
++        int top = rectangle.top;
++        int bottom = rectangle.bottom;
++        int left = rectangle.left;
++        int height = bottom - top - 2;
++        int width = rectangle.right - left;
++        font->SetRectangle(left, top + 3, width, height);
++        const char* name = owned_name_50;
++        const unsigned short* text = screen_text_lookup->LookupText(name);
++        font->DrawText(0, 2, text);
++    }
++}
+diff --git a/src/startup_screen_radio_item_set_flag02.cpp b/src/startup_screen_radio_item_set_flag02.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..299eb3daca352c8ddd34947b5959983553b39abe
+--- /dev/null
++++ b/src/startup_screen_radio_item_set_flag02.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_radio_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c6a40
++void ScreenRadioItem::SetFlag02()
++{
++    unsigned int flags = flags_44;
++    if ((flags & 2) == 0)
++    {
++        flags_44 = (flags & ~4u) | 2;
++        MarkPrepared();
++    }
++}
+diff --git a/src/startup_screen_radio_item_set_flag04.cpp b/src/startup_screen_radio_item_set_flag04.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..375079615e51c8f028f1169a1e70835369e90c26
+--- /dev/null
++++ b/src/startup_screen_radio_item_set_flag04.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_radio_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c6a60
++void ScreenRadioItem::SetFlag04()
++{
++    unsigned int flags = flags_44;
++    if ((flags & 4) == 0)
++    {
++        flags_44 = (flags & ~2u) | 4;
++        MarkPrepared();
++    }
++}
+diff --git a/src/startup_screen_radio_item_set_flag10.cpp b/src/startup_screen_radio_item_set_flag10.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..86f336bbf37c3065a7c67cd65e7a7e3503453078
+--- /dev/null
++++ b/src/startup_screen_radio_item_set_flag10.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_radio_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c6a80
++void ScreenRadioItem::SetFlag10()
++{
++    unsigned int flags = flags_44;
++    if ((flags & 0x10) == 0)
++    {
++        flags_44 = flags | 0x10;
++        MarkPrepared();
++    }
++}
+diff --git a/src/startup_screen_radio_item_update.cpp b/src/startup_screen_radio_item_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..292b87b6f4b26e613ac749255a0b0294fb8e38c9
+--- /dev/null
++++ b/src/startup_screen_radio_item_update.cpp
+@@ -0,0 +1,30 @@
++#include "startup_screen_radio_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c68c0
++void ScreenRadioItem::Unresolved04(float elapsed)
++{
++    unsigned int flags = flags_44;
++    if ((flags & 0x14) != 0)
++    {
++        flags_44 = flags & ~8u;
++        ClearManagerReference();
++        return;
++    }
++
++    ScreenItem::Unresolved04(elapsed);
++    unsigned char state = ReadState40();
++    flags = flags_44;
++    if (state != 0)
++    {
++        if ((flags & 8) == 0)
++        {
++            flags_44 = flags | 8u;
++            MarkPrepared();
++        }
++    }
++    else if ((flags & 8) != 0)
++    {
++        flags_44 = flags & ~8u;
++        MarkPrepared();
++    }
++}
+diff --git a/src/startup_screen_render.cpp b/src/startup_screen_render.cpp
+index ee544d83ad94c9b454c68e534e6a8598a7442ad9..fc90eb1d35f63fa63f3faf28eef3b1d1542b2c50 100644
+--- a/src/startup_screen_render.cpp
++++ b/src/startup_screen_render.cpp
+@@ -95,8 +95,7 @@ void ScreenManager::RenderScreens()
+             break;
+         }
+ 
+-        ActiveScreenEntry* entry =
+-            static_cast<CircularListValueNode*>(position.current.node->previous)->entry;
++        ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(position.current.node->previous)->entry;
+         if (entry->state == 1)
+         {
+             int surface = entry->surface;
+diff --git a/src/startup_screen_render_pointer.cpp b/src/startup_screen_render_pointer.cpp
+index bc6dafa2260b57a7aa8881833e0533c7db14b2e4..18990a1202994e697d6ef121b918005df799a432 100644
+--- a/src/startup_screen_render_pointer.cpp
++++ b/src/startup_screen_render_pointer.cpp
+@@ -87,8 +87,7 @@ void ScreenManager::RenderPointer()
+                 break;
+             }
+ 
+-            ActiveScreenEntry* entry =
+-                static_cast<CircularListValueNode*>(position.current.node->previous)->entry;
++            ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(position.current.node->previous)->entry;
+             if (entry->state == 1)
+             {
+                 ScreenDialog* item = entry->item;
+diff --git a/src/startup_screen_scroll_bar.h b/src/startup_screen_scroll_bar.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..49108a7feef4e4a6ddcdaeb74018f959d4c144bf
+--- /dev/null
++++ b/src/startup_screen_scroll_bar.h
+@@ -0,0 +1,52 @@
++#ifndef STARTUP_SCREEN_SCROLL_BAR_H
++#define STARTUP_SCREEN_SCROLL_BAR_H
++
++#include "startup_screen_item.h"
++
++struct ScreenButtonPrefix;
++struct ScreenFrameItem;
++
++// Genuine kind-5 scroll bar: x86 allocation 0x78 and table 0x004f4700. Fields
++// are those the real constructor and count update write; names descriptive.
++// Differing table slots are declared; their bodies remain separate.
++struct ScreenScrollBarPrefix : ScreenItem
++{
++    unsigned int word_44;     // The constructor stores its last word (mode).
++    unsigned int position_48; // First visible row; the constructor stores its first word.
++    unsigned int count_4c;    // Item count, zero until SetItemCount.
++    unsigned int visible_50;  // Visible rows.
++    unsigned char state_54;
++    unsigned char unknown_55[3];
++    ScreenButtonPrefix* up_58;   // Owned UI3_scrollbar_up button.
++    ScreenButtonPrefix* down_5c; // Owned UI3_scrollbar_down button.
++    ScreenFrameItem* thumb_60;   // Owned style-5 frame.
++    ScreenFrameItem* track_64;   // Owned style-4 frame.
++    float track_length_68;       // Track height minus both arrow heights.
++    int arrow_height_6c;         // Up-arrow resource frame height.
++    int offset_70;
++    int thumb_size_74;
++
++    // Actual 0x004b4ee0, RET32.
++    ScreenScrollBarPrefix(ScreenRectangle initial,
++        unsigned int position,
++        unsigned int count,
++        unsigned int visible,
++        int mode);
++    virtual ~ScreenScrollBarPrefix(); // Ordinary 0x004b5220; deleting wrapper 0x004b5200.
++
++    virtual void Unresolved04(float elapsed);                     // 0x004b5790
++    virtual void Unresolved1c();                                  // 0x004b5ab0
++    virtual void Unresolved24(unsigned char enabled);             // 0x004b52c0
++    virtual void MoveRectangle(int dx, int dy);                   // 0x004b5a60
++    virtual bool HandleInput38(int x, int y, int value);          // 0x004b52f0
++    virtual bool HandleTimedCoordinates(int x, int y, int value); // 0x004b5400
++
++    // Actual 0x004b58e0, RET4: stores the count and recomputes the thumb.
++    void SetItemCount(unsigned int count);
++};
++
++// Actual pointer globals to the arrow resource names.
++extern const char* screen_scroll_bar_up_name;   // 0x0057ff10
++extern const char* screen_scroll_bar_down_name; // 0x0057ff0c
++
++#endif
+diff --git a/src/startup_screen_scroll_bar_activation.cpp b/src/startup_screen_scroll_bar_activation.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a5439009df6fd6ca5e796ee641c6a8416f50e2b
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_activation.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_button.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004b52c0
++void ScreenScrollBarPrefix::Unresolved24(unsigned char enabled)
++{
++    ScreenItem::Unresolved24(enabled);
++    up_58->Unresolved24(enabled);
++    down_5c->Unresolved24(enabled);
++}
+diff --git a/src/startup_screen_scroll_bar_constructor.cpp b/src/startup_screen_scroll_bar_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ddaf12dacf86e44ccd39b954e4468f9283c7543
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_constructor.cpp
+@@ -0,0 +1,69 @@
++#include "startup_screen_button.h"
++#include "startup_screen_button_constants.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004b4ee0
++ScreenScrollBarPrefix::ScreenScrollBarPrefix(ScreenRectangle initial,
++    unsigned int position,
++    unsigned int count,
++    unsigned int visible,
++    int mode)
++    : ScreenItem(initial)
++    , word_44(mode)
++    , position_48(position)
++    , count_4c(0)
++    , visible_50(visible)
++    , state_54(0)
++    , thumb_60(0)
++    , offset_70(0)
++{
++    kind_28 = 5;
++    ScreenDialogResource* arrow = screen_dialog_resources->Lookup(screen_scroll_bar_up_name);
++    arrow_height_6c = arrow->record->frames[arrow->word_10]->height_10;
++    int arrow_width = arrow->record->frames[arrow->word_10]->width_0e;
++    screen_dialog_resources->Release(arrow);
++    track_length_68 = static_cast<float>(rectangle.bottom - rectangle.top) - arrow_height_6c * 2;
++    SetItemCount(count);
++
++    int left = rectangle.left;
++    int right = left + arrow_width;
++    ScreenRectangle up = { left, rectangle.top, right, rectangle.top + arrow_height_6c };
++    up_58 = new ScreenButtonPrefix(up,
++        screen_scroll_bar_up_name,
++        screen_button_no_text_name,
++        screen_dialog_none_name,
++        screen_dialog_none_name);
++    up_58->flag_50 = 1;
++
++    int bottom = rectangle.bottom;
++    ScreenRectangle down = { left, bottom - arrow_height_6c, right, bottom };
++    down_5c = new ScreenButtonPrefix(down,
++        screen_scroll_bar_down_name,
++        screen_button_no_text_name,
++        screen_dialog_none_name,
++        screen_dialog_none_name);
++    down_5c->flag_50 = 1;
++
++    ScreenRectangle thumb;
++    thumb.left = rectangle.left + 1;
++    thumb.top = rectangle.top;
++    thumb.right = thumb.left + 12;
++    thumb.bottom = thumb_size_74 + rectangle.top;
++    thumb_60 = new ScreenFrameItem(thumb, 5);
++
++    int thumb_left = thumb_60->GetRectangle().left;
++    float offset = (track_length_68 - offset_70) / count_4c * position_48;
++    if (offset < 0.0f)
++    {
++        offset = 0.0f;
++    }
++    thumb_60->SetRectanglePosition(
++        thumb_left, static_cast<int>(rectangle.top + arrow_height_6c + offset));
++
++    track_64 = new ScreenFrameItem(rectangle, 4);
++    ScreenItem::Unresolved24(1);
++    up_58->Unresolved24(1);
++    down_5c->Unresolved24(1);
++}
+diff --git a/src/startup_screen_scroll_bar_destructor.cpp b/src/startup_screen_scroll_bar_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..bde04d91f1831160036196c833b713528ae34ef8
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_destructor.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_button.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004b5220
++ScreenScrollBarPrefix::~ScreenScrollBarPrefix()
++{
++    ScreenItem::Unresolved24(0);
++    up_58->Unresolved24(0);
++    down_5c->Unresolved24(0);
++    delete up_58;
++    delete down_5c;
++    delete thumb_60;
++    delete track_64;
++}
+diff --git a/src/startup_screen_scroll_bar_draw.cpp b/src/startup_screen_scroll_bar_draw.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..8849eb59aa5d80446765f218a227425b819bf0aa
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_draw.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_button.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004b5ab0
++void ScreenScrollBarPrefix::Unresolved1c()
++{
++    track_64->MarkPrepared();
++    track_64->Unresolved0c();
++    up_58->MarkPrepared();
++    up_58->Unresolved0c();
++    down_5c->MarkPrepared();
++    down_5c->Unresolved0c();
++    thumb_60->MarkPrepared();
++    thumb_60->Unresolved0c();
++}
+diff --git a/src/startup_screen_scroll_bar_move.cpp b/src/startup_screen_scroll_bar_move.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5824452e133ad6fe9e2696b6e472a3d2cde1bea
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_move.cpp
+@@ -0,0 +1,13 @@
++#include "startup_screen_button.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004b5a60
++void ScreenScrollBarPrefix::MoveRectangle(int dx, int dy)
++{
++    ScreenItem::MoveRectangle(dx, dy);
++    up_58->MoveRectangle(dx, dy);
++    down_5c->MoveRectangle(dx, dy);
++    thumb_60->MoveRectangle(dx, dy);
++    track_64->MoveRectangle(dx, dy);
++}
+diff --git a/src/startup_screen_scroll_bar_timed.cpp b/src/startup_screen_scroll_bar_timed.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..31b9f0fb3ccf44435bafcde977fee217274b1222
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_timed.cpp
+@@ -0,0 +1,110 @@
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_button.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004b5400
++bool ScreenScrollBarPrefix::HandleTimedCoordinates(int x, int y, int value)
++{
++    state_40 = TestRectangle(x, y);
++    if (value != 2)
++    {
++        state_54 = 0;
++    }
++    bool handled = up_58->HandleTimedCoordinates(x, y, value);
++    if (!handled)
++    {
++        handled = down_5c->HandleTimedCoordinates(x, y, value);
++        if (!handled)
++        {
++            thumb_60->HandleTimedCoordinates(x, y, value);
++            if (thumb_60->ReadState41())
++            {
++                state_54 = 1;
++            }
++            else if (thumb_60->ReadState42())
++            {
++                thumb_60->state_42 = 0;
++                handled = true;
++            }
++        }
++    }
++    if (up_58->ReadState41() || down_5c->ReadState41())
++    {
++        handled = true;
++    }
++    if (up_58->ReadState40() || down_5c->ReadState40())
++    {
++        handled = true;
++    }
++
++    if (!state_54 && !handled && !thumb_60->TestRectangle(x, y))
++    {
++        track_64->HandleTimedCoordinates(x, y, value);
++        if (track_64->ReadState42() || track_64->ReadState41())
++        {
++            track_64->state_42 = 0;
++            handled = true;
++            if (y > thumb_60->GetRectangle().top)
++            {
++                for (unsigned int step = 0; step < visible_50 - 1; ++step)
++                {
++                    if (position_48 < count_4c - visible_50)
++                    {
++                        ++position_48;
++                        int thumb_left = thumb_60->GetRectangle().left;
++                        float offset = position_48 * ((track_length_68 - offset_70) / count_4c);
++                        if (offset < 0.0f)
++                        {
++                            offset = 0.0f;
++                        }
++                        thumb_60->SetRectanglePosition(
++                            thumb_left, static_cast<int>(rectangle.top + arrow_height_6c + offset));
++                    }
++                }
++            }
++            else
++            {
++                for (unsigned int step = 0; step < visible_50 - 1; ++step)
++                {
++                    if (position_48 > 0)
++                    {
++                        --position_48;
++                        int thumb_left = thumb_60->GetRectangle().left;
++                        float offset = position_48 * ((track_length_68 - offset_70) / count_4c);
++                        if (offset < 0.0f)
++                        {
++                            offset = 0.0f;
++                        }
++                        thumb_60->SetRectanglePosition(
++                            thumb_left, static_cast<int>(rectangle.top + arrow_height_6c + offset));
++                    }
++                }
++            }
++        }
++    }
++
++    if (state_54)
++    {
++        int dy = startup_input_state->ReadDeltaY();
++        if (thumb_60->GetRectangle().bottom + dy > down_5c->GetRectangle().top)
++        {
++            dy = down_5c->GetRectangle().top - thumb_60->GetRectangle().bottom;
++        }
++        else if (thumb_60->GetRectangle().top + dy < up_58->GetRectangle().bottom)
++        {
++            dy = up_58->GetRectangle().bottom - thumb_60->GetRectangle().top;
++        }
++        thumb_60->MoveRectangle(0, dy);
++        float pixel = thumb_60->GetRectangle().top - up_58->GetRectangle().bottom;
++        position_48 = static_cast<unsigned int>(
++            pixel / (track_length_68 - thumb_size_74) * (count_4c - visible_50));
++        handled = true;
++    }
++    if (ReadState40() && value == 2)
++    {
++        return true;
++    }
++    return handled;
++}
+diff --git a/src/startup_screen_scroll_bar_update.cpp b/src/startup_screen_scroll_bar_update.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..db46d4d24191d3820fa496de4aee3e13db678cc0
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_update.cpp
+@@ -0,0 +1,43 @@
++#include "startup_screen_button.h"
++#include "startup_screen_frame_item.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004b5790
++void ScreenScrollBarPrefix::Unresolved04(float elapsed)
++{
++    ScreenItem::Unresolved04(elapsed);
++    up_58->Unresolved04(elapsed);
++    down_5c->Unresolved04(elapsed);
++    if (down_5c->ReadState42())
++    {
++        if (position_48 < count_4c - visible_50)
++        {
++            ++position_48;
++            int thumb_left = thumb_60->GetRectangle().left;
++            float offset = position_48 * ((track_length_68 - offset_70) / count_4c);
++            if (offset < 0.0f)
++            {
++                offset = 0.0f;
++            }
++            thumb_60->SetRectanglePosition(
++                thumb_left, static_cast<int>(rectangle.top + arrow_height_6c + offset));
++        }
++        down_5c->state_42 = 0;
++    }
++    if (up_58->ReadState42())
++    {
++        if (position_48 > 0)
++        {
++            --position_48;
++            int thumb_left = thumb_60->GetRectangle().left;
++            float offset = position_48 * ((track_length_68 - offset_70) / count_4c);
++            if (offset < 0.0f)
++            {
++                offset = 0.0f;
++            }
++            thumb_60->SetRectanglePosition(
++                thumb_left, static_cast<int>(rectangle.top + arrow_height_6c + offset));
++        }
++        up_58->state_42 = 0;
++    }
++}
+diff --git a/src/startup_screen_scroll_bar_wheel.cpp b/src/startup_screen_scroll_bar_wheel.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..00f386c2599ff346edf0e5b01cc2c05f9b107f43
+--- /dev/null
++++ b/src/startup_screen_scroll_bar_wheel.cpp
+@@ -0,0 +1,38 @@
++#include "startup_screen_frame_item.h"
++#include "startup_screen_scroll_bar.h"
++
++// FUNCTION: BEACHLIFE 0x004b52f0
++bool ScreenScrollBarPrefix::HandleInput38(int x, int y, int value)
++{
++    if (value > 0)
++    {
++        if (position_48 > 0)
++        {
++            --position_48;
++            int thumb_left = thumb_60->GetRectangle().left;
++            float offset = position_48 * ((track_length_68 - offset_70) / count_4c);
++            if (offset < 0.0f)
++            {
++                offset = 0.0f;
++            }
++            thumb_60->SetRectanglePosition(
++                thumb_left, static_cast<int>(rectangle.top + arrow_height_6c + offset));
++        }
++    }
++    else if (value < 0)
++    {
++        if (position_48 < count_4c - visible_50)
++        {
++            ++position_48;
++            int thumb_left = thumb_60->GetRectangle().left;
++            float offset = position_48 * ((track_length_68 - offset_70) / count_4c);
++            if (offset < 0.0f)
++            {
++                offset = 0.0f;
++            }
++            thumb_60->SetRectanglePosition(
++                thumb_left, static_cast<int>(rectangle.top + arrow_height_6c + offset));
++        }
++    }
++    return true;
++}
+diff --git a/src/startup_screen_variable_filter.h b/src/startup_screen_variable_filter.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..0130eb303b190a27e04705b28bde108b5a027cae
+--- /dev/null
++++ b/src/startup_screen_variable_filter.h
+@@ -0,0 +1,55 @@
++#ifndef STARTUP_SCREEN_VARIABLE_FILTER_H
++#define STARTUP_SCREEN_VARIABLE_FILTER_H
++
++#include "startup_screen_item.h"
++
++struct ScreenBar;
++
++// Genuine 0x2c-byte filter object created for a FILTER_ table column. It is not
++// a ScreenItem (no table). Descriptive names only.
++struct ScreenVariableFilter
++{
++    // Owned bar: 0x004c20f0 deletes it (virtual destructor) when the selected
++    // key changes and creates a new 0x80-byte ScreenBar (0x004c1340) for
++    // kind-0 entries of the filter table 0x00581188.
++    ScreenBar* bar_00;
++    ScreenRectangle bounds_04;
++    ScreenRectangle initial_14;
++    int kind_24;             // Kind of the selected entry: 0 bar, 1 text, 2 none.
++    const char* variable_28; // Variable named by a kind-1 entry.
++
++    // Actual 0x004c2090, RET 0x10: stores the bounds twice, clears the bar and
++    // the shared selected key.
++    explicit ScreenVariableFilter(ScreenRectangle bounds);
++    // Actual 0x004c20e0, 13 bytes: deletes the owned bar. The physical body is
++    // shared with ScreenListBoxEntry's destructor (identical code, one copy).
++    ~ScreenVariableFilter();
++
++    // Actual 0x004c20f0, RET4: selects the filter table entry for a new key,
++    // replacing the bar.
++    void SelectKey(int key);
++    // Actual 0x004c2360, RET8: moves the filter; body separate.
++    void ApplyPosition(int dx, int dy);
++    // Actual 0x004c2330, RET8: moves the filter rectangle; body separate.
++    void MoveRectangle(int dx, int dy);
++};
++
++// Observed 0x18-byte filter table entry. Descriptive names.
++struct VariableFilterEntry
++{
++    int key;
++    int kind;             // 0 bar, 1 text, 2 none.
++    const char* variable; // Variable name shown.
++    float minimum;        // Bar range.
++    float maximum;
++    int style; // Bar style.
++};
++
++// The 28 filter entries, 0x00581188 (the selection loop's bound).
++extern VariableFilterEntry variable_filter_entries[28];
++
++// Key last selected by any filter (0x004c20f0 compares and stores it); every
++// filter constructor clears it. Descriptive name.
++extern int variable_filter_key; // 0x005baedc.
++
++#endif
+diff --git a/src/startup_screen_variable_filter_move.cpp b/src/startup_screen_variable_filter_move.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..aac6ecdb62a7278242dbb840f1ec63c79e380434
+--- /dev/null
++++ b/src/startup_screen_variable_filter_move.cpp
+@@ -0,0 +1,17 @@
++#include "startup_screen_bar.h"
++#include "startup_screen_variable_filter.h"
++
++// FUNCTION: BEACHLIFE 0x004c2330
++void ScreenVariableFilter::MoveRectangle(int dx, int dy)
++{
++    bounds_04.left += dx;
++    bounds_04.right += dx;
++    bounds_04.top += dy;
++    bounds_04.bottom += dy;
++
++    ScreenBar* bar = bar_00;
++    if (bar != 0)
++    {
++        bar->MoveRectangle(dx, dy);
++    }
++}
+diff --git a/src/startup_screen_variable_filter_position.cpp b/src/startup_screen_variable_filter_position.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1cb16730f8ca05c5ebbde84519a38bd9498d8429
+--- /dev/null
++++ b/src/startup_screen_variable_filter_position.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_variable_filter.h"
++
++// FUNCTION: BEACHLIFE 0x004c2360
++void ScreenVariableFilter::ApplyPosition(int dx, int dy)
++{
++    bounds_04.left = initial_14.left + dx;
++    bounds_04.right = initial_14.right + dx;
++    bounds_04.top = initial_14.top + dy;
++    bounds_04.bottom = initial_14.bottom + dy;
++}
+diff --git a/src/startup_screen_variable_item_constructor.cpp b/src/startup_screen_variable_item_constructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2103fbaf2642bea39672918e20971ac20b80df38
+--- /dev/null
++++ b/src/startup_screen_variable_item_constructor.cpp
+@@ -0,0 +1,15 @@
++#include "startup_screen_variable_item.h"
++
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004c8980
++ScreenVariableItem::ScreenVariableItem(
++    ScreenRectangle initial, const char* key, int font, int value_64, int value_6c)
++    : ScreenItem(initial)
++{
++    font_index_68 = font;
++    word_64 = value_64;
++    word_6c = value_6c;
++    strcpy(key_44, key);
++    kind_28 = 13;
++}
+diff --git a/src/startup_screen_variable_item_destructor.cpp b/src/startup_screen_variable_item_destructor.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0e71f204a16ff4872696d5f10e8ce8d8f171761c
+--- /dev/null
++++ b/src/startup_screen_variable_item_destructor.cpp
+@@ -0,0 +1,6 @@
++#include "startup_screen_variable_item.h"
++
++// FUNCTION: BEACHLIFE 0x004c8a20
++ScreenVariableItem::~ScreenVariableItem()
++{
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 2192998c2f0f0bd63bd85ba838f3dbcd24150d21..f24cae7945e6596d614f574739c0fb6df0b8ed43 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -199,10 +199,15 @@ struct VariableWorldPrefix
+ 
+     VariableEntity* FindObject(unsigned int id);                       // 0x0042ef60.
+     VariableEntity** FindNamed(const char* name, unsigned int* count); // 0x0042efe0, RET8.
+-    unsigned int HasNamed(const char* name);                          // 0x0042f000, RET4, EAX test.
+-    VariableEntity** ByType(unsigned char type, unsigned int* count); // 0x0042f020, RET8.
+-    VariableEntity** AllStaff(unsigned int* count);                   // 0x0042f0e0, RET4.
+-    unsigned int CountType(unsigned char type);                       // 0x0042f0f0, RET4.
++    unsigned int HasNamed(const char* name);                           // 0x0042f000, RET4, EAX test.
++    VariableEntity** ByType(unsigned char type, unsigned int* count);  // 0x0042f020, RET8.
++    VariableEntity** AllStaff(unsigned int* count);                    // 0x0042f0e0, RET4.
++    unsigned int CountType(unsigned char type);                        // 0x0042f0f0, RET4.
++
++private:
++    // Borrowed world view; construction and destruction remain separate.
++    VariableWorldPrefix();
++    ~VariableWorldPrefix();
+ };
+ 
+ using VariableWorldObject = VariableEntity;
+diff --git a/src/startup_world_cursor_names.h b/src/startup_world_cursor_names.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e8c0f7f3362862d408ec4ca251e4aea813302d3
+--- /dev/null
++++ b/src/startup_world_cursor_names.h
+@@ -0,0 +1,21 @@
++#ifndef STARTUP_WORLD_CURSOR_NAMES_H
++#define STARTUP_WORLD_CURSOR_NAMES_H
++
++// Observed prefix of the object at 0x005ab154: two pointers to name lists whose
++// first entries name placement-cursor dialog resources. Out-of-line accessors;
++// the owner type and its remaining contents are not established.
++struct WorldCursorNames
++{
++    const char** names_00;
++    const char** names_04;
++
++    const char* FirstName();  // Actual 0x00432de0: *names_00.
++    const char* SecondName(); // Actual 0x00432dd0: *names_04.
++    int CursorValue();        // Actual 0x00432df0: returns 0x43.
++    // Actual 0x00432260: atoi of the first name's characters 9 and 10.
++    int FirstNameNumber();
++};
++
++extern WorldCursorNames* world_cursor_names; // 0x005ab154.
++
++#endif
+diff --git a/src/window_count_ready_buildings.cpp b/src/window_count_ready_buildings.cpp
+index 3520995b298e877f65175ddf5c0e60c2ec287c53..73a71ee80f6e0af4ce2660e16aa2c09c5f693520 100644
+--- a/src/window_count_ready_buildings.cpp
++++ b/src/window_count_ready_buildings.cpp
+@@ -14,8 +14,7 @@ unsigned int WindowDeactivationState::CountReadyBuildings(unsigned int index)
+     while (remaining != 0)
+     {
+         VariableEntity* entity = *position;
+-        if (strcmp(entity->name_06, building->name_04) == 0 && !entity->FlagAt00460310() &&
+-            !entity->FlagAt00460340())
++        if (strcmp(entity->name_06, building->name_04) == 0 && !entity->FlagAt00460310() && !entity->FlagAt00460340())
+         {
+             ++count;
+         }

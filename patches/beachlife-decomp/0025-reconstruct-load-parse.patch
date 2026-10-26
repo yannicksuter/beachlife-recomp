@@ -1,0 +1,85 @@
+Reconstruct configuration file loading through the matched parser dependency chain.
+Preserve repeated opens, unchecked size/read behavior and overwritten token storage.
+Use the evidenced inline size-return helper with inlining limited to this source.
+
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -64,6 +64,7 @@
+     }
+     fixture_config_token.AssignValue("7", 1);
+     fixture_config_tokens.ParseTokens("generated", 9);
++    fixture_config_tokens.LoadAndParse("generated.cfg");
+     StartupConfig* owner = fixture_owner;
+     if (owner)
+     {
+--- /dev/null
++++ b/src/startup_config_load_parse.cpp
+@@ -0,0 +1,33 @@
++#include "startup_config_tokens.h"
++#include "startup_config_scan.h"
++#include <stdio.h>
++
++int ReadConfigFileBuffer(const char* filename, char* buffer, unsigned int size);
++
++static inline int GetUncheckedConfigFileSize(const char* filename)
++{
++    FILE* file = fopen(filename, "rb");
++    if (!file)
++        return 0;
++    fpos_t position;
++    fseek(file, 0, SEEK_END);
++    fgetpos(file, &position);
++    fclose(file);
++    return (int)position;
++}
++
++// FUNCTION: BEACHLIFE 0x004ec830
++void ConfigTokenBuffer::LoadAndParse(const char* filename)
++{
++    FILE* file = fopen(filename, "rb");
++    if (!file)
++        return;
++    fclose(file);
++    int size = GetUncheckedConfigFileSize(filename) + 1;
++    char* buffer = new char[size];
++    ReadConfigFileBuffer(filename, buffer, size);
++    buffer[size - 1] = 0;
++    if (AllocateTokens(CountConfigTokens(buffer, size)))
++        ParseTokens(buffer, size);
++    delete[] buffer;
++}
+--- a/src/startup_config_tokens.h
++++ b/src/startup_config_tokens.h
+@@ -20,6 +20,7 @@
+     ~ConfigTokenBuffer();
+     int AllocateTokens(unsigned int size);
+     void ParseTokens(const char* buffer, int size);
++    void LoadAndParse(const char* filename);
+ 
+     ConfigToken* tokens;
+     unsigned int count;
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -220,6 +220,12 @@
+       "size": 224,
+       "name": "StartupConfig::Append",
+       "name_status": "descriptive; original symbol and exact declaration unknown"
++    },
++    {
++      "address": "0x004ec830",
++      "size": 167,
++      "name": "ConfigTokenBuffer::LoadAndParse",
++      "name_status": "descriptive; original symbol and exact declaration unknown"
+     }
+   ],
+   "library_functions": [
+@@ -234,6 +240,9 @@
+     "startup_config_owner_destructor.cpp": [
+       "/GX",
+       "/Ob1"
++    ],
++    "startup_config_load_parse.cpp": [
++      "/Ob1"
+     ]
+   }
+ }

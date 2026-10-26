@@ -1,0 +1,1184 @@
+diff --git a/src/startup_building_guest_queue_positions.cpp b/src/startup_building_guest_queue_positions.cpp
+index 22c498a035b1f65d0ed2ccde9d98b1bb99c9a615..9455912f60d685b2ed9d446abc18d6c65627f48e 100644
+--- a/src/startup_building_guest_queue_positions.cpp
++++ b/src/startup_building_guest_queue_positions.cpp
+@@ -2,6 +2,7 @@
+ #include "startup_screen_mode_world.h"
+ #include "startup_building_queue_offsets.h"
+ #include <bit>
++#include <cstdlib>
+ 
+ static unsigned int QueueTileFlags(ScreenMapPosition position)
+ {
+@@ -163,3 +164,93 @@ ScreenMapPosition BuildingGuestQueue::EntrancePosition()
+     }
+     return { std::bit_cast<float>(word_58), std::bit_cast<float>(word_5c) };
+ }
++
++// FUNCTION: BEACHLIFE 0x00434e00
++ScreenMapPosition BuildingGuestQueue::FindQueuePosition()
++{
++    ScreenMapPosition base = { std::bit_cast<float>(word_58), std::bit_cast<float>(word_5c) };
++    ScreenMapPosition direction = { std::bit_cast<float>(word_68), std::bit_cast<float>(word_6c) };
++    ScreenMapPosition candidate = QueueOffset(base, direction);
++    if (((QueueTileFlags(candidate) & 0x10000080) && !(QueueTileFlags(candidate) & 0x8000))
++        || ((QueueTileFlags(candidate) & 2)
++            && (!(QueueTileFlags(candidate) & 0x10) || (QueueTileFlags(candidate) & 0x8000))))
++        return candidate;
++
++    if (QueueSameDirection(direction, building_queue_offsets[2])
++        || QueueSameDirection(direction, building_queue_offsets[5]))
++    {
++        ScreenMapPosition first = QueueOffset(base, building_queue_offsets[0]);
++        ScreenMapPosition second = QueueOffset(base, building_queue_offsets[6]);
++        if (QueuePointAllowed(second, 0x10000080) && QueuePointAllowed(first, 0x10000080))
++        {
++            if (std::rand() % 2)
++            {
++                word_68 = std::bit_cast<unsigned int>(building_queue_offsets[0].x);
++                word_6c = std::bit_cast<unsigned int>(building_queue_offsets[0].y);
++                return first;
++            }
++            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[6].x);
++            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[6].y);
++            return second;
++        }
++        if (((QueueTileFlags(first) & 0x10000080)
++                && !(QueueTileFlags(first) & 0x800)
++                && !(QueueTileFlags(first) & 0x8000))
++            || ((QueueTileFlags(first) & 2)
++                && (!(QueueTileFlags(first) & 0x10) || (QueueTileFlags(first) & 0x8000))))
++        {
++            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[0].x);
++            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[0].y);
++            return first;
++        }
++        if (QueuePointAllowed(second, 0x10000080))
++        {
++            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[6].x);
++            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[6].y);
++            return second;
++        }
++    }
++    else
++    {
++        ScreenMapPosition first = QueueOffset(base, building_queue_offsets[2]);
++        ScreenMapPosition second = QueueOffset(base, building_queue_offsets[5]);
++        if (QueuePointAllowed(second, 0x10000080) && QueuePointAllowed(first, 0x10000080))
++        {
++            if (std::rand() % 2)
++            {
++                word_68 = std::bit_cast<unsigned int>(building_queue_offsets[2].x);
++                word_6c = std::bit_cast<unsigned int>(building_queue_offsets[2].y);
++                return first;
++            }
++            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[5].x);
++            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[5].y);
++            return second;
++        }
++        if (QueuePointAllowed(second, 0x10000080))
++        {
++            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[5].x);
++            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[5].y);
++            return second;
++        }
++        if (QueuePointAllowed(first, 0x10000080))
++        {
++            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[2].x);
++            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[2].y);
++            return first;
++        }
++    }
++    ScreenMapPosition backward = {
++        static_cast<float>(static_cast<long double>(base.x) - direction.x),
++        static_cast<float>(static_cast<long double>(base.y) - direction.y)
++    };
++    if (((QueueTileFlags(backward) & 0x10000080) && !(QueueTileFlags(backward) & 0x8000))
++        || ((QueueTileFlags(backward) & 2)
++            && !(QueueTileFlags(backward) & 0x10)
++            && !(QueueTileFlags(backward) & 0x8000)))
++    {
++        word_68 = std::bit_cast<unsigned int>(-direction.x);
++        word_6c = std::bit_cast<unsigned int>(-direction.y);
++        return backward;
++    }
++    return candidate;
++}
+diff --git a/src/startup_renderer_blend_colour.cpp b/src/startup_renderer_blend_colour.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..924ec2ec518b4706480d5ecb212236dcbc06f397
+--- /dev/null
++++ b/src/startup_renderer_blend_colour.cpp
+@@ -0,0 +1,25 @@
++#include "startup_screen_renderer.h"
++#include "render_mask_setup.h"
++
++// FUNCTION: BEACHLIFE 0x0040bf90
++unsigned short ScreenRequestRenderer::BlendColour(unsigned short first, unsigned short second, float factor)
++{
++    long double inverse = 1.0L - factor;
++    unsigned char blue = static_cast<unsigned char>(static_cast<long long>(
++        (second & render_blue_mask & 0xff) * inverse
++        + static_cast<long double>(first & render_blue_mask & 0xff) * factor));
++    unsigned char green = static_cast<unsigned char>(static_cast<long long>(
++        (((second & render_green_mask) >> render_green_bits) & 0xff) * inverse
++        + static_cast<long double>(((first & render_green_mask) >> render_green_bits) & 0xff) * factor));
++    unsigned char red = static_cast<unsigned char>(static_cast<long long>(
++        (((second & render_red_mask) >> render_red_shift) & 0xff) * inverse
++        + static_cast<long double>(((first & render_red_mask) >> render_red_shift) & 0xff) * factor));
++    if (red > 31)
++        red = 31;
++    if (green > render_green_levels)
++        green = render_green_levels;
++    if (blue > 31)
++        blue = 31;
++    return static_cast<unsigned short>((static_cast<unsigned int>(red) << render_red_shift)
++                                       + (static_cast<unsigned int>(green) << render_green_bits) + blue);
++}
+diff --git a/src/startup_screen_palette_modify.cpp b/src/startup_screen_palette_modify.cpp
+index 1bf2153a8c01dd395af03889e034aad80dce3650..e7ec443ca457c519d74a7d90e36188b619e48557 100644
+--- a/src/startup_screen_palette_modify.cpp
++++ b/src/startup_screen_palette_modify.cpp
+@@ -3,8 +3,17 @@
+ #include "startup_screen_renderer.h"
+ #include <cstring>
+ 
++// FUNCTION: BEACHLIFE 0x0040a300
+ void BlendPaletteRange(int first, int last, const unsigned short* start,
+-    const unsigned short* end, unsigned short* output, float factor); // 0x0040a300.
++    const unsigned short* end, unsigned short* output, float factor)
++{
++    if (first <= last)
++    {
++        float inverse = 1.0f - factor;
++        for (int i = first; i <= last; ++i)
++            output[i] = screen_request_renderer->BlendColour(start[i], end[i], inverse);
++    }
++}
+ 
+ static const unsigned short* ModifyPalette(ScreenDialogPaletteModifiers* modifiers,
+     ScreenDialogResource* resource, float first, float second,
+diff --git a/src/startup_world_object_script_parse_arithmetic.cpp b/src/startup_world_object_script_parse_arithmetic.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..85fb6bad3aa0a8cd6a53f9ada270c1d9938ec514
+--- /dev/null
++++ b/src/startup_world_object_script_parse_arithmetic.cpp
+@@ -0,0 +1,93 @@
++#include "startup_world_script_actions.h"
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d6310
++int WorldSubsystemScript::ParseAddAction(unsigned int phase)
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = DecodeOperand(token);
++    count += ReadToken(token);
++    data->right_08 = DecodeOperand(token);
++    count += ReadToken(token);
++    Expression* expression = new (std::nothrow) Expression { 0, 6, data };
++    AppendExpression(expression, phase);
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d63c0
++int WorldSubsystemScript::ParseMinusAction(unsigned int phase)
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = DecodeOperand(token);
++    count += ReadToken(token);
++    data->right_08 = DecodeOperand(token);
++    count += ReadToken(token);
++    Expression* expression = new (std::nothrow) Expression { 0, 7, data };
++    AppendExpression(expression, phase);
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d6470
++int WorldSubsystemScript::ParseDivideAction(unsigned int phase)
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = DecodeOperand(token);
++    count += ReadToken(token);
++    data->right_08 = DecodeOperand(token);
++    count += ReadToken(token);
++    Expression* expression = new (std::nothrow) Expression { 0, 8, data };
++    AppendExpression(expression, phase);
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d6520
++int WorldSubsystemScript::ParseMultiplyAction(unsigned int phase)
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = DecodeOperand(token);
++    count += ReadToken(token);
++    data->right_08 = DecodeOperand(token);
++    count += ReadToken(token);
++    Expression* expression = new (std::nothrow) Expression { 0, 9, data };
++    AppendExpression(expression, phase);
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d65d0
++int WorldSubsystemScript::ParseSetAction(unsigned int phase)
++{
++    WorldActionArithmeticData* data = new (std::nothrow) WorldActionArithmeticData;
++    char token[52];
++    int count = ReadToken(token);
++    data->left_00 = DecodeOperand(token);
++    count += ReadToken(token);
++    data->right_08 = DecodeOperand(token);
++    count += ReadToken(token);
++    Expression* expression = new (std::nothrow) Expression { 0, 10, data };
++    AppendExpression(expression, phase);
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d6680
++int WorldSubsystemScript::ParsePlaySoundAction(unsigned int phase)
++{
++    const char** data = new (std::nothrow) const char*(0);
++    char token[52];
++    int count = ReadToken(token);
++    char* name = new (std::nothrow) char[std::strlen(token) + 1];
++    *data = name;
++    std::strcpy(name, token);
++    count += ReadToken(token);
++    Expression* expression = new (std::nothrow) Expression { 0, 11, data };
++    AppendExpression(expression, phase);
++    return count;
++}
+diff --git a/src/startup_world_object_script_parse_function.cpp b/src/startup_world_object_script_parse_function.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..2eaa56011dccfd4f98530221e3225a4570c06dc9
+--- /dev/null
++++ b/src/startup_world_object_script_parse_function.cpp
+@@ -0,0 +1,382 @@
++#include "startup_world_subsystems.h"
++#include "startup_game_file.h"
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d7490
++int WorldSubsystemScript::ParseFunctionAction(unsigned int phase)
++{
++    char token[52];
++    int count = ReadToken(token);
++    unsigned int* function = new (std::nothrow) unsigned int(0xb5);
++
++    if (_stricmp(token, "UpdateDesires") == 0)
++        *function = 0x0;
++    else if (_stricmp(token, "UpdateOpinions") == 0)
++        *function = 0x1;
++    else if (_stricmp(token, "UpdateDrowning") == 0)
++        *function = 0x2;
++    else if (_stricmp(token, "SearchDesire") == 0)
++        *function = 0x3;
++    else if (_stricmp(token, "DecideSwimAction") == 0)
++        *function = 0x4;
++    else if (_stricmp(token, "AlterDesires") == 0)
++        *function = 0x5;
++    else if (_stricmp(token, "GetConsumePoint") == 0)
++        *function = 0x6;
++    else if (_stricmp(token, "RandomisePallete") == 0)
++        *function = 0x7;
++    else if (_stricmp(token, "FaceSender") == 0)
++        *function = 0x8;
++    else if (_stricmp(token, "PlayToiletSound") == 0)
++        *function = 0x9;
++    else if (_stricmp(token, "AddRide") == 0)
++        *function = 0xa;
++    else if (_stricmp(token, "SetInvisible") == 0)
++        *function = 0xb;
++    else if (_stricmp(token, "SetVisible") == 0)
++        *function = 0xc;
++    else if (_stricmp(token, "GotoDancePoint") == 0)
++        *function = 0xe;
++    else if (_stricmp(token, "FindFightPoint") == 0)
++        *function = 0xf;
++    else if (_stricmp(token, "FindFightPerson") == 0)
++        *function = 0x10;
++    else if (_stricmp(token, "CreateLitter") == 0)
++        *function = 0x11;
++    else if (_stricmp(token, "SetSurfacePoint") == 0)
++        *function = 0x12;
++    else if (_stricmp(token, "ImproveOpinions") == 0)
++        *function = 0x13;
++    else if (_stricmp(token, "Debug") == 0)
++        *function = 0xb4;
++    else if (_stricmp(token, "ResetBuilderIdle") == 0)
++        *function = 0x5c;
++    else if (_stricmp(token, "FindNearestValidTile") == 0)
++        *function = 0x5d;
++    else if (_stricmp(token, "MakeStartEndCellBuilding") == 0)
++        *function = 0x5f;
++    else if (_stricmp(token, "MakeStartEndCellValid") == 0)
++        *function = 0x5e;
++    else if (_stricmp(token, "CheckForFemaleGuests") == 0)
++        *function = 0x60;
++    else if (_stricmp(token, "ResetNumBuildersWhistling") == 0)
++        *function = 0x61;
++
++    if (_stricmp(token, "FaceGuestWhistling") == 0)
++        *function = 0x62;
++    else if (_stricmp(token, "RemoveCostPoint") == 0)
++        *function = 0x64;
++    else if (_stricmp(token, "FreeBuilderOfJob") == 0)
++        *function = 0x65;
++    else if (_stricmp(token, "FreeBuilderOfJobNoBuildCallCheck") == 0)
++        *function = 0x66;
++    else if (_stricmp(token, "ReallocateBuilders") == 0)
++        *function = 0x67;
++    else if (_stricmp(token, "DeterminWhenToGoOnBreak") == 0)
++        *function = 0x68;
++    else if (_stricmp(token, "BuilderWasASleep") == 0)
++        *function = 0x69;
++    else if (_stricmp(token, "CheckForJobs") == 0)
++        *function = 0x6a;
++    else if (_stricmp(token, "RemoveBuilding") == 0)
++        *function = 0x63;
++    else if (_stricmp(token, "ResetIdle") == 0)
++        *function = 0x74;
++    else if (_stricmp(token, "FindLitter") == 0)
++        *function = 0x6b;
++    else if (_stricmp(token, "FindBinToClean") == 0)
++        *function = 0x6c;
++    else if (_stricmp(token, "FindToiletToClean") == 0)
++        *function = 0x6d;
++    else if (_stricmp(token, "FindUrgentClean") == 0)
++        *function = 0x6e;
++    else if (_stricmp(token, "FindBestScoredJob") == 0)
++        *function = 0x7d;
++    else if (_stricmp(token, "RemoveLitter") == 0)
++        *function = 0x6f;
++    else if (_stricmp(token, "GoToBinFront") == 0)
++        *function = 0x70;
++    else if (_stricmp(token, "GetWateringPos") == 0)
++        *function = 0xa0;
++    else if (_stricmp(token, "FaceBin") == 0)
++        *function = 0x71;
++    else if (_stricmp(token, "FacePlant") == 0)
++        *function = 0xa1;
++    else if (_stricmp(token, "CleanBin") == 0)
++        *function = 0x72;
++    else if (_stricmp(token, "CleanToilet") == 0)
++        *function = 0x73;
++    else if (_stricmp(token, "ResetIdle") == 0)
++        *function = 0x74;
++    else if (_stricmp(token, "FaceLitter") == 0)
++        *function = 0x75;
++    else if (_stricmp(token, "FindWanderPos") == 0)
++        *function = 0x76;
++    else if (_stricmp(token, "DidNotClean") == 0)
++        *function = 0x77;
++    else if (_stricmp(token, "StartedCleaning") == 0)
++        *function = 0x78;
++    else if (_stricmp(token, "CleanToiletTime") == 0)
++        *function = 0x7c;
++    else if (_stricmp(token, "StrollThought") == 0)
++        *function = 0x7b;
++    else if (_stricmp(token, "IdleThought") == 0)
++        *function = 0x79;
++    else if (_stricmp(token, "DirectedThought") == 0)
++        *function = 0x7a;
++    else if (_stricmp(token, "DecIdleTime") == 0)
++        *function = 0xa8;
++    else if (_stricmp(token, "ResetDirectingStaff") == 0)
++        *function = 0xa9;
++    else if (_stricmp(token, "FaceCamera") == 0)
++        *function = 0xaa;
++    else if (_stricmp(token, "SendToJob") == 0)
++        *function = 0xab;
++    else if (_stricmp(token, "StartShift") == 0)
++        *function = 0xac;
++    else if (_stricmp(token, "EndShift") == 0)
++        *function = 0xad;
++    else if (_stricmp(token, "Move2Hotel") == 0)
++        *function = 0x88;
++    else if (_stricmp(token, "Move2Tower") == 0)
++        *function = 0x89;
++    else if (_stricmp(token, "Move2SeaEntryPoint") == 0)
++        *function = 0x8b;
++    else if (_stricmp(token, "GuestDrowned") == 0)
++        *function = 0x92;
++    else if (_stricmp(token, "GuestSaved") == 0)
++        *function = 0x93;
++    else if (_stricmp(token, "IsInMyArea") == 0)
++        *function = 0x94;
++    else if (_stricmp(token, "OffsetAfterRescue") == 0)
++        *function = 0x95;
++    else if (_stricmp(token, "SetGuestInvisible") == 0)
++        *function = 0x96;
++    else if (_stricmp(token, "SetGuestVisible") == 0)
++        *function = 0x97;
++    else if (_stricmp(token, "CheckGuestStillAlive") == 0)
++        *function = 0x98;
++    else if (_stricmp(token, "FindBeachPoint") == 0)
++        *function = 0x8a;
++    else if (_stricmp(token, "FnMove2SeaEntry") == 0)
++        *function = 0x8b;
++    else if (_stricmp(token, "SearchForGuests") == 0)
++        *function = 0x8c;
++    else if (_stricmp(token, "PullGuest") == 0)
++        *function = 0x8d;
++    else if (_stricmp(token, "FaceLadder") == 0)
++        *function = 0x8e;
++    else if (_stricmp(token, "SetDrawPosBuild") == 0)
++        *function = 0x8f;
++    else if (_stricmp(token, "SetDrawPosServe") == 0)
++        *function = 0x90;
++    else if (_stricmp(token, "FindBeach") == 0)
++        *function = 0x91;
++    else if (_stricmp(token, "FindMisdemeanour") == 0)
++        *function = 0x7e;
++    else if (_stricmp(token, "IncNumSeriousFines") == 0)
++        *function = 0x7f;
++    else if (_stricmp(token, "IncNumMinorFines") == 0)
++        *function = 0x80;
++    else if (_stricmp(token, "IncNumJailed") == 0)
++        *function = 0x81;
++    else if (_stricmp(token, "IncNumCautioned") == 0)
++        *function = 0x82;
++    else if (_stricmp(token, "GoToFineOffsetAtHut") == 0)
++        *function = 0x83;
++    else if (_stricmp(token, "SetFacingDir") == 0)
++        *function = 0x85;
++    else if (_stricmp(token, "ChooseAction") == 0)
++        *function = 0x86;
++    else if (_stricmp(token, "FindJob") == 0)
++        *function = 0x99;
++    else if (_stricmp(token, "LookForBetterJob") == 0)
++        *function = 0x9a;
++    else if (_stricmp(token, "LookWatering") == 0)
++        *function = 0x9b;
++    else if (_stricmp(token, "LookForGuests") == 0)
++        *function = 0xa3;
++    else if (_stricmp(token, "ArrivedAtGuest") == 0)
++        *function = 0xa4;
++    else if (_stricmp(token, "AddToBoostTotal") == 0)
++        *function = 0xa5;
++    else if (_stricmp(token, "PatrollingThought") == 0)
++        *function = 0xa6;
++    else if (_stricmp(token, "MoveToNextBuilding") == 0)
++        *function = 0xa2;
++    else if (_stricmp(token, "AddOpinionData") == 0)
++        *function = 0xa7;
++    else if (_stricmp(token, "RandomiseAttachedPallete") == 0)
++        *function = 0x14;
++    else if (_stricmp(token, "LookForTotty") == 0)
++        *function = 0x15;
++    else if (_stricmp(token, "DoIFancySender") == 0)
++        *function = 0x16;
++    else if (_stricmp(token, "WalkToBeach") == 0)
++        *function = 0x17;
++    else if (_stricmp(token, "MoveActionPerson") == 0)
++        *function = 0x18;
++    else if (_stricmp(token, "FaceEachOther") == 0)
++        *function = 0x19;
++    else if (_stricmp(token, "HeadForBin") == 0)
++        *function = 0x1a;
++    else if (_stricmp(token, "FindSomeWhereToStay") == 0)
++        *function = 0x1b;
++    else if (_stricmp(token, "FindWalkPoint") == 0)
++        *function = 0x1c;
++    else if (_stricmp(token, "KillMe") == 0)
++        *function = 0xae;
++    else if (_stricmp(token, "DrawAttention") == 0)
++        *function = 0xaf;
++    else if (_stricmp(token, "GotAttention") == 0)
++        *function = 0xb0;
++    else if (_stricmp(token, "ForgetAttention") == 0)
++        *function = 0xb1;
++    else if (_stricmp(token, "DidNotRepair") == 0)
++        *function = 0x9d;
++    else if (_stricmp(token, "Repairing") == 0)
++        *function = 0x9f;
++    else if (_stricmp(token, "FinishedRepairs") == 0)
++        *function = 0x9e;
++    else if (_stricmp(token, "UnLit") == 0)
++        *function = 0x1d;
++    else if (_stricmp(token, "Lit") == 0)
++        *function = 0x1e;
++    else if (_stricmp(token, "MissedDesire") == 0)
++        *function = 0x1f;
++    else if (_stricmp(token, "WakeUpTime") == 0)
++        *function = 0x20;
++    else if (_stricmp(token, "LeaveHotel") == 0)
++        *function = 0x21;
++    else if (_stricmp(token, "AlterPriceOpinion") == 0)
++        *function = 0x22;
++    else if (_stricmp(token, "AlterSafetyOpinion") == 0)
++        *function = 0x24;
++    else if (_stricmp(token, "AlterQueueOpinion") == 0)
++        *function = 0x23;
++    else if (_stricmp(token, "SurfPaddlePoint") == 0)
++        *function = 0x25;
++    else if (_stricmp(token, "SurfToBeach") == 0)
++        *function = 0x26;
++    else if (_stricmp(token, "GiveBackLilo") == 0)
++        *function = 0x28;
++    else if (_stricmp(token, "GiveBackBoard") == 0)
++        *function = 0x27;
++    else if (_stricmp(token, "ClearMyDelayedMsgs") == 0)
++        *function = 0xb2;
++    else if (_stricmp(token, "GetNextPoolPoint") == 0)
++        *function = 0x29;
++    else if (_stricmp(token, "LookForVandalItem") == 0)
++        *function = 0x2a;
++    else if (_stricmp(token, "VandaliseBin") == 0)
++        *function = 0x2b;
++    else if (_stricmp(token, "Sunburn") == 0)
++        *function = 0x2c;
++    else if (_stricmp(token, "ReleaseBin") == 0)
++        *function = 0x2d;
++    else if (_stricmp(token, "LookForBench") == 0)
++        *function = 0x2e;
++    else if (_stricmp(token, "HeadForShore") == 0)
++        *function = 0x2f;
++    else if (_stricmp(token, "AlertGuests") == 0)
++        *function = 0xb3;
++    else if (_stricmp(token, "BadSafetyOpinion") == 0)
++        *function = 0x30;
++    else if (_stricmp(token, "LookForIllPoint") == 0)
++        *function = 0x31;
++    else if (_stricmp(token, "WalkAlongPath") == 0)
++        *function = 0x32;
++    else if (_stricmp(token, "WanderBeach") == 0)
++        *function = 0x33;
++    else if (_stricmp(token, "ShowThumbsOverlay") == 0)
++        *function = 0x34;
++    else if (_stricmp(token, "HuddleComplaintsOffice") == 0)
++        *function = 0x35;
++    else if (_stricmp(token, "ChooseFunSlideAction") == 0)
++        *function = 0x36;
++    else if (_stricmp(token, "SetupFunPoolSwim") == 0)
++        *function = 0x37;
++    else if (_stricmp(token, "IncrementOpinions") == 0)
++        *function = 0x38;
++    else if (_stricmp(token, "DecrementOpinions") == 0)
++        *function = 0x39;
++    else if (_stricmp(token, "CheckToiletStench") == 0)
++        *function = 0x3a;
++    else if (_stricmp(token, "DoSpotOpinion") == 0)
++        *function = 0x3b;
++
++    if (_stricmp(token, "SendOutFightingMsgs") == 0)
++        *function = 0x3c;
++    else if (_stricmp(token, "GenerateBlockedMessage") == 0)
++        *function = 0x3d;
++    else if (_stricmp(token, "GetSeaEntry") == 0)
++        *function = 0x3e;
++    else if (_stricmp(token, "SendOutToplessMessages") == 0)
++        *function = 0x3f;
++    else if (_stricmp(token, "GetonPath") == 0)
++        *function = 0x40;
++    else if (_stricmp(token, "WindSurfStraight") == 0)
++        *function = 0x41;
++    else if (_stricmp(token, "UpdatePurchaseOpinion") == 0)
++        *function = 0x42;
++    else if (_stricmp(token, "UpdatePriceScore") == 0)
++        *function = 0x43;
++    else if (_stricmp(token, "SendDetainTickerMsg") == 0)
++        *function = 0x87;
++    else if (_stricmp(token, "RandomCrowdAnim") == 0)
++        *function = 0x44;
++    else if (_stricmp(token, "WalkToWindSurf") == 0)
++        *function = 0x45;
++    else if (_stricmp(token, "ReleaseHotel") == 0)
++        *function = 0x46;
++    else if (_stricmp(token, "SendOutDeathMessage") == 0)
++        *function = 0x47;
++    else if (_stricmp(token, "AddPulledThought") == 0)
++        *function = 0x48;
++    else if (_stricmp(token, "AddSexThought") == 0)
++        *function = 0x49;
++    else if (_stricmp(token, "AddDumpedThought") == 0)
++        *function = 0x4a;
++    else if (_stricmp(token, "AddOffThought") == 0)
++        *function = 0x4b;
++    else if (_stricmp(token, "SetupStartValues") == 0)
++        *function = 0x4c;
++    else if (_stricmp(token, "DemolishedAsleep") == 0)
++        *function = 0x4d;
++    else if (_stricmp(token, "HuddleWharf") == 0)
++        *function = 0x4e;
++    else if (_stricmp(token, "AddDrowningThought") == 0)
++        *function = 0x4f;
++    else if (_stricmp(token, "NoPathToAccomadation") == 0)
++        *function = 0x50;
++    else if (_stricmp(token, "AddBadLeaveThought") == 0)
++        *function = 0x51;
++    else if (_stricmp(token, "AddBuildingFullThought") == 0)
++        *function = 0x52;
++    else if (_stricmp(token, "SetupSnogOffset") == 0)
++        *function = 0x53;
++    else if (_stricmp(token, "SetupFightTime") == 0)
++        *function = 0x54;
++    else if (_stricmp(token, "AddThoughtIDidnt") == 0)
++        *function = 0x55;
++    else if (_stricmp(token, "AddThoughtIDidIt") == 0)
++        *function = 0x56;
++    else if (_stricmp(token, "AddCommodBeachClosed") == 0)
++        *function = 0x57;
++    else if (_stricmp(token, "HeadForEntryPoint") == 0)
++        *function = 0x58;
++    else if (_stricmp(token, "GotoWorldUnloadPoint") == 0)
++        *function = 0x59;
++    else if (_stricmp(token, "ShowThumbsDown") == 0)
++        *function = 0x5a;
++    else if (_stricmp(token, "AddIllPurchaseThought") == 0)
++        *function = 0x5b;
++
++    if (*function == 0xb5)
++        StartupFatal("ObjectScript::FunctionCommand - Invalid Function %s", token);
++    count += ReadToken(token);
++    Expression* expression = new (std::nothrow) Expression { 0, 0, function };
++    AppendExpression(expression, phase);
++    return count;
++}
+diff --git a/src/startup_world_object_script_parse_if.cpp b/src/startup_world_object_script_parse_if.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc961290c21f37ed6893274297a4ad33e79d7abb
+--- /dev/null
++++ b/src/startup_world_object_script_parse_if.cpp
+@@ -0,0 +1,126 @@
++#include "startup_world_script_actions.h"
++#include "startup_game_file.h"
++#include <cstring>
++#include <new>
++
++extern std::uintptr_t world_object_script_stack[10];
++extern unsigned char world_object_script_nested;
++
++// FUNCTION: BEACHLIFE 0x004d6740
++int WorldSubsystemScript::ParseIfAction(unsigned int phase)
++{
++    unsigned char nested = world_object_script_nested;
++    int count = 0;
++    while (*cursor_591c != '(')
++    {
++        ++cursor_591c;
++        ++count;
++    }
++    char condition[52];
++    char* end = condition;
++    while (*cursor_591c != ')')
++    {
++        *end++ = *cursor_591c++;
++        ++count;
++    }
++    *end++ = *cursor_591c++;
++    ++count;
++    *end = 0;
++
++    WorldExpressionBranchData* data = new (std::nothrow) WorldExpressionBranchData;
++    if (data)
++    {
++        data->second_04 = 0;
++        data->first_00 = 0;
++        data->parsing_else_1c = 0;
++    }
++    if (condition[0] == '(')
++    {
++        unsigned int index = 1;
++        while (condition[index] == ' ')
++            ++index;
++        char left[52];
++        unsigned int length = 0;
++        while (condition[index] != ' ' && condition[index] != ')')
++            left[length++] = condition[index++];
++        left[length] = 0;
++        data->left_08 = DecodeOperand(left);
++        while (condition[index] == ' ')
++            ++index;
++        if (condition[index] == ')')
++            data->right_10.kind = 0x110;
++        else
++        {
++            while (condition[index] == ' ')
++                ++index;
++            char operation[12];
++            length = 0;
++            while (condition[index] != ' ')
++                operation[length++] = condition[index++];
++            operation[length] = 0;
++            if (std::strcmp(operation, "&&") == 0)
++                data->comparison_18 = 0;
++            else if (std::strcmp(operation, "||") == 0)
++                data->comparison_18 = 1;
++            else if (std::strcmp(operation, ">") == 0)
++                data->comparison_18 = 2;
++            else if (std::strcmp(operation, "<") == 0)
++                data->comparison_18 = 3;
++            else if (std::strcmp(operation, "==") == 0)
++                data->comparison_18 = 4;
++            else if (std::strcmp(operation, "<=") == 0)
++                data->comparison_18 = 5;
++            else if (std::strcmp(operation, "=<") == 0)
++                data->comparison_18 = 5;
++            else if (std::strcmp(operation, "=>") == 0)
++                data->comparison_18 = 6;
++            else if (std::strcmp(operation, ">=") == 0)
++                data->comparison_18 = 6;
++            else if (std::strcmp(operation, "!=") == 0)
++                data->comparison_18 = 7;
++            else
++                StartupFatal("ObjectScript::IfCommand - Invalid Operator in if statement %s", operation);
++            while (condition[index] == ' ')
++                ++index;
++            char right[52];
++            length = 0;
++            while (condition[index] != ' ' && condition[index] != ')')
++                right[length++] = condition[index++];
++            right[length] = 0;
++            if (right[0] == '"')
++            {
++                data->right_10.kind = 0x36;
++                char* text = new (std::nothrow) char[std::strlen(right) - 1];
++                data->right_10.data = reinterpret_cast<std::uintptr_t>(text);
++                right[length - 1] = 0;
++                std::strcpy(text, right + 1);
++            }
++            else
++                data->right_10 = DecodeOperand(right);
++        }
++    }
++    Expression* expression = new (std::nothrow) Expression { 0, 4, data };
++    AppendExpression(expression, phase);
++    world_object_script_nested = 1;
++    if (word_5914)
++    {
++        unsigned int index = 0;
++        while (world_object_script_stack[index])
++            ++index;
++        world_object_script_stack[index] = reinterpret_cast<std::uintptr_t>(word_5914);
++    }
++    word_5914 = data;
++    count += ParseStateActions(phase);
++    world_object_script_nested = nested;
++    if (world_object_script_stack[0])
++    {
++        unsigned int index = 0;
++        while (world_object_script_stack[index + 1])
++            ++index;
++        word_5914 = reinterpret_cast<WorldExpressionBranchData*>(world_object_script_stack[index]);
++        world_object_script_stack[index] = 0;
++    }
++    else
++        word_5914 = 0;
++    return count;
++}
+diff --git a/src/startup_world_object_script_parse_message.cpp b/src/startup_world_object_script_parse_message.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..af320ed5d75f67bc050669b3f658e87a4d8ceddd
+--- /dev/null
++++ b/src/startup_world_object_script_parse_message.cpp
+@@ -0,0 +1,74 @@
++#include "startup_world_script_actions.h"
++#include "startup_world_script_message_names.h"
++#include "startup_game_file.h"
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x004d8a10
++int WorldSubsystemScript::ParseMessageAction(unsigned int phase)
++{
++    WorldActionCommandData* data = new (std::nothrow) WorldActionCommandData;
++    if (data)
++    {
++        data->operands_04[3].kind = 0x110;
++        data->operands_04[4].kind = 0x110;
++        data->operands_04[5].kind = 0x110;
++        data->maximum_38 = 0.0f;
++        data->minimum_34 = 0.0f;
++        data->word_00 = 0;
++    }
++    char token[52];
++    int count = ReadToken(token);
++    for (unsigned int i = 0; i < 108; ++i)
++    {
++        if (std::strcmp(token, world_script_message_names[i].name) == 0)
++        {
++            data->word_00 = world_script_message_names[i].id;
++            break;
++        }
++        if (i == 107)
++            StartupFatal("SendMessage Command Not found %s", token);
++    }
++    count += ReadToken(token);
++    data->operands_04[0] = DecodeOperand(token);
++    count += ReadToken(token);
++    data->operands_04[1] = DecodeOperand(token);
++    count += ReadToken(token);
++    data->operands_04[2] = DecodeOperand(token);
++    count += ReadToken(token);
++    while (std::strcmp(token, ";") != 0)
++    {
++        if (std::strcmp(token, "Time") == 0)
++        {
++            count += ReadToken(token);
++            data->minimum_34 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "MaxTime") == 0)
++        {
++            count += ReadToken(token);
++            data->maximum_38 = static_cast<float>(std::atof(token));
++        }
++        else if (std::strcmp(token, "FloatData") == 0)
++        {
++            count += ReadToken(token);
++            data->operands_04[3] = DecodeOperand(token);
++        }
++        else if (std::strcmp(token, "State") == 0)
++        {
++            count += ReadToken(token);
++            data->operands_04[4] = DecodeOperand(token);
++        }
++        else if (std::strcmp(token, "SendFrom") == 0)
++        {
++            count += ReadToken(token);
++            data->operands_04[5] = DecodeOperand(token);
++        }
++        else
++            StartupFatal("ObjectScript::MessageCommand - Invalid command %s", token);
++        count += ReadToken(token);
++    }
++    Expression* expression = new (std::nothrow) Expression { 0, 1, data };
++    AppendExpression(expression, phase);
++    return count;
++}
+diff --git a/src/startup_world_object_script_parse_state.cpp b/src/startup_world_object_script_parse_state.cpp
+index 649eec24e81d179d7aa1a62cf4249c0f6e68170b..e1dd30f2ba16c0268f3bc53951cf8060cb3610ad 100644
+--- a/src/startup_world_object_script_parse_state.cpp
++++ b/src/startup_world_object_script_parse_state.cpp
+@@ -1,7 +1,12 @@
+ #include "startup_world_subsystems.h"
++#include "startup_world_script_actions.h"
++#include "startup_world_script_message_names.h"
+ #include "startup_game_file.h"
+ #include <cstdio>
+ #include <cstring>
++#include <cstdlib>
++#include <bit>
++#include <new>
+ 
+ // GLOBAL: BEACHLIFE 0x00582a38
+ static const struct
+@@ -205,3 +210,105 @@ int WorldSubsystemScript::ParseState()
+     ++count_5910;
+     return count;
+ }
++
++// FUNCTION: BEACHLIFE 0x004d8e40
++int WorldSubsystemScript::ParseChangeStateAction(unsigned int phase)
++{
++    WorldExpressionStateData* data = new (std::nothrow) WorldExpressionStateData { 0, 0.0f };
++    char token[52];
++    int count = ReadToken(token);
++    for (unsigned int i = 0; i < 137; ++i)
++    {
++        if (std::strcmp(token, object_script_states[i].name) == 0)
++        {
++            data->state_00 = object_script_states[i].state;
++            break;
++        }
++    }
++    count += ReadToken(token);
++    if (std::strcmp(token, ";") != 0)
++    {
++        if (std::strcmp(token, "Time") == 0)
++        {
++            count += ReadToken(token);
++            data->delay_04 = static_cast<float>(std::atof(token));
++        }
++        else
++            StartupFatal("ObjectScript::ChangeStateCommand - Invalid command %s", token);
++        count += ReadToken(token);
++    }
++    Expression* expression = new (std::nothrow) Expression { 0, 2, data };
++    AppendExpression(expression, phase);
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d7080
++int WorldSubsystemScript::ParsePlayAnimationAction(unsigned int phase)
++{
++    char token[52];
++    int count = ReadToken(token);
++    WorldExpressionAnimationData* data = new (std::nothrow) WorldExpressionAnimationData;
++    if (data)
++    {
++        data->name_00 = 0;
++        data->next_state_0c = 0;
++        data->word_10 = 0;
++        data->next_animation_04 = 0;
++        data->command_08 = 0x6c;
++        data->once_14 = 0;
++    }
++    data->release_15 = 0;
++    char* name = new (std::nothrow) char[std::strlen(token) + 1];
++    data->name_00 = name;
++    std::strcpy(name, token);
++    count += ReadToken(token);
++    while (std::strcmp(token, ";") != 0)
++    {
++        if (std::strcmp(token, "Finish") == 0)
++        {
++            count += ReadToken(token);
++            char* next = new (std::nothrow) char[std::strlen(token) + 1];
++            data->next_animation_04 = next;
++            std::strcpy(next, token);
++        }
++        else if (std::strcmp(token, "NotLooped") == 0)
++            data->release_15 = 1;
++        else if (std::strcmp(token, "ExitState") == 0)
++        {
++            count += ReadToken(token);
++            for (unsigned int i = 0; i < 137; ++i)
++            {
++                if (std::strcmp(token, object_script_states[i].name) == 0)
++                {
++                    data->next_state_0c = object_script_states[i].state;
++                    break;
++                }
++            }
++        }
++        else if (std::strcmp(token, "MaxTime") == 0)
++        {
++            count += ReadToken(token);
++            data->word_10 = std::bit_cast<unsigned int>(static_cast<float>(std::atof(token)));
++        }
++        else if (std::strcmp(token, "EndMessage") == 0)
++        {
++            count += ReadToken(token);
++            for (unsigned int i = 0; i < 108; ++i)
++            {
++                if (std::strcmp(token, world_script_message_names[i].name) == 0)
++                {
++                    data->command_08 = world_script_message_names[i].id;
++                    break;
++                }
++            }
++        }
++        else if (std::strcmp(token, "Reverse") == 0)
++            data->once_14 = 1;
++        else
++            StartupFatal("ObjectScript::AnimationCommand - Invalid Animation command %s", token);
++        count += ReadToken(token);
++    }
++    Expression* expression = new (std::nothrow) Expression { 0, 3, data };
++    AppendExpression(expression, phase);
++    return count;
++}
+diff --git a/src/startup_world_object_script_parse_switch.cpp b/src/startup_world_object_script_parse_switch.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..801ea76336e5917f821892fa01213290b9525ea7
+--- /dev/null
++++ b/src/startup_world_object_script_parse_switch.cpp
+@@ -0,0 +1,85 @@
++#include "startup_world_script_actions.h"
++#include <new>
++
++extern unsigned char world_object_script_nested;
++
++// FUNCTION: BEACHLIFE 0x004d6d00
++int WorldSubsystemScript::ParseSwitchAction(unsigned int phase)
++{
++    unsigned char nested = world_object_script_nested;
++    int count = 0;
++    while (*cursor_591c != '(')
++    {
++        ++cursor_591c;
++        ++count;
++    }
++    char condition[52];
++    char* end = condition;
++    while (*cursor_591c != ')')
++    {
++        *end++ = *cursor_591c++;
++        ++count;
++    }
++    *end++ = *cursor_591c++;
++    ++count;
++    *end = 0;
++    WorldExpressionSwitchData* data = new (std::nothrow) WorldExpressionSwitchData;
++    if (data)
++        data->cases_00 = 0;
++    if (condition[0] == '(')
++    {
++        unsigned int index = 1;
++        while (condition[index] == ' ')
++            ++index;
++        char value[52];
++        unsigned int length = 0;
++        while (condition[index] != ' ' && condition[index] != ')')
++            value[length++] = condition[index++];
++        value[length] = 0;
++        data->value_04 = DecodeOperand(value);
++        while (condition[index] == ' ' || condition[index] == ')')
++            ++index;
++    }
++    Expression* expression = new (std::nothrow) Expression { 0, 5, data };
++    AppendExpression(expression, phase);
++    world_object_script_nested = 0;
++    word_5918 = data;
++    count += ParseStateActions(phase);
++    world_object_script_nested = nested;
++    word_5918 = 0;
++    return count;
++}
++
++// FUNCTION: BEACHLIFE 0x004d6e80
++int WorldSubsystemScript::ParseCaseAction(unsigned int phase)
++{
++    char token[52];
++    int count = ReadToken(token);
++    char value[52];
++    unsigned int length = 0;
++    while (token[length] != ':')
++    {
++        value[length] = token[length];
++        ++length;
++    }
++    value[length] = 0;
++    if (word_5918->cases_00)
++    {
++        WorldExpressionSwitchData::Case* item = new (std::nothrow) WorldExpressionSwitchData::Case;
++        item->next_0c = 0;
++        item->expression_08 = 0;
++        item->value_00 = DecodeOperand(value);
++        WorldExpressionSwitchData::Case* last = word_5918->cases_00;
++        while (last->next_0c)
++            last = last->next_0c;
++        last->next_0c = item;
++    }
++    else
++    {
++        word_5918->cases_00 = new (std::nothrow) WorldExpressionSwitchData::Case;
++        word_5918->cases_00->next_0c = 0;
++        word_5918->cases_00->expression_08 = 0;
++        word_5918->cases_00->value_00 = DecodeOperand(value);
++    }
++    return count;
++}
+diff --git a/src/startup_world_route_reference.cpp b/src/startup_world_route_reference.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..452fb11858f7fe2c8facfc5b7a159fc972df2866
+--- /dev/null
++++ b/src/startup_world_route_reference.cpp
+@@ -0,0 +1,79 @@
++#include "startup_world_subsystems.h"
++#include "startup_world_vehicle_helpers.h"
++#include "startup_game_file.h"
++#include <bit>
++
++// FUNCTION: BEACHLIFE 0x004305f0
++int WorldRouteReference::Advance()
++{
++    if (reverse_04)
++        --index_08;
++    else
++        ++index_08;
++    if (index_08 == data_00->count_08 || static_cast<int>(index_08) < 0)
++        return 2;
++    if (reverse_04)
++        return index_08 == 0;
++    return index_08 == data_00->count_08 - 2;
++}
++
++// FUNCTION: BEACHLIFE 0x00430630
++bool WorldRouteReference::IsStraight()
++{
++    int count = static_cast<int>(data_00->count_08);
++    if (count <= 1)
++        return false;
++    ScreenPoint point = data_00->points_0c[0];
++    ScreenMapPosition previous = screen_terrain_grid->TileWorldPosition(point.x, point.y);
++    point = data_00->points_0c[1];
++    ScreenMapPosition current = screen_terrain_grid->TileWorldPosition(point.x, point.y);
++    ScreenMapPosition direction;
++    direction.x = static_cast<float>(static_cast<long double>(current.x) - previous.x);
++    long double y = static_cast<long double>(current.y) - previous.y;
++    direction.y = static_cast<float>(y);
++    float length = WorldSquareRoot(static_cast<float>(static_cast<long double>(direction.x) * direction.x + y * y));
++    float reciprocal = std::bit_cast<float>(0x7f000000u - std::bit_cast<unsigned int>(length));
++    reciprocal = static_cast<float>((2.0L - static_cast<long double>(length) * reciprocal) * reciprocal);
++    direction.x = static_cast<float>(static_cast<long double>(reciprocal) * direction.x);
++    direction.y = static_cast<float>(static_cast<long double>(direction.y) * reciprocal);
++    int heading = WorldDirection(direction, 8);
++    previous = current;
++    for (int i = 2; i < count; ++i)
++    {
++        point = data_00->points_0c[i];
++        current = screen_terrain_grid->TileWorldPosition(point.x, point.y);
++        long double x = static_cast<long double>(current.x) - previous.x;
++        y = static_cast<long double>(current.y) - previous.y;
++        direction.x = static_cast<float>(x);
++        direction.y = static_cast<float>(y);
++        length = WorldSquareRoot(static_cast<float>(x * x + y * y));
++        reciprocal = std::bit_cast<float>(0x7f000000u - std::bit_cast<unsigned int>(length));
++        reciprocal = static_cast<float>((2.0L - static_cast<long double>(length) * reciprocal) * reciprocal);
++        direction.x = static_cast<float>(static_cast<long double>(reciprocal) * direction.x);
++        direction.y = static_cast<float>(static_cast<long double>(direction.y) * reciprocal);
++        if (WorldDirection(direction, 8) != heading)
++            return false;
++        previous = current;
++    }
++    return true;
++}
++
++// FUNCTION: BEACHLIFE 0x004307f0
++void WorldRouteReference::SaveState(GameFileReader* file)
++{
++    file->Unknown34("m_bReverse", reverse_04);
++    file->Unknown24("m_iCurrStep", index_08);
++}
++
++// FUNCTION: BEACHLIFE 0x00430820
++void WorldRouteReference::LoadState(GameFileReader* file)
++{
++    file->ReadByte(&reverse_04);
++    file->Unknown68(&index_08);
++}
++
++// FUNCTION: BEACHLIFE 0x00486b80
++ScreenPoint WorldRouteReference::Position()
++{
++    return data_00->points_0c[index_08];
++}
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 62c133b06ecf99275ee6c42560e17e64ddd17944..b93f73b6edbab03846b473f8bb47aca30e3706da 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -12,6 +12,7 @@ struct ScreenTerrainGrid;
+ struct WorldActionCommandData;
+ struct WorldActionBranchData;
+ struct WorldExpressionBranchData;
++struct WorldExpressionSwitchData;
+ struct WorldRouteFinder
+ {
+     unsigned int FindLandRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut);  // 0x004309e0.
+@@ -303,10 +304,12 @@ struct WorldSubsystemScript
+     int ParseSetAction(unsigned int phase);                                                      // 0x004d65d0.
+     int ParsePlaySoundAction(unsigned int phase);                                                // 0x004d6680.
+     int ParseMessage();                                                                          // 0x004d90f0.
++    WorldScriptOperand DecodeOperand(const char* token);                                         // 0x004d9390.
++    void AppendExpression(Expression* expression, unsigned int phase);                           // 0x004d6f70.
+     Rule rules_00[60];
+     unsigned int count_5910;
+     WorldExpressionBranchData* word_5914;
+-    unsigned int word_5918;
++    WorldExpressionSwitchData* word_5918;
+     char* cursor_591c;
+     ~WorldSubsystemScript() noexcept(false); // 0x004d5500.
+ };

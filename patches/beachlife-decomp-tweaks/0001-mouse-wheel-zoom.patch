@@ -1,0 +1,52 @@
+diff --git a/src/startup_screen_pointer_input.cpp b/src/startup_screen_pointer_input.cpp
+index 76c37e8e72fb2eba66ec772b97e80d3c2cb747fd..0404ec71746bed7e88e28b3ec7dcd3fb81ffb4a7 100644
+--- a/src/startup_screen_pointer_input.cpp
++++ b/src/startup_screen_pointer_input.cpp
+@@ -4,6 +4,10 @@
+ #include "startup_screen_manager.h"
+ #include "startup_screen_mode_controller.h"
+ 
++// Optional tweak (not in the original game): see tweak_wheel_zoom.cpp.
++extern "C" int beachlife_tweak_wheel_zoom(void);
++void TweakWheelZoom(int wheel);
++
+ // FUNCTION: BEACHLIFE 0x004b2240
+ void ScreenManager::UpdatePointerInput()
+ {
+@@ -27,7 +31,13 @@ void ScreenManager::UpdatePointerInput()
+         }
+         if (!consumed && word_124)
+         {
+-            word_124->HandleThreeWords(x, y, wheel);
++            // Tweak: retail ignores the result; the mode controller reports
++            // whether it used the wheel (placement rotates the building).
++            consumed = word_124->HandleThreeWords(x, y, wheel);
++        }
++        if (!consumed && beachlife_tweak_wheel_zoom())
++        {
++            TweakWheelZoom(wheel);
+         }
+     }
+ 
+diff --git a/src/tweak_wheel_zoom.cpp b/src/tweak_wheel_zoom.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a7f781a216d97df947b637ee61712d9fa5bd53f8
+--- /dev/null
++++ b/src/tweak_wheel_zoom.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_renderer.h"
++#include "window_activation.h"
++
++// Optional tweak, not in the original game and off unless the player enables
++// it: in the world the mouse wheel zooms like Page Up (in) and Page Down (out).
++void TweakWheelZoom(int wheel)
++{
++    WindowDeactivationState* world = window_deactivation_state;
++    if (!world)
++        return;
++    unsigned int level = screen_request_renderer->clip_mode_54;
++    if (wheel > 0 && level > 0)
++        world->zoom_6f8 = level - 1;
++    else if (wheel < 0 && level < 2)
++        world->zoom_6f8 = level + 1;
++}

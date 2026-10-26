@@ -1,0 +1,395 @@
+diff --git a/src/tiff_decode_packbits.cpp b/src/tiff_decode_packbits.cpp
+new file mode 100644
+index 0000000..aba82fb
+--- /dev/null
++++ b/src/tiff_decode_packbits.cpp
+@@ -0,0 +1,65 @@
++#include "tga_image.h"
++#include "tiff_read_context.h"
++
++#include <stdlib.h>
++
++// FUNCTION: BEACHLIFE 0x004eb610
++void TiffDecodePackBits(TgaImage* image, TiffReadContext* context)
++{
++    unsigned int rows_per_strip = context->rows_per_strip;
++    unsigned int last_rows = static_cast<unsigned int>(image->height) % rows_per_strip;
++    if (last_rows == 0)
++        last_rows = rows_per_strip;
++    unsigned int row_bytes = static_cast<unsigned int>(image->bytes_per_pixel)
++                           * static_cast<unsigned int>(image->width);
++
++    unsigned int compressed_size = 0;
++    int strip_count = static_cast<int>(context->strip_count);
++    for (int scan = 0; scan < strip_count; ++scan)
++    {
++        unsigned int count = context->strip_byte_counts[scan];
++        if (count > compressed_size)
++            compressed_size = count;
++    }
++    unsigned char* buffer = static_cast<unsigned char*>(malloc(compressed_size));
++    for (int strip = 0; strip < static_cast<int>(context->strip_count); ++strip)
++    {
++        fseek(context->file, context->strip_offsets[strip], SEEK_SET);
++        fread(buffer, context->strip_byte_counts[strip], 1, context->file);
++        unsigned int strip_rows;
++        if (static_cast<unsigned int>(strip) == context->strip_count - 1u)
++            strip_rows = last_rows;
++        else
++            strip_rows = context->rows_per_strip;
++
++        unsigned char* source = buffer;
++        for (int row = 0; row < static_cast<int>(strip_rows); ++row)
++        {
++            unsigned int offset = (context->rows_per_strip * strip + row) * row_bytes;
++            unsigned char* destination = image->pixels + offset;
++            unsigned int produced = 0;
++            while (static_cast<int>(produced) < static_cast<int>(row_bytes))
++            {
++                signed char control = static_cast<signed char>(*source++);
++                if (control >= 0)
++                {
++                    int count = control + 1;
++                    while (count-- != 0)
++                    {
++                        *destination++ = *source++;
++                        ++produced;
++                    }
++                }
++                else if (control != -128)
++                {
++                    unsigned int count = 1 - control;
++                    produced += count;
++                    while (count-- != 0)
++                        *destination++ = *source;
++                    ++source;
++                }
++            }
++        }
++    }
++    free(buffer);
++}
+diff --git a/src/tiff_decode_strips.cpp b/src/tiff_decode_strips.cpp
+new file mode 100644
+index 0000000..f5e4639
+--- /dev/null
++++ b/src/tiff_decode_strips.cpp
+@@ -0,0 +1,14 @@
++#include "tga_image.h"
++#include "tiff_read_context.h"
++
++// FUNCTION: BEACHLIFE 0x004eb4b0
++void TiffDecodeStrips(TgaImage* image, TiffReadContext* context)
++{
++    unsigned char* destination = image->pixels;
++    for (int strip = 0; strip < static_cast<int>(context->strip_count); ++strip)
++    {
++        fseek(context->file, context->strip_offsets[strip], SEEK_SET);
++        fread(destination, context->strip_byte_counts[strip], 1, context->file);
++        destination += context->strip_byte_counts[strip];
++    }
++}
+diff --git a/src/tiff_decode_tiles.cpp b/src/tiff_decode_tiles.cpp
+new file mode 100644
+index 0000000..562be8d
+--- /dev/null
++++ b/src/tiff_decode_tiles.cpp
+@@ -0,0 +1,34 @@
++#include "tga_image.h"
++#include "tiff_read_context.h"
++
++// FUNCTION: BEACHLIFE 0x004eb510
++void TiffDecodeTiles(TgaImage* image, TiffReadContext* context)
++{
++    unsigned char* pixels = image->pixels;
++    unsigned int tile_rows = context->height / context->tile_height;
++    unsigned int tile_width = context->tile_width;
++    unsigned int width = context->width;
++    unsigned int bytes_per_sample = context->bits_per_sample >> 3;
++    unsigned int tile_columns = width / tile_width;
++    unsigned int bytes_per_pixel = bytes_per_sample * context->samples_per_pixel;
++    unsigned int row_bytes = width * bytes_per_pixel;
++    unsigned int tile_row_bytes = tile_width * bytes_per_pixel;
++    unsigned int tile_index = 0;
++    for (int tile_row = 0; tile_row < static_cast<int>(tile_rows); ++tile_row)
++    {
++        unsigned int horizontal_offset = 0;
++        for (int tile_column = 0; tile_column < static_cast<int>(tile_columns); ++tile_column)
++        {
++            fseek(context->file, context->tile_offsets[tile_index], SEEK_SET);
++            unsigned int current_height = context->tile_height;
++            for (int row = 0; row < static_cast<int>(current_height); ++row)
++            {
++                unsigned int offset = (current_height * tile_row + row) * row_bytes + horizontal_offset;
++                fread(pixels + offset, tile_row_bytes, 1, context->file);
++                current_height = context->tile_height;
++            }
++            ++tile_index;
++            horizontal_offset += tile_row_bytes;
++        }
++    }
++}
+diff --git a/src/tiff_directory_reader.cpp b/src/tiff_directory_reader.cpp
+new file mode 100644
+index 0000000..7c614e4
+--- /dev/null
++++ b/src/tiff_directory_reader.cpp
+@@ -0,0 +1,136 @@
++#include "tiff_read_context.h"
++#include "startup_resource_binary_read.h"
++
++#include <new>
++#include <string.h>
++
++struct TiffDirectoryEntry
++{
++    short tag;
++    unsigned short type;
++    int count;
++    unsigned int value;
++};
++
++// FUNCTION: BEACHLIFE 0x004eb920
++int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
++{
++    fseek(context->file, offset, SEEK_SET);
++    int remaining = ReadResourceWord(context->file);
++    while (remaining != 0)
++    {
++        TiffDirectoryEntry entry;
++        fread(&entry, 12, 1, context->file);
++        switch (entry.tag)
++        {
++        case 256:
++            context->width = entry.value;
++            break;
++        case 257:
++            context->height = entry.value;
++            break;
++        case 258:
++            context->bits_per_sample = static_cast<unsigned short>(entry.value);
++            break;
++        case 259:
++            context->compression = entry.value;
++            break;
++        case 270:
++            if (entry.count > 79)
++            {
++                strcpy(context->description, "Title too long");
++            }
++            else
++            {
++                long position = ftell(context->file);
++                fseek(context->file, entry.value, SEEK_SET);
++                fread(context->description, 1, entry.count, context->file);
++                fseek(context->file, position, SEEK_SET);
++            }
++            break;
++        case 273:
++            context->strip_count = entry.count;
++            context->strip_offsets_position = entry.value;
++            break;
++        case 277:
++            context->samples_per_pixel = static_cast<unsigned short>(entry.value);
++            break;
++        case 278:
++            context->rows_per_strip = entry.value;
++            break;
++        case 279:
++            context->strip_byte_counts_position = entry.value;
++            break;
++        case 320:
++            context->palette_offset = entry.value;
++            break;
++        case 322:
++            context->tile_width = entry.value;
++            break;
++        case 323:
++            context->tile_height = entry.value;
++            break;
++        case 324:
++            context->tile_offsets_position = entry.value;
++            break;
++        case 325:
++            context->tile_byte_counts_position = entry.value;
++            break;
++        case 4096:
++            context->word_ac = entry.value;
++            break;
++        case 4097:
++            context->word_b0 = entry.value;
++            break;
++        case 4098:
++            context->word_b4 = entry.value;
++            break;
++        case 4099:
++            context->word_b8 = entry.value;
++            break;
++        }
++        --remaining;
++    }
++    fread(&context->next_directory_offset, 4, 1, context->file);
++
++    if (context->strip_offsets_position != 0)
++    {
++        unsigned int* counts = static_cast<unsigned int*>(::operator new(context->strip_count << 2));
++        unsigned int offset_bytes = context->strip_count << 2;
++        context->strip_byte_counts = counts;
++        context->strip_offsets = static_cast<unsigned int*>(::operator new(offset_bytes));
++        if (context->strip_count > 1)
++        {
++            fseek(context->file, context->strip_byte_counts_position, SEEK_SET);
++            fread(context->strip_byte_counts, context->strip_count << 2, 1, context->file);
++            fseek(context->file, context->strip_offsets_position, SEEK_SET);
++            fread(context->strip_offsets, context->strip_count << 2, 1, context->file);
++        }
++        else
++        {
++            context->strip_byte_counts[0] = context->strip_byte_counts_position;
++            context->strip_offsets[0] = context->strip_offsets_position;
++        }
++    }
++    else
++    {
++        unsigned int tile_rows = context->height / context->tile_height;
++        unsigned int tile_count = tile_rows * (context->width / context->tile_width);
++        unsigned int bytes = tile_count << 2;
++        context->tile_byte_counts = static_cast<unsigned int*>(::operator new(bytes));
++        context->tile_offsets = static_cast<unsigned int*>(::operator new(bytes));
++        if (static_cast<int>(tile_count) > 1)
++        {
++            fseek(context->file, context->tile_byte_counts_position, SEEK_SET);
++            fread(context->tile_byte_counts, bytes, 1, context->file);
++            fseek(context->file, context->tile_offsets_position, SEEK_SET);
++            fread(context->tile_offsets, bytes, 1, context->file);
++        }
++        else
++        {
++            context->tile_byte_counts[0] = context->tile_byte_counts_position;
++            context->tile_offsets[0] = context->tile_offsets_position;
++        }
++    }
++    return 0;
++}
+diff --git a/src/tiff_image_loader.cpp b/src/tiff_image_loader.cpp
+new file mode 100644
+index 0000000..cb41391
+--- /dev/null
++++ b/src/tiff_image_loader.cpp
+@@ -0,0 +1,79 @@
++#include "tiff_image_loader.h"
++#include "tiff_read_context.h"
++#include "tga_image.h"
++#include <new>
++#include <stdlib.h>
++#include <string.h>
++
++struct TiffFileHeader
++{
++    unsigned short byte_order;
++    unsigned short magic;
++    unsigned int directory_offset;
++};
++
++// FUNCTION: BEACHLIFE 0x004ebd80
++TgaImage* LoadTiffFile(const char* filename)
++{
++    TiffReadContext* context = static_cast<TiffReadContext*>(malloc(sizeof(TiffReadContext)));
++    memset(context, 0, sizeof(TiffReadContext));
++    if (!context)
++        return 0;
++
++    context->file = fopen(filename, "rb");
++    if (!context->file)
++    {
++        free(context);
++        return 0;
++    }
++
++    TiffFileHeader header;
++    fread(&header, 8, 1, context->file);
++    if (header.byte_order != 0x4949)
++        return 0;
++    if (header.magic != 42)
++        return 0;
++
++    TiffReadDirectory(header.directory_offset, context);
++    TgaImage* image = new TgaImage(static_cast<int>(context->width),
++        static_cast<int>(context->height),
++        context->samples_per_pixel << 3,
++        static_cast<unsigned char>(context->palette_offset != 0));
++
++    if (context->tile_offsets_position)
++    {
++        TiffDecodeTiles(image, context);
++    }
++    else if (context->compression == 1)
++    {
++        TiffDecodeStrips(image, context);
++    }
++    else if (context->compression == 0x8005)
++    {
++        TiffDecodePackBits(image, context);
++    }
++
++    if (context->palette_offset)
++        TiffReadPalette(context, image->palette);
++    fclose(context->file);
++
++    if (context->samples_per_pixel == 4)
++    {
++        TgaImage* converted = TiffConvertFourSamples(image);
++        delete image;
++        image = converted;
++    }
++    if (context->bits_per_sample == 4)
++    {
++        TgaImage* converted = TiffExpandFourBits(image);
++        delete image;
++        image = converted;
++    }
++
++    ::operator delete(context->strip_byte_counts);
++    ::operator delete(context->strip_offsets);
++    ::operator delete(context->tile_offsets);
++    ::operator delete(context->tile_byte_counts);
++    free(context);
++    return image;
++}
+diff --git a/src/tiff_image_loader.h b/src/tiff_image_loader.h
+new file mode 100644
+index 0000000..956de33
+--- /dev/null
++++ b/src/tiff_image_loader.h
+@@ -0,0 +1,7 @@
++#pragma once
++
++struct TgaImage;
++
++// Actual 0x004ebd80, cdecl(filename), image pointer result; no callee stack pop.
++// This TIFF path is distinct from LoadTgaFile at 0x004ea910.
++TgaImage* LoadTiffFile(const char* filename);
+diff --git a/src/tiff_read_palette.cpp b/src/tiff_read_palette.cpp
+new file mode 100644
+index 0000000..b8045e2
+--- /dev/null
++++ b/src/tiff_read_palette.cpp
+@@ -0,0 +1,18 @@
++#include "tiff_read_context.h"
++#include "tiff_palette_byte.h"
++#include "startup_resource_binary_read.h"
++
++// FUNCTION: BEACHLIFE 0x004ebcf0
++void TiffReadPalette(TiffReadContext* context, unsigned char* palette)
++{
++    fseek(context->file, static_cast<int>(context->palette_offset), SEEK_SET);
++
++    for (int index = 0; index < 256; ++index)
++        palette[index * 3] = TiffPaletteByte(ReadResourceWord(context->file));
++
++    for (int index = 0; index < 256; ++index)
++        palette[index * 3 + 1] = TiffPaletteByte(ReadResourceWord(context->file));
++
++    for (int index = 0; index < 256; ++index)
++        palette[index * 3 + 2] = TiffPaletteByte(ReadResourceWord(context->file));
++}

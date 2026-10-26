@@ -1,7 +1,8 @@
 # Building
 
-The current executable is a native bootstrap, with no game or graphics
-implementation yet. Building requires no original game files or decomp source.
+The current executable is the graphical launcher and native runtime. Gameplay
+and broader content-language detection are not implemented yet. Building requires
+no original game files or matching compiler.
 
 ## Requirements and presets
 
@@ -10,6 +11,7 @@ checkout so generated identity can record the source commit. Configure outside
 the source directory. `CMakeUserPresets.json` can hold local overrides.
 
 ```sh
+python3 tools/setup_dependencies.py
 cmake --workflow --preset debug
 cmake --workflow --preset release
 cmake --workflow --preset launcher
@@ -17,7 +19,7 @@ cmake --workflow --preset launcher
 
 Each workflow configures, builds and runs CTest. `debug` is for development;
 `release` is the distributable configuration; `launcher` currently builds the
-same bootstrap and will grow with the host. Individual commands are available:
+same launcher. Individual commands are available:
 
 ```sh
 cmake --preset release
@@ -30,12 +32,561 @@ commit and dirty marker come from Git. `--build-info` emits the complete JSON
 record. Local builds use channel `dev`; Actions sets `test` or `release` and
 records its PR/run IDs. Test/release packages require clean committed sources.
 
+SDL3, Dear ImGui, stb, FreeType, unshield, zlib, dr_libs (MP3) and pl_mpeg (MPEG-1 for the
+boot build's compat layer) are immutable Git submodule pins.
+Dependency setup is an explicit network step; CMake never fetches source.
+Configuration exports each clean pin into the build directory, applies any ordered
+`patches/<name>/series`,
+and records file hashes. Every build rejects edited checkouts, edited prepared
+files or stale patch identities. Put changes in patch files, never in `extern/`.
+
+## Source formatting
+
+All C and C++ sources in `src/`, `tests/` and `decomp/` use clang-format at the
+version pinned in `tools/requirements-format.txt`. Patch releases can format
+differently, so the tool refuses any other version. Install the pinned wheel
+once, then format the work tree:
+
+```sh
+python3 -m venv build/format-venv
+build/format-venv/bin/pip install -r tools/requirements-format.txt
+python3 tools/format_sources.py
+python3 tools/format_sources.py --check
+```
+
+Paths limit either command to files or folders. Tracked and new files are
+included; submodules, ignored files and `orig/` are not. `--check` prints the
+differences and fails without changing anything; the Linux CI job runs it.
+
+The root `.clang-format` is the native C++20 style. `decomp/.clang-format` keeps
+include order and C++98 `> >` for the VC6 compiler. Formatting moves lines and
+adds braces but does not change behavior. Only line numbers (`__LINE__`,
+`std::source_location`) can differ in the output. Code that must keep its line
+numbers goes between `// clang-format off` and `// clang-format on` with a
+reason. Format a reconstructed file before writing patches for it, so the
+patches apply to formatted source.
+
+## Matching compiler options
+
+The prepared matching target JSON can declare `source_compile_options` for a
+qualified source file. It maps a `.cpp` basename, unique across game and support
+sources, to a list containing `/GX`, `/Ob1`, or both. Unknown files, directory
+paths, ambiguous basenames, duplicate flags and other options are rejected.
+The comparison retention fixture cannot receive these options. Unlisted files
+retain the default compiler settings; the runtime release wrapper retains its
+existing `/O1` setting even when additional qualified options apply. Add target
+changes through a reconstruction patch and verify that all retained methods still
+match. These options do not change the native CMake build.
+
+The reconstructed screen-registration cleanup matches the complete original
+method after relocation normalization. It clears the published manager even
+when another manager is registered. Rebuilt global addresses differ, so raw
+bytes are unequal; full manager ownership and native execution remain separate.
+
+The TIFF palette-byte converter matches the complete original 34-byte body
+after address normalization. Its two constant addresses and CRT tail address
+differ in raw bytes. Multiplication order and both floating-point constants
+are retained; code provenance and native floating-point equivalence remain
+separate qualifications.
+
+A `/GX` entry adds a generated COFF definition of the absolute `__except_list=0`
+ABI symbol required for VC6's `FS:[0]` exception registration. The object has no
+code, data or sections. Actual CRT imports and comparison metadata must still be
+provided by the target; the tool does not synthesize exception handlers. Matching
+results record the selected source options and generated object's identity.
+
+Matching targets can also declare `comparison_anchors` for unresolved member
+call identities. The tool generates fingerprinted definitions in ignored build
+output, outside the prepared source export, and excludes them from credited
+methods. These definitions establish comparison addresses only. An image using
+them must never be executed; native builds require the actual dependency source.
+
+Supported anchor kinds are `null-pointer-member` for pointer returns,
+`void-member` for `void` returns and `false-member` for `bool` returns. Each
+entry must identify one audited original method and its exact CSV symbol and
+extent. Constructors, destructors and other return types are unsupported;
+an anchor does not qualify a dependency as reconstructed or native-tested.
+
+## Reconstructed configuration libraries
+
+Build the prepared configuration and VFS file libraries without test executables:
+
+```sh
+cmake --preset release -B build/reconstructed-config \
+  -DBUILD_TESTING=OFF
+cmake --build build/reconstructed-config \
+  --target beachlife_reconstructed_startup_config --parallel
+```
+
+Consumers link `beachlife_reconstructed_startup_config`; its public dependencies
+provide the file, scanner, token, allocation, parser and loading libraries.
+Normal Play now requires these libraries, so the former
+`BEACHLIFE_BUILD_RECONSTRUCTED_CONFIG` switch is no longer needed. They use the
+same pinned export and per-build verification as the tests below. The historical
+commit in `patches/beachlife-decomp/source.json` must be available locally; CI's
+compiling jobs fetch full history. Configuration never fetches source itself.
+Packaging verifies the native reconstructed export again and records its baseline
+revision, source tree and ordered reconstruction/portability patch hashes in
+`SOURCE-MANIFEST.json`, alongside third-party dependency identities.
+Image, input, cursor and surface subsystem targets remain optional.
+
+The game's `beachlife_startup_configuration` host library validates the audited
+1,242-byte English configuration, then constructs the real owner on the game
+thread before the loading fade. It retains the immutable input snapshot and
+the shared `beachlife_retail_files` binding through teardown. Unsupported input
+fails before the owner is published. During faithful construction, a temporary
+process-wide default allocation handler terminates on allocation failure;
+snapshot/preflight errors remain recoverable. The original parser is unchanged.
+`startup_configuration` runs generated owner/lifetime/rejection checks with
+both default and injected allocators, plus subprocess allocation-failure probes.
+Its wrapper requires both successful exit and an explicit completion marker,
+so an original zero-status fatal exit cannot pass the test.
+
+## Reconstructed subsystem tests
+
+The optional targets compile reconstructed image, file, configuration, input,
+surface, pool-lock, screen-list, screen-item and screen-registry helpers using the native compiler.
+They consume a committed source export with faithful patches through the same
+preparation tool as dependencies. Enable them explicitly:
+
+```sh
+cmake --preset release -B build/reconstructed-tga \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
+cmake --build build/reconstructed-tga \
+  --target reconstructed_tga_tests reconstructed_files_tests \
+    reconstructed_config_tests reconstructed_config_tokens_tests \
+    reconstructed_config_allocation_tests reconstructed_config_parser_tests \
+    reconstructed_config_loading_tests reconstructed_startup_config_tests \
+    startup_configuration_tests startup_configuration_default_tests \
+    reconstructed_input_tests reconstructed_cursor_tests \
+    reconstructed_surfaces_tests reconstructed_surface_pixels_tests \
+    reconstructed_pool_lock_tests reconstructed_screen_list_tests \
+    reconstructed_screen_item_tests reconstructed_screen_registry_tests reconstructed_screen_placements_tests --parallel
+ctest --test-dir build/reconstructed-tga -L reconstructed --output-on-failure
+```
+
+The test option requires
+`BUILD_TESTING`. `patches/beachlife-decomp/source.json` owns the
+full baseline commit pin shared with matching; that object must exist locally,
+so shallow checkouts may need more history before configuration. Configuration
+never fetches it. New reconstructed increments are patches listed in
+`reconstruction-series`; native compatibility patches in `native-pre-series`
+restore declarations needed before optional experimental composition. Native
+portability patches follow in `series`.
+Keep the baseline intact. Uncommitted edits under `decomp/` are rejected;
+unrelated host edits do not affect the export.
+
+Configuration prepares `build/reconstructed-tga/prepared/beachlife-decomp/`
+and its adjacent JSON manifest. The export's `src/` directory contains ordinary
+C++ translation units and headers, including files added by reconstruction
+patches. Open that directory to read the combined source; the patches record
+changes relative to the pinned baseline.
+
+Every library build, including an otherwise up-to-date build, verifies the
+revision, source hashes, ordered patch series
+and prepared files. Update reconstruction or portability patches and reconfigure; never edit prepared
+files. The matching-only VC6 release wrapper is excluded in favor of the host
+CRT. Subsystem test executables remain opt-in; configuration and file libraries
+are part of normal Play.
+
+### Experimental reconstructed code
+
+Fully implemented reconstructions can be qualified with native behavior tests
+while original-compiler byte matching continues. Enable this source selection
+explicitly in a separate build directory:
+
+```sh
+cmake --preset release -B build/experimental \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON
+cmake --build build/experimental --parallel
+ctest --test-dir build/experimental -L reconstructed --output-on-failure
+```
+
+The `release` preset selects compiler optimization; the build channel remains
+`dev`. The option defaults to `OFF` and is rejected with the `release` channel.
+It selects the `native-experimental` prepared-source profile, applying
+`reconstruction-series`, then `native-pre-series`, then `experimental-series`,
+then the native portability `series`. Ordinary native and matching builds ignore `experimental-series`.
+The preparation CLI also accepts `--decomp-profile native-experimental`.
+
+Build metadata records `decomp_profile`; packaging verifies that exact profile
+and records its ordered patch hashes. Packages with different source profiles
+cannot form one release matrix. Enabling the option does not complete a missing
+game controller or menu. Each experimental subsystem still needs real source,
+behavior tests and an explicit runtime connection. A native test pass does not
+count as a byte match or establish production gameplay.
+
+The pool-lock target compiles the unchanged acquisition and cleanup methods
+against a test-only platform provider. It checks that both methods use the same
+32-bit word, preserves adaptive state across fast and fallback acquisition, and
+verifies the wait sequence and cleanup on normal and exceptional host lifetimes.
+Its deterministic single-threaded provider exercises no operating-system
+synchronization. Concurrent behavior, original parent unwind machinery and
+production use remain separate qualification steps.
+
+The screen-list target combines the actual node builder, insertion, Begin/End,
+chunk allocator, recycling and shared lock code. Its native patch sizes slots
+for the compiled node and establishes storage and recycled-object lifetimes.
+A scoped scalar-new replacement lives only in the test executable, leaving
+the prepared methods unchanged. A fixed real-storage ledger checks allocation
+sizes and order; an independent sequence checks both list links, payloads,
+sentinels, reuse, guards and cleanup after labelled host allocation exceptions.
+Checked fixture teardown releases its own backing storage. It does not implement
+the missing retail list destructor. The target disables LTO and uses the same
+deterministic platform provider as the pool-lock test. Null-return scavenging,
+retry after allocation failure, original CRT failure behavior, operating-system
+concurrency and production screen ownership remain outside its tested domain.
+
+The screen-item target exercises the actual constructor, ordinary destructor,
+rectangle callbacks and retained list/search helpers with generated live objects.
+It checks initial state, repeated positioning, bounded movement, virtual calls,
+owned-text release and unchanged surrounding storage. Paired scalar allocation
+and deletion providers live only in the test executable and use the host CRT.
+Name lookup uses the same active-entry and value-node declarations as insertion,
+with genuine generated Dialog objects. The optional archive publishes
+`BEACHLIFE_DECOMP_TEST_OBJECTS=1` to its consumers so every translation unit sees
+the same conditional inherited-constructor declaration. That native facility is
+off by default and supplies no original Dialog constructor or cleanup. The
+actual Dialog preparation and positioning methods supply their generated
+virtual-table entries; the positioning override is linked from its own source.
+The target disables LTO and links no VC6 release support. It requires no ISO;
+complete derived lifetimes, original allocation-failure behavior and production
+screen rendering remain separate work.
+
+The screen-registry target connects actual insertion and name lookup in one
+archive, with one owner for each iterator, pool and screen method. Generated
+live Dialog objects use the same test-only construction facility. Literal
+expectations cover empty and missing names, duplicates, ordering, bounded
+subranges, pointer identity and recycled-node reuse; lookup preserves the graph
+and object state. Paired scalar allocation providers and the deterministic
+uncontended lock provider belong only to the test executable. The actual Dialog
+positioning override is linked for the generated virtual table; this fixture
+does not exercise that callback. No original Dialog or list lifetime, allocation
+failure, operating-system concurrency, menu flow or production use is claimed.
+
+The surface-pixel target compiles the actual pixel-access method and error
+handler. Generated lock providers check descriptor initialization, arguments,
+signed success results and state changes during the callback. The same fixture
+covers software pixels, null results, valid table aliases and unchanged guards.
+Native layouts follow the compiled pointer types; these tests require no graphics
+device and do not qualify original x86 object layouts or a rendering backend.
+
+The generated fixtures check palette/pixel offsets, channel conversion, row
+orientation, raw and run-length packets, empty images and buffer ownership.
+They require no ISO or extracted data. The target is a native test executable;
+the production launcher still uses its existing decoder. A passing test does
+not establish a complete TGA parser, original ABI matching or gameplay.
+
+The file target runs the matched size, plain-file, BLE and startup configuration
+readers through an explicit VFS session. Its portability patches preserve 32-bit size/count behavior,
+the period terminator and signed byte inversion on 64-bit hosts. Scoped bindings
+belong to one thread, restore nested sessions and keep open handles' mounts alive.
+Reads use the supplied `FileSource`; they never fall back to the process directory
+or reopen the ISO. Generated tests cover real folder reads, aliases, short reads,
+stdio error results, seek/position behavior, ownership and repeated sessions.
+The configuration reader writes into caller-owned storage without adding a
+terminator. It returns one whenever opening succeeds, even after a short or
+failed read, preserving the original behavior. Generated tests check unchanged
+buffer tails and guards, error paths and buffer lifetime after the session ends.
+`BEACHLIFE_RECONSTRUCTED_FIXTURE_ROOT` selects the generated fixture directory;
+it defaults to the build tree. For a Windows cross-build run through Wine, use
+a path on its C: drive if Wine exposes the Unix build path as a reparse point.
+
+The unchecked retail loaders require stable files with a successful second open
+and sizes from 1 through `INT32_MAX - 1`; BLE inversion additionally requires a
+complete read. Tests cover empty/missing files and size-only 32-bit truncation
+separately, without exercising invalid allocation/index domains or reading
+uninitialized tails. This target qualifies file services for reconstructed
+startup; it does not connect a complete game driver to Play.
+
+The configuration target runs eight matched scanner helpers over generated byte
+arrays. It checks separator rules, apostrophe counting and quoted/unquoted
+extents, quote seeking and token counts, including embedded NULs, high-bit bytes
+and nonpositive sizes. The value helper requires one readable byte even for a
+nonpositive size; quote seeking needs an extra readable byte after a positive
+extent. Tests retain the earlier exact-boundary checks and screen composed
+counter inputs with an independent read-bound model before running unchecked
+code. Malformed cases outside that domain are excluded explicitly. These
+helpers are also used by the separate token-parser target. Value classification
+checks the numeric prefix before counting quotes and requires readable byte zero
+even for nonpositive sizes. The separate quoted-value helper returns the extent
+through the second double quote, wherever it occurs; it does not validate string
+syntax. Generated tests preserve both contracts and their exact read bounds.
+
+The token lifecycle target runs matched initialization and cleanup through the
+host C++ allocator. Generated fixtures verify borrowed data remains unchanged,
+owned scalar and array allocations are released once in the original order,
+and owner fields and surrounding guards are unchanged.
+
+The allocation target adds a native `std::nothrow` adaptation for the legacy
+default allocator's null-on-failure result. Generated fixtures check bounded
+table sizes, zero-size allocation, initialized records and injected failures.
+They preserve the overwritten old pointer and unchanged count on failure;
+test-owned storage is recovered separately. Custom allocation handlers and
+oversized or wrapping counts remain unqualified.
+
+The token-parser target adds matched name/value assignment, decimal-prefix
+conversion and token parsing. Generated fixtures check copied bytes, terminators,
+record order and retained old allocations against an independent byte model.
+Callers provide initialized records with enough capacity and one readable
+lookahead byte; the parser does not enforce capacity or update the stored count.
+Unsafe composed inputs are screened before executing unchecked source. Numeric
+fixtures use exact integers of magnitude at most 1,000,000 with at most one zero
+fractional digit, including signed zero. General fractional parity with the
+original x87 arithmetic, allocation failure and invalid pointer/extent domains
+remain unqualified. The setters use ordinary successful host allocations here;
+the allocation target's failure adaptation does not extend to these methods.
+This target does not load configuration files or connect a game startup driver.
+
+The configuration-loading target runs the matched file orchestration through the
+existing VFS reader, scanner, allocator and parser. It preserves the probe, size
+and read opens, low-32-bit size arithmetic, ignored I/O results and final NUL.
+Generated fixtures cover complete bounded files, repeated partial reads, a file
+growing between opens, virtual sizes above 4 GiB and checked token-table allocation
+failure. A previous table is overwritten without being freed; tests recover that
+storage separately. Failure can leave a null table with a nonzero old count,
+which the unchecked cleanup cannot safely destroy; fixtures observe that state
+before resetting their own count for teardown. The temporary allocation uses the legacy nonthrowing result
+without adding a null check. Temporary and payload allocations must succeed in
+the executed domain.
+
+The loader's final NUL is inside its allocation, with no extra lookahead padding.
+Composed records are generated to stay within that extent. Missing read opens or
+failed reads are exercised only when the size stage produced a one-byte buffer,
+which the final NUL fully initializes. Positive-size incomplete reads, position
+failures that write no result, invalid size arithmetic and general fractional
+parity remain unqualified. Tests also load generated files from a real folder and
+check that parsed allocations outlive the VFS session.
+`BEACHLIFE_RECONSTRUCTED_CONFIG_FIXTURE_ROOT` selects their separate output
+directory, defaulting to the build tree; Windows cross tests can use a Wine C:
+path. Existing subsystem fixtures create owners with no VFS bound before their
+own observations. Additional loading cases construct the real owner while a
+source is mounted: prefilled storage and a first-open observer check that the
+table pointer and count are initialized before I/O. Generated records remain
+valid after the session ends and are released by the actual destructor.
+Construction cases retain the same bounded failure domains and exercise real
+folder mounts, comments and exact integers from -2048 through 2048. The selected
+literal `2.5` is separately checked against float32 bits `0x40200000`, directly
+and through construction. Other nonzero fractions and changed floating-point
+modes remain outside this qualification.
+
+The startup-configuration target constructs the actual outer owner through the
+same VFS and token-loading library. It checks publication of the owner and a null
+list head before the first open, ordered typed records, duplicate names, copied
+strings, case-sensitive lowercase `true`, appended records and actual cleanup
+with global reset. Generated configurations are nonempty, with names and text
+of at most 255 bytes. Embedded NULs retain the original C-string prefix behavior.
+Numeric cases cover every integer from -2048 through 2048 and sample exact
+integers up to magnitude 1,000,000, with at most one zero fractional digit,
+signed zero and the separately qualified `2.5` literal. The original destructor
+assumes a nonempty list; empty-owner destruction, general fatal-error paths,
+allocation failure and exception unwinding remain unqualified. The fixture's
+completion guard rejects an early zero-status fatal exit while preserving
+CTest's normal exit-code checks. `BEACHLIFE_RECONSTRUCTED_STARTUP_FIXTURE_ROOT` selects its separate
+generated folder, defaulting to the build tree. Normal Play uses the separate
+host boundary described above; these broad subsystem fixtures do not establish
+a complete startup driver or menu.
+
+The input target checks two matched byte-state queries, transition reset and
+two signed-integer getters, plus the first-button transition getter.
+Generated fixtures cover all 256 valid indices and byte values, require exact
+zero-or-one results, and compare the whole declared object representation and
+surrounding guards. Reset clears only the two observed words and two bytes;
+tests check their widths, unchanged fields and repeated-call idempotence.
+Getter fixtures compare exact signed returns against independent supplied
+values over the complete signed 16-bit domain, 32-bit boundaries, walking-bit
+patterns and deterministic generated pairs. Both calls must leave the whole
+object and its guards unchanged; reported call counts are fixture entry calls.
+The first-button getter has 1,033 generated cases covering unsigned 32-bit
+boundaries and every value in each byte lane. Its neighboring button word differs
+before reset; exact returns and whole-object guards are checked before and after the
+real transition reset. These are bounded value/sequence tests, not device events
+or a claim about which physical button the first word represents.
+The declarations describe an observed prefix, not the complete retail input
+object. The current target requires the recovered resource-pointer prefix and
+both observed signed-integer fields. It checks relative field positions in the
+actual native layout rather than imposing x86 offsets on a 64-bit build.
+Pointer fields receive null or borrowed fixture addresses; signed fields receive
+typed boundary and representative values before their representations enter the
+object. Both input and cursor fixtures also accept the observed typed keyboard
+pointer prefix using relative native offsets. Its nonnull values are aligned
+fixture identities used only for preservation checks, never COM devices or
+callable API providers. All typed values, padding and surrounding bytes remain part of the
+unchanged-representation checks. Cursor methods have their own target;
+these getter checks do not establish the fields' original meaning.
+Out-of-range queries, state
+production, device input and integration with the controller or game loop remain
+unqualified.
+
+The cursor target runs the reconstructed setter and current-cursor wrapper
+through an explicit thread-local provider. The native patch replaces Win32
+integer-resource/API spelling with typed numeric-resource calls; it preserves
+resource IDs, image type, dimensions, flags, cached-state gates and publication
+after callbacks. Generated providers record exact event order and arguments,
+null or live handle results, callback-visible state and whole-object guards.
+Failed loads still remember the requested identifier. The current-cursor
+wrapper passes that cached identifier and therefore does not force a reload.
+Tests cover ignored arguments and set-call returns, invalid identifiers, nested
+bindings and thread isolation. Handles are borrowed fixture values; no game
+assets, Win32 resources or platform cursor backend are used. A missing provider
+or invalid session lifetime violates the host boundary's preconditions and
+terminates; this is separate from the retail API's null-result behavior.
+
+The surface target compiles the real position setter, member cleanup and indexed
+cleanup from that same export. Generated guarded objects and live primitive
+arrays exercise exact selected-slot writes, signed coordinates, table aliases,
+inactive repeats and software/Surface7 ownership. A typed Surface7 provider
+checks the receiver and state visible before release, then mutates fields or
+replaces table bindings; the independent final-state oracle verifies publication
+on the originally selected object and preservation of unrelated bytes. Return
+values from Release are ignored. Pointer indices stay within the generated
+table, including negative indices relative to an interior table pointer.
+Hardware objects are borrowed providers; no DirectDraw backend or GPU is used.
+Invalid pointers, provider exceptions, reentrancy and concurrent mutation are
+outside this fixture's domain. A null software buffer has valid final-state
+checks, but modern C++ may omit its deallocator call; the test does not claim the
+original VC6 null-delete call timing. The optional image, input, cursor and
+surface libraries are not linked into production gameplay.
+
+For a separate Linux sanitizer build, add
+`-DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'` and
+`-DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'` at configuration.
+Windows cross builds need an explicit execution environment to run CTest,
+as described below. Hosted CI and hardware qualification remain separate checks.
+
+### Boot build
+
+The boot build compiles all decompiled game source as one tree and links it
+with a generated, loud trap for every game function that is not decompiled
+yet. Calling a trap stops the game and names the function and its original
+address. That tells you what to decompile next. A boot build with traps is a
+development tool, never release gameplay. It currently supports Linux x86-64.
+
+```sh
+cmake --preset debug -B build/boot \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
+cmake --build build/boot
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  ctest --test-dir build/boot --output-on-failure
+./build/boot/beachlife_boot_link
+```
+
+The dummy drivers keep CTest headless; the two GPU integration tests report a
+skip. To execute them without a visible window on a machine with a usable GPU,
+run CTest with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy` instead.
+Boot configurations check retail parser rejection with a deliberately mistyped
+token, requiring both its configuration reads and the original zero-status fatal
+exit. Native configurations retain the fixed-identity rejection check. Both
+profiles also check cache repair, online/offline previews and the separate
+generated configuration-owner lifecycle; they do not qualify full gameplay.
+
+`BEACHLIFE_ENABLE_BOOT_GAME` selects the `native-game` profile: the
+`native-experimental` series followed by `game-series`. `build/boot/boot/traps.json`
+lists every trap; pass `-DBEACHLIFE_BOOT_INVENTORY=<inventory.json>` to give each
+trap its original address. Files that need the Windows SDK are left out until
+they have a native adaptation; their functions become traps too.
+
+The decompiled game compiles against `src/platform/compat`: the subset of the
+Windows, DirectInput and Miles APIs the retail executable imports, implemented
+on SDL3, so decompiled code keeps its original API calls. An API that is declared
+there but not implemented yet becomes a trap like missing game code.
+
+Every target compiling prepared game source, including the subsystem libraries,
+uses the shared compile environment in `cmake/GameCompile.cmake`. Boot builds
+add the compatibility headers, MSVC prelude and two-byte `wchar_t` ABI to those
+targets. These settings stay private to game-source targets and do not propagate
+to host consumers or fixture executables. Harness link providers stay unchanged.
+The default native presets keep their portable source profile without the boot
+compatibility flags.
+
+The opt-in `reconstructed_screen_mode6_owner` and `reconstructed_game_mode_progress`
+fixtures still require the `native-experimental` profile: they assert aggregate,
+prefix-only class layouts that the unified game tree replaced with full owners
+and real constructors/destructors. Their libraries build in the boot configuration,
+but these old fixtures cannot use the unified declarations unchanged. Keep running
+them in the separate experimental configuration above.
+
+Boot checks run headless: `--headless` opens the game window on SDL's offscreen
+driver with silent audio, so nothing appears on screen and no input focus is
+needed; screenshots are saved at the game's own resolution. A headless run plays
+in a fresh temporary profile that is removed afterwards, so it is reproducible and
+never changes the player's options, progress or saves; `BEACHLIFE_BOOT_USER_DIR`
+selects a profile folder explicitly. Development
+switches drive the game without a player:
+
+- `BEACHLIFE_BOOT_ROUTE=scenario1` clicks past the intro screens, then the main
+  menu's "start" and "play" on the first scenario, and closes its Objectives
+  dialog. A step `x,y>file` clicks one point until the game opens the file that
+  marks the next screen, so it does not depend on timing; `x,y+N` clicks once,
+  N frames after the previous step. Coordinates are the game's.
+  Presets `scenario1`…`scenario12` and `sandbox1`…`sandbox12` start each
+  scenario or sandbox island; beyond the first ones they need
+  `BEACHLIFE_BOOT_PROGRESS=all`.
+- `BEACHLIFE_BOOT_MONKEY="seed[,interval]"` clicks random game coordinates
+  every interval frames (default 90) once the route is done, and logs each click
+  so a failure reproduces from the seed.
+- `BEACHLIFE_BOOT_CLICKS="frame:x,y;..."` clicks at fixed frames, and
+  `BEACHLIFE_BOOT_WHEEL="frame:steps;..."` rolls the mouse wheel (positive is up).
+- `BEACHLIFE_BOOT_PROGRESS=all` starts the test profile with every scenario
+  and sandbox island available.
+- `BEACHLIFE_BOOT_SHOTS="frame,..."` also saves `<screenshot>-<frame>.png`.
+- `BEACHLIFE_BOOT_TRACE_FILES=1` prints each file the game opens.
+- `BEACHLIFE_BOOT_ASSUME_FOCUS=1` accepts input without window focus; a route
+  implies it.
+
+```sh
+BEACHLIFE_BOOT_ROUTE=scenario1 ./build/boot/beachlife --play --headless \
+  --frames 4000 --screenshot world.png
+```
+
+The boot build calls the decompiled WinMain and WindowProcedure. Play prepares
+the files and window; compat returns that window to retail CreateWindowExA.
+Retail owns configuration loading, dispatches at most one message per frame,
+then updates and renders with its profiler timing. Automation injects SDL input
+before PeekMessageA; DirectInput still receives the same events. The frame limit
+requests WM_CLOSE, whose retail handler posts WM_QUIT. Video stays alive through
+the final retail frame and renderer teardown. Host window geometry and hidden
+mode remain Play's choices.
+
+Player-visible changes that are not in the original game live in
+`patches/beachlife-decomp-tweaks/`, applied after the faithful series when the
+boot build is configured with `-DBEACHLIFE_ENABLE_TWEAKS=ON`. Each tweak stays
+off until the player enables it under Advanced > Gameplay options in the
+launcher; checks can enable one with its environment variable:
+
+| Tweak | Setting | Check override |
+|---|---|---|
+| Skip intro: start at the main menu (no movie, logo or title screen) | `tweaks.skip_intro` | `BEACHLIFE_TWEAK_SKIP_INTRO=1` |
+| Mouse wheel zooms the camera (up in, down out) | `tweaks.wheel_zoom` | `BEACHLIFE_TWEAK_WHEEL_ZOOM=1` |
+
+```sh
+BEACHLIFE_BOOT_ROUTE=scenario1 BEACHLIFE_TWEAK_SKIP_INTRO=1 \
+  BEACHLIFE_TWEAK_WHEEL_ZOOM=1 BEACHLIFE_BOOT_WHEEL="2500:1;2800:-1" \
+  ./build/boot/beachlife --play --headless --frames 4000 --screenshot zoom.png
+```
+
+`game-series` is written from a local merge tree. `tools/game_tree.py init`
+creates it under `build/game-tree/work` from the current series. Commit merged
+source there, check that every file compiles with `tools/game_tree.py check`,
+then run `tools/game_tree.py patches` to rewrite `game-series`.
+
 ## Linux
 
 The primary CI target uses Ubuntu 26.04 and GCC 15. The compatibility/Steam Deck
 package uses Ubuntu 24.04 and GCC 14. The packager checks its imported libraries
 and symbol versions against the SteamOS 3.7 runtime baseline. This check is not
 a claim that GPU operation or gameplay has been qualified on the device.
+
+Install SDL's development prerequisites before configuring on Ubuntu:
+
+```sh
+sudo apt-get install build-essential cmake ninja-build python3 git pkg-config \
+  libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev \
+  libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libx11-xcb-dev libegl-dev \
+  libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev \
+  libudev-dev libdbus-1-dev libvulkan-dev
+```
 
 ```sh
 ./build/release/beachlife --help
@@ -90,13 +641,1818 @@ LLVM-MinGW runtime, so use the documented cross build for release packages.
 
 ## Tests and scope
 
-CTest checks actual help/version/build-info behavior and generated fixtures for
-version changes, archive payloads, provenance, ABI bounds and release decisions.
+The presets also build `beachlife-data` and its generated ISO, cabinet and
+prepared-content fixtures. See [DATA](DATA.md) for headless preparation,
+verification, VFS reads and the launcher/runtime API. No retail inputs are
+needed for these tests. Windows CI runs the data checks in a separate test
+artifact; product packages still contain the launcher/runtime executable.
+
+CTest checks help/version/build-info, settings persistence, source errors and
+a window smoke that renders all six pages with SDL's dummy video driver and
+software renderer. Package smoke runs the same window check after extraction,
+proving that the artwork, icon and fonts travel with it. With a usable GPU,
+package smoke also opens the game window, prepares generated data, checks
+offline reuse and repair, verifies production rejection of unsupported
+configuration, and exercises the image preview. A separate generated runtime
+fixture uses the same launcher/runtime libraries and loading path with an
+internal configuration factory to test the successful game loop. Without a
+usable GPU, the checks ensure its error occurs before any cache or
+readiness is created and reports the skipped game-loading integration. The
+`launcher_content` test covers cancellation, source switches and mount lifetime;
+`startup_work` covers the order, progress, cancellation and errors of the work
+behind the game window's loading screen. `content_startup` runs its real
+check/prepare/mount/read worker without a GPU, including cancelled extraction,
+resumption, binding persistence, offline reuse and repair. It also checks the
+joined result through the actual thread-local file bridge: worker isolation,
+nested binding restoration, cancellation/failure, retained handles and teardown.
+The production call site constructs its configuration owner only after successful
+normal-Play work and an explicit join, before the loading fade. Headless coverage
+does not establish GPU presentation or a complete reconstructed startup driver.
+Generated fixtures cover
+pins, patch ordering, tampering, version changes, archive payloads, provenance,
+ABI bounds and release decisions.
 Run the Python checks alone with:
 
 ```sh
 python3 -B -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The pipeline does not download or execute original game code. GPU checks and
-matching-toolchain checks will be separate additions. See [RELEASES](RELEASES.md).
+For an actual desktop screenshot (then exit), use:
+
+```sh
+./build/debug/beachlife --screenshot build/launcher.png --config build/preview.cfg
+```
+
+`--page files|display|appearance|advanced|about` selects another page. `--source path.iso`
+preselects a disc image without saving it automatically. Screenshot and smoke
+runs never check for updates; `--update-preview STATE` shows a made-up update
+state instead (`uptodate`, `checking`, `available`, `test`, `back`, `blocked`,
+`downloading`, `failed` or `installfailed`); a `-dialog` suffix (`test-dialog`)
+also opens the update dialog.
+
+`--play` opens the game window with saved settings (or `--config` and `--source`),
+then prepares or reuses game data behind its loading screen, as Play does. `--cache-directory folder`
+overrides the user cache for development. `--frames N` stops after N frames, and
+`--screenshot file.png` then saves the last one. The `game_startup` and
+`game_runtime` integration tests exercise both the production input-rejection
+path and the positive generated runtime fixture. Preview checks still use the
+production binary. GPU checks are skipped where no display or usable device
+exists; the headless owner and allocation tests run independently.
+
+View a supported original TGA through the same worker and VFS:
+
+```sh
+./build/debug/beachlife --play --preview-screen Data/Screens/FrontScreen.tga
+```
+
+The selected ISO or prepared cache supplies the image. This explicit preview
+also appears as **Preview title screen** on the launcher's Game files page;
+it does not execute a reconstructed menu. `tga_images` tests generated decoder
+fixtures, `content_startup` checks image progress/cancellation and offline mount
+lifetime, and `game_runtime` presents a generated image when a GPU is available.
+
+The `launcher_updates` test writes packages the way `tools/package_build.py`
+does, plus damaged and hostile archives, and checks the update rules,
+unpacking, installation, rollback and the completion of an interrupted update
+without network access.
+
+The launcher prefers SDL's DX12 renderer on Windows, Metal on macOS and Vulkan
+on Linux, with a software fallback. Hosted software smoke does not qualify GPU
+hardware or reconstructed gameplay. The pipeline does not download or
+execute original game code. See [RELEASES](RELEASES.md).
+
+Windows embeds `assets/app/icon.ico` using the native resource compiler. All
+windows load the matching PNG from package resources. macOS builds the ICNS
+bundle resource using the system `sips` and `iconutil`; these tools are required
+on the macOS build host. No original ISO is needed to build the app icons.
+
+The optional `reconstructed_screen_placements_tests` target links one eleven-source
+archive containing the actual saved-placement node builder, insertion, writer,
+manager save wrapper, lookup, iterators and pool methods. Generated caller-owned
+records retain the
+list/query checks for duplicate signed groups, full-width coordinates, unchanged
+miss outputs, read-only graphs, node identity, same-type slot reuse and repeated
+cleanup. The writer additionally creates real 12-byte records and updates only
+the first matching record, including owned/borrowed duplicates and identical
+writes. Literal expected allocation sequences distinguish record storage from
+node-pool storage and require updates to allocate nothing. Generated teardown
+returns nodes, deletes owned records once and leaves borrowed records alive.
+Additional generated manager/game prefixes exercise both mode-6 suppression
+paths and route saves through the actual game global to two live stores. Literal
+coordinates/groups and whole-object guards check first-match updates, untouched
+rectangle right/bottom fields, other-store preservation and allocation-free
+suppressed or identical saves. The original list/writer scenarios stay intact;
+direct wrapper calls are counted separately from their nested writer behavior.
+The native profile preserves the eight-byte pool quantum while giving each
+host-sized node and free link its actual C++ lifetime. Test-only paired scalar
+allocation and deterministic lock providers cover successful, uncontended use.
+This does not provide the original manager/game/store/list constructor or
+destructor, allocation-failure behavior, concurrency, cross-type slot reuse,
+Dialog movement or production linkage.
+
+The optional `reconstructed_gui_integer_tests` target exercises the actual GUI
+integer argument reader with generated bytes and guarded live prefixes. Literal
+results and constructed-length oracles cover both delimiter flags, repeated
+calls, whitespace, and the original arithmetic treatment of malformed signs,
+interior control bytes and high-bit bytes. The whole reader, output, input and
+borrowed manager prefixes are checked for unintended writes. All reached bytes
+are accessible and every signed intermediate stays representable; missing
+bounds checks and arithmetic quirks are preserved. This qualifies the bounded
+reader, not original parser/manager lifetimes, widget construction or gameplay.
+
+
+The optional `reconstructed_gui_whitespace_tests` target selects the real
+whitespace and integer helpers from that same archive. Constructed run lengths,
+all 256 boundary-byte values, repeated calls and literal sequential inputs check
+cursor-only whitespace writes and the integer handoff. Four whitespace bytes
+advance; the other 252 values, including NUL and high bytes, remain unconsumed.
+The existing integer fixture and its expectations remain unchanged. Both tests
+use the same prepared parser declaration and guarded live prefixes, without
+supplying original parser/manager lifetimes or qualifying GUI construction.
+
+
+The optional `reconstructed_gui_text_tests` target selects the actual text,
+whitespace and integer readers from the same archive. Literal bytes, output
+terminators and cursor positions cover text stops, whitespace, optional delimiter
+consumption, repeated calls and sequential reader handoffs. Embedded NULs and
+high bytes are compared as bytes; shorter results must preserve the old output
+tail. Whole-object and buffer guards check that the readers change only their
+specified outputs and cursor. Inputs and outputs are disjoint, every scanned
+byte is accessible, and output capacity is sufficient. The existing integer and
+whitespace fixtures remain unchanged. This covers bounded reader behavior;
+original parser/manager lifetimes, unbounded or overlapping buffers, widget
+construction and gameplay remain outside this target.
+
+
+The optional `reconstructed_gui_rectangle_tests` target exercises the actual
+rectangle reader, whitespace helper, rectangle getter and base screen lifetime
+with generated inputs. Literal results cover flag ordering, unsigned centering,
+optional parent bounds, degenerate parents and cursor/delimiter quirks. Three
+separate fatal cases use the real fatal reporter and host C runtime; an exit
+observer checks output, cursor, guards and the absence of a normal return. The
+normal suite also rejects an unexpected early successful exit. The integer,
+whitespace and text fixtures remain unchanged and use the same prepared parser
+declaration. Inputs keep every reached byte and signed intermediate valid.
+These bounded cases do not supply original parser, renderer or derived-widget
+lifetimes, validate the diagnostic text, or establish gameplay.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` (default OFF), the optional
+`reconstructed_gui_context_tests` target exercises the reconstructed context
+push and child-link lifetime with generated live screen items. Literal histories
+cover empty and existing chains, duplicate/null contexts, allocation-time field
+reloads and two labelled host allocation exceptions. The executable's scoped
+scalar allocator uses guarded real storage. A separate native portability patch
+preserves the original post-allocation context reload while retaining both ordinary
+new expressions. Cleanup clears every borrowed payload before the actual link
+destructor runs, then ends the real generated/base item lifetimes.
+Whole-state and storage guards check unrelated data. The source is exported through
+the `native-experimental` profile; its compiler comparison remains a partial match
+and is separate from the strict matching registry. This bounded target does
+not establish owning-payload deletion, context pop, original allocation-failure
+semantics, full parser/derived-screen lifetimes or gameplay.
+
+```sh
+cmake --preset release -B build/experimental-context -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-context --target reconstructed_gui_context_tests
+ctest --test-dir build/experimental-context -R '^reconstructed_gui_context$' --output-on-failure
+```
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the existing reconstructed TGA
+archive also includes the allocating image constructor and complete buffer parser.
+`reconstructed_tga_parser_tests` checks generated raw/RLE indexed, RGB and RGBA
+images, including an 800×600 indexed screen. Literal outputs cover row order,
+channel conversion, palette tails, alpha, origin handling, zero dimensions and
+unsupported-type ownership quirks. Test-only allocation tracking observes the
+original leaks before reclaiming its own storage; the existing helper fixture
+remains unchanged. The constructor's partial compiler match remains separate
+from these behavioral tests.
+
+The raw parser has no input-length argument. These tests supply complete bounded
+buffers and representable sizes; truncated data, oversized palette writes,
+RLE packet overruns and signed arithmetic overflow are outside its safe domain.
+This target does not implement filename/VFS loading, renderer palette conversion,
+widget activation or a game frame.
+
+```sh
+cmake --preset release -B build/experimental-tga -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-tga --target reconstructed_tga_tests reconstructed_tga_parser_tests
+ctest --test-dir build/experimental-tga -R '^reconstructed_tga(_parser)?$' --output-on-failure
+```
+
+With experimental source enabled, `reconstructed_tga_files_tests` loads generated
+TGA files through the actual folder VFS and reconstructed file, parser and image
+cleanup methods. Nine calls cover an unbound session, missing and empty files,
+header rejection, case/separator aliases and small indexed/RGB raw and RLE images.
+The fixture checks that the temporary file array is released before returned
+pixels are used, including normal parser rejection. Its paired array allocator
+observes real host storage; the retail methods and VFS are not replaced.
+
+These cases require stable complete files and bounded parser inputs. They do not
+qualify short reads, malformed files, the original input leak when parsing throws,
+renderer palette conversion, widget activation or a game frame.
+
+```sh
+cmake --preset release -B build/experimental-tga-files -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-tga-files --target reconstructed_tga_files_tests
+ctest --test-dir build/experimental-tga-files -R '^reconstructed_tga_files$' --output-on-failure
+```
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`,
+`reconstructed_indexed_palette_blit_tests` exercises the reconstructed indexed
+palette blit through its own one-source archive. Source rows use a byte stride;
+destination rows use four-byte slots, and only the first halfword of each slot
+is written. The generated fixture checks literal palette words, all 256 indices,
+unequal strides and origins, zero extents, and preservation of every other buffer
+word and guard. Palette index zero is copied normally.
+
+The tested domain uses separate live buffers, bounded nonnegative dimensions,
+positive strides and representable integer arithmetic. This subsystem does not
+connect renderer storage or GPU presentation. Its partial compiler comparison
+remains separate from native behavior qualification.
+
+```sh
+cmake --preset release -B build/experimental-indexed-blit -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-indexed-blit --target reconstructed_indexed_palette_blit_tests
+ctest --test-dir build/experimental-indexed-blit -R '^reconstructed_indexed_palette_blit$' --output-on-failure
+```
+
+With experimental source enabled, `reconstructed_gui_pop_tests` exercises context
+pop together with the real context push, child-link lifetime and generated items
+using the reconstructed base lifetime. Twelve literal scenarios cover empty,
+single and multiple history links, repeated/null borrowed payloads, and push/pop
+round trips. Whole-state and allocation guards check published pointers,
+surviving links and borrowed-item survival at deallocation. The existing context
+push fixture remains unchanged.
+
+Two separate fatal cases call the real `StartupFatal` and CRT termination route.
+An exit observer verifies preserved state and fixture cleanup; returning from
+that branch fails the test. These bounded finite histories do not establish
+arbitrary pointer/cycle behavior, concurrent mutation, full parser/derived-screen
+lifetimes or gameplay. The method's partial compiler comparison remains separate
+from experimental native behavior qualification.
+
+```sh
+cmake --preset release -B build/experimental-context-pop -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-context-pop --target reconstructed_gui_pop_tests
+ctest --test-dir build/experimental-context-pop -R '^reconstructed_gui_pop($|_fatal_)' --output-on-failure
+```
+
+With experimental reconstructed tests enabled, `reconstructed_tga_palette_tests`
+exercises the actual image constructor, RGB555/RGB565 palette conversion and image
+destructor from the shared TGA archive. Its generated cases cover literal colors,
+all channel byte values, mixed palettes, zero/nonzero flag selection, guarded
+storage, repeated conversion and host allocation exceptions. The conversion
+always allocates 256 halfwords and replaces the old converted-palette pointer.
+The fixture observes the original overwrite leak and reclaims that old array
+after the actual image destructor releases its current buffers.
+
+Build with `cmake --build build/release --target reconstructed_tga_palette_tests`
+and run `ctest --test-dir build/release -R '^reconstructed_tga_palette$' --output-on-failure`.
+Both `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` are required. These checks use generated
+images and a paired host array-allocation provider; renderer integration and
+original allocation-failure behavior require separate qualification.
+
+With experimental reconstructed tests enabled,
+`reconstructed_gui_registration_tests` exercises the actual registration method
+and shared child-link and screen-item lifetimes. Literal cases cover named and
+unnamed insertion into two distinct lists, append order, repeated borrowed
+payloads, callback priority, receiver aliases and the final word read after a
+callback. Generated callbacks observe the real virtual interface; they do not
+implement missing retail attachment behavior.
+
+The fixture preserves the observed replacement behavior when a live list head
+has a null tail. It retains those orphaned links, clears all borrowed payloads,
+and calls the actual link destructor and paired host deletion before ending item
+lifetimes. These finite successful-allocation cases do not establish arbitrary
+graph safety, allocation or callback failure handling, full parser ownership,
+real attachment behavior or gameplay. Existing push and pop fixtures are unchanged.
+
+Build with `cmake --build build/experimental-context --target reconstructed_gui_registration_tests`
+and run `ctest --test-dir build/experimental-context -R '^reconstructed_gui_registration$' --output-on-failure`.
+Both `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` are required.
+
+With experimental reconstructed tests enabled,
+`reconstructed_renderer_blit_kernels_tests` exercises the transparent, packed and
+masked indexed blitters through one three-source archive. All three skip zero
+indices. Transparent and masked output preserve the upper halfword of each
+four-byte destination slot; packed output uses adjacent halfwords, rounds its
+byte pitch down to a halfword count, and ignores destination Y.
+
+Twenty-two literal cases check palette words, mask bits, padded and overlapping
+rows, zero extents and a live palette/output alias in each kernel. Whole typed
+buffers and guards preserve every unlisted element. The tested arithmetic and
+array spans are bounded; negative extents, arithmetic overflow, arbitrary
+cross-type aliasing and renderer/GPU integration are separate. The existing
+nontransparent indexed-blit target and source remain unchanged.
+
+```sh
+cmake --preset release -B build/experimental-blit-kernels -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-blit-kernels --target reconstructed_renderer_blit_kernels_tests
+ctest --test-dir build/experimental-blit-kernels -R '^reconstructed_renderer_blit_kernels$' --output-on-failure
+```
+
+With experimental reconstructed tests enabled,
+`reconstructed_screen_activation_tests` exercises the real item activation,
+manager notification and auxiliary clear methods with the reconstructed item
+constructor and destructor. Literal cases and all 256 activation bytes check
+routing, exact byte values, borrowed peer lifetimes and preserved object fields.
+The generated manager and auxiliary prefixes do not qualify their complete
+retail construction or widget/Intro lifetimes.
+
+The affected item, registry, placement and GUI tests also consume this coherent
+experimental declaration. Default native tests retain their existing declaration
+and use the same fixtures through a test profile definition.
+
+```sh
+cmake --preset release -B build/experimental-activation -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON
+cmake --build build/experimental-activation --target reconstructed_screen_activation_tests
+ctest --test-dir build/experimental-activation -R '^reconstructed_screen_activation$' --output-on-failure
+```
+
+With the experimental option enabled, `reconstructed_renderer_rectangle_queue`
+exercises the reconstructed dirty-rectangle accumulator using a native
+`std::deque` for value storage. Generated cases cover containment, swap-last
+removal, first-overlap and recursive append order, edge contacts and the
+original missed-overlap behavior. The surface and GUI rectangle tests use typed
+renderer snapshots for this profile. These tests cover valid queues and
+successful host allocation; original allocator, failure, locking and timing
+behavior are not reproduced by the storage adaptation.
+
+The experimental `reconstructed_renderer_clip` test exercises the real clipping
+method followed by the native dirty-rectangle accumulator. Literal cases cover
+the three defined scale modes, the active unscaled override, signed coordinates,
+logical half extents, edge equality, mutable argument aliases and ordered queue
+effects. It uses live native queue storage and preserves the original clipping
+and rectangle-partition behavior. Unsupported modes with the unscaled flag clear,
+overflow, allocation failure and full renderer/surface lifetime remain outside
+this bounded test; it does not present an image.
+
+The experimental `reconstructed_renderer_tga_draw_tests` target composes the
+complete TGA drawing method with the real clipping/rectangle queue, four indexed
+blitters, surface pixel access and allocated TGA image lifetime. Generated
+literal cases cover pixels, clipping side effects and live COM Lock/Unlock
+selection. This headless subsystem test does not establish surface creation,
+GPU presentation or the original Intro screen.
+
+
+The experimental `reconstructed_renderer_rectangle_fill_tests` target checks the
+complete rectangle-fill method with real surface pixel access and error handling.
+Generated cases cover full-buffer clipping, preserved upper pixel bits, dense
+16-bit pairs and odd tails, empty spans, and live COM Lock/Unlock state changes.
+Its guarded typed renderer includes the real native rectangle queue. This
+headless test does not establish surface creation, GPU presentation or the
+original Intro screen.
+
+
+The experimental `reconstructed_frame_fill_styles_tests` target checks the real
+colour converter and Frame drawing helpers for styles 2, 3 and 7 with actual
+rectangle filling. Generated cases preserve the wide-red conversion quirk,
+border overlap, clipping, captured renderer and live bounds during COM callbacks.
+The fixture uses the existing renderer global and real native queue storage;
+it does not construct a complete Frame or claim GPU presentation.
+
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the optional
+`reconstructed_font_measurement_tests` target exercises the reconstructed font
+renderer constructor and its three text measurement methods. Generated typed
+data covers kerning, wrapping, unsigned arithmetic, a valid text/data alias and
+preservation of borrowed state. The bounded cases exclude nonterminating input
+and scratch copies without room for a terminator. This does not implement font
+loading, full font ownership or destruction, or screen text rendering.
+
+
+The experimental `reconstructed_renderer_line_tests` target exercises all four
+line rasterizers, the renderer line method and Frame style 6 using guarded pixel
+buffers. Literal cases preserve direct-pixel upper bits, packed edge quirks,
+endpoint and clipping behavior, and live COM/renderer state changes. The fixture
+uses the actual colour converter, pixel access and renderer global. It does not
+construct a complete Frame or renderer or claim GPU presentation.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, the optional
+`reconstructed_screen_localization_tests` target exercises the reconstructed
+localization lookup, iterator result, and empty cleanup methods. Generated
+borrowed arrays cover pointer identity, duplicate keys, skipped buckets, wraparound,
+null queries and null text results. Windows uses the CRT `_stricmp`; other
+supported hosts use `strcasecmp`, with comparison cases restricted to seven-bit
+strings in the C locale. High-byte cases exercise hashing with every bucket
+unavailable and do not claim wider locale parity. The target does not implement
+localization loading, full ownership or destruction, or text drawing.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, build
+`reconstructed_auxiliary_text_tests` and run `ctest -R '^reconstructed_auxiliary_text$'`.
+The generated cases exercise the reconstructed auxiliary `SetText` method with
+the real localization lookup, font constructors and measurement methods. They
+check borrowed text identity, the unsigned 160-unit branch, wrapping and metric
+arithmetic using guarded typed data. The experimental manager declaration uses
+the observed ten-pointer font table; its existing fixture consumers retain
+their behavioral cases with typed initialization of the refined fields.
+
+The option remains off by default. This target does not supply localization/font
+loading, complete manager/auxiliary/font ownership, Frame lifetime or text drawing.
+Malformed glyph indices, nonterminating wrapping inputs and unsafe scratch-copy
+lengths remain outside its bounded domain. It does not start the original menu.
+
+The experimental profile supplies the 21 observed base `ScreenItem` slots from
+reconstructed source. `reconstructed_screen_item_complete_tests` exercises real
+base lifetimes, byte states, hit tests, owned-text copies and finite timed
+notifications through the actual manager, lookup and font methods. Its borrowed
+auxiliary state takes the real Position early return. It constructs no Frame;
+active Frame positioning and complete original subtype lifetimes remain separate.
+Repeated text assignment retains the original leak, with test-owned receipts
+reclaiming only the abandoned allocations afterward. Existing generated subtype
+fixtures keep their behavior checks under the common experimental declaration.
+
+```sh
+cmake --build build/native-experimental --target reconstructed_screen_item_complete_tests
+ctest --test-dir build/native-experimental -R '^reconstructed_screen_item_complete$' --output-on-failure
+```
+
+The experimental `reconstructed_tga_widget` test constructs a real TGA screen
+item, loads generated indexed images through the mounted folder VFS, converts
+their palettes and draws through the reconstructed renderer and rectangle
+queue. It also checks cached activation, disabling and actual derived/base
+destruction. Its bounded inputs exclude null-load dereferences, oversized paths
+and unsupported image palettes. The guarded array observer checks cleanup and
+one labelled host allocation failure; it does not reproduce the original CRT
+failure contract. This is headless subsystem coverage, not the Intro or menu.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, build
+`reconstructed_resource_frame_metadata_tests` and run
+`ctest -R '^reconstructed_resource_frame_metadata$'`. Generated binary streams
+exercise the reconstructed byte/word/dword readers and resource-frame metadata
+with the real constructor and destructor. Cases check nonterminated and embedded
+NUL names, repeated reads, exact allocation/deletion ownership, untouched fields
+and guarded storage. The fixture preserves the original overwritten-name leak
+and releases its saved orphan separately after the actual frame lifetime.
+
+The bounded domain requires complete reads, little-endian representation and
+the observed scalar widths. Short reads, full resource-file ownership, encoded
+frame loading and resource rendering remain separate. This optional headless
+target does not start the original Intro or qualify the GUI FrameItem lifetime.
+
+The experimental `reconstructed_resource_find_tests` target exercises resource
+lookup through the actual Find, Lookup, wrapper constructor and destructor.
+Generated borrowed records cover first-match lookup, C-locale ASCII case folding,
+fallback, empty names, shared-record identity and unsigned reference-count wrap.
+Owned wrapper/name storage is released through the real destructor and C++
+allocation boundary. This does not implement the resource file producer, full
+record ownership, Frame loading or menu presentation.
+
+The experimental `reconstructed_resource_record_lifetime_tests` target exercises
+real resource Record construction and destruction with separate owned names,
+palettes, pointer tables and real resource Frames. Its finite cases preserve
+signed-count and reference-count quirks. The resource lookup test now uses
+constructed Records with separately owned names, and releases its borrowed
+wrappers before those Records. The common resource header is checked with the
+existing Frame metadata test. These checks cover initialized, successfully
+allocated inputs; they do not establish the complete file owner or game flow.
+
+The experimental `reconstructed_resource_record_metadata_tests` target exercises
+resource record metadata through the actual Record and Frame constructors,
+destructors, metadata readers and scalar allocation boundary. Generated complete
+binary files cover palette formats, frame metadata, C-locale ASCII name
+classification, repeated reads and ownership cleanup, including the original
+replacement leaks. The bounded test requires little-endian scalar widths and
+accessible full reads; it does not qualify truncated files, resource file-owner
+initialization, raw frame-bank loading or rendering.
+
+With the experimental option enabled, `reconstructed_resource_file_producer_tests`
+exercises the complete resource loader against generated metadata and raw data
+files, using the real Record/Frame parser and lifetime methods. It checks bounded
+reads, descriptor publication, palette marks, repeated loads and explicit cleanup
+of allocations the loader leaves owned or abandoned. The fixture creates and
+removes a fresh directory supplied through `BEACHLIFE_RESOURCE_FILE_TEST_ROOT`.
+Windows uses the original path spelling; POSIX uses its path separators and CRT.
+This does not qualify mounted game-file access, short metadata reads, arbitrary
+palette formats or the original Intro.
+
+The experimental `reconstructed_resource_palette_modifiers_tests` target
+exercises the real palette-file reader, constructor and destructor with complete
+generated RGB files. Literal RGB565/RGB555 expectations cover twelve banks,
+file boundaries and repeated loads. Real object lifetimes check registration
+replacement, unconditional cleanup and preservation of opaque storage. The
+fixture uses the existing renderer global and typed native renderer/deque.
+Truncated files and dynamic exception injection are outside this bounded
+qualification; it does not implement the full resource manager or Intro flow.
+
+The experimental `reconstructed_resource_frame_loaders_tests` target exercises
+the whole-frame and selected-plane raw loaders with generated temporary files,
+real resource Frame lifetimes and the shared file descriptor/cursor. A native
+CRT bridge preserves the original signed 32-bit relative seek and unsigned
+cursor arithmetic. The finite cases cover partial reads, a failed backward seek,
+metadata reuse, allocation exceptions and the original overwritten-owner leaks.
+These checks do not establish the sprite codec, mounted game-file integration
+or the complete resource-manager lifetime.
+
+The experimental `reconstructed_resource_raster_direct_tests` target exercises
+the direct encoded sprite raster with 27 generated packet and pixel cases.
+It uses one reconstructed source file and checks complete destination, palette,
+packet and guard storage, including the original positive-left no-store path.
+Build this target with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_resource_raster_direct$'`.
+This bounded raster test does not run resource loading or the game.
+
+With the experimental option enabled, `reconstructed_resource_metadata_smoke`
+reads a complete local metadata file and an independently prepared expectation
+sidecar through the actual Record/Frame parser and lifetime methods. The CLI
+accepts the metadata path followed by the sidecar path. It checks both palette
+formats, every decoded field and palette word, stream positions and ownership
+cleanup. The sidecar must describe the complete supported input; this is a
+bounded full-read check.
+
+```sh
+cmake --preset release -B build/metadata-smoke \
+  -DBEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON \
+  -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON \
+  -DBEACHLIFE_RESOURCE_METADATA_SMOKE_INPUT:FILEPATH=/path/to/metadata \
+  -DBEACHLIFE_RESOURCE_METADATA_SMOKE_ORACLE:FILEPATH=/path/to/expectations
+cmake --build build/metadata-smoke --target reconstructed_resource_metadata_smoke
+ctest --test-dir build/metadata-smoke -R '^reconstructed_resource_metadata_smoke$' --output-on-failure
+```
+
+Both cache paths default to empty. CTest registers this test only when both are
+explicitly supplied; local inputs and sidecars are not bundled or provided by
+CI. Cross-Wine runs need paths the Windows process can open. The CLI can also be
+called directly with those two paths. This target does not call the resource
+file producer or load raw sprite data, render assets, or start the Intro.
+
+The experimental `reconstructed_resource_sprite_preview` target connects the
+reconstructed metadata parser, raw-frame loader and direct raster with genuine
+resource lifetimes. Its generic CLI accepts `METADATA RAWBANK SIDECAR` and an
+optional `OUTPUT_PREFIX`. The sidecar specifies the bounded input region and
+independent palette and pixel expectations. With an output prefix, the same
+successful invocation also writes two verified, newly created PPM images; an
+existing output file is rejected. Keep game inputs, sidecars and generated
+images local and untracked. This is an asset preview, not the game menu.
+
+The preview's CTest is registered only when all three explicit `FILEPATH` cache
+entries `BEACHLIFE_RESOURCE_SPRITE_PREVIEW_METADATA`,
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_RAW_BANK` and
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_ORACLE` are supplied. They default to empty.
+`BEACHLIFE_RESOURCE_SPRITE_PREVIEW_OUTPUT_PREFIX` also defaults to empty, so
+image files are written only when explicitly requested. The target requires
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON` and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`; it adds no bundled assets or default CI
+input and does not change the reconstructed source profiles.
+
+The experimental `reconstructed_resource_raster_packed_tests` target exercises
+the packed sprite raster with 31 generated packet and pixel cases. It uses
+one reconstructed source file and checks the complete typed destination,
+palette, stream and guards, including the packed positive-left stores and
+original signed-byte packet quirks.
+Build it with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_resource_raster_packed$'`.
+This bounded raster test needs no game data and does not run resource loading
+or the game.
+
+The experimental `reconstructed_active_list_cleanup_tests` target exercises
+the actual active-list visitor and node reclamation with 26 generated lifetime
+and ordering cases. It uses the existing list and pool methods, typed guarded
+storage and generic callback observers. It covers callback-driven link changes,
+borrowed payloads, pool return order and slot reuse. It supplies no game
+deactivation callback or full manager lifetime.
+Build with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_active_list_cleanup$'`.
+
+The experimental `reconstructed_screen_child_ring_tests` target exercises real
+child-ring construction, insertion, clearing and destruction with five generated
+lifetime cases. It uses the reconstructed outer allocator and existing pool
+methods, guarded native slots and live borrowed base items. The cases cover
+insertion order, payload aliasing, slot reuse and position-directed insertion
+between two coherent rings. They do not cover pool refill, allocation failure,
+concurrency or the complete Dialog/Frame owner.
+Build with `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; run CTest with
+`-R '^reconstructed_screen_child_ring$'`.
+
+The experimental `reconstructed_resource_frame_select` target exercises resource
+frame selection with the real frame lifetime and raw loaders. Generated files
+cover resident whole and plane buffers, upper clamps, lazy whole/plane loading,
+and cached pointer reuse. The finite domain uses positive counts, valid offsets,
+complete reads and successful allocations. It does not require retail data.
+
+The experimental `reconstructed_pool_refill` target exercises standalone pool
+refill with the real chunk allocator. Generated owned spans cover rounded full
+chains, reduced and single-slot returns, and one successful fresh allocation
+with real pointer-array storage in its returned slot. The fixture clears pool
+references before releasing each backing owner. Its finite domain excludes
+allocation failure, scavenging and concurrent access; no retail data is needed.
+
+The experimental `reconstructed_active_node_erase` target exercises the real
+active-list node erasure against typed borrowed entries, sentinels and pool
+storage. Three finite groups cover middle, first/last and sole-node removal,
+including an entry released before its distinct node. Existing list insertion,
+node construction, clearing and pool return remain the actual implementations.
+The fixture detaches all pool roots before its backing owners end lifetime.
+It retains the existing uncontended OS-test boundary; it does not implement a
+retail list owner, active-screen manager or gameplay loop.
+
+The experimental `reconstructed_renderer_word60_tests` target exercises the
+matched renderer word setter on a genuine typed aggregate with native deque
+storage. Generated cases cover zero, full-bit and repeated high-bit values,
+untouched fields and borrowed storage, and the actual host field alignment.
+The focused target uses one reconstructed source member and remains off with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME`. It does not implement the renderer's
+retail constructor or establish graphics, concurrency or gameplay behavior.
+
+The experimental `beachlife_reconstructed_resource_raster2` library composes the
+second encoded sprite raster with the real first-format clipping fallback.
+It preserves the original run-state, zero-header and four-byte pixel behavior.
+The focused `reconstructed_resource_raster2` test uses generated literal pixels.
+Both this library and `beachlife_reconstructed_resource_raster_direct` are
+available when `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=OFF`; their tests remain
+optional. They require `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and do not yet
+connect the reconstructed GUI to the game window.
+
+The experimental `reconstructed_gui_tga_command` target exercises the actual
+Intro TGA command with real rectangle/text readers, TGA widget construction,
+registration and owning-link destruction. Generated tokens cover a parent
+rectangle and allocation failure during registration; the completed widget
+retains the original lack of automatic rollback. The companion fatal check
+runs the original error path and its exit code. This remains an optional
+subsystem composition; full parser, GUI manager construction and the game
+window's Intro flow require their remaining real dependencies.
+
+The experimental `beachlife_reconstructed_render_masks` library contains the
+real pixel-format initializer and its fifteen shared mask/storage globals.
+It is available with subsystem tests disabled. The optional
+`reconstructed_render_mask_setup` test covers both format branches, full-width
+selectors and widths, borrowed storage and typed global aliases. The initializer
+only stores the supplied pixel pointer; it neither accesses nor owns that
+buffer. This library does not yet connect the renderer or GUI to the game window.
+
+The experimental `beachlife_reconstructed_renderer_present_effect` library
+applies the original five pixel-effect modes using the real shared mask
+initializer and globals. It remains available with subsystem tests disabled.
+The optional `reconstructed_renderer_present_effect` test checks literal
+16-bit pixels, low-byte mode selection, signed-dimension no-access paths and
+a typed global alias. The effect retains its unsupported-mode carried value.
+This library does not yet connect Present or the GUI to the game window.
+
+The experimental `beachlife_reconstructed_renderer_default` library copies
+the original source framebuffer to a surface through real pixel access and
+the shared render masks. It preserves the two-row conversion and fixed
+sixteen-pair packing paths. The optional `reconstructed_renderer_default`
+test uses literal guarded buffers and typed COM boundary observations.
+Both the default-render and surface-pixels libraries are available with
+subsystem tests disabled. Complete renderer ownership and game-window
+presentation remain separate integration work.
+
+With experimental game code and reconstructed subsystem tests enabled,
+`reconstructed_screen_item_rectangle_position` checks the original base-item
+position setter using real item construction and destruction. Literal cases
+cover negative coordinates, an inverted rectangle and arguments read from the
+same item; width, height, the saved rectangle and unrelated fields are preserved.
+The test and its small library reuse the existing base-item dependencies.
+
+The experimental `beachlife_reconstructed_resource_raster_402880` library draws
+depth-tagged sprite packets using the real shared render masks. It preserves
+the distinct full, left-cropped and right-cropped paths, including replacement
+of rejected full-packet endpoints. The optional
+`reconstructed_resource_raster_402880` test uses generated guarded pixels,
+literal blend/depth results and a valid palette-to-pixel alias. The library is
+available with subsystem tests disabled. Full resource ownership and the
+Frame/Dialog renderer connection remain separate integration work.
+
+The optional `reconstructed_gui_defined_item_tests` target exercises the complete
+defined-item class: its real constructor, destructor, child forwarding and timed
+dispatch. Generated live children and seeded pool storage check three bounded
+groups, including name copying, reentrant attachment and borrowed-child survival.
+The target uses the existing base/ring implementation, host scalar allocation
+and the qualified uncontended pool test boundary. It does not connect GUI script
+loading or establish gameplay, concurrent pool behavior or a platform backend.
+Linux optimized and sanitizer builds are the initial qualification scope;
+Windows and macOS remain deferred.
+
+The optional `reconstructed_resource_raster_405b20_tests` target exercises the
+complete half-resolution depth raster with the genuine shared mask owner.
+Three generated groups cover full/cropped sampling, four blend routes, signed
+packet gaps, row/depth timing and a valid live palette alias. Linux optimized
+and sanitizer builds are the initial scope; Windows/macOS and full resource
+ownership remain separate gates. Its library also builds with tests disabled.
+
+The optional `reconstructed_tiff_image_conversions_tests` target qualifies the
+two complete TIFF image conversions with real image allocation and cleanup.
+Three generated groups check retained input ownership, four-to-three sample
+copying, nibble order across odd rows, the original eight-entry palette copy
+and empty images. Linux optimized and sanitizer builds are the initial scope;
+Windows/macOS, complete TIFF loading and game integration remain separate.
+
+The optional experimental TIFF loader target
+`reconstructed_tiff_image_loader_tests` uses generated files and the reconstructed
+directory, strip, tile, PackBits, palette and image-conversion methods. It reuses
+the real binary word reader, adapted once to the mounted file session, and
+TgaImage allocation/destruction. A `retail_files::Session` binds its input to a
+prepared `FileSource`; Windows path separators and case aliases use the same
+VFS lookup as the other retail loaders. There is no host-path fallback. The
+generated-file check uses a manifest-backed folder mount and exercises directory
+position save/restore as well as decoding. Build it with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`; then run
+`ctest --test-dir <build> -R '^reconstructed_tiff_image_loader$' --output-on-failure`.
+The subsystem scope is complete little-endian inputs, bounded dimensions and
+ordinary successful allocations. Palette checks use values away from sensitive
+floating-point boundaries; general equivalence to the original x87 precision
+environment is not established. Invalid-header leaks, truncated input,
+out-of-bounds packet behavior and allocation-failure cleanup are not repaired or
+included. This target does not connect the production font loader or front end.
+
+The experimental font-data target constructs and destroys the reconstructed font
+owner through the mounted file session. Generated coordinate, TIFF and kerning
+files exercise image ownership and real font measurements. The three existing
+font-metric consumers use the same owning declaration and retain their literal
+behavior cases. This is subsystem qualification, not GUI or game presentation.
+
+The optional `reconstructed_font_glyphs_tests` target exercises both complete
+font glyph writers with the real font renderer constructor and colour converter.
+Three generated groups cover colour pixels, monochrome masks, reversed rows,
+the direct writer's four-byte slots with low-word stores, and live byte aliases.
+All buffers have valid prefixes for the original final row-pointer steps.
+The font renderer borrows null font-data and lookup pointers because these two
+methods never read those owners. The renderer uses its real native deque.
+Enable experimental game code and reconstructed subsystem tests to build this
+target. Linux optimized and sanitizer builds are the initial scope; Windows,
+macOS, complete text layout and front-end rendering remain separate gates.
+
+The optional `reconstructed_font_drawing_tests` target composes the complete
+text wrapper, line renderer, drawing settings and both glyph writers. It loads
+a genuine font owner from generated coordinate, kerning and TIFF files through
+the mounted file session. Three groups check literal clipped/aligned pixels,
+software-surface pitch and position with real access/unlock, and word/forced
+wrapping with the original height stop. Valid text prefixes and image prefixes
+keep the original pointer operations inside live storage. Linux optimized and
+sanitizer builds are the initial scope. Hardware COM surfaces, Windows/macOS,
+other floating-point modes and the production front-end connection remain
+separate gates; this target is available with experimental subsystem tests.
+
+
+The experimental `resource_files_tests` target checks the mounted-file adapter
+for reconstructed resource owners. Build it with experimental game code and
+reconstructed subsystem tests enabled, then run `ctest -R '^resource_files$'`.
+It checks retained closed-stream tokens, raw read errors, signed cursor updates
+and nested session lifetime using generated files through the real folder
+source. Linux optimized and sanitizer builds are the initial qualification;
+resource-owner integration and Windows/macOS execution remain separate gates.
+
+The optional `reconstructed_gui_text_item_tests` target constructs the genuine
+Text widget with its complete base table and real file-loaded font owner.
+Three groups check lookup-borrowed and scalar-owned text, preparation/activation
+and alternate drawing phases, settings priorities and literal framebuffer
+pixels. Owned fallback text uses the original short-height route; no readable
+prefix is invented before its allocation. The fixture uses the current typed
+manager and lookup declarations as borrowed subsystem read models, not as full
+game owners. Linux optimized and explicit sanitizer checks are the initial
+scope. This experimental subsystem test does not run the parser, full manager
+or front end; Windows/macOS and production integration remain separate.
+
+The optional `reconstructed_gui_parse_text_tests` target runs the complete
+TEXT script handler through the real rectangle/text/integer readers and item
+registration into genuine Text widgets. Focused cases check unnamed append
+order, lookup results, parent-relative coordinates, literal cursor positions
+and real link/widget cleanup. A separate invocation checks genuine fatal
+termination for a missing opening bracket. The parser and localization lookup
+are typed borrowed subsystem models; full parser/manager construction and the
+script dispatcher are not supplied by this test. Linux optimized and explicit
+sanitizer checks are the initial scope; Windows/macOS and front-end execution
+remain separate.
+
+The experimental resource-owner target constructs the genuine sprite-resource
+manager, reads generated manifest-backed metadata and palettes through the mounted
+file API, selects lazy raw Frame data, and destroys the real graph. Existing FILE*
+metadata overloads remain available. The same full owner declaration is used by
+all selected consumers. Pool locking uses real host atomic exchange/yield/sleep;
+the bounded fixture seeds one genuine free pool slot and does not qualify refill,
+contention or original thread timing. Descriptor-zero and retained-closed-token
+behavior remain explicit. The producer allocation-observation fixture is restricted
+to 64-bit Linux with a GNU-compatible linker; its I/O wrappers only forward to the
+real mounted implementation. These headless capabilities do not connect the game
+controller, menu or GPU presentation.
+
+The experimental direct glyph writer also selects the strictly reconstructed
+row-tail source. Its existing headless glyph target checks the selected native
+body against literal pixels, mask aliases and preserved source buffers. Native
+compiler output and game-runtime linkage remain separate from VC6 matching.
+
+The optional `reconstructed_gui_parse_font_tests` target connects the complete
+FONT handler to genuine font-data and font-renderer construction through generated
+coordinate, TIFF and kerning files in the mounted file session. Three groups check
+the no-opening return, sequential typed publication, and retention of completed
+font data when the later renderer allocation throws. A single Linux test-link
+wrapper forwards successful scalar allocations to the real C++ runtime. Published
+objects are destroyed through their real lifetimes. The manager and parser are
+typed borrowed subsystem models, not complete game owners. Initial coverage is
+64-bit Linux optimized and explicit sanitizer builds; full GUI dispatch, owner
+lifetime, Windows/macOS and production front-end execution remain separate gates.
+
+The optional experimental FrameItem subsystem composes the complete Frame class,
+its owning child ring, resource-backed frame styles and real resource raster routes.
+`reconstructed_frame_item` uses generated mounted resources and genuine item/resource
+lifetimes for literal pixel and clipping checks. It is a headless subsystem; the game
+controller, window presentation and full menu are separate integration work.
+
+The optional `reconstructed_gui_parse_main_tests` target connects the complete
+MAIN handler to genuine Frame construction and context links. Its generated
+inputs cover the unsigned 800-pixel branch, balanced nested-brace skipping,
+main-item publication, context push/pop and real fatal termination after a
+completed item is published. The fixture owns every constructed Frame and
+checks the real pool-slot returns. Parser, manager and renderer storage is an
+explicitly borrowed typed read model, not a complete game owner or menu.
+
+Enable `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS` and the default-off
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME` option, then build
+`reconstructed_gui_parse_main_tests` and select CTest names matching
+`^reconstructed_gui_parse_main(_fatal_open)?$`. The generated fixture is
+restricted to Linux with 64-bit pointers; other platforms and production
+GUI flow are separate qualifications.
+The experimental headless Dialog fixture constructs the complete Dialog and
+its owned Frame and child rings, then exercises real resource drawing, hit tests,
+dragging and transition completion. It uses generated mounted files and typed
+borrowed manager, renderer and window read models. This qualifies a subsystem;
+it does not start the original Intro controller or provide a GUI context owner.
+
+The experimental `reconstructed_surface_create` test selects the complete surface
+creation and initialization methods with the real pool refill and cleanup code.
+Its Linux optimized and sanitizer gate covers first-inactive reuse, pointer-table
+growth across the native 128-byte pool threshold, and bounded software-image
+allocation/release. The hardware DirectDraw branch remains in source but is not
+exercised; this is a subsystem test, not a complete renderer or game session.
+
+The experimental `reconstructed_gui_parse_dialog_tests` target exercises the
+complete Dialog script handler with genuine Dialog and owned Frame lifetimes,
+real readers, registration and context links. Generated inputs check numbering,
+absolute bounds, attachment priority and the existing integer-reader quirks.
+The two fatal cases invoke the real reporter in separate processes and observe
+publication before explicitly cleaning up the test-owned graph. This is a
+bounded parser subsystem test; the complete parser/manager owners and running
+front-end remain separate integration work.
+
+The experimental `reconstructed_screen_request_tests` target exercises complete
+screen requests through genuine Dialog/Frame lifetimes, active-list insertion,
+saved placement and software-surface creation/preparation. Its generated cases
+use the initial front-end's null-context domain. Nonnull context callbacks,
+hardware surfaces and complete manager/game ownership remain separate gates.
+The target is available with reconstructed tests and experimental game sources
+enabled; it does not connect the production controller or enable a menu.
+
+The experimental `reconstructed_close_active_screens_tests` target checks active
+screen closing with genuine Dialog/Frame ownership, software surfaces and the
+existing list, placement and pool implementations. Three generated groups cover
+empty lists, closing-state publication and same-group placement order, and both
+mode-6 placement exclusions. Cleanup uses real surface and node operations.
+The Linux 64-bit fixture uses null contexts and typed subsystem read models;
+full manager construction, nonnull callbacks and gameplay remain separate.
+
+The experimental `reconstructed_gui_parse_define_tests` target exercises the
+complete Define handler with genuine defined-item, child-ring, registration
+and context lifetimes. Its Linux fixture covers nested definitions, duplicate
+names and the real fatal exit before registration. The definition index borrows
+items owned by the all-items chain. This subsystem does not execute the complete
+GUI dispatcher or establish front-end/gameplay readiness.
+
+The optional `reconstructed_menu_show_main_tests` target connects the complete
+menu action to real active-screen closing and screen requests. One generated
+Linux 64-bit case checks placement restoration, closing/new-entry order, null
+contexts and genuine Dialog/Frame, list and software-surface cleanup. It uses
+the existing typed subsystem read models; action-table ownership, nonnull
+callbacks and a running menu remain separate.
+
+The experimental `reconstructed_gui_image_item_tests` target composes the complete
+ImageItem with the real base, resource owner, mounted readers and drawing code.
+Its finite generated format-1 resource exercises two genuine image lifetimes,
+reference release, preparation-gated pixels, right clipping and inclusive input.
+The current fixture is Linux 64-bit only. Manager and renderer prefixes are
+explicit borrowed read models; this does not establish a complete GUI owner,
+hardware presentation or menu flow. Default source profiles are unchanged.
+
+The optional `reconstructed_gui_parse_image_tests` target connects complete
+IMAGE parsing to genuine Image construction, resource lookup and software
+drawing. Generated mounted files exercise unnamed registration, relative
+parent geometry, optional owned text and real link/resource teardown. A
+separate missing-opening-bracket entry reaches the actual fatal reporter.
+The parser, manager and localization prefixes remain typed subsystem read
+models; full script dispatch and a running menu are separate capabilities.
+
+The experimental `reconstructed_gui_tab_item_tests` target composes the complete
+TabItem with real base, child-ring, Frame and resource lifetimes. Three generated
+groups cover borrowed-child survival, activation/preparation and movement,
+cached two-plane pixels, and selected-coordinate propagation. The mounted files,
+palette and guarded canvas are generated; there are no game-method providers.
+The fixture is Linux 64-bit only and uses typed borrowed manager/renderer read
+models. Full GUI ownership, hardware presentation and menu flow remain separate.
+Default source profiles are unchanged.
+
+The experimental `reconstructed_gui_parse_tab_tests` target connects the complete
+TAB-context handler to genuine Tab/Frame/resource/ring lifetimes and real parser
+readers and registration. Generated inputs exercise absolute coordinates,
+registration before alternate-context publication, raw owned labels and literal
+resource pixels. A separate process checks the real missing-open fatal path.
+The fixture is Linux 64-bit only; parser, manager, renderer and localization
+prefixes are bounded read models. It does not establish full GUI ownership,
+script dispatch, hardware presentation or menu flow. Default profiles are unchanged.
+
+The experimental `reconstructed_gui_parse_main640_tests` target exercises the
+complete MAIN640 handler with genuine Frame and context lifetimes. Generated
+inputs check construction only at width 640, raw nested-brace skipping at other
+widths, publication before brace validation, and real fatal termination with
+fixture-owned cleanup. The focused fixture is Linux 64-bit only and uses typed
+borrowed parser, manager and renderer read models. It does not establish the
+complete parser/GUI owner, command dispatcher, presentation or menu flow.
+Default source profiles remain unchanged.
+
+The experimental `reconstructed_menu_owner190_entry_destroy_tests` target
+exercises the distinct owner190 entry callback with null payloads and genuine
+Text/base scalar ownership. A separate constructed observer checks virtual
+destruction before the record is released; the plain Text case retains its
+actual class table. The focused fixture is Linux 64-bit only. Full manager,
+owner190 producer/list lifetime and menu execution remain separate capabilities.
+Default source profiles are unchanged.
+
+The experimental `beachlife_reconstructed_game_mode_progress` library combines
+the real mode-byte setter, scenario-progress loader and sole progress-path
+global. It remains available with reconstructed tests disabled. On 64-bit Linux,
+`reconstructed_game_mode_progress_tests` uses generated missing, partial and
+complete binary files to check the original defaults, low-byte flags, capped
+index and exact mode bytes through the actual CRT. Its typed game prefix is a
+bounded read model; this does not construct the full game or start the menu.
+Other platforms and full game-owner integration remain separate qualification.
+
+The optional `reconstructed_menu_show_scenario_tests` target connects the complete
+Scenario action to real mode/progress-file loading, active-screen closing and
+screen requests. One generated Linux 64-bit case checks the loaded progress,
+placement restoration, null contexts and genuine Dialog/Frame, list and software
+surface cleanup. The game, manager and renderer prefixes are typed subsystem
+read models; full game/action-table ownership and a running menu remain separate.
+Default source profiles are unchanged.
+
+The optional `reconstructed_item_clear_manager_tests` target exercises the real
+item-to-manager reference-clearing helper with two genuine base-item lifetimes.
+Its focused Linux 64-bit cases cover matched and unmatched items, a changed
+current manager, retained fields and a null auxiliary on the unmatched path.
+The manager and auxiliary are typed borrowed prefixes; this does not construct
+their complete owners or qualify the RadioItem class or a running menu.
+
+The Sandbox extension adds the real `MenuPlaySandbox` callback to the same
+`reconstructed_menu_show_scenario_tests` fixture. The two generated cases
+check mode 0/progress index 8 and mode 1/index 0, respectively; both original
+actions request `ScenarioScreen`. They share the real file loader, closing,
+request, placement and Dialog/Frame cleanup paths. The separate
+`beachlife_reconstructed_menu_play_sandbox` archive is selected only with the
+experimental reconstructed tests. Linux 64-bit qualification covers this
+bounded subsystem; full game/action-table ownership, other platforms and a
+running menu remain separate. Default source profiles are unchanged.
+
+The experimental `beachlife_reconstructed_sea_state_owner` archive contains the
+real sea-state constructor, destructor and byte setter. It is available with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` even when reconstructed tests are disabled.
+The optional Linux 64-bit `reconstructed_sea_state_owner_tests` target checks
+genuine placement lifetimes, all observed opaque bytes and outside guards,
+byte values `0`, `0x80` and `0xff`, and real scalar ownership. The fixture defines
+no allocation or game-method replacements. The parent renderer setter and its
+tail-pointer migration remain separate; this capability does not construct the
+complete renderer or establish menu/GPU gameplay. The experimental option stays
+off by default; other platform qualification remains separate.
+
+The optional experimental renderer sea setter forwards the complete argument
+byte to the genuine sea-state owner. Its standalone library links the real
+child lifetime/setter library and remains available with reconstructed tests
+disabled. The focused Linux 64-bit test uses a typed renderer read model, its
+real native rectangle queue, and genuine child construction/destruction; it
+checks receiver changes, bytes 0/128/255, owned storage and retained state.
+The appended native pointer follows the host ABI, not the original x86 offset.
+Full renderer/platform construction, sea rendering, Windows/macOS execution
+and gameplay remain separate capabilities. Experimental selection is off by
+default and does not imply a strict byte match.
+
+The experimental `beachlife_reconstructed_sound_bank` library provides the complete
+sound-bank FILE, bucket, record and cached-sample lifetime sources, including the
+real index loader and sample lookup. It is available with reconstructed tests
+disabled. `reconstructed_sound_bank_owner_tests` uses generated local index/data
+files for empty, two-record and duplicate-key banks, checking cold/hot reads,
+reference and cache totals, FILE closure and genuine destruction. The focused
+qualification targets 64-bit little-endian Linux with the C ASCII locale;
+Windows/macOS and audio playback are separate gates. Original unchecked
+size/name reads, open-error behavior and unpublished full-table leaks remain
+unchanged; these unsafe inputs are outside the fixture's defined domain.
+The source profile stays experimental and off by default.
+
+The same experimental image-parser target also supplies the genuine `Icon`
+handler and image-resource configuration. Run the `reconstructed_gui_parse_icon`
+test for generated-data parsing, registration, parent attachment, pixel drawing
+and real image/resource cleanup. The existing subsystem remains selected by
+reconstructed tests; this does not activate the full GUI parser or game menu.
+
+The sound-bank fixture also exercises genuine named-sample release and cache
+aging: reference transitions, the original unsigned underflow, exact-five
+retention, eviction after a retained sum exceeds five, and real FILE reloading.
+The timer is a typed float and is still left untouched by the original loader
+and lookup. This focused extension requires Linux x86-64 with a 64-bit
+long-double significand; its near-threshold case preserves the wider sum across
+the float store. It does not establish all original x87 control-word behavior.
+Other floating-point ABIs, Windows/macOS and audio playback remain separate
+qualification gates; the existing experimental option stays off by default.
+
+The optional experimental `beachlife_reconstructed_listbox_storage` library
+provides the two genuine ListBox backing-range destructors independently of
+the widget. With reconstructed tests enabled, the Linux x86-64
+`reconstructed_listbox_storage` test covers null storage, the original
+128-byte pool boundary, real pool publication and reuse, and host scalar
+release above that boundary. Pointer arrays use their native element size;
+the threshold remains bytes. A transparent test-only linker observer forwards
+every scalar delete to the real host implementation. The fixture checks
+retained member representations through owned byte storage after destruction.
+It does not construct a ListBox, destroy rows or qualify refill, allocation
+failure, concurrency, Windows or macOS. Experimental selection stays off by
+default; matching and complete GUI ownership remain separate gates.
+
+The optional experimental `beachlife_reconstructed_listbox_selection_find`
+library searches a stable range of 32-bit signed words using the real host
+standard library. An equality guard preserves the original null-empty result
+before pointer arithmetic or value access. The reconstructed-test target
+`reconstructed_listbox_selection_find` checks empty ranges, first-match ordering,
+four-word and tail boundaries, valid value aliases and unchanged guarded input.
+The focused qualification is Linux optimized and sanitized; Windows/macOS,
+complete ListBox ownership and menu execution remain separate gates. This is
+library support, not a new game method or a strict compiler match. Default
+native selection and the off-by-default experimental option are unchanged.
+
+The optional `reconstructed_screen_select_tests` target exercises the complete
+`ScreenManager::ScreenSelect` method through the real request, Dialog, Frame,
+active-list and software-surface methods. It uses generated `InGameOptions`
+registration and explicit null contexts, with genuine widget ownership and
+borrowed manager/renderer read models. Build it with reconstructed tests and
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON`, then run
+`ctest --test-dir <build> -R '^reconstructed_screen_select$' --output-on-failure`.
+The focused fixture supports 64-bit Linux. It does not construct the full game
+or manager and does not establish a running menu or production renderer.
+
+The matching fixture retains `ScreenListBoxPrefix::MarkPrepared` through a borrowed
+x86 receiver. Its complete 39-byte body matches strictly; raw bytes differ only
+in the relocated call to the real base method. Removing that call is rejected.
+The native profiles retain their existing ListBox source selection; this match
+does not qualify a complete ListBox lifetime or a native GUI execution path.
+
+The optional `reconstructed_screen_activate_tests` target exercises the complete
+`ScreenManager::ActivateScreens` method. Three generated cases preserve the
+ScenarioWon/ScenarioLost guards and otherwise request a genuine PauseBox with
+null context and flag1 on the incoming manager. Actual Dialog/Frame ownership,
+active-list operations and software surfaces are used with borrowed manager and
+renderer read models. Enable reconstructed tests and experimental game sources,
+then run `ctest --test-dir <build> -R '^reconstructed_screen_activate$' --output-on-failure`.
+The focused fixture supports 64-bit Linux; it does not construct the full Game
+or manager, execute a full menu or qualify GPU presentation.
+
+The matching profile includes the complete ten-byte renderer surface-selection
+method. It matches strictly and byte for byte; changing the stored index with
+XOR1 is rejected against the fixed original extent. Existing comparison results
+are retained. The native profiles preserve their current source selection; this
+match does not qualify a complete renderer lifetime or native rendering path.
+
+The optional `reconstructed_screen_clip_tests` target covers the complete
+`ClipScreenRectangles` method using the existing renderer-global definition
+and a typed renderer read model with real host queue lifetime. Its generated
+literals cover each edge, combined clipping, signed dimensions, empty and
+inverted rectangles, and valid same-object aliases. It preserves unrelated
+renderer members and outside guards. Enable reconstructed tests and experimental
+game sources, then run
+`ctest --test-dir <build> -R '^reconstructed_screen_clip$' --output-on-failure`.
+The focused fixture supports 64-bit Linux and representable integer arithmetic.
+It does not construct the retail renderer, blit pixels or establish menu/GPU
+execution. Windows/macOS and tests-disabled availability remain separate gates.
+
+The matching profile includes the complete 91-byte screen rectangle clipping
+method. It matches strictly; raw bytes differ at the relocated renderer-global
+address. A changed bottom adjustment is rejected against the fixed original
+extent, retaining all previous comparison results. Native source selections
+preserve their independently qualified clipping implementation.
+
+The experimental `beachlife_reconstructed_screen_mode6` library contains the
+complete idle Mode6 owner, its real base and derived lifetimes, and all seven
+non-destructor virtual methods. MainMenu selects this idle mode; connecting the
+mode-switching parent remains separate. `reconstructed_screen_mode6_owner`
+covers borrowed manager identity, all seven virtual calls, stack and placement
+lifetimes, and real scalar deletion through the base pointer. The manager used
+by this fixture is an aggregate read model, not a qualified retail manager owner.
+
+The library requires `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME`, which defaults to OFF,
+and is available with `BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=OFF`. Its Linux ownership
+fixture still requires reconstructed tests. It has no production, full menu, GPU
+or strict-match claim. Native qualification is focused on Linux optimized and
+ASan/UBSan/LSan builds; Windows and macOS remain separate gates. Shared physical
+empty/false method aliases receive no duplicate original-function credit.
+
+The experimental `beachlife_reconstructed_frame_clock` library contains the real
+FrameClock constructor, destructor and existing update method. It owns the
+unchanged input-global translation unit shared with the complete ScreenItem
+library. The Linux `reconstructed_frame_clock_owner` fixture uses genuine clock
+lifetimes and explicit tick arguments, verifies initialized fields and the
+original unconditional registration clear, and exercises finite updates away
+from the original x87 sampling threshold. It never reads the sample word before
+the update method defines it. The existing complete-item fixture constructs a
+real clock and uses a separate non-owning snapshot. These checks do not qualify
+clock wraparound, general x87 equivalence, a live OS clock, full Game startup or
+production timing.
+
+The optional experimental InputMotion owner target composes its real constructor,
+ordinary destructor and registration with the existing cursor adapter and
+TGA/VFS/image/palette implementation. `reconstructed_input_motion_owner` uses a
+generated indexed TGA and borrowed typed input/renderer state to check initial
+coordinates, palette conversion, publication and genuine image cleanup,
+including the original unconditional registration clear. Its fixture is limited
+to 64-bit x86 Linux; optimized and explicit ASan/UBSan/LSan qualification remain
+separate from Windows/macOS coverage. This target requires the reconstructed-test
+selection and does not select InputMotion Update or Render, start the Game owner,
+or provide a gameplay cursor. Experimental source selection remains off by
+default.
+
+The `beachlife_renderer_display` host library borrows the existing game window
+through `platform::Video`. It queries real SDL display/window state and converts
+top-down, little-endian RGB555 frames, with an explicit row stride, into the
+video boundary's RGBA pixels. Drawing contexts may outlive the display wrapper;
+the borrowed `Video` and window must remain alive. Invalid storage, wrong-thread
+use, expired windows and SDL errors are reported without a fabricated fallback.
+This library is linked by the runtime, but the reconstructed renderer owner and
+its DirectDraw/GDI calls are not connected to it yet. Normal Play is unchanged.
+
+The focused `renderer_display` test uses an actual hidden SDL dummy window and a
+recorder for `platform::Video`. It checks padded/unaligned literal pixels,
+storage limits, context lifetime and rejection before presentation. The pinned
+dummy backend has no window-border query: border-dependent operations must
+report that failure. It does not qualify desktop border/DPI behavior, a GPU,
+retail Game/renderer lifetime or a visible Intro/menu. Linux optimized and
+explicit address/undefined/leak sanitizer builds are the initial scope.
+
+```sh
+cmake --preset release -B build/renderer-display -DBUILD_TESTING=ON
+cmake --build build/renderer-display --target renderer_display_tests
+ctest --test-dir build/renderer-display -R '^renderer_display$' --output-on-failure
+```
+
+Experimental builds also provide `beachlife_reconstructed_gui_float`, the complete
+script floating-point reader used by slider and bar commands. It keeps the
+original unchecked 128-byte token buffer, whitespace and delimiter handling,
+and `atof` followed by float narrowing. The native boundary uses the host CRT;
+nondecimal syntax, overflow and non-C locales are not qualified against VC6.
+The existing parser prefix is borrowed here; this does not construct the full
+parser, widget owners or a menu. Ordinary native builds do not select this body.
+
+With `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and
+`BEACHLIFE_BUILD_RECONSTRUCTED_TESTS=ON`, build
+`reconstructed_gui_float_tests` and run `ctest -R '^reconstructed_gui_float$'`.
+The focused fixture covers literal values and cursor positions, consecutive
+reads, the maximum bounded token, and unchanged input/unrelated typed members.
+The library is available with subsystem tests disabled.
+
+The matching profile includes the complete 32-byte MainMenu controller
+constructor with its real base lifetime and ten-slot table. It matches strictly;
+raw bytes differ at relocated addresses. Changing its initial-entry flag from
+1 to 0 is rejected at 90% against the fixed original extent, retaining all 121
+previous comparison results. The physical eight-byte Exit alias retains its
+existing strict and raw match. Native source selections remain unchanged;
+comparison-only anchors and borrowed dependencies do not establish a running
+MainMenu or a complete native Game owner.
+
+Experimental localization also composes the genuine language constructor,
+destructor and hash-table storage. It loads generated BLE data through the
+existing mounted-file boundary and retains the original quote scanning,
+duplicate-key probing, fixed value array and unconditional global cleanup.
+The initial non-Windows domain is finite ASCII keys with unchanged UTF-16 text;
+it does not claim portable Windows ACP conversion or repaired malformed-input
+behavior. The sole global and prime table remain in their existing archives.
+
+With experimental reconstructed tests enabled,
+`reconstructed_text_lookup_owner_tests` exercises complete language lifetimes
+and real lookups. Its initial qualification is Linux x86-64 optimized and
+ASan/UBSan/LSan; Windows and macOS remain separate gates. Existing localization,
+font, text and parser fixtures now construct genuine language owners, use scoped
+borrowed records, and restore their owned tables before cleanup. This does not
+construct a Game or a complete GUI manager, and normal source selection remains
+unchanged. The localization target retains its existing test-selection boundary.
+
+
+Experimental source selection also provides the genuine renderer owner for its
+windowed software path. It composes the real constructor, ordinary destructor,
+mode callback, surface allocation and six TIFF loads with the SDL display
+transport. The uniform declaration uses host vector backing and the existing
+deque boundary; pointed-to surfaces retain their original ownership and cleanup
+order. Allocation, growth and exception timing are not VC6 matching claims.
+
+`reconstructed_renderer_owner_tests` and the affected method fixtures require
+Linux x86-64 and actual X11 window geometry for this initial qualification.
+Fixtures construct real owners and restore scoped borrowed inputs before
+destruction. Historical probes before the start of the surface allocation are
+outside this native domain; real default-buffer branches remain covered.
+Hardware display initialization and unsupported geometry fail explicitly.
+Presentation, capture and the complete Game/controller flow remain separate
+dependencies. This owner does not change normal Play or enable gameplay by
+itself, and experimental selection remains off by default.
+
+The matching profile includes the complete 165-byte GUI floating-point reader.
+It matches strictly, with relocated bytes differing. A control that stops
+consuming the closing delimiter is rejected at 82.44% against the fixed
+original extent, while all 122 previous results are retained. The real
+`atof` import and borrowed parser fixture are included; comparison images
+are not executed. Native source selections and their existing Float
+qualification remain unchanged. This does not qualify a complete parser
+owner or frontend flow.
+
+
+The experimental JPEG export target connects the complete game wrapper to a
+real host file encoder built from the pinned stb source. The codec patch leaves
+stb's default behavior unchanged and permits an explicit sampling choice; this
+service selects Y 2x2 / Cb,Cr 1x1 (4:2:0), including quality100. Input is tightly
+packed top-down RGB. File output completes and closes before the game's result
+global is published; source buffers remain borrowed and partial failed output
+is retained. The codec's internal memory, quantization/bitstream details, path
+sharing, failure timing and full IJL error behavior are not byte-matched.
+
+With experimental reconstructed tests enabled on Linux,
+`reconstructed_jpeg_export_tests` uses the genuine four-argument TgaImage owner,
+generated colors, a real JPEG decoder, literal sampling/quantization markers,
+odd and one-pixel extents, guarded input, and actual missing-path and `/dev/full`
+failures. `BEACHLIFE_RECONSTRUCTED_JPEG_FIXTURE_ROOT` selects its generated output
+directory. The host boundary rejects unrepresentable dimensions/indexing before
+I/O; this is not a claim about original malformed input behavior. Windows/macOS,
+codec allocation failure and close-only failure remain separate qualification
+gates. This target alone does not execute renderer capture, presentation, the
+Game owner or a menu. Default reconstructed source selection is unchanged.
+
+
+The experimental `reconstructed_renderer_capture` test exercises the complete
+capture method through a genuinely constructed software renderer, six generated
+TIFF inputs, the real TGA image lifetime, and the native JPEG exporter. Literal
+RGB555 full-frame, cropped and high-bit cases compare encoded output with
+independently specified RGB passed to the same codec. A real missing-directory
+failure still cleans up the image and clears the pending flag. The sole control
+changes that final clear to one.
+
+This focused Linux x86-64 check uses a real hidden x11 window and leak checks.
+The existing `Present` method is not selected by this target. The hardware565
+capture branch remains complete source but unqualified: the native owner rejects
+hardware construction. Short terminated fixture filenames exercise a bounded
+read of opaque storage; they do not establish its original general capacity.
+This is capture-subsystem evidence, not a reconstructed Game/menu or GPU result.
+
+The experimental renderer presentation target composes the complete windowed
+`Present()` algorithm with the genuine renderer, pixel access, fade effect,
+frame capture and JPEG service. The six effect globals have one real storage
+owner. Capture runs before the effect; the original countdown, signed old-step
+comparison, surface selection and lock cleanup remain intact. An unavailable
+host drawing operation reaches the original cleanup tail. Unsupported hardware
+presentation remains an explicit separate capability.
+
+`reconstructed_renderer_present_tests` uses generated TIFFs and a genuine renderer
+to check literal effect states/colors, capture-before-effect ordering through
+real JPEG output, failed bitmap validation, and the original null-pixel early
+return. Its Video recorder observes the platform boundary; it supplies no game
+method. This does not qualify GPU presentation, mode0, a complete Game/controller,
+or the menu. Existing experimental subsystem-test selection remains unchanged.
+
+The matching profile also reconstructs the Panel13c entry count as its original
+signed pointer difference. Its complete 10-byte method is byte-identical; a
+capacity-instead-of-end source control scores 75% against the same original
+extent, while all prior matching results remain intact. The comparison fixture
+borrows the proven 16-byte owner prefix and establishes no owner lifetime. An
+early inverse patch keeps both native source selections unchanged.
+
+`beachlife_renderer_words` supplies owned RGB555/RGB565 CPU surfaces for the
+native renderer. It preserves exact source-key words, supports contained
+unscaled copies with overlapping storage, and keeps unlocked pixel borrows
+valid until storage is exchanged or destroyed. Operations reject wrong-thread
+access, incompatible formats, invalid bounds and conflicting locks. Logical
+pixel conversion is independent of the physical GPU format.
+
+Build `renderer_word_surface_tests` and run `ctest -R '^renderer_word_surface$'`
+for generated ownership, keyed-copy, overlap, bounds and literal color checks.
+This target needs no disc data, SDL runtime initialization or reconstructed
+game owner. Full-screen display selection, GPU presentation and the complete
+game/controller connection require their own integration.
+
+The matching profile also reconstructs the complete 147-byte Panel13c directory
+and file-name search. It is strictly matched and byte-identical; changing the
+second comparison to use the directory rejects the control at 80% against the
+same original extent. The 36-byte owner and 28-byte entry declarations are shared
+by the freshly compiled count, search and borrowed-pointer fixture. All 124 prior
+matching rows retain their scores and raw-byte results. An early inverse patch
+preserves both native source selections; this match establishes no owning
+lifetime or native gameplay capability.
+
+
+The matching profile includes the VC6 x86 stack-probe compiler helper needed by
+large local buffers. Its 47-byte body agrees with the pinned compiler package,
+walks each 4096-byte stack page, and preserves the original register and stack
+contract. A compile-only 0x1400-byte caller verifies the real compiler call;
+the linked comparison image is never executed. A changed ECX restore is rejected
+against the same complete helper extent, while all 125 existing method results
+are retained. The MSVCRT import library also exposes genuine `strncmp` and
+`strncpy` imports for reconstructed file metadata readers.
+
+This is compiler support, with no additional game-method matching or gameplay
+credit. Both native source profiles remove it before native adaptation and keep
+their existing source selection. Native compilers provide their own stack
+probing support.
+
+The comparison metadata binds the current PDB public alias of a shared empty
+function. Its complete one-byte extent and the caller's complete extent are
+preserved; folded aliases are checked against the actual linked contribution.
+
+
+The matching profile reconstructs the complete 593-byte scenery-list population
+method, including its vector growth and exception cleanup. The original
+21-byte exception handler and 40-byte state metadata are checked separately.
+The selected source includes the real catalog getter and pool-refill dependency;
+`_strupr` is supplied by the genuine MSVCRT import library. The current borrowed
+image-list and frame declarations remain consistent across the comparison image.
+
+A preview-frame to cost-field source control is compared against the same full
+original method extent and must fail matching while retaining every earlier
+method result. Comparison images are never executed. Both native source profiles
+retain their previous selection; this matching increment alone does not connect
+the game window to the reconstructed menu or qualify a full catalog owner.
+
+
+The matching profile reconstructs the complete 718-byte load-panel entry append,
+including its file check, owned strings, optional MP3 scan, tag read and vector
+growth. Its original 35-byte exception-handler code and 48-byte state metadata
+are checked separately. Real scanner and tag-reader bodies supply the direct
+dependencies; the existing compiler stack helper handles their large buffers.
+The original scanner leak and unchecked parsing behavior are preserved.
+
+The combined comparison image retains the scenery-list reconstruction and all
+earlier method results. A control that changes the stored entry value with XOR1
+must fail against the same full original 718-byte extent. This linked matching
+image is never executed. Both native profiles retain their existing selections;
+the append and scanner source does not gain native or game-runtime credit from
+the comparison. The stream parser still needs a separate native pointer-domain
+adaptation before experimental execution.
+
+
+The experimental renderer provides the original mode-0 startup route through
+real SDL fullscreen display selection and owned RGB565 front/back surfaces.
+It requires the exact requested pixel dimensions and density; it does not
+select a nearest resolution or force the software-renderer mode. Offscreen
+surfaces retain explicit ownership, and capture reads the back image before
+real GPU presentation exchanges its pixel storage. The software path remains
+selected by its original mode argument.
+
+The renderer owner, presentation and blit libraries are available with
+`BEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON` and reconstructed tests disabled. The
+option remains off by default. The optional Linux mode-0 fixture uses six
+generated TIFFs, real Vulkan presentation, downloaded pixel comparisons and
+normal owner cleanup. It needs X11 with an actual density-1 800×600 fullscreen
+mode; other displays are not silently substituted.
+
+This capability does not connect Play to the Game/Intro/menu loop. The actual
+COM loss/restore methods cannot operate on the native owner’s null COM fields;
+a real typed recovery boundary and the complete Game/GUI ownership connection
+remain separate. Windows/macOS, device recovery and allocation-failure timing
+are not qualified by the Linux owner fixture.
+
+
+The matching profile reconstructs the complete 793-byte building-list population
+method, including its availability checks, count text, count-dependent colours
+and pointer-vector growth. The linked comparison uses the real catalog,
+building-count and pool dependencies; comparison-only boundaries remain excluded
+and the image is never executed.
+
+The method passes full strict comparison, while raw bytes differ. A control that
+changes the no-building colour must fail against the same complete original
+extent and retain every earlier method result. Both native source profiles keep
+their existing selections, including the experimental mode-0 renderer; this
+matching result does not qualify the building-list owner or connect the menu.
+Experimental native rendering has typed surface status and exact fullscreen-mode
+restoration on the existing SDL GPU window. The original software skip, primary-
+then-back checks, indexed entry reload and preparation clear are retained. CPU
+pixel allocations survive the supported display transition. Window/display
+identity changes, unavailable exact modes and failed GPU presentation are errors;
+this does not recreate a lost GPU device or construct a Game/GUI/Intro owner.
+
+
+The experimental positional-sound scheduler has its genuine constructor,
+list and payload cleanup, and global registration lifetime. Its owner and pool
+libraries are available with reconstructed tests disabled. Pool declarations use
+the existing real host atomic exchange and thread wait; production targets do
+not include fixture platform headers. Sound playback, scheduler updates and the
+complete Game owner remain separate capabilities.
+
+The optional Linux scheduler-owner fixture checks empty and populated lists,
+payload release order, returned pool nodes and overlapping owner lifetimes. It
+retains the original unconditional global clear when an older owner is destroyed.
+
+
+Experimental credits-data libraries decode the supported locally supplied
+`BeachLife.exe` as data. They verify its complete size and SHA-256, validate
+the PE32 data mapping, and preserve all 205 scalar rows and the adjacent
+writable format. No original table, text or executable is bundled or executed.
+A single game-thread binding owns publication; uninitialized, duplicate and
+foreign-thread access is rejected. Both libraries are available with
+reconstructed tests disabled and the experimental option remains off by default.
+The boot session binds verified records when available. Missing, unreadable or
+unsupported credits data leaves the table unbound and fails only when the credits
+consumer requests its first row, so unrelated startup does not depend on it.
+No placeholder rows are published, and verified records remain bound through
+game teardown.
+
+The optional Linux generated-input fixture exercises optional missing/rejected
+data, malformed mappings, row
+and format preservation, binding lifetime and actual reconstructed BLE text
+lookup. Preparation retains the required executable through the existing worker;
+completed prepared mounts work with the ISO disconnected. Older caches need one
+repair with the ISO present. The complete credits controller and the normal
+Play-to-menu connection remain separate.
+
+
+The experimental `beachlife_reconstructed_renderer_clip_mode` library keeps the
+original mode word, rectangle suppression and three scale-bit values, and is
+available with reconstructed tests disabled. The focused
+`reconstructed_renderer_clip_mode` fixture selects `--clip-mode` on the existing
+clipping executable: one genuine renderer and six generated TIFFs exercise
+half, normal and double clipping, suppressed queue publication, and an unknown
+full-width mode under the defined unscaled branch. It uses the existing hidden
+SDL X11 window and platform Video recorder; it does not qualify GPU presentation,
+a Game owner or a menu. The remaining default clipping cases are a separate test.
+
+
+
+The matching profile includes the complete 59-byte renderer clip-mode setter.
+It passes strict comparison and raw byte equality. The coherent renderer prefix
+retains its 124-byte layout, and a typed borrowed caller exercises every accessed
+field without constructing a renderer owner or executing the comparison image.
+
+A control changing mode 2 to the mode-1 value is rejected at 73.33% against the
+fixed original 59-byte extent; its emitted body is 49 bytes after equal stores
+merge. All 128 prior scores and raw-byte results remain unchanged. The early
+native inverse preserves both native source profiles and the existing
+experimental clip-mode capability. This matching increment does not connect
+Game, Intro or menu rendering.
+
+The experimental credits-owner lifetime target is
+`reconstructed_credits_owner_tests` (`ctest -R '^reconstructed_credits_owner$'`).
+It constructs the real owner and pool sentinel, exercises Reset, and destroys
+nonempty lists through the genuine entry callback and Text/base destructors.
+The native pointer layout is separate from the VC6 layout. The spacing field
+keeps its original uninitialized constructor behavior; Reset establishes its
+first defined value. Native copying is disabled until a real list-copy body
+is selected. Existing GUI dependencies currently require the optional
+reconstructed-test configuration. This headless lifetime proof does not select
+the credits producer, scrolling/rendering loop, or complete Game/GUI startup.
+
+
+The matching profile includes the music and playlist accessors below. Each
+uses the boot source file name and method body and passes 100% normalized
+comparison with identical raw code bytes. Alignment is excluded from the
+audited extents. Changed-body controls read a different field while retaining
+the complete original extent. All 129 earlier scores and raw-byte results
+remain unchanged, including the existing `AccessPixels` result of 98.18%.
+Native inverse patches retain the existing native source selections; the
+comparison images are never executed.
+
+| Method | Address | Code bytes | Changed-body control |
+| --- | --- | ---: | ---: |
+| `ScreenPlacementStore::ReadMusicName` | `0x004e6bf0` | 15 | 80% |
+| `ScreenPlacementStore::ReadMusicDirectory` | `0x004e6c00` | 16 | 80% |
+| `ScreenPlacementStore::ReadMusicWord08` | `0x004e6c10` | 16 | 80% |
+| `ScreenPlacementStore::ReadMusicWord0c` | `0x004e6c20` | 16 | 80% |
+| `ScreenPlacementStore::MusicCount` | `0x004e6c30` | 10 | 75% |
+| `ScreenLoadPanel13cOwner::ReadEntryWord10` | `0x004cdb90` | 16 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryName` | `0x004cdba0` | 15 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryDirectory` | `0x004cdbb0` | 16 | 80% |
+| `ScreenLoadPanel13cOwner::ReadEntryWord18` | `0x004cdbc0` | 16 | 80% |
+
+
+The matching profile also promotes these existing startup methods.
+Each complete code extent passes 100% normalized comparison. Raw equality
+is listed separately; changed-body controls retain the audited original
+extent and are rejected. All other existing comparison results remain
+unchanged. `ScreenRequestRenderer::AccessPixels` (M001) remains outside this
+matching credit; its normalized display varies with the linked layout. Paired
+inverse patches preserve the native game export. Comparison images are never
+executed.
+
+| Method | Address | Code bytes | Raw equality | Changed-body control |
+| --- | --- | ---: | --- | ---: |
+| `ScreenItem::Unresolved4c` | `0x004a1160` | 3 | yes | 66.67% |
+| `ControllerState::ScreenSizeChanged` | `0x004e8fa0` | 3 | yes | 66.67% |
+| `ScreenItem::Unresolved20` | `0x004a1150` | 4 | yes | 50.00% |
+| `GuiParserState::ReadRegistryHead` | `0x004aa890` | 4 | yes | 40.00% |
+| `GuiParserState::ReadItemsHead` | `0x004aa8a0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState40` | `0x004adac0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState41` | `0x004adcc0` | 4 | yes | 40.00% |
+| `ScreenItem::ReadState42` | `0x004adcd0` | 4 | yes | 40.00% |
+| `ScreenItem::HandleInput38` | `0x004a70a0` | 5 | yes | 50.00% |
+| `ScreenMode6Controller::HandleFourWords` | `0x004a70b0` | 5 | yes | 50.00% |
+| `ScreenManagerAuxiliaryState::ClearState` | `0x004c1330` | 5 | yes | 50.00% |
+| `CurrentScreenTerrain` | `0x00416cd0` | 6 | no (relocations) | 40.00% |
+| `IntroController::ScriptPath` | `0x004e8d10` | 6 | no (relocations) | 50.00% |
+| `ControllerState::~ControllerState` | `0x0049ee50` | 7 | no (relocations) | 80.00% |
+| `ScreenModeController::~ScreenModeController` | `0x004a61c0` | 7 | no (relocations) | 80.00% |
+| `ScreenManager::CurrentContext` | `0x004b1b90` | 7 | yes | 40.00% |
+| `ScreenRequestGamePrefix::ReadMenuReturnFlag` | `0x004e3bd0` | 7 | yes | 50.00% |
+| `InputState::ReadDeltaY` | `0x004eab20` | 7 | yes | 40.00% |
+| `ScreenRequestGamePrefix::ClearMenuReturnFlag` | `0x004e3be0` | 8 | yes | 50.00% |
+| `ScreenRequestRenderer::SetUnscaledClip` | `0x00483590` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetWord10` | `0x0049fa00` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetState14` | `0x0049fa10` | 10 | yes | 40.00% |
+| `ScreenFontRenderer::SetWord18` | `0x0049fa20` | 10 | yes | 40.00% |
+| `SetFatalWindow` | `0x004ea1f0` | 10 | no (relocations) | 40.00% |
+| `ScreenRendererRegistration::~ScreenRendererRegistration` | `0x00411ee0` | 11 | no (relocations) | 50.00% |
+| `ScreenMode6Controller::~ScreenMode6Controller` | `0x004a7680` | 11 | no (relocations) | 80.00% |
+| `ScreenVariableItem::~ScreenVariableItem` | `0x004c8a20` | 11 | no (relocations) | 80.00% |
+| `GameUpdatePairRegistration::~GameUpdatePairRegistration` | `0x004d3080` | 11 | no (relocations) | 50.00% |
+| `ScreenGameRegistration::~ScreenGameRegistration` | `0x004e5520` | 11 | no (relocations) | 50.00% |
+| `FrameClock::~FrameClock` | `0x004eb3b0` | 11 | no (relocations) | 50.00% |
+| `StartupProfilerRegistration::~StartupProfilerRegistration` | `0x004ecfa0` | 11 | no (relocations) | 50.00% |
+| `GuiParserState::GuiParserState` | `0x004ecfb0` | 11 | yes | 57.14% |
+| `RendererSeaStatePrefix::SetSeaEnabled` | `0x004184f0` | 13 | yes | 40.00% |
+| `ScreenItem::ClearManagerReference` | `0x004add90` | 13 | no (relocations) | 75.00% |
+| `ScreenListBoxEntry::~ScreenListBoxEntry` | `0x004c20e0` | 13 | yes | 22.22% |
+| `ScreenImageItem::Unresolved04` | `0x004c3d20` | 13 | no (relocations) | 57.14% |
+| `ScreenFrameItem::SetHeight` | `0x004c7830` | 13 | yes | 75.00% |
+| `ScreenLoadPanel140::ScreenLoadPanel140` | `0x004c8760` | 13 | yes | 36.36% |
+| `RendererSeaStatePrefix::~RendererSeaStatePrefix` | `0x004184e0` | 14 | no (relocations) | 22.22% |
+| `ScreenManagerAuxiliaryState::~ScreenManagerAuxiliaryState` | `0x004c1160` | 14 | yes | 22.22% |
+| `ScreenManagerOwner190::Reset` | `0x004c1c40` | 14 | yes | 66.67% |
+| `ScreenManager::SetFontData` | `0x004aedb0` | 15 | yes | 57.14% |
+| `ScreenManager::SetFontRenderer` | `0x004aedc0` | 15 | yes | 57.14% |
+| `ScreenPlacementStore::SetScreenSize` | `0x004e6960` | 17 | yes | 66.67% |
+| `ScreenModeController::ScreenModeController` | `0x004a6180` | 18 | no (relocations) | 66.67% |
+| `ScreenRequestRenderer::SetSeaEnabled` | `0x0040bf70` | 19 | no (relocations) | 66.67% |
+| `ScreenRadioItem::ClearFlag10` | `0x004c6aa0` | 19 | yes | 87.50% |
+| `ScreenButtonActionAt004a3290` | `0x004a3290` | 21 | no (relocations) | 83.33% |
+| `ScreenRequestGamePrefix::HasScenarioFlag08` | `0x004e41c0` | 22 | yes | 88.89% |
+| `InputState::SetSystemCursor` | `0x004eb330` | 22 | no (relocations) | 83.33% |
+| `ScreenLinearContainer::Unresolved08` | `0x004c0ed0` | 24 | yes | 91.67% |
+| `ScreenLinearContainer::Unresolved0c` | `0x004c0fa0` | 24 | yes | 91.67% |
+| `ScreenLinearContainer::Unresolved1c` | `0x004c0fe0` | 24 | yes | 91.67% |
+| `ScreenFontData::~ScreenFontData` | `0x004183f0` | 25 | no (relocations) | 95.65% |
+| `VariableCatalog::Scenery` | `0x00449780` | 25 | yes | 71.43% |
+| `ScreenMode0Controller::ScreenMode0Controller` | `0x004a6e90` | 25 | no (relocations) | 82.35% |
+| `ScreenMode6Controller::ScreenMode6Controller` | `0x004a7640` | 25 | no (relocations) | 82.35% |
+| `ScreenMode5Controller::ScreenMode5Controller` | `0x004a7b50` | 25 | no (relocations) | 82.35% |
+| `ScreenMode4Controller::ScreenMode4Controller` | `0x004a8610` | 25 | no (relocations) | 82.35% |
+| `ScreenLoadPanel13c::~ScreenLoadPanel13c` | `0x004c2450` | 25 | no (relocations) | 95.65% |
+| `ExitGameController::ExitGameController` | `0x004e8230` | 25 | no (relocations) | 94.74% |
+| `IntroController::IntroController` | `0x004e8b40` | 25 | no (relocations) | 94.74% |
+| `LoadGameController::LoadGameController` | `0x004e8d20` | 25 | no (relocations) | 94.74% |
+| `ResetGameController::ResetGameController` | `0x004e8fb0` | 25 | no (relocations) | 94.74% |
+| `InputState::HideSystemCursor` | `0x004eb0b0` | 25 | no (relocations) | 96.00% |
+| `WindowDeactivationState::SetGameSpeed` | `0x0043f480` | 26 | no (relocations) | 90.91% |
+| `VariableWorldPrefix::HasNamed` | `0x0042f000` | 27 | no (relocations) | 94.12% |
+| `GameUpdatePair::Update` | `0x004d2760` | 27 | no (relocations) | 88.00% |
+| `ScreenImageItem::ConfigureIcon` | `0x004c3e10` | 28 | yes | 94.12% |
+| `IntroController::~IntroController` | `0x004e8b80` | 28 | no (relocations) | 76.92% |
+| `MainMenuController::~MainMenuController` | `0x004e8e30` | 28 | no (relocations) | 76.92% |
+| `InputState::Poll` | `0x004eaab0` | 28 | no (relocations) | 96.30% |
+| `ScreenRequestRenderer::PositionSurface` | `0x0040e350` | 29 | yes | 66.67% |
+| `VariableCatalog::Building` | `0x004493a0` | 29 | yes | 94.12% |
+| `ScreenMode10Controller::ScreenMode10Controller` | `0x004a70c0` | 29 | no (relocations) | 95.24% |
+| `ScreenLinearContainer::MarkPrepared` | `0x004c0fc0` | 29 | no (relocations) | 96.30% |
+| `ScreenImageItem::Unresolved24` | `0x004c8510` | 30 | no (relocations) | 89.66% |
+| `GuiDefinedItem::Unresolved08` | `0x004a5400` | 31 | yes | 96.97% |
+| `GuiDefinedItem::Unresolved0c` | `0x004a54b0` | 31 | yes | 96.97% |
+| `GuiDefinedItem::MarkPrepared` | `0x004a54d0` | 31 | yes | 96.97% |
+| `ScreenDialog::Unresolved08` | `0x004a5cb0` | 31 | yes | 96.97% |
+| `ScreenRadioGroup::Unresolved1c` | `0x004c7140` | 31 | yes | 96.97% |
+| `ScreenFrameItem::Unresolved1c` | `0x004c7940` | 31 | yes | 96.97% |
+| `ScreenDialogResourceRecord::ScreenDialogResourceRecord` | `0x004171c0` | 32 | yes | 83.33% |
+| `MenuShowMain` | `0x004a1c20` | 32 | no (relocations) | 94.12% |
+| `ScreenLinearContainer::HandleInput38` | `0x004c0dd0` | 32 | yes | 96.30% |
+| `ScreenManagerOwner190::IsFinished` | `0x004c1d50` | 32 | no (relocations) | 96.00% |
+| `DestroyManagerOwner190Entry` | `0x004c1ee0` | 32 | no (relocations) | 96.77% |
+| `ScreenFrameItem::SetRectangle` | `0x004c7840` | 32 | yes | 95.65% |
+| `RendererSeaStatePrefix::RendererSeaStatePrefix` | `0x00418410` | 33 | yes | 71.43% |
+| `ScreenMode9Controller::ScreenMode9Controller` | `0x004a9de0` | 33 | no (relocations) | 96.00% |
+| `ScreenManager::ReadItemThreshold` | `0x004af6f0` | 33 | no (relocations) | 94.74% |
+| `ScreenLinearContainer::Unresolved04` | `0x004c0ea0` | 33 | yes | 96.97% |
+| `ScreenManagerOwner190::RenderChildren` | `0x004c1d70` | 33 | yes | 97.14% |
+| `ScreenTextItem::~ScreenTextItem` | `0x004c83d0` | 34 | no (relocations) | 88.89% |
+| `GuiDefinedItem::Unresolved10` | `0x004a5480` | 36 | no (relocations) | 96.97% |
+| `ScreenDialog::Unresolved10` | `0x004a5ef0` | 36 | no (relocations) | 96.97% |
+| `ScreenTabItem::Unresolved10` | `0x004c0c40` | 36 | no (relocations) | 96.97% |
+| `ScreenRadioGroup::MarkPrepared` | `0x004c70c0` | 36 | no (relocations) | 97.14% |
+| `ScreenFrameItem::MarkPrepared` | `0x004c7860` | 36 | no (relocations) | 97.14% |
+| `ScreenFrameItem::Unresolved10` | `0x004c7960` | 36 | no (relocations) | 96.97% |
+| `ScreenRequestRenderer::UnlockPixels` | `0x0040e2e0` | 37 | yes | 96.77% |
+| `VariableWorldPrefix::CountType` | `0x0042f0f0` | 37 | no (relocations) | 96.00% |
+| `ScreenItem::Unresolved24` | `0x004ada40` | 37 | no (relocations) | 80.00% |
+| `ScreenScrollBarPrefix::Unresolved24` | `0x004b52c0` | 37 | no (relocations) | 91.43% |
+| `WindowAudioState::PlaySound` | `0x004cf710` | 37 | no (relocations) | 96.00% |
+| `ScreenMode7Controller::ScreenMode7Controller` | `0x004a8f40` | 38 | no (relocations) | 88.89% |
+| `ScreenRequestGamePrefix::PopulateLoadGameMenu` | `0x004e4ed0` | 38 | no (relocations) | 89.66% |
+| `StartupMovie::Play` | `0x004ed190` | 38 | no (relocations) | 96.77% |
+| `ScreenDialogResourceLookup::Release` | `0x00417d10` | 39 | no (relocations) | 96.77% |
+| `WorldCursorNames::FirstNameNumber` | `0x00432260` | 39 | no (relocations) | 96.30% |
+| `VariableEntity::FlagAt00460340` | `0x00460340` | 39 | no (relocations) | 96.55% |
+| `ScreenImageItem::Unresolved0c` | `0x004c3d30` | 39 | no (relocations) | 96.97% |
+| `ScreenRequestRenderer::SurfaceLost` | `0x0040e370` | 40 | yes | 91.89% |
+| `GuiDefinedItem::Unresolved4c` | `0x004a5420` | 40 | yes | 97.56% |
+| `GuiDefinedItem::Unresolved24` | `0x004a5450` | 40 | yes | 97.56% |
+| `GuiDefinedItem::Unresolved04` | `0x004a54f0` | 40 | yes | 97.56% |
+| `ScreenDialog::Unresolved4c` | `0x004a5d40` | 40 | yes | 97.56% |
+| `ScreenFrameItem::Unresolved04` | `0x004c77d0` | 40 | yes | 97.56% |
+| `ScreenFrameItem::Unresolved24` | `0x004c7800` | 40 | yes | 97.56% |
+| `ScreenMode1Controller::ScreenMode1Controller` | `0x004a9390` | 41 | no (relocations) | 88.89% |
+| `ScreenItem::TestRectangle` | `0x004adad0` | 41 | yes | 25.81% |
+| `WindowAudioState::IsStreamPlaying` | `0x004cfee0` | 41 | no (relocations) | 92.68% |
+| `ScreenButtonActionAt004a3260` | `0x004a3260` | 42 | no (relocations) | 94.74% |
+| `ScreenMode8Controller::ScreenMode8Controller` | `0x004a7690` | 42 | no (relocations) | 96.77% |
+| `ScreenImageItem::TestRectangle` | `0x004c3d60` | 42 | yes | 91.43% |
+| `FrameClock::FrameClock` | `0x004eb380` | 42 | no (relocations) | 96.55% |
+| `ScreenRequestRenderer::RestoreSurface` | `0x0040e3a0` | 43 | yes | 97.30% |
+| `ScreenManager::ReleaseOwner190` | `0x004b11d0` | 43 | no (relocations) | 96.77% |
+| `ScreenVariableFilter::ApplyPosition` | `0x004c2360` | 43 | yes | 96.77% |
+| `DeactivateActiveScreen` | `0x004b2e80` | 44 | no (relocations) | 97.14% |
+| `ScreenTabItem::Unresolved08` | `0x004c0a80` | 44 | yes | 77.27% |
+| `ScreenTabItem::MarkPrepared` | `0x004c0af0` | 44 | yes | 90.00% |
+| `ScreenRadioGroup::Unresolved10` | `0x004c71e0` | 44 | no (relocations) | 91.89% |
+| `ScreenItem::SetRectanglePosition` | `0x004add60` | 45 | yes | 73.68% |
+| `StartupConfig::GetInteger` | `0x004ecce0` | 45 | no (relocations) | 96.77% |
+| `StartupConfig::GetString` | `0x004ecd10` | 45 | no (relocations) | 96.77% |
+| `GuiDefinedItem::ApplyPosition` | `0x004a53a0` | 47 | yes | 97.96% |
+| `GuiDefinedItem::MoveRectangle` | `0x004a53d0` | 47 | yes | 97.96% |
+| `ScreenLinearContainer::MoveRectangle` | `0x004c0d60` | 47 | no (relocations) | 85.11% |
+| `LoadTgaFile` | `0x004ea910` | 47 | no (relocations) | 93.33% |
+| `ScreenVariableFilter::MoveRectangle` | `0x004c2330` | 48 | yes | 79.07% |
+| `ScreenLinearContainer::ApplyPosition` | `0x004c0d90` | 49 | no (relocations) | 89.80% |
+| `WindowAudioState::VoiceStatus` | `0x004cfac0` | 49 | yes | 97.78% |
+| `GameFileReader::Unknown48` | `0x0049eb30` | 50 | no (relocations) | 89.80% |
+| `ReleasePlacementMusicEntry` | `0x004e7f30` | 51 | no (relocations) | 97.67% |
+| `ScreenManager::ClearItemReference` | `0x004af6b0` | 52 | no (relocations) | 96.00% |
+| `ScreenButtonActionAt004a2ef0` | `0x004a2ef0` | 53 | no (relocations) | 95.65% |
+| `ScreenManager::ShowItemText` | `0x004af670` | 54 | no (relocations) | 90.91% |
+| `ScreenTabItem::ApplyPosition` | `0x004c08a0` | 54 | no (relocations) | 87.27% |
+| `ScreenTabItem::MoveRectangle` | `0x004c0ab0` | 54 | no (relocations) | 87.27% |
+| `ScreenRadioGroup::ApplyPosition` | `0x004c7160` | 54 | no (relocations) | 87.27% |
+| `ScreenRadioGroup::MoveRectangle` | `0x004c71a0` | 54 | no (relocations) | 87.27% |
+| `GameFileReader::Unknown34` | `0x0049e440` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown30` | `0x0049e480` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown2c` | `0x0049e4c0` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown28` | `0x0049e500` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown24` | `0x0049e540` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown18` | `0x0049e680` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown0c` | `0x0049e7b0` | 55 | no (relocations) | 90.20% |
+| `GameFileReader::Unknown08` | `0x0049e7f0` | 55 | no (relocations) | 90.20% |
+| `ScreenRequestRenderer::RecreateSurface` | `0x0040e4c0` | 57 | no (relocations) | 98.04% |
+| `ScreenDialog::Unresolved24` | `0x004a5aa0` | 57 | no (relocations) | 94.12% |
+| `ScreenDialog::BeginTransition` | `0x004a5d70` | 57 | no (relocations) | 79.07% |
+| `ScreenDialog::HandleInput38` | `0x004a5ae0` | 58 | yes | 98.31% |
+| `ScreenTablePrefix::Unresolved10` | `0x004b8670` | 58 | no (relocations) | 93.88% |
+| `ScreenTabItem::HandleInput38` | `0x004c08e0` | 58 | yes | 98.31% |
+| `ScreenRadioGroup::HandleTimedCoordinates` | `0x004c7080` | 58 | yes | 98.31% |
+| `ScreenFrameItem::HandleTimedEvent` | `0x004c7790` | 58 | yes | 98.31% |
+| `ScreenTabItem::Unresolved04` | `0x004c0a40` | 59 | no (relocations) | 85.71% |
+| `ControllerState::ControllerState` | `0x0049edf0` | 62 | no (relocations) | 90.57% |
+| `ScreenFrameItem::TestRectangle` | `0x004c76c0` | 62 | no (relocations) | 88.89% |
+| `ScreenManager::PrepareActiveScreens` | `0x004b1260` | 65 | no (relocations) | 94.74% |
+| `ScreenDialogPaletteModifiers::ScreenDialogPaletteModifiers` | `0x00409810` | 66 | no (relocations) | 97.30% |
+| `ScreenScrollBarPrefix::MoveRectangle` | `0x004b5a60` | 66 | no (relocations) | 92.54% |
+| `ScreenTabItem::Unresolved24` | `0x004c09f0` | 66 | no (relocations) | 85.71% |
+| `ScreenScrollBarPrefix::Unresolved1c` | `0x004b5ab0` | 69 | yes | 98.25% |
+| `ScreenLinearContainer::ScreenLinearContainer` | `0x004c0c70` | 69 | no (relocations) | 97.78% |
+| `ScreenRadioGroup::Unresolved0c` | `0x004c70f0` | 69 | no (relocations) | 98.36% |
+| `TgaScreenItem::Unresolved0c` | `0x004c8710` | 69 | no (relocations) | 97.67% |
+| `ScreenItem::SetOwnedText` | `0x004adcf0` | 71 | no (relocations) | 92.54% |
+| `ScreenTextItem::Unresolved0c` | `0x004c8400` | 71 | no (relocations) | 94.92% |
+| `ScreenDialog::Unresolved1c` | `0x004a5e70` | 72 | yes | 98.51% |
+| `ShowFatalWindowMessage` | `0x004ea1a0` | 74 | no (relocations) | 93.02% |
+| `ScreenTextItem::Unresolved1c` | `0x004c8450` | 75 | no (relocations) | 95.52% |
+| `ScreenTabItem::Unresolved1c` | `0x004c0bf0` | 78 | yes | 94.44% |
+| `ScreenLinearContainer::Unresolved4c` | `0x004c0f50` | 79 | no (relocations) | 98.55% |
+| `ScreenPlacementStore::ClearPlacements` | `0x004e68f0` | 79 | no (relocations) | 98.59% |
+| `TgaScreenItem::~TgaScreenItem` | `0x004c85c0` | 81 | no (relocations) | 93.02% |
+| `ScreenDialogResourceFrame::ScreenDialogResourceFrame` | `0x00416ce0` | 82 | yes | 94.92% |
+| `StartupMovie::StartupMovie` | `0x004ed0d0` | 82 | no (relocations) | 60.71% |
+| `InputState::InputState` | `0x004ea940` | 83 | no (relocations) | 81.63% |
+| `InputState::Initialize` | `0x004eaa50` | 83 | no (relocations) | 92.96% |
+| `InputMotionState::~InputMotionState` | `0x00409500` | 84 | no (relocations) | 93.62% |
+| `WindowAudioState::StopAllSounds` | `0x004cfdc0` | 84 | no (relocations) | 98.73% |
+| `ScreenRequestGamePrefix::Activate` | `0x004e3b70` | 86 | no (relocations) | 89.80% |
+| `ScreenLinearContainer::Unresolved24` | `0x004c0ef0` | 88 | no (relocations) | 96.47% |
+| `ScreenListBoxPrefix::HandleInput38` | `0x004c55b0` | 88 | yes | 96.47% |
+| `ScreenItem::HandleTimedEvent` | `0x004adc30` | 89 | no (relocations) | 98.46% |
+| `StartupMovie::~StartupMovie` | `0x004ed130` | 91 | yes | 98.88% |
+| `InputState::CreateKeyboard` | `0x004eab60` | 92 | no (relocations) | 98.85% |
+| `ScreenImageItem::~ScreenImageItem` | `0x004c3cc0` | 96 | no (relocations) | 94.12% |
+| `ScreenLoadPanel140::Update` | `0x004c8770` | 96 | no (relocations) | 96.63% |
+| `GameFileReader::Unknown3c` | `0x0049e360` | 97 | no (relocations) | 94.38% |
+| `VariableWorldPrefix::SetKeylines` | `0x0042fab0` | 98 | yes | 88.89% |
+| `ScreenDialogResourceFrame::~ScreenDialogResourceFrame` | `0x00416d40` | 99 | no (relocations) | 96.39% |
+| `ScreenManager::StartCredits` | `0x004b1160` | 99 | no (relocations) | 94.74% |
+| `ScreenManager::PrepareNamedScreen` | `0x004b12b0` | 99 | no (relocations) | 96.39% |
+| `ScreenRequestGamePrefix::SetScreenSize` | `0x004e41e0` | 100 | no (relocations) | 86.84% |
+| `ScreenCheckBox::~ScreenCheckBox` | `0x004c1730` | 101 | no (relocations) | 94.55% |
+| `ScreenManager::FindListBox` | `0x004ae2f0` | 102 | yes | 94.85% |
+| `GameFileReader::Unknown38` | `0x0049e3d0` | 104 | no (relocations) | 97.87% |
+| `ScreenRadioItem::~ScreenRadioItem` | `0x004c6850` | 105 | no (relocations) | 93.10% |
+| `WindowAudioState::PlaySoundAtLevel` | `0x004cf740` | 107 | no (relocations) | 98.59% |
+| `TgaScreenItem::TgaScreenItem` | `0x004c8530` | 108 | no (relocations) | 97.44% |
+| `ScreenTextItem::ApplyFontSettings` | `0x004c84a0` | 109 | no (relocations) | 97.83% |
+| `GameFileReader::Unknown20` | `0x0049e580` | 113 | no (relocations) | 97.96% |
+| `GameFileReader::Unknown10` | `0x0049e730` | 113 | no (relocations) | 97.96% |
+| `ScreenManager::HandlePanelInput` | `0x004b10e0` | 113 | yes | 97.50% |
+| `ScreenPlacementStore::ClearMusicEntries` | `0x004e6980` | 113 | no (relocations) | 90.74% |
+| `GameFileReader::Unknown1c` | `0x0049e600` | 114 | no (relocations) | 97.96% |
+| `ScreenRadioItem::Unresolved1c` | `0x004c6b20` | 114 | no (relocations) | 97.73% |
+| `WindowAudioState::StopSound` | `0x004cfc80` | 114 | no (relocations) | 97.37% |
+| `ScreenManager::SetTickerRectangle` | `0x004af5f0` | 115 | no (relocations) | 97.37% |
+| `ScreenImageItem::HandleTimedCoordinates` | `0x004c3d90` | 115 | no (relocations) | 98.25% |
+| `ScreenButtonPrefix::Unresolved24` | `0x004a0f10` | 116 | no (relocations) | 79.01% |
+| `GameFileReader::Unknown50` | `0x0049ea70` | 118 | no (relocations) | 90.91% |
+| `ScreenManager::ActivateScreens` | `0x004ae8f0` | 119 | no (relocations) | 97.92% |
+| `RecordDisplayMode` | `0x00411ad0` | 121 | yes | 17.91% |
+| `ScreenLinearContainer::~ScreenLinearContainer` | `0x004c0ce0` | 122 | no (relocations) | 91.89% |
+| `ScreenVariableItem::ScreenVariableItem` | `0x004c8980` | 122 | no (relocations) | 97.73% |
+| `ScreenDialogResourceRecord::~ScreenDialogResourceRecord` | `0x004171e0` | 123 | no (relocations) | 83.02% |
+| `WindowDeactivationState::CountBuildings` | `0x0043cea0` | 126 | no (relocations) | 96.23% |
+| `InputState::~InputState` | `0x004ea9c0` | 130 | no (relocations) | 98.00% |
+| `GameFileReader::Unknown5c` | `0x0049e920` | 133 | no (relocations) | 96.43% |
+| `ScreenFrameItem::HandleTimedCoordinates` | `0x004c7700` | 133 | yes | 90.91% |
+| `ScreenListBoxPrefix::Unresolved24` | `0x004c51b0` | 137 | no (relocations) | 52.54% |
+| `WindowSoundBank::ReleaseSample` | `0x004d1fe0` | 137 | no (relocations) | 93.33% |
+| `ScreenRequestRenderer::ResizeSurface` | `0x0040e3d0` | 139 | no (relocations) | 66.67% |
+| `WindowAudioState::SetSoundLevel` | `0x004cfb00` | 141 | no (relocations) | 97.87% |
+| `ScreenManagerAuxiliaryState::SetText` | `0x004c1170` | 142 | no (relocations) | 97.92% |
+| `ScreenCheckBox::Unresolved04` | `0x004c1810` | 144 | no (relocations) | 98.04% |
+| `StartupMovie::Initialize` | `0x004ed1c0` | 145 | no (relocations) | 98.46% |
+| `InputMotionState::Render` | `0x004095f0` | 148 | no (relocations) | 98.04% |
+| `ScreenScrollBarPrefix::~ScreenScrollBarPrefix` | `0x004b5220` | 153 | no (relocations) | 98.11% |
+| `ScreenButtonPrefix::~ScreenButtonPrefix` | `0x004a0e70` | 155 | no (relocations) | 97.78% |
+| `ScreenBar::ScreenBar` | `0x004c1340` | 160 | no (relocations) | 98.18% |
+| `InputMotionState::InputMotionState` | `0x00409450` | 161 | no (relocations) | 97.92% |
+| `ScreenTextLookup::LookupText` | `0x0049f370` | 161 | no (relocations) | 93.33% |
+| `ScreenTextItem::ScreenTextItem` | `0x004c8250` | 161 | no (relocations) | 97.87% |
+| `ScreenLinearContainer::HandleTimedCoordinates` | `0x004c0df0` | 163 | no (relocations) | 98.48% |
+| `ScreenManager::RenderProgressOverlay` | `0x004b0f30` | 164 | no (relocations) | 97.87% |
+| `WindowDeactivationState::CountReadyBuildings` | `0x0043cdf0` | 166 | no (relocations) | 98.53% |
+| `ScreenRadioItem::HandleTimedCoordinates` | `0x004c6990` | 169 | no (relocations) | 87.77% |
+| `ScreenTextItem::ScreenTextItem` | `0x004c8320` | 175 | no (relocations) | 98.11% |
+| `StartupMovie::OpenStream` | `0x004ed390` | 183 | no (relocations) | 98.41% |
+| `ScreenFontRenderer::ScreenFontRenderer` | `0x0049f6c0` | 187 | no (relocations) | 98.25% |
+| `ScreenCheckBox::ScreenCheckBox` | `0x004c1650` | 192 | no (relocations) | 98.44% |
+| `ScreenDialogResourceFrame::LoadAllData` | `0x00416f10` | 195 | no (relocations) | 98.53% |
+| `WindowAudioState::Initialize3DProvider` | `0x004d0370` | 196 | no (relocations) | 76.56% |
+| `ScreenManager::HandleOverlayInput` | `0x004b0270` | 197 | no (relocations) | 85.29% |
+| `EmptyStaticInitializer432f00` | `0x00432f00` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f10` | `0x00432f10` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f20` | `0x00432f20` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f30` | `0x00432f30` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f40` | `0x00432f40` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f50` | `0x00432f50` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f60` | `0x00432f60` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer432f70` | `0x00432f70` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer437ee0` | `0x00437ee0` | 1 | yes | 66.67% |
+| `EmptyStaticInitializer49ad00` | `0x0049ad00` | 1 | yes | 66.67% |
+| `VariableEntity::CanSelectAtPointer` | `0x00453750` | 3 | yes | 40.00% |
+| `RejectWorldPointerSelection` | `0x0048c200` | 3 | yes | 80.00% |
+| `AcceptWorldStateExit` | `0x0048e880` | 3 | yes | 40.00% |
+| `LoadGameController::ScriptPath` | `0x004e8de0` | 3 | yes | 80.00% |
+| `WorldSceneryEntity::EntityName` | `0x0041c830` | 4 | yes | 80.00% |
+| `ScreenTerrainCell::Objects` | `0x004452d0` | 4 | yes | 80.00% |
+| `ScreenTerrainRouteNode::Bounds` | `0x004456c0` | 4 | yes | 80.00% |
+| `ScreenTerrainRouteNode::Next` | `0x004456d0` | 4 | yes | 80.00% |
+| `VariableEntity::EntityName` | `0x00453760` | 4 | yes | 80.00% |
+| `VariableEntity::StaffName` | `0x0048f0f0` | 4 | yes | 80.00% |
+| `WorldSubsystem3c::Controller` | `0x004dae90` | 4 | yes | 80.00% |
+| `WorldCursorNames::FirstName` | `0x00432de0` | 5 | yes | 85.71% |
+| `WindowDeactivationState::UpdatePower` | `0x0043f0c0` | 5 | no (relocations) | 66.67% |
+| `WorldSharkEntity::Unknown3c` | `0x0048b8d0` | 5 | no (relocations) | 66.67% |
+| `WorldEntity19::Unknown08` | `0x0049aef0` | 5 | yes | 40.00% |
+| `ScreenMode10Controller::Enter` | `0x004a7110` | 5 | yes | 80.00% |
+| `ScreenLoadPanel13cOwner::NextTrack` | `0x004ce560` | 5 | no (relocations) | 66.67% |
+| `WorldCursorNames::SecondName` | `0x00432dd0` | 6 | yes | 85.71% |
+| `WorldCursorNames::CursorValue` | `0x00432df0` | 6 | yes | 80.00% |
+| `ScreenRequestGamePrefix::ScenarioDirectory` | `0x004e3d60` | 6 | no (relocations) | 80.00% |
+| `ExitGameController::ScriptPath` | `0x004e8370` | 6 | no (relocations) | 80.00% |
+| `WorldSubsystem4c::MessageCounts` | `0x00424700` | 7 | yes | 80.00% |
+| `VariableEntity::GuestValue467d70` | `0x00467d70` | 7 | yes | 80.00% |
+| `ScreenManager::SelectionInputEnabled` | `0x004b2190` | 7 | yes | 80.00% |
+| `ScreenLoadPanel13c::StartPlayback` | `0x004c2470` | 7 | no (relocations) | 80.00% |
+| `ScreenLoadPanel13c::StopPlayback` | `0x004c2480` | 7 | no (relocations) | 80.00% |
+| `ScreenLoadPanel13cOwner::IsPlaying` | `0x004cdb50` | 7 | no (relocations) | 80.00% |
+| `WindowAudioState::EffectsVolume` | `0x004cf680` | 7 | yes | 80.00% |
+| `InputState::ReadSecondButtonTransition` | `0x004eab00` | 7 | yes | 80.00% |
+| `InputState::ReadDeltaX` | `0x004eab10` | 7 | yes | 80.00% |
+| `InputState::ReadWheel` | `0x004eab30` | 7 | yes | 80.00% |
+| `OverlayMapPrefix::LockMap` | `0x0041aa20` | 8 | yes | 33.33% |
+| `OverlayMapPrefix::UnlockMap` | `0x0041aa30` | 8 | yes | 80.00% |
+| `VariableTransport::StartDay` | `0x0042d100` | 8 | yes | 88.89% |
+| `ClearEntitySelection` | `0x00490c20` | 8 | yes | 80.00% |
+| `ScreenManager::DisableOverlay` | `0x004b0fe0` | 8 | yes | 80.00% |
+| `ScreenManager::RequestCameraCapture` | `0x004b2180` | 8 | yes | 33.33% |
+| `WindowDeactivationState::CurrentZoom` | `0x0043f3b0` | 9 | no (relocations) | 85.71% |
+| `VariableEntity::Unknown28` | `0x00453a40` | 9 | no (relocations) | 80.00% |
+| `VariableEntity::SetKind` | `0x004539f0` | 10 | yes | 85.71% |
+| `VariableEntity::SetEntityId` | `0x00453a00` | 10 | yes | 85.71% |
+| `VariableEntity::SetMovementMode` | `0x00453a10` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetFootprintX` | `0x00491090` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetFootprintY` | `0x004910a0` | 10 | yes | 85.71% |
+| `VariableEntity::SetFlag5a` | `0x004910b0` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetRepairAssigned` | `0x004910c0` | 10 | yes | 85.71% |
+| `WorldStaticEntity::SetRepairActive` | `0x00491110` | 10 | yes | 85.71% |
+| `VariableEntity::SetCleaningRequested` | `0x00491120` | 10 | yes | 85.71% |
+| `VariableEntity::SetRepairRequested` | `0x00491130` | 10 | yes | 85.71% |
+| `ScreenRequestGamePrefix::ScenarioNameCount` | `0x004e3d40` | 10 | yes | 88.89% |

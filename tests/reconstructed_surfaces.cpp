@@ -1,0 +1,972 @@
+#include "startup_screen_renderer.h"
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+#include "renderer_queue_test_state.h"
+#endif
+#include <array>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <exception>
+#include <initializer_list>
+#include <limits>
+#include <new>
+#include <type_traits>
+
+namespace
+{
+struct RendererFixtureFailure
+{
+};
+
+static_assert(sizeof(int) == 4 && std::numeric_limits<int>::digits == 31);
+static_assert(sizeof(unsigned int) == 4);
+static_assert(std::is_standard_layout_v<ScreenSurfacePosition>);
+static_assert(std::is_trivially_copyable_v<ScreenSurfacePosition>);
+#if !defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+static_assert(std::is_standard_layout_v<ScreenRequestRenderer>);
+static_assert(std::is_trivially_copyable_v<ScreenRequestRenderer>);
+#endif
+static_assert(sizeof(ScreenPoint) == 2 * sizeof(int));
+static_assert(
+    std::is_same_v<decltype(static_cast<void (ScreenRequestRenderer::*)(int, ScreenPoint)>(
+                       &ScreenRequestRenderer::PositionSurface)),
+        void (ScreenRequestRenderer::*)(int, ScreenPoint)>);
+static_assert(
+    std::is_same_v<decltype(&ScreenSurfacePosition::Cleanup), void (ScreenSurfacePosition::*)()>);
+static_assert(std::is_same_v<decltype(&ScreenRequestRenderer::CleanupSurface),
+    void (ScreenRequestRenderer::*)(int)>);
+
+// Native offsets follow these real types; the observed x86 prefix is not imposed
+// on the pointer-bearing 64-bit objects exercised here.
+enum class Method : unsigned
+{
+    member,
+    indexed
+};
+std::uint64_t cases, checks, representation_checks, byte_checks;
+std::uint64_t deferred_cleanup_prefix_cases, deferred_position_prefix_cases;
+// Keep the observer stores visible around the replaceable array allocation.
+volatile bool track_payload_allocations = false;
+std::uint64_t array_events, api_events, null_events;
+std::uint64_t cleanup_cases[2]{}, cleanup_calls[2]{};
+std::uint64_t position_cases, position_calls;
+std::uint64_t case_number;
+
+[[noreturn]] void fail(const char* message)
+{
+    std::fprintf(stderr, "case %llu: %s\n", static_cast<unsigned long long>(case_number), message);
+    throw RendererFixtureFailure{};
+}
+
+void check(bool condition, const char* message)
+{
+    ++checks;
+    if (!condition)
+    {
+        fail(message);
+    }
+}
+
+void check_bytes(const void* first, const void* second, std::size_t size, const char* message)
+{
+    ++representation_checks;
+    byte_checks += size;
+    check(std::memcmp(first, second, size) == 0, message);
+}
+
+struct Frame
+{
+    unsigned char before[32];
+    ScreenSurfacePosition object;
+    unsigned char prepared; // Extra trailing canary, separate from object.prepared.
+    unsigned char after[32];
+};
+
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+struct RendererFrame
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    unsigned char before[32];
+    ScreenRequestRenderer renderer{renderer_bootstrap.video(), 8, 4, 1};
+    unsigned char after[32];
+    renderer_owner_test::RestoreOwnedState renderer_restore{renderer, renderer_bootstrap};
+};
+struct RendererSnapshot
+{
+    std::array<unsigned char, 32> before{};
+    renderer_queue_test::Snapshot renderer;
+    std::array<unsigned char, 32> after{};
+};
+RendererSnapshot renderer_snapshot(const RendererFrame& r)
+{
+    RendererSnapshot result{};
+    std::copy(std::begin(r.before), std::end(r.before), result.before.begin());
+    result.renderer = r.renderer;
+    std::copy(std::begin(r.after), std::end(r.after), result.after.begin());
+    return result;
+}
+#else
+struct RendererFrame
+{
+    unsigned char before[32];
+    ScreenRequestRenderer renderer;
+    unsigned char after[32];
+};
+
+using RendererSnapshot = RendererFrame;
+#endif
+
+void check_renderer_frame(
+    const RendererFrame* actual, const RendererSnapshot* expected, const char* message)
+{
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    ++representation_checks;
+    byte_checks += sizeof(actual->before) + sizeof(actual->after) +
+                   renderer_queue_test::compared_bytes(expected->renderer);
+    check(
+        std::equal(
+            std::begin(actual->before), std::end(actual->before), std::begin(expected->before)) &&
+            std::equal(
+                std::begin(actual->after), std::end(actual->after), std::begin(expected->after)) &&
+            renderer_queue_test::equal(actual->renderer, expected->renderer),
+        message);
+#else
+    check_bytes(actual, expected, sizeof(RendererFrame), message);
+#endif
+}
+
+struct TableFrame
+{
+    unsigned char before[32];
+    ScreenSurfacePosition* entries[8];
+    unsigned char after[32];
+};
+
+struct Allocation
+{
+    unsigned char* raw;
+    void* pointer;
+    std::size_t bytes;
+};
+Allocation allocations[4]{};
+
+Allocation* find_allocation(void* pointer)
+{
+    for (auto& allocation : allocations)
+    {
+        if (allocation.pointer == pointer && allocation.raw)
+        {
+            return &allocation;
+        }
+    }
+    return nullptr;
+}
+
+void inspect_allocation(const Allocation& allocation)
+{
+    for (std::size_t n = 0; n < allocation.bytes + 64; ++n)
+    {
+        const auto expected = n < 32 || n >= allocation.bytes + 32 ? 0xa7 : 0x5c;
+        if (allocation.raw[n] != expected)
+        {
+            fail("pixel allocation or guards changed before release");
+        }
+    }
+    byte_checks += allocation.bytes + 64;
+    check(true, "pixel allocation inspected");
+}
+
+struct Context
+{
+    Frame* actual;
+    Frame initial;
+    unsigned mask;
+    unsigned route; // 0 inactive, 1 primitive array, 2 COM.
+    unsigned result;
+    unsigned events;
+    void* original_pixels;
+    DirectDrawSurface7Prefix* original_surface;
+    DirectDrawSurface7Prefix* replacement_surface;
+    unsigned short* replacement_pixels;
+    RendererFrame* renderer;
+    RendererSnapshot initial_renderer;
+    TableFrame* table;
+    TableFrame initial_table;
+    ScreenSurfacePosition** alternate;
+    ScreenSurfacePosition* decoy;
+    unsigned slot;
+    unsigned base;
+};
+Context* current;
+
+void mutate(Frame& frame, const Context& context)
+{
+    auto& object = frame.object;
+    if (context.mask & 1)
+    {
+        object.pixels = context.replacement_pixels;
+    }
+    if (context.mask & 2)
+    {
+        object.surface = context.replacement_surface;
+    }
+    if (context.mask & 4)
+    {
+        object.width = 0x89abcdefu;
+        object.height = 0xfedcba98u;
+        object.pitch = 0x76543210u;
+    }
+    if (context.mask & 8)
+    {
+        object.active = 0xe9;
+    }
+    if (context.mask & 16)
+    {
+        object.software = 0x35;
+    }
+    if (context.mask & 32)
+    {
+        frame.prepared = 0x83;
+    }
+    if (context.mask & 64)
+    {
+        object.position = ScreenPoint{-1234567, 2345678};
+    }
+    if (context.mask & 128)
+    {
+        object.unknown_02[0] = 0x42;
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+        object.unknown_0d[2] = 0x61;
+#else
+        object.unknown_0c[3] = 0x61;
+#endif
+    }
+}
+
+void provider_event(unsigned route)
+{
+    check(current != nullptr, "provider called without a labelled context");
+    check(current->route == route, "wrong ownership provider selected");
+    check(current->events++ == 0, "provider invoked more than once");
+    check_bytes(current->actual,
+        &current->initial,
+        sizeof(Frame),
+        "object changed before provider returned");
+    check_renderer_frame(
+        current->renderer, &current->initial_renderer, "renderer changed before provider returned");
+    check_bytes(current->table,
+        &current->initial_table,
+        sizeof(TableFrame),
+        "table changed before provider returned");
+    mutate(*current->actual, *current);
+    if (current->mask & 256)
+    {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+        std::copy(current->alternate + current->base,
+            current->alternate + 8,
+            current->renderer->renderer.surface_storage.begin());
+#else
+        current->renderer->renderer.surfaces = current->alternate + current->base;
+#endif
+    }
+    if (current->mask & 512)
+    {
+        current->table->entries[current->slot] = current->decoy;
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+        if (!(current->mask & 256) && current->slot >= current->base)
+        {
+            current->renderer->renderer.surface_storage[current->slot - current->base] =
+                current->decoy;
+        }
+#endif
+    }
+}
+
+unsigned int SURFACE_STDCALL release_provider(DirectDrawSurface7Prefix* receiver)
+{
+    check(current != nullptr && receiver == current->original_surface, "COM receiver differs");
+    provider_event(2);
+    ++api_events;
+    return current->result;
+}
+
+template <class T> void expected_write(Frame& frame, std::size_t offset, const T& value)
+{
+    std::memcpy(reinterpret_cast<unsigned char*>(&frame.object) + offset, &value, sizeof(value));
+}
+
+void run_cleanup(Method method,
+    unsigned active,
+    unsigned software,
+    unsigned mask,
+    unsigned result,
+    bool null_pixels,
+    unsigned payload_words,
+    unsigned pattern,
+    unsigned slot,
+    unsigned base,
+    bool alias)
+{
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    const auto repeated = alias ? (slot + 3) % 8 : slot;
+    if (method == Method::indexed && (slot < base || repeated < base))
+    {
+        ++deferred_cleanup_prefix_cases;
+        return; // Only historical before-data indexing is outside this owner domain.
+    }
+    static RendererFrame renderer; // One genuine owner across all cleanup value cases.
+#else
+    RendererFrame renderer;
+#endif
+    case_number = cases++;
+    ++cleanup_cases[static_cast<unsigned>(method)];
+    DirectDrawSurface7VtablePrefix vtable{};
+    vtable.Release = release_provider;
+    DirectDrawSurface7Prefix primary{&vtable}, replacement{&vtable};
+    const auto original_vtable = vtable;
+    const auto original_primary = primary;
+    const auto original_replacement = replacement;
+    unsigned short replacement_pixels[4]{17, 33, 65, 129};
+    const unsigned short saved_replacement_pixels[4]{17, 33, 65, 129};
+    auto* owned = null_pixels ? nullptr : [](unsigned words)
+    {
+        struct Track
+        {
+            Track()
+            {
+                track_payload_allocations = true;
+            }
+            ~Track()
+            {
+                track_payload_allocations = false;
+            }
+        } tracking;
+        return new unsigned short[words];
+    }(payload_words);
+
+    Frame actual;
+    std::memset(&actual, static_cast<int>(pattern & 255), sizeof(actual));
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+    actual.object.native_surface = nullptr;
+    actual.object.native_surface_owned = false;
+#endif
+    actual.object.active = static_cast<unsigned char>(active);
+    actual.object.software = static_cast<unsigned char>(software);
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+    actual.object.video_memory = static_cast<unsigned char>(pattern);
+#endif
+    actual.object.pixels = owned;
+    actual.object.surface = active && !software ? &primary : nullptr;
+    actual.object.width = 0xffffffffu ^ (active * 0x01010101u);
+    actual.object.height = software * 0x01010101u;
+    actual.object.pitch = 0x80000001u ^ pattern;
+    actual.object.position = ScreenPoint{-1234, 5678};
+    actual.prepared = static_cast<unsigned char>(pattern);
+
+    Frame decoy;
+    std::memcpy(&decoy, &actual, sizeof(decoy));
+    decoy.object.active = 0xb3;
+    decoy.object.software = 0;
+    decoy.object.pixels = nullptr;
+    decoy.object.surface = &replacement;
+    Frame saved_decoy;
+    std::memcpy(&saved_decoy, &decoy, sizeof(decoy));
+    TableFrame table, alternate;
+    std::memset(&table, 0x67, sizeof(table));
+    std::memset(&alternate, 0xd5, sizeof(alternate));
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    std::fill(std::begin(renderer.before), std::end(renderer.before), 0x96);
+    std::fill(std::begin(renderer.after), std::end(renderer.after), 0x96);
+    renderer_queue_test::initialize(renderer.renderer, 0x96);
+#else
+    std::memset(&renderer, 0x96, sizeof(renderer));
+#endif
+    for (unsigned n = 0; n < 8; ++n)
+    {
+        table.entries[n] = &decoy.object;
+        alternate.entries[n] = &decoy.object;
+    }
+    table.entries[slot] = &actual.object;
+    if (alias)
+    {
+        table.entries[(slot + 3) % 8] = &actual.object;
+    }
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    renderer.renderer.surface_storage.assign(table.entries + base, table.entries + 8);
+#else
+    renderer.renderer.surfaces = table.entries + base;
+#endif
+    const int index = static_cast<int>(slot) - static_cast<int>(base);
+    TableFrame original_table, expected_table, saved_alternate;
+    RendererSnapshot original_renderer, expected_renderer;
+    std::memcpy(&original_table, &table, sizeof(table));
+    std::memcpy(&expected_table, &table, sizeof(table));
+    std::memcpy(&saved_alternate, &alternate, sizeof(alternate));
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    original_renderer = renderer_snapshot(renderer);
+    expected_renderer = renderer_snapshot(renderer);
+#else
+    std::memcpy(&original_renderer, &renderer, sizeof(renderer));
+    std::memcpy(&expected_renderer, &renderer, sizeof(renderer));
+#endif
+
+    Context context{};
+    context.actual = &actual;
+    std::memcpy(&context.initial, &actual, sizeof(actual));
+    context.mask = mask;
+    context.route = active == 0 ? 0u : software == 0 ? 2u : 1u;
+    context.result = result;
+    context.original_pixels = owned;
+    context.original_surface = &primary;
+    context.replacement_surface = &replacement;
+    context.replacement_pixels = replacement_pixels;
+    context.renderer = &renderer;
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    context.initial_renderer = renderer_snapshot(renderer);
+#else
+    std::memcpy(&context.initial_renderer, &renderer, sizeof(renderer));
+#endif
+    context.table = &table;
+    std::memcpy(&context.initial_table, &table, sizeof(table));
+    context.alternate = alternate.entries;
+    context.decoy = &decoy.object;
+    context.slot = slot;
+    context.base = base;
+    Frame expected;
+    std::memcpy(&expected, &actual, sizeof(expected));
+    const bool observable_provider = context.route == 2 || (context.route == 1 && owned);
+    if (observable_provider)
+    {
+        mutate(expected, context);
+        if (mask & 256)
+        {
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+            expected_renderer.renderer.surface_storage.assign(
+                alternate.entries + base, alternate.entries + 8);
+#else
+            expected_renderer.renderer.surfaces = alternate.entries + base;
+#endif
+        }
+        if (mask & 512)
+        {
+            expected_table.entries[slot] = &decoy.object;
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+            if (!(mask & 256) && slot >= base)
+            {
+                expected_renderer.renderer.surface_storage[slot - base] = &decoy.object;
+            }
+#endif
+        }
+    }
+    // An independent write-set oracle uses the entry-state route, then applies
+    // provider mutations and only the documented post-provider publication set.
+    if (active)
+    {
+        const unsigned char clear_byte = 0;
+        const unsigned int clear_word = 0;
+        expected_write(expected, offsetof(ScreenSurfacePosition, active), clear_byte);
+        for (auto offset : {offsetof(ScreenSurfacePosition, width),
+                 offsetof(ScreenSurfacePosition, height),
+                 offsetof(ScreenSurfacePosition, pitch)})
+        {
+            expected_write(expected, offset, clear_word);
+        }
+        if (software)
+        {
+            unsigned short* clear_pointer = nullptr;
+            expected_write(expected, offsetof(ScreenSurfacePosition, pixels), clear_pointer);
+        }
+    }
+    current = &context;
+    ++cleanup_calls[static_cast<unsigned>(method)];
+    if (method == Method::member)
+    {
+        actual.object.Cleanup();
+    }
+    else
+    {
+        renderer.renderer.CleanupSurface(index);
+    }
+    current = nullptr;
+    check(context.events == static_cast<unsigned>(observable_provider),
+        "ownership event count differs");
+    check_bytes(&actual, &expected, sizeof(Frame), "object write set or surrounding guards differ");
+    check_bytes(&vtable, &original_vtable, sizeof(vtable), "COM vtable changed");
+    check_bytes(&primary, &original_primary, sizeof(primary), "COM object changed");
+    check_bytes(
+        &replacement, &original_replacement, sizeof(replacement), "replacement COM object changed");
+    check_bytes(replacement_pixels,
+        saved_replacement_pixels,
+        sizeof(replacement_pixels),
+        "replacement pixel buffer changed");
+    check_renderer_frame(&renderer, &expected_renderer, "renderer write set differs");
+    check_bytes(&table, &expected_table, sizeof(table), "table write set differs");
+    check_bytes(&alternate, &saved_alternate, sizeof(alternate), "alternate table changed");
+    check_bytes(&decoy, &saved_decoy, sizeof(decoy), "unselected entry changed");
+    // Restore only generated table bindings so a repeat selects the same live
+    // object, including through an aliased entry. Provider mutations were
+    // already checked against the independent expected state above.
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    // Only the generated table binding was mutated by this provider. All other
+    // typed fields, queue values/count and guards were already checked above.
+    std::copy(original_renderer.renderer.surface_storage.begin(),
+        original_renderer.renderer.surface_storage.end(),
+        renderer.renderer.surface_storage.begin());
+#else
+    std::memcpy(&renderer, &original_renderer, sizeof(renderer));
+#endif
+    std::memcpy(&table, &original_table, sizeof(table));
+    // A second invocation must observe the cleared gate and leave everything.
+    std::memcpy(&context.initial, &actual, sizeof(actual));
+    context.route = 0;
+    context.events = 0;
+    current = &context;
+    const unsigned repeat_slot = alias ? (slot + 3) % 8 : slot;
+    ++cleanup_calls[static_cast<unsigned>(method)];
+    if (method == Method::member)
+    {
+        actual.object.Cleanup();
+    }
+    else
+    {
+        renderer.renderer.CleanupSurface(static_cast<int>(repeat_slot) - static_cast<int>(base));
+    }
+    current = nullptr;
+    check(context.events == 0, "inactive repeat invoked a provider");
+    check_bytes(&actual, &expected, sizeof(Frame), "inactive repeat changed object");
+    check_renderer_frame(&renderer, &original_renderer, "inactive repeat changed renderer");
+    check_bytes(&table, &original_table, sizeof(table), "inactive repeat changed table");
+    check_bytes(
+        &alternate, &saved_alternate, sizeof(alternate), "inactive repeat changed alternate");
+    check_bytes(&decoy, &saved_decoy, sizeof(decoy), "inactive repeat changed unselected entry");
+
+    if (owned)
+    {
+        const bool was_released = active && software;
+        auto* allocation = find_allocation(owned);
+        check((allocation == nullptr) == was_released, "allocation ownership differs");
+        if (allocation)
+        {
+            inspect_allocation(*allocation);
+            delete[] owned;
+        }
+    }
+    for (auto& allocation : allocations)
+    {
+        check(!allocation.raw, "generated owner leaked an allocation");
+        allocation = Allocation{};
+    }
+}
+template <typename T> struct Guarded
+{
+    std::array<unsigned char, 32> before;
+    T value;
+    std::array<unsigned char, 32> after;
+};
+
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+// Genuine renderer ownership; only method inputs are borrowed.
+template <> struct Guarded<ScreenRequestRenderer>
+{
+    renderer_owner_test::Bootstrap renderer_bootstrap;
+    std::array<unsigned char, 32> before;
+    ScreenRequestRenderer value{renderer_bootstrap.video(), 8, 4, 1};
+    std::array<unsigned char, 32> after;
+    renderer_owner_test::RestoreOwnedState renderer_restore{value, renderer_bootstrap};
+};
+
+#endif
+
+using Renderer = Guarded<ScreenRequestRenderer>;
+using Surface = Guarded<ScreenSurfacePosition>;
+using Table = Guarded<std::array<ScreenSurfacePosition*, 8>>;
+using Surfaces = std::array<Surface, 8>;
+
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+using GuardedRendererSnapshot = renderer_queue_test::FrameSnapshot<std::array<unsigned char, 32>>;
+GuardedRendererSnapshot snapshot(const Renderer& value)
+{
+    return GuardedRendererSnapshot(value);
+}
+
+void unchanged(const Renderer& value, const GuardedRendererSnapshot& expected, const char* name)
+{
+    ++representation_checks;
+    byte_checks += value.before.size() + value.after.size() +
+                   renderer_queue_test::compared_bytes(expected.value);
+    check(value.before == expected.before && value.after == expected.after &&
+              renderer_queue_test::equal(value.value, expected.value),
+        name);
+}
+
+void patterned(Renderer& value, unsigned int salt)
+{
+    value.before.fill(static_cast<unsigned char>(salt));
+    value.after.fill(static_cast<unsigned char>(salt ^ 0xd5U));
+    renderer_queue_test::initialize(value.value, salt);
+}
+#endif
+
+template <typename T> std::array<unsigned char, sizeof(T)> snapshot(const T& value)
+{
+    std::array<unsigned char, sizeof(T)> bytes;
+    std::memcpy(bytes.data(), &value, sizeof(value));
+    return bytes;
+}
+
+template <typename T>
+void unchanged(
+    const T& value, const std::array<unsigned char, sizeof(T)>& expected, const char* name)
+{
+    check_bytes(&value, expected.data(), sizeof(value), name);
+}
+
+template <typename T> void patterned(T& value, unsigned int salt)
+{
+    auto* bytes = reinterpret_cast<unsigned char*>(&value);
+    for (std::size_t i = 0; i < sizeof(value); ++i)
+    {
+        bytes[i] = static_cast<unsigned char>(i * 37 + salt);
+    }
+}
+
+// Every object and pointer is valid before the source executes. The independent
+// representation oracle replaces only the two selected coordinate subobjects.
+void run_position(unsigned int layout, unsigned int base_index, unsigned int index, int x, int y)
+{
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    const auto repeated = layout == 3 && index < 5 ? index + 3 : index;
+    if (index < base_index || repeated < base_index)
+    {
+        ++deferred_position_prefix_cases;
+        return;
+    }
+    static Renderer renderer; // Actual owner, not a reconstructed-method substitute.
+#else
+    Renderer renderer;
+#endif
+    case_number = cases++;
+    ++position_cases;
+    Table table;
+    Surfaces surfaces;
+    patterned(renderer, 0x35);
+    patterned(table, 0x67);
+    patterned(surfaces, 0x98);
+    unsigned short borrowed_pixels[4]{1, 2, 3, 4};
+    DirectDrawSurface7VtablePrefix vtable{};
+    vtable.Release = release_provider;
+    DirectDrawSurface7Prefix interface{&vtable};
+    const auto expected_pixels = snapshot(borrowed_pixels);
+    const auto expected_vtable = snapshot(vtable);
+    const auto expected_interface = snapshot(interface);
+    unsigned n = 0;
+    for (auto& entry : surfaces)
+    {
+#if defined(BEACHLIFE_DECOMP_RENDERER_WORD_SURFACE)
+        entry.value.native_surface = nullptr;
+        entry.value.native_surface_owned = false;
+#endif
+        entry.value.active = static_cast<unsigned char>(n * 37);
+        entry.value.software = static_cast<unsigned char>(n * 63);
+#if defined(BEACHLIFE_DECOMP_SURFACE_TABLE)
+        // Preserve the exact old byte-pattern value at this newly named byte.
+        entry.value.video_memory = static_cast<unsigned char>(
+            (reinterpret_cast<std::uintptr_t>(&entry.value.video_memory) -
+                reinterpret_cast<std::uintptr_t>(&surfaces)) *
+                37 +
+            0x98);
+#endif
+        entry.value.pixels = n % 2 ? borrowed_pixels : nullptr;
+        entry.value.surface = n % 3 ? &interface : nullptr;
+        entry.value.width = n * 5;
+        entry.value.height = n * 7;
+        entry.value.pitch = n * 11;
+        entry.value.position = ScreenPoint{static_cast<int>(n) - 1234, static_cast<int>(n) + 5678};
+        ++n;
+    }
+    renderer.value.width = 800;
+    renderer.value.height = 600;
+    for (unsigned int i = 0; i < table.value.size(); ++i)
+    {
+        // Three bijections and an aliasing table exercise selected-index identity.
+        const unsigned int selected = layout == 3 ? i % 3 : (i * (2 * layout + 1) + layout) % 8;
+        table.value[i] = &surfaces[selected].value;
+    }
+#if defined(BEACHLIFE_DECOMP_RENDERER_QUEUE)
+    renderer.value.surface_storage.assign(table.value.begin() + base_index, table.value.end());
+#else
+    renderer.value.surfaces = table.value.data() + base_index;
+#endif
+    auto expected_surfaces = snapshot(surfaces);
+    const auto expected_table = snapshot(table);
+    const auto expected_renderer = snapshot(renderer);
+    const auto* base = reinterpret_cast<const unsigned char*>(&surfaces);
+    const auto x_offset =
+        reinterpret_cast<const unsigned char*>(&table.value[index]->position.x) - base;
+    const auto y_offset =
+        reinterpret_cast<const unsigned char*>(&table.value[index]->position.y) - base;
+    std::memcpy(expected_surfaces.data() + x_offset, &x, sizeof(x));
+    std::memcpy(expected_surfaces.data() + y_offset, &y, sizeof(y));
+
+    const ScreenPoint point = {x, y};
+    const auto expected_point = snapshot(point);
+    renderer.value.PositionSurface(static_cast<int>(index) - static_cast<int>(base_index), point);
+    unchanged(point, expected_point, "by-value argument");
+    unchanged(surfaces, expected_surfaces, "surfaces");
+    unchanged(table, expected_table, "table");
+    unchanged(renderer, expected_renderer, "renderer");
+    ++position_calls;
+
+    // A second call must overwrite both fields, including an aliased table slot.
+    const unsigned int again = layout == 3 && index < 5 ? index + 3 : index;
+    const int next_x = std::bit_cast<int>(~std::bit_cast<std::uint32_t>(y));
+    const int next_y = std::bit_cast<int>(~std::bit_cast<std::uint32_t>(x));
+    std::memcpy(expected_surfaces.data() + x_offset, &next_x, sizeof(next_x));
+    std::memcpy(expected_surfaces.data() + y_offset, &next_y, sizeof(next_y));
+    const ScreenPoint next_point = {next_x, next_y};
+    renderer.value.PositionSurface(
+        static_cast<int>(again) - static_cast<int>(base_index), next_point);
+    unchanged(surfaces, expected_surfaces, "surfaces");
+    unchanged(table, expected_table, "table");
+    unchanged(renderer, expected_renderer, "renderer");
+    ++position_calls;
+
+    // Passing an actual stored position by value covers same-object and other-
+    // object argument aliases without fabricating byte-overlapping C++ objects.
+    for (unsigned int from = 0; from < table.value.size(); ++from)
+    {
+        const auto before = snapshot(surfaces);
+        const auto* source = table.value[from];
+        auto expected = before;
+        std::memcpy(expected.data() + x_offset, &source->position.x, sizeof(int));
+        std::memcpy(expected.data() + y_offset, &source->position.y, sizeof(int));
+        renderer.value.PositionSurface(
+            static_cast<int>(index) - static_cast<int>(base_index), source->position);
+        unchanged(surfaces, expected, "by-value source alias");
+        unchanged(table, expected_table, "alias table");
+        unchanged(renderer, expected_renderer, "alias renderer");
+        ++position_calls;
+    }
+    unchanged(borrowed_pixels, expected_pixels, "borrowed pixels");
+    unchanged(vtable, expected_vtable, "borrowed vtable");
+    unchanged(interface, expected_interface, "borrowed interface");
+}
+
+} // namespace
+
+// Explicit test providers: all generated primitive-array allocations use this
+// guarded arena; production source and comparison builds retain normal CRT use.
+void* operator new[](std::size_t bytes)
+{
+    // Genuine renderer/TIFF/library allocations are outside the finite payload
+    // observer. Forward them to the real host allocation boundary unchanged.
+    if (!track_payload_allocations)
+    {
+        return ::operator new(bytes ? bytes : 1);
+    }
+    auto* raw = static_cast<unsigned char*>(std::malloc(bytes + 64));
+    if (!raw)
+    {
+        throw std::bad_alloc();
+    }
+    std::memset(raw, 0xa7, bytes + 64);
+    std::memset(raw + 32, 0x5c, bytes);
+    for (auto& allocation : allocations)
+    {
+        if (!allocation.raw)
+        {
+            allocation = Allocation{raw, raw + 32, bytes};
+            return allocation.pointer;
+        }
+    }
+    fail("generated allocation registry exhausted");
+}
+
+void operator delete[](void* memory) noexcept
+{
+    if (!memory)
+    {
+        // Modern C++ compilers may omit a null delete[] call. The original
+        // unconditional VC6 dispatch is qualified by the target byte audit.
+        ++null_events;
+        return;
+    }
+    auto* allocation = find_allocation(memory);
+    if (allocation == nullptr)
+    {
+        // Retain the observer's double-release check for its own payloads;
+        // unrelated genuine owner/library allocations use the real allocator.
+        for (const auto& retired : allocations)
+        {
+            check(retired.pointer != memory, "duplicate generated payload release");
+        }
+        ::operator delete(memory);
+        return;
+    }
+    inspect_allocation(*allocation);
+    if (current)
+    {
+        check(memory == current->original_pixels, "wrong pixel allocation released");
+        provider_event(1);
+        ++array_events;
+    }
+    std::free(allocation->raw);
+    allocation->raw = nullptr; // Keep its retired identity until this case ends.
+}
+
+void operator delete[](void* memory, std::size_t) noexcept
+{
+    ::operator delete[](memory);
+}
+
+int main()
+{
+    try
+    {
+        for (auto method : {Method::member, Method::indexed})
+        {
+            // Each possible flag byte is tested independently against both routes.
+            // The representative cross product below also covers their interaction.
+            for (unsigned byte = 0; byte < 256; ++byte)
+            {
+                for (unsigned other : {0u, 1u})
+                {
+                    run_cleanup(
+                        method, byte, other, 0, 0, false, byte % 33, byte, byte % 8, 3, true);
+                    run_cleanup(
+                        method, other, byte, 0, 0, false, byte % 33, byte, byte % 8, 0, false);
+                }
+            }
+            for (unsigned active : {0u, 1u, 128u, 255u})
+            {
+                for (unsigned mode : {0u, 1u, 128u, 255u})
+                {
+                    for (unsigned base : {0u, 3u})
+                    {
+                        for (unsigned slot = 0; slot < 8; ++slot)
+                        {
+                            for (bool alias : {false, true})
+                            {
+                                run_cleanup(method,
+                                    active,
+                                    mode,
+                                    0,
+                                    mode * 0x01010101u,
+                                    false,
+                                    (active + mode + slot) % 33,
+                                    active ^ mode,
+                                    slot,
+                                    base,
+                                    alias);
+                            }
+                        }
+                    }
+                }
+            }
+            // Null primitive arrays have a valid state contract. Modern compilers
+            // may omit the deallocator call; exact VC6 call timing is not claimed.
+            for (unsigned active : {1u, 128u, 255u})
+            {
+                for (unsigned mode : {1u, 128u, 255u})
+                {
+                    for (unsigned base : {0u, 3u})
+                    {
+                        for (unsigned slot = 0; slot < 8; ++slot)
+                        {
+                            run_cleanup(
+                                method, active, mode, 0, 0, true, 0, 0x72, slot, base, true);
+                        }
+                    }
+                }
+            }
+            for (unsigned mode : {0u, 1u})
+            {
+                for (unsigned base : {0u, 3u})
+                {
+                    for (unsigned mask = 0; mask < 1024; ++mask)
+                    {
+                        constexpr unsigned results[] = {0u, 1u, 0x80000000u, 0xffffffffu};
+                        run_cleanup(method,
+                            0x91,
+                            mode,
+                            mask,
+                            results[mask % 4],
+                            false,
+                            17,
+                            0xb5,
+                            mask % 8,
+                            base,
+                            (mask & 1) != 0);
+                    }
+                }
+            }
+        }
+        constexpr std::array<int, 9> values{0,
+            1,
+            -1,
+            800,
+            -600,
+            std::numeric_limits<int>::min(),
+            std::numeric_limits<int>::max(),
+            std::bit_cast<int>(0x55555555u),
+            std::bit_cast<int>(0xaaaaaaaau)};
+        for (unsigned layout = 0; layout < 4; ++layout)
+        {
+            for (unsigned slot = 0; slot < 8; ++slot)
+            {
+                for (unsigned base : {0u, 3u})
+                {
+                    for (int x : values)
+                    {
+                        for (int y : values)
+                        {
+                            run_position(layout, base, slot, x, y);
+                        }
+                    }
+                    for (unsigned bit = 0; bit < 32; ++bit)
+                    {
+                        const auto word = std::uint32_t{1} << bit;
+                        run_position(layout,
+                            base,
+                            slot,
+                            std::bit_cast<int>(word),
+                            std::bit_cast<int>(~word));
+                    }
+                }
+            }
+        }
+        std::printf("deferred_cleanup_prefix_cases=%llu deferred_position_prefix_cases=%llu\n",
+            static_cast<unsigned long long>(deferred_cleanup_prefix_cases),
+            static_cast<unsigned long long>(deferred_position_prefix_cases));
+        std::printf(
+            "surface subsystem checks passed: {\"member_cases\":%llu,\"indexed_cases\":%llu,"
+            "\"position_cases\":%llu,\"member_calls\":%llu,\"indexed_calls\":%llu,"
+            "\"position_calls\":%llu,\"assertions\":%llu,\"representation_checks\":%llu,"
+            "\"inspected_bytes\":%llu,\"array_events\":%llu,\"release_events\":%llu,"
+            "\"null_delete_events\":%llu}\n",
+            static_cast<unsigned long long>(cleanup_cases[0]),
+            static_cast<unsigned long long>(cleanup_cases[1]),
+            static_cast<unsigned long long>(position_cases),
+            static_cast<unsigned long long>(cleanup_calls[0]),
+            static_cast<unsigned long long>(cleanup_calls[1]),
+            static_cast<unsigned long long>(position_calls),
+            static_cast<unsigned long long>(checks),
+            static_cast<unsigned long long>(representation_checks),
+            static_cast<unsigned long long>(byte_checks),
+            static_cast<unsigned long long>(array_events),
+            static_cast<unsigned long long>(api_events),
+            static_cast<unsigned long long>(null_events));
+    }
+    catch (const RendererFixtureFailure&)
+    {
+        return 2;
+    }
+    catch (const std::exception& error)
+    {
+        std::fprintf(stderr, "renderer fixture host failure: %s\n", error.what());
+        return 3;
+    }
+}

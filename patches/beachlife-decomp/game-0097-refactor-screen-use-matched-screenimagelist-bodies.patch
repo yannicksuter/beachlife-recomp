@@ -1,0 +1,156 @@
+diff --git a/src/startup_screen_image_list_build.cpp b/src/startup_screen_image_list_build.cpp
+index c15adc485c2e03c809ee12a3304307da704607a1..b91aaf4641545ac598efe1fb4d1b73ab9784f430 100644
+--- a/src/startup_screen_image_list_build.cpp
++++ b/src/startup_screen_image_list_build.cpp
+@@ -68,50 +68,83 @@ void ScreenImageList::PopulateBuildings(int kind, const char* thumbnail, const c
+         VariableBuilding* building = variable_catalog->Building(index);
+         if (building->list_kind_1c8 != kind)
+             continue;
+-        char text[128];
++        char text[0x80];
+         sprintf(text, "BUILD_TIPTEXT_%s", building->name_04);
+         _strupr(text);
+-        bool grey = window_deactivation_state->IsBuildingGreyed(index);
+-        if (!grey && !window_deactivation_state->CanBuild(index))
+-            continue;
+-        ScreenImageListFrame* frame = new (std::nothrow) ScreenImageListFrame;
+-        frame->thumbnail_00 = grey ? grey_thumbnail : thumbnail;
+-        frame->preview_frame_04 = building->preview_frame_1c4;
+-        frame->feature_0c = index;
+-        frame->text_08 = new char[strlen(text) + 1];
+-        strcpy(frame->text_08, text);
+-        if (!grey)
++        if (window_deactivation_state->IsBuildingGreyed(index))
++        {
++            ScreenImageListFrame* frame = new (std::nothrow) ScreenImageListFrame;
++            frame->thumbnail_00 = grey_thumbnail;
++            frame->preview_frame_04 = building->preview_frame_1c4;
++            frame->feature_0c = index;
++            frame->text_08 = new char[strlen(text) + 1];
++            strcpy(frame->text_08, text);
++            vector_60.PushBack(frame);
++        }
++        else if (window_deactivation_state->CanBuild(index))
+         {
++            ScreenImageListFrame* frame = new (std::nothrow) ScreenImageListFrame;
++            frame->thumbnail_00 = thumbnail;
++            frame->preview_frame_04 = building->preview_frame_1c4;
++            frame->feature_0c = index;
++            frame->text_08 = new char[strlen(text) + 1];
++            strcpy(frame->text_08, text);
++
++            // The count of this building: red when none, black when all are
++            // ready, orange otherwise.
+             frame->counted_94 = 1;
+             unsigned int ready = window_deactivation_state->CountReadyBuildings(index);
+             unsigned int total = window_deactivation_state->CountBuildings(index);
+             static const unsigned short format[] = { '%', 'd', 0 };
+             swprintf(frame->count_10, format, total);
+-            frame->colour_90 = total ? (ready == total ? 0 : 0xff8000) : 0xffff0000;
+-        }
+-        if (grey)
+-            vector_60.PushBack(frame);
+-        else
+-        {
+-            ScreenImageListFrame* appended = frame;
+-            if (vector_60.end != vector_60.capacity.data)
++            if (total)
+             {
+-                if (vector_60.end)
+-                    ::new (vector_60.end) ScreenImageListFrame*(appended);
++                if (ready != total)
++                    frame->colour_90 = 0xff8000;
++                else
++                    frame->colour_90 = 0;
++            }
++            else
++            {
++                frame->colour_90 = 0xffff0000;
++            }
++
++            // Library push_back, expanded here with its growth path.
++            ScreenImageListFrame** position = vector_60.end;
++            if (position != vector_60.capacity.data)
++            {
++                if (position)
++                    ::new (position) ScreenImageListFrame*(frame);
+                 ++vector_60.end;
+             }
+             else
+             {
+-                unsigned int size = static_cast<unsigned int>(vector_60.end - vector_60.begin);
+-                unsigned int count = size + (size < 1 ? 1 : size);
+-                unsigned int bytes = count * sizeof(ScreenImageListFrame*);
+-                ScreenImageListFrame** storage = count ? static_cast<ScreenImageListFrame**>(bytes > 128 ? ::operator new(bytes) : AllocatePoolBytes(bytes)) : 0;
+-                ScreenImageListFrame** next = static_cast<ScreenImageListFrame**>(CopyTrivial(vector_60.begin, vector_60.end, storage));
+-                *next++ = appended;
+-                DeallocateImageListPointerSlots(vector_60.begin, static_cast<unsigned int>(vector_60.capacity.data - vector_60.begin));
++                unsigned int length;
++                {
++                    unsigned int minimum = 1;
++                    unsigned int size = static_cast<unsigned int>(position - vector_60.begin);
++                    length = size + MaxUnsigned(size, minimum);
++                }
++                ScreenImageListFrame** storage;
++                if (length != 0)
++                {
++                    size_t bytes = static_cast<size_t>(length) * sizeof(ScreenImageListFrame*);
++                    storage = static_cast<ScreenImageListFrame**>(bytes > 128 ? ::operator new(bytes) : AllocatePoolBytes(bytes));
++                }
++                else
++                {
++                    storage = 0;
++                }
++                ScreenImageListFrame** stored
++                    = static_cast<ScreenImageListFrame**>(CopyTrivial(vector_60.begin, position, storage));
++                *stored = frame;
++                position = stored + 1;
++                if (vector_60.begin)
++                    DeallocateImageListPointerSlots(vector_60.begin,
++                        static_cast<unsigned int>(vector_60.capacity.data - vector_60.begin));
+                 vector_60.begin = storage;
+-                vector_60.end = next;
+-                vector_60.capacity.data = storage + count;
++                vector_60.end = position;
++                vector_60.capacity.data = storage + length;
+             }
+         }
+     }
+diff --git a/src/startup_screen_image_list_scenery.cpp b/src/startup_screen_image_list_scenery.cpp
+index 74055427e1f68829514f0846dae946515e5cb090..45ad1615520d320d05f59477652f258c4ff82f1e 100644
+--- a/src/startup_screen_image_list_scenery.cpp
++++ b/src/startup_screen_image_list_scenery.cpp
+@@ -18,9 +18,7 @@ void ScreenImageList::PopulateScenery(int kind, const char* thumbnail)
+     {
+         VariableScenery* scenery = variable_catalog->Scenery(index);
+         if (scenery->list_kind_2c4 != kind)
+-        {
+             continue;
+-        }
+         char text[0x80];
+         sprintf(text, "SP_DESC_%s", scenery->name_04);
+         _strupr(text);
+@@ -43,18 +41,16 @@ void ScreenImageList::PopulateScenery(int kind, const char* thumbnail)
+             unsigned int minimum = 1;
+             unsigned int size = static_cast<unsigned int>(position - vector_60.begin);
+             unsigned int length = size + MaxUnsigned(size, minimum);
+-            ScreenImageListFrame** storage = length ? static_cast<ScreenImageListFrame**>(
+-                                                          AllocateNodeStorage(length * sizeof(ScreenImageListFrame*)))
+-                                                    : 0;
+-            ScreenImageListFrame** stored = static_cast<ScreenImageListFrame**>(
+-                CopyTrivial(vector_60.begin, position, storage));
++            ScreenImageListFrame** storage = length
++                                               ? static_cast<ScreenImageListFrame**>(AllocateNodeStorage(length * sizeof(ScreenImageListFrame*)))
++                                               : 0;
++            ScreenImageListFrame** stored
++                = static_cast<ScreenImageListFrame**>(CopyTrivial(vector_60.begin, position, storage));
+             *stored = frame;
+             position = stored + 1;
+             if (vector_60.begin)
+-            {
+                 ReleaseNodeStorage(vector_60.begin,
+                     static_cast<unsigned int>(vector_60.capacity.data - vector_60.begin) * sizeof(ScreenImageListFrame*));
+-            }
+             vector_60.begin = storage;
+             vector_60.end = position;
+             vector_60.capacity.data = storage + length;
