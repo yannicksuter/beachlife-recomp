@@ -115,5 +115,5 @@ icon and font have separate notices in the package. Windows uses the original
 icon in the executable; macOS uses it in the app bundle. Linux window icons
 depend on desktop support. The source icon is 32×32 pixels.
 
-See [RELEASES](RELEASES.md) for candidate promotion and [BUILDING](BUILDING.md)
+See [RELEASES](RELEASES.md) for release promotion and [BUILDING](BUILDING.md)
 for building the same executable yourself.

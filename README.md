@@ -56,9 +56,9 @@ experimental decompiled game. `main` is the development
 branch; promotion to `stable` goes through a tested `main` → `stable` PR.
 
 Promotion PRs receive temporary test prereleases. Merging builds the stable
-commit and creates a draft release candidate for the version in
-`CMakeLists.txt`. The owner reviews and publishes the draft. Existing versions
-are preserved; raise the CMake version for another candidate.
+commit and publishes the version in `CMakeLists.txt` as the latest release,
+titled and described by the merged PR. Existing versions are preserved; raise
+the CMake version for another release.
 
 Read [RELEASES](docs/RELEASES.md) for the complete process and
 [INSTALL](docs/INSTALL.md) for package contents and startup.

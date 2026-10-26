@@ -190,12 +190,25 @@ class ReleaseTests(unittest.TestCase):
 
     @patch.object(release, 'verify_set', return_value=[])
     @patch.object(release, 'read_version', return_value='0.1.0')
-    def test_candidate_is_draft_at_exact_commit(self, version, verify):
-        with patch.object(release, 'api', side_effect=[[], None]), patch.object(release, 'command') as command:
+    def test_stable_release_is_latest_from_merged_pr(self, version, verify):
+        with patch.object(release, 'api', side_effect=[[], None, []]), patch.object(release, 'command') as command:
+            with self.assertRaisesRegex(RuntimeError, 'No merged main -> stable PR'):
+                release.publish('owner/repo', 'stable', Path('.'), 'a' * 40, 7)
+        command.assert_not_called()
+        pr = {'merged_at': '2026-10-26T12:00:00Z', 'merge_commit_sha': 'a' * 40, 'title': 'feat: ship it',
+              'body': 'What changed.\r\n', 'base': {'ref': 'stable'}, 'head': {'ref': 'main'}}
+        notes = []
+        def record(*args):
+            notes.append(Path(args[args.index('--notes-file') + 1]).read_text())
+        with patch.object(release, 'api', side_effect=[[], None, [pr]]), \
+                patch.object(release, 'command', side_effect=record) as command:
             release.publish('owner/repo', 'stable', Path('.'), 'a' * 40, 7)
         args = command.call_args.args
-        self.assertIn('--draft', args)
+        self.assertNotIn('--draft', args)
+        self.assertIn('--latest', args)
+        self.assertEqual(args[args.index('--title') + 1], 'feat: ship it')
         self.assertEqual(args[args.index('--target') + 1], 'a' * 40)
+        self.assertEqual(notes, ['What changed.\n'])
 
 
 class FormatTests(unittest.TestCase):

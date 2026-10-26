@@ -3,7 +3,7 @@
 `main` is development. `stable` is the default release branch and receives
 promotions through PRs from this repository's `main`. Published releases and
 test prereleases are public so the launcher's updater can retrieve them.
-Draft candidates remain unpublished until the owner approves publication.
+Merging a promotion PR publishes the new version as the latest release.
 
 ## One version source
 
@@ -45,14 +45,14 @@ tests need no retail files; GPU-dependent checks may skip, while the generated
 headless retail parser check must pass.
 
 PR artifacts expire after seven days; stable/manual artifacts after fourteen.
-A test or draft release retains attached archives independently of that Actions
-retention. Fork PRs receive build checks/artifacts without release privileges.
+A test or published release retains attached archives independently of that
+Actions retention. Fork PRs receive build checks/artifacts without release privileges.
 Manual dispatch produces development artifacts and does not publish a release.
 
 ## Promote main to stable
 
 1. Synchronize `main` with `stable`, finish the changes and raise the CMake version
-   if a new candidate is needed. Commit and push `main`.
+   if a new release is needed. Commit and push `main`.
 2. Open a PR with base `stable` and head `main`. The promotion policy rejects
    other source branches/repositories. Keep the branch up to date with `stable`.
 3. Wait for every build/test and `Native build gate`. The gate also checks the
@@ -62,9 +62,9 @@ Manual dispatch produces development artifacts and does not publish a release.
    inspect the build before merging.
 5. Merge using a merge commit. The push to `stable` runs the same matrix again
    at the actual merged SHA; it does not rename the PR artifacts.
-6. Actions creates draft `v<version>`, attaches that stable run's packages and
-   SHA256SUMS, and generates release notes. Review this candidate, then publish
-   the draft when ready. Publishing uses the existing assets without rebuilding.
+6. Actions publishes `v<version>` as the latest release with that stable run's
+   packages and SHA256SUMS. The release takes the merged PR's title and body, so
+   write them as release notes before merging.
 7. Synchronize development after promotion: fetch, fast-forward `main` to stable
    when possible, and push it. If main has advanced, merge stable into main and
    resolve the changes before the next promotion.
@@ -77,13 +77,9 @@ against GitHub's SHA-256 digest (or SHA256SUMS) and every file against
 SOURCE-MANIFEST.json. Keep these names, SHA256SUMS and the manifest format
 stable. Drafts stay invisible to the launcher until they are published.
 
-A candidate is a **draft GitHub release**, not an automatically numbered RC.
-Numbered prereleases would need an explicit additional CMake version field and
-promotion policy. The owner controls final publication.
-
 Existing tags, published releases and drafts are preserved. Another stable
 commit with the same CMake version still builds artifacts but does not replace
-the existing candidate. Increase the version for a new candidate.
+the existing release. Increase the version for a new release.
 The pipeline checks the paginated release inventory, including drafts, as well
 as existing tags; GitHub's release-by-tag endpoint alone does not find drafts.
 
