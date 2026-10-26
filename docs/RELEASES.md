@@ -135,7 +135,12 @@ Keychain Access (My Certificates, the Developer ID Application entry with its
 key) and store it with `base64 -i DeveloperID.p12 | gh secret set MACOS_CERTIFICATE`.
 Create the API key under App Store Connect → Users and Access → Integrations →
 App Store Connect API with Developer access; `gh secret set MACOS_NOTARY_KEY <
-AuthKey_<ID>.p8` stores it. Notarization adds a few minutes to each macOS job.
+AuthKey_<ID>.p8` stores it.
+
+PR builds are signed but not notarized: the launcher's own updates are not
+quarantined, so only browser downloads need Apple's ticket. Stable pushes and
+manual workflow runs notarize, which usually takes minutes; a new developer
+account's first submissions can wait in Apple's queue for hours.
 
 ## Package contract
 

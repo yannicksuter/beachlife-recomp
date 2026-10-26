@@ -40,7 +40,7 @@ jobs:
     name: ${{ matrix.platform }}
     needs: policy
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ matrix.timeout || 45 }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,10 +57,12 @@ jobs:
             runner: macos-15
             arch: arm64
             package_platform: macos
+            timeout: 105 # Apple's notarization queue
           - platform: macos-x86_64
             runner: macos-15
             arch: x86_64
             package_platform: macos
+            timeout: 105
     defaults:
       run:
         shell: bash
@@ -135,6 +137,9 @@ jobs:
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+          # Only what players download from a browser needs Apple's ticket: stable
+          # releases and manual runs. The launcher's own updates are not quarantined.
+          MACOS_NOTARIZE: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: |
           test "$(lipo -archs build/release/beachlife.app/Contents/MacOS/beachlife)" = "$TARGET_ARCH"
           test "$(lipo -archs build/release/beachlife_boot_link)" = "$TARGET_ARCH"

@@ -9,6 +9,7 @@ MACOS_CERTIFICATE           base64 of the Developer ID Application .p12
 MACOS_CERTIFICATE_PASSWORD  its export password
 MACOS_NOTARY_KEY            an App Store Connect API key (.p8 text)
 MACOS_NOTARY_KEY_ID, MACOS_NOTARY_ISSUER  that key's ID and issuer ID
+MACOS_NOTARIZE              set to notarize; otherwise only signed
 """
 import argparse
 import base64
@@ -66,8 +67,8 @@ class Keychain:
 def notarize(item, folder):
     """Submits `item` (an app, zipped first, or a disk image) and staples the ticket."""
     key = os.environ.get('MACOS_NOTARY_KEY')
-    if not key:
-        print('No notarization key: signed with the Developer ID but not notarized.')
+    if not key or not os.environ.get('MACOS_NOTARIZE'):
+        print('Signed with the Developer ID; notarization runs for releases and manual builds.')
         return
     key_file = Path(folder) / 'notary.p8'
     key_file.write_text(key)
@@ -78,7 +79,7 @@ def notarize(item, folder):
     credentials = ['--key', key_file, '--key-id', os.environ['MACOS_NOTARY_KEY_ID'],
                    '--issuer', os.environ['MACOS_NOTARY_ISSUER']]
     result = json.loads(output('xcrun', 'notarytool', 'submit', submission, *credentials,
-                               '--wait', '--timeout', '30m', '--output-format', 'json'))
+                               '--wait', '--timeout', '60m', '--output-format', 'json'))
     if result.get('status') != 'Accepted':
         subprocess.run(['xcrun', 'notarytool', 'log', result.get('id', ''), *map(str, credentials)])
         raise SystemExit(f"Notarization {result.get('status')}: {result.get('message', '')}")
