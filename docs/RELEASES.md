@@ -38,8 +38,8 @@ builds its exact head SHA and produces these package artifacts:
 | macOS ARM64 | tar.gz with app | Native build, CTest, architecture/signature checks, CLI/window smoke |
 | macOS x86_64 | tar.gz with app | Cross build, architecture/signature checks, Rosetta CLI/window smoke |
 
-A separate boot matrix builds the experimental decompiled game on Linux x86_64,
-Windows x86_64, macOS arm64 and macOS x86_64. Its `boot-*` artifacts use the `dev`
+A separate game matrix builds the experimental decompiled game on Linux x86_64,
+Windows x86_64, macOS arm64 and macOS x86_64. Its `beachlife_*` artifacts use the `dev`
 channel, including on stable pushes. Windows uses the same pinned cross compiler
 and is built only; its tests are not run. Boot tests need no retail files;
 GPU-dependent checks may skip, while the generated headless retail parser check

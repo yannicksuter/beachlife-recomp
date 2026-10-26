@@ -285,10 +285,10 @@ jobs:
           ./build/data-tests/system_usage_tests.exe --sample
           exit $LASTEXITCODE
 
-  # Development artifacts only: deliberately independent of Native build gate
-  # and the beachlife-* release artifact namespace/five-package contract.
+  # Development artifacts only: the beachlife_* names keep them outside the
+  # Native build gate and the beachlife-* release namespace/five-package contract.
   boot:
-    name: boot-${{ matrix.platform }}
+    name: beachlife_${{ matrix.platform }}
     needs: policy
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
@@ -322,7 +322,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
-      - name: Install Linux boot tools
+      - name: Install Linux tools
         if: matrix.platform == 'linux-x86_64'
         run: |
           sudo apt-get update
@@ -340,7 +340,7 @@ jobs:
           sudo apt-get install -y cmake ninja-build
           toolchain=$(python tools/setup_windows_toolchain.py "$RUNNER_TEMP/llvm-mingw")
           echo "LLVM_MINGW_ROOT=$toolchain" >> "$GITHUB_ENV"
-      - name: Select macOS boot toolchain
+      - name: Select macOS toolchain
         if: runner.os == 'macOS'
         env:
           TARGET_ARCH: ${{ matrix.arch }}
@@ -355,7 +355,7 @@ jobs:
           echo "CXX=$(xcrun --find clang++)" >> "$GITHUB_ENV"
       - name: Prepare pinned dependencies
         run: python tools/setup_dependencies.py
-      - name: Configure boot game
+      - name: Configure game
         env:
           TARGET_ARCH: ${{ matrix.arch }}
           TARGET_PLATFORM: ${{ matrix.platform }}
@@ -372,12 +372,12 @@ jobs:
             -DBEACHLIFE_BUILD_CHANNEL=dev \
             -DBEACHLIFE_BUILD_PULL_REQUEST="$PR_NUMBER" -DBEACHLIFE_BUILD_RUN="$GITHUB_RUN_ID" \
             -DBEACHLIFE_ENABLE_EXPERIMENTAL_GAME=ON -DBEACHLIFE_ENABLE_BOOT_GAME=ON
-      - name: Build boot game and fixtures
+      - name: Build game and fixtures
         run: cmake --build build/boot --parallel 3 2>&1 | tee build/boot-build.log
       - name: Run native CTest including headless retail parser
         if: matrix.platform != 'windows-x86_64'
         run: ctest --test-dir build/boot --output-on-failure --no-tests=error
-      - name: Check and sign boot app
+      - name: Check and sign game app
         if: runner.os == 'macOS'
         env:
           TARGET_ARCH: ${{ matrix.arch }}
@@ -386,7 +386,7 @@ jobs:
           test "$(lipo -archs build/boot/beachlife_boot_link)" = "$TARGET_ARCH"
           codesign --force --sign - build/boot/beachlife.app
           codesign --verify --deep --strict build/boot/beachlife.app
-      - name: Assemble boot artifact
+      - name: Assemble game artifact
         env:
           TARGET_PLATFORM: ${{ matrix.platform }}
         run: |
@@ -400,14 +400,14 @@ jobs:
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: boot-${{ matrix.platform }}
+          name: beachlife_${{ matrix.platform }}
           path: build/boot-artifacts/
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
-          name: boot-diagnostics-${{ matrix.platform }}
+          name: beachlife_${{ matrix.platform }}-diagnostics
           path: |
             build/boot-build.log
             build/boot/boot/traps.json
