@@ -1,0 +1,209 @@
+diff --git a/src/startup_audio_option_defaults.h b/src/startup_audio_option_defaults.h
+new file mode 100644
+index 0000000..ecd8ad4
+--- /dev/null
++++ b/src/startup_audio_option_defaults.h
+@@ -0,0 +1,8 @@
++#ifndef STARTUP_AUDIO_OPTION_DEFAULTS_H
++#define STARTUP_AUDIO_OPTION_DEFAULTS_H
++
++// Read-only retail defaults used by ResetAudioOptions.
++extern const float screen_sound_volume_default; // 0x004f4d48.
++extern const float screen_music_volume_default; // 0x004f4d4c.
++
++#endif
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index fd39a47..898097a 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -20,6 +20,7 @@ struct ScreenRectangle;
+ struct ScreenRequestContext;
+ struct ScreenRequestRenderer;
+ struct ScreenManager;
++struct GameSaveRecord;
+ 
+ // Observed screen-manager and placement pointers at original x86+0x48/+0x54.
+ // This does not recover the complete game class or its lifetime.
+@@ -32,11 +33,14 @@ struct GameScenarioNameRange
+ 
+ struct ScreenRequestGamePrefix
+ {
+-    bool HasScenarioFlag04(unsigned int index); // 0x004e41a0.
+-    int TimeHours(float value);                 // 0x004e5360.
+-    bool SelectedSaveExists();                  // 0x004e4f60.
+-    void SelectSaveForLoad();                   // 0x004e44b0.
+-    void ResetScenarioProgress();               // 0x004e3d70.
++    bool HasScenarioFlag04(unsigned int index);             // 0x004e41a0.
++    int TimeHours(float value);                             // 0x004e5360.
++    bool SelectedSaveExists();                              // 0x004e4f60.
++    void SelectSaveForLoad();                               // 0x004e44b0.
++    void ResetScenarioProgress();                           // 0x004e3d70.
++    int SelectedSaveScenario();                             // 0x004e4eb0.
++    const unsigned short* ScenarioName(unsigned int index); // 0x004e3d50.
++    void SetMenuReturnFlag(unsigned char value);            // 0x004e3bf0.
+     unsigned int ScenarioNameCount();
+     const unsigned short* ScenarioDirectory();
+     ControllerSelectionState controller_selection;
+@@ -52,9 +56,11 @@ struct ScreenRequestGamePrefix
+     unsigned int scenario_a0;
+     unsigned char byte_a4;
+     unsigned char unknown_a5[0xf];
+-    unsigned int word_b4;
++    int word_b4;
+     unsigned char save_info_enabled;
+-    unsigned char unknown_b9[0xb];
++    unsigned char unknown_b9[3];
++    GameSaveRecord* selected_save;
++    unsigned char unknown_c0[4];
+     unsigned char flag_c4;
+     unsigned char inactive_c5;
+ 
+@@ -100,6 +106,8 @@ struct ScreenManager
+     void SetFeatureState(const char* name, unsigned char enabled);                                                       // 0x004b1e90.
+     bool ToggleScreen(const char* name, ScreenRequestContext* context, unsigned char flag);                              // 0x004b15b0.
+     bool CloseScreen(const char* name);                                                                                  // 0x004b17e0.
++    unsigned char CanShowTickerMessage();                                                                                // 0x004af490.
++    void ClosePause();                                                                                                   // 0x004ae970.
+     void RequestCameraCapture();
+     void DisableOverlay();
+     unsigned char SelectionInputEnabled();
+diff --git a/src/startup_screen_panel13c_owner.h b/src/startup_screen_panel13c_owner.h
+index 374a34c..02706ff 100644
+--- a/src/startup_screen_panel13c_owner.h
++++ b/src/startup_screen_panel13c_owner.h
+@@ -50,6 +50,8 @@ struct ScreenLoadPanel13cOwner
+     const char* ReadTitle(int index);                   // 0x004cdc40.
+     const char* ReadArtist(int index);                  // 0x004cdc60.
+     bool UpdatePlayback();                              // 0x004cdb00.
++    void MarkForDeletion(int index);                    // 0x004cde40.
++    unsigned char ReadRepeat(int index);                // 0x004cdc30.
+     bool IsPlaying();
+     void StopPlayback();
+     void StartPlayback();
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index d929cdc..b3c7af1 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -20,8 +20,13 @@ struct SavedScreenPlacementNode : CircularListNode
+ // Observed prefix only. Original complete class and field names are unknown.
+ struct ScreenPlacementStore
+ {
++    void ResetAudioOptions();                            // 0x004e6cf0.
++    void ResetVideoOptions();                            // 0x004e6ce0.
+     void GetScreenSize(int* out_width, int* out_height); // 0x004e6940.
+-    unsigned char unknown_00[0x18];
++    unsigned char unknown_00[8];
++    float sound_volume_08;
++    float music_volume_0c;
++    unsigned char unknown_10[8];
+     ScreenPlacementMusicEntry** music_begin_18;
+     ScreenPlacementMusicEntry** music_end_1c;
+     ScreenPlacementMusicEntry** music_limit_20;
+@@ -29,7 +34,11 @@ struct ScreenPlacementStore
+     CircularList saved;
+     int width_2c;
+     int height_30;
+-    unsigned char unknown_34[8];
++    unsigned char flag_34;
++    unsigned char flag_35;
++    unsigned char flag_36;
++    unsigned char flag_37;
++    unsigned char unknown_38[4];
+     unsigned int menu_script_variant_3c;
+ 
+     const char* ReadMusicName(int index);
+diff --git a/src/startup_screen_variable_image.h b/src/startup_screen_variable_image.h
+new file mode 100644
+index 0000000..3002273
+--- /dev/null
++++ b/src/startup_screen_variable_image.h
+@@ -0,0 +1,32 @@
++#ifndef STARTUP_SCREEN_VARIABLE_IMAGE_H
++#define STARTUP_SCREEN_VARIABLE_IMAGE_H
++
++#include "startup_screen_item.h"
++
++#include "startup_screen_request_context.h"
++struct ScreenDialogResource;
++
++extern const char* variable_image_resources[17];                               // 0x00582084.
++void DrawAppealStars(const char* resource, ScreenRectangle bounds, int count); // 0x004cd7b0.
++void DrawRatingStars(const char* resource, ScreenRectangle bounds, int count); // 0x004cd630.
++
++// Genuine "VariableImage" object: original allocation 0x6c and table 0x004f4cb4.
++// The table column constructor also creates one for a VARIMG_ column.
++// VTABLE: BEACHLIFE 0x004f4cb4
++struct ScreenVariableImage : ScreenItem
++{
++    char name_44[32];                  // +44: unchecked name copy.
++    ScreenDialogResource* resource_64; // +64: borrowed; constructor leaves untouched.
++    ScreenRequestContext* context_68;  // +68: borrowed row/current context.
++
++    // Actual 0x004cb920, RET 0x14.
++    ScreenVariableImage(ScreenRectangle initial, const char* name);
++
++    // Every differing retail vtable slot remains an explicit dependency.
++    virtual ~ScreenVariableImage();                   // 0x004cb9b0; wrapper 0x004cb990.
++    virtual void Unresolved0c();                      // 0x004cb9e0
++    virtual void Unresolved1c();                      // 0x004cc450
++    virtual void Unresolved24(unsigned char enabled); // 0x004cb9c0
++};
++
++#endif
+diff --git a/src/startup_world_test.h b/src/startup_world_test.h
+new file mode 100644
+index 0000000..9b04142
+--- /dev/null
++++ b/src/startup_world_test.h
+@@ -0,0 +1,39 @@
++#ifndef STARTUP_WORLD_TEST_H
++#define STARTUP_WORLD_TEST_H
++
++#include "startup_controller.h"
++
++struct WindowDeactivationState;
++
++// Actual 164-byte x86 "WorldTest" controller at Game+0x10. Field names are
++// descriptive; only the constructor's stores are established here.
++// VTABLE: BEACHLIFE 0x004f4e78
++struct WorldTestController : ControllerState
++{
++    WindowDeactivationState* object_88; // Ordinary world cleanup: 0x0043c420.
++    unsigned char byte_8c;
++    unsigned char unknown_8d[3];
++    int waves_90;
++    int crowd_94;
++    int crickets_98;
++    unsigned char byte_9c;
++    unsigned char unknown_9d[3];
++    float ambience_time_a0;
++
++    // Actual 0x004e90c0, RET4: Game passes "WorldTest".
++    explicit WorldTestController(const char* name);
++    virtual ~WorldTestController();                        // Deleting wrapper 0x004e9100.
++    void UpdateCrowdSound(float level);                    // 0x004e9d40.
++    void UpdateWildlifeSounds(float level);                // 0x004e9e60.
++    virtual int Update();                                  // 0x004e91e0.
++    virtual void RenderBeforeScreens();                    // 0x004e98d0.
++    virtual void RenderAfterScreens();                     // 0x004e98e0.
++    virtual void Enter();                                  // 0x004e98f0.
++    virtual void Exit();                                   // 0x004e9c60.
++    virtual const char* ScriptPath();                      // 0x004e9ce0.
++    virtual void ControllerSlot1c();                       // 0x004e9d00.
++    virtual void ScreenSizeChanged(int width, int height); // 0x004e9d10, RET8.
++    virtual void ControllerSlot24();                       // 0x004e9fa0.
++};
++
++#endif
+diff --git a/src/window_audio.h b/src/window_audio.h
+index 70343cf..8296c67 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -8,6 +8,7 @@ struct WindowSoundBank;
+ // constructor. These descriptive fields do not establish a native owner ABI.
+ struct WindowAudioState
+ {
++    void StopStream();     // 0x004cff80.
+     bool IsStreamPaused(); // 0x004cff10.
+     float EffectsVolume();
+     unsigned char enabled;

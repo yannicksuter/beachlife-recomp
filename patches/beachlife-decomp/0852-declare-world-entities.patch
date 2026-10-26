@@ -1,0 +1,1429 @@
+diff --git a/src/startup_pointer_list_operations.h b/src/startup_pointer_list_operations.h
+index 9b727cb..844d42a 100644
+--- a/src/startup_pointer_list_operations.h
++++ b/src/startup_pointer_list_operations.h
+@@ -24,18 +24,25 @@ Callback VisitPointerList(Iterator first, Iterator last, Callback callback, Valu
+     return callback;
+ }
+ 
+-template <class Node, class Iterator>
+-Iterator ErasePointerListNode(Iterator position)
++// Deduce the actual link type separately: a value node can inherit its links.
++// VC6 cannot order the generic and CircularListIterator function overloads.
++template <class Node, class Link>
++inline Link* ErasePointerListLinks(Link* node)
+ {
+-    Node* node = position.node;
+-    Node* previous = node->previous;
+-    Node* next = node->next;
++    Link* previous = node->previous;
++    Link* next = node->next;
+     previous->next = next;
+     next->previous = previous;
+     if (node)
+         ReturnPool(node, sizeof(Node));
++    return next;
++}
++
++template <class Node, class Iterator>
++Iterator ErasePointerListNode(Iterator position)
++{
+     Iterator result;
+-    result.node = next;
++    result.node = ErasePointerListLinks<Node>(position.node);
+     return result;
+ }
+ 
+@@ -47,20 +54,4 @@ Iterator PointerListEnd(Node* head)
+     return result;
+ }
+ 
+-// Shared erasure of the retail pointer-list nodes; the payload determines size.
+-template <class Node>
+-CircularListIterator ErasePointerListNode(CircularListIterator position)
+-{
+-    CircularListNode* node = position.node;
+-    CircularListNode* previous = node->previous;
+-    CircularListNode* next = node->next;
+-    previous->next = next;
+-    next->previous = previous;
+-    if (node)
+-        ReturnPool(node, sizeof(Node));
+-    CircularListIterator result;
+-    result.node = next;
+-    return result;
+-}
+-
+ #endif
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 80f1d5c..8a58735 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -2,6 +2,8 @@
+ #ifndef STARTUP_SCREEN_DIALOG_RESOURCE_H
+ #define STARTUP_SCREEN_DIALOG_RESOURCE_H
+ 
++struct ScreenWorldPosition;
++
+ struct ScreenDialogResourceFrame
+ {
+     const char* name;
+@@ -70,19 +72,31 @@ struct ScreenDialogResourceRecord
+ // their wider meaning and the original class name are not established here.
+ struct ScreenDialogResource
+ {
+-    char* name;
++    union
++    {
++        char* name;
++        const char* model_name_00;
++    };
+     unsigned int word_04;
+     unsigned int word_08;
+     unsigned int word_0c;
+     unsigned int word_10;
+     unsigned int word_14;
+-    unsigned int word_18;
++    union
++    {
++        unsigned int word_18;
++        int rotation_18;
++    };
+     unsigned int word_1c;
+     unsigned char flag_20;
+     unsigned char unknown_21[3];
+     unsigned int word_24;
+     unsigned char flag_28;
+-    unsigned char flag_29;
++    union
++    {
++        unsigned char flag_29;
++        unsigned char enabled_29;
++    };
+     unsigned char flag_2a;
+     unsigned char unknown_2b;
+     unsigned int word_2c;
+@@ -95,6 +109,7 @@ struct ScreenDialogResource
+     // Actual 0x00412ae0 ownership body is a separate source dependency.
+     ~ScreenDialogResource();
+     void Draw(int x, int y, unsigned int flags, float time);
++    void DrawWorld(const ScreenWorldPosition* position, float time); // 0x00413f10.
+ };
+ 
+ // Only this lookup prefix is established; no complete manager lifetime claim.
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index c8a5fc5..8d9b0b2 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -3,9 +3,12 @@
+ 
+ #include "startup_list.h"
+ #include "startup_world_deque.h"
++#include "startup_world_script_values.h"
++#include "startup_screen_point.h"
++#include "startup_screen_item.h"
++#include "startup_screen_dialog_resource.h"
+ 
+ struct ScreenModeCommand;
+-struct WorldScriptValue;
+ struct ScreenWorldPosition;
+ struct GameFileReader;
+ 
+@@ -60,6 +63,9 @@ struct VariableScenery
+     float rating_304;      // Star rating, 0..1 (drawn x100).
+     unsigned char unknown_308[4];
+     int flag_30c; // Selects build mode 8 instead of 7 for the path list.
++    unsigned char unknown_310;
++    unsigned char removable_311;
++    unsigned char blocks_tile_312;
+ };
+ 
+ struct VariableGuestState
+@@ -130,32 +136,72 @@ struct VariableStaffState
+     int female_c4;
+ };
+ 
+-struct VariableKeylineState
+-{
+-    const char* model_name_00; // Guests: fat_bloke, fit_bloke, gail or shaz.
+-    unsigned char unknown_04[0x14];
+-    int rotation_18; // Odd quarter turns swap a building's footprint.
+-    unsigned char unknown_1c[0xd];
+-    unsigned char enabled_29;
+-};
+-
+-struct WorldGuestEntity;
++typedef ScreenDialogResource VariableKeylineState;
+ 
+ struct WorldStaticEntity;
++struct WorldMovingEntity;
++struct WorldPedestrianEntity;
++struct WorldStaffEntity;
++struct WorldSceneryEntity;
++struct WorldBuildingEntity;
++struct WorldGuestEntity;
++struct WorldVehicleEntity;
++struct WorldObjectEntity;
++struct WorldServiceStaffEntity;
++struct WorldLifeguardEntity;
++struct WorldMechanicEntity;
++struct WorldRepresentativeEntity;
++struct WorldBuilderEntity;
++struct WorldCleanerEntity;
++struct WorldSecurityEntity;
++struct WorldSharkEntity;
++struct WorldEntity14;
++struct WorldEntity15;
++struct WorldEntity16;
++struct WorldEntity17;
++struct WorldEntity18;
++struct WorldEntity19;
++struct WorldEntity20;
++struct VariableVehicleDefinition;
++struct VariableCatalogObjectDefinition
++{
++    unsigned char unknown_00[0xc4];
++    char resource_c4[0x100];
++    char resource_1c4[0x100];
++    unsigned char unknown_2c4[0x80];
++    void** names_344;
++    unsigned char unknown_348[0x88];
++    unsigned int frame_count_3d0;
++    int name_count_3d4;
++    unsigned char unknown_3d8[8];
++    void* data_3e0;
++    unsigned char unknown_3e4[4];
++    void* data_3e8;
++    unsigned char unknown_3ec[4];
++    void* data_3f0;
++    void** frames_3f4;
++    unsigned char flag_3f8;
++    unsigned char unknown_3f9[3];
++    void* data_3fc;
++    void* data_400;
++    void* data_404;
++    void* data_408;
++    void* data_40c;
++    void* data_410;
++    unsigned char unknown_414[8];
++    int draw_offset_x_41c;
++    int draw_offset_y_420;
++    unsigned char flag_424;
++};
++struct WorldSubsystemScript;
+ 
+ struct VariableEntity
+ {
+-    void SetRepairRequested(unsigned char value);
+-    void SetCleaningRequested(unsigned char value);
+-    WorldStaticEntity* AsStatic();
+-    void SetFlag5a(unsigned char value);
+-    void SetMovementMode(unsigned int value);
+-    void SetEntityId(unsigned int value);
+-    void SetKind(unsigned char value);
+-    WorldGuestEntity* AsGuest();
+-    float GuestValue467d70();
+-    const char* StaffName();
+-    virtual void Destroy(unsigned int flags); // 0x00454200.
++    VariableKeylineState* KeylineState();      // 0x00477c90.
++    explicit VariableEntity(const char* name); // 0x00453770.
++    ~VariableEntity();                         // 0x00453810.
++    const char* StaffName();                   // 0x0048f0f0.
++    virtual void Destroy(unsigned int flags);  // 0x00454200.
+     virtual bool Unknown04(unsigned int state) = 0;
+     virtual bool Unknown08(unsigned int state) = 0;
+     virtual bool Unknown0c() = 0; // Base body 0x00453850.
+@@ -180,42 +226,68 @@ struct VariableEntity
+     virtual void ClearSelection();                                                                                                               // Folded 0x00437d10.
+     virtual bool CanSelectAtPointer();                                                                                                           // 0x00453750.
+     virtual const char* EntityName();                                                                                                            // 0x00453760.
+-
++    void SetPosition(ScreenWorldPosition position);
++    void SetHeading(unsigned int heading);
++    void Unknown70();
++    unsigned char MatchesPointerGroup(int previous);      // 0x0047c3d0.
++    unsigned char SelectGuestPointer(ScreenPoint* point); // 0x0047b0b0.
++    unsigned char SelectStaffPointer(ScreenPoint* point); // 0x00490a80.
++    ScreenPoint TilePosition();                           // 0x00453920.
++    ScreenWorldPosition Position();                       // 0x00466e80.
+     unsigned char inactive_04;
+     unsigned char unknown_05;
+     // The prior name span covered opaque bytes now proved to contain these fields.
+-    char name_06[0x22];
++    char name_06[32];
++    unsigned char unknown_26[2];
+     unsigned int id_28;
+     unsigned char kind_2c;
+-    unsigned char unknown_2d[3];
++    unsigned char movement_2d;
++    unsigned char unknown_2e[2];
+     float x_30; // World position; the overlay markers scale it to the map.
+     float y_34;
+-    unsigned char unknown_38[4];
++    float z_38;
+     unsigned int state_3c;
+-    unsigned char unknown_40[4];
++    unsigned char visible_40;
++    unsigned char unknown_41[3];
+     VariableKeylineState* keyline_state_44;
+-    unsigned char unknown_48[0xc];
++    unsigned int word_48;
++    unsigned int word_4c;
++    unsigned char broken_50;
++    unsigned char unknown_51[3];
+     unsigned int selection_state_54;
+-    unsigned char unknown_58[8];
+-    VariableBuilding* building_60;
+-    unsigned char unknown_64[0x90];
+-    VariableGuestState* guest_f4;
+-    unsigned char unknown_f8[0xc];
+-    VariableStaffState* staff_104;
+-    unsigned char unknown_108[4];
+-    float morale_10c; // Staff; drawn as a 0..4 smiley.
+-    unsigned char unknown_110[0x60];
+-    VariableEventSchedule* events_170;
+-    unsigned char unknown_174[0xf0];
+-    float happiness_264; // Guests; drawn as a 0..4 smiley.
+-    unsigned char unknown_268[0xd4];
+-    int power_state_33c; // Generator state 0..3; nonzero shows the second lit frame.
+-    unsigned char unknown_340[0x418];
+-    unsigned char byte_758;
++    WorldStaticEntity* AsStatic();
++    const WorldStaticEntity* AsStatic() const;
++    WorldSceneryEntity* AsScenery();
++    const WorldSceneryEntity* AsScenery() const;
++    WorldBuildingEntity* AsBuilding();
++    const WorldBuildingEntity* AsBuilding() const;
++    WorldGuestEntity* AsGuest();
++    const WorldGuestEntity* AsGuest() const;
++    WorldVehicleEntity* AsVehicle();
++    const WorldVehicleEntity* AsVehicle() const;
++    WorldStaffEntity* AsStaff();
++    const WorldStaffEntity* AsStaff() const;
++    WorldBuilderEntity* AsBuilder();
++    const WorldBuilderEntity* AsBuilder() const;
++    WorldMovingEntity* AsMoving();
++    const WorldMovingEntity* AsMoving() const;
++
++    float X() const
++    {
++        return x_30;
++    }
++    void StrikeBuilding(); // 0x00456fc0.
++    void StrikeScenery();  // 0x0041eb70.
++    float Y() const
++    {
++        return y_34;
++    }
+ 
+     // Actual 0x00460310 and 0x00460340; AL results, no stack arguments.
+     bool FlagAt00460310();
+     bool FlagAt00460340();
++    bool FlagAt00460370(); // 0x00460370.
++    bool FlagAt00460380(); // 0x00460380.
+     // Actual 0x00460510 and 0x00460660 (x87 results): this building's male and
+     // female appeal; bodies separate.
+     float MaleAppeal();
+@@ -223,6 +295,49 @@ struct VariableEntity
+     // Actual 0x004607f0: the generator's current output, 0 when idle; body
+     // separate. Descriptive name.
+     int PowerOutput();
++    void OverloadPower();                                     // 0x00460790.
++    void RemoveGuest(unsigned int id);                        // 0x0045c960.
++    void SetKind(unsigned char kind);                         // 0x004539f0.
++    void SetEntityId(unsigned int id);                        // 0x00453a00.
++    float GuestFade();                                        // 0x00467ce0.
++    float GuestValue467d70();                                 // 0x00467d70.
++    float GuestValue47ab00();                                 // 0x0047ab00.
++    void SetMovementMode(unsigned int mode);                  // 0x00453a10.
++    bool AddRoutePoint(ScreenWorldPosition point);            // 0x004621b0.
++    void SetArrivalPosition(ScreenWorldPosition point);       // 0x0049a490.
++    void SetDeparturePosition(ScreenWorldPosition point);     // 0x0049a4c0.
++    void SetArrivalTile(ScreenPoint point);                   // 0x0049a4f0.
++    void SetDepartureTile(ScreenPoint point);                 // 0x0049a510.
++    void SetArrivalHeading(int heading);                      // 0x0049a530.
++    void SetDepartureHeading(int heading);                    // 0x0049a550.
++    void SetVehicleVariant(unsigned char variant);            // 0x00494da0.
++    void SetTransport(unsigned int id);                       // 0x00478560.
++    void SetHappiness(float value);                           // 0x0046b180.
++    void OpenContainedEntity();                               // 0x00494330.
++    void CloseContainedEntity();                              // 0x00494300.
++    void WeatherChanged();                                    // 0x0046ade0.
++    ScreenRectangle* BuildingRectangle();                     // 0x0045f170.
++    void RequestRemoval();                                    // 0x0041f240.
++    void MoveTo(const ScreenWorldPosition* point);            // 0x00490340.
++    void MoveToTarget(int target);                            // 0x004903a0.
++    void Demolish();                                          // 0x004606a0.
++    void OpenBuilding();                                      // 0x00460880.
++    void CloseBuilding();                                     // 0x004608a0.
++    void OpenBuildingContents();                              // 0x00461f10.
++    void CloseBuildingContents();                             // 0x00462050.
++    void SetDrinkType(unsigned int type);                     // 0x0045ee10.
++    void SetDrinkValue(float value);                          // 0x0045ed60.
++    void SetFlag5a(unsigned char enabled);                    // 0x004910b0.
++    void SetSceneryContents(unsigned int count);              // 0x0041eab0.
++    void SetCleaningRequested(unsigned char enabled);         // 0x00491120.
++    void SetRepairRequested(unsigned char enabled);           // 0x00491130.
++    void DecreaseStaffHours();                                // 0x0048ff70.
++    void IncreaseStaffHours();                                // 0x0048ff30.
++    void UpdateWageMorale();                                  // 0x0048ecf0.
++    void SetStaffShift(unsigned int start, unsigned int end); // 0x0048ede0.
++    bool HireStaff();                                         // 0x0045b650.
++    void DismissStaff(unsigned int id);                       // 0x0045c200.
++    unsigned int ThoughtTarget(unsigned int row);             // 0x0045ca30.
+ };
+ 
+ struct VariableEventDefinition;
+@@ -230,8 +345,20 @@ struct VariableCatalogUnlock;
+ struct VariableCatalogObjectDefinition;
+ struct VariableVehicleDefinition;
+ 
++struct VariableCrimeDefinition;
++
++struct VariableThought
++{
++    void* data_00;
++    unsigned int target_04;
++};
++
++typedef WorldDequeIterator<VariableThought*> ScreenContextRowIterator;
++struct BuildingGuestQueue;
++
+ struct VariableCatalog
+ {
++    VariableCrimeDefinition* Crime(unsigned int index); // 0x00449380.
+     unsigned char unknown_00[0x0c];
+     unsigned int building_count_0c;
+     unsigned char unknown_10[0x24];
+@@ -261,17 +388,21 @@ struct VariableCatalog
+ 
+ struct VariableWeather
+ {
+-    float Red();   // 0x00438a50, RET0.
+-    float Green(); // 0x00438a70, RET0.
+-    float Blue();  // 0x00438a90, RET0.
++    unsigned int* GuestChanges(); // 0x0043a040.
++    float Red();                  // 0x00438a50, RET0.
++    float Green();                // 0x00438a70, RET0.
++    float Blue();                 // 0x00438a90, RET0.
+     // Actual 0x00438520, RET0; called after a screen-size change.
+     void RefreshForScreenSize();
+ };
+ 
+ // Observed inline building, guest and entity pointer tables. Complete world
+ // ownership and lifetime remain separate from this borrowed matching view.
++typedef VariableEntity* VariableEntityPointer;
++
+ struct VariableWorldPrefix
+ {
++    VariableEntityPointer* CollectStaff(unsigned int* count); // 0x0042f990.
+     unsigned char unknown_00[4];
+     unsigned int buildings_04;
+     unsigned int guests_08;
+@@ -306,4 +437,6 @@ extern VariableCatalog* variable_catalog;   // 0x005bac38.
+ const char* ReadVariableFilterTitle(); // 0x004c2390.
+ float GetGameVersion();                // 0x004e3cb0, existing version.cpp.
+ 
++#include "startup_world_entities.h"
++
+ #endif
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 05bfcd1..9615646 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -3,58 +3,964 @@
+ 
+ #include "startup_variable_state.h"
+ 
+-// Matching-only observed receiver views. Complete derived owners and native
+-// lifetimes remain in the native source profile.
+-struct WorldSceneryEntity
++struct ScreenTerrainRouteNode;
++
++struct WorldObjectSlot
+ {
+-    unsigned char unknown_00[0x60];
+-    char model_name_60[32];
+-    const char* EntityName();
++    int variant_00;
++    int id_04;
++    unsigned char flag_08;
++    unsigned char flag_09;
++    unsigned char unknown_0a[2];
++    unsigned int position_0c;
++};
++
++struct WorldStaticEntity : VariableEntity
++{
++    void SetRepairAssigned(unsigned char assigned);     // 0x004910c0.
++    bool NeedsCleaning();                               // 0x004910f0.
++    bool NeedsRepair();                                 // 0x004910d0.
++    void SetRepairActive(unsigned char value);          // 0x00491110.
++    void SetFootprintX(unsigned char size);             // 0x00491090.
++    void SetFootprintY(unsigned char size);             // 0x004910a0.
++    explicit WorldStaticEntity(const char* name);       // 0x00490fd0.
++    ~WorldStaticEntity();                               // 0x00491030.
++    virtual void Destroy(unsigned int flags);           // 0x00491010.
++    virtual bool Unknown0c();                           // 0x00491040.
++    virtual bool Unknown14(ScreenModeCommand* command); // 0x00491070.
++    virtual void Unknown48(GameFileReader* file);       // 0x00491140.
++    virtual void Unknown4c(GameFileReader* file);       // 0x004911f0.
++    unsigned char footprint_x_58;
++    unsigned char footprint_y_59;
++    unsigned char flags_5a[4];
++    unsigned char cleaning_requested_5e;
++    unsigned char repair_requested_5f;
+ };
+-struct WorldSharkEntity : VariableEntity
++
++struct WorldMovingEntity : VariableEntity
+ {
+-    virtual void Unknown3c();
++    void SteerTowardTarget();                                                                                  // 0x00482940.
++    void SteerArriving();                                                                                      // 0x00482ab0.
++    void SteerFollowing();                                                                                     // 0x00482c30.
++    void IntegrateVelocity(float step);                                                                        // 0x00482d90.
++    void SetSteeringTarget(ScreenMapPosition position);                                                        // 0x00486b60.
++    void UpdateSteeringTarget();                                                                               // 0x004831d0.
++    bool IntegrateMotion(float step);                                                                          // 0x00482f00.
++    void AdvanceMotion();                                                                                      // 0x004835a0.
++    void PrepareMove(ScreenModeCommand* command);                                                              // 0x00483db0.
++    bool ReachedDestination();                                                                                 // 0x00483e70.
++    void FindMotionRoute(ScreenPoint* start, ScreenPoint* end, unsigned char* success, unsigned int flags);    // 0x00483f60.
++    bool AdjustRouteEndpoints(ScreenPoint* start, ScreenPoint* end, unsigned int flags);                       // 0x00485f20.
++    void NotifyRouteTransition(ScreenPoint* start, ScreenPoint* end, unsigned int flags);                      // 0x00485ca0.
++    explicit WorldMovingEntity(const char* name);                                                              // 0x00482770.
++    ~WorldMovingEntity();                                                                                      // 0x004828b0.
++    virtual void Destroy(unsigned int flags);                                                                  // 0x00482890.
++    virtual bool Unknown0c();                                                                                  // 0x00483a80.
++    virtual bool Unknown14(ScreenModeCommand* command);                                                        // 0x00484120.
++    virtual void Unknown20(ScreenModeCommand command);                                                         // Folded 0x004859c0.
++    virtual void Unknown24(ScreenModeCommand command, float delay);                                            // Folded 0x004859d0.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                  // 0x004859e0.
++    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value); // 0x00485c50.
++    virtual void Unknown48(GameFileReader* file);                                                              // 0x00486480.
++    virtual void Unknown4c(GameFileReader* file);                                                              // 0x004867e0.
++    virtual void SetMovementPosition(ScreenWorldPosition position);                                            // 0x00482910.
++    void SetMotionPosition(ScreenMapPosition position);                                                        // 0x00486b20.
++    ScreenMapPosition MotionPosition() const;                                                                  // 0x00486ae0.
++    ScreenMapPosition MotionVelocity() const;                                                                  // 0x00486b00.
++    void SetMotionVelocity(ScreenMapPosition velocity);                                                        // 0x00486b40.
++    unsigned int word_58;
++    unsigned char flag_5c;
++    unsigned char unknown_5d[0x3];
++    float value_60;
++    float motion_64[6];
++    float acceleration_7c;
++    float speed_80;
++    float target_84[2];
++    unsigned int word_8c;
++    unsigned int word_90;
++    unsigned int word_94;
++    unsigned int word_98;
++    unsigned int word_9c;
++    unsigned int word_a0;
++    unsigned char unknown_a4[0x4];
++    unsigned char flag_a8;
++    unsigned char unknown_a9[0x3];
++    int word_ac;
++    unsigned int word_b0;
++    unsigned char flag_b4;
++    unsigned char unknown_b5[0x3];
++    void* route_b8;
++    unsigned char flag_bc;
++    unsigned char unknown_bd[0x13];
++    unsigned char flags_d0[4];
++    unsigned char flag_d4;
++    unsigned char unknown_d5[0x3];
++    float values_d8[3];
++    unsigned char flag_e4;
++    unsigned char unknown_e5[0x3];
++    unsigned int word_e8;
++    unsigned int word_ec;
++    float value_f0;
+ };
+ 
+-struct WorldEntity19 : VariableEntity
++struct WorldPedestrianEntity : WorldMovingEntity
+ {
+-    virtual bool Unknown08(unsigned int value);
++    bool AcceptPerformerState(unsigned int state); // 0x0048ce00.
++    bool LeaveContestState();                      // 0x0049e080.
++    bool LeavePerformerState();                    // 0x0048d080.
++    float PlayPerformerAnimation(const char* animation, unsigned char once, unsigned int next_state,
++        unsigned char hold, const char* next_animation);                                                       // 0x00464590.
++    WorldScriptValue ReadPerformerValue(unsigned int kind, unsigned int data);                                 // 0x004533b0.
++    explicit WorldPedestrianEntity(const char* name);                                                          // 0x0047c350.
++    ~WorldPedestrianEntity();                                                                                  // 0x0047c390.
++    virtual void Destroy(unsigned int flags);                                                                  // 0x0047c370.
++    virtual bool Unknown0c();                                                                                  // 0x0047c3a0.
++    virtual bool Unknown14(ScreenModeCommand* command);                                                        // 0x0047c580.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                  // 0x0047c590.
++    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value); // 0x0047c5d0.
++    virtual void Unknown48(GameFileReader* file);                                                              // 0x0047c5f0.
++    virtual void Unknown4c(GameFileReader* file);                                                              // 0x0047c600.
+ };
+ 
+-// Observed guest receiver field; no lifetime or complete owner is supplied.
+-struct WorldGuestEntity
++struct WorldStaffEntity : WorldPedestrianEntity
+ {
+-    unsigned char unknown_00[0x360];
++    bool UpdateServiceStaff();                                                                                                                    // 0x0049add0.
++    void SaveServiceStaffState(GameFileReader* file, unsigned int action);                                                                        // 0x0049af40.
++    void LoadServiceStaffState(GameFileReader* file, unsigned int* action);                                                                       // 0x0049af70.
++    void ChooseRandomDestination();                                                                                                               // 0x004900e0.
++    void UpdateStaffFeedback();                                                                                                                   // 0x0048ec30.
++    void AddThought(unsigned int flags);                                                                                                          // 0x004907e0.
++    explicit WorldStaffEntity(const char* name);                                                                                                  // 0x0048e930.
++    ~WorldStaffEntity();                                                                                                                          // 0x0048eb10.
++    virtual void Destroy(unsigned int flags);                                                                                                     // 0x0048eaf0.
++    virtual bool Unknown0c();                                                                                                                     // 0x0048eb20.
++    virtual bool Unknown14(ScreenModeCommand* command);                                                                                           // 0x0048ee00.
++    virtual void ReadText(const char* key, unsigned short* output);                                                                               // 0x0048f8d0.
++    virtual void WriteValue(const char* key, const void* value);                                                                                  // 0x0048feb0.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                                                     // 0x0048f100.
++    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value);                                    // 0x0048f5a0.
++    virtual void Unknown34(unsigned int value);                                                                                                   // 0x0048f730.
++    virtual void Unknown40();                                                                                                                     // 0x00490b50.
++    virtual void Unknown48(GameFileReader* file);                                                                                                 // 0x004903f0.
++    virtual void Unknown4c(GameFileReader* file);                                                                                                 // 0x00490630.
++    virtual void Unknown50(int first, int second);                                                                                                // 0x0048f020.
++    virtual void Replaced();                                                                                                                      // 0x00490c30.
++    virtual void ClearSelection();                                                                                                                // 0x00490c20.
++    virtual void SetHome(unsigned int id);                                                                                                        // 0x00456570.
++    virtual const char* Notification(unsigned int flags);                                                                                         // 0x004908e0.
++    virtual void Dismiss();                                                                                                                       // 0x00490a00.
++    virtual void DirectTo(unsigned int id);                                                                                                       // Folded 0x0049dbe0.
++    bool IsOnDuty();                                                                                                                              // 0x0048ffb0.
++    bool EnterDefaultScriptState(unsigned int state);                                                                                             // 0x00486fc0.
++    float PlayStaffAnimation(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x00466060.
++    bool FindInteractionOffset(ScreenWorldPosition* position, int x, int y);                                                                      // 0x0048fff0.
++    bool LeaveScriptState();                                                                                                                      // 0x00487110.
++    float PlayMechanicAnimation(const char* animation, unsigned char once, unsigned int next_state,
++        unsigned char suppress, const char* next_animation);                // 0x00455630.
++    void QueueScriptCommand(ScreenModeCommand command);                     // 0x004812a0.
++    void QueueDelayedScriptCommand(ScreenModeCommand command, float delay); // 0x004812d0.
++    WorldSubsystemScript* script_f4;
++    unsigned short* personal_name_f8;
++    ScreenModeCommand* current_command_fc;
++    unsigned int home_id_100;
++    VariableStaffState* staff_104;
++    unsigned int wages_108;
++    float morale_10c;
++    float wage_basis_110;
++    unsigned int shift_start_114;
++    unsigned int shift_end_118;
++    int hours_worked_11c;
++    unsigned int word_120;
++    unsigned char flag_124;
++    unsigned char unknown_125[0x3];
++    unsigned int word_128;
++    unsigned int word_12c;
++    unsigned int word_130;
++    unsigned int word_134;
++    unsigned char moving_138;
++    unsigned char unknown_139[0x3];
++    int target_13c;
++    float target_x_140;
++    float target_y_144;
++    unsigned char unknown_148[0x4];
++    unsigned int word_14c;
++    unsigned int next_day_150;
++    unsigned int word_154;
++    unsigned short text_158[3][256];
++    unsigned char byte_758;
++    unsigned char flag_759;
++    unsigned char flag_75a;
++    unsigned char unknown_75b[0x1];
++    float target_morale_75c;
++    float morale_change_760;
++    unsigned char morale_changing_764;
++    unsigned char target_flag_765;
++    unsigned char flag_766;
++    unsigned char unknown_767;
++    float directed_x_768;
++    float directed_y_76c;
++    unsigned int word_770;
++    unsigned int word_774;
++};
++
++struct WorldSceneryEntity : WorldStaticEntity
++{
++    unsigned int AvailableSeats();                                  // 0x0041f220.
++    void SetVandalized(unsigned char value);                        // 0x0041ecc0.
++    ScreenWorldPosition ApproachPosition();                         // 0x0041e820.
++    void SetPlacementName(const char* name);                        // 0x0041c8a0.
++    explicit WorldSceneryEntity(const char* name);                  // 0x0041c0d0.
++    ~WorldSceneryEntity();                                          // 0x0041c840.
++    virtual void Destroy(unsigned int flags);                       // 0x0041c810.
++    virtual bool Unknown04(unsigned int state);                     // 0x0041c9c0.
++    virtual bool Unknown08(unsigned int state);                     // 0x0041c9f0.
++    virtual bool Unknown0c();                                       // 0x0041d6e0.
++    virtual bool Unknown10();                                       // Folded 0x0048e880.
++    virtual bool Unknown14(ScreenModeCommand* command);             // 0x0041d850.
++    virtual void ReadText(const char* key, unsigned short* output); // 0x0041e4c0.
++    virtual void Unknown3c();                                       // 0x0041dd50.
++    virtual void Unknown48(GameFileReader* file);                   // 0x0041ed30.
++    virtual void Unknown4c(GameFileReader* file);                   // 0x0041ef00.
++    virtual void Unknown50(int first, int second);                  // 0x0041c8d0.
++    virtual bool CanSelectAtPointer();                              // 0x0041f880.
++    virtual const char* EntityName();                               // 0x0041c830.
++    char model_name_60[32];
++    int ids_80[2];
++    int ids_88[2];
++    unsigned int word_90;
++    unsigned int word_94;
++    unsigned int count_98;
++    unsigned int word_9c;
++    unsigned char byte_a0;
++    unsigned char unknown_a1[0x3];
++    unsigned int word_a4;
++    unsigned char flag_a8;
++    unsigned char unknown_a9[3];
++    unsigned int word_ac;
++    ScreenRectangle reburn_rectangle_b0;
++    ScreenRectangle removal_rectangle_c0;
++    unsigned char flag_d0;
++    unsigned char unknown_d1[3];
++    ScreenDialogResource* effect_d4;
++    float value_d8;
++    float value_dc;
++    unsigned char flag_e0;
++    unsigned char unknown_e1[3];
++    float value_e4;
++    unsigned char flag_e8;
++    unsigned char flag_e9;
++    unsigned char unknown_ea[2];
++    void (*draw_ec)(WorldSceneryEntity*);
++    void (*update_f0)(WorldSceneryEntity*);
++    VariableScenery* scenery_f4;
++};
++
++struct WorldBuildingEntity : WorldStaticEntity
++{
++    VariableBuilding* BuildingDefinition();                         // 0x00424650.
++    float FeatureRating(unsigned int feature, unsigned int gender); // 0x00460550.
++
++    void AddThought(const unsigned short* text, unsigned int guest); // 0x0045c810.
++    ScreenMapPosition ContentPosition(unsigned int index);           // 0x0045c790.
++    ScreenWorldPosition EntrancePosition();                          // 0x004571d0.
++    unsigned int AvailableRooms();                                   // 0x00460500.
++    bool BeachOpen(unsigned int kind);                               // 0x0045e870.
++    void SetBeachOpen(unsigned int closed);                          // 0x0045e760.
++    void SetupScreenBounds(ScreenWorldPosition position);            // 0x0045f050.
++    void DrawLighting(unsigned char* light);                         // 0x0045f260.
++    void InitializeStaff();                                          // 0x0045bab0.
++    void InitializeVehicles();                                       // 0x0045c2a0.
++    void InitializeContents();                                       // 0x0045c630.
++    float FeatureValue(unsigned int feature);                        // 0x004605e0.
++    float FeatureDuration(unsigned int feature);                     // 0x00461e20.
++    void SetRotation(unsigned int rotation);                         // 0x00460710.
++    void SetEntrancePosition(ScreenWorldPosition position);          // 0x004416a0.
++    void SetMarkerPosition(ScreenWorldPosition position);            // 0x00424660.
++    void SetStaffPosition(ScreenWorldPosition position);             // 0x004604d0.
++    ScreenWorldPosition StaffPosition();                             // 0x004571a0.
++    void BreakDown();                                                // 0x00457140.
++    ~WorldBuildingEntity();                                          // 0x00456d00.
++    void ActivateBuilding();                                         // 0x00460900.
++    explicit WorldBuildingEntity(const char* name);                  // 0x00456580.
++    virtual void Destroy(unsigned int flags);                        // 0x00456ce0.
++    virtual bool Unknown04(unsigned int state);                      // 0x00457230.
++    virtual bool Unknown08(unsigned int state);                      // 0x00457250.
++    virtual bool Unknown0c();                                        // 0x00458020.
++    virtual bool Unknown10();                                        // 0x00458820.
++    virtual bool Unknown14(ScreenModeCommand* command);              // 0x00458b60.
++    virtual void ReadText(const char* key, unsigned short* output);  // 0x0045caa0.
++    virtual void WriteValue(const char* key, const void* value);     // 0x0045e930.
++    virtual void Unknown3c();                                        // 0x0045f6e0.
++    virtual void Unknown40();                                        // 0x00460190.
++    virtual int Unknown44();                                         // 0x0045f240.
++    virtual void Unknown48(GameFileReader* file);                    // 0x00460bc0.
++    virtual void Unknown4c(GameFileReader* file);                    // 0x00461590.
++    virtual void Unknown50(int first, int second);                   // 0x0045ef00.
++    virtual void Replaced();                                         // 0x00490c20.
++    virtual bool CanSelectAtPointer();                               // 0x0045eed0.
++    VariableBuilding* building_60;
++    unsigned int staff_ids_64[10];
++    unsigned int staff_count_8c;
++    unsigned int pending_staff_90;
++    unsigned int additional_staff_94[10];
++    unsigned int additional_staff_count_bc;
++    unsigned char staff_flags_c0[10];
++    unsigned char flag_ca;
++    unsigned char flag_cb;
++    ScreenWorldPosition queue_position_cc;
++    ScreenWorldPosition staff_position_d8;
++    ScreenWorldPosition entrance_position_e4;
++    float value_f0;
++    float value_f4;
++    float queue_z_f8;
++    ScreenWorldPosition marker_position_fc;
++    float placed_time_108;
++    unsigned int word_10c;
++    unsigned int word_110;
++    unsigned int word_114;
++    unsigned int word_118;
++    unsigned int word_11c;
++    unsigned int vehicle_ids_120[6];
++    unsigned char flags_138[6];
++    unsigned char unknown_13e[0x2];
++    ScreenDialogResource* resources_140[8];
++    ScreenDialogResource* resource_160;
++    ScreenDialogResource* resource_164;
++    ScreenDialogResource* resource_168;
++    BuildingGuestQueue* building_queue_16c;
++    VariableEventSchedule* events_170;
++    void* data_174;
++    unsigned int count_178;
++    unsigned int word_17c;
++    float value_180;
++    float value_184;
++    unsigned char flag_188;
++    unsigned char unknown_189[3];
++    ScreenWorldPosition pool_position_18c;
++    ScreenDialogResource* resource_198;
++    unsigned int building_state_19c;
++    unsigned int word_1a0;
++    unsigned int word_1a4;
++    float appeal_1a8[5][2];
++    unsigned int feature_values_1d0[5];
++    float feature_scale_1e4[5];
++    float feature_prices_1f8[5];
++    float drink_value_20c;
++    unsigned int drink_type_210;
++    float building_values_214[4];
++    unsigned int word_224;
++    unsigned int data_228[64];
++    float value_328;
++    unsigned int word_32c;
++    unsigned int building_value_330;
++    unsigned int word_334;
++    unsigned int word_338;
++    int power_state_33c;
++    unsigned char flag_340;
++    unsigned char unknown_341[0x3];
++    int hour_344;
++    float value_348;
++    unsigned int word_34c;
++    int building_value_350;
++    unsigned int word_354;
++    int hour_358;
++    unsigned int word_35c;
++    unsigned int word_360;
++    unsigned char byte_364;
++    unsigned char closed_365;
++    unsigned char flag_366;
++    unsigned char flag_367;
++    unsigned char flag_368;
++    unsigned char unknown_369[0x3];
++    int contents_count_36c;
++    unsigned int contents_370[10];
++    int child_count_398;
++    unsigned int child_ids_39c[20];
++    unsigned char burn_limbo_3ec;
++    unsigned char unknown_3ed[3];
++    ScreenRectangle footprint_rectangle_3f0;
++    ScreenRectangle building_rectangle_400;
++    unsigned int word_410;
++    int shadow_frame_414;
++    int pick_frame_418;
++    int light_frame_41c;
++    unsigned char flag_420;
++    unsigned char unknown_421[3];
++    int sound_id_424;
++    WorldDequeStorage<VariableThought*, ScreenContextRowIterator> thoughts_428;
++    int word_450;
++    float construction_time_454;
++    unsigned int word_458;
++};
++
++struct WorldGuestEntity : WorldPedestrianEntity
++{
++    void PerformAction0();                                                 // 0x0046ab00.
++    void PerformAction1();                                                 // 0x0046a470.
++    void PerformAction2();                                                 // 0x0046a2b0.
++    bool PerformAction3();                                                 // 0x0046beb0.
++    void PerformAction4();                                                 // 0x0046f9d0.
++    void PerformAction5();                                                 // 0x00474520.
++    void PerformAction6();                                                 // 0x00476fa0.
++    void PerformAction7();                                                 // 0x004775e0.
++    void PerformAction14();                                                // 0x00477720.
++    void PerformAction16();                                                // 0x00477a40.
++    void PerformAction15();                                                // 0x00477ca0.
++    void PerformAction17();                                                // 0x00477fb0.
++    void PerformAction18();                                                // 0x00478270.
++    void PerformAction20();                                                // 0x00478570.
++    void PerformAction21();                                                // 0x00478640.
++    void PerformAction24();                                                // 0x00479360.
++    void PerformAction25();                                                // 0x00479730.
++    void PerformAction26();                                                // 0x004797f0.
++    void PerformAction27();                                                // 0x00479970.
++    void PerformAction31();                                                // 0x00476e70.
++    void PerformAction34();                                                // 0x00476be0.
++    void PerformAction35();                                                // 0x004746c0.
++    void PerformAction36();                                                // 0x00474a50.
++    void PerformAction38();                                                // 0x00475e80.
++    void PerformAction41();                                                // 0x00479a60.
++    void PerformAction42();                                                // 0x0047a130.
++    void PerformAction43();                                                // 0x0047a8f0.
++    void PerformAction46();                                                // 0x0047acd0.
++    void PerformAction49();                                                // 0x0047ab40.
++    void PerformAction50();                                                // 0x00476090.
++    void PerformAction51();                                                // 0x00478f80.
++    void PerformAction53();                                                // 0x00474e60.
++    void PerformAction54();                                                // 0x004752e0.
++    void PerformAction55();                                                // 0x00475750.
++    void PerformAction59();                                                // 0x00473bb0.
++    void PerformAction60();                                                // 0x00473760.
++    void PerformAction61();                                                // 0x00473a80.
++    void PerformAction62();                                                // 0x0046fcb0.
++    void PerformAction63();                                                // 0x004739e0.
++    void PerformAction64();                                                // 0x00473830.
++    void PerformAction65();                                                // 0x00473520.
++    void PerformAction66();                                                // 0x0046b850.
++    void PerformAction67();                                                // 0x00476820.
++    void PerformAction69();                                                // 0x00478d70.
++    void PerformAction71();                                                // 0x00478e40.
++    void PerformAction76();                                                // 0x004733f0.
++    void PerformAction77();                                                // 0x00476a10.
++    void PerformAction78();                                                // 0x00475090.
++    void PerformAction79();                                                // 0x00473450.
++    void PerformAction80();                                                // 0x00473010.
++    void PerformAction82();                                                // 0x00473140.
++    void PerformAction83();                                                // 0x00479620.
++    void PerformAction85();                                                // 0x00472e40.
++    void PerformAction86();                                                // 0x00472f50.
++    void PerformAction87();                                                // 0x00472cf0.
++    void PerformAction88();                                                // 0x00478d10.
++    void PerformAction89();                                                // 0x00477500.
++    void PerformAction91();                                                // 0x0046e3e0.
++    ScreenWorldPosition* FindWaterWalkpoints();                            // 0x00468000.
++    ScreenWorldPosition RandomWalkPosition();                              // 0x00468990.
++    ScreenWorldPosition* FindLandWalkpoints(ScreenWorldPosition position); // 0x00469520.
++    void ShowThought(unsigned int text);                                   // 0x0047b180.
++
++    bool CheckIllness();                                                    // 0x0046ae10.
++    bool CheckDeparture();                                                  // 0x0046af30.
++    bool CheckBedtime();                                                    // 0x0046b1e0.
++    void SetActivityDuration(unsigned int desire, float strength);          // 0x0046b590.
++    ScreenWorldPosition* FindBeachWalkpoints(ScreenWorldPosition position); // 0x00468ac0.
++
++    void AddContamination(float amount);                                                                                                         // 0x0047b1b0.
++    bool CanBeFined();                                                                                                                           // 0x0046be90.
++    bool HasSatDown();                                                                                                                           // 0x00478b80.
++    float IllnessTint();                                                                                                                         // 0x00467d70.
++    void DrawDesire(ScreenPoint* position);                                                                                                      // 0x0047bd00.
++    ~WorldGuestEntity();                                                                                                                         // 0x00469f40.
++    explicit WorldGuestEntity(const char* name);                                                                                                 // 0x00466f00.
++    virtual void Destroy(unsigned int flags);                                                                                                    // 0x00467b00.
++    virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0046e330.
++    virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0046e3a0.
++    virtual bool Unknown0c();                                                                                                                    // 0x0046a040.
++    virtual bool Unknown10();                                                                                                                    // 0x0046e3c0.
++    virtual bool Unknown14(ScreenModeCommand* command);                                                                                          // 0x0046e210.
++    virtual void ReadText(const char* key, unsigned short* output);                                                                              // 0x0046e510.
++    virtual void Unknown20(ScreenModeCommand command);                                                                                           // 0x0046fd50.
++    virtual void Unknown24(ScreenModeCommand command, float delay);                                                                              // 0x0046fd80.
++    virtual float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x0046fdb0.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                                                    // 0x00470280.
++    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value);                                   // 0x00470f80.
++    virtual void Unknown34(unsigned int value);                                                                                                  // 0x00471980.
++    virtual void Unknown3c();                                                                                                                    // 0x00467b20.
++    virtual void Unknown40();                                                                                                                    // 0x00467d80.
++    virtual void Unknown48(GameFileReader* file);                                                                                                // 0x0047b1e0.
++    virtual void Unknown4c(GameFileReader* file);                                                                                                // 0x0047b810.
++    virtual void Unknown50(int first, int second);                                                                                               // 0x0047aec0.
++    virtual void Replaced();                                                                                                                     // 0x0047b080.
++    virtual void ClearSelection();                                                                                                               // 0x0047b090.
++    VariableGuestState* guest_f4;
++    WorldSubsystemScript* script_f8;
++    ScreenModeCommand* word_fc;
++    float ranges_100[7][2];
++    float traits_138[13];
++    float weather_values_16c[26];
++    float happiness_values_1d4[7];
++    unsigned int words_1f0[13];
++    unsigned int transport_224;
++    unsigned char flag_228;
++    unsigned char flag_229;
++    unsigned char unknown_22a[2];
++    ScreenWorldPosition walkpoints_22c[3];
++    unsigned int word_250;
++    float guest_value_254;
++    unsigned int word_258;
++    float guest_value_25c;
++    unsigned short* personal_name_260;
++    float happiness_264;
++    char walk_animation_268[40];
++    char text_290[40];
++    unsigned char flag_2b8;
++    char current_animation_2b9[40];
++    char return_animation_2e1[40];
++    unsigned char unknown_309[3];
++    unsigned int leave_state_30c;
++    ScreenDialogResource* word_310;
++    unsigned int word_314;
++    unsigned int lightning_state_318;
++    unsigned int word_31c;
++    unsigned int word_320;
++    unsigned int word_324;
++    unsigned int word_328;
++    unsigned int word_32c;
++    unsigned char flag_330;
++    unsigned char unknown_331[0x3];
++    float word_334;
++    unsigned int word_338;
++    float hour_33c;
++    float hour_340;
++    unsigned int days_344;
++    unsigned int word_348;
++    float guest_value_34c;
++    unsigned int word_350;
++    unsigned int arrival_day_354;
++    float time_358;
++    unsigned char flag_35c;
++    unsigned char unknown_35d[0x3];
+     float guest_value_360;
++    unsigned char flag_364;
++    unsigned char unknown_365[0x7];
++    unsigned char flag_36c;
++    unsigned char unknown_36d[0x3];
++    unsigned int word_370;
++    unsigned int word_374;
++    unsigned int word_378;
++    unsigned char flag_37c;
++    unsigned char unknown_37d[0x3];
++    unsigned int word_380;
++    unsigned int word_384;
++    unsigned int word_388;
++    unsigned char flag_38c;
++    unsigned char flag_38d;
++    unsigned char unknown_38e[2];
++    unsigned int word_390;
++    unsigned int word_394;
++    unsigned int words_398[5];
++    unsigned char flag_3ac;
++    unsigned char unknown_3ad[3];
++    unsigned int last_ids_3b0[2];
++    unsigned char last_activities_3b8[2];
++    unsigned char unknown_3ba[2];
++    unsigned int word_3bc;
++    unsigned char flag_3c0;
++    unsigned char unknown_3c1[3];
++    ScreenDialogResource* resource_3c4;
++    ScreenDialogResource* resource_3c8;
++    float word_3cc;
++    unsigned char unhappy_departure_3d0;
++    unsigned char flag_3d1;
++    unsigned char flags_3d2[3];
++    unsigned char unknown_3d5[3];
++    unsigned int word_3d8;
++    unsigned int word_3dc;
++    float word_3e0;
++    float time_3e4;
++    unsigned int words_3e8[3];
+ };
+-inline WorldGuestEntity* VariableEntity::AsGuest()
++
++struct WorldVehicleEntity : WorldMovingEntity
+ {
+-    return reinterpret_cast<WorldGuestEntity*>(this);
+-}
++    void StartTurnAnimation();                                                              // 0x00495be0.
++    void PrepareVehicle();                                                                  // 0x004974d0.
++    void AnimateVehicle(float time);                                                        // 0x00495980.
++    void SwimVehicle();                                                                     // 0x00499f80.
++    void FacePoint(ScreenMapPosition point);                                                // 0x0049a2e0.
++    void UpdateVehicleTurn(float time);                                                     // 0x00495850.
++    float PassengerAnimation(float time, unsigned char boarding, unsigned char additional); // 0x00496150.
++    void StartCircuit();                                                                    // 0x00495f50.
++    void FaceVehicle(int direction);                                                        // 0x0049a3c0.
++    void Roam();                                                                            // 0x00499d50.
++    bool FindFishingPoint();                                                                // 0x0049a090.
++    float IdleVehicle();                                                                    // 0x00496680.
++    ~WorldVehicleEntity();                                                                  // 0x00494b60.
++    explicit WorldVehicleEntity(const char* name);                                          // 0x004946a0.
++    virtual void Destroy(unsigned int flags);                                               // 0x00494b40.
++    virtual bool Unknown04(unsigned int state);                                             // 0x004974b0.
++    virtual bool Unknown08(unsigned int state);                                             // 0x00497a40.
++    virtual bool Unknown0c();                                                               // 0x00494e20.
++    virtual bool Unknown10();                                                               // 0x00498ee0.
++    virtual bool Unknown14(ScreenModeCommand* command);                                     // 0x00496860.
++    virtual void ReadText(const char* key, unsigned short* output);                         // 0x00499b80.
++    virtual void Unknown3c();                                                               // 0x00498f40.
++    virtual void Unknown48(GameFileReader* file);                                           // 0x0049a560.
++    virtual void Unknown4c(GameFileReader* file);                                           // 0x0049a990.
++    virtual bool CanSelectAtPointer();                                                      // 0x0048c200.
++    VariableVehicleDefinition* definition_f4;
++    unsigned int vehicle_type_f8;
++    ScreenDialogResource* resource_fc;
++    ScreenDialogResource* resource_100;
++    ScreenDialogResource* resource_104;
++    ScreenDialogResource* resource_108;
++    unsigned int passengers_10c[300];
++    unsigned int passenger_count_5bc;
++    float ride_time_5c0;
++    unsigned int word_5c4;
++    int word_5c8;
++    unsigned char byte_5cc;
++    unsigned char vehicle_variant_5cd;
++    unsigned char unknown_5ce[0x2];
++    int heading_5d0;
++    ScreenWorldPosition route_5d4[64];
++    unsigned int route_count_8d4;
++    unsigned int word_8d8;
++    ScreenPoint turn_area_8dc;
++    unsigned char flag_8e4;
++    unsigned char flag_8e5;
++    unsigned char unknown_8e6[0x2];
++    unsigned int words_8e8[3];
++    ScreenWorldPosition fish_point_8f4;
++    unsigned char flag_900;
++    unsigned char flag_901;
++    unsigned char unknown_902[0x2];
++    unsigned int words_904[7];
++    void* circuit_920;
++    unsigned char flag_924;
++    unsigned char unknown_925[0x3];
++    ScreenDialogResource* resource_928;
++    unsigned char door_animation_92c;
++    unsigned char unknown_92d[3];
++    ScreenWorldPosition arrival_position_930;
++    ScreenWorldPosition departure_position_93c;
++    ScreenPoint arrival_tile_948;
++    ScreenPoint departure_tile_950;
++    int arrival_heading_958;
++    int departure_heading_95c;
++    unsigned char flag_960;
++    unsigned char unknown_961[0x3];
++    unsigned int word_964;
++    unsigned int word_968;
++};
+ 
+-struct WorldStaffEntity : VariableEntity
++struct WorldObjectEntity : WorldStaticEntity
+ {
+-    virtual void ClearSelection();
++    bool ReceiveGuest(unsigned int id);                                                                        // 0x00491740.
++    bool IsEmpty();                                                                                            // 0x00491710.
++    void SetPlacementType(unsigned int type);                                                                  // 0x00491990.
++    void SetRotation(unsigned int rotation);                                                                   // 0x00494060.
++    void CopyPosition(ScreenWorldPosition position);                                                           // 0x00441f60.
++    ~WorldObjectEntity();                                                                                      // 0x00491600.
++    explicit WorldObjectEntity(const char* name);                                                              // 0x00491260.
++    virtual void Destroy(unsigned int flags);                                                                  // 0x004915e0.
++    virtual bool Unknown04(unsigned int state);                                                                // Folded 0x00491ef0.
++    virtual bool Unknown08(unsigned int state);                                                                // 0x00491f10.
++    virtual bool Unknown0c();                                                                                  // 0x00491fc0.
++    virtual bool Unknown10();                                                                                  // Folded 0x0048e880.
++    virtual bool Unknown14(ScreenModeCommand* command);                                                        // 0x004920e0.
++    virtual void ReadText(const char* key, unsigned short* output);                                            // 0x00492060.
++    virtual void WriteValue(const char* key, const void* value);                                               // 0x00491ff0.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                  // 0x00494010.
++    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value); // 0x00494040.
++    virtual void Unknown3c();                                                                                  // 0x00491aa0.
++    virtual void Unknown48(GameFileReader* file);                                                              // 0x00494360.
++    virtual void Unknown4c(GameFileReader* file);                                                              // 0x00494530.
++    VariableCatalogObjectDefinition* definition_60;
++    int word_64;
++    unsigned char unknown_68[4];
++    ScreenDialogResource** resources_6c;
++    ScreenDialogResource** resources_70;
++    unsigned char flag_74;
++    unsigned char unknown_75[0x3];
++    unsigned char* flags_78;
++    int word_7c;
++    unsigned int word_80;
++    unsigned int contained_id_84;
++    unsigned char flag_88;
++    unsigned char unknown_89[0x3];
++    WorldObjectSlot* slots_8c;
++    unsigned int word_90;
++    unsigned int owner_94;
++    unsigned char flag_98;
++    unsigned char unknown_99[0x3];
++    unsigned int word_9c;
++    unsigned int word_a0;
+ };
+ 
+-// Observed static-entity prefix through +0x5f; no constructed owner.
+-struct WorldStaticEntity
++struct WorldSharkEntity : WorldMovingEntity
+ {
+-    void SetRepairActive(unsigned char value);
+-    void SetRepairAssigned(unsigned char value);
+-    void SetFootprintY(unsigned char value);
+-    void SetFootprintX(unsigned char value);
+-    unsigned char unknown_00[0x58];
+-    unsigned char footprint_x_58;
+-    unsigned char footprint_y_59;
+-    unsigned char flags_5a[4];
+-    unsigned char cleaning_requested_5e;
+-    unsigned char repair_requested_5f;
++    void SetBounds(ScreenRectangle bounds);                                                                                                      // 0x0048b7a0.
++    void SetEventIndex(unsigned int index);                                                                                                      // 0x0048b770.
++    explicit WorldSharkEntity(const char* name);                                                                                                 // 0x0048b5c0.
++    ~WorldSharkEntity();                                                                                                                         // 0x0048b680.
++    virtual void Destroy(unsigned int flags);                                                                                                    // 0x0048b660.
++    virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0048b690.
++    virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0048b750.
++    virtual bool Unknown0c();                                                                                                                    // 0x0048b7d0.
++    virtual bool Unknown10();                                                                                                                    // 0x0048b780.
++    virtual bool Unknown14(ScreenModeCommand* command);                                                                                          // 0x0048b810.
++    virtual void ReadText(const char* key, unsigned short* output);                                                                              // 0x0048bd20.
++    virtual void Unknown20(ScreenModeCommand command);                                                                                           // 0x0048b8e0.
++    virtual void Unknown24(ScreenModeCommand command, float delay);                                                                              // 0x0048b910.
++    virtual float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x0048b940.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                                                    // 0x0048ba00.
++    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value);                                   // 0x0048bc30.
++    virtual void Unknown34(unsigned int value);                                                                                                  // 0x0048bcf0.
++    virtual void Unknown3c();                                                                                                                    // 0x0048b8d0.
++    virtual void Unknown48(GameFileReader* file);                                                                                                // 0x0048c050.
++    virtual void Unknown4c(GameFileReader* file);                                                                                                // 0x0048c130.
++    virtual void Unknown50(int first, int second);                                                                                               // Folded 0x0048c040.
++    virtual bool CanSelectAtPointer();                                                                                                           // 0x0048c200.
++    ScreenModeCommand* command_f4;
++    unsigned int word_f8;
++    unsigned int word_fc;
++    unsigned int swim_rectangle_100[4];
++    unsigned int action_state_110;
++    int word_114;
++    WorldSubsystemScript* script_118;
++    unsigned int word_11c;
++    unsigned int owner_120;
++    void FindVictim();   // 0x0048bd80.
++    void AttackVictim(); // 0x0048be20.
++};
++
++struct WorldEntity19 : WorldStaffEntity
++{
++    explicit WorldEntity19(const char* name);           // 0x0049ad10.
++    ~WorldEntity19();                                   // 0x0049adc0.
++    virtual void Destroy(unsigned int flags);           // 0x0049ada0.
++    virtual bool Unknown04(unsigned int state);         // Folded 0x00491ef0.
++    virtual bool Unknown08(unsigned int state);         // 0x0049aef0.
++    virtual bool Unknown0c();                           // 0x0049add0.
++    virtual bool Unknown10();                           // Folded 0x0048e880.
++    virtual bool Unknown14(ScreenModeCommand* command); // 0x0049ae00.
++    virtual void Unknown48(GameFileReader* file);       // 0x0049af40.
++    virtual void Unknown4c(GameFileReader* file);       // 0x0049af70.
++    virtual void SetHome(unsigned int id);              // 0x0049af00.
++    unsigned int action_state_778;
++};
++
++struct WorldServiceStaffEntity : WorldStaffEntity
++{
++    ~WorldServiceStaffEntity();                                     // 0x0048e920.
++    explicit WorldServiceStaffEntity(const char* name);             // 0x0048d240.
++    virtual void Destroy(unsigned int flags);                       // 0x0048e900.
++    virtual bool Unknown04(unsigned int state);                     // 0x0048e1a0.
++    virtual bool Unknown08(unsigned int state);                     // 0x0048e200.
++    virtual bool Unknown0c();                                       // 0x0049add0.
++    virtual bool Unknown10();                                       // Folded 0x0048e880.
++    virtual bool Unknown14(ScreenModeCommand* command);             // 0x0048d3e0.
++    virtual void Unknown20(ScreenModeCommand command);              // 0x0048e1c0.
++    virtual void Unknown24(ScreenModeCommand command, float delay); // 0x0048e1e0.
++    virtual void Unknown3c();                                       // 0x0048e890.
++    virtual void Unknown48(GameFileReader* file);                   // 0x0049af40.
++    virtual void Unknown4c(GameFileReader* file);                   // 0x0049af70.
++    virtual void Unknown50(int first, int second);                  // Folded 0x0048c040.
++    virtual void SetHome(unsigned int id);                          // 0x0048e3a0.
++    unsigned int word_778;
++    WorldSubsystemScript* service_script_77c;
++};
++
++struct WorldLifeguardEntity : WorldStaffEntity
++{
++    void FindRescueTarget();                                                                                                                     // 0x0047fee0.
++    void GoToTower();                                                                                                                            // 0x0047ef60.
++    void PatrolBeach();                                                                                                                          // 0x0047ed60.
++    void FindExitPoint();                                                                                                                        // 0x0047f760.
++    void EnterTower();                                                                                                                           // 0x0047eb90.
++    void LeaveTower();                                                                                                                           // 0x0047ec70.
++    void FindBeachArea();                                                                                                                        // 0x0047e930.
++    ~WorldLifeguardEntity();                                                                                                                     // 0x0047c910.
++    void UpdateFeedback();                                                                                                                       // 0x0047cfc0.
++    void EndRescue();                                                                                                                            // 0x0047f6b0.
++    explicit WorldLifeguardEntity(const char* name);                                                                                             // 0x0047c610.
++    virtual void Destroy(unsigned int flags);                                                                                                    // 0x0047c8f0.
++    virtual bool Unknown04(unsigned int state);                                                                                                  // 0x0047c9a0.
++    virtual bool Unknown08(unsigned int state);                                                                                                  // 0x0047ca60.
++    virtual bool Unknown0c();                                                                                                                    // 0x0047cb90.
++    virtual bool Unknown10();                                                                                                                    // 0x00487110.
++    virtual bool Unknown14(ScreenModeCommand* command);                                                                                          // 0x0047cbd0.
++    virtual void ReadText(const char* key, unsigned short* output);                                                                              // 0x0047e440.
++    virtual void WriteValue(const char* key, const void* value);                                                                                 // 0x0047e750.
++    virtual void Unknown20(ScreenModeCommand command);                                                                                           // 0x004812a0.
++    virtual void Unknown24(ScreenModeCommand command, float delay);                                                                              // 0x004812d0.
++    virtual float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x0047cd80.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                                                    // 0x0047dc50.
++    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value);                                   // 0x0047e060.
++    virtual void Unknown34(unsigned int value);                                                                                                  // 0x0047d430.
++    virtual void Unknown3c();                                                                                                                    // 0x0047e7e0.
++    virtual void Unknown48(GameFileReader* file);                                                                                                // 0x0047f1e0.
++    virtual void Unknown4c(GameFileReader* file);                                                                                                // 0x0047f470.
++    virtual void Unknown50(int first, int second);                                                                                               // 0x0047caf0.
++    virtual const char* Notification(unsigned int flags);                                                                                        // 0x0047d2d0.
++    virtual void Dismiss();                                                                                                                      // 0x0047f690.
++    virtual void DirectTo(unsigned int id);                                                                                                      // 0x0047f0b0.
++    unsigned char flag_778;
++    unsigned char flag_779;
++    unsigned char unknown_77a[2];
++    unsigned int saving_id_77c;
++    ScreenTerrainRouteNode* beach_route_780;
++    unsigned int beach_area_784;
++    ScreenWorldPosition exit_point_788;
++    char return_animation_794[40];
++    char current_animation_7bc[40];
++    unsigned int word_7e4;
++    unsigned char flag_7e8;
++    unsigned char unknown_7e9[0x3];
++    unsigned int action_state_7ec;
++    ScreenDialogResource* attached_7f0;
++    int attached_x_7f4;
++    int attached_y_7f8;
++    unsigned int feedback_7fc[3];
++    unsigned char unknown_808[0x8];
++    unsigned int word_810;
++    unsigned int word_814;
++    unsigned char flag_818;
++    unsigned char unknown_819[0x3];
++    unsigned int word_81c;
++    unsigned int word_820;
++    unsigned int influence_area_824;
++    unsigned char flags_828[5];
++    unsigned char unknown_82d[3];
++};
++
++struct WorldBuilderEntity : WorldStaffEntity
++{
++    void FindValidTile();                                                                                                                        // 0x00455dd0.
++    void FindHomePoint();                                                                                                                        // 0x004556d0.
++    ~WorldBuilderEntity();                                                                                                                       // 0x004544f0.
++    void UpdateConditions();                                                                                                                     // 0x004561b0.
++    void SetBuilderIndex(unsigned int index);                                                                                                    // 0x00454750.
++    explicit WorldBuilderEntity(const char* name);                                                                                               // 0x00454260.
++    virtual void Destroy(unsigned int flags);                                                                                                    // 0x004544d0.
++    virtual bool Unknown04(unsigned int state);                                                                                                  // 0x004554d0.
++    virtual bool Unknown08(unsigned int state);                                                                                                  // 0x00455590.
++    virtual bool Unknown0c();                                                                                                                    // 0x00454760.
++    virtual bool Unknown10();                                                                                                                    // 0x00487110.
++    virtual bool Unknown14(ScreenModeCommand* command);                                                                                          // 0x004547c0.
++    virtual void ReadText(const char* key, unsigned short* output);                                                                              // 0x00455830.
++    virtual void WriteValue(const char* key, const void* value);                                                                                 // 0x00455ac0.
++    virtual void Unknown20(ScreenModeCommand command);                                                                                           // 0x004812a0.
++    virtual void Unknown24(ScreenModeCommand command, float delay);                                                                              // 0x004812d0.
++    virtual float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x00455630.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                                                    // 0x00454ff0.
++    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value);                                   // 0x00454cc0.
++    virtual void Unknown34(unsigned int value);                                                                                                  // 0x00454920.
++    virtual void Unknown48(GameFileReader* file);                                                                                                // 0x00455ae0.
++    virtual void Unknown4c(GameFileReader* file);                                                                                                // 0x00455c90.
++    virtual void Unknown50(int first, int second);                                                                                               // 0x004546b0.
++    virtual const char* Notification(unsigned int flags);                                                                                        // 0x00456310.
++    virtual void Dismiss();                                                                                                                      // 0x00456470.
++    virtual void DirectTo(unsigned int id);                                                                                                      // 0x004560a0.
++    unsigned char unknown_778[4];
++    unsigned int word_77c;
++    unsigned int word_780;
++    unsigned int word_784;
++    unsigned int word_788;
++    float time_78c;
++    unsigned char flag_790;
++    unsigned char unknown_791[0x3];
++    unsigned int words_794[3];
++    WorldDequeStorage<int> queue_7a0;
++    WorldDequeStorage<int> queue_7c8;
++    unsigned int builder_index_7f0;
++    ScreenWorldPosition placement_position_7f4;
++    unsigned int word_800;
++    unsigned int word_804;
++    unsigned int word_808;
++    unsigned int word_80c;
++    unsigned int word_810;
++    unsigned int word_814;
+ };
+ 
+ inline WorldStaticEntity* VariableEntity::AsStatic()
+ {
+-    return reinterpret_cast<WorldStaticEntity*>(this);
++    return static_cast<WorldStaticEntity*>(this);
++}
++
++inline const WorldStaticEntity* VariableEntity::AsStatic() const
++{
++    return static_cast<const WorldStaticEntity*>(this);
++}
++
++inline WorldSceneryEntity* VariableEntity::AsScenery()
++{
++    return static_cast<WorldSceneryEntity*>(this);
++}
++
++inline const WorldSceneryEntity* VariableEntity::AsScenery() const
++{
++    return static_cast<const WorldSceneryEntity*>(this);
++}
++
++inline WorldBuildingEntity* VariableEntity::AsBuilding()
++{
++    return static_cast<WorldBuildingEntity*>(this);
++}
++
++inline const WorldBuildingEntity* VariableEntity::AsBuilding() const
++{
++    return static_cast<const WorldBuildingEntity*>(this);
++}
++
++inline WorldGuestEntity* VariableEntity::AsGuest()
++{
++    return static_cast<WorldGuestEntity*>(this);
++}
++
++inline const WorldGuestEntity* VariableEntity::AsGuest() const
++{
++    return static_cast<const WorldGuestEntity*>(this);
++}
++
++inline WorldVehicleEntity* VariableEntity::AsVehicle()
++{
++    return static_cast<WorldVehicleEntity*>(this);
++}
++
++inline const WorldVehicleEntity* VariableEntity::AsVehicle() const
++{
++    return static_cast<const WorldVehicleEntity*>(this);
++}
++
++inline WorldStaffEntity* VariableEntity::AsStaff()
++{
++    return static_cast<WorldStaffEntity*>(this);
++}
++
++inline const WorldStaffEntity* VariableEntity::AsStaff() const
++{
++    return static_cast<const WorldStaffEntity*>(this);
++}
++
++inline WorldMovingEntity* VariableEntity::AsMoving()
++{
++    return static_cast<WorldMovingEntity*>(this);
++}
++
++inline const WorldMovingEntity* VariableEntity::AsMoving() const
++{
++    return static_cast<const WorldMovingEntity*>(this);
++}
++
++inline WorldBuilderEntity* VariableEntity::AsBuilder()
++{
++    return static_cast<WorldBuilderEntity*>(this);
++}
++
++inline const WorldBuilderEntity* VariableEntity::AsBuilder() const
++{
++    return static_cast<const WorldBuilderEntity*>(this);
+ }
+ 
+ #endif
