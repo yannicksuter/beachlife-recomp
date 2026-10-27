@@ -138,7 +138,8 @@ def package(build, output, source=ROOT, toolchain=None):
     build, output, source = Path(build).resolve(), Path(output).resolve(), Path(source).resolve()
     info = json.loads(regular_file(build, "generated/build-info.json").read_text())
     target = info["platform"] + "-" + info["architecture"]
-    if target not in TARGETS or info["system"] != ("linux" if info["platform"] == "steamdeck" else info["platform"]):
+    if (target not in TARGETS + MAC_BUILD_TARGETS
+            or info["system"] != ("linux" if info["platform"] == "steamdeck" else info["platform"])):
         raise ValueError("Unsupported package target")
     if info["project_version"] != read_version(source) or info["commit"] != git_output(source, "rev-parse", "HEAD"):
         raise ValueError("Build identity is stale; rebuild before packaging")

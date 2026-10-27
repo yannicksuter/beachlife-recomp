@@ -912,7 +912,12 @@ std::string installed_package(const fs::path& base)
     {
         std::ifstream stream(app_package_file(base), std::ios::binary);
         std::string package;
-        if (!std::getline(stream, package) || package.empty())
+        std::getline(stream, package);
+        if (!package.empty() && package.back() == '\r')
+        {
+            package.pop_back();
+        }
+        if (package.empty())
         {
             fail("The app does not name its package.");
         }
