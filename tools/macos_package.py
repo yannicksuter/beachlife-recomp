@@ -10,6 +10,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 from package_build import (MAC_APP, MAC_PACKAGE_ID, digest, inspect_package, mac_signing,
@@ -108,11 +109,14 @@ def dmg(folder, output):
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp) / 'Beach Life'
         root.mkdir()
-        # ditto keeps the signature and the stapled ticket exactly as they are.
-        subprocess.run(['ditto', str(folder / MAC_APP), str(root / MAC_APP)], check=True)
+        # ditto keeps the signature and the stapled ticket exactly as they are. The
+        # tools report to the log: this command's output is only the image's path.
+        subprocess.run(['ditto', str(folder / MAC_APP), str(root / MAC_APP)], check=True,
+                       stdout=sys.stderr)
         (root / 'Applications').symlink_to('/Applications')
         subprocess.run(['hdiutil', 'create', '-volname', 'Beach Life', '-srcfolder', str(root),
-                        '-fs', 'HFS+', '-format', 'UDZO', '-ov', str(destination)], check=True)
+                        '-fs', 'HFS+', '-format', 'UDZO', '-ov', str(destination)], check=True,
+                       stdout=sys.stderr)
     return destination
 
 
