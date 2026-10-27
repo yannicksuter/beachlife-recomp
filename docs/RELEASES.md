@@ -142,10 +142,11 @@ Create the API key under App Store Connect → Users and Access → Integrations
 App Store Connect API with Developer access; `gh secret set MACOS_NOTARY_KEY <
 AuthKey_<ID>.p8` stores it.
 
-PR builds are signed but not notarized: the launcher's own updates are not
-quarantined, so only browser downloads need Apple's ticket. Stable pushes and
-manual workflow runs notarize, which usually takes minutes; a new developer
-account's first submissions can wait in Apple's queue for hours.
+Only browser downloads need Apple's ticket; the launcher's own updates are not
+quarantined. Stable pushes, PRs into `stable` (whose test build is published)
+and manual workflow runs notarize, which usually takes minutes; a new developer
+account's first submissions can wait in Apple's queue for hours. Other PR
+builds are signed but not notarized.
 
 ## Package contract
 
