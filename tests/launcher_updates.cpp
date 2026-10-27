@@ -582,11 +582,11 @@ void test_app_install(const fs::path& work)
     {
         fs::create_directories(app / "Contents/MacOS");
         fs::create_directories(app / "Contents/Resources");
-        std::ofstream(app / "Contents/Info.plist")
+        std::ofstream(app / "Contents/Info.plist", std::ios::binary)
             << "<plist><dict><key>CFBundleShortVersionString</key><string>" << version
             << "</string></dict></plist>\n";
-        std::ofstream(app / "Contents/MacOS/beachlife") << binary;
-        std::ofstream(app / "Contents/Resources/PACKAGE") << "macos-universal\n";
+        std::ofstream(app / "Contents/MacOS/beachlife", std::ios::binary) << binary;
+        std::ofstream(app / "Contents/Resources/PACKAGE", std::ios::binary) << "macos-universal\n";
     };
     const fs::path app = apps / "Beach Life.app";
     bundle(app, "0.0.6", "old app\n");
