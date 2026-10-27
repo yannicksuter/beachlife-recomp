@@ -68,7 +68,7 @@ def notarize(item, folder):
     """Submits `item` (an app, zipped first, or a disk image) and staples the ticket."""
     key = os.environ.get('MACOS_NOTARY_KEY')
     if not key or not os.environ.get('MACOS_NOTARIZE'):
-        print('Signed with the Developer ID; MACOS_NOTARIZE is unset, so not notarized.')
+        print('Signed with the Developer ID; not notarized (needs MACOS_NOTARIZE and the notary key).')
         return
     key_file = Path(folder) / 'notary.p8'
     key_file.write_text(key)
