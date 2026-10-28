@@ -1,0 +1,169 @@
+diff --git b/src/startup_world_guest_action_helpers.h a/src/startup_world_guest_action_helpers.h
+deleted file mode 100644
+index 1914109..0000000
+--- b/src/startup_world_guest_action_helpers.h
++++ /dev/null
+@@ -1,37 +0,0 @@
+-#ifndef STARTUP_WORLD_GUEST_ACTION_HELPERS_H
+-#define STARTUP_WORLD_GUEST_ACTION_HELPERS_H
+-
+-#include "startup_world_motion_inlines.h"
+-#include "startup_screen_mode_world.h"
+-#include "startup_screen_position_inlines.h"
+-#include "startup_screen_text.h"
+-#include "window_activation.h"
+-#include <stdio.h>
+-#include <stdlib.h>
+-
+-inline ScreenModeCommand MakeGuestCommand(unsigned int sender, unsigned int recipient,
+-    unsigned int kind, unsigned int first = 0, unsigned int second = 0)
+-{
+-    ScreenModeCommand command;
+-    command.words[0] = sender;
+-    command.words[1] = recipient;
+-    command.words[2] = kind;
+-    command.words[3] = first;
+-    command.words[4] = second;
+-    return command;
+-}
+-
+-inline void SendGuestWalk(unsigned int id, unsigned int kind, ScreenWorldPosition position)
+-{
+-    ScreenModeCommand command = MakeGuestCommand(id, id, kind, static_cast<int>(position.x), static_cast<int>(position.y));
+-    screen_mode_commands->QueueCommand(&command);
+-}
+-
+-inline unsigned int RandomGuestThought(const char* prefix)
+-{
+-    char key[256];
+-    sprintf(key, "%s%d", prefix, rand() % 3 + 1);
+-    return screen_text_lookup->LookupTextIndex(key);
+-}
+-
+-#endif
+diff --git b/src/startup_world_motion_inlines.h a/src/startup_world_motion_inlines.h
+deleted file mode 100644
+index f28800f..0000000
+--- b/src/startup_world_motion_inlines.h
++++ /dev/null
+@@ -1,54 +0,0 @@
+-#ifndef STARTUP_WORLD_MOTION_INLINES_H
+-#define STARTUP_WORLD_MOTION_INLINES_H
+-
+-#include "startup_world_motion_helpers.h"
+-#include "startup_screen_position_inlines.h"
+-#include <string.h>
+-
+-inline float MotionFloat(unsigned int word)
+-{
+-    float value;
+-    memcpy(&value, &word, sizeof(value));
+-    return value;
+-}
+-
+-inline unsigned int MotionWord(float value)
+-{
+-    unsigned int word;
+-    memcpy(&word, &value, sizeof(word));
+-    return word;
+-}
+-
+-inline float MotionSquareRoot(float value)
+-{
+-    unsigned int word = MotionWord(value);
+-    if (!word)
+-        return 0.0f;
+-    unsigned int exponent = (((word + 0xc0800000u) >> 1) + 0x3f800000u) & 0x7f800000u;
+-    return MotionFloat(square_root_mantissas[(word >> 8) & 0xffff] | exponent);
+-}
+-
+-inline float MotionReciprocal(float value)
+-{
+-    float estimate = MotionFloat(0x7f000000u - MotionWord(value));
+-    return static_cast<float>((2.0L - static_cast<long double>(value) * estimate) * estimate);
+-}
+-
+-inline ScreenWorldPosition MotionDestination(const WorldMovingEntity* entity)
+-{
+-    return ScreenWorldPosition(MotionFloat(entity->word_8c), MotionFloat(entity->word_90), MotionFloat(entity->word_94));
+-}
+-
+-inline void StoreMotionDestination(WorldMovingEntity* entity, ScreenWorldPosition position)
+-{
+-    entity->word_8c = MotionWord(position.x);
+-    entity->word_90 = MotionWord(position.y);
+-    entity->word_94 = MotionWord(position.z);
+-}
+-
+-inline void StoreMotionOpaqueWord(unsigned char* destination, unsigned int word)
+-{
+-    memcpy(destination, &word, sizeof(word));
+-}
+-
+-#endif
+diff --git b/src/startup_world_performer_helpers.h a/src/startup_world_performer_helpers.h
+deleted file mode 100644
+index e67cfe0..0000000
+--- b/src/startup_world_performer_helpers.h
++++ /dev/null
+@@ -1,17 +0,0 @@
+-#ifndef STARTUP_WORLD_PERFORMER_HELPERS_H
+-#define STARTUP_WORLD_PERFORMER_HELPERS_H
+-
+-#include "startup_screen_mode_world.h"
+-#include "startup_screen_position_inlines.h"
+-#include "startup_world_entities.h"
+-
+-inline ScreenMapPosition PerformerBuildingPoint(WorldBuildingEntity* owner, ScreenMapPosition offset)
+-{
+-    unsigned int rotation = owner->keyline_state_44->word_18;
+-    unsigned int height = owner->BuildingDefinition()->footprint_y_1d8;
+-    unsigned int width = owner->BuildingDefinition()->footprint_x_1d4;
+-    ScreenPoint tile = owner->TilePosition();
+-    return CurrentScreenTerrain()->BuildingOffset(tile.x, tile.y, width, height, offset, rotation);
+-}
+-
+-#endif
+diff --git b/src/startup_world_vehicle_helpers.h a/src/startup_world_vehicle_helpers.h
+deleted file mode 100644
+index e2bc7ec..0000000
+--- b/src/startup_world_vehicle_helpers.h
++++ /dev/null
+@@ -1,37 +0,0 @@
+-#ifndef STARTUP_WORLD_VEHICLE_HELPERS_H
+-#define STARTUP_WORLD_VEHICLE_HELPERS_H
+-
+-#include "startup_world_motion_inlines.h"
+-#include "startup_screen_overlay_layout.h"
+-#include "startup_square_root_table.h"
+-#include "window_activation.h"
+-
+-float WorldSquareRoot(float value);                                       // 0x00430850.
+-int WorldDirection(ScreenMapPosition direction, unsigned int directions); // 0x00430890.
+-void ClearVehicleApproach(int x, int y, int direction);                   // 0x00497640.
+-void RestoreVehicleApproach(int x, int y, int direction);                 // 0x00497740.
+-void ClearVehicleReturn(int x, int y, int direction);                     // 0x00497840.
+-void RestoreVehicleReturn(int x, int y, int direction);                   // 0x00497940.
+-
+-inline float VehicleSquareRoot(float squared)
+-{
+-    unsigned int bits = MotionWord(squared);
+-    if (!bits)
+-        return 0.0f;
+-    unsigned int exponent = (((bits + 0xc0800000u) >> 1) + 0x3f800000u) & 0x7f800000u;
+-    return MotionFloat(square_root_mantissas[(bits >> 8) & 0xffff] | exponent);
+-}
+-
+-inline void SelectVehicleVariant(ScreenDialogResource* resource, int variant)
+-{
+-    resource->SelectVariant(variant);
+-}
+-
+-inline ScreenWorldPosition VehicleRoutePosition(void* route)
+-{
+-    WorldRoutePosition* cursor = static_cast<WorldRoutePosition*>(route);
+-    ScreenPoint point = cursor->data_00->points_0c[cursor->index_08];
+-    return overlay_map->TilePosition(&point);
+-}
+-
+-#endif
