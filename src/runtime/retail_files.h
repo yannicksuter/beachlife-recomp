@@ -74,6 +74,7 @@ constexpr std::int32_t low_position(Position value) noexcept
 // The reconstructed allocation/read helpers intentionally retain their unchecked
 // behavior. Qualified callers supply stable files of 1..INT32_MAX-1 bytes and a
 // successful second open; BLE decoding additionally requires a complete read.
-// An empty or missing file returns null. Returned arrays belong to the caller.
+// An empty or missing file returns null. Returned buffers belong to the caller
+// and must be released with ::operator delete, matching the retail allocator.
 
 } // namespace beachlife::runtime::retail_files

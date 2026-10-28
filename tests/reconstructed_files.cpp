@@ -9,6 +9,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -24,6 +25,14 @@ namespace
 namespace data = beachlife::data;
 namespace files = beachlife::runtime::retail_files;
 using Bytes = std::vector<unsigned char>;
+struct LoadedBufferDeleter
+{
+    void operator()(char* buffer) const noexcept
+    {
+        ::operator delete(buffer);
+    }
+};
+using LoadedBuffer = std::unique_ptr<char[], LoadedBufferDeleter>;
 std::size_t checks = 0;
 
 void expect(bool value, const char* message)
@@ -212,8 +221,8 @@ void reconstructed_loaders(
         const auto input = payload(sizes[index]);
         expect(GetFileSize(name.c_str()) == static_cast<std::int32_t>(input.size()),
             "File size or path alias differs.");
-        std::unique_ptr<char[]> plain(LoadFile(name.c_str()));
-        std::unique_ptr<char[]> ble(LoadBleFile(name.c_str()));
+        LoadedBuffer plain(LoadFile(name.c_str()));
+        LoadedBuffer ble(LoadBleFile(name.c_str()));
         if (input.empty())
         {
             expect(!plain && !ble, "Empty input must return null.");
@@ -457,7 +466,7 @@ void facade_reads(const std::shared_ptr<const data::FileSource>& source)
 
     observations->chunk = std::numeric_limits<std::size_t>::max();
     observations->largest_read = 0;
-    std::unique_ptr<char[]> large(LoadFile("Data/file7.bin"));
+    LoadedBuffer large(LoadFile("Data/file7.bin"));
     expect(large && observations->largest_read <= 256 * 1024,
         "The bridge must bound individual VFS reads.");
     expect(observations->opened == observations->closed, "Loader stream leaked.");
@@ -486,7 +495,7 @@ void failure_paths(const std::shared_ptr<const data::FileSource>& source)
         // LoadFile ignores short reads, as the original does. Only initialized
         // prefix bytes and the explicit terminator are observed here. BLE's
         // uninitialized-tail inversion is outside the safe fixture domain.
-        std::unique_ptr<char[]> plain(LoadFile("Data/file3.bin"));
+        LoadedBuffer plain(LoadFile("Data/file3.bin"));
         expect(plain && plain[255] == '.', "Short LoadFile result/terminator differs.");
         for (std::size_t index = 0; index < 3; ++index)
         {
