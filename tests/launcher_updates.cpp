@@ -440,8 +440,10 @@ void test_install(const fs::path& fixtures, const fs::path& work)
         check(install_blocker(base).empty() ||
                   install_blocker(base).rfind("Downloads are not available", 0) == 0,
             "A package folder can be updated");
-        check(package_folder(base / "assets/launcher") == base && package_folder(base) == base,
-            "The package folder is found");
+        check(package_folder(base / "assets/launcher") == base && package_folder(base) == base &&
+                  package_folder(base / "beachlife.app/Contents/Resources/") == base &&
+                  package_folder(base / "beachlife.app/Contents/MacOS") == base,
+            "The package folder is found, also from inside the macOS app");
         const fs::path root = unpack_package(fixtures / archive, update_folder(base) / "staged-1");
         install_staged_package(base, root, update_folder(base) / "previous-1");
         check(read(base / "beachlife") == "new launcher\n" &&
@@ -570,6 +572,52 @@ void test_notes()
         "Pull request description");
 }
 
+// A release Mac app installed on its own from the disk image: the bundle is the
+// package, replaced as a whole, with its work folder beside it.
+void test_app_install(const fs::path& work)
+{
+    const fs::path apps = fresh(work, "apps");
+    const auto bundle =
+        [](const fs::path& app, const std::string& version, const std::string& binary)
+    {
+        fs::create_directories(app / "Contents/MacOS");
+        fs::create_directories(app / "Contents/Resources");
+        std::ofstream(app / "Contents/Info.plist", std::ios::binary)
+            << "<plist><dict><key>CFBundleShortVersionString</key><string>" << version
+            << "</string></dict></plist>\n";
+        std::ofstream(app / "Contents/MacOS/beachlife", std::ios::binary) << binary;
+        std::ofstream(app / "Contents/Resources/PACKAGE", std::ios::binary) << "macos-universal\n";
+    };
+    const fs::path app = apps / "Beach Life.app";
+    bundle(app, "0.0.6", "old app\n");
+    check(package_folder(app / "Contents/Resources/") == app &&
+              package_folder(app / "Contents/MacOS") == app &&
+              installed_package(app) == "macos-universal",
+        "A release app is its own package");
+    check(update_folder(app) == apps / ".Beach Life update" &&
+              installed_launcher(app) == app / "Contents/MacOS/beachlife",
+        "The app's update work happens beside it");
+    check(install_blocker(app).empty() ||
+              install_blocker(app).rfind("Downloads are not available", 0) == 0,
+        "A release app can be updated");
+    const fs::path staged = fresh(work, "app-staged");
+    fs::create_directories(staged);
+    std::ofstream(staged / package_manifest) << "{}\n";
+    bundle(staged / "Beach Life.app", "0.0.7", "new app\n");
+    install_staged_package(app, staged, update_folder(app) / "previous-1");
+    check(read(app / "Contents/MacOS/beachlife") == "new app\n" &&
+              read(update_folder(app) / "previous-1/Beach Life.app/Contents/MacOS/beachlife") ==
+                  "old app\n",
+        "The new app replaces the installed one, which moves aside");
+    check(finish_updates(app) == "0.0.6" && !fs::exists(update_folder(app)),
+        "The next start reports the replaced version and removes the old app");
+
+    const fs::path local = fresh(work, "local-build") / "beachlife.app";
+    fs::create_directories(local / "Contents/Resources");
+    check(package_folder(local / "Contents/Resources/").empty(),
+        "A local build's app does not update itself");
+}
+
 int main(int argc, char** argv)
 {
     if (argc != 2)
@@ -590,6 +638,7 @@ int main(int argc, char** argv)
         test_notes();
         test_unpack(fixtures, work);
         test_install(fixtures, work);
+        test_app_install(work);
     }
     catch (const std::exception& error)
     {

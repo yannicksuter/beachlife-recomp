@@ -129,18 +129,90 @@ jobs:
         if: runner.os == 'macOS'
         env:
           TARGET_ARCH: ${{ matrix.arch }}
+        # Ad hoc here: the macos-universal job signs the joined app for release.
         run: |
           test "$(lipo -archs build/release/beachlife.app/Contents/MacOS/beachlife)" = "$TARGET_ARCH"
           test "$(lipo -archs build/release/beachlife_boot_link)" = "$TARGET_ARCH"
-          codesign --force --sign - build/release/beachlife.app
-          codesign --verify --deep --strict build/release/beachlife.app
+          python tools/sign_macos.py build/release/beachlife.app
       - name: Package and test extracted binaries
         run: |
           python tools/package_build.py --build-dir build/release --output-dir build/artifacts
           python tools/check_package.py build/artifacts/*.tar.gz
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: runner.os != 'macOS'
         with:
           path: build/artifacts/*.tar.gz
+          archive: false
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: runner.os == 'macOS'
+        with:
+          # Not a release package (beachlife-*): macos-universal joins the two.
+          name: mac-${{ matrix.arch }}
+          path: build/artifacts/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    name: macos-universal
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 120 # Apple's notarization queue
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Developer ID signing and notarization; without them (forks) the app is ad hoc.
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+      MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+      # Only what players download from a browser needs Apple's ticket: stable
+      # releases, their main -> stable test builds and manual runs. The
+      # launcher's own updates are not quarantined.
+      MACOS_NOTARIZE: ${{ (github.event_name != 'pull_request' || github.base_ref == 'stable') && '1' || '' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Select Xcode and Rosetta
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          if ! arch -x86_64 /usr/bin/true; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: mac-*
+          path: build/mac
+          merge-multiple: true
+      - name: Join the universal app
+        run: python tools/macos_package.py stage build/mac/*-macos-arm64.tar.gz build/mac/*-macos-x86_64.tar.gz build/universal
+      - name: Sign and notarize the app
+        run: python tools/sign_macos.py "build/universal/Beach Life.app"
+      - name: Package the app and test both halves
+        run: |
+          python tools/macos_package.py pack build/universal build/artifacts
+          python tools/check_package.py build/artifacts/*-macos-universal.tar.gz
+      - name: Make, sign and notarize the disk image
+        run: |
+          image=$(python tools/macos_package.py dmg build/universal build/artifacts)
+          python tools/sign_macos.py "$image"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          path: build/artifacts/*-macos-universal.tar.gz
+          archive: false
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          path: build/artifacts/*-macos-universal.dmg
           archive: false
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 14 }}
@@ -292,7 +364,7 @@ jobs:
   verify:
     name: Native build gate
     if: always()
-    needs: [policy, build, windows, windows-smoke]
+    needs: [policy, build, windows, windows-smoke, macos]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every build and native test

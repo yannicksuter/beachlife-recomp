@@ -2791,6 +2791,14 @@ class Launcher
 
 fs::path game_log_folder(const fs::path& settings_file)
 {
+#ifdef __APPLE__
+    // A Mac app lives in Applications, which it should not write beside; Console.app
+    // lists ~/Library/Logs.
+    if (const char* home = std::getenv("HOME"); home && *home)
+    {
+        return path_from_utf8(home) / "Library" / "Logs" / "Beach Life";
+    }
+#endif
     fs::path game;
     if (const char* base = SDL_GetBasePath())
     {

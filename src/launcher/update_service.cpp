@@ -71,7 +71,7 @@ UpdateService::UpdateService(BuildIdentity build, fs::path base)
     {
         if (!base_.empty())
         {
-            build_.package = read_package_manifest(base_ / package_manifest).package();
+            build_.package = installed_package(base_);
         }
     }
     catch (const std::exception&)
