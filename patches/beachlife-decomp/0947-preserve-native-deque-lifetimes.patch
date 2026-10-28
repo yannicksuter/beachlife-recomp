@@ -1,0 +1,238 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 2ee2964..d0e49aa 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -400,6 +400,7 @@ extern "C"
+ {
+     char fixture_gui_rectangle_input[] = "C10,20,110,220)";
+     GuiParserState fixture_gui_rectangle_reader(0);
++    ScreenRequestRenderer fixture_gui_rectangle_renderer;
+     volatile int fixture_gui_rectangle_null[4];
+     volatile unsigned int fixture_gui_rectangle_null_cursor;
+     volatile int fixture_gui_rectangle_parent[4];
+@@ -409,11 +410,10 @@ extern "C"
+     // never executes; all retail helper calls remain their actual sources.
+     void fixture_gui_rectangle_calls(const ScreenItem* parent)
+     {
+-        ScreenRequestRenderer* fixture_gui_rectangle_renderer = screen_request_renderer;
+         fixture_gui_rectangle_reader.buffer = fixture_gui_rectangle_input;
+-        fixture_gui_rectangle_renderer->width = 800;
+-        fixture_gui_rectangle_renderer->height = 600;
+-        screen_request_renderer = fixture_gui_rectangle_renderer;
++        fixture_gui_rectangle_renderer.width = 800;
++        fixture_gui_rectangle_renderer.height = 600;
++        screen_request_renderer = &fixture_gui_rectangle_renderer;
+         ScreenRectangle rectangle;
+         fixture_gui_rectangle_reader.cursor = 0;
+         fixture_gui_rectangle_reader.ReadRectangle(rectangle, 0);
+@@ -597,21 +597,21 @@ typedef char PitchRendererSize[(sizeof(ScreenRequestRenderer) == 0x138) ? 1 : -1
+ typedef char PitchArrayOffset[(offsetof(ScreenRequestRenderer, surfaces) == 0x68) ? 1 : -1];
+ typedef char PitchIndexOffset[(offsetof(ScreenRequestRenderer, current_surface) == 0x74) ? 1 : -1];
+ 
+-// Surface aggregates and a borrowed renderer; no retail lifetime is substituted.
++// Generated live aggregates; no retail constructor or method is substituted.
+ ScreenSurfacePosition fixture_pitch_surfaces[2] = { 0 };
+ ScreenSurfacePosition* fixture_pitch_entries[2];
++ScreenRequestRenderer fixture_pitch_renderer;
+ volatile unsigned int fixture_pitch_result;
+ 
+ extern "C" void fixture_surface_pitch_call()
+ {
+-    ScreenRequestRenderer* fixture_pitch_renderer = screen_request_renderer;
+     fixture_pitch_surfaces[0].pitch = 18u;
+     fixture_pitch_surfaces[1].pitch = 0xfedcba98u;
+     fixture_pitch_entries[0] = &fixture_pitch_surfaces[0];
+     fixture_pitch_entries[1] = &fixture_pitch_surfaces[1];
+-    fixture_pitch_renderer->surfaces = fixture_pitch_entries;
+-    fixture_pitch_renderer->current_surface = 1;
+-    fixture_pitch_result = fixture_pitch_renderer->SurfacePitch();
++    fixture_pitch_renderer.surfaces = fixture_pitch_entries;
++    fixture_pitch_renderer.current_surface = 1;
++    fixture_pitch_result = fixture_pitch_renderer.SurfacePitch();
+ }
+ 
+ // Comparison-only typed two-word surface position observation; never run this image.
+@@ -624,24 +624,24 @@ typedef char FixtureRendererSize[(sizeof(ScreenRequestRenderer) == 0x138) ? 1 :
+ typedef char FixtureSurfaceArray[(offsetof(ScreenRequestRenderer, surfaces) == 104) ? 1 : -1];
+ typedef char FixtureCurrentSurface[(offsetof(ScreenRequestRenderer, current_surface) == 116) ? 1 : -1];
+ 
+-// Surface aggregates and a borrowed renderer; no retail lifetime is substituted.
++// Generated live aggregates; no retail constructor or method is substituted.
+ ScreenSurfacePosition fixture_position_surfaces[2] = { 0 };
+ ScreenSurfacePosition* fixture_position_entries[2] = { 0 };
++ScreenRequestRenderer fixture_position_renderer;
+ volatile int fixture_position_x;
+ volatile int fixture_position_y;
+ 
+ extern "C" void fixture_surface_position_call()
+ {
+-    ScreenRequestRenderer* fixture_position_renderer = screen_request_renderer;
+     fixture_position_surfaces[0].position.x = -42;
+     fixture_position_surfaces[0].position.y = 99;
+     fixture_position_surfaces[1].position.x = -123456789;
+     fixture_position_surfaces[1].position.y = 305419896;
+     fixture_position_entries[0] = &fixture_position_surfaces[0];
+     fixture_position_entries[1] = &fixture_position_surfaces[1];
+-    fixture_position_renderer->surfaces = fixture_position_entries;
+-    fixture_position_renderer->current_surface = 1;
+-    ScreenPoint position = fixture_position_renderer->SurfacePosition();
++    fixture_position_renderer.surfaces = fixture_position_entries;
++    fixture_position_renderer.current_surface = 1;
++    ScreenPoint position = fixture_position_renderer.SurfacePosition();
+     fixture_position_x = position.x;
+     fixture_position_y = position.y;
+ }
+@@ -785,16 +785,16 @@ extern "C" void fixture_entry()
+     fixture_written_y = fixture_written->y;
+     fixture_written_group = fixture_written->group;
+     fixture_save_placement(&fixture_placement, fixture_written);
+-    ScreenRequestRenderer* fixture_screen_renderer = screen_request_renderer;
++    ScreenRequestRenderer fixture_screen_renderer;
+     ScreenSurfacePosition fixture_screen_surface = { 0 };
+     ScreenSurfacePosition* fixture_screen_surfaces[1] = { &fixture_screen_surface };
+     ScreenPoint fixture_screen_position = { 2, 3 };
+-    fixture_screen_renderer->surfaces = fixture_screen_surfaces;
+-    fixture_screen_renderer->software_mode = 1;
+-    fixture_surface_pixels = fixture_screen_renderer->AccessPixels();
+-    fixture_screen_renderer->PositionSurface(0, fixture_screen_position);
++    fixture_screen_renderer.surfaces = fixture_screen_surfaces;
++    fixture_screen_renderer.software_mode = 1;
++    fixture_surface_pixels = fixture_screen_renderer.AccessPixels();
++    fixture_screen_renderer.PositionSurface(0, fixture_screen_position);
+     fixture_screen_surface.Cleanup();
+-    fixture_screen_renderer->CleanupSurface(0);
++    fixture_screen_renderer.CleanupSurface(0);
+     {
+         PoolLockGuard fixture_pool_guard;
+         AcquirePoolLock(&pool_lock_word);
+diff --git b/src/startup_renderer_rectangle_queue.h a/src/startup_renderer_rectangle_queue.h
+index e6a2903..f0fbe87 100644
+--- b/src/startup_renderer_rectangle_queue.h
++++ a/src/startup_renderer_rectangle_queue.h
+@@ -11,26 +11,14 @@ struct RendererRectangleIterator
+     ScreenRectangle* last;
+     ScreenRectangle** node;
+ 
+-    RendererRectangleIterator();
+-    RendererRectangleIterator(const RendererRectangleIterator& other); // 0x00426b00.
+-    void Advance(int amount);                                          // 0x00411d80.
++    void Advance(int amount); // 0x00411d80.
+ };
+ 
+-struct RendererRectangleTrivialTag
+-{
+-};
+-void DestroyRectangleRange(RendererRectangleIterator first, RendererRectangleIterator last,
+-    const RendererRectangleTrivialTag&);
+-void DestroyRectangleRange(RendererRectangleIterator first, RendererRectangleIterator last, ScreenRectangle*);
+-void DestroyRectangleRange(RendererRectangleIterator first, RendererRectangleIterator last);
+-
+ void ReleaseRendererRectangleStorage(void* memory, unsigned int size); // 0x00411d50.
+ 
+ // The retail deque stores eight rectangles in each 128-byte block.
+ struct RendererRectangleQueue : WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>
+ {
+-    RendererRectangleQueue();
+-    ~RendererRectangleQueue(); // 0x00411c20.
+     ScreenRectangle& At(int index);
+     const ScreenRectangle& At(int index) const;
+     void PopBack();
+diff --git b/src/startup_world_deque.h a/src/startup_world_deque.h
+index 613fb62..0b539ef 100644
+--- b/src/startup_world_deque.h
++++ a/src/startup_world_deque.h
+@@ -2,35 +2,6 @@
+ #define STARTUP_WORLD_DEQUE_H
+ 
+ // Shared x86 deque storage; operations retain their separate retail bodies.
+-struct ScreenRectangle;
+-template <class T>
+-struct WorldDequeBlockCount
+-{
+-    enum
+-    {
+-        value = 32
+-    };
+-};
+-template <>
+-struct WorldDequeBlockCount<ScreenRectangle>
+-{
+-    enum
+-    {
+-        value = 8
+-    };
+-};
+-
+-struct WorldDequeTrivialTag
+-{
+-};
+-
+-// The typed destruction dispatcher passes this tag to the folded 0x00437d10 body.
+-template <class Iterator>
+-void DestroyWorldDequeRange(Iterator first, Iterator last, const WorldDequeTrivialTag&);
+-template <class Iterator, class T>
+-void DestroyWorldDequeRange(Iterator first, Iterator last, T* value);
+-template <class Iterator>
+-void DestroyWorldDequeRange(Iterator first, Iterator last);
+ struct WorldDequeAllocator
+ {
+ };
+@@ -56,18 +27,11 @@ template <class T, class Iterator = WorldDequeIterator<T> >
+ struct WorldDequeStorage
+ {
+     typedef T value_type;
+-    enum
+-    {
+-        block_size = WorldDequeBlockCount<T>::value
+-    };
+     Iterator begin;
+     Iterator end;
+     T** map;
+     unsigned int map_count;
+ 
+-    WorldDequeStorage();
+-    WorldDequeStorage(const WorldDequeAllocator& allocator, unsigned int count);
+-    ~WorldDequeStorage();
+     Iterator Erase(Iterator position);
+     Iterator Insert(Iterator position, const T& value);
+     void AppendBlock(const T& value);
+@@ -78,8 +42,6 @@ struct WorldDequeStorage
+     WorldDequeStorage* Initialize(const WorldDequeAllocator&, unsigned int count);
+     void InitializeMap(unsigned int count);
+     void CreateNodes(T** first, T** last);
+-    void DestroyNodes(T** first, T** last);
+-    void PopFrontBlock();
+     void Destroy();
+     void Clear();
+     void ReleaseStorage();
+diff --git b/src/startup_world_deque_operations.h a/src/startup_world_deque_operations.h
+index df78870..3999af4 100644
+--- b/src/startup_world_deque_operations.h
++++ a/src/startup_world_deque_operations.h
+@@ -10,26 +10,4 @@ int WorldDequeDistance(Iterator last, Iterator first);
+ template <class T>
+ void DeallocateImageListPointerSlots(T* storage, unsigned int count);
+ 
+-struct WorldDequeIteratorTag
+-{
+-};
+-struct WorldDequeRandomAccessTag
+-{
+-};
+-
+-template <class Iterator>
+-Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result,
+-    const WorldDequeRandomAccessTag&, int*);
+-template <class Iterator>
+-Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result, const WorldDequeIteratorTag&);
+-template <class Iterator>
+-Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result);
+-template <class Iterator>
+-Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result,
+-    const WorldDequeRandomAccessTag&, int*);
+-template <class Iterator>
+-Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result, const WorldDequeIteratorTag&);
+-template <class Iterator>
+-Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result);
+-
+ #endif

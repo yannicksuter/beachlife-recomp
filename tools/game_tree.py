@@ -314,7 +314,11 @@ def system_symbols(compiler='c++', nm='nm', target_system='Linux', *, arch=None,
         if not paths:
             raise ValueError('Cannot locate the target Windows runtime libraries')
         return symbols([nm, '-P', '--defined-only'], paths)
-    for library in ('libc.so.6', 'libm.so.6', 'libstdc++.so.6', 'libgcc_s.so.1'):
+    # Instrumented game objects also reference the compiler's sanitizer
+    # runtimes. Trapping those hooks overrides the real runtime at link time
+    # and can recurse before main (including inside __asan_init itself).
+    for library in ('libc.so.6', 'libm.so.6', 'libstdc++.so.6', 'libgcc_s.so.1',
+                    'libasan.so', 'libubsan.so'):
         path = subprocess.run([compiler, f'-print-file-name={library}'], text=True,
                               stdout=subprocess.PIPE, check=True).stdout.strip()
         if Path(path).is_file():

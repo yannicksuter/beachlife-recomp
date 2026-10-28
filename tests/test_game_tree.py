@@ -2,6 +2,7 @@
 import argparse
 import contextlib
 import io
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,6 +13,31 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import game_tree
+
+
+@unittest.skipUnless(sys.platform.startswith('linux') and
+                     all(shutil.which(tool) for tool in ('g++', 'nm', 'readelf', 'c++filt')),
+                     'Linux sanitizer fixture requires GCC and ELF inspection tools')
+class LinuxSanitizerTraps(unittest.TestCase):
+    def test_instrumentation_uses_real_runtime(self):
+        with tempfile.TemporaryDirectory(prefix='boot sanitizer ') as temp:
+            root = Path(temp)
+            (root/'src').mkdir()
+            source = root/'src/caller.cpp'
+            source.write_text('int read(int *p, int i) { return p[i] + i; }\n')
+            obj = root/'caller.o'
+            subprocess.run(['g++', '-fsanitize=address,undefined', '-c', str(source),
+                            '-o', str(obj)], check=True)
+            (root/'objects.txt').write_text(str(obj)+'\n')
+            args = argparse.Namespace(objects=root/'objects.txt', nm='nm', host=[],
+                compiler='g++', target_system='Linux', target_arch=None, sysroot=None,
+                compiler_arg=[], readelf='readelf', objdump='objdump', tree=root,
+                demangler='c++filt', inventory=None, strict=False, require_complete=True,
+                output=root/'traps.cpp', json=root/'traps.json')
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(game_tree.traps(args), 0)
+            self.assertEqual(json.loads(args.json.read_text()),
+                             {'functions': [], 'host_services': [], 'unresolved': []})
 
 
 @unittest.skipUnless(all(shutil.which(tool) for tool in ('clang++', 'llvm-nm', 'llvm-objdump',
