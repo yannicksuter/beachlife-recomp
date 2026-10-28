@@ -1,0 +1,81 @@
+diff --git a/src/startup_config_quote_seeker.cpp b/src/startup_config_quote_seeker.cpp
+index e9401a7..1a2499b 100644
+--- a/src/startup_config_quote_seeker.cpp
++++ b/src/startup_config_quote_seeker.cpp
+@@ -1,6 +1,5 @@
+ #include "startup_config_scan.h"
+ 
+-// Descriptive name; positive extents require a readable lookahead byte at buffer[size].
+ // FUNCTION: BEACHLIFE 0x004ec3c0
+ int SeekConfigQuotedName(const char* buffer, int size)
+ {
+@@ -9,11 +8,11 @@ int SeekConfigQuotedName(const char* buffer, int size)
+     {
+         if (buffer[index] == '\'')
+             return index;
+-        if (buffer[++index] == '/')
++        if (++index < size && buffer[index] == '/')
+         {
+             do
+             {
+-                if (index >= size)
++                if (index + 1 >= size)
+                     goto done;
+             } while (buffer[++index] != '\r');
+         }
+diff --git a/src/startup_config_token_count.cpp b/src/startup_config_token_count.cpp
+index 068f89e..7be93ad 100644
+--- a/src/startup_config_token_count.cpp
++++ b/src/startup_config_token_count.cpp
+@@ -1,6 +1,6 @@
+ #include "startup_config_scan.h"
+ 
+-// Descriptive name; lexical preconditions and original unchecked behavior are retained.
++void StartupFatal(const char* format, ...);
+ // FUNCTION: BEACHLIFE 0x004ec600
+ int CountConfigTokens(const char* buffer, int size)
+ {
+@@ -9,9 +9,28 @@ int CountConfigTokens(const char* buffer, int size)
+     while (HasConfigNameDelimiters(buffer + index, size - index))
+     {
+         index += SeekConfigQuotedName(buffer + index, size - index);
+-        index += GetConfigNameExtent(buffer + index, size - index);
++        if (index >= size)
++            break;
++        int name_length = GetConfigNameExtent(buffer + index, size - index);
++        if (name_length < 2 || name_length > size - index || buffer[index + name_length - 1] != '\'')
++        {
++            StartupFatal("Configuration has an unterminated name");
++            return count;
++        }
++        index += name_length;
+         index += SkipConfigSeparators(buffer + index, size - index);
+-        index += GetConfigValueExtent(buffer + index, size - index);
++        if (index >= size)
++        {
++            StartupFatal("Configuration is missing a value");
++            return count;
++        }
++        int value_length = GetConfigValueExtent(buffer + index, size - index);
++        if (value_length <= 0 || (buffer[index] == '"' && (value_length < 2 || buffer[index + value_length - 1] != '"')))
++        {
++            StartupFatal("Configuration has an unterminated value");
++            return count;
++        }
++        index += value_length;
+         index += SkipConfigSeparators(buffer + index, size - index);
+         ++count;
+     }
+diff --git a/src/startup_config_token_parser.cpp b/src/startup_config_token_parser.cpp
+index d6ca34f..6de40ff 100644
+--- a/src/startup_config_token_parser.cpp
++++ b/src/startup_config_token_parser.cpp
+@@ -6,7 +6,7 @@ void ConfigTokenBuffer::ParseTokens(const char* buffer, int size)
+ {
+     int index = SkipConfigSeparators(buffer, size);
+     int token = 0;
+-    while (HasConfigNameDelimiters(buffer + index, size - index))
++    while (token < static_cast<int>(count))
+     {
+         index += SeekConfigQuotedName(buffer + index, size - index);
+         tokens[token].AssignName(buffer + index, size - index);

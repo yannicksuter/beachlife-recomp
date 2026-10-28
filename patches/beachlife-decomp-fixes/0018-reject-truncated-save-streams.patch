@@ -1,0 +1,479 @@
+diff --git a/src/startup_game_file.h b/src/startup_game_file.h
+index 6165b11..4c0327e 100644
+--- a/src/startup_game_file.h
++++ b/src/startup_game_file.h
+@@ -2,6 +2,15 @@
+ #define STARTUP_GAME_FILE_H
+ 
+ #include <stdio.h>
++#include <stdexcept>
++
++struct GameFileReadError : std::runtime_error
++{
++    GameFileReadError()
++        : std::runtime_error("Invalid or truncated saved game")
++    {
++    }
++};
+ 
+ // Actual abstract base: original vptr +00, normalized mode byte +04 and
+ // untouched bytes +05..07. Constructor 0x0049ef60 and ordinary destructor
+@@ -86,6 +95,9 @@ struct GameFileReader : GameFileBase
+     virtual void ReadByte(unsigned char* value);
+ 
+     FILE* file_08;
++
++    void ReadExact(void* output, size_t size);
++    int ReadLength();
+ };
+ 
+ // Existing source 0x004ea170: formats the message and exits.
+diff --git a/src/startup_game_file_constructor.cpp b/src/startup_game_file_constructor.cpp
+index b89dcc6..c54041b 100644
+--- a/src/startup_game_file_constructor.cpp
++++ b/src/startup_game_file_constructor.cpp
+@@ -2,31 +2,41 @@
+ 
+ #include <string.h>
+ 
++void GameFileReader::ReadExact(void* output, size_t size)
++{
++    if (fread(output, 1, size, file_08) != size)
++        throw GameFileReadError();
++}
++
++int GameFileReader::ReadLength()
++{
++    unsigned char tag;
++    int length;
++    ReadExact(&tag, 1);
++    ReadExact(&length, 4);
++    if (length < 0)
++        throw GameFileReadError();
++    return length;
++}
++
+ // FUNCTION: BEACHLIFE 0x0049e1e0
+ GameFileReader::GameFileReader(int base, const char* path)
+     : GameFileBase(base)
+ {
+     file_08 = fopen(path, write_mode ? "wb" : "rb");
++    if (!file_08)
++        throw GameFileReadError();
+     if (!write_mode)
+     {
+-        unsigned char tag;
+-        int length;
+         char header[128];
+-        char* output = header;
+-        fread(&tag, 1, 1, file_08);
+-        fread(&length, 4, 1, file_08);
+-        // The original inlined reader retains this test of its stack buffer.
+-        // It does not clamp the encoded length to that buffer's capacity.
+-        if (output)
++        try
+         {
+-            fgets(output, length + 1, file_08);
++            ReadString(header, sizeof(header));
+         }
+-        else
++        catch (...)
+         {
+-            for (int i = 0; i < length; ++i)
+-            {
+-                fgetc(file_08);
+-            }
++            fclose(file_08);
++            throw;
+         }
+     }
+     else
+diff --git a/src/startup_game_file_read_byte.cpp b/src/startup_game_file_read_byte.cpp
+index dc96b64..dd35f11 100644
+--- a/src/startup_game_file_read_byte.cpp
++++ b/src/startup_game_file_read_byte.cpp
+@@ -4,6 +4,6 @@
+ void GameFileReader::ReadByte(unsigned char* value)
+ {
+     unsigned char tag;
+-    fread(&tag, 1, 1, file_08);
+-    fread(value, 1, 1, file_08);
++    ReadExact(&tag, 1);
++    ReadExact(value, 1);
+ }
+diff --git a/src/startup_game_file_read_string.cpp b/src/startup_game_file_read_string.cpp
+index 91a9ed6..dbee49a 100644
+--- a/src/startup_game_file_read_string.cpp
++++ b/src/startup_game_file_read_string.cpp
+@@ -1,21 +1,22 @@
+ #include "startup_game_file.h"
+ 
+ // FUNCTION: BEACHLIFE 0x0049e830
+-void GameFileReader::ReadString(char* buffer, int)
++void GameFileReader::ReadString(char* buffer, int capacity)
+ {
+-    unsigned char tag;
+-    int length;
+-    fread(&tag, 1, 1, file_08);
+-    fread(&length, 4, 1, file_08);
++    int length = ReadLength();
+     if (buffer)
+     {
+-        fgets(buffer, length + 1, file_08);
++        if (length >= capacity)
++            throw GameFileReadError();
++        ReadExact(buffer, length);
++        buffer[length] = 0;
+     }
+     else
+     {
+         for (int i = 0; i < length; ++i)
+         {
+-            fgetc(file_08);
++            if (fgetc(file_08) == EOF)
++                throw GameFileReadError();
+         }
+     }
+ }
+diff --git a/src/startup_game_file_read_text.cpp b/src/startup_game_file_read_text.cpp
+index 30c205b..42e87e2 100644
+--- a/src/startup_game_file_read_text.cpp
++++ b/src/startup_game_file_read_text.cpp
+@@ -1,18 +1,7 @@
+ #include "startup_game_file.h"
+ 
+ // FUNCTION: BEACHLIFE 0x0049e8b0
+-void GameFileReader::ReadText(char* buffer, int)
++void GameFileReader::ReadText(char* buffer, int capacity)
+ {
+-    unsigned char tag;
+-    int length;
+-    fread(&tag, 1, 1, file_08);
+-    fread(&length, 4, 1, file_08);
+-    if (length)
+-    {
+-        fgets(buffer, length + 1, file_08);
+-    }
+-    else
+-    {
+-        buffer[0] = 0;
+-    }
++    ReadString(buffer, capacity);
+ }
+diff --git a/src/startup_game_file_read_values.cpp b/src/startup_game_file_read_values.cpp
+index 98aaf14..749c413 100644
+--- a/src/startup_game_file_read_values.cpp
++++ b/src/startup_game_file_read_values.cpp
+@@ -29,8 +29,8 @@ void GameFileReader::Unknown58(unsigned char* value)
+ void GameFileReader::Unknown48(unsigned short* value)
+ {
+     unsigned char tag;
+-    fread(&tag, 1, 1, file_08);
+-    fread(value, 2, 1, file_08);
++    ReadExact(&tag, 1);
++    ReadExact(value, 2);
+ }
+ 
+ // Folded with Unknown48 at 0x0049eb30.
+@@ -44,12 +44,14 @@ void GameFileReader::Unknown54(unsigned char* values, int count)
+ {
+     unsigned char tag;
+     int stored_count;
+-    fread(&tag, 1, 1, file_08);
+-    fread(&stored_count, 4, 1, file_08);
++    ReadExact(&tag, 1);
++    ReadExact(&stored_count, 4);
++    if (stored_count != count || count < 0)
++        throw GameFileReadError();
+     unsigned char value;
+     for (int i = 0; i < count; ++i)
+     {
+-        fread(&value, 1, 1, file_08);
++        ReadExact(&value, 1);
+         values[i] = value;
+     }
+ }
+@@ -59,12 +61,14 @@ void GameFileReader::Unknown50(unsigned int* values, int count)
+ {
+     unsigned char tag;
+     int stored_count;
+-    fread(&tag, 1, 1, file_08);
+-    fread(&stored_count, 4, 1, file_08);
++    ReadExact(&tag, 1);
++    ReadExact(&stored_count, 4);
++    if (stored_count != count || count < 0)
++        throw GameFileReadError();
+     unsigned int value;
+     for (stored_count = 0; stored_count < count; ++stored_count)
+     {
+-        fread(&value, 4, 1, file_08);
++        ReadExact(&value, 4);
+         *values = value;
+         ++values;
+     }
+@@ -77,17 +81,19 @@ void GameFileReader::Unknown60(unsigned int* values, int count)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0049e920
+-void GameFileReader::Unknown5c(unsigned short* text, int)
++void GameFileReader::Unknown5c(unsigned short* text, int capacity)
+ {
+     unsigned char tag;
+     int length;
+-    fread(&tag, 1, 1, file_08);
+-    fread(&length, 4, 1, file_08);
++    ReadExact(&tag, 1);
++    ReadExact(&length, 4);
++    if (length < 0 || length >= capacity)
++        throw GameFileReadError();
+     int i = 0;
+     unsigned short value;
+     for (; i < length; ++i)
+     {
+-        fread(&value, 2, 1, file_08);
++        ReadExact(&value, 2);
+         *text = value;
+         ++text;
+     }
+diff --git a/src/startup_game_file_read_word.cpp b/src/startup_game_file_read_word.cpp
+index 107e163..cf3e648 100644
+--- a/src/startup_game_file_read_word.cpp
++++ b/src/startup_game_file_read_word.cpp
+@@ -4,14 +4,14 @@
+ void GameFileReader::ReadInt(int* value)
+ {
+     unsigned char tag;
+-    fread(&tag, 1, 1, file_08);
+-    fread(value, 4, 1, file_08);
++    ReadExact(&tag, 1);
++    ReadExact(value, 4);
+ }
+ 
+ // Typed alias of the same physical 0x0049eaf0 body (table slot +74).
+ void GameFileReader::ReadFloat(float* value)
+ {
+     unsigned char tag;
+-    fread(&tag, 1, 1, file_08);
+-    fread(value, 4, 1, file_08);
++    ReadExact(&tag, 1);
++    ReadExact(value, 4);
+ }
+diff --git a/src/startup_game_load_save.cpp b/src/startup_game_load_save.cpp
+index 440b1e7..bcc5d36 100644
+--- a/src/startup_game_load_save.cpp
++++ b/src/startup_game_load_save.cpp
+@@ -2,6 +2,7 @@
+ #include <math.h>
+ #include <stdio.h>
+ #include <string.h>
++#include <memory>
+ 
+ #include "startup_controller_selection.h"
+ #include "startup_game_file.h"
+@@ -26,45 +27,51 @@ void ScreenRequestGamePrefix::ProcessWordB4()
+ 
+     char path[128];
+     sprintf(path, "%s/save%d.dat", startup_save_directory, number);
+-    GameFileReader* file = new GameFileReader(0, path);
++    try
++    {
++        std::unique_ptr<GameFileReader> file(new GameFileReader(0, path));
+ 
+-    char text[128];
+-    file->ReadString(text, 128);
+-    if (strcmp(text, startup_save_signature) != 0)
+-        StartupFatal("Attempted to load incorrect file");
++        char text[128];
++        file->ReadString(text, 128);
++        if (strcmp(text, startup_save_signature) != 0)
++            StartupFatal("Attempted to load incorrect file");
+ 
+-    float version;
+-    file->ReadFloat(&version);
+-    if (fabs(version - startup_save_version) > FLT_EPSILON)
+-        StartupFatal("Save file has incorrect version number");
++        float version;
++        file->ReadFloat(&version);
++        if (fabs(version - startup_save_version) > FLT_EPSILON)
++            StartupFatal("Save file has incorrect version number");
+ 
+-    int header;
+-    file->ReadInt(&header);
+-    controller_selection.active->Exit();
++        int header;
++        file->ReadInt(&header);
++        controller_selection.active->Exit();
+ 
+-    int scenario;
+-    int value;
+-    float time;
+-    file->ReadInt(&scenario);
+-    file->ReadInt(&value);
+-    file->ReadFloat(&time);
+-    file->ReadFloat(&time);
+-    file->ReadInt(&value);
+-    file->ReadText(text, 64);
+-    unsigned char flag;
+-    file->ReadByte(&flag);
+-    byte_a4 = flag;
+-    LoadScenarioProgress();
++        int scenario;
++        int value;
++        float time;
++        file->ReadInt(&scenario);
++        file->ReadInt(&value);
++        file->ReadFloat(&time);
++        file->ReadFloat(&time);
++        file->ReadInt(&value);
++        file->ReadText(text, 64);
++        unsigned char flag;
++        file->ReadByte(&flag);
++        byte_a4 = flag;
++        LoadScenarioProgress();
+ 
+-    controller_selection.active = controller_selection.first_controller;
+-    scenario_a0 = scenario;
+-    controller_selection.pending = controller_selection.first_controller;
+-    controller_selection.first_controller->byte_9c = 1;
+-    controller_selection.active->Enter();
+-    screen_request_renderer->SetWord60(0);
+-    window_deactivation_state->LoadState(file);
+-    controller_selection.active->ControllerSlot24();
+-    screen_manager->ApplyScreenLayout();
+-    screen_manager->ApplyLoadedScenario();
+-    delete file;
++        controller_selection.active = controller_selection.first_controller;
++        scenario_a0 = scenario;
++        controller_selection.pending = controller_selection.first_controller;
++        controller_selection.first_controller->byte_9c = 1;
++        controller_selection.active->Enter();
++        screen_request_renderer->SetWord60(0);
++        window_deactivation_state->LoadState(file.get());
++        controller_selection.active->ControllerSlot24();
++        screen_manager->ApplyScreenLayout();
++        screen_manager->ApplyLoadedScenario();
++    }
++    catch (const GameFileReadError& error)
++    {
++        StartupFatal("%s", error.what());
++    }
+ }
+diff --git a/src/startup_game_refresh_save_records.cpp b/src/startup_game_refresh_save_records.cpp
+index 5bc8647..1762ef6 100644
+--- a/src/startup_game_refresh_save_records.cpp
++++ b/src/startup_game_refresh_save_records.cpp
+@@ -10,6 +10,7 @@
+ #include <io.h>
+ #include <math.h>
+ #include <new>
++#include <memory>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+@@ -50,56 +51,62 @@ void ScreenRequestGamePrefix::RefreshSaveRecords()
+         if (probe)
+         {
+             fclose(probe);
+-            // Only a failed construction releases the pending allocation.
+-            // Later read/append failures do not acquire a cleanup guard.
+-            GameFileReader* file = new GameFileReader(0, path);
+-            char signature[128];
+-            file->ReadString(signature, 128);
+-            bool signature_matches = strcmp(signature, startup_save_signature) == 0;
+-            float version;
+-            file->ReadFloat(&version);
+-            // A NaN version is unordered and is not rejected by the original.
+-            // Widen before subtraction to retain its unrounded comparison near
+-            // the exact binary32 version and epsilon boundary.
+-            if (!(fabs(static_cast<double>(version) - startup_save_version) > FLT_EPSILON) && signature_matches)
++            try
+             {
+-                GameSaveRecord* record = new GameSaveRecord;
+-                record->word_00 = static_cast<unsigned int>(number);
+-                int timestamp;
+-                file->ReadInt(&timestamp);
+-                record->time_04 = timestamp;
+-                int scenario;
+-                file->ReadInt(&scenario);
+-                record->word_08 = static_cast<unsigned int>(scenario);
+-                int value;
+-                file->ReadInt(&value);
+-                record->day_0c = value;
+-                float time;
+-                file->ReadFloat(&time);
+-                record->time_10 = time;
+-                file->ReadFloat(&time);
+-                record->cash_14 = time;
+-                file->ReadInt(&value);
+-                record->guests_18 = value;
+-                file->ReadText(record->name_1c, 64);
+-                unsigned char ignored_flag;
+-                file->ReadByte(&ignored_flag);
+-
+-                GameSaveRecord** position = saves.end;
+-                if (position != saves.capacity.data)
++                std::unique_ptr<GameFileReader> file(new GameFileReader(0, path));
++                char signature[128];
++                file->ReadString(signature, 128);
++                bool signature_matches = strcmp(signature, startup_save_signature) == 0;
++                float version;
++                file->ReadFloat(&version);
++                // A NaN version is unordered and is not rejected by the original.
++                // Widen before subtraction to retain its unrounded comparison near
++                // the exact binary32 version and epsilon boundary.
++                if (!(fabs(static_cast<double>(version) - startup_save_version) > FLT_EPSILON) && signature_matches)
+                 {
+-                    if (position)
++                    std::unique_ptr<GameSaveRecord> pending(new GameSaveRecord);
++                    GameSaveRecord* record = pending.get();
++                    record->word_00 = static_cast<unsigned int>(number);
++                    int timestamp;
++                    file->ReadInt(&timestamp);
++                    record->time_04 = timestamp;
++                    int scenario;
++                    file->ReadInt(&scenario);
++                    record->word_08 = static_cast<unsigned int>(scenario);
++                    int value;
++                    file->ReadInt(&value);
++                    record->day_0c = value;
++                    float time;
++                    file->ReadFloat(&time);
++                    record->time_10 = time;
++                    file->ReadFloat(&time);
++                    record->cash_14 = time;
++                    file->ReadInt(&value);
++                    record->guests_18 = value;
++                    file->ReadText(record->name_1c, 64);
++                    unsigned char ignored_flag;
++                    file->ReadByte(&ignored_flag);
++
++                    GameSaveRecord** position = saves.end;
++                    if (position != saves.capacity.data)
+                     {
+-                        ::new (position) GameSaveRecord*(record);
++                        if (position)
++                        {
++                            ::new (position) GameSaveRecord*(record);
++                        }
++                        ++saves.end;
+                     }
+-                    ++saves.end;
+-                }
+-                else
+-                {
+-                    saves.InsertOverflow(position, record, GameSaveRecordTrueType(), 1, true);
++                    else
++                    {
++                        saves.InsertOverflow(position, record, GameSaveRecordTrueType(), 1, true);
++                    }
++                    pending.release();
+                 }
+             }
+-            delete file;
++            catch (const GameFileReadError&)
++            {
++                // Ignore incomplete saves while populating the menu.
++            }
+         }
+         status = _findnext(handle, &found);
+     }

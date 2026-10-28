@@ -1,0 +1,244 @@
+diff --git a/src/startup_gui_float.cpp b/src/startup_gui_float.cpp
+index 8b6c5e1..eeefda9 100644
+--- a/src/startup_gui_float.cpp
++++ b/src/startup_gui_float.cpp
+@@ -1,11 +1,13 @@
+ #include "startup_gui_parser.h"
+ 
+ #include <stdlib.h>
++#include <cmath>
++
++void StartupFatal(const char* format, ...);
+ 
+ // FUNCTION: BEACHLIFE 0x004ab120
+ void GuiParserState::ReadFloat(float& value)
+ {
+-    // The token is copied unchecked into a 128-byte buffer (original).
+     char text[128];
+     char* out = text;
+     while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
+@@ -15,12 +17,22 @@ void GuiParserState::ReadFloat(float& value)
+ 
+     while (buffer[cursor] != ' ' && buffer[cursor] != ',' && buffer[cursor] != ')')
+     {
++        if (buffer[cursor] == 0 || out == text + sizeof(text) - 1)
++        {
++            StartupFatal("GUI_Parse - Invalid float at file offset - %u", cursor);
++            return;
++        }
+         *out = buffer[cursor];
+         ++cursor;
+         ++out;
+     }
+     *out = 0;
+     value = static_cast<float>(atof(text));
++    if (!std::isfinite(value))
++    {
++        StartupFatal("GUI_Parse - Float out of range at file offset - %u", cursor);
++        return;
++    }
+ 
+     if (buffer[cursor] == ',' || buffer[cursor] == ')')
+     {
+diff --git a/src/startup_gui_integer.cpp b/src/startup_gui_integer.cpp
+index 2482d9b..a10c5c6 100644
+--- a/src/startup_gui_integer.cpp
++++ b/src/startup_gui_integer.cpp
+@@ -1,6 +1,8 @@
+ #include "startup_gui_parser.h"
+ #include <cstdint>
+ 
++void StartupFatal(const char* format, ...);
++
+ // FUNCTION: BEACHLIFE 0x004ab270
+ void GuiParserState::ReadInteger(int& value, bool consume_delimiter)
+ {
+@@ -12,6 +14,11 @@ void GuiParserState::ReadInteger(int& value, bool consume_delimiter)
+ 
+     while (buffer[cursor] != ' ' && buffer[cursor] != ',' && buffer[cursor] != ')')
+     {
++        if (buffer[cursor] == 0)
++        {
++            StartupFatal("GUI_Parse - Unterminated integer at file offset - %u", cursor);
++            return;
++        }
+         std::uint32_t digit = static_cast<signed char>(buffer[cursor]);
+         value = static_cast<std::int32_t>(static_cast<std::uint32_t>(value) * 10u + digit - '0');
+         ++cursor;
+diff --git a/src/startup_gui_parse.cpp b/src/startup_gui_parse.cpp
+index 112e746..1e7e114 100644
+--- a/src/startup_gui_parse.cpp
++++ b/src/startup_gui_parse.cpp
+@@ -14,31 +14,31 @@ struct GuiCommandName
+ 
+ // DATA: BEACHLIFE 0x0057ee58
+ const GuiCommandName gui_command_names[25] = {
+-    {"CheckBox", 0},
+-    {"DialogItem", 1},
+-    {"MainItem", 2},
+-    {"MainItem640", 3},
+-    {"TabWindow", 4},
+-    {"Table", 5},
+-    {"Define", 6},
+-    {"Button", 7},
+-    {"Slider", 8},
+-    {"Text", 9},
+-    {"Variable", 10},
+-    {"ComboBox", 11},
+-    {"VariableImage", 12},
+-    {"Image", 13},
+-    {"Font", 14},
+-    {"TGA", 15},
+-    {"TickerText", 16},
+-    {"ImageList", 17},
+-    {"Icon", 18},
+-    {"Bar", 19},
+-    {"NumberAdjust", 20},
+-    {"RadioGroup", 21},
+-    {"RadioButton", 22},
+-    {"ListBox", 23},
+-    {"StartDebug", 24},
++    { "CheckBox", 0 },
++    { "DialogItem", 1 },
++    { "MainItem", 2 },
++    { "MainItem640", 3 },
++    { "TabWindow", 4 },
++    { "Table", 5 },
++    { "Define", 6 },
++    { "Button", 7 },
++    { "Slider", 8 },
++    { "Text", 9 },
++    { "Variable", 10 },
++    { "ComboBox", 11 },
++    { "VariableImage", 12 },
++    { "Image", 13 },
++    { "Font", 14 },
++    { "TGA", 15 },
++    { "TickerText", 16 },
++    { "ImageList", 17 },
++    { "Icon", 18 },
++    { "Bar", 19 },
++    { "NumberAdjust", 20 },
++    { "RadioGroup", 21 },
++    { "RadioButton", 22 },
++    { "ListBox", 23 },
++    { "StartDebug", 24 },
+ };
+ 
+ // FUNCTION: BEACHLIFE 0x004aa550
+@@ -60,12 +60,11 @@ void GuiParserState::Parse(const char* script, unsigned int size)
+     bool stop = false;
+     cursor = 0;
+     buffer = script;
+-    char command[32];
++    char command[33];
+     while (cursor < size && !stop)
+     {
+         const char* data = buffer;
+-        while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
+-               data[cursor] == '\t')
++        while (cursor < size && (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t'))
+         {
+             ++cursor;
+         }
+@@ -75,14 +74,12 @@ void GuiParserState::Parse(const char* script, unsigned int size)
+             if (current == '<')
+             {
+                 ++cursor;
+-                while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' ||
+-                       data[cursor] == '\t')
++                while (cursor < size && (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t'))
+                 {
+                     ++cursor;
+                 }
+                 unsigned int used = 0;
+-                while (data[cursor] != ' ' && data[cursor] != '(' && data[cursor] != '\r' &&
+-                       data[cursor] != '\n' && used < 32)
++                while (cursor < size && data[cursor] != 0 && data[cursor] != ' ' && data[cursor] != '(' && data[cursor] != '\r' && data[cursor] != '\n' && used < 32)
+                 {
+                     command[used++] = data[cursor++];
+                 }
+@@ -130,7 +127,7 @@ void GuiParserState::Parse(const char* script, unsigned int size)
+             else if (current == '/')
+             {
+                 ++cursor;
+-                while (data[cursor] != '\n')
++                while (cursor < size && data[cursor] != '\n')
+                 {
+                     ++cursor;
+                 }
+@@ -142,8 +139,7 @@ void GuiParserState::Parse(const char* script, unsigned int size)
+             else
+             {
+                 unsigned int used = 0;
+-                while (
+-                    data[cursor] != ' ' && data[cursor] != '(' && data[cursor] != '\r' && used < 32)
++                while (cursor < size && data[cursor] != 0 && data[cursor] != ' ' && data[cursor] != '(' && data[cursor] != '\r' && used < 32)
+                 {
+                     command[used++] = data[cursor++];
+                 }
+@@ -166,9 +162,7 @@ void GuiParserState::Parse(const char* script, unsigned int size)
+                             "GUI_Parse - No parent for defined item at file offset - %u", cursor);
+                     }
+                     ScreenChildLink* definition = defined_items;
+-                    while (definition &&
+-                           strcmp(static_cast<GuiDefinedItem*>(definition->item)->identifier,
+-                               command) != 0)
++                    while (definition && strcmp(static_cast<GuiDefinedItem*>(definition->item)->identifier, command) != 0)
+                     {
+                         definition = definition->next;
+                     }
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+index 584a0ef..8314e24 100644
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -3,6 +3,8 @@
+ 
+ #define BEACHLIFE_DECOMP_DEFINED_ITEMS 1
+ 
++#include <stddef.h>
++
+ struct ScreenManager;
+ struct ScreenRectangle;
+ struct ScreenItem;
+@@ -55,7 +57,12 @@ struct GuiParserState
+     void ReadInteger(int& value, bool consume_delimiter);
+     void ReadFloat(float& value);
+     void SkipWhitespace();
+-    void ReadText(char* text);
++    void ReadText(char* text, size_t capacity);
++    template <size_t N>
++    void ReadText(char (&text)[N])
++    {
++        ReadText(text, N);
++    }
+     void ReadRectangle(ScreenRectangle& rectangle, const ScreenItem* parent);
+     void PushContext(ScreenItem* item);
+     void PopContext();
+diff --git a/src/startup_gui_text.cpp b/src/startup_gui_text.cpp
+index 82e7aaf..99dec06 100644
+--- a/src/startup_gui_text.cpp
++++ b/src/startup_gui_text.cpp
+@@ -1,7 +1,9 @@
+ #include "startup_gui_parser.h"
+ 
++void StartupFatal(const char* format, ...);
++
+ // FUNCTION: BEACHLIFE 0x004ab1d0
+-void GuiParserState::ReadText(char* text)
++void GuiParserState::ReadText(char* text, size_t capacity)
+ {
+     unsigned int length = 0;
+     while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
+@@ -12,6 +14,11 @@ void GuiParserState::ReadText(char* text)
+     while (buffer[cursor] != ')' && buffer[cursor] != '\r' && buffer[cursor] != ',' && buffer[cursor] != '('
+            && buffer[cursor] != '{')
+     {
++        if (buffer[cursor] == 0 || length + 1 >= capacity)
++        {
++            StartupFatal("GUI_Parse - Invalid text at file offset - %u", cursor);
++            return;
++        }
+         text[length] = buffer[cursor];
+         ++length;
+         ++cursor;
