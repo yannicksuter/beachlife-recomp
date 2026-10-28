@@ -1,0 +1,138 @@
+diff --git a/metadata.csv b/metadata.csv
+index ce156b4..2fd2618 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -634,3 +634,4 @@ address,type,size,symbol
+ 0x005bac68,global,4,?world_cleaner_count@@3IA
+ 0x005bae60,global,4,?world_security_count@@3IA
+ 0x005ab150,global,4,?world_subsystem_18@@3PAUWorldSubsystem18@@A
++0x0058883c,global,131072,?overlay_archive_buffer@@3PAEA
+diff --git a/src/overlay_archive_globals.cpp b/src/overlay_archive_globals.cpp
+new file mode 100644
+index 0000000..a899288
+--- /dev/null
++++ b/src/overlay_archive_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_overlay_layout.h"
++
++// GLOBAL: BEACHLIFE 0x0058883c
++unsigned char overlay_archive_buffer[0x20000];
+diff --git a/src/startup_list.h b/src/startup_list.h
+index 0a1925f..c80f96e 100644
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -10,6 +10,10 @@ struct WorldCleaningAssignment;
+ struct SavedScreenPlacement;
+ struct SavedScreenPlacementNode;
+ 
++typedef WorldCleaningRequest* const& WorldCleaningRequestReference;
++typedef WorldCleaningAssignment* const& WorldCleaningAssignmentReference;
++typedef WorldTransportRecord* const& WorldTransportRecordReference;
++
+ // Observed node prefix only; the original value type is unknown.
+ struct CircularListNode
+ {
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index bfa961a..84611fa 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -43,6 +43,9 @@ extern ScreenTerrainGrid* screen_terrain_grid;
+ extern char terrain_height_map_path[0x78];
+ ScreenTerrainGrid* CurrentScreenTerrain();
+ 
++struct ScreenTerrainCell;
++typedef ScreenTerrainCell* ScreenTerrainCellPointer;
++
+ struct ScreenTerrainCell
+ {
+     ScreenTerrainCell();                         // 0x00445110.
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index 68b8452..923ba44 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -7,6 +7,7 @@
+ #include <stdio.h>
+ 
+ struct VariableEntity;
++typedef VariableEntity* VariableEntityPointer;
+ struct ScreenRequestRenderer;
+ struct DebugFont;
+ 
+@@ -35,6 +36,9 @@ struct OverlayCachedTile
+ struct GameFileReader;
+ struct ScreenRequestRenderer;
+ 
++extern unsigned char overlay_archive_buffer[0x20000];                      // 0x0058883c.
++void ExpandOverlayArchive(const unsigned char* source, void* destination); // 0x004092c0.
++
+ struct OverlayArchive
+ {
+     struct Tile
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 880f4c9..a8c719d 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -1341,6 +1341,10 @@ extern const char* world_mechanic_dialog_name;
+ extern const char* world_representative_dialog_name;
+ extern unsigned int world_cleaner_count;
+ extern unsigned int world_security_count;
+-void DrawStaffMorale(ScreenPoint* position, float morale);                                                         // 0x00490cf0.
+-void CancelRepresentativeInteraction(WorldRepresentativeEntity* entity, unsigned int* id, unsigned char directed); // 0x00489040.
++void DrawStaffMorale(ScreenPoint* position, float morale);                                                                  // 0x00490cf0.
++void CancelRepresentativeInteraction(WorldRepresentativeEntity* entity, unsigned int* id, unsigned char directed);          // 0x00489040.
++ScreenContextRowIterator FindEntityThought(ScreenContextRowIterator first, ScreenContextRowIterator last, unsigned int id); // 0x004627d0.
++bool HitEntityPointer(ScreenPoint* center, ScreenPoint* point);                                                             // 0x00490c40.
++int WorldDirection(ScreenMapPosition direction, unsigned int directions);                                                   // 0x00430890.
++void __fastcall IgnoreSceneryDraw(WorldSceneryEntity* entity);                                                              // Folded empty callback, 0x00437d10.
+ #endif
+diff --git a/src/startup_world_script_actions.h b/src/startup_world_script_actions.h
+index 9a2845b..2e67cf8 100644
+--- a/src/startup_world_script_actions.h
++++ b/src/startup_world_script_actions.h
+@@ -28,6 +28,7 @@ struct WorldActionBranchData
+ 
+ struct WorldActionArithmeticData
+ {
++    WorldActionArithmeticData();  // Folded constructor, 0x004d38b0.
+     ~WorldActionArithmeticData(); // 0x004d3610.
+     WorldScriptOperand left_00;
+     WorldScriptOperand right_08;
+@@ -121,6 +122,7 @@ struct WorldActionTransportData
+ 
+ struct WorldActionEntryData
+ {
++    WorldActionEntryData(); // Folded constructor, 0x004d38b0.
+     unsigned int first_00;
+     unsigned int second_04;
+     unsigned int kind_08;
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 4a3dfee..9f35d03 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -66,6 +66,7 @@ struct WorldRouteReference
+ struct ScreenTerrainGrid;
+ struct WorldRouteFinder
+ {
++    bool CellAllowed(const ScreenPoint* point); // 0x00431810, thiscall, RET4.
+     unsigned int FindLandRoute(int x1,
+         int y1,
+         int x2,
+@@ -106,7 +107,7 @@ struct WorldRouteFinder
+     ScreenTerrainCell cell_34;
+     void* data_88;
+     AllocationNode* data_8c;
+-    bool (*callback_90)(WorldRouteFinder* finder, const ScreenPoint* point);
++    bool (WorldRouteFinder::*callback_90)(const ScreenPoint* point);
+     void Clear();        // 0x00430e80.
+     ~WorldRouteFinder(); // 0x00430980.
+ 
+@@ -480,7 +481,6 @@ extern WorldSubsystem4c* world_subsystem_4c;
+ extern char world_object_script_token[50];
+ extern WorldActionBranchData* world_script_state_words[10];
+ 
+-bool WorldRouteCellAllowed(WorldRouteFinder* finder, const ScreenPoint* point); // 0x00431810.
+-extern unsigned int world_object_script_stack[10];                              // 0x005baf00.
+-extern unsigned char world_object_script_nested;                                // 0x005baffe.
++extern unsigned int world_object_script_stack[10]; // 0x005baf00.
++extern unsigned char world_object_script_nested;   // 0x005baffe.
+ #endif

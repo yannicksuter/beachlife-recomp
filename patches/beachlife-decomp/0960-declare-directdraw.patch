@@ -1,0 +1,519 @@
+diff --git a/metadata.csv b/metadata.csv
+index 9b96e33..5d0f52a 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -609,3 +609,8 @@ address,type,size,symbol
+ 0x00588830,global,4,?render_mask_width@@3IA
+ 0x00588834,global,2,?render_blue_mask@@3GA
+ 0x005babbc,global,120,?terrain_height_map_path@@3PADA
++0x004f5354,global,16,_IID_IDirectDraw7
++0x0057d6b0,global,4,?window_name@@3PADA
++0x0057d6b4,global,4,?mutex_name@@3PADA
++0x005baeb8,global,1,?windowed@@3_NA
++0x005baeb9,global,1,?application_active@@3_NA
+diff --git a/src/directdraw7_identity.cpp b/src/directdraw7_identity.cpp
+new file mode 100644
+index 0000000..32c7084
+--- /dev/null
++++ b/src/directdraw7_identity.cpp
+@@ -0,0 +1,4 @@
++#include "startup_direct_draw7.h"
++
++// GLOBAL: BEACHLIFE 0x004f5354
++extern "C" const GUID IID_IDirectDraw7 = { 0x15e65ec0, 0x3b9c, 0x11d2, { 0xb9, 0x2f, 0x00, 0x60, 0x97, 0x97, 0xea, 0x5b } };
+diff --git a/src/startup_application_globals.cpp b/src/startup_application_globals.cpp
+new file mode 100644
+index 0000000..230115a
+--- /dev/null
++++ b/src/startup_application_globals.cpp
+@@ -0,0 +1,16 @@
++#include "startup_application_state.h"
++
++namespace
++{
++char application_window_name[] = "Beach Life";
++char application_mutex_name[] = "Beach Life mutex";
++} // namespace
++
++// GLOBAL: BEACHLIFE 0x0057d6b0
++char* window_name = application_window_name;
++// GLOBAL: BEACHLIFE 0x0057d6b4
++char* mutex_name = application_mutex_name;
++// GLOBAL: BEACHLIFE 0x005baeb8
++bool windowed;
++// GLOBAL: BEACHLIFE 0x005baeb9
++bool application_active;
+diff --git a/src/startup_direct_draw4.h b/src/startup_direct_draw4.h
+index 4a7426f..b3762e8 100644
+--- a/src/startup_direct_draw4.h
++++ b/src/startup_direct_draw4.h
+@@ -1,63 +1,103 @@
+ #ifndef STARTUP_DIRECT_DRAW4_H
+ #define STARTUP_DIRECT_DRAW4_H
+-
+ #include <windows.h>
+ #include <ddraw.h>
+ 
+-// DirectDraw 6 platform ABI used by the movie player (DDRAW.dll, dxguid). The
+-// pinned VC6 SDK only declares interfaces up to IDirectDraw2; DX6-only
+-// parameter structures stay opaque here.
++// DX6 declarations absent from the pinned VC6 SDK, with the retail x86 ABI.
+ #ifndef DDSCL_FPUSETUP
+ #define DDSCL_FPUSETUP 0x00000800
+ #endif
++#ifndef DDSD_TEXTURESTAGE
++#define DDSD_TEXTURESTAGE 0x00100000
++struct DDSCAPS2
++{
++    DWORD dwCaps, dwCaps2, dwCaps3, dwCaps4;
++};
++struct DDSURFACEDESC2
++{
++    DWORD dwSize, dwFlags, dwHeight, dwWidth;
++    union
++    {
++        LONG lPitch;
++        DWORD dwLinearSize;
++    };
++    DWORD dwBackBufferCount;
++    union
++    {
++        DWORD dwMipMapCount;
++        DWORD dwZBufferBitDepth;
++        DWORD dwRefreshRate;
++    };
++    DWORD dwAlphaBitDepth, dwReserved;
++    LPVOID lpSurface;
++    DDCOLORKEY ddckCKDestOverlay, ddckCKDestBlt, ddckCKSrcOverlay, ddckCKSrcBlt;
++    DDPIXELFORMAT ddpfPixelFormat;
++    DDSCAPS2 ddsCaps;
++    DWORD dwTextureStage;
++};
++typedef DDSCAPS2* LPDDSCAPS2;
++typedef DDSURFACEDESC2* LPDDSURFACEDESC2;
++#endif
+ 
+-// IDirectDraw4 in DDRAW.dll slot order (slot offsets after IUnknown's three).
+ #ifndef IDirectDraw4_SetDisplayMode
+-struct IDirectDraw4 : public IUnknown
++struct IDirectDrawSurface4;
++struct IDirectDraw4 : IUnknown
+ {
+     STDMETHOD(Compact)() PURE;
+-    STDMETHOD(CreateClipper)(DWORD flags, LPDIRECTDRAWCLIPPER* clipper, IUnknown* outer) PURE;
+-    STDMETHOD(CreatePalette)(
+-        DWORD flags, LPPALETTEENTRY entries, LPDIRECTDRAWPALETTE* palette, IUnknown* outer) PURE;
+-    STDMETHOD(CreateSurface)(void* description, void** surface, IUnknown* outer) PURE;
+-    STDMETHOD(DuplicateSurface)(void* surface, void** duplicate) PURE;
+-    STDMETHOD(EnumDisplayModes)(
+-        DWORD flags, void* description, LPVOID context, void* callback) PURE;
+-    STDMETHOD(EnumSurfaces)(DWORD flags, void* description, LPVOID context, void* callback) PURE;
++    STDMETHOD(CreateClipper)(DWORD, IDirectDrawClipper**, IUnknown*) PURE;
++    STDMETHOD(CreatePalette)(DWORD, LPPALETTEENTRY, IDirectDrawPalette**, IUnknown*) PURE;
++    STDMETHOD(CreateSurface)(DDSURFACEDESC2*, IDirectDrawSurface4**, IUnknown*) PURE;
++    STDMETHOD(DuplicateSurface)(IDirectDrawSurface4*, IDirectDrawSurface4**) PURE;
++    STDMETHOD(EnumDisplayModes)(DWORD, DDSURFACEDESC2*, LPVOID, void*) PURE;
++    STDMETHOD(EnumSurfaces)(DWORD, DDSURFACEDESC2*, LPVOID, void*) PURE;
+     STDMETHOD(FlipToGDISurface)() PURE;
+-    STDMETHOD(GetCaps)(LPDDCAPS driver, LPDDCAPS emulation) PURE;
+-    STDMETHOD(GetDisplayMode)(void* description) PURE;
+-    STDMETHOD(GetFourCCCodes)(LPDWORD count, LPDWORD codes) PURE;
+-    STDMETHOD(GetGDISurface)(void** surface) PURE;
+-    STDMETHOD(GetMonitorFrequency)(LPDWORD frequency) PURE;
+-    STDMETHOD(GetScanLine)(LPDWORD line) PURE;
+-    STDMETHOD(GetVerticalBlankStatus)(LPBOOL in_blank) PURE;
+-    STDMETHOD(Initialize)(GUID* guid) PURE;
++    STDMETHOD(GetCaps)(LPDDCAPS, LPDDCAPS) PURE;
++    STDMETHOD(GetDisplayMode)(DDSURFACEDESC2*) PURE;
++    STDMETHOD(GetFourCCCodes)(DWORD*, DWORD*) PURE;
++    STDMETHOD(GetGDISurface)(IDirectDrawSurface4**) PURE;
++    STDMETHOD(GetMonitorFrequency)(DWORD*) PURE;
++    STDMETHOD(GetScanLine)(DWORD*) PURE;
++    STDMETHOD(GetVerticalBlankStatus)(BOOL*) PURE;
++    STDMETHOD(Initialize)(GUID*) PURE;
+     STDMETHOD(RestoreDisplayMode)() PURE;
+-    STDMETHOD(SetCooperativeLevel)(HWND window, DWORD flags) PURE;
+-    STDMETHOD(SetDisplayMode)(
+-        DWORD width, DWORD height, DWORD bpp, DWORD refresh, DWORD flags) PURE;
++    STDMETHOD(SetCooperativeLevel)(HWND, DWORD) PURE;
++    STDMETHOD(SetDisplayMode)(DWORD, DWORD, DWORD, DWORD, DWORD) PURE;
+ };
+-
+ extern "C" const GUID IID_IDirectDraw4;
+ #endif
+-
+-// Older SDKs omit the DX6 interfaces; keep the surface prefix through Flip.
+ #ifndef IDirectDrawSurface4_Flip
+-struct IDirectDrawSurface4 : public IUnknown
++struct IDirectDrawSurface4 : IUnknown
+ {
+-    STDMETHOD(AddAttachedSurface)(IDirectDrawSurface4* surface) PURE;
+-    STDMETHOD(AddOverlayDirtyRect)(RECT* rectangle) PURE;
+-    STDMETHOD(Blt)(RECT* destination, IDirectDrawSurface4* source,
+-        RECT* source_rectangle, DWORD flags, DDBLTFX* effects) PURE;
+-    STDMETHOD(BltBatch)(DDBLTBATCH* batch, DWORD count, DWORD flags) PURE;
+-    STDMETHOD(BltFast)(DWORD x, DWORD y, IDirectDrawSurface4* source,
+-        RECT* source_rectangle, DWORD flags) PURE;
+-    STDMETHOD(DeleteAttachedSurface)(DWORD flags, IDirectDrawSurface4* surface) PURE;
+-    STDMETHOD(EnumAttachedSurfaces)(void* context, void* callback) PURE;
+-    STDMETHOD(EnumOverlayZOrders)(DWORD flags, void* context, void* callback) PURE;
+-    STDMETHOD(Flip)(IDirectDrawSurface4* target, DWORD flags) PURE;
++    STDMETHOD(AddAttachedSurface)(IDirectDrawSurface4*) PURE;
++    STDMETHOD(AddOverlayDirtyRect)(RECT*) PURE;
++    STDMETHOD(Blt)(RECT*, IDirectDrawSurface4*, RECT*, DWORD, DDBLTFX*) PURE;
++    STDMETHOD(BltBatch)(DDBLTBATCH*, DWORD, DWORD) PURE;
++    STDMETHOD(BltFast)(DWORD, DWORD, IDirectDrawSurface4*, RECT*, DWORD) PURE;
++    STDMETHOD(DeleteAttachedSurface)(DWORD, IDirectDrawSurface4*) PURE;
++    STDMETHOD(EnumAttachedSurfaces)(void*, void*) PURE;
++    STDMETHOD(EnumOverlayZOrders)(DWORD, void*, void*) PURE;
++    STDMETHOD(Flip)(IDirectDrawSurface4*, DWORD) PURE;
++    STDMETHOD(GetAttachedSurface)(DDSCAPS2*, IDirectDrawSurface4**) PURE;
++    STDMETHOD(GetBltStatus)(DWORD) PURE;
++    STDMETHOD(GetCaps)(DDSCAPS2*) PURE;
++    STDMETHOD(GetClipper)(IDirectDrawClipper**) PURE;
++    STDMETHOD(GetColorKey)(DWORD, DDCOLORKEY*) PURE;
++    STDMETHOD(GetDC)(HDC*) PURE;
++    STDMETHOD(GetFlipStatus)(DWORD) PURE;
++    STDMETHOD(GetOverlayPosition)(LONG*, LONG*) PURE;
++    STDMETHOD(GetPalette)(IDirectDrawPalette**) PURE;
++    STDMETHOD(GetPixelFormat)(DDPIXELFORMAT*) PURE;
++    STDMETHOD(GetSurfaceDesc)(DDSURFACEDESC2*) PURE;
++    STDMETHOD(Initialize)(IDirectDraw*, DDSURFACEDESC2*) PURE;
++    STDMETHOD(IsLost)() PURE;
++    STDMETHOD(Lock)(RECT*, DDSURFACEDESC2*, DWORD, HANDLE) PURE;
++    STDMETHOD(ReleaseDC)(HDC) PURE;
++    STDMETHOD(Restore)() PURE;
++    STDMETHOD(SetClipper)(IDirectDrawClipper*) PURE;
++    STDMETHOD(SetColorKey)(DWORD, DDCOLORKEY*) PURE;
++    STDMETHOD(SetOverlayPosition)(LONG, LONG) PURE;
++    STDMETHOD(SetPalette)(IDirectDrawPalette*) PURE;
++    STDMETHOD(Unlock)(RECT*) PURE;
+ };
+ #endif
+-
+ #endif
+diff --git a/src/startup_direct_draw7.h b/src/startup_direct_draw7.h
+new file mode 100644
+index 0000000..2d5e626
+--- /dev/null
++++ b/src/startup_direct_draw7.h
+@@ -0,0 +1,67 @@
++#ifndef STARTUP_DIRECT_DRAW7_H
++#define STARTUP_DIRECT_DRAW7_H
++#include "startup_direct_draw4.h"
++
++struct IDirectDrawSurface7;
++#ifndef IDirectDraw7_SetDisplayMode
++struct IDirectDraw7 : IUnknown
++{
++    STDMETHOD(Compact)() PURE;
++    STDMETHOD(CreateClipper)(DWORD, IDirectDrawClipper**, IUnknown*) PURE;
++    STDMETHOD(CreatePalette)(DWORD, LPPALETTEENTRY, IDirectDrawPalette**, IUnknown*) PURE;
++    STDMETHOD(CreateSurface)(DDSURFACEDESC2*, IDirectDrawSurface7**, IUnknown*) PURE;
++    STDMETHOD(DuplicateSurface)(IDirectDrawSurface7*, IDirectDrawSurface7**) PURE;
++    STDMETHOD(EnumDisplayModes)(DWORD, DDSURFACEDESC2*, LPVOID, void*) PURE;
++    STDMETHOD(EnumSurfaces)(DWORD, DDSURFACEDESC2*, LPVOID, void*) PURE;
++    STDMETHOD(FlipToGDISurface)() PURE;
++    STDMETHOD(GetCaps)(LPDDCAPS, LPDDCAPS) PURE;
++    STDMETHOD(GetDisplayMode)(DDSURFACEDESC2*) PURE;
++    STDMETHOD(GetFourCCCodes)(DWORD*, DWORD*) PURE;
++    STDMETHOD(GetGDISurface)(IDirectDrawSurface7**) PURE;
++    STDMETHOD(GetMonitorFrequency)(DWORD*) PURE;
++    STDMETHOD(GetScanLine)(DWORD*) PURE;
++    STDMETHOD(GetVerticalBlankStatus)(BOOL*) PURE;
++    STDMETHOD(Initialize)(GUID*) PURE;
++    STDMETHOD(RestoreDisplayMode)() PURE;
++    STDMETHOD(SetCooperativeLevel)(HWND, DWORD) PURE;
++    STDMETHOD(SetDisplayMode)(DWORD, DWORD, DWORD, DWORD, DWORD) PURE;
++};
++#endif
++#ifndef IDirectDrawSurface7_Flip
++struct IDirectDrawSurface7 : IUnknown
++{
++    STDMETHOD(AddAttachedSurface)(IDirectDrawSurface7*) PURE;
++    STDMETHOD(AddOverlayDirtyRect)(RECT*) PURE;
++    STDMETHOD(Blt)(RECT*, IDirectDrawSurface7*, RECT*, DWORD, DDBLTFX*) PURE;
++    STDMETHOD(BltBatch)(DDBLTBATCH*, DWORD, DWORD) PURE;
++    STDMETHOD(BltFast)(DWORD, DWORD, IDirectDrawSurface7*, RECT*, DWORD) PURE;
++    STDMETHOD(DeleteAttachedSurface)(DWORD, IDirectDrawSurface7*) PURE;
++    STDMETHOD(EnumAttachedSurfaces)(void*, void*) PURE;
++    STDMETHOD(EnumOverlayZOrders)(DWORD, void*, void*) PURE;
++    STDMETHOD(Flip)(IDirectDrawSurface7*, DWORD) PURE;
++    STDMETHOD(GetAttachedSurface)(DDSCAPS2*, IDirectDrawSurface7**) PURE;
++    STDMETHOD(GetBltStatus)(DWORD) PURE;
++    STDMETHOD(GetCaps)(DDSCAPS2*) PURE;
++    STDMETHOD(GetClipper)(IDirectDrawClipper**) PURE;
++    STDMETHOD(GetColorKey)(DWORD, DDCOLORKEY*) PURE;
++    STDMETHOD(GetDC)(HDC*) PURE;
++    STDMETHOD(GetFlipStatus)(DWORD) PURE;
++    STDMETHOD(GetOverlayPosition)(LONG*, LONG*) PURE;
++    STDMETHOD(GetPalette)(IDirectDrawPalette**) PURE;
++    STDMETHOD(GetPixelFormat)(DDPIXELFORMAT*) PURE;
++    STDMETHOD(GetSurfaceDesc)(DDSURFACEDESC2*) PURE;
++    STDMETHOD(Initialize)(IDirectDraw*, DDSURFACEDESC2*) PURE;
++    STDMETHOD(IsLost)() PURE;
++    STDMETHOD(Lock)(RECT*, DDSURFACEDESC2*, DWORD, HANDLE) PURE;
++    STDMETHOD(ReleaseDC)(HDC) PURE;
++    STDMETHOD(Restore)() PURE;
++    STDMETHOD(SetClipper)(IDirectDrawClipper*) PURE;
++    STDMETHOD(SetColorKey)(DWORD, DDCOLORKEY*) PURE;
++    STDMETHOD(SetOverlayPosition)(LONG, LONG) PURE;
++    STDMETHOD(SetPalette)(IDirectDrawPalette*) PURE;
++    STDMETHOD(Unlock)(RECT*) PURE;
++};
++#endif
++extern "C" const GUID IID_IDirectDraw7;
++extern "C" HRESULT WINAPI DirectDrawCreateEx(GUID*, void**, REFIID, IUnknown*);
++#endif
+diff --git a/src/startup_directdraw_surface.h b/src/startup_directdraw_surface.h
+index 1a030fc..0c15ddb 100644
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -1,6 +1,8 @@
+ #ifndef STARTUP_DIRECTDRAW_SURFACE_H
+ #define STARTUP_DIRECTDRAW_SURFACE_H
+ 
++#include <stddef.h>
++
+ #if defined(_MSC_VER)
+ #define SURFACE_STDCALL __stdcall
+ #elif defined(__i386__)
+@@ -12,8 +14,16 @@
+ // The observed IDirectDrawSurface7 ABI prefix, not its complete declaration.
+ // HRESULT is a signed 32-bit result; unused method signatures remain opaque.
+ struct DirectDrawSurface7Prefix;
++struct DirectDraw7Prefix;
++struct SurfaceOuterUnknown;
+ struct SurfaceApiRectangle;
+ 
++struct SurfaceColorKey
++{
++    unsigned int low;
++    unsigned int high;
++};
++
+ struct SurfaceDescription
+ {
+     unsigned int size;
+@@ -21,31 +31,72 @@ struct SurfaceDescription
+     unsigned int height;
+     unsigned int width;
+     int pitch;
+-    unsigned char unknown_14[0x10];
++    unsigned int back_buffer_count; // Original +0x14.
++    unsigned char unknown_18[0x0c];
+     void* pixels;
+     unsigned char unknown_28[0x40];
+     unsigned int caps;
+     unsigned char unknown_6c[0x10];
+ };
+ 
++struct SurfaceCapabilities
++{
++    unsigned int caps;
++    unsigned int caps2;
++    unsigned int caps3;
++    unsigned int caps4;
++};
++
+ typedef int SurfaceResult;
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceEnumerateCallback)(SurfaceDescription*, void*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceEnumerateModesMethod)(DirectDraw7Prefix*, unsigned int, SurfaceDescription*, void*, SurfaceEnumerateCallback);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceCooperativeLevelMethod)(DirectDraw7Prefix*, void*, unsigned int);
++typedef unsigned int(SURFACE_STDCALL* SurfaceAddRefMethod)(DirectDrawSurface7Prefix*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceAttachedMethod)(
++    DirectDrawSurface7Prefix*, SurfaceCapabilities*, DirectDrawSurface7Prefix**);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceCreateMethod)(
++    DirectDraw7Prefix*, SurfaceDescription*, DirectDrawSurface7Prefix**, SurfaceOuterUnknown*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceDescriptionMethod)(
++    DirectDrawSurface7Prefix*, SurfaceDescription*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceDisplayModeMethod)(
++    DirectDraw7Prefix*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+ typedef unsigned int(SURFACE_STDCALL* SurfaceReleaseMethod)(DirectDrawSurface7Prefix*);
+ typedef SurfaceResult(SURFACE_STDCALL* SurfaceStatusMethod)(DirectDrawSurface7Prefix*);
+-typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(DirectDrawSurface7Prefix*,
+-    SurfaceApiRectangle*, SurfaceDescription*, unsigned int, void*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceLockMethod)(
++    DirectDrawSurface7Prefix*, SurfaceApiRectangle*, SurfaceDescription*, unsigned int, void*);
++
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceColorKeyMethod)(
++    DirectDrawSurface7Prefix*, unsigned int, SurfaceColorKey*);
+ 
+-typedef SurfaceResult(SURFACE_STDCALL* SurfaceUnlockMethod)(DirectDrawSurface7Prefix*, SurfaceApiRectangle*);
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceUnlockMethod)(
++    DirectDrawSurface7Prefix*, SurfaceApiRectangle*);
++
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceBltMethod)(DirectDrawSurface7Prefix*,
++    SurfaceApiRectangle*,
++    DirectDrawSurface7Prefix*,
++    SurfaceApiRectangle*,
++    unsigned int,
++    void*);
+ 
+ struct DirectDrawSurface7VtablePrefix
+ {
+-    void* unused_00[2];
++    void* unused_00;
++    SurfaceAddRefMethod AddRef; // Original slot1 (+0x04).
+     SurfaceReleaseMethod Release;
+-    void* unused_0c[21];
++    void* unused_0c[2];
++    SurfaceBltMethod Blt; // Original slot5 (+0x14); all later observed slots stay fixed.
++    void* unused_18[6];
++    SurfaceAttachedMethod GetAttachedSurface; // Original slot12 (+0x30).
++    void* unused_34[9];
++    SurfaceDescriptionMethod GetSurfaceDesc;
++    void* unused_5c;
+     SurfaceStatusMethod IsLost;
+     SurfaceLockMethod Lock;
+     void* unused_68;
+     SurfaceStatusMethod Restore;
+-    void* unused_70[4];
++    void* unused_70;
++    SurfaceColorKeyMethod SetColorKey;
++    void* unused_78[2];
+     SurfaceUnlockMethod Unlock;
+ };
+ 
+@@ -54,4 +105,33 @@ struct DirectDrawSurface7Prefix
+     const DirectDrawSurface7VtablePrefix* vtable;
+ };
+ 
++struct DirectDraw7VtablePrefix
++{
++    void* unused_00[6];
++    SurfaceCreateMethod CreateSurface;
++    void* unused_1c;
++    SurfaceEnumerateModesMethod EnumDisplayModes;
++    void* unused_24[11];
++    SurfaceCooperativeLevelMethod SetCooperativeLevel;
++    SurfaceDisplayModeMethod SetDisplayMode; // Original slot21 (+0x54).
++};
++
++struct DirectDraw7Prefix
++{
++    const DirectDraw7VtablePrefix* vtable;
++};
++
++#if defined(_M_IX86) || defined(__i386__)
++typedef char SurfaceAbiCheck1[(sizeof(SurfaceDescription) == 0x7c) ? 1 : -1];
++typedef char SurfaceAbiCheck2[(offsetof(SurfaceDescription, back_buffer_count) == 0x14) ? 1 : -1];
++typedef char SurfaceAbiCheck3[(offsetof(SurfaceDescription, pixels) == 0x24) ? 1 : -1];
++typedef char SurfaceAbiCheck4[(offsetof(SurfaceDescription, caps) == 0x68) ? 1 : -1];
++typedef char SurfaceAbiCheck5[(offsetof(DirectDrawSurface7VtablePrefix, AddRef) == 0x04) ? 1 : -1];
++typedef char SurfaceAbiCheck6[(offsetof(DirectDrawSurface7VtablePrefix, Blt) == 0x14) ? 1 : -1];
++typedef char SurfaceAbiCheck7[(offsetof(DirectDrawSurface7VtablePrefix, GetAttachedSurface) == 0x30) ? 1 : -1];
++typedef char SurfaceAbiCheck8[(offsetof(DirectDrawSurface7VtablePrefix, GetSurfaceDesc) == 0x58) ? 1 : -1];
++typedef char SurfaceAbiCheck9[(offsetof(DirectDrawSurface7VtablePrefix, Unlock) == 0x80) ? 1 : -1];
++typedef char SurfaceAbiCheck10[(offsetof(DirectDraw7VtablePrefix, SetDisplayMode) == 0x54) ? 1 : -1];
++#endif
++
+ #endif
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index e9f0100..56a01d3 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -29,6 +29,13 @@ struct ScreenSurfacePosition
+     void Cleanup();
+ };
+ 
++struct RendererWindowRectangle
++{
++    int left;
++    int top;
++    int right;
++    int bottom;
++};
+ struct RendererSeaStatePrefix;
+ 
+ struct ScreenRequestRenderer
+@@ -49,7 +56,12 @@ struct ScreenRequestRenderer
+     unsigned int height;
+     RenderRectangle clip_rectangle;
+     unsigned short* pixels_1c;
+-    unsigned char unknown_20[0x24];
++    unsigned char unknown_20[4];
++    RendererWindowRectangle window_rectangle_24;
++    void* window_34; // HWND, four bytes on x86.
++    DirectDraw7Prefix* draw;
++    DirectDrawSurface7Prefix* primary_surface;
++    DirectDrawSurface7Prefix* back_surface;
+     unsigned int format_44;
+     union
+     {
+@@ -85,6 +97,8 @@ struct ScreenRequestRenderer
+     unsigned char* buffer_130;
+     RendererSeaStatePrefix* sea_state_134;
+ 
++    unsigned char InitializeDisplay(void* window, unsigned char mode, unsigned int width, unsigned int height, unsigned int bits); // 0x0040d9c0, RET20.
++
+     unsigned char SupportsWidth(int width);                                   // 0x00411b50.
+     void FillSizedRectangle(RenderRectangle* rectangle, unsigned int colour); // 0x0040c240.
+     void FillRectangle(const ScreenRectangle& bounds, unsigned int colour);
+diff --git a/support/directdraw7_imports.cpp b/support/directdraw7_imports.cpp
+new file mode 100644
+index 0000000..ab30f4e
+--- /dev/null
++++ b/support/directdraw7_imports.cpp
+@@ -0,0 +1,16 @@
++#include "startup_direct_draw7.h"
++HRESULT(WINAPI* matching_ddraw_create_ex)(GUID*, void**, REFIID, IUnknown*) = &DirectDrawCreateEx;
++int(WINAPI* matching_system_metrics)(int) = &GetSystemMetrics;
++BOOL(WINAPI* matching_client_to_screen)(HWND, LPPOINT) = &ClientToScreen;
++BOOL(WINAPI* matching_client_rect)(HWND, LPRECT) = &GetClientRect;
++BOOL(WINAPI* matching_window_rect)(HWND, LPRECT) = &GetWindowRect;
++BOOL(WINAPI* matching_system_parameters)(UINT, UINT, PVOID, UINT) = &SystemParametersInfoA;
++BOOL(WINAPI* matching_set_window_pos)(HWND, HWND, int, int, int, int, UINT) = &SetWindowPos;
++BOOL(WINAPI* matching_adjust_window_rect)(LPRECT, DWORD, BOOL, DWORD) = &AdjustWindowRectEx;
++HMENU(WINAPI* matching_get_menu)(HWND) = &GetMenu;
++LONG(WINAPI* matching_get_window_long)(HWND, int) = &GetWindowLongA;
++BOOL(WINAPI* matching_set_rect)(LPRECT, int, int, int, int) = &SetRect;
++
++BOOL(WINAPI* matching_destroy_window)(HWND) = &DestroyWindow;
++LRESULT(WINAPI* matching_def_window_proc)(HWND, UINT, WPARAM, LPARAM) = &DefWindowProcA;
++DWORD(WINAPI* matching_get_tick_count)() = &GetTickCount;
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 457c84f..7e341c7 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -3111,7 +3111,19 @@
+         "PostQuitMessage": 4,
+         "ShowCursor": 4,
+         "MessageBoxA": 16,
+-        "ClipCursor": 4
++        "ClipCursor": 4,
++        "GetSystemMetrics": 4,
++        "ClientToScreen": 8,
++        "GetClientRect": 8,
++        "GetWindowRect": 8,
++        "SystemParametersInfoA": 16,
++        "SetWindowPos": 28,
++        "AdjustWindowRectEx": 16,
++        "GetMenu": 4,
++        "GetWindowLongA": 8,
++        "SetRect": 20,
++        "DestroyWindow": 4,
++        "DefWindowProcA": 16
+       }
+     },
+     "KERNEL32.dll": {
+@@ -3127,7 +3139,8 @@
+         "MapViewOfFile": 20,
+         "UnmapViewOfFile": 4,
+         "GetLastError": 0,
+-        "WritePrivateProfileStringA": 16
++        "WritePrivateProfileStringA": 16,
++        "GetTickCount": 0
+       }
+     },
+     "DINPUT8.dll": {
+@@ -3139,7 +3152,8 @@
+     "DDRAW.dll": {
+       "export_names": "undecorated",
+       "symbols": {
+-        "DirectDrawCreate": 12
++        "DirectDrawCreate": 12,
++        "DirectDrawCreateEx": 16
+       }
+     },
+     "ole32.dll": {

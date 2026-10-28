@@ -27,8 +27,8 @@ Both builds apply `reconstruction-series`; native builds then apply
 `series`. Matching retains the original compiler and ABI. Normal
 Play's configuration and VFS file libraries, plus optional native subsystem
 tests, consume that export. The remaining game code uses the same boundary.
-Intentional behavior changes stay in a
-separate optional series, with tweaks off by default. Third-party dependencies
+Optional gameplay changes stay in a
+separate series, with tweaks off by default. Third-party dependencies
 remain immutable pins; never edit their checkouts in place.
 
 The optional `BEACHLIFE_ENABLE_EXPERIMENTAL_GAME` build uses the
@@ -39,6 +39,16 @@ retain their existing source selection. Build and package metadata identify the
 profile.
 Missing functions still require real implementations, and experimental native
 execution is tracked separately from matching and production integration.
+
+The boot game's `native-game` profile adds the faithful `game-series`, then
+`patches/beachlife-decomp-fixes/series`. This always-on layer contains one
+Git-format patch per retail bug against the prepared native game sources.
+The faithful game tree and matching export retain retail behavior for byte
+comparison. The `matching`, `native` and `native-experimental` profiles omit
+the fixes. Enabling `BEACHLIFE_ENABLE_TWEAKS` selects `native-game-tweaks`,
+which adds `patches/beachlife-decomp-tweaks/series` after the fixes; each tweak
+still defaults to off at run time. Prepared-source identities include the
+ordered series and patch hashes for every selected layer.
 
 The matching build uses the original 32-bit compiler and compares functions
 against the target executable. The native build uses CMake/Ninja and modern

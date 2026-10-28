@@ -1,0 +1,292 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 2ee2964..e1d002c 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -298,7 +298,7 @@ typedef char gui_int_flag_size_check[sizeof(bool) == 1 ? 1 : -1];
+ typedef char gui_int_manager_offset_check[offsetof(GuiParserState, manager) == 0 ? 1 : -1];
+ typedef char gui_int_cursor_offset_check[offsetof(GuiParserState, cursor) == 4 ? 1 : -1];
+ typedef char gui_int_buffer_offset_check[offsetof(GuiParserState, buffer) == 8 ? 1 : -1];
+-typedef char gui_int_prefix_size_check[sizeof(GuiParserState) == 0x3c ? 1 : -1];
++typedef char gui_int_prefix_size_check[sizeof(GuiParserState) == 0x40 ? 1 : -1];
+ typedef char gui_context_current_check[offsetof(GuiParserState, current_context) == 0x0c ? 1 : -1];
+ typedef char gui_context_alternate10_check[offsetof(GuiParserState, alternate_context_10) == 0x10 ? 1 : -1];
+ typedef char gui_context_alternate14_check[offsetof(GuiParserState, alternate_context_14) == 0x14 ? 1 : -1];
+@@ -365,7 +365,7 @@ typedef char gui_text_byte_size_check[sizeof(char) == 1 ? 1 : -1];
+ typedef char gui_text_manager_offset_check[offsetof(GuiParserState, manager) == 0 ? 1 : -1];
+ typedef char gui_text_cursor_offset_check[offsetof(GuiParserState, cursor) == 4 ? 1 : -1];
+ typedef char gui_text_buffer_offset_check[offsetof(GuiParserState, buffer) == 8 ? 1 : -1];
+-typedef char gui_text_prefix_size_check[sizeof(GuiParserState) == 0x3c ? 1 : -1];
++typedef char gui_text_prefix_size_check[sizeof(GuiParserState) == 0x40 ? 1 : -1];
+ 
+ extern "C"
+ {
+@@ -518,7 +518,7 @@ extern "C"
+             fixture_resource_words[5] = resource->word_18;
+             fixture_resource_words[6] = resource->word_1c;
+             fixture_resource_words[7] = resource->word_24;
+-            fixture_resource_words[8] = resource->word_2c;
++            fixture_resource_words[8] = reinterpret_cast<unsigned int>(resource->word_2c);
+             fixture_resource_flags[0] = resource->flag_20;
+             fixture_resource_flags[1] = resource->flag_28;
+             fixture_resource_flags[2] = resource->flag_29;
+@@ -561,7 +561,7 @@ extern "C"
+         {
+             resource->name = fixture_resource_dtor_owned_name;
+             resource->record = fixture_resource_dtor_record;
+-            resource->word_2c = 0x2468ace0U;
++            resource->word_2c = reinterpret_cast<const unsigned short*>(0x2468ace0U);
+             resource->~ScreenDialogResource();
+             fixture_resource_dtor_word_bytes[0] = storage[resource_destructor_clear_offset + 0];
+             fixture_resource_dtor_word_bytes[1] = storage[resource_destructor_clear_offset + 1];
+@@ -1519,7 +1519,7 @@ extern "C" __declspec(dllexport) void FixtureBorrowedIntroExit(IntroController*
+     fixture_intro_exit_after = owner->active;
+ }
+ 
+-typedef char FloatParserSize[sizeof(GuiParserState) == 0x3c ? 1 : -1];
++typedef char FloatParserSize[sizeof(GuiParserState) == 0x40 ? 1 : -1];
+ typedef char FloatParserCursor[offsetof(GuiParserState, cursor) == 4 ? 1 : -1];
+ typedef char FloatParserBuffer[offsetof(GuiParserState, buffer) == 8 ? 1 : -1];
+ typedef char FloatParserLastWord[offsetof(GuiParserState, word_38) == 0x38 ? 1 : -1];
+diff --git a/metadata.csv b/metadata.csv
+index 7ef2aa7..f9b8d24 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -531,3 +531,4 @@ address,type,size,symbol
+ 0x00491120,function,10,?SetCleaningRequested@VariableEntity@@QAEXE@Z
+ 0x00491130,function,10,?SetRepairRequested@VariableEntity@@QAEXE@Z
+ 0x004e3d40,function,10,?ScenarioNameCount@ScreenRequestGamePrefix@@QAEIXZ
++0x005a8924,global,4,?screen_dialog_resource_update_index@@3HA
+diff --git a/src/gui_resource_globals.cpp b/src/gui_resource_globals.cpp
+new file mode 100644
+index 0000000..cbd1277
+--- /dev/null
++++ b/src/gui_resource_globals.cpp
+@@ -0,0 +1,4 @@
++#include "startup_screen_dialog_resource.h"
++
++// GLOBAL: BEACHLIFE 0x005a8924
++int screen_dialog_resource_update_index;
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+index 138bae1..2cc03d2 100644
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -26,6 +26,7 @@ struct GuiParserState
+     ScreenChildLink* registry_tail;
+     // Observed 32-bit publication only; its original type and meaning are unknown.
+     unsigned int word_38;
++    unsigned int word_3c;
+ 
+     ScreenChildLink* ReadRegistryHead();
+ 
+@@ -40,6 +41,7 @@ struct GuiParserState
+     void ReadRectangle(ScreenRectangle& rectangle, const ScreenItem* parent);
+     void PushContext(ScreenItem* item);
+     void PopContext();
++    void ParseFont();
+     void RegisterItem(ScreenItem* item, unsigned char named);
+ };
+ 
+diff --git a/src/startup_screen_dialog.h b/src/startup_screen_dialog.h
+index 56ac60a..50971f9 100644
+--- a/src/startup_screen_dialog.h
++++ b/src/startup_screen_dialog.h
+@@ -30,6 +30,7 @@ struct ScreenDialog : ScreenItem
+     ScreenChildRing children;
+     unsigned int group_7c;
+ 
++    virtual void MoveRectangle(int dx, int dy);
+     virtual void MarkPrepared();
+     virtual void ApplyPosition(int dx, int dy);
+     virtual void Unresolved08();
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 30ff7bd..ee0cb78 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -3,6 +3,8 @@
+ #define STARTUP_SCREEN_DIALOG_RESOURCE_H
+ 
+ struct ScreenWorldPosition;
++struct ScreenMapPosition;
++struct ScreenRectangle;
+ struct GameFileReader;
+ 
+ struct ScreenDialogResourceFrame
+@@ -73,16 +75,24 @@ struct ScreenDialogResourceRecord
+ // their wider meaning and the original class name are not established here.
+ struct ScreenDialogResource
+ {
++    void BurnTerrain(const ScreenWorldPosition* position);                                                                                                     // 0x00415090.
++    ScreenRectangle WorldRectangle(const ScreenWorldPosition* position);                                                                                       // 0x00412b80.
++    void BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth);                                                             // 0x00415210.
++    void BurnTerrainClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth);                    // 0x004146f0.
++    void BurnBuildingFootprint(const ScreenWorldPosition* position, unsigned int width, unsigned int height);                                                  // 0x004155f0.
++    void BurnBuildingTiles(int tile_x, int tile_y, int offset_x, int offset_y, float depth_step, unsigned int depth);                                          // 0x00415890.
++    void BurnBuildingClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, float depth_step, unsigned int depth); // 0x00415c40.
++    void DrawBuildingProgress(const ScreenWorldPosition* position, unsigned int width, unsigned int height, float progress, unsigned char front);              // 0x00413790.
+     union
+     {
+         char* name;
+         const char* model_name_00;
+     };
+-    unsigned int word_04;
++    float word_04;
+     unsigned int word_08;
+-    unsigned int word_0c;
++    int word_0c;
+     unsigned int word_10;
+-    unsigned int word_14;
++    int word_14;
+     union
+     {
+         unsigned int word_18;
+@@ -100,26 +110,50 @@ struct ScreenDialogResource
+     };
+     unsigned char flag_2a;
+     unsigned char unknown_2b;
+-    unsigned int word_2c;
++    const unsigned short* word_2c;
+     ScreenDialogResourceRecord* record;
+     unsigned char flag_34;
+     unsigned char unknown_35[3];
+ 
+-    float SetAnimation(const char* name, float time, const ScreenWorldPosition* position); // 0x004168e0.
+-    void LoadState(GameFileReader* file);                                                  // 0x00416c40.
+-
+-    void DrawBuilding(const ScreenWorldPosition* position, unsigned int width, unsigned int height, unsigned char invalid); // 0x00413250.
+-
+-    unsigned int SelectedFrameHeight(); // 0x0041bc40.
+-    int CurrentFrameValue();            // 0x00412b00.
+-
+     ScreenDialogResource();
++    void SaveState(GameFileReader* file); // 0x00416b80.
++    void LoadState(GameFileReader* file); // 0x00416c40.
+ 
+     // Actual 0x00412ae0 ownership body is a separate source dependency.
+     ~ScreenDialogResource();
+-    void Draw(int x, int y, unsigned int flags, float time);
++
+     ScreenDialogResourceFrame* SelectedFrame();
+-    void DrawWorld(const ScreenWorldPosition* position, float time); // 0x00413f10.
++    unsigned int SelectedFrameHeight(); // 0x0041bc40.
++    void SelectVariant(int variant);    // 0x00466ea0.
++
++    void FacePositions(ScreenWorldPosition first, ScreenWorldPosition second); // 0x00416710.
++    void FaceDirection(ScreenMapPosition direction);                           // 0x004167c0.
++    int CurrentFrameValue();                                                   // 0x00412b00.
++    void SelectionOffset(int* x, int* y);                                      // 0x00413d00.
++    void UpdateTerrainIntersection(ScreenRectangle* rectangle, const ScreenWorldPosition* position,
++        int x, int y); // 0x00414b30.
++    void UpdateTerrainIntersectionTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y,
++        int offset_x, int offset_y, unsigned int depth, int x, int y);                     // 0x00414c10.
++    float SetAnimation(const char* name, float time, const ScreenWorldPosition* position); // 0x004168e0.
++    void UpdateBuildingRectangle(ScreenRectangle* rectangle, const ScreenWorldPosition* position,
++        unsigned int width, unsigned int height);                                                   // 0x00414240.
++    void DrawTerrain(const ScreenWorldPosition* position, unsigned int width, unsigned int height); // 0x00416060.
++    void DrawTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y,
++        float depth_step, unsigned int depth); // 0x004161f0.
++    void UpdateBuildingTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y,
++        int offset_x, int offset_y, float depth_step, unsigned int depth);                                                   // 0x00414470.
++    void WorldCoordinates(const ScreenWorldPosition* position, float time, int* x, int* y, unsigned short* depth);           // 0x00414160.
++    void DrawWorldModified(const ScreenWorldPosition* position, float time, float first, float second);                      // 0x004140f0.
++    void DrawWorldEffects(const ScreenWorldPosition* position, float time, float first, float second, unsigned char effect); // 0x00414070.
++    void DrawValues(int x, int y, unsigned int depth, float time, float first, float second);                                // 0x00412ce0.
++    void DrawWorld(const ScreenWorldPosition* position, float time);                                                         // 0x00413f10.
++    void DrawBuilding(const ScreenWorldPosition* position, unsigned int width,
++        unsigned int height, unsigned char invalid);                        // 0x00413250.
++    void UpdateWorldFrame(float time, const ScreenWorldPosition* position); // 0x00416a90.
++    void UpdateFrame(float time);
++    bool TestPixel(int x, int y);
++    void Draw(int x, int y, unsigned int flags, float time);
++    void DrawClipped(int x, int y, int left, int top, int right, int bottom, unsigned int flags);
+ };
+ 
+ // Only this lookup prefix is established; no complete manager lifetime claim.
+@@ -129,11 +163,14 @@ struct ScreenDialogResourceLookup
+     int record_count;
+     ScreenDialogResourceRecord** records;
+ 
++    void Update(float time); // 0x00417b90.
++
+     ScreenDialogResource* Lookup(const char* name);
+     ScreenDialogResource* Find(const char* name);
+     void Release(ScreenDialogResource* resource);
+ };
+ 
++extern int screen_dialog_resource_update_index; // 0x005a8924.
+ extern ScreenDialogResourceLookup* screen_dialog_resources;
+ extern const char screen_dialog_clear_name[];
+ extern const char screen_dialog_none_name[];
+diff --git a/src/startup_screen_list_box.h b/src/startup_screen_list_box.h
+index f9174c0..ec32991 100644
+--- a/src/startup_screen_list_box.h
++++ b/src/startup_screen_list_box.h
+@@ -57,9 +57,13 @@ struct ScreenListBoxPrefix : ScreenItem
+         const char* name, unsigned int first_word, unsigned int second_word);
+     ~ScreenListBoxPrefix();
+ 
++    virtual void Unresolved04(float elapsed);
+     void Unresolved0c();
+     void MarkPrepared();
+     void MoveRectangle(int dx, int dy);
++    void SetFirstVisibleRow(int row);
++    void SelectRow(int row, unsigned char replace);
++    void AddEntry(int row, int x, int width, int word_4, int word_5, int word_6, int word_7, const unsigned short* text, unsigned char flag);
+     void ClearEntries();
+     void ClearSelection(); // 0x004c4280.
+     int NextSelectedRow(); // 0x004c3b90.
+diff --git a/src/startup_screen_list_box_entry.h b/src/startup_screen_list_box_entry.h
+index 1d83d50..994bda1 100644
+--- a/src/startup_screen_list_box_entry.h
++++ b/src/startup_screen_list_box_entry.h
+@@ -11,7 +11,8 @@ struct ScreenListBoxEntry
+     ScreenItem* item; // Owned child; slot iterations dereference it unchecked.
+     int row;
+     unsigned char flag_8;
+-    unsigned char unknown_9[7]; // Never written by the inline construction.
++    unsigned char unknown_9[3];
++    unsigned int value_0c; // Never written by the inline construction.
+ 
+     // Preserve inlining in the existing ClearEntries match; the comparison
+     // fixture retains the emitted out-of-line instance.
+diff --git a/src/startup_screen_palette_modifiers.h b/src/startup_screen_palette_modifiers.h
+index 10e39cc..8cf0e33 100644
+--- a/src/startup_screen_palette_modifiers.h
++++ b/src/startup_screen_palette_modifiers.h
+@@ -1,6 +1,7 @@
+ #ifndef STARTUP_SCREEN_PALETTE_MODIFIERS_H
+ #define STARTUP_SCREEN_PALETTE_MODIFIERS_H
+ 
++struct ScreenDialogResource;
+ struct ScreenDialogPaletteModifiers;
+ extern ScreenDialogPaletteModifiers* screen_dialog_palette_modifiers;
+ 
+@@ -17,7 +18,15 @@ struct ScreenPaletteRegistration
+ struct ScreenDialogPaletteModifiers : ScreenPaletteRegistration
+ {
+     unsigned short colours[12][64];
+-    unsigned char unknown_600[0x80];
++    union
++    {
++        unsigned char unknown_600[0x80];
++        unsigned short modified_600[64];
++    };
++
++    const unsigned short* Modify(ScreenDialogResource* resource, float first, float second);
++    const unsigned short* ModifyEffect(ScreenDialogResource* resource, float first, float second, unsigned char effect);
++    void ClearRegistration();
+ 
+     // Actual 0x00409810 and 0x00409860; source-level registration cleanup.
+     ScreenDialogPaletteModifiers();
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index 2280395..9ec1a54 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -106,6 +106,8 @@ struct ScreenFontRenderer
+ 
+     void SetRectangle(int x, int y, int width, int height);
+ 
++    void DrawGlyphSurface(const unsigned char* source, int source_stride, unsigned short* destination, int destination_stride, int source_x, int source_y, int destination_x, int destination_y, int width, int height, const unsigned short* palette);
++
+     void DrawGlyphDirect(const unsigned char* source, int source_stride,
+         unsigned short* destination, int destination_stride,
+         int source_x, int source_y, int destination_x, int destination_y,

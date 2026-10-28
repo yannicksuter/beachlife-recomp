@@ -1,0 +1,334 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index c8921d8..e1d002c 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -264,5 +264,5 @@ extern "C"
+ // only fields consumed by this comparison; no retail owner lifetime is implied.
+ ScreenManager fixture_save_manager = { 0 };
+-ScreenRequestGamePrefix* fixture_save_game;
++ScreenRequestGamePrefix fixture_save_game = { 0 };
+ ScreenRectangle fixture_save_rectangle = { -17, 29, 41, 67 };
+ volatile int fixture_manager_saved_x;
+@@ -284,6 +284,6 @@ typedef char save_rectangle_size_check[sizeof(ScreenRectangle) == 16 ? 1 : -1];
+ extern "C" void fixture_save_placement(ScreenPlacementStore* store, SavedScreenPlacement* placement)
+ {
+-    fixture_save_game->placement = store;
+-    screen_request_game = fixture_save_game;
++    fixture_save_game.placement = store;
++    screen_request_game = &fixture_save_game;
+     fixture_save_manager.SavePlacement(fixture_save_rectangle, 5);
+     fixture_manager_saved_x = placement->x;
+diff --git b/metadata.csv a/metadata.csv
+index 947cf74..470d2ed 100644
+--- b/metadata.csv
++++ a/metadata.csv
+@@ -588,3 +588,2 @@ address,type,size,symbol
+ 0x005868d0,global,4,?screen_placement_profile_dialog_y_key@@3PBDB
+ 0x587c98,string,11,
+-0x00586348,global,4,?startup_game_state_path@@3PBDB
+diff --git b/src/game_scenario_globals.cpp a/src/game_scenario_globals.cpp
+deleted file mode 100644
+index 91e1186..0000000
+--- b/src/game_scenario_globals.cpp
++++ /dev/null
+@@ -1,4 +0,0 @@
+-#include "startup_screen_manager.h"
+-
+-// GLOBAL: BEACHLIFE 0x00586348
+-const char* startup_game_state_path = "sp.bin";
+diff --git b/src/startup_application.h a/src/startup_application.h
+deleted file mode 100644
+index 94a112a..0000000
+--- b/src/startup_application.h
++++ /dev/null
+@@ -1,16 +0,0 @@
+-#ifndef STARTUP_APPLICATION_H
+-#define STARTUP_APPLICATION_H
+-
+-#include <windows.h>
+-
+-#include "startup_application_state.h"
+-#include "startup_config_owner.h"
+-#include "startup_frame_clock.h"
+-#include "startup_screen_manager.h"
+-#include "startup_timer.h"
+-
+-extern StartupProfiler* profiler;
+-void StartupFatal(const char* format, ...);
+-LRESULT CALLBACK WindowProcedure(HWND, UINT, WPARAM, LPARAM);
+-
+-#endif
+diff --git b/src/startup_application_state.h a/src/startup_application_state.h
+deleted file mode 100644
+index 2cadf8a..0000000
+--- b/src/startup_application_state.h
++++ /dev/null
+@@ -1,9 +0,0 @@
+-#ifndef STARTUP_APPLICATION_STATE_H
+-#define STARTUP_APPLICATION_STATE_H
+-
+-extern char* window_name;
+-extern char* mutex_name;
+-extern bool windowed;
+-extern bool application_active;
+-
+-#endif
+diff --git b/src/startup_config_owner.h a/src/startup_config_owner.h
+index acd8c06..44d4196 100644
+--- b/src/startup_config_owner.h
++++ a/src/startup_config_owner.h
+@@ -37,5 +37,4 @@ struct StartupConfig : StartupConfigOwnerState
+     void Append(const char* name, bool flag, int integer, float number, const char* text);
+     bool FindNode(StartupConfigNode** result, const char* name);
+-    bool GetBool(bool* value, const char* name);
+     bool GetInteger(int* value, const char* name);
+     bool GetString(const char** value, const char* name);
+diff --git b/src/startup_config_tokens.h a/src/startup_config_tokens.h
+index d24b823..f5e9339 100644
+--- b/src/startup_config_tokens.h
++++ a/src/startup_config_tokens.h
+@@ -23,6 +23,4 @@ public:
+     void ParseTokens(const char* buffer, int size);
+     void LoadAndParse(const char* filename);
+-    const char* FindText(const char* name);
+-    const float* FindNumber(const char* name);
+ 
+     ConfigToken* tokens;
+diff --git b/src/startup_screen_manager.h a/src/startup_screen_manager.h
+index b015024..0c3c17b 100644
+--- b/src/startup_screen_manager.h
++++ a/src/startup_screen_manager.h
+@@ -19,119 +19,45 @@ struct ScreenPlacementStore;
+ struct ScreenRectangle;
+ #include "startup_screen_request_context.h"
++struct ScreenRequestRenderer;
+ struct ScreenManager;
+-struct ScreenModeController;
+ struct ScreenLoadPanel13c;
+ struct ScreenLoadPanel140;
+-struct ScreenRequestRenderer;
+-struct InputMotionState;
+-struct InputState;
+-struct FrameClock;
+-struct WindowAudioState;
+-struct GameUpdatePair;
++struct ScreenModeController;
+ struct GameSaveRecord;
+-extern const char* startup_game_state_path;
+-
+-struct StartupProfiler;
+-struct DebugFont;
+-struct ScreenTextLookup;
+-struct ScreenDialogResourceLookup;
+-struct ScreenRequestGamePrefix;
+-extern ScreenRequestGamePrefix* screen_request_game;
+-
+-// Descriptive empty first base: actual publication precedes both range member
+-// constructors. The real unwind cleanup unconditionally clears the global.
+-struct ScreenGameRegistration
+-{
+-    explicit ScreenGameRegistration(ScreenRequestGamePrefix* owner);
+-    ~ScreenGameRegistration(); // Actual 0x004e5520, RET0; source dependency.
+-};
+-
+-// Actual three-pointer storage at Game+64. LoadScenarioNames allocates 256-byte
+-// UTF-16 strings and publishes their pointers. This member's destructor frees
+-// backing slots only; pointee cleanup belongs to the real enclosing methods.
+-// End-of-storage slot of the scenario name range: the capacity pointer plus an
+-// empty allocator part whose (empty) destructor 0x00437d10 the range
+-// destructor's unwind map names for this member (+0x08).
+-struct GameScenarioNameCapacity
+-{
+-    unsigned short** data;
+-
+-    GameScenarioNameCapacity(unsigned short** value);
+-    ~GameScenarioNameCapacity();
+-};
+ 
++// Observed screen-manager and placement pointers at original x86+0x48/+0x54.
++// This does not recover the complete game class or its lifetime.
+ struct GameScenarioNameRange
+ {
+     unsigned short** begin;
+     unsigned short** end;
+-    GameScenarioNameCapacity capacity;
+-
+-    GameScenarioNameRange();
+-    // Actual 0x004e5490, 142B library body: frees the pointer storage only.
+-    ~GameScenarioNameRange();
+-};
+-
+-// End-of-storage slot of the save record range (as GameScenarioNameCapacity).
+-struct GameSaveRecordCapacity
+-{
+-    GameSaveRecord** data;
+-
+-    GameSaveRecordCapacity(GameSaveRecord** value);
+-    ~GameSaveRecordCapacity();
+-};
+-
+-// Empty library dispatch tag for the folded pointer-vector growth arm.
+-struct GameSaveRecordTrueType
+-{
+-};
+-
+-struct GameSaveRecordRange
+-{
+-    GameSaveRecord** begin;
+-    GameSaveRecord** end;
+-    GameSaveRecordCapacity capacity;
+-
+-    GameSaveRecordRange();
+-    // Actual 0x004e5400, 142B library body: frees the pointer storage only.
+-    ~GameSaveRecordRange();
+-
+-    // Shared physical library body 0x004e80d0, RET8; typed projection separate.
+-    GameSaveRecord** Erase(GameSaveRecord** first, GameSaveRecord** last);
+-    // Actual folded library child 0x004c3a30, RET20; body remains separate.
+-    void InsertOverflow(GameSaveRecord** position,
+-        GameSaveRecord* const& value,
+-        const GameSaveRecordTrueType& plain,
+-        unsigned int count,
+-        bool at_end);
++    unsigned short** limit;
+ };
+ 
+-// Complete observed 200-byte x86 Game storage for the genuine constructor.
+-// The retained descriptive class name does not establish a native owner layout.
+-// All children are real declared types; missing bodies remain explicit.
+-struct ScreenRequestGamePrefix : ScreenGameRegistration
++struct ScreenRequestGamePrefix
+ {
+-    ControllerSelectionState controller_selection; // Original00..28.
+-    InputMotionState* input_motion;
++    bool HasScenarioFlag04(unsigned int index);             // 0x004e41a0.
++    int TimeHours(float value);                             // 0x004e5360.
++    bool SelectedSaveExists();                              // 0x004e4f60.
++    void SelectSaveForLoad();                               // 0x004e44b0.
++    void ResetScenarioProgress();                           // 0x004e3d70.
++    int SelectedSaveScenario();                             // 0x004e4eb0.
++    const unsigned short* ScenarioName(unsigned int index); // 0x004e3d50.
++    void SetMenuReturnFlag(unsigned char value);            // 0x004e3bf0.
++    unsigned int ScenarioNameCount();
++    const unsigned short* ScenarioDirectory();
++    ControllerSelectionState controller_selection;
++    unsigned char unknown_2c[4];
+     InputState* input;
+-    FrameClock* clock;
+-    StartupProfiler* profiler;
+-    ScreenRequestRenderer* renderer;
+-    DebugFont* debug_font;
+-    ScreenTextLookup* text;
++    unsigned char unknown_34[0x14];
+     ScreenManager* screens;
+-    WindowAudioState* audio;
+-    GameUpdatePair* update_pair;
++    unsigned char unknown_4c[8];
+     ScreenPlacementStore* placement;
+-    unsigned char unknown_58;
+-    unsigned char reload_screen;
+-    unsigned char unknown_5a[2];
+-    ScreenDialogResourceLookup* resources;
+-    unsigned int word_60;
++    unsigned char unknown_58[0xc];
+     GameScenarioNameRange scenario_names;
+     unsigned int words_70[12];
+     unsigned int scenario_a0;
+     unsigned char byte_a4;
+-    unsigned char unknown_a5[3];
+-    GameSaveRecordRange saves;
++    unsigned char unknown_a5[0xf];
+     int word_b4;
+     unsigned char save_info_enabled;
+@@ -141,59 +67,21 @@ struct ScreenRequestGamePrefix : ScreenGameRegistration
+     unsigned char flag_c4;
+     unsigned char inactive_c5;
+-    unsigned char unknown_c6[2];
+ 
+-    // Actual 0x004e2530..004e2ddf, RET8.
+-    ScreenRequestGamePrefix(void* instance, void* window);
+-    ~ScreenRequestGamePrefix(); // Actual 0x004e2e00.
+-    // Actual 0x004e3dd0; real filesystem/name-range body remains separate.
+-    void LoadScenarioNames();
+-    unsigned int ScenarioNameCount();                       // 0x004e3d40.
+-    const unsigned short* ScenarioName(unsigned int index); // 0x004e3d50.
+-    const unsigned short* ScenarioDirectory();              // 0x004e3d60.
+-    void ShowLoadingScreen(const char* path);               // 0x004e3c00.
+-    int SelectedSaveScenario();                             // 0x004e4eb0.
+-    int TimeHours(float value);                             // 0x004e5360.
+-    int TimeMinutes(float value);                           // 0x004e5380.
+-    void RefreshSaveRecords();                              // 0x004e4740.
+-    void PopulateLoadGameMenu();                            // 0x004e4ed0.
+-    void PopulateSaveGameMenu();                            // 0x004e4f00.
+-    void ClearSaveRecords();                                // 0x004e4c80.
+-    void SelectSaveForLoad();                               // 0x004e44b0.
+-    bool SelectedSaveExists();                              // 0x004e4f60.
+-    void SaveGame();                                        // 0x004e4250.
+-    void DeleteSaveGame();                                  // 0x004e4d00.
+-    void DeleteLoadGame();                                  // 0x004e4dd0.
+-    void PopulateSaveList(ScreenListBoxPrefix* list, unsigned int row_word, unsigned char clear);
+-    bool HasScenarioFlag04(unsigned int index); // 0x004e41a0.
+-    bool HasScenarioFlag08(unsigned int index); // 0x004e41c0.
++    void ReadText(const char* key, unsigned short* output); // 0x004e30b0.
++    bool HasScenarioFlag08(unsigned int index);
+ 
+-    void Activate();
+-    void Deactivate();
+-    void Update();
+-    // Actual 0x004e3a50; complete ordered frame path, no arguments.
+-    void Render();
+     bool LoadControllerScreen(const char* path);
+-    // Actual 0x004e41e0; width/height words, RET8.
+     void SetScreenSize(int width, int height);
+-    // Actual 0x004e3bd0/0x004e3be0 access the preserved byte+c4.
+     unsigned char ReadMenuReturnFlag();
+     void ClearMenuReturnFlag();
+-    void SetMenuReturnFlag(unsigned char value); // 0x004e3bf0.
+-    // Actual 0x004e4000; complete FILE/progress body remains separate.
++    // Actual 0x004e3db0, RET4: stores the byte at +a4, then calls 0x004e4000.
+     void SetByteA4(unsigned char value);
++    // Actual 0x004e4000; complete progress/FILE body remains a dependency.
+     void LoadScenarioProgress();
+-    void ResetScenarioProgress(); // 0x004e3d70.
+-    void SaveScenarioProgress();  // 0x004e4100.
+-    void UnlockNextScenario();    // 0x004e4140.
+-    // Actual 0x004e44e0; loads the selected save after releasing the list records.
+-    void ProcessWordB4();
+-    // Actual 0x004e5100; updates the enabled load/save information panel.
+-    void UpdateBeforeInput();
+-    // Actual 0x004e30b0, RET8; caller-owned 16-bit output, no capacity argument.
+-    // Result is ignored here; complete real implementation remains separate.
+-    void ReadText(const char* key, unsigned short* output);
+-    // Actual 0x004e3640, RET8; consumes a borrowed pointer to one 32-bit value.
+-    // The real game-variable implementation and complete owner remain separate.
+-    void WriteInteger(const char* key, int* value);
++    void PopulateLoadGameMenu();
++    void PopulateSaveGameMenu();
++    void PopulateSaveList(ScreenListBoxPrefix* list, unsigned int row_word, unsigned char clear);
++    void RefreshSaveRecords();
++    void Activate();
+ };
+ 
+@@ -443,4 +331,9 @@ extern ScreenRequestGamePrefix* screen_request_game;
+ extern ScreenManager* screen_manager;
+ 
++struct ScreenGameRegistration
++{
++    ~ScreenGameRegistration();
++};
++
+ extern const float screen_item_positive_threshold;
+ extern const float screen_item_other_threshold;
+diff --git b/src/startup_screen_renderer.h a/src/startup_screen_renderer.h
+index e9f0100..34cf0b1 100644
+--- b/src/startup_screen_renderer.h
++++ a/src/startup_screen_renderer.h
+@@ -97,8 +97,4 @@ struct ScreenRequestRenderer
+     void DrawWaterTile(int column, int row, const ScreenPoint& position, const ScreenRectangle& bounds,
+         TgaImage* image, int mode, unsigned int flags, unsigned int extra); // 0x0040c420.
+-    void RenderNightDay(float value);
+-    void RenderDefault();
+-    void RestoreSurfaces();
+-    void Present();
+     void SelectSurface(int surface);
+     void SetUnscaledClip(unsigned char value);
