@@ -1,0 +1,84 @@
+diff --git a/src/startup_world_motion_routes.cpp b/src/startup_world_motion_routes.cpp
+index 396c0929301680419dd7863424f96b4129b724a6..3810affbaec3bf01a71e5e90e91c089802b11d6c 100644
+--- a/src/startup_world_motion_routes.cpp
++++ b/src/startup_world_motion_routes.cpp
+@@ -104,11 +104,72 @@ bool WorldMovingEntity::AdjustRouteEndpoints(ScreenPoint* start, ScreenPoint* en
+ {
+     ScreenPoint first = *start;
+     ScreenPoint last = *end;
+-    bool first_valid = AdjustRoutePoint(first, flags);
+-    bool last_valid = AdjustRoutePoint(last, flags);
+-    if (!first_valid || !last_valid)
+-        return false;
+-    *start = first;
+-    *end = last;
+-    return true;
++    ScreenPoint neighbour;
++    bool first_valid;
++    bool last_valid;
++    if ((RouteTileFlags(*start) & flags) && !(RouteTileFlags(first) & 0x8000))
++        first_valid = true;
++    else if ((RouteTileFlags(first) & 0x100) && !(RouteTileFlags(first) & 0x10))
++    {
++        RouteTileFlags(first) |= 0xc0000080u;
++        for (int direction = 0; direction < 8; ++direction)
++        {
++            screen_terrain_grid->Step(first.x, first.y, direction, &neighbour);
++            if ((RouteTileFlags(neighbour) & 0x100) && !(RouteTileFlags(neighbour) & 0x10))
++                RouteTileFlags(neighbour) |= 0xc0000080u;
++        }
++        first_valid = (RouteTileFlags(first) & flags) != 0;
++    }
++    else
++    {
++        for (int direction = 0; direction < 8; direction += 2)
++        {
++            screen_terrain_grid->Step(first.x, first.y, direction, &neighbour);
++            if ((RouteTileFlags(neighbour) & flags) && !(RouteTileFlags(neighbour) & 0x8000))
++            {
++                first = neighbour;
++                direction = 8;
++                first_valid = true;
++            }
++            else
++                first_valid = false;
++        }
++    }
++    if ((RouteTileFlags(last) & flags) && !(RouteTileFlags(last) & 0x8000))
++        last_valid = true;
++    else if ((RouteTileFlags(last) & 0x100) && !(RouteTileFlags(last) & 0x10))
++    {
++        RouteTileFlags(last) |= 0xc0000080u;
++        for (int direction = 0; direction < 8; ++direction)
++        {
++            screen_terrain_grid->Step(last.x, last.y, direction, &neighbour);
++            if ((RouteTileFlags(neighbour) & 0x100) && !(RouteTileFlags(neighbour) & 0x10))
++                RouteTileFlags(neighbour) |= 0xc0000080u;
++        }
++        last_valid = (RouteTileFlags(last) & flags) != 0;
++    }
++    else
++    {
++        for (int direction = 0; direction < 8; direction += 2)
++        {
++            screen_terrain_grid->Step(last.x, last.y, direction, &neighbour);
++            unsigned int adjacent = RouteTileFlags(neighbour);
++            if ((adjacent & flags) && !(adjacent & 0x8000))
++            {
++                last = neighbour;
++                direction = 8;
++                last_valid = true;
++            }
++            else
++                last_valid = false;
++        }
++    }
++    if (first_valid && last_valid)
++    {
++        *start = first;
++        end->y = last.y;
++        end->x = last.x;
++        return true;
++    }
++    return false;
+ }

@@ -1,0 +1,124 @@
+diff --git a/metadata.csv b/metadata.csv
+index 225dc7e..e86d4ee 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -709,2 +709,5 @@ address,type,size,symbol
+ 0x0057c3c0,global,4,?world_fishing_rod2_animation@@3PBDB
+ 0x0057c394,global,4,?world_fishing_driver_animation@@3PBDB
++0x00581518,global,4,?panel13c_repeat_icon@@3PBDB
++0x00581510,global,4,?panel13c_sun_icon@@3PBDB
++0x00581514,global,4,?panel13c_moon_icon@@3PBDB
+diff --git a/src/startup_screen_list_box.h b/src/startup_screen_list_box.h
+index c477063..e5cd898 100644
+--- a/src/startup_screen_list_box.h
++++ b/src/startup_screen_list_box.h
+@@ -6,4 +6,8 @@
+ struct ScreenListBoxEntry;
+ 
++struct ScreenListBoxTrueType
++{
++};
++
+ // Observed three-pointer member at original +6c.
+ struct ScreenListBoxEntryRange
+@@ -36,4 +40,6 @@ struct ScreenListBoxSelectionRange
+     };
+ 
++    void InsertOverflow(int* position, const int& value, const ScreenListBoxTrueType& plain, unsigned int count, bool at_end);
++
+     ~ScreenListBoxSelectionRange(); // Actual 0x004c39a0; not defined or used here.
+ };
+@@ -79,4 +85,7 @@ struct ScreenListBoxPrefix : ScreenItem
+     void SelectRow(int row, unsigned char replace);
+     void AddEntry(int row, int x, int width, int word_4, int word_5, int word_6, int word_7, const unsigned short* text, unsigned char flag);
++    void AddTextEntry(int row, int x, int width, int word_4, int word_5, int word_6, int word_7, const char* text, unsigned char flag);
++    void AddImageEntry(int row, int x, const char* resource);
++    void AddActionEntry(int row, int x, const char* resource, unsigned int value);
+     void ClearEntries();
+     void ClearSelection(); // 0x004c4280.
+diff --git a/src/startup_screen_list_box_entry.h b/src/startup_screen_list_box_entry.h
+index 994bda1..7569d19 100644
+--- a/src/startup_screen_list_box_entry.h
++++ b/src/startup_screen_list_box_entry.h
+@@ -23,6 +23,5 @@ struct ScreenListBoxEntry
+     }
+ 
+-private:
+-    ScreenListBoxEntry(); // AddEntry's inline construction is not supplied here.
++    ScreenListBoxEntry(); // Construction is inline in the retail entry callers.
+ };
+ 
+diff --git a/src/startup_screen_list_box_selection.h b/src/startup_screen_list_box_selection.h
+new file mode 100644
+index 0000000..0773f95
+--- /dev/null
++++ b/src/startup_screen_list_box_selection.h
+@@ -0,0 +1,42 @@
++#ifndef STARTUP_SCREEN_LIST_BOX_SELECTION_H
++#define STARTUP_SCREEN_LIST_BOX_SELECTION_H
++
++#include "startup_screen_list_box.h"
++
++#include <functional>
++
++// Library inlines of the signed-word selection append and sort observed
++// expanded in SelectRow. The out-of-line helpers are library support (cdecl,
++// RET0, empty comparison object by value); their bodies are not supplied.
++typedef std::less<int> ScreenListBoxLess;
++
++const int& MedianListBoxSelection(const int& first,
++    const int& middle,
++    const int& last,
++    ScreenListBoxLess less); // 0x004c5940
++int* PartitionListBoxSelection(
++    int* first, int* last, int pivot, ScreenListBoxLess less); // 0x004c5980
++void IntrosortListBoxSelection(int* first,
++    int* last,
++    int* type,
++    int depth_limit,
++    ScreenListBoxLess less); // 0x004c57a0
++void PartialSortListBoxSelection(int* first,
++    int* middle,
++    int* last,
++    int* type,
++    ScreenListBoxLess less); // 0x004c5a40
++void LinearInsertListBoxSelection(
++    int* first, int* last, int value, ScreenListBoxLess less); // 0x004c5bb0
++void UnguardedLinearInsertListBoxSelection(
++    int* last, int value, ScreenListBoxLess less);                                 // 0x004c5c90
++void InsertionSortListBoxSelection(int* first, int* last, ScreenListBoxLess less); // 0x004c59d0
++
++void AdjustListBoxSelectionHeap(int* first, int hole, int length, int value, ScreenListBoxLess less);
++void MakeListBoxSelectionHeap(int* first, int* last, ScreenListBoxLess less, int* value_type, int* distance_type);
++void PopListBoxSelectionHeap(int* first, int* last, int* result, int value, ScreenListBoxLess less, int* distance_type);
++void PushBackSelection(ScreenListBoxSelectionRange& range, const int& value);
++int ListBoxSelectionLog2(int count);
++void SortListBoxSelection(int* first, int* last);
++
++#endif
+diff --git a/src/startup_screen_panel13c_data.cpp b/src/startup_screen_panel13c_data.cpp
+new file mode 100644
+index 0000000..c54b7e2
+--- /dev/null
++++ b/src/startup_screen_panel13c_data.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_panel13c_owner.h"
++
++// GLOBAL: BEACHLIFE 0x00581510
++const char* panel13c_sun_icon = "UI3_mp3_icon_sun";
++// GLOBAL: BEACHLIFE 0x00581514
++const char* panel13c_moon_icon = "UI3_mp3_icon_moon";
++// GLOBAL: BEACHLIFE 0x00581518
++const char* panel13c_repeat_icon = "UI3_mp3_icon_repeat";
+diff --git a/src/startup_screen_panel13c_owner.h b/src/startup_screen_panel13c_owner.h
+index 58663ad..0fa48be 100644
+--- a/src/startup_screen_panel13c_owner.h
++++ b/src/startup_screen_panel13c_owner.h
+@@ -102,3 +102,7 @@ private:
+ };
+ 
++extern const char* panel13c_repeat_icon;
++extern const char* panel13c_sun_icon;
++extern const char* panel13c_moon_icon;
++
+ #endif

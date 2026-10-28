@@ -1,0 +1,217 @@
+diff --git a/metadata.csv b/metadata.csv
+index 7afca06..e10ca8f 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -653,2 +653,5 @@ address,type,size,symbol
+ 0x00581670,global,4,?screen_frame_style5_name@@3PBDB
+ 0x0057badc,global,4,?world_staff_morale_resource@@3PBDB
++0x0057d580,global,4,?game_file_stream_name@@3PBDB
++0x00586330,global,4,?startup_save_signature@@3PBDB
++0x004f4d40,global,4,?startup_save_version@@3MB
+diff --git a/src/ble_loader.cpp b/src/ble_loader.cpp
+index c260cef..d13597f 100644
+--- a/src/ble_loader.cpp
++++ b/src/ble_loader.cpp
+@@ -1,5 +1,5 @@
+ #include <stdio.h>
+ 
+-long GetFileSize(const char* filename);
++#include "startup_ble_file.h"
+ 
+ // Descriptive name; the original symbol and allocation spelling are unknown.
+diff --git a/src/file_loader.cpp b/src/file_loader.cpp
+index 4e16886..039b483 100644
+--- a/src/file_loader.cpp
++++ b/src/file_loader.cpp
+@@ -1,5 +1,5 @@
+ #include <stdio.h>
+ 
+-long GetFileSize(const char* filename);
++#include "startup_ble_file.h"
+ 
+ // Descriptive name; the original symbol and allocation spelling are unknown.
+diff --git a/src/matching_game_file_data.cpp b/src/matching_game_file_data.cpp
+new file mode 100644
+index 0000000..e7e5b6a
+--- /dev/null
++++ b/src/matching_game_file_data.cpp
+@@ -0,0 +1,8 @@
++#include "startup_game_file.h"
++
++// GLOBAL: BEACHLIFE 0x0057d580
++const char* game_file_stream_name = "Binary Serial Stream";
++// GLOBAL: BEACHLIFE 0x00586330
++const char* startup_save_signature = "BeachLife Save";
++// GLOBAL: BEACHLIFE 0x004f4d40
++const float startup_save_version = 1.6f;
+diff --git a/src/startup_ble_file.h b/src/startup_ble_file.h
+new file mode 100644
+index 0000000..4db99c0
+--- /dev/null
++++ b/src/startup_ble_file.h
+@@ -0,0 +1,6 @@
++#ifndef STARTUP_BLE_FILE_H
++#define STARTUP_BLE_FILE_H
++// Retail x86 CRT file-size and BLE loader interfaces.
++long GetFileSize(const char* name);
++char* LoadBleFile(const char* name);
++#endif
+diff --git a/src/startup_game_file.h b/src/startup_game_file.h
+index 6165b11..1777b37 100644
+--- a/src/startup_game_file.h
++++ b/src/startup_game_file.h
+@@ -98,5 +98,5 @@ extern const float startup_save_version;   // 1.6, 0x004f4d40.
+ 
+ // Actual writable pointer 0x0057d580 -> "Binary Serial Stream" at 0x0057d584.
+-// Separate initialized-data owner is still required; this is not a new constant.
++// The matching data owner preserves the original writable pointer slot.
+ extern const char* game_file_stream_name;
+ 
+diff --git a/src/startup_world_cursor_names.h b/src/startup_world_cursor_names.h
+index 0f61ae1..47a1de3 100644
+--- a/src/startup_world_cursor_names.h
++++ b/src/startup_world_cursor_names.h
+@@ -5,5 +5,12 @@ struct ScreenDialogResource;
+ struct ScreenRectangle;
+ 
+-struct WorldCursorNames
++struct WorldCursorNames;
++struct WorldCursorRegistration
++{
++    explicit WorldCursorRegistration(WorldCursorNames* owner);
++    ~WorldCursorRegistration(); // 0x00432e00.
++};
++
++struct WorldCursorNames : WorldCursorRegistration
+ {
+     WorldCursorNames(const char* path_tiles, const char* pavement_tiles, const char* beach_tiles); // 0x00431fa0.
+@@ -38,3 +45,6 @@ struct WorldCursorNames
+ extern WorldCursorNames* world_cursor_names; // 0x005ab154.
+ 
++int SkipCursorFrameComments(const char* text);           // 0x00432290.
++int ReadCursorFrameToken(char* token, const char* text); // 0x00432300.
++
+ #endif
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 1ec6697..be7f3f0 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -69,5 +69,9 @@ struct WorldMovingEntity : VariableEntity
+     ScreenMapPosition MotionVelocity() const;                                                                  // 0x00486b00.
+     void SetMotionVelocity(ScreenMapPosition velocity);                                                        // 0x00486b40.
+-    unsigned int word_58;
++    union
++    {
++        unsigned int word_58;
++        float value_58;
++    };
+     unsigned char flag_5c;
+     unsigned char unknown_5d[0x3];
+@@ -77,11 +81,27 @@ struct WorldMovingEntity : VariableEntity
+     float speed_80;
+     float target_84[2];
+-    unsigned int word_8c;
+-    unsigned int word_90;
+-    unsigned int word_94;
++    union
++    {
++        unsigned int word_8c;
++        float value_8c;
++    };
++    union
++    {
++        unsigned int word_90;
++        float value_90;
++    };
++    union
++    {
++        unsigned int word_94;
++        float value_94;
++    };
+     unsigned int word_98;
+     unsigned int word_9c;
+     unsigned int word_a0;
+-    unsigned char unknown_a4[0x4];
++    union
++    {
++        unsigned char unknown_a4[4];
++        int word_a4;
++    };
+     unsigned char flag_a8;
+     unsigned char unknown_a9[0x3];
+@@ -91,6 +111,21 @@ struct WorldMovingEntity : VariableEntity
+     unsigned char unknown_b5[0x3];
+     void* route_b8;
+-    unsigned char flag_bc;
+-    unsigned char unknown_bd[0x13];
++    union
++    {
++        struct
++        {
++            unsigned char flag_bc;
++            unsigned char unknown_bd[0x13];
++        };
++        struct
++        {
++            unsigned char padding_bc[4];
++            int word_c0;
++            unsigned char flag_c4;
++            unsigned char padding_c5[3];
++            unsigned int word_c8;
++            unsigned int word_cc;
++        };
++    };
+     unsigned char flags_d0[4];
+     unsigned char flag_d4;
+@@ -99,5 +134,9 @@ struct WorldMovingEntity : VariableEntity
+     unsigned char flag_e4;
+     unsigned char unknown_e5[0x3];
+-    unsigned int word_e8;
++    union
++    {
++        unsigned int word_e8;
++        float value_e8;
++    };
+     unsigned int word_ec;
+     float value_f0;
+@@ -1350,3 +1389,5 @@ void __fastcall IgnoreSceneryDraw(WorldSceneryEntity* entity);
+ extern const char* world_staff_morale_resource;                                                                             // 0x0057badc.
+ 
++void CancelMechanicJob(WorldMechanicEntity* entity, unsigned char found); // 0x00482630.
++
+ #endif
+diff --git a/src/startup_world_motion_helpers.h b/src/startup_world_motion_helpers.h
+index be2ed48..c491c8a 100644
+--- a/src/startup_world_motion_helpers.h
++++ b/src/startup_world_motion_helpers.h
+@@ -5,4 +5,5 @@
+ #include "startup_world_entities.h"
+ #include "startup_world_subsystems.h"
++#include "startup_square_root_table.h"
+ 
+ extern ScreenMapPosition motion_positive_offset; // 0x005bae48.
+@@ -11,3 +12,7 @@ void InitializeMotionPositiveOffset();           // 0x00482730.
+ void InitializeMotionNegativeOffset();           // 0x00482750.
+ 
++typedef WorldRouteReference WorldRoutePosition;
++float WorldSquareRoot(float value);                                       // 0x00430850.
++int WorldDirection(ScreenMapPosition direction, unsigned int directions); // 0x00430890.
++
+ #endif
+diff --git a/src/window_activation.h b/src/window_activation.h
+index 8deb0b9..d33459a 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -55,4 +55,12 @@ struct WindowActivationTarget
+ struct WindowDeactivationState : WorldStateRegistration
+ {
++    void Start();                         // 0x0043c740.
++    void UpdateDayStatistics();           // 0x004413e0.
++    void UpdateAt0043ef30();              // 0x0043ef30.
++    void UpdateAt0043f4a0();              // 0x0043f4a0.
++    void UpdateAt0043dda0();              // 0x0043dda0.
++    void UpdateAt0043d540();              // 0x0043d540.
++    void SaveState(GameFileReader* file); // 0x0043f660.
++    void LoadState(GameFileReader* file); // 0x0043fc80.
+     void BroadcastToBuildings(ScreenModeCommand* command);
+     void BroadcastToType(ScreenModeCommand* command, unsigned char type);
