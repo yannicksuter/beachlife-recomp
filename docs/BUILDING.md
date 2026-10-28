@@ -501,7 +501,13 @@ profiles also check cache repair, online/offline previews and the separate
 generated configuration-owner lifecycle; they do not qualify full gameplay.
 
 `BEACHLIFE_ENABLE_BOOT_GAME` selects the `native-game` profile: the
-`native-experimental` series followed by `game-series`. `build/boot/boot/traps.json`
+`native-experimental` series followed by `game-series` and the always-on
+`patches/beachlife-decomp-fixes/series`. Each retail bug has its own Git-format
+patch against the prepared native game sources. These fixes leave the faithful
+game tree and matching export unchanged; `matching`, `native` and
+`native-experimental` never apply them. The series and patch hashes are recorded
+in the prepared-source manifest like the other layers.
+`build/boot/boot/traps.json`
 lists every trap; pass `-DBEACHLIFE_BOOT_INVENTORY=<inventory.json>` to give each
 trap its original address. Files that need the Windows SDK are left out until
 they have a native adaptation; their functions become traps too.
@@ -573,8 +579,9 @@ requests WM_CLOSE, whose retail handler posts WM_QUIT. Video stays alive through
 the final retail frame and renderer teardown. Host window geometry and hidden
 mode remain Play's choices.
 
-Player-visible changes that are not in the original game live in
-`patches/beachlife-decomp-tweaks/`, applied after the faithful series when the
+Optional gameplay changes live in
+`patches/beachlife-decomp-tweaks/`, applied after the faithful and fixes series
+in the `native-game-tweaks` profile when the
 game build is configured with `-DBEACHLIFE_ENABLE_TWEAKS=ON` (already enabled by
 the release preset). Each tweak stays
 off until the player enables it on the launcher's Gameplay page; checks can enable one with its environment variable:
