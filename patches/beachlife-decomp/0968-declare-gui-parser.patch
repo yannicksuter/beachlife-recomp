@@ -1,0 +1,148 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 878c888..290d90d 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -160,10 +160,7 @@ extern "C" void fixture_gui_register()
+     parser.context_head = 0;
+     parser.previous_context = 0;
+     parser.last_registered_item = 0;
+-    parser.unknown_24[0] = 0;
+-    parser.unknown_24[1] = 0;
+-    parser.unknown_24[2] = 0;
+-    parser.unknown_24[3] = 0;
++    parser.defined_items = 0;
+     parser.registry_head = 0;
+     parser.items_head = 0;
+     parser.items_tail = 0;
+@@ -305,7 +302,7 @@ typedef char gui_context_alternate14_check[offsetof(GuiParserState, alternate_co
+ typedef char gui_context_head_check[offsetof(GuiParserState, context_head) == 0x18 ? 1 : -1];
+ typedef char gui_context_previous_check[offsetof(GuiParserState, previous_context) == 0x1c ? 1 : -1];
+ typedef char gui_registered_item_check[offsetof(GuiParserState, last_registered_item) == 0x20 ? 1 : -1];
+-typedef char gui_opaque24_check[offsetof(GuiParserState, unknown_24) == 0x24 ? 1 : -1];
++typedef char gui_defined_items24_check[offsetof(GuiParserState, defined_items) == 0x24 ? 1 : -1];
+ typedef char gui_registry_head_check[offsetof(GuiParserState, registry_head) == 0x28 ? 1 : -1];
+ typedef char gui_items_head_check[offsetof(GuiParserState, items_head) == 0x2c ? 1 : -1];
+ typedef char gui_items_tail_check[offsetof(GuiParserState, items_tail) == 0x30 ? 1 : -1];
+diff --git a/metadata.csv b/metadata.csv
+index b70b921..9e3a164 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -639,3 +639,4 @@ address,type,size,symbol
+ 0x00572d20,global,5,?screen_dialog_none_name@@3QBDB
+ 0x00586334,global,4,?startup_save_directory@@3PBDB
+ 0x005baef8,global,4,?animation_sounds@@3PAUAnimationSoundLookup@@A
++0x0057ee58,global,200,?gui_command_names@@3QBUGuiCommandName@@B
+diff --git a/src/gui_parser_command_names.cpp b/src/gui_parser_command_names.cpp
+new file mode 100644
+index 0000000..3175854
+--- /dev/null
++++ b/src/gui_parser_command_names.cpp
+@@ -0,0 +1,30 @@
++#include "startup_gui_parser.h"
++
++// GLOBAL: BEACHLIFE 0x0057ee58
++const GuiCommandName gui_command_names[25] = {
++    { "CheckBox", 0 },
++    { "DialogItem", 1 },
++    { "MainItem", 2 },
++    { "MainItem640", 3 },
++    { "TabWindow", 4 },
++    { "Table", 5 },
++    { "Define", 6 },
++    { "Button", 7 },
++    { "Slider", 8 },
++    { "Text", 9 },
++    { "Variable", 10 },
++    { "ComboBox", 11 },
++    { "VariableImage", 12 },
++    { "Image", 13 },
++    { "Font", 14 },
++    { "TGA", 15 },
++    { "TickerText", 16 },
++    { "ImageList", 17 },
++    { "Icon", 18 },
++    { "Bar", 19 },
++    { "NumberAdjust", 20 },
++    { "RadioGroup", 21 },
++    { "RadioButton", 22 },
++    { "ListBox", 23 },
++    { "StartDebug", 24 },
++};
+diff --git a/src/startup_gui_parser.h b/src/startup_gui_parser.h
+index 2cc03d2..4076d3a 100644
+--- a/src/startup_gui_parser.h
++++ b/src/startup_gui_parser.h
+@@ -6,8 +6,16 @@ struct ScreenRectangle;
+ struct ScreenItem;
+ struct ScreenChildLink;
+ 
+-// Observed x86 parser prefix through +0x3b only, not the complete allocation.
++// Observed x86 parser prefix through +0x3f only, not the complete allocation.
+ // Host pointer layout differs. Complete original layout and lifetime are unresolved.
++struct GuiCommandName
++{
++    const char* name;
++    unsigned int token;
++};
++
++extern const GuiCommandName gui_command_names[25]; // 0x0057ee58.
++
+ struct GuiParserState
+ {
+     ScreenManager* manager;
+@@ -19,7 +27,7 @@ struct GuiParserState
+     ScreenChildLink* context_head;
+     ScreenItem* previous_context;
+     ScreenItem* last_registered_item;
+-    unsigned char unknown_24[4];
++    ScreenChildLink* defined_items;
+     ScreenChildLink* registry_head;
+     ScreenChildLink* items_head;
+     ScreenChildLink* items_tail;
+@@ -42,6 +50,32 @@ struct GuiParserState
+     void PushContext(ScreenItem* item);
+     void PopContext();
+     void ParseFont();
++    void Parse(const char* script, unsigned int size);
++    bool DispatchToken(unsigned int token);
++    void ParseColumnContext();
++    void ParseCheckBox();
++    void ParseTabWindow();
++    void ParseTable();
++    void ParseButton();
++    void ParseSlider();
++    void ParseVariable();
++    void ParseComboBox();
++    void ParseVariableImage();
++    void ParseImageList();
++    void ParseBar();
++    void ParseNumberAdjust();
++    void ParseRadioGroup();
++    void ParseRadioButton();
++    void ParseListBox();
++    void ParseTGA();
++    void ParseText();
++    void ParseMainItem();
++    void ParseDialogItem();
++    void ParseDefine();
++    void ParseImage();
++    void ParseTabContext();
++    void ParseMainItem640();
++    void ParseIcon();
+     void RegisterItem(ScreenItem* item, unsigned char named);
+ };
+ 
+diff --git a/src/startup_screen_dialog.h b/src/startup_screen_dialog.h
+index 50971f9..4b57fd2 100644
+--- a/src/startup_screen_dialog.h
++++ b/src/startup_screen_dialog.h
+@@ -30,6 +30,9 @@ struct ScreenDialog : ScreenItem
+     ScreenChildRing children;
+     unsigned int group_7c;
+ 
++    ScreenDialog(const char* dialog_name, ScreenRectangle initial,
++        const char* resource_name, unsigned int group, unsigned char flag);
++
+     virtual void MoveRectangle(int dx, int dy);
+     virtual void MarkPrepared();
+     virtual void ApplyPosition(int dx, int dy);
