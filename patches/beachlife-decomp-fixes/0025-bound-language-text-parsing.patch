@@ -1,0 +1,96 @@
+diff --git a/src/startup_screen_text_lookup_constructor.cpp b/src/startup_screen_text_lookup_constructor.cpp
+index 9820a75..bb7160b 100644
+--- a/src/startup_screen_text_lookup_constructor.cpp
++++ b/src/startup_screen_text_lookup_constructor.cpp
+@@ -12,6 +12,8 @@
+ #include <windows.h>
+ #endif
+ 
++void StartupFatal(const char* format, ...);
++
+ namespace
+ {
+ static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(int) == 4);
+@@ -77,6 +79,11 @@ ScreenTextLookup::ScreenTextLookup(const char* name)
+     // The original trivial allocations are scalar-freed. Use real scalar host
+     // storage for those arrays of implicit-lifetime character/code-unit values.
+     size_t length = strlen(name);
++    if (length < 4)
++    {
++        StartupFatal("Invalid language filename");
++        return;
++    }
+     char* path = static_cast<char*>(::operator new(length + 1));
+     strcpy(path, name);
+     path[length - 4] = '.';
+@@ -85,28 +92,48 @@ ScreenTextLookup::ScreenTextLookup(const char* name)
+     path[length - 1] = 'e';
+     path_8cc0 = static_cast<char*>(::operator new(strlen(path) + 1));
+     strcpy(path_8cc0, path);
+-    int characters = GetFileSize(path) / 2 - 1;
++    int file_size = GetFileSize(path);
++    if (file_size < 2 || (file_size & 1))
++    {
++        ::operator delete(path);
++        StartupFatal("Invalid language file size");
++        return;
++    }
++    int characters = file_size / 2 - 1;
+     file_18 = LoadBleFile(path);
+     ::operator delete(path);
+ 
+-    // Preserve the original quote/cursor/index/probe algorithm. No malformed
+-    // input, missing-file, full-table or allocation-failure repair is added.
++    if (!file_18)
++    {
++        StartupFatal("Cannot read language file");
++        return;
++    }
+     char* cursor = file_18 + 2;
+     for (int position = 0; position < characters; ++position, cursor += 2)
+     {
+         if (ReadUnit(cursor) != '"')
+             continue;
++        if (index_1c >= sizeof(values) / sizeof(values[0]))
++        {
++            StartupFatal("Too many language entries");
++            return;
++        }
+         ScreenTextValue* value = &values[index_1c];
+         if (value->key == 0)
+         {
+             cursor += 2;
+             char* start = cursor;
+             ++position;
+-            while (ReadUnit(cursor) != '"')
++            while (position < characters && ReadUnit(cursor) != '"')
+             {
+                 cursor += 2;
+                 ++position;
+             }
++            if (position >= characters)
++            {
++                StartupFatal("Unterminated language text");
++                return;
++            }
+             cursor[0] = 0;
+             cursor[1] = 0;
+             int bytes = static_cast<int>(TextLength(start)) + 1;
+@@ -119,11 +146,16 @@ ScreenTextLookup::ScreenTextLookup(const char* name)
+             cursor += 2;
+             char* start = cursor;
+             ++position;
+-            while (ReadUnit(cursor) != '"')
++            while (position < characters && ReadUnit(cursor) != '"')
+             {
+                 cursor += 2;
+                 ++position;
+             }
++            if (position >= characters)
++            {
++                StartupFatal("Unterminated language text");
++                return;
++            }
+             cursor[0] = 0;
+             cursor[1] = 0;
+             std::size_t units = TextLength(start) + 1;
