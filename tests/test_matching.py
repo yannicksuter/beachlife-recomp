@@ -158,7 +158,19 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
                        'sha1': hashlib.sha1(data).hexdigest(),
                        'sha256': hashlib.sha256(data).hexdigest(), 'functions': []}
         self.args = SimpleNamespace(source=self.source, original=self.original,
-                                    output=self.root / 'output', reports=self.root / 'reports')
+                                    output=self.root / 'output', reports=self.root / 'reports',
+                                    stlport=self.root / 'vendor')
+        self.stlport_header = self.args.stlport / 'stlport/vector'
+        self.stlport_header.parent.mkdir(parents=True)
+        self.stlport_header.write_text('// synthetic vendor input\n')
+        self.stlport_pin = self.root / 'stlport.json'
+        self.stlport_pin.write_text(json.dumps({
+            'header_files': 1,
+            'headers_sha256': hashlib.sha256(
+                f'vector\0{matching.digest(self.stlport_header)}\n'.encode()).hexdigest()}))
+        stlport_patch = patch.object(matching, 'STLPORT_PIN', self.stlport_pin)
+        stlport_patch.start()
+        self.addCleanup(stlport_patch.stop)
         self.calls = []
         self.comparison_rows = []
         self.build_arguments = None
@@ -183,9 +195,11 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.calls.append('runtime_library')
         return 'generated-import.lib'
 
-    def build(self, folder, sources, name, extra_link=(), extra_compile=(), source_flags=None):
+    def build(self, folder, sources, name, extra_link=(), extra_compile=(), source_flags=None,
+              source_includes=None):
         self.calls.append('build')
         self.build_arguments = (extra_link, extra_compile, source_flags)
+        self.source_includes = source_includes
         if self.tamper:
             path = folder / 'abi/vc6-except-list.obj'
             path.write_bytes(path.read_bytes()[:-1] + b'X')

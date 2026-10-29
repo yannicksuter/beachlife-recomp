@@ -75,6 +75,43 @@ patches apply to formatted source.
 
 ## Matching compiler options
 
+The matching tool uses an external STLport **4.5.3** input, separate from native
+builds and never committed. Download `STLport-4.5.3.tar.gz` from the
+[SourceForge STLport archive](https://sourceforge.net/projects/stlport/files/STLport%20archive/STLport%204/).
+Its SHA-256 is
+`74917eee7d57577518063b4caf7fb13577f21472fb92ecc239fc1ecf2fc9b1ec`.
+For the default local layout, place it at
+`build/thirdparty-stlport/archives/STLport-4.5.3/STLport-4.5.3.tar.gz`, verify
+that checksum, then extract it under `build/thirdparty-stlport/src/STLport-4.5.3/`.
+The resulting root is
+`build/thirdparty-stlport/src/STLport-4.5.3/STLport-4.5.3/`, containing `stlport/`.
+Pass another location with `tools/matching.py game --stlport /path/to/STLport-4.5.3`
+or `BEACHLIFE_STLPORT`; an explicit argument takes precedence. The default is
+subject to the same verification as an explicit root.
+
+Before compiling, the tool verifies all 405 files beneath `stlport/` against
+the archive-derived header-tree SHA-256 in `tools/stlport.json`. The tree digest
+is SHA-256 over sorted UTF-8 records `relative/path`, NUL, lowercase file
+SHA-256, newline. Added, removed, renamed, modified or symlinked headers fail
+verification. The pin and every header also enter the result's input
+fingerprints, and the tree is checked again before publishing the result.
+
+Enable STLport for individual translation units with the target's
+`"stlport_sources": ["match_00442d10.cpp", "fixture_00442d10.cpp"]` list.
+Address-keyed target fragments may append to it; duplicate or unknown source
+basenames are rejected. Include every translation unit that shares an STLport
+type, including retention fixtures. Selected files search STLport before VC6's
+`Include` fallback and define `_STLP_NO_OWN_IOSTREAMS=1`. Other STLport settings
+remain at their defaults: threads, node allocator, no debug. Exception support
+and inlining remain controlled by the existing per-source `/GX` and `/Ob1`
+options. No options are applied globally. This configuration maps `std` to
+`_STL`; use global C spellings such as `::strcmp`.
+
+The opt-in preserves existing VC6 library instantiations. In particular,
+`PopListBoxSelectionHeap` uses Dinkumware's `std::_Adjust_heap`, which STLport
+does not provide. Converting such declarations and their consumers requires a
+separately qualified matching change. Native profiles do not use this input.
+
 The prepared matching target JSON can declare `source_compile_options` for a
 qualified source file. It maps a `.cpp` basename, unique across game and support
 sources, to a list containing `/GX`, `/Ob1`, or both. Unknown files, directory

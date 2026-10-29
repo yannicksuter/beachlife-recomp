@@ -2,6 +2,9 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import shutil
+import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -177,7 +180,7 @@ class ComparisonAnchorTests(unittest.TestCase):
     def test_csv_and_declaration_must_be_exact(self):
         for changed in ({'header': '../generated.h'}, {'return_type': 'void*; bad()'},
                         {'name': 'GeneratedOwner::Find()'}, {'parameters': 'const char*'},
-                        {'parameters': ['const char* argument']}, {'parameters': ['int'] * 5},
+                        {'parameters': ['const char* argument']}, {'parameters': ['int'] * 17},
                         {'kind': 'game-implementation'}, {'unexpected': True}):
             target = copy.deepcopy(self.target)
             target['comparison_anchors'][0].update(changed)
@@ -208,6 +211,236 @@ class ComparisonAnchorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unexpected files'):
             matching.generate_comparison_anchors(
                 self.metadata, self.source, self.directory / 'output', specs)
+
+    def generate(self, **changes):
+        anchor = self.anchor | changes
+        (self.metadata / 'metadata.csv').write_text(
+            f'address,type,size,symbol\n{anchor["address"]},function,{anchor["size"]},{anchor["symbol"]}\n')
+        target = self.target | {'comparison_anchors': [anchor]}
+        specs = matching.comparison_anchor_specs(self.metadata, target)
+        folder = self.directory / ('output_' + str(len(list(self.directory.glob('output_*')))))
+        paths, records = matching.generate_comparison_anchors(self.metadata, self.source, folder, specs)
+        self.assertFalse(records[0]['qualified'])
+        self.assertFalse(records[0]['image_execution_permitted'])
+        self.assertIn('static volatile unsigned int comparison_anchor_marker;', paths[0].read_text())
+        return paths[0].read_text()
+
+    def test_scalar_returns_use_the_declared_width_and_floating_type(self):
+        for kind, types, zero in (
+                ('integer-member', matching.ANCHOR_INTEGERS, '0'),
+                ('float-member', ('float',), '0.0f'),
+                ('double-member', ('double',), '0.0')):
+            for return_type in types:
+                with self.subTest(return_type=return_type):
+                    body = self.generate(kind=kind, return_type=return_type)
+                    self.assertIn(f'{return_type} GeneratedOwner::Find(', body)
+                    self.assertIn(f'    return {zero};', body)
+        for kind, result in (('float-member', 'double'), ('double-member', 'long double'),
+                             ('integer-member', 'bool'), ('integer-member', 'unsigned __int64'),
+                             ('integer-member', 'GeneratedEnum'), ('float-member', 'float&')):
+            with self.subTest(kind=kind, result=result), self.assertRaisesRegex(ValueError, 'declaration'):
+                self.generate(kind=kind, return_type=result)
+
+    def test_named_aggregate_returns_are_value_initialized(self):
+        for name in ('GeneratedValue', 'GeneratedOwner::Value'):
+            body = self.generate(kind='aggregate-member', return_type=name, parameters=[])
+            self.assertIn(f'    return {name}();', body)
+        for name in ('int', 'void', 'Value[2]', 'Value*', 'Value&', 'Value<int>', 'Value(); bad()'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'declaration'):
+                self.generate(kind='aggregate-member', return_type=name)
+
+    def test_five_six_and_sixteen_parameters_are_bounded(self):
+        for count in (5, 6, 11, 16):
+            body = self.generate(kind='void-member', return_type='void', parameters=['int'] * count)
+            self.assertIn(f'int argument{count})', body)
+            self.assertIn(f'    (void)argument{count};', body)
+        with self.assertRaisesRegex(ValueError, 'declaration'):
+            self.generate(parameters=['int'] * 17)
+
+    def test_reference_and_double_pointer_shapes(self):
+        parameters = ['GeneratedResult**', 'const GeneratedResult* const&', 'int&',
+                      'const GeneratedOwner::Value&', 'unsigned short**', 'void* const*']
+        body = self.generate(return_type='GeneratedResult**', parameters=parameters)
+        for index, parameter in enumerate(parameters, 1):
+            self.assertIn(f'{parameter} argument{index}', body)
+        self.assertIn('GeneratedResult** GeneratedOwner::Find(', body)
+        for parameter in ('void', 'void&', 'int&&', 'int***', 'int[]', 'int value',
+                          'int = 0', '...', 'int; bad()', 'volatile int', 'long double',
+                          'unsigned Thing', 'void (*)(int)', 'Thing<int>'):
+            with self.subTest(parameter=parameter), self.assertRaisesRegex(ValueError, 'declaration'):
+                self.generate(parameters=[parameter])
+        for result in ('GeneratedResult***', 'GeneratedResult*&'):
+            with self.assertRaisesRegex(ValueError, 'declaration'):
+                self.generate(return_type=result)
+
+    def test_nested_owners_and_const_members(self):
+        body = self.generate(name='GeneratedOwner::Nested::Find', qualifier='const')
+        self.assertIn('GeneratedOwner::Nested::Find(const char* argument) const\n', body)
+        for changes in ({'name': 'GeneratedOwner::GeneratedOwner'}, {'name': 'Owner::~Owner'},
+                        {'name': 'Owner::Nested::operator()'}, {'name': 'Owner<int>::Find'},
+                        {'name': 'Find'}, {'name': 'Owner::void'}, {'qualifier': 'volatile'},
+                        {'qualifier': 'const; bad()'}, {'calling_convention': '__stdcall'}):
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, 'declaration'):
+                self.generate(**changes)
+
+    def test_free_functions_bind_the_header_declaration_before_definition(self):
+        for convention, symbol in (('__cdecl', '?GeneratedFree@@YAHH@Z'),
+                                   ('__stdcall', '_GeneratedFree@4')):
+            body = self.generate(kind='integer-function', return_type='int', name='GeneratedFree',
+                                 symbol=symbol, parameters=['int'], calling_convention=convention)
+            binding = ('typedef int (' + convention + ' *comparison_anchor_signature)(int);\n'
+                       'static comparison_anchor_signature const comparison_anchor_declaration = &GeneratedFree;')
+            self.assertIn(binding, body)
+            self.assertLess(body.index(binding), body.index(f'int {convention} GeneratedFree('))
+        for changes in ({'calling_convention': '__fastcall'}, {'qualifier': 'const'},
+                        {'name': 'GeneratedFree()'}, {'symbol': 'plain undecorated'}):
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, 'declaration'):
+                self.generate(**({'kind': 'void-function', 'return_type': 'void',
+                                  'name': 'GeneratedFree'} | changes))
+
+    def test_callbacks_use_header_typedefs_and_explicit_calling_conventions(self):
+        body = self.generate(kind='null-callback-function', return_type='GeneratedCallback',
+                             name='VisitGenerated', parameters=['GeneratedRange', 'GeneratedCallback'])
+        self.assertIn('GeneratedCallback __cdecl VisitGenerated(GeneratedRange argument1, '
+                      'GeneratedCallback argument2)', body)
+        self.assertIn('    return 0;', body)
+        body = self.generate(kind='void-function', return_type='void', name='GeneratedCallbackBody',
+                             parameters=['void*', 'int'], calling_convention='__stdcall')
+        self.assertIn('void __stdcall GeneratedCallbackBody(void* argument1, int argument2)', body)
+        for result in ('void (*)(int)', 'GeneratedCallback*', 'int'):
+            with self.assertRaisesRegex(ValueError, 'declaration'):
+                self.generate(kind='null-callback-function', return_type=result, name='VisitGenerated')
+
+    def test_structured_callback_parameters_cannot_inject_declarators(self):
+        callback = {'return_type': 'bool', 'parameters': ['const GeneratedResult*', 'const void*'],
+                    'calling_convention': '__cdecl'}
+        for convention in ('__cdecl', '__stdcall'):
+            body = self.generate(parameters=['unsigned int*', callback | {'calling_convention': convention}])
+            self.assertIn('bool (' + convention + ' *argument2)(const GeneratedResult*, const void*)', body)
+        for changed in ({'return_type': 'GeneratedResult'}, {'return_type': 'int&'},
+                        {'parameters': ['void']}, {'parameters': [callback]},
+                        {'parameters': ['int'] * 17}, {'calling_convention': '__fastcall'},
+                        {'calling_convention': '__cdecl); bad('}, {'name': 'bad'},
+                        {'parameters': ['int value']}):
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'declaration'):
+                self.generate(parameters=[callback | changed])
+
+    def test_missing_duplicate_and_nonfunction_metadata_identities_fail(self):
+        row = '0x00401100,function,16,?Find@GeneratedOwner@@QAEPAXPBD@Z\n'
+        for rows in ('', row * 2, row.replace(',function,', ',data,'), row.replace(',16,', ',17,')):
+            (self.metadata / 'metadata.csv').write_text('address,type,size,symbol\n' + rows)
+            with self.assertRaisesRegex(ValueError, 'CSV identity'):
+                matching.comparison_anchor_specs(self.metadata, self.target)
+
+    def test_overlapping_ranges_and_credited_symbols_fail(self):
+        for address in ('0x0040100c', '0x00400ff8'):
+            with self.assertRaisesRegex(ValueError, 'distinct'):
+                self.generate(address=address)
+        (self.metadata / 'metadata.csv').write_text(
+            'address,type,size,symbol\n'
+            '0x00401000,function,13,?Find@GeneratedOwner@@QAEPAXPBD@Z\n'
+            '0x00401100,function,16,?Find@GeneratedOwner@@QAEPAXPBD@Z\n')
+        with self.assertRaisesRegex(ValueError, 'distinct'):
+            matching.comparison_anchor_specs(self.metadata, self.target)
+
+    @unittest.skipUnless(shutil.which('c++'), 'C++ syntax check requires a host compiler')
+    def test_shared_header_is_the_authority_for_generated_definitions(self):
+        header = ('struct GeneratedResult { int word; };\n'
+                  'typedef void (*GeneratedCallback)(int);\n'
+                  'struct GeneratedOwner {\n'
+                  ' float Floating(int); double Double(); int Integer();\n'
+                  ' GeneratedResult Aggregate();\n'
+                  ' GeneratedResult** Pointers(GeneratedResult* const&, int**);\n'
+                  ' void Many(int, int, int, int, int, int);\n'
+                  ' void Callback(bool (*)(const GeneratedResult*, const void*));\n'
+                  ' struct Nested { bool Read(const int&) const; };\n'
+                  '};\n'
+                  'int GeneratedFree(int);\n'
+                  'GeneratedCallback VisitGenerated(GeneratedCallback);\n')
+        (self.source / 'generated.h').write_text(header)
+        cases = [
+            {'kind': 'float-member', 'return_type': 'float', 'name': 'GeneratedOwner::Floating',
+             'parameters': ['int']},
+            {'kind': 'double-member', 'return_type': 'double', 'name': 'GeneratedOwner::Double',
+             'parameters': []},
+            {'kind': 'integer-member', 'return_type': 'int', 'name': 'GeneratedOwner::Integer',
+             'parameters': []},
+            {'kind': 'aggregate-member', 'return_type': 'GeneratedResult',
+             'name': 'GeneratedOwner::Aggregate', 'parameters': []},
+            {'return_type': 'GeneratedResult**', 'name': 'GeneratedOwner::Pointers',
+             'parameters': ['GeneratedResult* const&', 'int**']},
+            {'kind': 'void-member', 'return_type': 'void', 'name': 'GeneratedOwner::Many',
+             'parameters': ['int'] * 6},
+            {'kind': 'false-member', 'return_type': 'bool', 'name': 'GeneratedOwner::Nested::Read',
+             'parameters': ['const int&'], 'qualifier': 'const'},
+            {'kind': 'integer-function', 'return_type': 'int', 'name': 'GeneratedFree',
+             'parameters': ['int']},
+            {'kind': 'null-callback-function', 'return_type': 'GeneratedCallback',
+             'name': 'VisitGenerated', 'parameters': ['GeneratedCallback']},
+            {'kind': 'void-member', 'return_type': 'void', 'name': 'GeneratedOwner::Callback',
+             'parameters': [{'return_type': 'bool', 'parameters': ['const GeneratedResult*', 'const void*'],
+                             'calling_convention': '__cdecl'}]},
+        ]
+        for case in cases:
+            for valid in (True, False):
+                # A valid grammar shape still must match an actual declaration.
+                changed = case if valid else case | {'name': case['name'] + 'Undeclared'}
+                body = self.generate(**changed)
+                path = self.directory / 'syntax.cpp'
+                path.write_text(body)
+                result = subprocess.run([shutil.which('c++'), '-std=c++98', '-fsyntax-only',
+                                         '-D__cdecl=', '-D__stdcall=', '-I' + str(self.source), str(path)],
+                                        capture_output=True, text=True)
+                with self.subTest(case=case, valid=valid):
+                    self.assertEqual(result.returncode == 0, valid, result.stderr)
+        (self.source / 'generated.h').write_text(
+            'class GeneratedResult { GeneratedResult(); };\n'
+            'struct GeneratedOwner { GeneratedResult Aggregate(); };\n')
+        path.write_text(self.generate(**cases[3]))
+        result = subprocess.run([shutil.which('c++'), '-std=c++98', '-fsyntax-only',
+                                 '-I' + str(self.source), str(path)], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0, 'Inaccessible value initialization must fail.')
+
+
+class ComparisonAnchorObjectTests(unittest.TestCase):
+    @staticmethod
+    def coff(symbol, section=1, symbol_type=0x20, storage=2, copies=1):
+        # Synthetic COFF tables and one placeholder code byte, no retail input.
+        header = struct.pack('<HHIIIHH', 0x14c, 1, 0, 61, copies, 0, 0)
+        code = struct.pack('<8sIIIIIIHHI', b'.text', 0, 0, 1, 60, 0, 0, 0, 0, 0x60000020)
+        entry = struct.pack('<IIIhHBB', 0, 4, 0, section, symbol_type, storage, 0)
+        name = symbol.encode('ascii') + b'\0'
+        return header + code + b'\0' + entry * copies + struct.pack('<I', len(name) + 4) + name
+
+    def test_exact_defined_symbol_is_required(self):
+        expected = '?Generated@@YAHXZ'
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'generated.obj'
+            path.write_bytes(self.coff(expected))
+            matching.verify_comparison_anchor_object(path, expected)
+            for data in (self.coff('?Wrong@@YAHXZ'), self.coff(expected, section=0),
+                         self.coff(expected, symbol_type=0), self.coff(expected, storage=3),
+                         self.coff(expected, copies=2), self.coff(expected, section=2),
+                         self.coff(expected)[:-1], b'not COFF'):
+                with self.subTest(data=data), self.assertRaises(ValueError):
+                    path.write_bytes(data)
+                    matching.verify_comparison_anchor_object(path, expected)
+
+    def test_build_rejects_wrong_anchor_symbol_before_linking(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            source = folder / 'generated.cpp'
+            source.write_text('// synthetic compiler input\n')
+            tool = object.__new__(matching.Toolchain)
+            tool.compiler = folder
+            tool.native = str
+            def compile_only(command, cwd):
+                self.assertTrue(any('CL.EXE' in str(argument) for argument in command))
+                (cwd / 'generated.obj').write_bytes(self.coff('?Wrong@@YAHXZ'))
+                return ''
+            tool.run = compile_only
+            with self.assertRaisesRegex(ValueError, 'exactly the declared symbol'):
+                tool.build(folder, [source], 'generated', anchor_symbols={source: '?Generated@@YAHXZ'})
 
 
 if __name__ == '__main__':

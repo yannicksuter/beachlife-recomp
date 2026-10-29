@@ -211,6 +211,10 @@ python3 tools/matching.py game --compiler /path/to/msvc6.4 \
 cmake --build --preset debug --target matching_game
 ```
 
+Each compiler, linker and reccmp command may take 60 seconds. On a busy machine
+the final link can need longer; raise the limit with `--timeout SECONDS` or
+`BEACHLIFE_MATCHING_TIMEOUT`.
+
 All twelve game functions currently match after address normalization, totaling
 1,123 bytes. The filename hash, four TGA helpers and image constructor also match
 all 527 raw bytes exactly. Rebuilt constants/imports in the other functions

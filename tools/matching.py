@@ -24,6 +24,8 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / 'decomp/targets/beachlife-uk-1.1.json'
 SOURCE_PIN = ROOT / 'patches/beachlife-decomp/source.json'
+STLPORT_PIN = ROOT / 'tools/stlport.json'
+STLPORT_DEFAULT = ROOT / 'build/thirdparty-stlport/src/STLport-4.5.3/STLport-4.5.3'
 
 
 def digest(path, algorithm='sha256'):
@@ -42,6 +44,29 @@ def verify_original(path, target):
         if digest(path, name) != target[name]:
             raise ValueError(f'Original executable {name} does not match the target.')
     return path.resolve()
+
+
+def verify_stlport(root):
+    """Verify the entire external include tree against the archive-derived pin."""
+    root = Path(root).resolve()
+    include = root / 'stlport'
+    if not include.is_dir():
+        raise ValueError('Set --stlport or BEACHLIFE_STLPORT to the extracted STLport 4.5.3 root.')
+    pin = json.loads(STLPORT_PIN.read_text())
+    headers = {}
+    no_symlinks(include, root)
+    for path in sorted(include.rglob('*')):
+        no_symlinks(path, root)
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError(f'Not a regular STLport header: {path}')
+        headers[path.relative_to(include).as_posix()] = digest(path)
+    fingerprint = hashlib.sha256(''.join(
+        f'{name}\0{headers[name]}\n' for name in sorted(headers)).encode('utf-8')).hexdigest()
+    if (len(headers), fingerprint) != (pin['header_files'], pin['headers_sha256']):
+        raise ValueError('STLport header tree does not match the pinned 4.5.3 archive.')
+    return include, {include / name: value for name, value in headers.items()}
 
 
 def section(path, name):
@@ -108,6 +133,7 @@ class Toolchain:
         self.output = args.output.resolve()
         self.output.mkdir(parents=True, exist_ok=True)
         self.environment = os.environ.copy()
+        self.timeout = getattr(args, 'timeout', 60)
         self.prefix = args.prefix.resolve()
         if os.name != 'nt':
             self.environment.update(WINEPREFIX=str(self.prefix), WINEDEBUG='-all',
@@ -126,7 +152,7 @@ class Toolchain:
 
     def run(self, command, cwd):
         result = subprocess.run(command, cwd=cwd, env=self.environment, capture_output=True,
-                                text=True, errors='replace', timeout=60)
+                                text=True, errors='replace', timeout=self.timeout)
         output = result.stdout + result.stderr
         if result.returncode:
             raise RuntimeError(f"Command failed ({result.returncode}): {command[0]}\n{output}")
@@ -156,7 +182,8 @@ class Toolchain:
         (folder / 'imports.log').write_text(log)
         return 'msvcrt-import.lib'
 
-    def build(self, folder, sources, name, extra_link=(), extra_compile=(), source_flags=None):
+    def build(self, folder, sources, name, extra_link=(), extra_compile=(), source_flags=None,
+              anchor_symbols=None, source_includes=None):
         folder.mkdir(parents=True, exist_ok=True)
         objects, logs = [], []
         for source in sources:
@@ -173,11 +200,15 @@ class Toolchain:
                 options.remove('/Gy-')
             flags = ['/nologo', '/c', '/O2' if packaged else '/Ox', '/Ob0', '/Zi', '/Gd',
                      *(['/Gy'] if packaged else []),
-                     '/Fdcompile.pdb', '/Fo' + obj, *extra_compile,
+                     '/Fdcompile.pdb', '/Fo' + obj,
+                     *('/I' + self.native(path) for path in (source_includes or {}).get(source, ())),
+                     *extra_compile,
                      *options, self.native(source)]
             self.response(folder / 'compile.rsp', flags)
             command = [str(self.compiler / 'CL.EXE'), '@compile.rsp']
             logs.append(self.run(command if os.name == 'nt' else ['wine', *command], folder))
+            if source in (anchor_symbols or {}):
+                verify_comparison_anchor_object(folder / obj, anchor_symbols[source])
         flags = ['/nologo', '/out:' + name + '.exe', '/pdb:' + name + '.pdb', '/debug',
                  '/pdbtype:sept', '/incremental:no', '/opt:ref', '/opt:icf',
                  '/entry:fixture_entry', '/subsystem:console', '/machine:I386',
@@ -383,7 +414,8 @@ def game_metadata_rows(metadata):
 
 
 def merge_target_fragments(metadata, target):
-    lists = ('functions', 'library_functions', 'unclassified_functions', 'comparison_anchors')
+    lists = ('functions', 'library_functions', 'unclassified_functions', 'comparison_anchors',
+             'stlport_sources')
     mappings = ('source_compile_options', 'stdcall_imports', 'runtime_stdcall_imports')
     for path in registration_files(metadata, 'targets/beachlife-uk-1.1.d', r'[0-9a-f]{8}\.json'):
         fragment = json.loads(path.read_text())
@@ -449,6 +481,23 @@ def game_source_compile_options(target, sources):
             raise ValueError('Source compiler options must be unique entries from /GX, /Ob1 and /Gy-.')
         result[available[name]] = flags.copy()
     return result
+
+
+def game_stlport_sources(target, sources):
+    """Opt in complete translation units, including their retention fixtures."""
+    configured = target.get('stlport_sources', [])
+    if (not isinstance(configured, list) or any(not isinstance(name, str) for name in configured) or
+            len(configured) != len(set(configured))):
+        raise ValueError('stlport_sources must be a list of unique source basenames.')
+    available = {}
+    for source in sources:
+        if source.name in available or not source.is_file():
+            raise ValueError('Matching source basenames must identify unique files.')
+        available[source.name] = source
+    for name in configured:
+        if not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*\.cpp', name) or name not in available:
+            raise ValueError('STLport must name an existing game, support or fixture source basename.')
+    return [available[name] for name in sorted(configured)]
 
 
 def game_stdcall_imports(target):
@@ -517,6 +566,145 @@ def verify_runtime_compiled_imports(binary, configured, original):
             'omitted': sorted(set(configured) - set(actual))}
 
 
+ANCHOR_IDENTIFIER = r'[A-Za-z_][A-Za-z_0-9]*'
+ANCHOR_NAME = ANCHOR_IDENTIFIER + r'(?:::' + ANCHOR_IDENTIFIER + r')*'
+ANCHOR_INTEGERS = ('char', 'signed char', 'unsigned char', 'short', 'unsigned short',
+                   'int', 'unsigned int', 'long', 'unsigned long')
+ANCHOR_SCALARS = (*ANCHOR_INTEGERS, 'bool', 'float', 'double')
+# These tokens cannot be a typedef/class name in the deliberately small grammar.
+ANCHOR_KEYWORDS = set(('void bool char short int long signed unsigned float double const volatile '
+                       'auto class struct union enum typename template decltype static extern register '
+                       'mutable inline virtual friend typedef operator new delete return __cdecl '
+                       '__stdcall __fastcall __thiscall').split())
+
+
+def anchor_named_type(value):
+    return (isinstance(value, str) and re.fullmatch(ANCHOR_NAME, value) is not None and
+            not (set(value.split('::')) & ANCHOR_KEYWORDS))
+
+
+def anchor_type(value):
+    """Allow scalar/named values, const, up to two pointers, and lvalue references.
+
+    Callback parameters use a header typedef or the separate structured shape.
+    Declarators, templates, arrays, defaults and expressions are intentionally
+    excluded; this is not a C++ parser.
+    """
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r'(const )?(' + ANCHOR_NAME + r'|unsigned (?:char|short|int|long)|signed char)'
+                         r'((?:\*(?: const)?){0,2})(&?)', value)
+    if not match:
+        return None
+    base, pointers, reference = match[2], match[3], match[4]
+    if base not in (*ANCHOR_SCALARS, 'void') and not anchor_named_type(base):
+        return None
+    if base == 'void' and not pointers:
+        return None
+    return base, pointers, reference
+
+
+def anchor_parameter(parameter, name=''):
+    """Render only a simple type or a bounded, non-nested callback declarator."""
+    if anchor_type(parameter) is not None:
+        return parameter + (' ' + name if name else '')
+    if (not isinstance(parameter, dict) or
+            set(parameter) != {'return_type', 'parameters', 'calling_convention'} or
+            parameter['calling_convention'] not in ('__cdecl', '__stdcall') or
+            not isinstance(parameter['parameters'], list) or len(parameter['parameters']) > 16 or
+            not all(anchor_type(value) is not None for value in parameter['parameters'])):
+        return None
+    result = parameter['return_type']
+    parsed = anchor_type(result)
+    if not (result == 'void' or result in ANCHOR_SCALARS or
+            (parsed is not None and parsed[1] and not parsed[2])):
+        return None
+    return (f'{result} ({parameter["calling_convention"]} *{name})'
+            f'({", ".join(parameter["parameters"])})')
+
+
+def anchor_declaration(item):
+    """Validate the signature shape; the compiler checks the shared declaration."""
+    required = {'address', 'size', 'name', 'symbol', 'header', 'kind', 'return_type', 'parameters'}
+    optional = {'calling_convention', 'qualifier'}
+    if (not isinstance(item, dict) or not required <= set(item) or set(item) - required - optional or
+            not isinstance(item['kind'], str) or
+            not anchor_named_type(item['name']) or not isinstance(item['return_type'], str)):
+        return False
+    kinds = ('void', 'null-pointer', 'false', 'integer', 'float', 'double', 'aggregate', 'null-callback')
+    shape, separator, owner = item['kind'].rpartition('-')
+    if not separator or shape not in kinds or owner not in ('member', 'function'):
+        return False
+    parts = item['name'].split('::')
+    if owner == 'member':
+        if (len(parts) < 2 or parts[-1] == parts[-2] or 'calling_convention' in item or
+                item.get('qualifier', '') not in ('', 'const')):
+            return False
+    elif 'qualifier' in item or item.get('calling_convention', '__cdecl') not in ('__cdecl', '__stdcall'):
+        return False
+    result = item['return_type']
+    parsed = anchor_type(result)
+    returns = {'void': result == 'void',
+               'null-pointer': parsed is not None and bool(parsed[1]) and not parsed[2],
+               'false': result in ('bool', 'unsigned char'),
+               'integer': result in ANCHOR_INTEGERS,
+               'float': result == 'float', 'double': result == 'double',
+               'aggregate': anchor_named_type(result),
+               'null-callback': anchor_named_type(result)}
+    return (returns[shape] and isinstance(item['parameters'], list) and
+            len(item['parameters']) <= 16 and
+            all(anchor_parameter(parameter) is not None for parameter in item['parameters']))
+
+
+def verify_comparison_anchor_object(path, expected):
+    """Require the exact defined function identity, not an undefined reference."""
+    data = path.read_bytes()
+    if len(data) < 20 or struct.unpack_from('<H', data)[0] != 0x14c:
+        raise ValueError('Comparison anchor needs an x86 COFF object.')
+    count_sections, = struct.unpack_from('<H', data, 2)
+    offset, count = struct.unpack_from('<II', data, 8)
+    optional_size, = struct.unpack_from('<H', data, 16)
+    sections = 20 + optional_size
+    strings = offset + count * 18
+    if (optional_size or sections + count_sections * 40 > len(data) or
+            offset < sections + count_sections * 40 or strings + 4 > len(data)):
+        raise ValueError('Truncated comparison anchor COFF tables.')
+    string_size, = struct.unpack_from('<I', data, strings)
+    if string_size < 4 or strings + string_size > len(data):
+        raise ValueError('Truncated comparison anchor COFF strings.')
+    definitions, index = [], 0
+    while index < count:
+        entry = offset + index * 18
+        auxiliary = data[entry + 17]
+        if index + 1 + auxiliary > count:
+            raise ValueError('Truncated comparison anchor COFF auxiliary records.')
+        name = data[entry:entry + 8]
+        if name[:4] == b'\0' * 4:
+            start, = struct.unpack_from('<I', name, 4)
+            if not 4 <= start < string_size:
+                raise ValueError('Invalid comparison anchor COFF name offset.')
+            end = data.find(b'\0', strings + start, strings + string_size)
+            if end == -1:
+                raise ValueError('Unterminated comparison anchor COFF name.')
+            name = data[strings + start:end]
+        else:
+            name = name.rstrip(b'\0')
+        section_number, symbol_type, storage = struct.unpack_from('<hHB', data, entry + 12)
+        if name == expected.encode('ascii') and storage == 2 and section_number > 0:
+            if section_number > count_sections:
+                raise ValueError('Invalid comparison anchor COFF section.')
+            section_header = sections + (section_number - 1) * 40
+            flags, = struct.unpack_from('<I', data, section_header + 36)
+            size, = struct.unpack_from('<I', data, section_header + 16)
+            value, = struct.unpack_from('<I', data, entry + 8)
+            if symbol_type != 0x20 or not flags & 0x20 or value >= size:
+                raise ValueError('Comparison anchor symbol is not a defined code function.')
+            definitions.append(name)
+        index += 1 + auxiliary
+    if len(definitions) != 1:
+        raise ValueError(f'Comparison anchor must define exactly the declared symbol: {expected}')
+
+
 def comparison_anchor_specs(metadata, target):
     """Validate unqualified address anchors separately from credited functions."""
     specs = target.get('comparison_anchors', [])
@@ -529,30 +717,18 @@ def comparison_anchor_specs(metadata, target):
     ranges = [(int(item['address'], 16), int(item['address'], 16) + item['size'])
               for item in credited]
     names = {item['name'] for item in credited}
-    symbols = set()
     rows = game_metadata_rows(metadata)
-    keys = {'address', 'size', 'name', 'symbol', 'header', 'kind', 'return_type', 'parameters'}
+    credited_addresses = {int(item['address'], 16) for item in credited}
+    symbols = {row['symbol'] for row in rows if int(row['address'], 16) in credited_addresses}
     for item in specs:
-        if (not isinstance(item, dict) or set(item) != keys or
-                item.get('kind') not in ('null-pointer-member', 'void-member', 'false-member') or
+        if (not anchor_declaration(item) or
                 not isinstance(item.get('address'), str) or
                 not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item['address']) or
                 type(item.get('size')) is not int or item['size'] <= 0 or
-                not isinstance(item.get('name'), str) or
-                not re.fullmatch(r'[A-Za-z_]\w*::[A-Za-z_]\w*', item['name']) or
                 not isinstance(item.get('symbol'), str) or
-                not re.fullmatch(r'\?[^,\s]+', item['symbol']) or
+                not re.fullmatch(r'(?:\?[^,\s]+|_[A-Za-z_][A-Za-z_0-9]*(?:@[0-9]+)?)', item['symbol']) or
                 not isinstance(item.get('header'), str) or
-                not re.fullmatch(r'[A-Za-z_]\w*\.h', item['header']) or
-                not isinstance(item.get('return_type'), str) or
-                not ((item['kind'] == 'null-pointer-member' and
-                      re.fullmatch(r'[A-Za-z_]\w*\*', item['return_type'])) or
-                     (item['kind'] == 'void-member' and item['return_type'] == 'void') or
-                     (item['kind'] == 'false-member' and item['return_type'] in ('bool', 'unsigned char'))) or
-                not isinstance(item.get('parameters'), list) or len(item['parameters']) > 4 or
-                not all(isinstance(parameter, str) and
-                        re.fullmatch(r'(?:const )?(?:unsigned )?[A-Za-z_]\w*\*?', parameter)
-                        for parameter in item['parameters'])):
+                not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*\.h', item['header'])):
             raise ValueError('Unsupported comparison-only anchor declaration.')
         start, end = int(item['address'], 16), int(item['address'], 16) + item['size']
         if (end > 0x100000000 or item['name'] in names or item['symbol'] in symbols or
@@ -594,19 +770,34 @@ def generate_comparison_anchors(metadata, source, folder, specs):
     for item, path in zip(specs, paths):
         names = (['argument'] if len(item['parameters']) == 1 else
                  ['argument' + str(index) for index in range(1, len(item['parameters']) + 1)])
-        parameters = ', '.join(type_name + ' ' + name for type_name, name in zip(item['parameters'], names))
-        if item['kind'] == 'void-member':
+        parameters = ', '.join(anchor_parameter(parameter, name)
+                               for parameter, name in zip(item['parameters'], names))
+        shape, _, owner = item['kind'].rpartition('-')
+        if shape == 'void':
             statement = ''.join('    (void)' + name + ';\n' for name in names)
         else:
-            statement = '    return 0;\n' if item['kind'] == 'null-pointer-member' else '    return false;\n'
+            value = {'null-pointer': '0', 'false': 'false', 'integer': '0',
+                     'float': '0.0f', 'double': '0.0', 'aggregate': item['return_type'] + '()',
+                     'null-callback': '0'}[shape]
+            statement = f'    return {value};\n'
+        declaration, convention = '', ''
+        if owner == 'function':
+            convention = item.get('calling_convention', '__cdecl') + ' '
+            # A free definition alone could invent a missing declaration. Resolve
+            # the precise typed address BEFORE defining it, against the header.
+            declaration = (f'typedef {item["return_type"]} ({convention}*comparison_anchor_signature)'
+                           f'({", ".join(anchor_parameter(parameter) for parameter in item["parameters"])});\n'
+                           'static comparison_anchor_signature const comparison_anchor_declaration = '
+                           f'&{item["name"]};\n\n')
+        qualifier = ' ' + item['qualifier'] if item.get('qualifier') else ''
         # A file-local marker keeps identical-COMDAT folding from merging an
         # anchor with another anchor or with a credited body of the same code.
         body = (f'#include "{item["header"]}"\n\n'
                 '// GENERATED COMPARISON-ONLY ANCHOR. Never execute this image.\n'
                 '// This is no implementation or qualification of the original dependency.\n'
-                'static volatile unsigned int comparison_anchor_marker;\n\n'
+                'static volatile unsigned int comparison_anchor_marker;\n\n' + declaration +
                 f'// FUNCTION: BEACHLIFE {item["address"]}\n'
-                f'{item["return_type"]} {item["name"]}({parameters})\n'
+                f'{item["return_type"]} {convention}{item["name"]}({parameters}){qualifier}\n'
                 '{\n'
                 f'    comparison_anchor_marker = {item["address"]};\n' + statement + '}\n')
         if path.exists() and path.read_text() != body:
@@ -676,6 +867,7 @@ def verify_sdk_headers(metadata, include):
 def game(tool, args):
     metadata = tool.decomp_root
     target_path, target = game_target(metadata)
+    stlport_include, stlport_headers = verify_stlport(args.stlport)
     sdk_headers = verify_sdk_headers(metadata, tool.compiler.parent / 'Include')
     original = verify_original(args.original, target)
     source = args.source.resolve()
@@ -694,6 +886,7 @@ def game(tool, args):
     if not entry.is_file():
         raise ValueError('Prepared source has no comparison retention fixture.')
     fixtures = registration_files(metadata, 'fixtures/game.d', r'fixture_[0-9a-f]{8}\.cpp')
+    stlport_sources = game_stlport_sources(target, [*sources, *support_sources, entry, *fixtures])
     folder = tool.output / 'game'
     # Report consumers use one fingerprinted target, including fragment entries.
     # Keep the legacy target path and bytes unchanged when no fragments exist.
@@ -706,6 +899,7 @@ def game(tool, args):
     inputs = set([target_path, *sources, *anchors, *source.rglob('*.h'),
                   *(path for path in metadata.rglob('*') if path.is_file()),
                   ROOT / 'tools/matching_imports.py', ROOT / 'tools/prepare_sources.py',
+                  STLPORT_PIN, *stlport_headers,
                   Path(__file__).resolve()])
     manifest_path = getattr(args, 'prepared_manifest', None)
     if manifest_path is not None:
@@ -755,10 +949,16 @@ def game(tool, args):
     source_flags = {support / 'operator_delete.cpp': ['/O1']}
     for path, flags in compile_options.items():
         source_flags.setdefault(path, []).extend(flags)
+    for path in stlport_sources:
+        source_flags.setdefault(path, []).append('/D_STLP_NO_OWN_IOSTREAMS=1')
     binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, entry, *fixtures], 'BeachLife', link_flags,
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
                              '/I' + tool.native(source)],
-                            source_flags=source_flags)
+                            source_flags=source_flags,
+                            **({'source_includes': {path: [stlport_include] for path in stlport_sources}}
+                               if stlport_sources else {}),
+                            **({'anchor_symbols': {path: record['symbol'] for path, record in
+                                                   zip(anchors, anchor_records)}} if anchors else {}))
     if verify_sdk_headers(metadata, tool.compiler.parent / 'Include') != sdk_headers:
         raise ValueError('SDK header pins changed during the build.')
     if abi_support and abi_object.read_bytes() != abi_bytes:
@@ -823,6 +1023,8 @@ def game(tool, args):
                 decomp_revision=args.decomp_revision, decomp_profile='matching')
     if input_hashes() != fingerprints:
         raise ValueError('Matching inputs changed during comparison; rerun the comparison.')
+    if verify_stlport(args.stlport)[1] != stlport_headers:
+        raise ValueError('STLport headers changed during comparison.')
     if verify_sdk_headers(metadata, tool.compiler.parent / 'Include') != sdk_headers:
         raise ValueError('SDK header pins changed during comparison.')
     result = {'target': target['id'], 'original_sha256': target['sha256'],
@@ -832,6 +1034,8 @@ def game(tool, args):
               'unclassified_functions': unclassified_functions,
               'source_compile_options': {path.name: flags for path, flags in sorted(compile_options.items())},
               'sdk_headers_sha256': sdk_headers,
+              'stlport_root': str(stlport_include.parent),
+              'stlport_sources': [path.name for path in stlport_sources],
               'link_abi_support': abi_support,
               'stdcall_import_libraries': import_libraries,
               'original_stdcall_imports': original_stdcall_imports,
@@ -862,12 +1066,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['verify', 'fixture', 'stdio-fixture', 'platform-fixture', 'game'])
     parser.add_argument('--compiler', default=os.environ.get('BEACHLIFE_MSVC6'))
+    parser.add_argument('--stlport', type=Path, default=os.environ.get('BEACHLIFE_STLPORT', STLPORT_DEFAULT),
+                        help='extracted, pinned STLport 4.5.3 root (containing stlport/); matching only')
     parser.add_argument('--original', type=Path, default=ROOT / 'orig/analysis/disc/BeachLife.exe')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/matching')
     parser.add_argument('--prefix', type=Path, default=ROOT / 'build/matching/wine')
     parser.add_argument('--reccmp', default='reccmp-reccmp')
     parser.add_argument('--source', type=Path, help='experimental source override; default is the matching export')
     parser.add_argument('--reports', type=Path, default=ROOT / 'orig/analysis/matching')
+    parser.add_argument('--timeout', type=int, default=int(os.environ.get('BEACHLIFE_MATCHING_TIMEOUT', 60)),
+                        help='seconds allowed per compiler, linker or reccmp command (default 60)')
     args = parser.parse_args()
     try:
         if args.command == 'verify':
