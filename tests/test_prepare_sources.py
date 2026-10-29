@@ -531,7 +531,7 @@ class LocalDecompTests(unittest.TestCase):
                 self.assertEqual((self.output / 'beachlife-decomp/src/value.cpp').read_text(),
                                  value + '\n')
                 self.assertEqual(self.record()['identity']['patches'], [
-                    {'path': p.resolve().relative_to(self.repo).as_posix(),
+                    {'path': p.resolve().relative_to(self.repo.resolve()).as_posix(),
                      'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in patches])
         # Either a series edit or a fix edit invalidates only game exports.
         for changed in (fixes, fix):
