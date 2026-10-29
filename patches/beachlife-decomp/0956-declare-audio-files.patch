@@ -1,0 +1,188 @@
+diff --git a/src/miles_imports.h b/src/miles_imports.h
+index c9ca291..50b8ca1 100644
+--- a/src/miles_imports.h
++++ b/src/miles_imports.h
+@@ -58,4 +58,10 @@ extern "C" __declspec(dllimport) void __stdcall AIL_set_stream_loop_count(
+     void* stream, unsigned int count);
+ extern "C" __declspec(dllimport) void __stdcall AIL_start_stream(void* stream);
+ 
++extern "C" __declspec(dllimport) int __stdcall AIL_set_3D_sample_file(void* sample, const void* data);
++
++extern "C" __declspec(dllimport) void __stdcall AIL_set_3D_sample_loop_count(void* sample, unsigned int count);
++
++extern "C" __declspec(dllimport) void __stdcall AIL_set_3D_sample_distances(void* sample, float maximum, float minimum);
++
+ #endif
+diff --git a/src/sound_capacity.h b/src/sound_capacity.h
+new file mode 100644
+index 0000000..0905816
+--- /dev/null
++++ b/src/sound_capacity.h
+@@ -0,0 +1,7 @@
++#ifndef SOUND_CAPACITY_H
++#define SOUND_CAPACITY_H
++
++// Existing complete support body at 0x0049ee60; no duplicate implementation.
++unsigned int SelectHashTableCapacity(unsigned int requested);
++
++#endif
+diff --git a/src/sound_name_hash.h b/src/sound_name_hash.h
+new file mode 100644
+index 0000000..c83b10b
+--- /dev/null
++++ b/src/sound_name_hash.h
+@@ -0,0 +1,7 @@
++#ifndef SOUND_NAME_HASH_H
++#define SOUND_NAME_HASH_H
++
++// Existing complete 0x004d2280 body; no duplicate implementation.
++unsigned int SoundNameHash(const char* name);
++
++#endif
+diff --git a/src/startup_resource_binary_read.h b/src/startup_resource_binary_read.h
+new file mode 100644
+index 0000000..fb52445
+--- /dev/null
++++ b/src/startup_resource_binary_read.h
+@@ -0,0 +1,12 @@
++#ifndef STARTUP_RESOURCE_BINARY_READ_H
++#define STARTUP_RESOURCE_BINARY_READ_H
++
++#include <stdio.h>
++
++// Real cdecl readers at 0x004eb420, 0x004eb440 and 0x004eb460.
++// Each calls actual fread; their source/native ABI remains a separate gate.
++unsigned char ReadResourceByte(FILE* stream);
++unsigned short ReadResourceWord(FILE* stream);
++unsigned int ReadResourceDword(FILE* stream);
++
++#endif
+diff --git a/src/startup_resource_scalar_read.h b/src/startup_resource_scalar_read.h
+new file mode 100644
+index 0000000..dd6c433
+--- /dev/null
++++ b/src/startup_resource_scalar_read.h
+@@ -0,0 +1,5 @@
++#ifndef STARTUP_RESOURCE_SCALAR_READ_H
++#define STARTUP_RESOURCE_SCALAR_READ_H
++template <class Value, class Stream, class Read>
++Value ReadResourceScalar(Stream* stream, Read read);
++#endif
+diff --git a/src/startup_trivial_range_overflow.h b/src/startup_trivial_range_overflow.h
+new file mode 100644
+index 0000000..1863b08
+--- /dev/null
++++ b/src/startup_trivial_range_overflow.h
+@@ -0,0 +1,5 @@
++#ifndef STARTUP_TRIVIAL_RANGE_OVERFLOW_H
++#define STARTUP_TRIVIAL_RANGE_OVERFLOW_H
++template <class Value>
++void InsertTrivialRangeOverflow(Value*& begin, Value*& end, Value*& capacity, Value* position, const Value& value, unsigned int count, bool at_end);
++#endif
+diff --git a/src/tiff_read_context.h b/src/tiff_read_context.h
+new file mode 100644
+index 0000000..678a67f
+--- /dev/null
++++ b/src/tiff_read_context.h
+@@ -0,0 +1,50 @@
++#pragma once
++
++#include <stdio.h>
++
++struct TgaImage;
++
++// Descriptive C-style context; original malloc/zero span is 0xc0 bytes on x86.
++// Field names follow the loader and complete IFD producer. Child declarations
++// alone do not establish linked implementations or a complete TIFF codec.
++struct TiffReadContext
++{
++    FILE* file;                     // +0x00
++    char description[80];           // +0x04, tag 270, no appended terminator on read
++    unsigned short bits_per_sample; // +0x54, IFD tag 258 low word
++    unsigned char unknown_56[2];
++    unsigned int compression; // +0x58, IFD tag 259
++    unsigned int height;      // +0x5c, IFD tag 257
++    unsigned int width;       // +0x60, IFD tag 256
++    unsigned char unknown_64[4];
++    unsigned int rows_per_strip;      // +0x68, IFD tag 278
++    unsigned short samples_per_pixel; // +0x6c, IFD tag 277 low word
++    unsigned char unknown_6e[14];
++    unsigned int strip_count;                // +0x7c, IFD tag 273 count
++    unsigned int strip_offsets_position;     // +0x80, IFD tag 273 value
++    unsigned int strip_byte_counts_position; // +0x84, IFD tag 279
++    unsigned int palette_offset;             // +0x88, IFD tag 320
++    unsigned int* strip_offsets;             // +0x8c, scalar-allocated word storage
++    unsigned int* strip_byte_counts;         // +0x90, scalar-allocated word storage
++    unsigned int tile_width;                 // +0x94, IFD tag 322
++    unsigned int tile_height;                // +0x98, IFD tag 323
++    unsigned int tile_offsets_position;      // +0x9c, IFD tag 324
++    unsigned int tile_byte_counts_position;  // +0xa0, IFD tag 325
++    unsigned int* tile_offsets;              // +0xa4, scalar-allocated word storage
++    unsigned int* tile_byte_counts;          // +0xa8, scalar-allocated word storage
++    unsigned int word_ac;                    // +0xac, private tag 4096
++    unsigned int word_b0;                    // +0xb0, private tag 4097
++    unsigned int word_b4;                    // +0xb4, private tag 4098
++    unsigned int word_b8;                    // +0xb8, private tag 4099
++    unsigned int next_directory_offset;      // +0xbc, recorded but not followed
++};
++
++// All are actual cdecl children. The directory returns zero on its ordinary
++// paths; the loader ignores it. Decoder/palette return-register values are unused.
++int TiffReadDirectory(unsigned int offset, TiffReadContext* context);   // 0x004eb920
++void TiffDecodeStrips(TgaImage* image, TiffReadContext* context);       // 0x004eb4b0
++void TiffDecodeTiles(TgaImage* image, TiffReadContext* context);        // 0x004eb510
++void TiffDecodePackBits(TgaImage* image, TiffReadContext* context);     // 0x004eb610
++void TiffReadPalette(TiffReadContext* context, unsigned char* palette); // 0x004ebcf0
++TgaImage* TiffConvertFourSamples(TgaImage* image);                      // 0x004eb790
++TgaImage* TiffExpandFourBits(TgaImage* image);                          // 0x004eb840
+diff --git a/src/window_audio.h b/src/window_audio.h
+index c30ae64..ba57dad 100644
+--- a/src/window_audio.h
++++ b/src/window_audio.h
+@@ -85,6 +85,8 @@ struct WindowAudioState
+     // Actual 0x004d0440, RET4; source remains a separate dependency.
+     void UpdateVoiceFades(float delta);
+     void SetSoundLevel(int voice, float level);
++    void FadeSoundLevel(int voice, float level, float fade);
++    int Play3DSoundWithParameters(const char* name, int volume, const WindowAudioVector* position, unsigned int flags, int voice);
+ 
+     void MuteDigitalDriver();
+     void UnmuteDigitalDriver();
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+index 0beeb78..5b01a97 100644
+--- a/src/window_sound_bank.h
++++ b/src/window_sound_bank.h
+@@ -58,6 +58,7 @@ struct WindowSoundBank
+     ~WindowSoundBank();
+     bool HasSound(const char* name); // 0x004d1e50.
+     void ReleaseSample(const char* name);
++    void UpdateCache(float delta);
+     void* FindSample(const char* name, unsigned int* bytes);
+     void LoadIndex(const char* header_path, const char* bank_path); // 0x004d2140, RET8.
+ 
+diff --git a/support/audio_3d_imports.cpp b/support/audio_3d_imports.cpp
+new file mode 100644
+index 0000000..bde216e
+--- /dev/null
++++ b/support/audio_3d_imports.cpp
+@@ -0,0 +1,4 @@
++#include "miles_imports.h"
++int(__stdcall* matching_3d_file)(void*, const void*) = &AIL_set_3D_sample_file;
++void(__stdcall* matching_3d_loop)(void*, unsigned int) = &AIL_set_3D_sample_loop_count;
++void(__stdcall* matching_3d_distances)(void*, float, float) = &AIL_set_3D_sample_distances;
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index be19c51..457c84f 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -3097,7 +3097,10 @@
+         "AIL_start_stream": 4,
+         "AIL_close_stream": 4,
+         "AIL_set_stream_volume": 8,
+-        "AIL_shutdown": 0
++        "AIL_shutdown": 0,
++        "AIL_set_3D_sample_file": 8,
++        "AIL_set_3D_sample_loop_count": 8,
++        "AIL_set_3D_sample_distances": 12
+       }
+     },
+     "USER32.dll": {

@@ -1,0 +1,348 @@
+diff --git a/src/startup_ticker_storage.h b/src/startup_ticker_storage.h
+new file mode 100644
+index 0000000..88d3743
+--- /dev/null
++++ b/src/startup_ticker_storage.h
+@@ -0,0 +1,20 @@
++#ifndef STARTUP_TICKER_STORAGE_H
++#define STARTUP_TICKER_STORAGE_H
++#include "startup_world_deque.h"
++struct TickerQueuedMessage;
++struct TickerHistoryMessage;
++template <class Message> struct TickerDeque : WorldDequeStorage<Message*>
++{
++    typedef WorldDequeStorage<Message*> Storage;
++    typedef WorldDequeIterator<Message*> Iterator;
++    TickerDeque();
++    ~TickerDeque();
++    bool Empty() const;
++    unsigned int Size() const;
++    Message* Front() const;
++    Message*& operator[](int index);
++    Iterator Erase(Iterator position);
++    void PopFront();
++    void PushBack(Message* const& value);
++};
++#endif
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 05c79b1..03f1964 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -2,11 +2,12 @@
+ #define STARTUP_VARIABLE_STATE_H
+ 
+ #include "startup_list.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_item.h"
++#include "startup_screen_point.h"
++#include "startup_ticker_storage.h"
+ #include "startup_world_deque.h"
+ #include "startup_world_script_values.h"
+-#include "startup_screen_point.h"
+-#include "startup_screen_item.h"
+-#include "startup_screen_dialog_resource.h"
+ 
+ struct ScreenModeCommand;
+ struct ScreenWorldPosition;
+@@ -41,6 +42,51 @@ struct TickerHistoryMessage
+     char* key_10;
+ };
+ 
++struct VariableTicker
++{
++    void AddFeedback(unsigned int flags, unsigned int kind); // 0x0042b5b0.
++    unsigned int Feedback(unsigned int kind);                // 0x0042b640.
++
++    VariableTicker();                                  // 0x00429950.
++    void AddNamedMessage(const char* name);            // 0x0042a940.
++    void ClearFeedback(unsigned int kind);             // 0x0042b540.
++    void RemovePendingEntityMessages(unsigned int id); // 0x0042a680.
++    void RemoveNamedMessage(const char* name);         // 0x0042a760.
++    TickerDeque<TickerQueuedMessage> pending_00;
++    TickerDeque<TickerHistoryMessage> history_28;
++    WorldDequeIterator<TickerHistoryMessage*> current_50;
++    int word_60;
++    int word_64;
++    int word_68;
++    int word_6c;
++    int word_70;
++    int word_74;
++    int word_78;
++    unsigned int suppressed_count_7c;
++    unsigned char flag_80;
++    unsigned char flag_81;
++    unsigned char unknown_82[2];
++    unsigned int suppressed_84[100];
++    float value_214;
++
++    void AddHistory(const unsigned short* text, unsigned int id);          // 0x0042a160.
++    void AddHistory(const char* key, unsigned int id);                     // 0x00429fb0.
++    void AddMessage(const char* key, unsigned int id, unsigned char flag); // 0x0042a300.
++    const char* FeatureMessage(unsigned int feature);                      // 0x0042b6a0.
++
++    void Update();                              // 0x00429c40.
++    ~VariableTicker();                          // 0x00429a40.
++    void LoadState(GameFileReader* file);       // 0x0042b0d0.
++    void SaveState(GameFileReader* file);       // 0x0042ad70.
++    void RemoveEntityMessages(unsigned int id); // 0x0042a840.
++
++    void AddMessage(const unsigned short* text, unsigned int id, unsigned char flag); // 0x0042a4d0.
++    const unsigned short* FirstMessage(
++        float* time, unsigned int* day, unsigned int* id); // 0x00429e50.
++    const unsigned short* NextMessage(
++        float* time, unsigned int* day, unsigned int* id); // 0x00429f00.
++};
++
+ struct WorldTransportArrival
+ {
+     unsigned char set_happiness;
+@@ -358,26 +404,33 @@ struct VariableEntity
+     virtual bool Unknown08(unsigned int state) = 0;
+     virtual bool Unknown0c() = 0; // Base body 0x00453850.
+     virtual bool Unknown10() = 0;
+-    virtual bool Unknown14(ScreenModeCommand* command) = 0;                                                                                      // Base body 0x00453860.
+-    virtual void ReadText(const char* key, unsigned short* output);                                                                              // 0x00453a20.
+-    virtual void WriteValue(const char* key, const void* value);                                                                                 // Folded 0x0048c040.
+-    virtual void Unknown20(ScreenModeCommand command);                                                                                           // 0x0048e1c0.
+-    virtual void Unknown24(ScreenModeCommand command, float delay);                                                                              // 0x0048e1e0.
+-    virtual float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x00453a40.
+-    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data);                                                                    // 0x00453a50.
+-    virtual void Unknown30(unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value);                                   // 0x00453d40.
+-    virtual void Unknown34(unsigned int value);                                                                                                  // Folded 0x0049dbe0.
+-    virtual void SetWorldPosition(const ScreenWorldPosition* position);                                                                          // 0x00453950.
+-    virtual void Unknown3c();                                                                                                                    // 0x0049daf0.
+-    virtual void Unknown40();                                                                                                                    // Folded 0x00437d10.
+-    virtual int Unknown44();                                                                                                                     // Folded 0x004e8de0.
+-    virtual void Unknown48(GameFileReader* file);                                                                                                // 0x00453fa0.
+-    virtual void Unknown4c(GameFileReader* file);                                                                                                // 0x004540d0.
+-    virtual void Unknown50(int first, int second);                                                                                               // Folded 0x004e8fa0.
+-    virtual void Replaced();                                                                                                                     // Folded 0x00437d10.
+-    virtual void ClearSelection();                                                                                                               // Folded 0x00437d10.
+-    virtual bool CanSelectAtPointer();                                                                                                           // 0x00453750.
+-    virtual const char* EntityName();                                                                                                            // 0x00453760.
++    virtual bool Unknown14(ScreenModeCommand* command) = 0;         // Base body 0x00453860.
++    virtual void ReadText(const char* key, unsigned short* output); // 0x00453a20.
++    virtual void WriteValue(const char* key, const void* value);    // Folded 0x0048c040.
++    virtual void Unknown20(ScreenModeCommand command);              // 0x0048e1c0.
++    virtual void Unknown24(ScreenModeCommand command, float delay); // 0x0048e1e0.
++    virtual float Unknown28(const char* animation,
++        unsigned char once,
++        unsigned int next_state,
++        unsigned char hold,
++        const char* next_animation);                                          // 0x00453a40.
++    virtual WorldScriptValue Unknown2c(unsigned int kind, unsigned int data); // 0x00453a50.
++    virtual void Unknown30(unsigned int kind,
++        unsigned int data,
++        unsigned int value_kind,
++        unsigned int value);                                            // 0x00453d40.
++    virtual void Unknown34(unsigned int value);                         // Folded 0x0049dbe0.
++    virtual void SetWorldPosition(const ScreenWorldPosition* position); // 0x00453950.
++    virtual void Unknown3c();                                           // 0x0049daf0.
++    virtual void Unknown40();                                           // Folded 0x00437d10.
++    virtual int Unknown44();                                            // Folded 0x004e8de0.
++    virtual void Unknown48(GameFileReader* file);                       // 0x00453fa0.
++    virtual void Unknown4c(GameFileReader* file);                       // 0x004540d0.
++    virtual void Unknown50(int first, int second);                      // Folded 0x004e8fa0.
++    virtual void Replaced();                                            // Folded 0x00437d10.
++    virtual void ClearSelection();                                      // Folded 0x00437d10.
++    virtual bool CanSelectAtPointer();                                  // 0x00453750.
++    virtual const char* EntityName();                                   // 0x00453760.
+     void SetPosition(ScreenWorldPosition position);
+     void SetHeading(unsigned int heading);
+     void Unknown70();
+@@ -515,18 +568,21 @@ struct VariableThought
+ typedef WorldDequeIterator<VariableThought*> ScreenContextRowIterator;
+ struct BuildingGuestQueue
+ {
+-    ScreenMapPosition EntrancePosition();                                                                             // 0x004332e0.
+-    ScreenMapPosition FindQueuePosition();                                                                            // 0x00434e00.
+-    ScreenMapPosition Position(unsigned int index);                                                                   // 0x00433dc0.
+-    unsigned int Count();                                                                                             // 0x004333c0.
+-    bool AddGuest(unsigned int id, unsigned int feature, unsigned char flag);                                         // 0x004333f0.
+-    bool PopGuest(unsigned int* id, unsigned int* feature);                                                           // 0x004336a0.
+-    void SendGuests(unsigned int id);                                                                                 // 0x00433bc0.
+-    BuildingGuestQueue(unsigned int capacity, ScreenMapPosition entrance, ScreenMapPosition offset, unsigned int id); // 0x00432f80.
+-    ~BuildingGuestQueue();                                                                                            // 0x00433100.
+-    void Evacuate();                                                                                                  // 0x00433880.
+-    void SaveState(GameFileReader* file);                                                                             // 0x00435980.
+-    void LoadState(GameFileReader* file);                                                                             // 0x00435bd0.
++    ScreenMapPosition EntrancePosition();                                     // 0x004332e0.
++    ScreenMapPosition FindQueuePosition();                                    // 0x00434e00.
++    ScreenMapPosition Position(unsigned int index);                           // 0x00433dc0.
++    unsigned int Count();                                                     // 0x004333c0.
++    bool AddGuest(unsigned int id, unsigned int feature, unsigned char flag); // 0x004333f0.
++    bool PopGuest(unsigned int* id, unsigned int* feature);                   // 0x004336a0.
++    void SendGuests(unsigned int id);                                         // 0x00433bc0.
++    BuildingGuestQueue(unsigned int capacity,
++        ScreenMapPosition entrance,
++        ScreenMapPosition offset,
++        unsigned int id);                 // 0x00432f80.
++    ~BuildingGuestQueue();                // 0x00433100.
++    void Evacuate();                      // 0x00433880.
++    void SaveState(GameFileReader* file); // 0x00435980.
++    void LoadState(GameFileReader* file); // 0x00435bd0.
+     unsigned int owner_00;
+     unsigned int word_04;
+     WorldDequeStorage<unsigned int> guests_08;
+@@ -543,6 +599,7 @@ struct BuildingGuestQueue
+ 
+ struct VariableCatalog
+ {
++    ~VariableCatalog();                                 // 0x00448d90.
+     VariableCrimeDefinition* Crime(unsigned int index); // 0x00449380.
+     unsigned char unknown_00[0x0c];
+     unsigned int building_count_0c;
+@@ -694,23 +751,30 @@ struct VariableWorldPrefix : VariableWorldRegistration
+     // Actual 0x0042fab0, RET4; low-byte flag, real world owner required.
+     void SetKeylines(unsigned char enabled);
+ 
+-    VariableEntity* FindObject(unsigned int id);                                                                                            // 0x0042ef60.
+-    VariableEntity** FindNamed(const char* name, unsigned int* count);                                                                      // 0x0042efe0, RET8.
+-    unsigned int HasNamed(const char* name);                                                                                                // 0x0042f000, RET4, EAX test.
+-    VariableEntity** ByType(unsigned char type, unsigned int* count);                                                                       // 0x0042f020, RET8.
+-    VariableEntity** Nearby(int x, int y, unsigned int distance, unsigned int* count);                                                      // 0x0042f120.
+-    VariableEntity** AllStaff(unsigned int* count);                                                                                         // 0x0042f0e0, RET4.
+-    VariableEntity** CollectStaff(unsigned int* count);                                                                                     // 0x0042f990.
+-    VariableEntity** SelectedBuildings(unsigned int* count);                                                                                // 0x0042f230.
+-    VariableEntity** Selected(unsigned int* count);                                                                                         // 0x0042f360.
+-    unsigned int FindIndex(unsigned int id);                                                                                                // 0x0042f820.
+-    VariableEntity** FindMatches(unsigned int* count, const void* key, bool (*predicate)(VariableEntity*, const void*));                    // 0x0042f890.
+-    void ClearSelectionForType(unsigned char type);                                                                                         // 0x0042f6d0.
+-    VariableEntity** InRectangle(unsigned char type, unsigned int* count, const ScreenWorldPosition* low, const ScreenWorldPosition* high); // 0x0042f510.
+-    void ClearSelection();                                                                                                                  // 0x0042f770.
+-    unsigned int CountType(unsigned char type);                                                                                             // 0x0042f0f0, RET4.
+-
+-    void CountMatches(unsigned int& result, const void* key,
++    VariableEntity* FindObject(unsigned int id);                       // 0x0042ef60.
++    VariableEntity** FindNamed(const char* name, unsigned int* count); // 0x0042efe0, RET8.
++    unsigned int HasNamed(const char* name);                          // 0x0042f000, RET4, EAX test.
++    VariableEntity** ByType(unsigned char type, unsigned int* count); // 0x0042f020, RET8.
++    VariableEntity** Nearby(
++        int x, int y, unsigned int distance, unsigned int* count); // 0x0042f120.
++    VariableEntity** AllStaff(unsigned int* count);                // 0x0042f0e0, RET4.
++    VariableEntity** CollectStaff(unsigned int* count);            // 0x0042f990.
++    VariableEntity** SelectedBuildings(unsigned int* count);       // 0x0042f230.
++    VariableEntity** Selected(unsigned int* count);                // 0x0042f360.
++    unsigned int FindIndex(unsigned int id);                       // 0x0042f820.
++    VariableEntity** FindMatches(unsigned int* count,
++        const void* key,
++        bool (*predicate)(VariableEntity*, const void*)); // 0x0042f890.
++    void ClearSelectionForType(unsigned char type);       // 0x0042f6d0.
++    VariableEntity** InRectangle(unsigned char type,
++        unsigned int* count,
++        const ScreenWorldPosition* low,
++        const ScreenWorldPosition* high);       // 0x0042f510.
++    void ClearSelection();                      // 0x0042f770.
++    unsigned int CountType(unsigned char type); // 0x0042f0f0, RET4.
++
++    void CountMatches(unsigned int& result,
++        const void* key,
+         bool (*predicate)(const VariableEntity*, const void*)); // 0x0042f9f0
+ 
+     ~VariableWorldPrefix();               // 0x0042e780.
+diff --git a/src/window_activation.h b/src/window_activation.h
+index 29e2665..8c3003d 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -6,13 +6,38 @@
+ #undef PlaySound
+ #endif
+ 
+-#include "window_audio.h"
+ #include "startup_building_status.h"
++#include "window_audio.h"
+ 
+ struct VariableWorldPrefix;
+ struct VariableEconomy;
+ struct WorldRepairManager;
+ struct WorldCleaningManager;
++struct VariableCatalog;
++struct InputMotionState;
++struct InputState;
++struct ScreenModeCommandQueue;
++struct ScreenTerrainGrid;
++struct WorldSubsystem18;
++struct WorldSubsystem20;
++struct VariableTransport;
++struct VariableTicker;
++struct OverlayMapPrefix;
++struct WorldCursorNames;
++struct WorldSubsystem3c;
++struct VariableWeather;
++struct WorldSubsystem44;
++struct WorldSubsystem4c;
++struct AnimationSoundLookup;
++
++struct WindowDeactivationState;
++extern WindowDeactivationState* window_deactivation_state;
++
++struct WorldStateRegistration
++{
++    explicit WorldStateRegistration(WindowDeactivationState* owner);
++    ~WorldStateRegistration(); // 0x00441950.
++};
+ 
+ // Descriptive observed prefixes, not recovered complete class layouts.
+ struct WindowActivationTarget
+@@ -24,11 +49,11 @@ struct WindowActivationTarget
+     void Deactivate();
+ };
+ 
+-struct WindowDeactivationState
++struct WindowDeactivationState : WorldStateRegistration
+ {
+-    ~WindowDeactivationState();                                                      // Ordinary nonvirtual destructor, 0x0043c420.
+-    void* VehicleCircuit(unsigned int kind);                                         // 0x00441320.
+-    unsigned int CurrentHour();                                                      // 0x0043d260.
++    ~WindowDeactivationState();              // Ordinary nonvirtual destructor, 0x0043c420.
++    void* VehicleCircuit(unsigned int kind); // 0x00441320.
++    unsigned int CurrentHour();              // 0x0043d260.
+     void AddScriptEntry(unsigned int kind, unsigned int first, unsigned int second); // 0x00441340.
+     bool IsBuildingListed(unsigned int index);                                       // 0x0043cdc0.
+     unsigned int VehicleCircuitCount(unsigned int kind);                             // 0x00441310.
+@@ -38,16 +63,29 @@ struct WindowDeactivationState
+     unsigned int CurrentZoom();
+     void UpdateAt0043f0d0();
+     void UpdatePower();
+-    unsigned char unknown_00[0x10];
++    VariableCatalog* catalog_00;
++    InputMotionState* motion_04;
++    InputState* input_08;
++    ScreenModeCommandQueue* commands_0c;
+     VariableWorldPrefix* world_10;
+-    unsigned char unknown_14[8];
++    ScreenTerrainGrid* terrain_14;
++    WorldSubsystem18* subsystem_18;
+     VariableEconomy* economy_1c;
+-    unsigned char unknown_20[8];
++    WorldSubsystem20* subsystem_20;
++    VariableTransport* transport_24;
+     WorldRepairManager* repairs_28;
+     WorldCleaningManager* cleaning_2c;
+-    unsigned char unknown_30[0x18];
++    VariableTicker* ticker_30;
++    OverlayMapPrefix* map_34;
++    WorldCursorNames* cursors_38;
++    WorldSubsystem3c* subsystem_3c;
++    VariableWeather* weather_40;
++    WorldSubsystem44* subsystem_44;
+     VariableBuildingStatus* building_status_48;
+-    unsigned char unknown_4c[0x10c];
++    WorldSubsystem4c* subsystem_4c;
++    AnimationSoundLookup* animation_sounds_50;
++    char path_54[256];
++    float value_154;
+     union
+     {
+         float clock_158;
+@@ -104,8 +142,8 @@ struct WindowDeactivationState
+     float income_770;
+     float income_774;
+ 
+-    bool IsBuildingGreyed(unsigned int index);            // 0x0043cc30, RET4; excluded comparison boundary.
+-    bool CanBuild(unsigned int index);                    // Real complete 0x0043cad0 source selected.
++    bool IsBuildingGreyed(unsigned int index); // 0x0043cc30, RET4; excluded comparison boundary.
++    bool CanBuild(unsigned int index);         // Real complete 0x0043cad0 source selected.
+     unsigned int CountReadyBuildings(unsigned int index); // Real 0x0043cdf0 source.
+     unsigned int CountBuildings(unsigned int index);      // Real 0x0043cea0 source.
+     void SetGameSpeed(unsigned int index);

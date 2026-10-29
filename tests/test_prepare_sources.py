@@ -507,6 +507,45 @@ class LocalDecompTests(unittest.TestCase):
         self.assertEqual((self.repo / 'decomp/src/value.cpp').read_bytes(), b'first\n')
         self.assertFalse((self.repo / 'decomp/src/helper.cpp').exists())
 
+    def test_game_fixes_follow_faithful_sources_and_precede_optional_tweaks(self):
+        import hashlib
+        common, native, _, _ = self.profile_patches()
+        game = self.patch('game.patch', 'native', 'game')
+        self.write('patches/beachlife-decomp/game-series', b'game.patch\n')
+        fix = self.patch('../beachlife-decomp-fixes/fix.patch', 'game', 'fixed game')
+        fixes = self.write('patches/beachlife-decomp-fixes/series', b'fix.patch\n')
+        tweak = self.patch('../beachlife-decomp-tweaks/tweak.patch',
+                           'fixed game', 'fixed game with tweak')
+        self.write('patches/beachlife-decomp-tweaks/series', b'tweak.patch\n')
+        for profile, value, patches in (
+                ('matching', 'reconstructed', [common]),
+                ('native', 'native', [common, native]),
+                ('native-experimental', 'native', [common, native]),
+                ('native-game', 'fixed game', [common, native, game, fix]),
+                ('native-game-tweaks', 'fixed game with tweak',
+                 [common, native, game, fix, tweak])):
+            with self.subTest(profile=profile):
+                self.output = self.root / ('prepared-' + profile)
+                self.prepare(decomp_profile=profile)
+                self.prepare(verify=True, decomp_profile=profile)
+                self.assertEqual((self.output / 'beachlife-decomp/src/value.cpp').read_text(),
+                                 value + '\n')
+                self.assertEqual(self.record()['identity']['patches'], [
+                    {'path': p.resolve().relative_to(self.repo.resolve()).as_posix(),
+                     'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in patches])
+        # Either a series edit or a fix edit invalidates only game exports.
+        for changed in (fixes, fix):
+            changed.write_bytes(changed.read_bytes() + b'\n')
+            for profile in ('matching', 'native', 'native-experimental',
+                            'native-game', 'native-game-tweaks'):
+                self.output = self.root / ('prepared-' + profile)
+                if profile.startswith('native-game'):
+                    with self.assertRaisesRegex(ValueError, 'stale'):
+                        self.prepare(verify=True, decomp_profile=profile)
+                    self.prepare(decomp_profile=profile)
+                self.prepare(verify=True, decomp_profile=profile)
+        self.assertEqual((self.repo / 'decomp/src/value.cpp').read_bytes(), b'first\n')
+
     def test_native_pre_series_precedes_experimental_and_is_fingerprinted(self):
         common, native, reconstruction, adaptations = self.profile_patches()
         common.write_bytes(common.read_bytes() +

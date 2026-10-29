@@ -18,6 +18,8 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = ('sdl', 'imgui', 'stb', 'unshield', 'zlib', 'freetype', 'dr-libs', 'pl-mpeg')
 DECOMP = 'beachlife-decomp'
+# Retail bug fixes are always applied to the played game, never to matching.
+DECOMP_FIXES = 'beachlife-decomp-fixes'
 # Optional player-visible changes, kept apart from the faithful series.
 DECOMP_TWEAKS = 'beachlife-decomp-tweaks'
 DECOMP_PROFILES = {
@@ -25,12 +27,14 @@ DECOMP_PROFILES = {
     'matching': ('reconstruction-series',),
     'native-experimental': ('reconstruction-series', 'native-pre-series',
                             'experimental-series', 'series'),
-    # The boot build's one merged game tree, applied last.
+    # The boot build's merged game tree, followed by always-on retail bug fixes.
     'native-game': ('reconstruction-series', 'native-pre-series',
-                    'experimental-series', 'series', 'game-series'),
+                    'experimental-series', 'series', 'game-series',
+                    (DECOMP_FIXES, 'series')),
     # The boot build plus the optional tweak series, each off by default at run time.
     'native-game-tweaks': ('reconstruction-series', 'native-pre-series',
                            'experimental-series', 'series', 'game-series',
+                           (DECOMP_FIXES, 'series'),
                            (DECOMP_TWEAKS, 'series')),
 }
 

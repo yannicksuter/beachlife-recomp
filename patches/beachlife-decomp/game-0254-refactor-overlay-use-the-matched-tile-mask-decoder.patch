@@ -1,0 +1,86 @@
+diff --git a/src/startup_overlay_tile_mask.cpp b/src/startup_overlay_tile_mask.cpp
+index baf7b9aa63569b2d8166a1d44b3b0838fea58b10..0de3da912de7a1bc510f8f5c566a0edd82adf494 100644
+--- a/src/startup_overlay_tile_mask.cpp
++++ b/src/startup_overlay_tile_mask.cpp
+@@ -16,15 +16,18 @@ void OverlayMapPrefix::DrawTileMask(int tile_x, int tile_y, int x, int y, const
+     }
+     if (!this->cached_tiles_e0[(tile_y) * (cache_width_d4) + (tile_x)].ready)
+         this->MapCachedTile(tile_x, tile_y);
+-    int size = tile_size_dc;
+     int active_y = tile_y;
+-    for (int row = 0; row < 33; ++row, ++y)
++    int size = tile_size_dc;
++    unsigned int data_index = 0;
++    for (int row = 0; row < 33; ++row)
+     {
+         int active_x = tile_x;
+         int column = x;
+-        if (y > size - 1)
+-            active_y = tile_y + y / size;
+-        int row_offset = (y % size) * size;
++        int decoded = 0;
++        int row_y = y + row;
++        if (row_y > size - 1)
++            active_y = tile_y + row_y / size;
++        int row_offset = (row_y % size) * size;
+         int pixel = row_offset + x;
+         if (!overlay_map->cached_tiles_e0[(active_y) * (overlay_map->cache_height_d8) + (tile_x)].ready)
+         {
+@@ -32,23 +35,19 @@ void OverlayMapPrefix::DrawTileMask(int tile_x, int tile_y, int x, int y, const
+             map->cached_tiles_e0[active_y * map->cache_width_d4 + tile_x].ready = 1;
+             unsigned int pixels = static_cast<unsigned int>(map->tile_size_dc) * map->tile_size_dc;
+             unsigned int offset = (active_y * map->cache_width_d4 + tile_x) * pixels * 4;
+-            void* view = map->mapped_file_f4->MapView(offset, pixels * 4);
+-            map->cached_tiles_e0[active_y * map->cache_width_d4 + tile_x].view = view;
++            map->cached_tiles_e0[active_y * map->cache_width_d4 + tile_x].view = map->mapped_file_f4->MapView(offset, pixels * 4);
+         }
+         if (!this->cached_tiles_e0[(active_y) * (cache_width_d4) + (tile_x)].ready)
+             this->MapCachedTile(tile_x, active_y);
+         unsigned int* view = static_cast<unsigned int*>(cached_tiles_e0[active_y * cache_width_d4 + tile_x].view);
+         const unsigned short* colours = archive_154->Colours(tile_x, active_y);
+         const unsigned short* depths = archive_154->Depths(tile_x, active_y);
+-        int decoded = 0;
+         while (decoded < 62)
+         {
+-            int run = static_cast<signed char>(*data++);
++            signed char run = data[data_index++];
+             if (run >= 0)
+             {
+-                data += run;
+-                decoded += run;
+-                for (int i = 0; i < run; ++i)
++                while (run--)
+                 {
+                     if (column >= size)
+                     {
+@@ -75,6 +74,8 @@ void OverlayMapPrefix::DrawTileMask(int tile_x, int tile_y, int x, int y, const
+                         view[pixel] = (value & 0xffff0000u) + colours[pixel];
+                     ++pixel;
+                     ++column;
++                    ++decoded;
++                    ++data_index;
+                 }
+             }
+             else
+@@ -94,16 +95,17 @@ void OverlayMapPrefix::DrawTileMask(int tile_x, int tile_y, int x, int y, const
+                         void* view = map->mapped_file_f4->MapView(offset, pixels * 4);
+                         map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].view = view;
+                     }
+-                    if (!overlay_map->cached_tiles_e0[(active_y) * (overlay_map->cache_width_d4) + (active_x)].ready)
++                    OverlayMapPrefix* map = overlay_map;
++                    OverlayCachedTile* tile = &map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x];
++                    if (!tile->ready)
+                     {
+-                        OverlayMapPrefix* map = overlay_map;
+-                        map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].ready = 1;
++                        tile->ready = 1;
+                         unsigned int pixels = static_cast<unsigned int>(map->tile_size_dc) * map->tile_size_dc;
+                         unsigned int offset = (active_y * map->cache_width_d4 + active_x) * pixels * 4;
+                         void* view = map->mapped_file_f4->MapView(offset, pixels * 4);
+                         map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].view = view;
+                     }
+-                    view = static_cast<unsigned int*>(overlay_map->cached_tiles_e0[active_y * overlay_map->cache_width_d4 + active_x].view);
++                    view = static_cast<unsigned int*>(map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].view);
+                     colours = archive_154->Colours(active_x, active_y);
+                     depths = archive_154->Depths(active_x, active_y);
+                     pixel = row_offset + column;
