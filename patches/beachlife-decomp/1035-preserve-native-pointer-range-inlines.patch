@@ -1,0 +1,126 @@
+diff --git b/src/startup_pointer_range_inlines.h a/src/startup_pointer_range_inlines.h
+deleted file mode 100644
+index 4ce110e..0000000
+--- b/src/startup_pointer_range_inlines.h
++++ /dev/null
+@@ -1,120 +0,0 @@
+-#ifndef STARTUP_POINTER_RANGE_INLINES_H
+-#define STARTUP_POINTER_RANGE_INLINES_H
+-
+-#include "startup_trivial_range_algorithms.h"
+-#include "startup_screen_table_storage.h"
+-#include "pool_allocate.h"
+-#include <new>
+-#include "pool_return.h"
+-#include "copy_trivial.h"
+-
+-// Retail inline/template body: 0x004a5000.
+-template <class T>
+-void ClearPointerRange(T* begin, T*& end)
+-{
+-    end = static_cast<T*>(CopyTrivial(end, end, begin));
+-}
+-
+-// Retail inline/template body: 0x004b95f0.
+-template <class T>
+-void ReleaseTrivialStorage(T* begin, T* capacity)
+-{
+-    if (begin)
+-    {
+-        unsigned int bytes = static_cast<unsigned int>(capacity - begin) * sizeof(T);
+-        if (bytes > 128)
+-            ::operator delete(begin);
+-        else
+-            ReturnPool(begin, bytes);
+-    }
+-}
+-
+-// Retail inline/template body: 0x004c3b40.
+-template <class T>
+-void SetTrivialStorage(T*& begin, T*& end, T*& capacity, T* first, T* last, T* limit)
+-{
+-    begin = first;
+-    end = last;
+-    capacity = limit;
+-}
+-
+-// Retail inline/template body: 0x00435dd0.
+-template <class T>
+-void ConstructTrivialValue(T* destination, const T& value)
+-{
+-    if (destination)
+-        ::new (destination) T(value);
+-}
+-
+-// Retail inline/template body: 0x004a5030.
+-template <class T, class Callback>
+-Callback VisitPointerRange(T** first, T** last, Callback callback)
+-{
+-    while (first != last)
+-    {
+-        callback(*first);
+-        ++first;
+-    }
+-    return callback;
+-}
+-
+-// Retail inline/template body: 0x004c3b60.
+-template <class T>
+-T* FillTrivialRange(T* first, unsigned int count, const T& value)
+-{
+-    for (; count > 0; --count, ++first)
+-        *first = value;
+-    return first;
+-}
+-
+-template <class T>
+-inline T& ScreenTableStorage<T>::operator[](unsigned int index)
+-{
+-    return begin[index];
+-}
+-template <class T>
+-inline const T& ScreenTableStorage<T>::operator[](unsigned int index) const
+-{
+-    return begin[index];
+-}
+-template <class T>
+-inline bool ScreenTableStorage<T>::Empty() const
+-{
+-    return begin == end;
+-}
+-template <class T>
+-inline unsigned int ScreenTableStorage<T>::Size() const
+-{
+-    return static_cast<unsigned int>(end - begin);
+-}
+-template <class T>
+-inline void ScreenTableStorage<T>::ReleaseStorage()
+-{
+-    ReleaseTrivialStorage(begin, limit);
+-}
+-template <class T>
+-inline void ScreenTableStorage<T>::SetStorage(T* first, T* last, T* capacity)
+-{
+-    SetTrivialStorage(begin, end, limit, first, last, capacity);
+-}
+-template <class T>
+-inline void ScreenTableStorage<T>::PushBack(const T& value)
+-{
+-    if (end != limit)
+-    {
+-        if (end)
+-            ::new (end) T(value);
+-        ++end;
+-        return;
+-    }
+-    unsigned int size = static_cast<unsigned int>(end - begin);
+-    unsigned int count = size + (size < 1 ? 1 : size);
+-    unsigned int bytes = count * sizeof(T);
+-    T* storage = count ? static_cast<T*>(bytes > 128 ? ::operator new(bytes) : AllocatePoolBytes(bytes)) : 0;
+-    T* next = static_cast<T*>(CopyTrivial(begin, end, storage));
+-    *next++ = value;
+-    ReleaseStorage();
+-    SetStorage(storage, next, storage + count);
+-}
+-
+-#endif

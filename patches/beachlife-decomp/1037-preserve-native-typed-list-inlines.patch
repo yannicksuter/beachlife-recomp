@@ -1,0 +1,176 @@
+diff --git b/src/startup_game_won.h a/src/startup_game_won.h
+index d82ae9c..bbfa869 100644
+--- b/src/startup_game_won.h
++++ a/src/startup_game_won.h
+@@ -34,6 +34,4 @@ struct GameWonList : GameWonListBase
+     CircularListIterator Insert(CircularListIterator position, ScreenItem* const& item);
+     void Clear();
+-    CircularListIterator Begin() const;
+-    CircularListIterator End() const;
+ };
+ 
+diff --git b/src/startup_pointer_list_inlines.h a/src/startup_pointer_list_inlines.h
+deleted file mode 100644
+index 4f781d3..0000000
+--- b/src/startup_pointer_list_inlines.h
++++ /dev/null
+@@ -1,129 +0,0 @@
+-#ifndef STARTUP_POINTER_LIST_INLINES_H
+-#define STARTUP_POINTER_LIST_INLINES_H
+-
+-#include "startup_pointer_list_operations.h"
+-#include "startup_world_repairs.h"
+-#include "startup_game_won.h"
+-#include <iterator>
+-
+-// The category reference is the retail input-iterator dispatch argument.
+-// Folded distance implementation at 0x00420d60.
+-template <class Iterator>
+-unsigned int PointerListDistance(const Iterator& first, const Iterator& last,
+-    const std::input_iterator_tag&)
+-{
+-    Iterator position(first);
+-    unsigned int count = 0;
+-    while (position.node != last.node)
+-    {
+-        position.node = position.node->next;
+-        ++count;
+-    }
+-    return count;
+-}
+-
+-template <class Iterator>
+-inline unsigned int PointerListDistance(const Iterator& first, const Iterator& last)
+-{
+-    return PointerListDistance(first, last, std::input_iterator_tag());
+-}
+-
+-template <class Node>
+-inline RecordIdEquals<Node>::RecordIdEquals(unsigned int value)
+-    : id(value)
+-{
+-}
+-template <class Node>
+-inline bool RecordIdEquals<Node>::operator()(CircularListNode* node) const
+-{
+-    return static_cast<Node*>(node)->entry->id_00 == id;
+-}
+-
+-template <class Iterator, class Predicate>
+-Iterator FindPointerListRecord(Iterator first, Iterator last, Predicate predicate)
+-{
+-    while (first.node != last.node && !predicate(first.node))
+-        first.node = first.node->next;
+-    return first;
+-}
+-
+-template <class Node, class Link>
+-void ClearPointerList(Link* head)
+-{
+-    Link* node = head->next;
+-    while (node != head)
+-    {
+-        Link* released = node;
+-        node = node->next;
+-        if (released)
+-            ReturnPool(released, sizeof(Node));
+-    }
+-    head->next = head;
+-    head->previous = head;
+-}
+-
+-template <class T>
+-void DeleteNullablePointerListValue(T* value)
+-{
+-    if (value)
+-        ::operator delete(value);
+-}
+-
+-// Payload selection belongs to the typed specialization, not the stack ABI.
+-template <class Node, class Value, Value Node::* Payload, class Iterator, class Callback>
+-Callback VisitPointerList(Iterator first, Iterator last, Callback callback)
+-{
+-    while (first.node != last.node)
+-    {
+-        callback(static_cast<Node*>(first.node)->*Payload);
+-        first.node = first.node->next;
+-    }
+-    return callback;
+-}
+-
+-inline CircularListIterator WorldRepairList::Begin() const
+-{
+-    CircularListIterator result;
+-    result.node = head->next;
+-    return result;
+-}
+-inline CircularListIterator WorldRepairList::End() const
+-{
+-    CircularListIterator result;
+-    result.node = head;
+-    return result;
+-}
+-inline CircularListIterator WorldRepairList::Erase(CircularListIterator position)
+-{
+-    return ErasePointerListNode<WorldRepairNode<WorldRepairEntry> >(position);
+-}
+-inline CircularListIterator WorldRepairAssignmentList::Begin() const
+-{
+-    CircularListIterator result;
+-    result.node = head->next;
+-    return result;
+-}
+-inline CircularListIterator WorldRepairAssignmentList::End() const
+-{
+-    CircularListIterator result;
+-    result.node = head;
+-    return result;
+-}
+-inline CircularListIterator WorldRepairAssignmentList::Erase(CircularListIterator position)
+-{
+-    return ErasePointerListNode<WorldRepairNode<WorldRepairAssignment> >(position);
+-}
+-inline CircularListIterator GameWonList::Begin() const
+-{
+-    CircularListIterator result;
+-    result.node = head->next;
+-    return result;
+-}
+-inline CircularListIterator GameWonList::End() const
+-{
+-    CircularListIterator result;
+-    result.node = head;
+-    return result;
+-}
+-
+-#endif
+diff --git b/src/startup_state_save_helpers.h a/src/startup_state_save_helpers.h
+index 554f95a..3630455 100644
+--- b/src/startup_state_save_helpers.h
++++ a/src/startup_state_save_helpers.h
+@@ -3,22 +3,8 @@
+ 
+ #include "startup_game_file.h"
+-#include "startup_pointer_list_inlines.h"
+-#include <string.h>
++#include "startup_pointer_list_operations.h"
+ 
+-inline void WriteStateFloat(GameFileReader* file, const char* name, float value)
+-{
+-    unsigned int bits;
+-    memcpy(&bits, &value, sizeof(bits));
+-    file->Unknown30(name, bits);
+-}
+-
+-inline unsigned int StateListSize(CircularListNode* head)
+-{
+-    CircularListIterator first;
+-    first.node = head->next;
+-    CircularListIterator last;
+-    last.node = head;
+-    return PointerListDistance(first, last);
+-}
++void WriteStateFloat(GameFileReader* file, const char* name, float value);
++unsigned int StateListSize(CircularListNode* head);
+ 
+ #endif

@@ -1,0 +1,55 @@
+diff --git a/src/startup_screen_children.h b/src/startup_screen_children.h
+index 4e340b5..7c879bc 100644
+--- a/src/startup_screen_children.h
++++ b/src/startup_screen_children.h
+@@ -29,4 +29,6 @@ struct ScreenChildRing
+ {
+     ScreenChildNode* head;
++    ScreenChildRing();
++    void Clear();
+     ScreenChildIterator End() const;
+     ScreenChildIterator Insert(ScreenChildIterator position, ScreenItem* const& item);
+diff --git a/src/startup_screen_children_inlines.h b/src/startup_screen_children_inlines.h
+new file mode 100644
+index 0000000..3eb1d40
+--- /dev/null
++++ b/src/startup_screen_children_inlines.h
+@@ -0,0 +1,38 @@
++#ifndef STARTUP_SCREEN_CHILDREN_INLINES_H
++#define STARTUP_SCREEN_CHILDREN_INLINES_H
++
++#include "startup_screen_children.h"
++#include "pool_allocate.h"
++#include "pool_return.h"
++#include <new>
++
++// Observed member construction in Dialog 0x004a5710 and Frame 0x004c7429.
++// No separate original entry address or original template name is claimed.
++inline ScreenChildRing::ScreenChildRing()
++    : head(0)
++{
++    void* storage = AllocatePoolBytes(sizeof(ScreenChildNode));
++    ScreenChildNode* sentinel = ::new (storage) ScreenChildNode;
++    sentinel->next = sentinel;
++    sentinel->previous = sentinel;
++    head = sentinel;
++}
++
++// Same borrowed-node clear operation inlined at 0x004a5810 and 0x004c7456.
++// The qualified pool-return source expresses its actual lock/free-list effect;
++// no original out-of-line Clear entry or byte-matching result is claimed.
++inline void ScreenChildRing::Clear()
++{
++    ScreenChildNode* node = head->next;
++    while (node != head)
++    {
++        ScreenChildNode* released = node;
++        node = node->next;
++        if (released != 0)
++            ReturnPool(released, sizeof(ScreenChildNode));
++    }
++    head->next = head;
++    head->previous = head;
++}
++
++#endif

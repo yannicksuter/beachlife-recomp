@@ -1,0 +1,540 @@
+diff --git b/src/startup_world_deque_inlines.h a/src/startup_world_deque_inlines.h
+deleted file mode 100644
+index 3eed6f0..0000000
+--- b/src/startup_world_deque_inlines.h
++++ /dev/null
+@@ -1,534 +0,0 @@
+-#ifndef STARTUP_WORLD_DEQUE_INLINES_H
+-#define STARTUP_WORLD_DEQUE_INLINES_H
+-
+-#include "startup_world_deque_operations.h"
+-#include "startup_pointer_range_inlines.h"
+-#include "startup_ticker_storage.h"
+-#include "startup_overlay_pending_deque.h"
+-#include "node_storage.h"
+-#include "pool_chunk_acquire.h"
+-#include "pool_lock_acquire.h"
+-#include "pool_lock_guard.h"
+-#include "pool_refill.h"
+-#include "pool_allocate.h"
+-#include "startup_trivial_range_algorithms.h"
+-#include <string.h>
+-#include "startup_screen_shared_methods.h"
+-
+-// Shared implementation of the retail library's 32-element deque operations.
+-template <class Iterator>
+-int WorldDequeDistance(Iterator last, Iterator first)
+-{
+-    return 32 * (last.node - first.node - 1) + (last.current - last.first)
+-         + (first.last - first.current);
+-}
+-
+-template <class Iterator>
+-static Iterator WorldDequeAdvance(Iterator position, int count)
+-{
+-    int offset = static_cast<int>(position.current - position.first) + count;
+-    if (offset >= 0 && offset < 32)
+-        position.current += count;
+-    else
+-    {
+-        int block = offset > 0 ? offset / 32 : (offset + 1) / 32 - 1;
+-        position.node += block;
+-        position.first = *position.node;
+-        position.last = position.first + 32;
+-        position.current = position.first + offset - block * 32;
+-    }
+-    return position;
+-}
+-
+-// Retail template body: 0x00427a90.
+-template <class Iterator>
+-Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result,
+-    const WorldDequeRandomAccessTag&, int*)
+-{
+-    int count = WorldDequeDistance<Iterator>(last, first);
+-    while (count > 0)
+-    {
+-        *result.current = *first.current;
+-        first = WorldDequeAdvance(first, 1);
+-        result = WorldDequeAdvance(result, 1);
+-        --count;
+-    }
+-    return result;
+-}
+-
+-// Retail template body: 0x0043b490.
+-template <class Iterator>
+-Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result, const WorldDequeIteratorTag&)
+-{
+-    return CopyWorldDeque(first, last, result, WorldDequeRandomAccessTag(), 0);
+-}
+-
+-// Retail template body: 0x00462880.
+-template <class Iterator>
+-Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result)
+-{
+-    return CopyWorldDeque(first, last, result, WorldDequeIteratorTag());
+-}
+-
+-// Retail template body: 0x00462b50.
+-template <class Iterator>
+-Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result,
+-    const WorldDequeRandomAccessTag&, int*)
+-{
+-    int count = WorldDequeDistance<Iterator>(last, first);
+-    while (count > 0)
+-    {
+-        last = WorldDequeAdvance(last, -1);
+-        result = WorldDequeAdvance(result, -1);
+-        *result.current = *last.current;
+-        --count;
+-    }
+-    return result;
+-}
+-
+-// Retail template body: 0x00462b00.
+-template <class Iterator>
+-Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result, const WorldDequeIteratorTag&)
+-{
+-    return CopyWorldDequeBackward(first, last, result, WorldDequeRandomAccessTag(), 0);
+-}
+-
+-// Retail template body: 0x00462830.
+-template <class Iterator>
+-Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result)
+-{
+-    return CopyWorldDequeBackward(first, last, result, WorldDequeIteratorTag());
+-}
+-
+-// Retail template body: 0x0042c570.
+-template <class T, class Iterator>
+-void WorldDequeStorage<T, Iterator>::ReserveMap(unsigned int count, unsigned char front)
+-{
+-    unsigned int old_nodes = static_cast<unsigned int>(end.node - begin.node) + 1;
+-    unsigned int new_nodes = old_nodes + count;
+-    T** new_begin;
+-    if (map_count > new_nodes * 2)
+-    {
+-        new_begin = map + (map_count - new_nodes) / 2 + (front ? count : 0);
+-        memmove(new_begin, begin.node, old_nodes * sizeof(T*));
+-    }
+-    else
+-    {
+-        unsigned int size = map_count + (map_count < count ? count : map_count) + 2;
+-        T** new_map = static_cast<T**>(size == 0 ? 0 : size * sizeof(T*) > 128 ? ::operator new(size * sizeof(T*))
+-                                                                               : AllocatePoolBytes(size * sizeof(T*)));
+-        new_begin = new_map + (size - new_nodes) / 2 + (front ? count : 0);
+-        memmove(new_begin, begin.node, old_nodes * sizeof(T*));
+-        if (this->map)
+-        {
+-            unsigned int bytes = map_count * sizeof(T*);
+-            if (bytes > 128)
+-                ::operator delete(this->map);
+-            else
+-                ReturnPool(this->map, bytes);
+-        }
+-        map = new_map;
+-        map_count = size;
+-    }
+-    begin.node = new_begin;
+-    begin.first = *new_begin;
+-    begin.last = begin.first + block_size;
+-    end.node = new_begin + old_nodes - 1;
+-    end.first = *end.node;
+-    end.last = end.first + block_size;
+-}
+-
+-template <class T, class Iterator>
+-static void WorldDequeAppendBlock(WorldDequeStorage<T, Iterator>& deque, const T& source)
+-{
+-    T value = source;
+-    if (deque.map_count - (deque.end.node - deque.map) < 2)
+-        deque.ReserveMap(1, 0);
+-    deque.end.node[1] = static_cast<T*>(AllocateNodeStorage(WorldDequeStorage<T, Iterator>::block_size * sizeof(T)));
+-    if (deque.end.current)
+-        *deque.end.current = value;
+-    ++deque.end.node;
+-    deque.end.first = *deque.end.node;
+-    deque.end.last = deque.end.first + WorldDequeStorage<T, Iterator>::block_size;
+-    deque.end.current = deque.end.first;
+-}
+-
+-template <class T, class Iterator>
+-static void WorldDequePushBack(WorldDequeStorage<T, Iterator>& deque, const T& value)
+-{
+-    if (deque.end.current == deque.end.last - 1)
+-        deque.AppendBlock(value);
+-    else
+-    {
+-        if (deque.end.current)
+-            *deque.end.current = value;
+-        ++deque.end.current;
+-    }
+-}
+-
+-template <class T, class Iterator>
+-static void WorldDequePushFrontBlock(WorldDequeStorage<T, Iterator>& deque, const T& source)
+-{
+-    T value = source;
+-    if (deque.begin.node == deque.map)
+-        deque.ReserveMap(1, 1);
+-    deque.begin.node[-1] = static_cast<T*>(AllocateNodeStorage(WorldDequeStorage<T, Iterator>::block_size * sizeof(T)));
+-    --deque.begin.node;
+-    deque.begin.first = *deque.begin.node;
+-    deque.begin.last = deque.begin.first + WorldDequeStorage<T, Iterator>::block_size;
+-    deque.begin.current = deque.begin.last - 1;
+-    ConstructTrivialValue(deque.begin.current, value);
+-}
+-
+-template <class T, class Iterator>
+-static void WorldDequePushFront(WorldDequeStorage<T, Iterator>& deque, const T& value)
+-{
+-    if (deque.begin.current == deque.begin.first)
+-        deque.PushFrontBlock(value);
+-    else
+-    {
+-        ConstructTrivialValue(deque.begin.current - 1, value);
+-        --deque.begin.current;
+-    }
+-}
+-
+-// Retail template body: 0x00427240.
+-template <class T, class Iterator>
+-void WorldDequeStorage<T, Iterator>::AppendBlock(const T& source)
+-{
+-    T value = source;
+-    if (map_count - (end.node - map) < 2)
+-        ReserveMap(1, 0);
+-    void* storage;
+-    if (block_size * sizeof(value_type) > 128)
+-        storage = ::operator new(block_size * sizeof(value_type));
+-    else
+-    {
+-        AcquirePoolLock(&pool_lock_word);
+-        PoolLockGuard guard;
+-        PoolChunkLink* volatile* bucket = pool_chunk_buckets + (block_size * sizeof(value_type) - 1) / 8;
+-        PoolChunkLink* pooled = *bucket;
+-        if (pooled)
+-            *bucket = pooled->next;
+-        else
+-            pooled = static_cast<PoolChunkLink*>(RefillPool(block_size * sizeof(value_type)));
+-        storage = pooled;
+-    }
+-    end.node[1] = static_cast<T*>(storage);
+-    if (end.current)
+-        *end.current = value;
+-    ++end.node;
+-    end.first = *end.node;
+-    end.last = end.first + block_size;
+-    end.current = end.first;
+-}
+-
+-template <class T, class Iterator>
+-void WorldDequeStorage<T, Iterator>::PushFrontBlock(const T& value)
+-{
+-    WorldDequePushFrontBlock(*this, value);
+-}
+-
+-template <class T, class Iterator>
+-Iterator MakeWorldDequeHole(WorldDequeStorage<T, Iterator>& deque, Iterator position)
+-{
+-    int index = WorldDequeDistance<Iterator>(position, deque.begin);
+-    unsigned int size = WorldDequeDistance<Iterator>(deque.end, deque.begin);
+-    if (index < static_cast<int>(size / 2))
+-    {
+-        WorldDequePushFront(deque, *deque.begin.current);
+-        position = WorldDequeAdvance(deque.begin, index);
+-        CopyWorldDeque(WorldDequeAdvance(deque.begin, 2), WorldDequeAdvance(position, 1), WorldDequeAdvance(deque.begin, 1));
+-    }
+-    else
+-    {
+-        WorldDequePushBack(deque, *WorldDequeAdvance(deque.end, -1).current);
+-        position = WorldDequeAdvance(deque.begin, index);
+-        CopyWorldDequeBackward(position, WorldDequeAdvance(deque.end, -2), WorldDequeAdvance(deque.end, -1));
+-    }
+-    return position;
+-}
+-
+-template <class T, class Iterator>
+-Iterator EraseWorldDeque(WorldDequeStorage<T, Iterator>& deque, Iterator position)
+-{
+-    int index = WorldDequeDistance<Iterator>(position, deque.begin);
+-    unsigned int size = WorldDequeDistance<Iterator>(deque.end, deque.begin);
+-    if (static_cast<unsigned int>(index) < size / 2)
+-    {
+-        CopyWorldDequeBackward(deque.begin, position, WorldDequeAdvance(position, 1));
+-        if (deque.begin.current == deque.begin.last - 1)
+-        {
+-            DeallocateImageListPointerSlots(deque.begin.first, 32);
+-            ++deque.begin.node;
+-            deque.begin.first = *deque.begin.node;
+-            deque.begin.last = deque.begin.first + 32;
+-            deque.begin.current = deque.begin.first;
+-        }
+-        else
+-            ++deque.begin.current;
+-    }
+-    else
+-    {
+-        CopyWorldDeque(WorldDequeAdvance(position, 1), deque.end, position);
+-        if (deque.end.current == deque.end.first)
+-        {
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-            --deque.end.node;
+-            deque.end.first = *deque.end.node;
+-            deque.end.last = deque.end.first + 32;
+-            deque.end.current = deque.end.last;
+-        }
+-        --deque.end.current;
+-    }
+-    return WorldDequeAdvance(deque.begin, index);
+-}
+-
+-// Retail template body: 0x0042c320.
+-template <class Iterator, class Callback>
+-Callback VisitWorldDeque(Iterator first, Iterator last, Callback callback)
+-{
+-    while (first.current != last.current)
+-    {
+-        callback(*first.current);
+-        first = WorldDequeAdvance(first, 1);
+-    }
+-    return callback;
+-}
+-
+-template <class T>
+-int WorldDequeDistance(const WorldDequeIterator<T>& last, const WorldDequeIterator<T>& first)
+-{
+-    return 32 * (last.node - first.node - 1) + (last.current - last.first)
+-         + (first.last - first.current);
+-}
+-template <class T>
+-inline WorldDequeIterator<T>::WorldDequeIterator()
+-    : current(0)
+-    , first(0)
+-    , last(0)
+-    , node(0)
+-{
+-}
+-template <class T>
+-inline WorldDequeIterator<T>::WorldDequeIterator(T* position, T* block_first, T* block_last, T** slot)
+-    : current(position)
+-    , first(block_first)
+-    , last(block_last)
+-    , node(slot)
+-{
+-}
+-template <class T>
+-inline void WorldDequeIterator<T>::Advance(int count)
+-{
+-    int offset = static_cast<int>(current - first) + count;
+-    if (offset >= 0 && offset < 32)
+-        current += count;
+-    else
+-    {
+-        int block = offset > 0 ? offset / 32 : (offset + 1) / 32 - 1;
+-        node += block;
+-        first = *node;
+-        last = first + 32;
+-        current = first + offset - block * 32;
+-    }
+-}
+-template <class T>
+-inline WorldDequeIterator<T> WorldDequeIterator<T>::Advanced(int count) const
+-{
+-    WorldDequeIterator<T> result(*this);
+-    result.Advance(count);
+-    return result;
+-}
+-template <class T>
+-inline bool WorldDequeIterator<T>::operator==(const WorldDequeIterator<T>& other) const
+-{
+-    return current == other.current;
+-}
+-template <class T>
+-inline bool WorldDequeIterator<T>::operator!=(const WorldDequeIterator<T>& other) const
+-{
+-    return current != other.current;
+-}
+-template <class T>
+-void DeallocateImageListPointerSlots(T* storage, unsigned int count)
+-{
+-    if (storage)
+-        ReleaseNodeStorage(storage, count * sizeof(T));
+-}
+-
+-template <class T, class Iterator>
+-inline void WorldDequeStorage<T, Iterator>::CreateNodes(T** first, T** last)
+-{
+-
+-    value_type** current = first;
+-    try
+-    {
+-        while (current < last)
+-        {
+-            if (block_size * sizeof(value_type) > 128)
+-                *current = static_cast<value_type*>(::operator new(block_size * sizeof(value_type)));
+-            else
+-            {
+-                PoolChunkLink* storage;
+-                {
+-                    const unsigned int bytes = block_size * sizeof(value_type);
+-                    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
+-                    AcquirePoolLock(&pool_lock_word);
+-                    PoolLockGuard guard;
+-                    storage = *bucket;
+-                    if (storage)
+-                        *bucket = storage->next;
+-                    else
+-                    {
+-                        unsigned int block_size = (bytes + 7) & ~7u;
+-                        int count = 20;
+-                        unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
+-                        storage = reinterpret_cast<PoolChunkLink*>(chunk);
+-                        if (count != 1)
+-                        {
+-                            PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
+-                            pool_chunk_buckets[(block_size - 1) / 8] = next;
+-                            for (int index = 1;; ++index)
+-                            {
+-                                PoolChunkLink* current = next;
+-                                if (count - 1 == index)
+-                                {
+-                                    current->next = 0;
+-                                    break;
+-                                }
+-                                next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
+-                                current->next = next;
+-                            }
+-                        }
+-                    }
+-                }
+-
+-                *current = reinterpret_cast<value_type*>(storage);
+-            }
+-            ++current;
+-        }
+-    }
+-    catch (...)
+-    {
+-        DestroyNodes(first, current);
+-        throw;
+-    }
+-}
+-
+-template <class T, class Iterator>
+-inline void WorldDequeStorage<T, Iterator>::Deallocate(T* storage, unsigned int count)
+-{
+-    DeallocateImageListPointerSlots(storage, count);
+-}
+-
+-template <class T, class Iterator>
+-inline void WorldDequeStorage<T, Iterator>::DestroyNodes(T** first, T** last)
+-{
+-    while (first < last)
+-    {
+-        Deallocate(*first, block_size);
+-        ++first;
+-    }
+-}
+-
+-template <class T, class Iterator>
+-inline void WorldDequeStorage<T, Iterator>::PopFrontBlock()
+-{
+-    Deallocate(begin.first, block_size);
+-    ++begin.node;
+-    begin.first = *begin.node;
+-    begin.last = begin.first + block_size;
+-    begin.current = begin.first;
+-}
+-
+-template <class T, class Iterator>
+-inline Iterator WorldDequeStorage<T, Iterator>::Begin() const
+-{
+-    return begin;
+-}
+-
+-template <class T, class Iterator>
+-inline Iterator WorldDequeStorage<T, Iterator>::End() const
+-{
+-    return end;
+-}
+-
+-template <class T, class Iterator>
+-inline T& WorldDequeStorage<T, Iterator>::At(int index)
+-{
+-    int offset = static_cast<int>(begin.current - begin.first) + index;
+-    if (offset >= 0 && offset < block_size)
+-        return begin.current[index];
+-    int block = offset > 0 ? offset / block_size : (offset + 1) / block_size - 1;
+-    return begin.node[block][offset - block * block_size];
+-}
+-
+-template <class T, class Iterator>
+-inline void WorldDequeStorage<T, Iterator>::Clear()
+-{
+-    for (T** node = begin.node + 1; node < end.node; ++node)
+-        DeallocateImageListPointerSlots(*node, block_size);
+-    if (begin.node != end.node)
+-        DeallocateImageListPointerSlots(end.first, block_size);
+-    end = begin;
+-}
+-
+-template <class T, class Iterator>
+-inline void WorldDequeStorage<T, Iterator>::ReleaseStorage()
+-{
+-    if (map)
+-    {
+-        DestroyNodes(begin.node, end.node + 1);
+-        DeallocateImageListPointerSlots(map, map_count);
+-    }
+-}
+-
+-template <class Message>
+-inline void TickerDeque<Message>::PushBack(Message* const& value)
+-{
+-    if (this->end.current == this->end.last - 1)
+-        this->AppendBlock(value);
+-    else
+-    {
+-        if (this->end.current)
+-            ::new (this->end.current) Message*(value);
+-        ++this->end.current;
+-    }
+-}
+-inline unsigned int OverlayPendingDeque::Size() const
+-{
+-    return static_cast<unsigned int>(WorldDequeDistance<unsigned int>(end, begin));
+-}
+-
+-template <class Deque>
+-void InitializeWorldDequeMap(Deque& deque, unsigned int count)
+-{
+-    typedef typename Deque::value_type T;
+-    unsigned int nodes = count / Deque::block_size + 1;
+-    deque.map_count = nodes + 2 > 8 ? nodes + 2 : 8;
+-    deque.map = static_cast<T**>(AllocateNodeStorage(deque.map_count * sizeof(T*)));
+-    T** first = deque.map + (deque.map_count - nodes) / 2;
+-    T** last = first + nodes;
+-    try
+-    {
+-        deque.CreateNodes(first, last);
+-    }
+-    catch (...)
+-    {
+-        DeallocateImageListPointerSlots(deque.map, deque.map_count);
+-        deque.map = 0;
+-        deque.map_count = 0;
+-        throw;
+-    }
+-    deque.begin.node = first;
+-    deque.begin.first = *first;
+-    deque.begin.last = *first + Deque::block_size;
+-    deque.end.node = last - 1;
+-    deque.end.first = *(last - 1);
+-    deque.end.last = deque.end.first + Deque::block_size;
+-    deque.begin.current = deque.begin.first;
+-    deque.end.current = deque.end.first + count % Deque::block_size;
+-}
+-
+-#endif
