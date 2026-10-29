@@ -1,5 +1,8 @@
 # Beach Life recomp
 
+[![Decompiled](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fyannicksuter%2Fbeachlife-recomp%2Fmain%2Fdocs%2Fbadges%2Fdecompiled.json)](docs/PROGRESS.md#readme-badges)
+[![Byte-matched](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fyannicksuter%2Fbeachlife-recomp%2Fmain%2Fdocs%2Fbadges%2Fmatched.json)](docs/PROGRESS.md#readme-badges)
+
 A native C++ port of **Beach Life** (Deep Red Games / Eidos, 2002), known in
 North America as **Virtual Resort: Spring Break**, for Windows, Linux and macOS.
 

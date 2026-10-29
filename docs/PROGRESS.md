@@ -31,6 +31,19 @@ the fingerprinted target configuration from the matching export, so newly patche
 methods are included. Inventory source paths refer to the prepared C++ files in
 that comparison; regenerate the matching export if they have been removed.
 
+## README badges
+
+`--badges docs/badges` also writes two [shields.io endpoint](https://shields.io/badges/endpoint-badge)
+files that the README badges read from `main`:
+
+- **decompiled**: game-method bytes whose decompiled source runs in the native
+  game build instead of a trap.
+- **byte-matched**: game-method bytes with a strict 100% match against the
+  original executable, the same figure as **Matching** below.
+
+Both are floored to one decimal place, so they never round up. They contain
+only these two numbers; the inventory and report stay local.
+
 ## Reading the percentages
 
 - **Matching** counts the full byte extents of game methods with a strict 100%

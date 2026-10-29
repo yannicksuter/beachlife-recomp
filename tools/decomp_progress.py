@@ -219,7 +219,33 @@ def build_report(inventory, comparison, target, root):
                         # Optional run-track state: in the boot build's game tree, or a trap there.
                         'boot_methods': sum(f.get('boot') == 'in_tree' for f in functions),
                         'boot_bytes': sum(f['size'] or 0 for f in functions if f.get('boot') == 'in_tree'),
+                        'boot_game_bytes': sum(f['size'] or 0 for f in game if f.get('boot') == 'in_tree'),
+                        'boot_tracked': any('boot' in f for f in functions),
                         'boot_traps': sum(f.get('boot') == 'trap' for f in functions)}}
+
+
+def badge_percent(numerator, denominator):
+    """Floor to one decimal so a badge never rounds up to an unearned value."""
+    if not denominator:
+        return 0.0, '0%'
+    if numerator >= denominator:
+        return 100.0, '100%'
+    value = int(numerator * 1000 // denominator) / 10
+    return value, f'{value:.1f}%'
+
+
+def badges(metrics):
+    """shields.io endpoint documents for the README: byte matching and decompiled share."""
+    def document(label, numerator, denominator):
+        value, message = badge_percent(numerator, denominator)
+        color = next(name for limit, name in ((10, 'red'), (30, 'orange'), (60, 'yellow'),
+                                              (90, 'yellowgreen'), (100, 'green'), (101, 'brightgreen'))
+                     if value < limit)
+        return {'schemaVersion': 1, 'label': label, 'message': message, 'color': color}
+    result = {'matched.json': document('byte-matched', metrics['matched_bytes'], metrics['game_bytes'])}
+    if metrics['boot_tracked']:
+        result['decompiled.json'] = document('decompiled', metrics['boot_game_bytes'], metrics['game_bytes'])
+    return result
 
 
 def render(report):
@@ -324,6 +350,7 @@ def main():
     parser.add_argument('--target', type=Path, help='defaults to the compared target configuration')
     parser.add_argument('--source', type=Path, default=ROOT)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--badges', type=Path, help='also write shields.io endpoint JSON files here')
     args = parser.parse_args()
     try:
         comparison = json.loads(args.comparison.read_text(encoding='utf-8'))
@@ -335,6 +362,10 @@ def main():
         output = render(report)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(output, encoding='utf-8')
+        if args.badges:
+            args.badges.mkdir(parents=True, exist_ok=True)
+            for name, document in badges(report['metrics']).items():
+                (args.badges / name).write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
         print(json.dumps({'output': str(args.output), **report['metrics']}, indent=2))
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f'Progress report: {error}\n')
