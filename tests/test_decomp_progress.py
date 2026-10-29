@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from decomp_progress import build_report, render
+from decomp_progress import badges, build_report, render
 
 
 class ProgressTests(unittest.TestCase):
@@ -69,6 +69,17 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(sum(g['end'] - g['start'] for g in report['gaps']), 200)
         self.inventory['functions'][0]['runtime_linked'] = True
         self.assertEqual(self.report()['metrics']['runtime_bytes'], 16)
+
+    def test_badges_floor_matching_and_report_decompiled_share(self):
+        documents = badges(self.report()['metrics'])
+        self.assertEqual(documents, {'matched.json': {'schemaVersion': 1, 'label': 'byte-matched',
+                                                      'message': '33.3%', 'color': 'yellow'}})
+        for item, boot in zip(self.inventory['functions'], ('in_tree', None, 'in_tree', 'trap')):
+            item['boot'] = boot
+        documents = badges(self.report()['metrics'])
+        self.assertEqual(documents['decompiled.json']['message'], '100%')
+        self.inventory['functions'][2]['boot'] = 'trap'
+        self.assertEqual(badges(self.report()['metrics'])['decompiled.json']['message'], '33.3%')
 
     def test_partial_comparison_is_never_completed(self):
         self.comparison['functions'][0].update(normalized_match=0.9999999, exact_bytes=False)
