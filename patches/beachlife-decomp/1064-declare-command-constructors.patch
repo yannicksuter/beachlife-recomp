@@ -1,0 +1,133 @@
+diff --git a/src/startup_screen_command_constructors.cpp b/src/startup_screen_command_constructors.cpp
+new file mode 100644
+index 0000000..0d8c2e8
+--- /dev/null
++++ b/src/startup_screen_command_constructors.cpp
+@@ -0,0 +1,12 @@
++#include "startup_screen_command_inlines.h"
++#include <new>
++
++// Emits the shared out-of-line constructor bodies once, from an /Ob1 source.
++// Retail callers that do not expand them call these copies.
++#pragma inline_depth(0)
++
++void EmitScreenModeCommandConstructors(void* storage, int word, float number)
++{
++    new (storage) ScreenModeCommand(word, word, word, word, word);
++    new (storage) ScreenModeCommand(word, word, word, word, word, number, word);
++}
+diff --git a/src/startup_screen_command_inlines.h b/src/startup_screen_command_inlines.h
+new file mode 100644
+index 0000000..05d5ccc
+--- /dev/null
++++ b/src/startup_screen_command_inlines.h
+@@ -0,0 +1,32 @@
++#ifndef STARTUP_SCREEN_COMMAND_INLINES_H
++#define STARTUP_SCREEN_COMMAND_INLINES_H
++
++#include "startup_screen_mode_world.h"
++
++// Include only from /Ob1 sources: an /Ob0 source would emit a different
++// out-of-line copy with a vector constructor call for the words.
++
++// FUNCTION: BEACHLIFE 0x00466030
++inline ScreenModeCommand::ScreenModeCommand(int sender, int recipient, int kind, int first, int second)
++{
++    words[0] = sender;
++    words[1] = recipient;
++    words[2] = kind;
++    words[3] = first;
++    words[4] = second;
++}
++
++// FUNCTION: BEACHLIFE 0x00472cb0
++inline ScreenModeCommand::ScreenModeCommand(
++    int sender, int recipient, int kind, int first, int second, float number, int activity)
++{
++    words[0] = sender;
++    words[1] = recipient;
++    words[2] = kind;
++    words[3] = first;
++    words[4] = second;
++    words[6].number = number;
++    words[5] = activity;
++}
++
++#endif
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 6bc1b37..586354b 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -233,18 +233,12 @@ struct ScreenModeCommand
+     ScreenModeCommandWord words[8];
+ 
+     ScreenModeCommand();
+-    ScreenModeCommand(ScreenModeCommandWord sender,
+-        ScreenModeCommandWord recipient,
+-        ScreenModeCommandWord kind,
+-        ScreenModeCommandWord first,
+-        ScreenModeCommandWord second);
+-    ScreenModeCommand(ScreenModeCommandWord sender,
+-        ScreenModeCommandWord recipient,
+-        ScreenModeCommandWord kind,
+-        ScreenModeCommandWord first,
+-        ScreenModeCommandWord second,
+-        float number,
+-        ScreenModeCommandWord activity);
++    // Retail callers push plain words, so the parameters are scalars. The
++    // inline bodies live in startup_screen_command_inlines.h: include it only
++    // where retail expands them (/Ob1); other callers call them out of line.
++    ScreenModeCommand(int sender, int recipient, int kind, int first, int second); // 0x00466030.
++    ScreenModeCommand(int sender, int recipient, int kind, int first, int second, float number,
++        int activity); // 0x00472cb0.
+ };
+ 
+ // Default construction preserves the unwritten retail command words.
+@@ -256,33 +250,6 @@ inline ScreenModeCommand::ScreenModeCommand()
+ {
+ }
+ 
+-// 0x00466030.
+-inline ScreenModeCommand::ScreenModeCommand(ScreenModeCommandWord sender, ScreenModeCommandWord recipient,
+-    ScreenModeCommandWord kind, ScreenModeCommandWord first, ScreenModeCommandWord second)
+-{
+-    words[0] = sender;
+-    words[1] = recipient;
+-    words[2] = kind;
+-    words[3] = first;
+-    words[4] = second;
+-}
+-
+-// 0x00472cb0.
+-inline ScreenModeCommand::ScreenModeCommand(ScreenModeCommandWord sender, ScreenModeCommandWord recipient,
+-    ScreenModeCommandWord kind, ScreenModeCommandWord first, ScreenModeCommandWord second,
+-    float number, ScreenModeCommandWord activity)
+-{
+-    words[0] = sender;
+-    words[1] = recipient;
+-    words[2] = kind;
+-    words[3] = first;
+-    words[4] = second;
+-    unsigned int bits;
+-    memcpy(&bits, &number, sizeof(bits));
+-    words[6] = bits;
+-    words[5] = activity;
+-}
+-
+ struct ScreenSceneryPlacement
+ {
+     char name[32];
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 74f5cc8..c590e2e 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -3071,6 +3071,9 @@
+     ],
+     "startup_screen_mode_command_end.cpp": [
+       "/Ob1"
++    ],
++    "startup_screen_command_constructors.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {

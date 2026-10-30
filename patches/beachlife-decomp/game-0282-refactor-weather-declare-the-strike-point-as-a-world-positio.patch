@@ -1,0 +1,101 @@
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 0e5907f907c3e30e27e0a3453ad2231185dbd688..64243a6d26beff1a20003160b2e70a7d85327db8 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -763,9 +763,7 @@ struct VariableWeather : WeatherRegistration
+     unsigned char flag_2ae0;
+     unsigned char unknown_2ae1[3];
+     ScreenRectangle rectangle_2ae4;
+-    float value_2af4;
+-    float value_2af8;
+-    float value_2afc;
++    ScreenWorldPosition strike_point_2af4; // Saved as m_StrikePoint.x/.y/.z.
+     unsigned int values_2b00[26];
+     void* haze_2b68;
+     WorldDequeStorage<WorldWeatherEvent*> events_2b6c;
+diff --git a/src/startup_weather_haze_update.cpp b/src/startup_weather_haze_update.cpp
+index 6dd7c29984ec2e9d2ce7d622d90c145852de3d9b..efdfaac5545b253215817c7e8a43f16e152bbc03 100644
+--- a/src/startup_weather_haze_update.cpp
++++ b/src/startup_weather_haze_update.cpp
+@@ -25,8 +25,7 @@ void VariableWeather::UpdateHaze()
+ {
+     if (!haze_2b68)
+         return;
+-    ScreenWorldPosition position = { value_2af4, value_2af8, value_2afc };
+-    ScreenPoint point = overlay_map->WorldToScreen(position);
++    ScreenPoint point = overlay_map->WorldToScreen(strike_point_2af4);
+     point.x -= 100;
+     point.y -= screen_request_renderer->height;
+     int left = 0;
+diff --git a/src/startup_weather_lifetime.cpp b/src/startup_weather_lifetime.cpp
+index 3273a829d140a31588782c267e8b592730af88e6..bfb5a7bdf2ade7838a2bb4c72101d7bd6838e800 100644
+--- a/src/startup_weather_lifetime.cpp
++++ b/src/startup_weather_lifetime.cpp
+@@ -57,9 +57,9 @@ void VariableWeather::LoadState(GameFileReader* file)
+     rectangle_2ae4.left = value;
+     file->Unknown68(&value);
+     rectangle_2ae4.right = value;
+-    file->ReadFloat(&value_2af4);
+-    file->ReadFloat(&value_2af8);
+-    file->ReadFloat(&value_2afc);
++    file->ReadFloat(&strike_point_2af4.x);
++    file->ReadFloat(&strike_point_2af4.y);
++    file->ReadFloat(&strike_point_2af4.z);
+     file->ReadByte(&flag_2ba5);
+     unsigned char haze;
+     file->ReadByte(&haze);
+diff --git a/src/startup_weather_lighting.cpp b/src/startup_weather_lighting.cpp
+index 8b3e779c4af649c8ed58528cc3bcb49ffc978fa6..a6087a331573b3c4651397b3a51bf758b637df2d 100644
+--- a/src/startup_weather_lighting.cpp
++++ b/src/startup_weather_lighting.cpp
+@@ -82,18 +82,18 @@ void VariableWeather::UpdateLighting()
+                         if (flag_2ae0 && variable_world->FindObject(word_2ad4))
+                         {
+                             VariableEntity* entity = variable_world->FindObject(word_2ad4);
+-                            value_2af4 = entity->x_30;
+-                            value_2af8 = entity->y_34;
+-                            value_2afc = entity->z_38;
++                            strike_point_2af4.x = entity->x_30;
++                            strike_point_2af4.y = entity->y_34;
++                            strike_point_2af4.z = entity->z_38;
+                             variable_world->FindObject(word_2ad4)->StrikeBuilding();
+                         }
+                         else
+                         {
+-                            value_2af4 = static_cast<float>(rand() % (rectangle_2ae4.right - rectangle_2ae4.left) + rectangle_2ae4.left);
+-                            value_2af8 = static_cast<float>(rand() % (rectangle_2ae4.bottom - rectangle_2ae4.top) + rectangle_2ae4.top);
++                            strike_point_2af4.x = static_cast<float>(rand() % (rectangle_2ae4.right - rectangle_2ae4.left) + rectangle_2ae4.left);
++                            strike_point_2af4.y = static_cast<float>(rand() % (rectangle_2ae4.bottom - rectangle_2ae4.top) + rectangle_2ae4.top);
+                         }
+                         PrepareHaze();
+-                        ScreenWorldPosition position = { value_2af4, value_2af8, value_2afc };
++                        ScreenWorldPosition position = strike_point_2af4;
+                         ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(position);
+                         unsigned int count;
+                         VariableEntity** nearby = CurrentVariableWorld()->Nearby(tile.x, tile.y, 4, &count);
+@@ -119,7 +119,7 @@ void VariableWeather::UpdateLighting()
+                             }
+                         count = variable_world->buildings_04;
+                         VariableEntity** buildings = variable_world->buildings_12120;
+-                        position = { value_2af4, value_2af8, value_2afc };
++                        position = strike_point_2af4;
+                         tile = CurrentScreenTerrain()->WorldToTile(position);
+                         for (unsigned int index = 0; index < count; ++index)
+                         {
+diff --git a/src/startup_weather_save.cpp b/src/startup_weather_save.cpp
+index 62fa9ea751ba50e2ad701013570b30e39b665620..632570603183243e4c9095125270e4bcca17d430 100644
+--- a/src/startup_weather_save.cpp
++++ b/src/startup_weather_save.cpp
+@@ -23,9 +23,9 @@ void VariableWeather::SaveState(GameFileReader* file)
+     file->Unknown24("m_rStrikeArea.bottom", rectangle_2ae4.bottom);
+     file->Unknown24("m_rStrikeArea.left", rectangle_2ae4.left);
+     file->Unknown24("m_rStrikeArea.right", rectangle_2ae4.right);
+-    WriteStateFloat(file, "m_StrikePoint.x", value_2af4);
+-    WriteStateFloat(file, "m_StrikePoint.y", value_2af8);
+-    WriteStateFloat(file, "m_StrikePoint.z", value_2afc);
++    WriteStateFloat(file, "m_StrikePoint.x", strike_point_2af4.x);
++    WriteStateFloat(file, "m_StrikePoint.y", strike_point_2af4.y);
++    WriteStateFloat(file, "m_StrikePoint.z", strike_point_2af4.z);
+     file->Unknown34("m_bStrikes", flag_2ba5);
+     if (haze_2b68)
+         file->Unknown34("m_LightningLightmap", 1);
