@@ -1,0 +1,64 @@
+diff --git a/src/startup_font_fit_text_to_width.cpp b/src/startup_font_fit_text_to_width.cpp
+index e245b12..adf1427 100644
+--- a/src/startup_font_fit_text_to_width.cpp
++++ b/src/startup_font_fit_text_to_width.cpp
+@@ -5,7 +5,7 @@
+ namespace
+ {
+ // The retail CRT's wide strings contain 16-bit units. Host wchar_t may have
+-// four bytes, so retain the unchecked wcslen/wcscat operations on actual units.
++// four bytes, so perform the wcslen/wcscat operations on actual units.
+ std::size_t TextLength16(const unsigned short* text)
+ {
+     const unsigned short* end = text;
+@@ -35,14 +35,32 @@ void ScreenFontRenderer::FitTextToWidth(unsigned short* text, int width)
+     int measured = MeasureText(text);
+     if (measured > width)
+     {
+-        unsigned short* cut = text + TextLength16(text) - 1;
++        const unsigned short ellipsis[] = { '.', '.', '.', 0 };
++        // Retail steps a cut pointer back one unit per attempt and appends the
++        // ellipsis there. With a short text or a width narrower than the
++        // ellipsis the cut moved before the buffer and wrote in front of it;
++        // a negative width never stopped. A cut before the start now writes
++        // the text retail left there (the ellipsis without its first dots)
++        // inside the buffer, and an empty result ends the loop.
++        std::ptrdiff_t cut = static_cast<std::ptrdiff_t>(TextLength16(text)) - 1;
+         do
+         {
+             --cut;
+-            *cut = 0;
+-            const unsigned short ellipsis[] = { '.', '.', '.', 0 };
+-            // The retail call passes the newly terminated cut position.
+-            AppendText16(cut, ellipsis);
++            if (cut >= 0)
++            {
++                text[cut] = 0;
++                // The retail call passes the newly terminated cut position.
++                AppendText16(text + cut, ellipsis);
++            }
++            else
++            {
++                std::ptrdiff_t dots = cut + 3 > 0 ? cut + 3 : 0;
++                for (std::ptrdiff_t i = 0; i < dots; ++i)
++                    text[i] = '.';
++                text[dots] = 0;
++                if (!dots)
++                    break;
++            }
+             measured = MeasureText(text);
+         } while (measured > width);
+     }
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index bc33f0d..00d74f6 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -205,7 +205,7 @@ struct ScreenFontRenderer
+         const unsigned short* text, unsigned int width, unsigned int spacing);
+     unsigned int MeasureWrappedText(
+         const unsigned short* text, unsigned int width, unsigned int spacing);
+-    // Actual 0x004a05e0, RET8; truncation and ellipsis writes stay unchecked.
++    // Actual 0x004a05e0, RET8; truncates in place and appends an ellipsis.
+     void FitTextToWidth(unsigned short* text, int width);
+ };
+ 
