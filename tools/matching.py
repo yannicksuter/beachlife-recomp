@@ -1075,9 +1075,63 @@ def comparison_array_end_sites(instructions, function, code, relocations, symbol
     return sites
 
 
+def folded_identity_specs(metadata_rows, rebuilt, publics):
+    """CSV code identities whose own symbol LINK placed at a folded address.
+
+    After identical-code folding the PDB keeps one public per rebuilt address,
+    so only one of the folded symbols can bind its original address by symbol.
+    Every code identity at such an address is listed with the rebuilt address
+    and every name that the LINK map gives it; a fold is proven only when the
+    address carries another map name as well.
+    """
+    result = []
+    for row in metadata_rows:
+        symbol = row.get('symbol')
+        if row.get('type') not in FOLDED_ALIAS_TYPES or not symbol:
+            continue
+        address = rebuilt.get(symbol)
+        if address is not None and publics.get(address, set()) - {symbol}:
+            result.append({'address': f"0x{int(row['address'], 16):08x}", 'symbol': symbol,
+                           'recomp': f'0x{address:08x}', 'names': sorted(publics[address])})
+    return result
+
+
+def bind_folded_identities(specs, pdb_publics, original_match, rebuilt_match):
+    """Choose the folded identities to bind at their LINK map address.
+
+    pdb_publics maps rebuilt addresses to the PDB public names there;
+    original_match and rebuilt_match return the address an original or rebuilt
+    address is already matched to, or None. An identity is bound only when its
+    original address is still unmatched after reccmp's own matching, the LINK
+    map names its symbol and another name at that rebuilt address, the PDB
+    public that reccmp kept there is one of those map names, and no other
+    original address holds the address. Returns one record per identity and
+    the pairs to match.
+    """
+    records, pairs, used = [], [], set()
+    for item in specs:
+        original, recomp = int(item['address'], 16), int(item['recomp'], 16)
+        names, kept = set(item['names']), pdb_publics.get(recomp, set())
+        matched = original_match(original)
+        if matched is not None:
+            bound = 'reccmp' if matched == recomp else 'other'
+        elif item['symbol'] not in names or not names - {item['symbol']} or not kept or not kept <= names:
+            bound = False
+        elif rebuilt_match(recomp) is not None or recomp in used:
+            bound = False
+        else:
+            used.add(recomp)
+            pairs.append((original, recomp))
+            bound = 'map'
+        records.append(dict(item, bound=bound))
+    return records, pairs
+
+
 def compare_global_operands(configuration, arguments):
-    """Run pinned reccmp with instruction-scoped operand names; no image or database edits."""
+    """Run pinned reccmp with instruction-scoped operand names and folded code
+    identities bound through their own PDB publics; images stay unchanged."""
     import reccmp
+    import reccmp.compare.core as reccmp_core
     from reccmp.compare.functions import FunctionComparator
     from reccmp.compare.asm.instgen import InstructGen, SectionType
     from reccmp.types import EntityType, ImageId
@@ -1086,7 +1140,32 @@ def compare_global_operands(configuration, arguments):
         raise ValueError('Global operand comparison requires reccmp 0.1.7.')
     config = json.loads(Path(configuration).read_text())
     original_compare = FunctionComparator.compare_function
+    original_load_cvdump, original_match_lines = reccmp_core.load_cvdump, reccmp_core.match_lines
     applied = {}
+    folded = {'publics': {}, 'records': None}
+
+    def load_cvdump(analysis, db, recomp_bin):
+        for public in analysis.parser.publics:
+            if recomp_bin.is_valid_section(public.section):
+                folded['publics'].setdefault(recomp_bin.get_abs_addr(public.section, public.offset),
+                                             set()).add(public.name)
+        return original_load_cvdump(analysis, db, recomp_bin)
+
+    def match_lines(db, *args, **kwargs):
+        # reccmp's own symbol, name and line matches come first.
+        result = original_match_lines(db, *args, **kwargs)
+        def matched(image, address):
+            entity = db.get(image, address)
+            return None if entity is None else (
+                entity.recomp_addr if image == ImageId.ORIG else entity.orig_addr)
+        folded['records'], pairs = bind_folded_identities(
+            config.get('folded_identities', []), folded['publics'],
+            lambda address: matched(ImageId.ORIG, address), lambda address: matched(ImageId.RECOMP, address))
+        if pairs:
+            with db.batch() as batch:
+                for original, recomp in pairs:
+                    batch.match(original, recomp)
+        return result
 
     def instructions(image, start, size):
         return [(inst[0], image.read(inst[0], inst[1]))
@@ -1158,25 +1237,32 @@ def compare_global_operands(configuration, arguments):
                 sanitizer.sanitize = default
 
     FunctionComparator.compare_function = compare
+    reccmp_core.load_cvdump, reccmp_core.match_lines = load_cvdump, match_lines
     previous_arguments = sys.argv
     try:
         sys.argv = ['reccmp-reccmp', *arguments]
         result = compare_main()
         if len(applied) != len(config['operands']):
             raise ValueError('Comparator did not validate every configured global operand.')
+        if config.get('folded_identities') and folded['records'] is None:
+            raise ValueError('Comparator did not reach the folded identity binding.')
         save(config['validation'], [applied[key] for key in sorted(applied)])
+        if 'folded_validation' in config:
+            save(config['folded_validation'], folded['records'] or [])
         return result
     finally:
         FunctionComparator.compare_function = original_compare
+        reccmp_core.load_cvdump, reccmp_core.match_lines = original_load_cvdump, original_match_lines
         sys.argv = previous_arguments
 
 
-def global_operand_command(tool, metadata, target, source, sources, folder, command):
-    """Without configured operands, return the ordinary reccmp command unchanged."""
+def global_operand_command(tool, metadata, target, source, sources, folder, command, folded=()):
+    """Without configured operands or folded identities, return the ordinary
+    reccmp command unchanged. Otherwise also return the validation paths."""
     specs = comparison_global_operand_specs(metadata, target)
-    if not specs:
-        return command, None
-    linked = (folder / 'link.rsp').read_text().splitlines()
+    if not specs and not folded:
+        return command, None, None
+    linked = (folder / 'link.rsp').read_text().splitlines() if specs else []
     for item in specs:
         path = source / item['source']
         obj = folder / (path.stem + '.obj')
@@ -1184,13 +1270,18 @@ def global_operand_command(tool, metadata, target, source, sources, folder, comm
             raise ValueError('Global operand must name a compiled and linked game source.')
         item.update(object=str(obj), object_sha256=digest(obj))
     config, validation = folder / 'global-operands.json', folder / 'global-operands-validated.json'
+    folded_validation = folder / 'folded-identities-validated.json'
     validation.unlink(missing_ok=True)
-    save(config, {'operands': specs, 'validation': str(validation)})
+    folded_validation.unlink(missing_ok=True)
+    save(config, {'operands': specs, 'validation': str(validation),
+                  **({'folded_identities': list(folded), 'folded_validation': str(folded_validation)}
+                     if folded else {})})
     interpreter = Path(tool.reccmp).parent / ('python.exe' if os.name == 'nt' else 'python')
     if not interpreter.is_file():
         raise ValueError('Global operands require the Python interpreter beside reccmp-reccmp.')
-    return [str(interpreter), str(Path(__file__).resolve()), 'compare-global-operands',
-            str(config), *command[1:]], validation
+    return ([str(interpreter), str(Path(__file__).resolve()), 'compare-global-operands',
+             str(config), *command[1:]], validation if specs else None,
+            folded_validation if folded else None)
 
 
 FUNCTION_ANNOTATION = re.compile(r'^[ \t]*//[ \t]*(?:FUNCTION|LIBRARY|SYNTHETIC|TEMPLATE|STUB):[ \t]*'
@@ -1676,20 +1767,14 @@ def game(tool, args):
         'path': str(binary), 'pdb': str(pdb)}}})
     reports = args.reports.resolve()
     reports.mkdir(parents=True, exist_ok=True)
-    command, operand_validation = global_operand_command(
-        tool, metadata, target, source, sources, folder,
-        [tool.reccmp, '--target', 'BEACHLIFE', '--json', str(reports / 'comparison.json'), '--no-color'])
-    output = tool.run(command, folder)
-    (reports / 'comparison.log').write_text(output)
-    if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
-        raise ValueError('Comparator reported an error; inspect comparison.log.')
-    report = json.loads((reports / 'comparison.json').read_text())
     # Identical-code folding gives several symbols one rebuilt address and the
-    # comparator reports only one of their names. A folded function or library
-    # row counts only through its own CSV symbol, at a rebuilt address that LINK
-    # shares with another name, over its own original extent, when the bytes are
-    # equal or differ only in absolute or relative operands that LINK resolved
-    # and that name the same identities on both sides.
+    # comparator keeps only one of their names. A folded function or library
+    # identity binds its original address through its own CSV symbol, at the
+    # rebuilt address that LINK gave that symbol and shares with another name,
+    # so callers keep its identity; a row that still cannot be compared counts
+    # only over its own original extent, when the bytes are equal or differ only
+    # in absolute or relative operands that LINK resolved and that name the
+    # same identities on both sides.
     map_path = binary.with_suffix('.map')
     rebuilt, objects = {}, {}
     for line in map_path.read_text(errors='replace').splitlines():
@@ -1701,13 +1786,21 @@ def game(tool, args):
     metadata_rows = game_metadata_rows(metadata)
     symbol_at = {int(row['address'], 16): row['symbol'] for row in metadata_rows
                  if row.get('type') in FOLDED_ALIAS_TYPES and row.get('symbol')}
-    folding = {}
+    folding = {'publics': map_public_names(map_path)}
+    folded_specs = folded_identity_specs(metadata_rows, rebuilt, folding['publics'])
+    command, operand_validation, folded_validation = global_operand_command(
+        tool, metadata, target, source, sources, folder,
+        [tool.reccmp, '--target', 'BEACHLIFE', '--json', str(reports / 'comparison.json'), '--no-color'],
+        folded_specs)
+    output = tool.run(command, folder)
+    (reports / 'comparison.log').write_text(output)
+    if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
+        raise ValueError('Comparator reported an error; inspect comparison.log.')
+    report = json.loads((reports / 'comparison.json').read_text())
     def folded_function(item):
         start, size = int(item['address'], 16), item['size']
         symbol = symbol_at.get(start, '')
         address = rebuilt.get(symbol)
-        if 'publics' not in folding:
-            folding['publics'] = map_public_names(map_path)
         if address is None or not folding['publics'].get(address, set()) - {symbol}:
             raise ValueError(f"Comparator did not find {item['name']}.")
         found = {'name': item['name'], 'address': item['address'], 'bytes': size,
@@ -1785,6 +1878,10 @@ def game(tool, args):
     if operand_validation is not None:
         result['comparison_global_operands'] = json.loads(operand_validation.read_text())
         result['image_execution_permitted'] = False
+    if folded_validation is not None:
+        if not folded_validation.is_file():
+            raise ValueError('Comparator did not validate the folded identities.')
+        result['comparison_folded_identities'] = json.loads(folded_validation.read_text())
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
     if any(item['normalized_match'] != 1 for item in functions):
