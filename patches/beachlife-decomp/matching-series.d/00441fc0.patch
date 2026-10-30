@@ -19,62 +19,28 @@ index 0000000..d70a290
 +0x00441fc0,library,189,?CreateNode@WorldIdSet@@QAEPAUWorldIdSetNode@@ABI@Z
 diff --git a/src/match_00441fc0.cpp b/src/match_00441fc0.cpp
 new file mode 100644
-index 0000000..85af277
+index 0000000..3b4b16e
 --- /dev/null
 +++ b/src/match_00441fc0.cpp
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,22 @@
 +// LIBRARY: BEACHLIFE 0x00441fc0 SYMBOL
 +// ?CreateNode@WorldIdSet@@QAEPAUWorldIdSetNode@@ABI@Z
 +#include "startup_world_id_set.h"
-+#include "pool_chunk_acquire.h"
-+#include "pool_lock_acquire.h"
-+#include "pool_lock_guard.h"
-+#include "pool_return.h"
++#include "node_storage.h"
 +
 +#include <new>
 +
 +WorldIdSetNode* WorldIdSet::CreateNode(const unsigned int& entry)
 +{
-+    PoolChunkLink* block;
-+    {
-+        AcquirePoolLock(&pool_lock_word);
-+        PoolLockGuard guard;
-+        block = pool_chunk_buckets[2];
-+        if (block)
-+        {
-+            pool_chunk_buckets[2] = block->next;
-+        }
-+        else
-+        {
-+            int count = 20;
-+            char* chunk = AcquirePoolChunk(24, count);
-+            block = reinterpret_cast<PoolChunkLink*>(chunk);
-+            if (count != 1)
-+            {
-+                PoolChunkLink* next = reinterpret_cast<PoolChunkLink*>(chunk + 24);
-+                pool_chunk_buckets[2] = next;
-+                for (int index = 1;; ++index)
-+                {
-+                    PoolChunkLink* current = next;
-+                    next = reinterpret_cast<PoolChunkLink*>(reinterpret_cast<char*>(next) + 24);
-+                    if (count - 1 == index)
-+                    {
-+                        current->next = 0;
-+                        break;
-+                    }
-+                    current->next = next;
-+                }
-+            }
-+        }
-+    }
-+    WorldIdSetNode* result = reinterpret_cast<WorldIdSetNode*>(block);
++    void* block = NodeAllocator::allocate(sizeof(WorldIdSetNode));
++    WorldIdSetNode* result = static_cast<WorldIdSetNode*>(block);
 +    try
 +    {
 +        new (&result->value) unsigned int(entry);
 +    }
 +    catch (...)
 +    {
-+        ReturnPool(result, 24);
++        NodeAllocator::deallocate(result, sizeof(WorldIdSetNode));
 +        throw;
 +    }
 +    return result;
