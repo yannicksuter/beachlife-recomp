@@ -1,5 +1,6 @@
 """Build and compare small x86 matching targets with the verified VC6 toolchain."""
 import argparse
+import bisect
 import csv
 import hashlib
 import json
@@ -9,6 +10,7 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 
 if __package__:
     from .matching_imports import (coff_import_symbols, stdcall_export_names,
@@ -173,9 +175,12 @@ class Toolchain:
             raise ValueError('Unsupported quote/newline in compiler argument.')
         path.write_text('\n'.join('"' + arg + '"' for arg in arguments) + '\n')
 
-    def runtime_library(self, folder):
+    def runtime_library(self, folder, exports=()):
         folder.mkdir(parents=True, exist_ok=True)
         shutil.copy2(self.decomp_root / 'msvcrt.def', folder / 'msvcrt.def')
+        if exports:
+            (folder / 'msvcrt.def').write_text(runtime_definition(
+                (self.decomp_root / 'msvcrt.def').read_text(), exports))
         command = [str(self.compiler / 'LIB.EXE'), '/nologo', '/machine:IX86',
                    '/def:msvcrt.def', '/out:msvcrt-import.lib']
         log = self.run(command if os.name == 'nt' else ['wine', *command], folder)
@@ -263,6 +268,146 @@ def pe_imports(path):
         else:
             raise ValueError('Unterminated PE import table.')
     raise ValueError('Unterminated PE import directory.')
+
+
+def pe_base_relocations(path):
+    """Sorted virtual addresses of the 32-bit operands a PE32 image relocates."""
+    data = Path(path).read_bytes()
+    section(path, b'.text')
+    pe = struct.unpack_from('<I', data, 0x3c)[0]
+    if pe+168 > len(data) or struct.unpack_from('<H', data, pe+24)[0] != 0x10b:
+        raise ValueError('Expected a complete PE32 optional header.')
+    base = struct.unpack_from('<I', data, pe+52)[0]
+    rva, size = struct.unpack_from('<II', data, pe+160)
+    if struct.unpack_from('<I', data, pe+116)[0] <= 5 or not rva or not size:
+        return []
+    table = read_va(path, base+rva, size)
+    result, position = [], 0
+    while position < size:
+        if position+8 > size:
+            raise ValueError('Truncated PE base relocation block.')
+        page, length = struct.unpack_from('<II', table, position)
+        if length < 8 or length % 2 or position+length > size:
+            raise ValueError('Invalid PE base relocation block.')
+        for offset in range(position+8, position+length, 2):
+            entry, = struct.unpack_from('<H', table, offset)
+            if entry >> 12 == 3:
+                result.append(base+page+(entry & 0xfff))
+            elif entry >> 12:
+                raise ValueError(f'Unsupported PE base relocation type {entry >> 12}.')
+        position += length
+    return sorted(result)
+
+
+def map_public_names(path):
+    """Every public and static name of a LINK map, by rebuilt virtual address."""
+    names = {}
+    for line in Path(path).read_text(errors='replace').splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and ':' in parts[0] and re.fullmatch(r'[0-9a-fA-F]{8}', parts[2]):
+            names.setdefault(int(parts[2], 16), set()).add(parts[1])
+    return names
+
+
+# Code identities that may be credited through a folded alias, and the data or
+# code identities a relocated operand of such an alias may name.
+FOLDED_ALIAS_TYPES = ('function', 'library')
+OPERAND_IDENTITY_TYPES = ('function', 'library', 'global')
+
+
+def relocated_operand_identities(original, binary, rows, publics):
+    """Name the targets of absolute operands: an import slot by DLL and symbol,
+    otherwise the exact CSV identity (original) or LINK map names (rebuilt)."""
+    def slots(path):
+        return {int(slot, 16): f'import:{dll.lower()}!{name}'
+                for dll, names in pe_imports(path).items() for name, slot in names.items()}
+    original_slots, rebuilt_slots = slots(original), slots(binary)
+    original_symbols = {int(row['address'], 16): 'symbol:' + row['symbol'] for row in rows
+                        if row.get('type') in OPERAND_IDENTITY_TYPES and row.get('symbol')}
+    def original_identity(value):
+        return original_slots.get(value) or original_symbols.get(value)
+    def rebuilt_identities(value):
+        found = {'symbol:' + name for name in publics.get(value, ())}
+        if value in rebuilt_slots:
+            found.add(rebuilt_slots[value])
+        return found
+    return original_identity, rebuilt_identities
+
+
+def compare_relocated_alias(original_code, rebuilt_code, original_address, rebuilt_address,
+                            relocations, relative, original_identity, rebuilt_identities):
+    """Relocation-normalized comparison of one folded alias body.
+
+    Every byte outside the operands that LINK resolves must be identical, so both
+    sides decode to the same instructions. Absolute operands are the 32-bit
+    operands the rebuilt image relocates; relative call or jump operands are the
+    REL32 relocations of the alias's own COFF function. Each operand must name the
+    same identity on both sides (the original has no relocations; its operand is
+    resolved by value). Returns the operand list, or None when anything differs
+    or cannot be identified."""
+    size = len(rebuilt_code)
+    if len(original_code) != size:
+        return None
+    first = bisect.bisect_left(relocations, rebuilt_address-3)
+    last = bisect.bisect_left(relocations, rebuilt_address+size)
+    sites = sorted([(site-rebuilt_address, False) for site in relocations[first:last]] +
+                   [(offset, True) for offset in relative])
+    operands, position = [], 0
+    for offset, is_relative in sites:
+        # An operand that crosses the extent or another operand is not comparable.
+        if offset < position or offset+4 > size:
+            return None
+        if original_code[position:offset] != rebuilt_code[position:offset]:
+            return None
+        values = [struct.unpack_from('<i' if is_relative else '<I', code, offset)[0]
+                  for code in (original_code, rebuilt_code)]
+        if is_relative:
+            values = [(start+offset+4+value) & 0xffffffff
+                      for start, value in zip((original_address, rebuilt_address), values)]
+        identity = original_identity(values[0])
+        if identity is None or identity not in rebuilt_identities(values[1]):
+            return None
+        operands.append({'offset': offset, 'identity': identity, **({'relative': True} if is_relative else {})})
+        position = offset+4
+    if original_code[position:] != rebuilt_code[position:]:
+        return None
+    return operands
+
+
+def folded_relative_operands(path, symbol, rebuilt_code):
+    """REL32 operand offsets of one folded alias, read from its own COFF function.
+
+    Identical-code folding merges only identical sections with identical
+    relocations, so that function must be the rebuilt body byte for byte apart
+    from its relocated operands; otherwise nothing is returned."""
+    code, relocations = comparison_operand_coff(path, symbol)
+    if len(code) < len(rebuilt_code):
+        return []
+    masked = [bytearray(code[:len(rebuilt_code)]), bytearray(rebuilt_code)]
+    for offset, _, _, _ in relocations:
+        for data in masked:
+            data[offset:offset+4] = bytes(len(data[offset:offset+4]))
+    if masked[0] != masked[1]:
+        return []
+    return [offset for offset, kind, _, _ in relocations if kind == 0x14 and offset < len(rebuilt_code)]
+
+
+def folded_alias_objects(folder, linked, mapped, symbol):
+    """Linked objects that define a folded alias's own symbol as a code function.
+
+    The LINK map names the object whose section identical-code folding kept,
+    which can be another folded symbol's object; then every linked object that
+    defines this symbol is a candidate instead."""
+    objects = [line.strip('"') for line in linked if re.fullmatch(r'"[^\\/:"]+\.obj"', line)]
+    def defines(name):
+        try:
+            verify_comparison_anchor_object(folder / name, symbol)
+        except (OSError, ValueError):
+            return False
+        return True
+    if objects.count(mapped) == 1 and defines(mapped):
+        return [mapped]
+    return [name for name in objects if name != mapped and defines(name)]
 
 
 def stdio_fixture(tool):
@@ -415,7 +560,8 @@ def game_metadata_rows(metadata):
 
 def merge_target_fragments(metadata, target):
     lists = ('functions', 'library_functions', 'unclassified_functions', 'comparison_anchors',
-             'stlport_sources')
+             'comparison_lifetime_anchors', 'comparison_global_operands',
+             'stlport_sources', 'runtime_cdecl_imports')
     mappings = ('source_compile_options', 'stdcall_imports', 'runtime_stdcall_imports')
     for path in registration_files(metadata, 'targets/beachlife-uk-1.1.d', r'[0-9a-f]{8}\.json'):
         fragment = json.loads(path.read_text())
@@ -426,10 +572,11 @@ def merge_target_fragments(metadata, target):
                 if not isinstance(value, list) or not isinstance(target.get(key, []), list):
                     raise ValueError(f'{key} must be a list in matching target fragment: {path}')
                 existing = target.setdefault(key, [])
-                if key == 'comparison_anchors':
-                    # A callee anchor shared by parallel registrations is kept
-                    # once; a different anchor at its address still fails later.
-                    value = [item for item in value if item not in existing]
+                if key in ('comparison_anchors', 'comparison_lifetime_anchors', 'runtime_cdecl_imports'):
+                    # A callee anchor or CRT import shared by parallel registrations
+                    # is kept once; a different anchor at its address still fails later.
+                    value = [item for index, item in enumerate(value)
+                             if item not in existing and item not in value[:index]]
                 existing.extend(value)
             else:
                 if not isinstance(value, dict) or not isinstance(target.get(key, {}), dict):
@@ -443,21 +590,26 @@ def merge_target_fragments(metadata, target):
 
 def drop_superseded_anchors(metadata, target):
     """Let a matched body replace an anchor that a parallel registration kept for it."""
-    anchors = target.get('comparison_anchors')
+    for key in ('comparison_anchors', 'comparison_lifetime_anchors'):
+        drop_superseded(metadata, target, key)
+
+
+def drop_superseded(metadata, target, key):
+    anchors = target.get(key)
     if not isinstance(anchors, list) or not anchors:
         return
     def identity(item):
         if isinstance(item, dict) and re.fullmatch(r'0x[0-9a-fA-F]{1,8}', str(item.get('address'))):
             return int(item['address'], 16), item.get('size')
         return None
-    credited = {identity(item) for key in ('functions', 'library_functions', 'unclassified_functions')
-                for item in (target.get(key) if isinstance(target.get(key), list) else [])} - {None}
+    credited = {identity(item) for group in ('functions', 'library_functions', 'unclassified_functions')
+                for item in (target.get(group) if isinstance(target.get(group), list) else [])} - {None}
     symbols = {(int(row['address'], 16), row['symbol']) for row in game_metadata_rows(metadata)}
     def superseded(item):
         # Only the same address, extent and symbol; anything else still fails validation.
-        key = identity(item)
-        return key in credited and (key[0], item.get('symbol')) in symbols
-    target['comparison_anchors'] = [item for item in anchors if not superseded(item)]
+        found = identity(item)
+        return found in credited and (found[0], item.get('symbol')) in symbols
+    target[key] = [item for item in anchors if not superseded(item)]
 
 
 def game_source_compile_options(target, sources):
@@ -542,6 +694,37 @@ def game_runtime_stdcall_imports(target):
                 for name, count in configured.items())):
         raise ValueError('Only the observed _CxxThrowException runtime stdcall import is supported.')
     return dict(configured)
+
+
+def game_runtime_cdecl_imports(target):
+    """Undecorated CRT functions a registration needs from the generated import library."""
+    configured = target.get('runtime_cdecl_imports', [])
+    if (not isinstance(configured, list) or
+            any(not isinstance(name, str) or not re.fullmatch(r'_{0,2}[A-Za-z][A-Za-z0-9_]*', name)
+                for name in configured) or len(configured) != len(set(configured))):
+        raise ValueError('runtime_cdecl_imports must list unique undecorated MSVCRT function names.')
+    return sorted(configured)
+
+
+def verify_runtime_cdecl_imports(original, configured):
+    """Never invent an import: the retail image must import each name from MSVCRT.dll."""
+    if not configured:
+        return {}
+    actual = pe_imports(original).get('MSVCRT.dll', {})
+    missing = [name for name in configured if name not in actual]
+    if missing:
+        raise ValueError(f'The original does not import {", ".join(missing)} from MSVCRT.dll.')
+    return {name: actual[name] for name in configured}
+
+
+def runtime_definition(text, exports):
+    """Append missing names to the EXPORTS of the prepared module definition."""
+    lines = text.splitlines()
+    if 'EXPORTS' not in (line.strip() for line in lines):
+        raise ValueError('The prepared msvcrt.def has no EXPORTS section.')
+    present = {line.split()[0] for line in lines[[line.strip() for line in lines].index('EXPORTS') + 1:]
+               if line.strip()}
+    return '\n'.join([*lines, *('    ' + name for name in exports if name not in present)]) + '\n'
 
 
 def verify_runtime_original_imports(binary, configured):
@@ -717,6 +900,7 @@ def comparison_anchor_specs(metadata, target):
     ranges = [(int(item['address'], 16), int(item['address'], 16) + item['size'])
               for item in credited]
     names = {item['name'] for item in credited}
+    signatures = set()
     rows = game_metadata_rows(metadata)
     credited_addresses = {int(item['address'], 16) for item in credited}
     symbols = {row['symbol'] for row in rows if int(row['address'], 16) in credited_addresses}
@@ -731,7 +915,13 @@ def comparison_anchor_specs(metadata, target):
                 not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*\.h', item['header'])):
             raise ValueError('Unsupported comparison-only anchor declaration.')
         start, end = int(item['address'], 16), int(item['address'], 16) + item['size']
+        # Overloads share a qualified name, but never a decorated identity or
+        # range. Return types do not distinguish C++ overloads. The compiler
+        # and the exact COFF symbol check remain authoritative for typedefs.
+        signature = (item['name'], tuple(anchor_parameter(value) for value in item['parameters']),
+                     item.get('qualifier', ''))
         if (end > 0x100000000 or item['name'] in names or item['symbol'] in symbols or
+                signature in signatures or
                 any(start < right and left < end for left, right in ranges)):
             raise ValueError('Comparison-only anchors must be distinct from credited functions and each other.')
         rows_at_address = [row for row in rows if int(row['address'], 16) == start]
@@ -740,9 +930,280 @@ def comparison_anchor_specs(metadata, target):
                 rows_at_address[0]['symbol'] != item['symbol']):
             raise ValueError('Comparison-only anchor must match one explicit CSV identity.')
         ranges.append((start, end))
-        names.add(item['name'])
+        signatures.add(signature)
         symbols.add(item['symbol'])
     return specs
+
+
+def comparison_global_operand_specs(metadata, target):
+    """Allow only explicit, instruction-scoped one-past-the-end array operands.
+
+    The CSV keeps the real array extent: neither the array nor the entity that
+    starts at its end address is renamed or resized. The addend is that extent,
+    plus an optional member offset inside the element one past the end (a loop
+    over &array[i].member); element_size must divide the extent and exceed the
+    member offset. COFF and linked-image checks follow in the comparator,
+    before the operand can affect a score.
+    """
+    specs = target.get('comparison_global_operands', [])
+    if not isinstance(specs, list):
+        raise ValueError('comparison_global_operands must be a list.')
+    functions = {int(item['address'], 16): item
+                 for key in ('functions', 'library_functions', 'unclassified_functions')
+                 for item in target.get(key, [])}
+    rows = game_metadata_rows(metadata)
+    result, seen = [], set()
+    for item in specs:
+        required = {'function', 'instruction_offset', 'global', 'source'}
+        if (not isinstance(item, dict) or
+                set(item) not in (required, required | {'member_offset', 'element_size'}) or
+                any(type(item.get(key, 0)) is not int
+                    for key in ('member_offset', 'element_size')) or
+                any(not isinstance(item[key], str) or
+                    not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item[key])
+                    for key in ('function', 'global')) or
+                type(item['instruction_offset']) is not int or item['instruction_offset'] < 0 or
+                not isinstance(item['source'], str) or
+                not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*\.cpp', item['source'])):
+            raise ValueError('Unsupported comparison global operand.')
+        function, address = int(item['function'], 16), int(item['global'], 16)
+        key = function, item['instruction_offset']
+        if (function not in functions or key in seen or
+                item['instruction_offset'] + 5 > functions[function]['size']):
+            raise ValueError('Global operand needs a unique instruction in a registered function.')
+        seen.add(key)
+        identities = []
+        for start, kind in ((function, 'function'), (address, 'global')):
+            selected = [row for row in rows if int(row['address'], 16) == start]
+            if (len(selected) != 1 or selected[0]['type'] != kind or
+                    not re.fullmatch(r'[1-9][0-9]*', selected[0]['size']) or
+                    not re.fullmatch(r'(?:\?[^,\s]+|_[A-Za-z_][A-Za-z_0-9]*)', selected[0]['symbol']) or
+                    start + int(selected[0]['size']) >= 0x100000000):
+                raise ValueError('Global operand needs exact explicit function and global CSV identities.')
+            identities.append(selected[0])
+        if int(identities[0]['size']) != functions[function]['size']:
+            raise ValueError('Global operand function extent disagrees with its CSV identity.')
+        size, member = int(identities[1]['size']), item.get('member_offset', 0)
+        element = item.get('element_size', size)
+        if not (0 < element <= size and size % element == 0 and 0 <= member < element):
+            raise ValueError('Global operand member offset must lie inside one real element.')
+        result.append(dict(item, function_symbol=identities[0]['symbol'],
+                           function_size=int(identities[0]['size']),
+                           global_symbol=identities[1]['symbol'], size=size, addend=size + member))
+    return result
+
+
+def comparison_operand_coff(path, expected):
+    """Return one defined function's COFF bytes and its bounded relocations.
+
+    Each relocation is (function offset, type, target symbol, stored addend).
+    """
+    verify_comparison_anchor_object(path, expected)
+    data = path.read_bytes()
+    count_sections, = struct.unpack_from('<H', data, 2)
+    offset, count = struct.unpack_from('<II', data, 8)
+    strings = offset + count * 18
+    symbols, index = {}, 0
+    while index < count:
+        entry = offset + index * 18
+        name = data[entry:entry + 8]
+        if name[:4] == b'\0' * 4:
+            start = strings + struct.unpack_from('<I', name, 4)[0]
+            name = data[start:data.index(b'\0', start)]
+        value, section_number, kind, storage, auxiliary = struct.unpack_from('<IhHBB', data, entry + 8)
+        symbols[index] = (name.rstrip(b'\0').decode('ascii'), value, section_number, kind, storage)
+        index += auxiliary + 1
+    name, value, section_number, _, _ = next(
+        item for item in symbols.values() if item[0] == expected and item[2] > 0 and item[4] == 2)
+    header = 20 + (section_number - 1) * 40
+    length, raw, relocs = struct.unpack_from('<III', data, header + 16)
+    count_relocs, = struct.unpack_from('<H', data, header + 32)
+    flags, = struct.unpack_from('<I', data, header + 36)
+    if (section_number > count_sections or raw < 20 + count_sections * 40 or raw + length > offset or
+            count_relocs == 0xffff or flags & 0x01000000 or
+            (count_relocs and (relocs < raw + length or relocs + count_relocs * 10 > offset))):
+        raise ValueError('Invalid comparison operand COFF data or relocations.')
+    end = min([length, *(item[1] for item in symbols.values()
+                        if item[2] == section_number and item[3] == 0x20 and item[1] > value)])
+    result = []
+    for index in range(count_relocs):
+        position, symbol, kind = struct.unpack_from('<IIH', data, relocs + index * 10)
+        if position + 4 > length or symbol not in symbols:
+            raise ValueError('Invalid comparison operand COFF relocation.')
+        if value <= position < end:
+            if position + 4 > end:
+                raise ValueError('Comparison operand relocation crosses a function boundary.')
+            result.append((position - value, kind, symbols[symbol][0],
+                           struct.unpack_from('<I', data, raw + position)[0]))
+    return data[raw + value:raw + end], result
+
+
+ONE_PAST_REGISTERS = ('eax', 'ecx', 'edx', 'ebx', 'esp', 'ebp', 'esi', 'edi')
+
+
+def comparison_array_end_instruction(raw, value):
+    """Only CMP r32, imm32: never a dereference, branch or arbitrary literal."""
+    if len(raw) == 5 and raw[0] == 0x3d:
+        immediate, register = 1, 'eax'
+    elif len(raw) == 6 and raw[0] == 0x81 and 0xf8 <= raw[1] <= 0xff:
+        immediate, register = 2, ONE_PAST_REGISTERS[raw[1] - 0xf8]
+    else:
+        raise ValueError('One-past global operand must be CMP register, imm32.')
+    if struct.unpack_from('<I', raw, immediate)[0] != value:
+        raise ValueError('One-past global operand has the wrong address or addend.')
+    return immediate, register
+
+
+def comparison_array_end_sites(instructions, function, code, relocations, symbol, addend, value):
+    """Rebuilt one-past comparisons, identified by their COFF relocation.
+
+    instructions are the disassembled (address, bytes) of the linked function.
+    A site needs CMP r32, imm32 equal to the linked global + addend, and its
+    immediate must be the object's DIR32 relocation to that exact global with
+    that exact stored addend. Returns (function offset, register) pairs.
+    """
+    sites = []
+    for address, raw in instructions:
+        offset = address - function
+        try:
+            immediate, register = comparison_array_end_instruction(raw, value)
+        except ValueError:
+            continue
+        if (code[offset:offset + immediate] == raw[:immediate] and
+                (offset + immediate, 6, symbol, addend) in relocations):
+            sites.append((offset, register))
+    return sites
+
+
+def compare_global_operands(configuration, arguments):
+    """Run pinned reccmp with instruction-scoped operand names; no image or database edits."""
+    import reccmp
+    from reccmp.compare.functions import FunctionComparator
+    from reccmp.compare.asm.instgen import InstructGen, SectionType
+    from reccmp.types import EntityType, ImageId
+    from reccmp.tools.asmcmp import main as compare_main
+    if reccmp.VERSION != '0.1.7':
+        raise ValueError('Global operand comparison requires reccmp 0.1.7.')
+    config = json.loads(Path(configuration).read_text())
+    original_compare = FunctionComparator.compare_function
+    applied = {}
+
+    def instructions(image, start, size):
+        return [(inst[0], image.read(inst[0], inst[1]))
+                for section in InstructGen(image.read(start, size), start, True).sections
+                if section.type == SectionType.CODE for inst in section.contents]
+
+    def compare(self, match):
+        rules = sorted((item for item in config['operands'] if int(item['function'], 16) == match.orig_addr),
+                       key=lambda item: item['instruction_offset'])
+        if not rules:
+            return original_compare(self, match)
+        replacements = ({}, {})
+        original_code = dict(instructions(self.orig_bin, match.orig_addr, rules[0]['function_size']))
+        rebuilt_code = instructions(self.recomp_bin, match.recomp_addr, match.size(ImageId.RECOMP))
+        for global_symbol, addend in sorted({(item['global_symbol'], item['addend']) for item in rules}):
+            group = [item for item in rules if (item['global_symbol'], item['addend']) == (global_symbol, addend)]
+            item = group[0]
+            entity = self.db.get_one_match(int(item['global'], 16))
+            # The addend derives from the audited CSV extent of the matched
+            # global, so only its one-past-the-end element can be expressed.
+            if (match.get('symbol') != item['function_symbol'] or
+                    match.size(ImageId.ORIG) != item['function_size'] or
+                    entity is None or entity.entity_type != EntityType.DATA or
+                    entity.get('symbol') != global_symbol or
+                    entity.size(ImageId.ORIG) != item['size']):
+                raise ValueError('Global operand does not resolve to its explicit matched identity.')
+            path = Path(item['object'])
+            if digest(path) != item['object_sha256']:
+                raise ValueError('Global operand object changed during comparison.')
+            code, relocations = comparison_operand_coff(path, item['function_symbol'])
+            name = global_symbol + ''.join(f'+{value}' for value in (item['size'], item.get('member_offset'))
+                                           if value) + ' (ONE_PAST)'
+            # The audited original instruction must be exactly this comparison.
+            original = []
+            for rule in group:
+                address = match.orig_addr + rule['instruction_offset']
+                if address not in original_code:
+                    raise ValueError('Global operand offset is not an original instruction boundary.')
+                _, register = comparison_array_end_instruction(original_code[address],
+                                                              entity.orig_addr + addend)
+                replacements[0][address] = ('cmp', f'{register}, {name}')
+                original.append(register)
+            # Rebuilt sites come from relocations, so a changed body is still
+            # compared as a mismatch instead of borrowing the original offset.
+            sites = comparison_array_end_sites(rebuilt_code, match.recomp_addr, code, relocations,
+                                               global_symbol, addend, entity.recomp_addr + addend)
+            paired = len(sites) == len(group)
+            for index, rule in enumerate(group):
+                offset, register = sites[index] if paired else (None, None)
+                if paired:
+                    replacements[1][match.recomp_addr + offset] = ('cmp', f'{register}, {name}')
+                applied[(match.orig_addr, rule['instruction_offset'])] = {
+                    'function': rule['function'], 'function_symbol': rule['function_symbol'],
+                    'instruction_offset': rule['instruction_offset'], 'register': original[index],
+                    'recomp_function': hex(match.recomp_addr), 'recomp_instruction_offset': offset,
+                    'recomp_register': register, 'global': rule['global'], 'global_symbol': global_symbol,
+                    'size': rule['size'], 'addend': addend, 'recomp_global': hex(entity.recomp_addr),
+                    'source': rule['source'], 'object': rule['object'],
+                    'object_sha256': rule['object_sha256']}
+        sanitizers = (self.orig_sanitize, self.recomp_sanitize)
+        previous = [sanitizer.sanitize for sanitizer in sanitizers]
+        try:
+            for sanitizer, replace, default in zip(sanitizers, replacements, previous):
+                sanitizer.sanitize = lambda inst, replace=replace, default=default: (
+                    replace[inst[0]] if inst[0] in replace else default(inst))
+            return original_compare(self, match)
+        finally:
+            for sanitizer, default in zip(sanitizers, previous):
+                sanitizer.sanitize = default
+
+    FunctionComparator.compare_function = compare
+    previous_arguments = sys.argv
+    try:
+        sys.argv = ['reccmp-reccmp', *arguments]
+        result = compare_main()
+        if len(applied) != len(config['operands']):
+            raise ValueError('Comparator did not validate every configured global operand.')
+        save(config['validation'], [applied[key] for key in sorted(applied)])
+        return result
+    finally:
+        FunctionComparator.compare_function = original_compare
+        sys.argv = previous_arguments
+
+
+def global_operand_command(tool, metadata, target, source, sources, folder, command):
+    """Without configured operands, return the ordinary reccmp command unchanged."""
+    specs = comparison_global_operand_specs(metadata, target)
+    if not specs:
+        return command, None
+    linked = (folder / 'link.rsp').read_text().splitlines()
+    for item in specs:
+        path = source / item['source']
+        obj = folder / (path.stem + '.obj')
+        if path not in sources or linked.count('"' + obj.name + '"') != 1:
+            raise ValueError('Global operand must name a compiled and linked game source.')
+        item.update(object=str(obj), object_sha256=digest(obj))
+    config, validation = folder / 'global-operands.json', folder / 'global-operands-validated.json'
+    validation.unlink(missing_ok=True)
+    save(config, {'operands': specs, 'validation': str(validation)})
+    interpreter = Path(tool.reccmp).parent / ('python.exe' if os.name == 'nt' else 'python')
+    if not interpreter.is_file():
+        raise ValueError('Global operands require the Python interpreter beside reccmp-reccmp.')
+    return [str(interpreter), str(Path(__file__).resolve()), 'compare-global-operands',
+            str(config), *command[1:]], validation
+
+
+FUNCTION_ANNOTATION = re.compile(r'^[ \t]*//[ \t]*(?:FUNCTION|LIBRARY|SYNTHETIC|TEMPLATE|STUB):[ \t]*'
+                                 r'BEACHLIFE[ \t]+0x([0-9a-fA-F]{1,8})\b', re.M)
+
+
+def annotated_function_addresses(paths):
+    """Original function addresses that prepared source bodies already annotate."""
+    found = {}
+    for path in paths:
+        for match in FUNCTION_ANNOTATION.finditer(path.read_text(errors='replace')):
+            found.setdefault(int(match[1], 16), path)
+    return found
 
 
 def generate_comparison_anchors(metadata, source, folder, specs):
@@ -765,6 +1226,15 @@ def generate_comparison_anchors(metadata, source, folder, specs):
         header = (source / item['header']).resolve()
         if not header.is_relative_to(source.resolve()) or not header.is_file():
             raise ValueError('Comparison anchor header is not an actual source input.')
+    # A callee whose real body is already in the export (matched or not) keeps
+    # that body: a CSV identity names it. An anchor would add a second
+    # annotation for the address and a duplicate definition.
+    annotated = annotated_function_addresses(
+        [*sorted(source.rglob('*.cpp')), *sorted((metadata / 'support').glob('*.cpp'))])
+    for item in specs:
+        if int(item['address'], 16) in annotated:
+            raise ValueError(f'Comparison anchor {item["address"]} duplicates the prepared body in '
+                             f'{annotated[int(item["address"], 16)].name}; use its CSV identity instead.')
     destination.mkdir(parents=True, exist_ok=True)
     records = []
     for item, path in zip(specs, paths):
@@ -811,6 +1281,204 @@ def generate_comparison_anchors(metadata, source, folder, specs):
     return paths, records
 
 
+def lifetime_identity_kind(name, symbol):
+    """Constructor or destructor identity of one class, from its exact decoration.
+
+    VC6 decorates a constructor ??0Class@@<access>AE@<parameters>Z and a
+    destructor ??1Class@@<access>AE@XZ; only the class name is taken from it.
+    A scalar deleting destructor needs no identity: VC6 generates it as a
+    COMDAT wherever the class vtable is emitted.
+    """
+    parts = name.split('::') if isinstance(name, str) else []
+    if (len(parts) != 2 or not re.fullmatch(ANCHOR_IDENTIFIER, parts[0]) or
+            parts[0] in ANCHOR_KEYWORDS or not isinstance(symbol, str)):
+        return None
+    owner = re.escape(parts[0])
+    if parts[1] == parts[0] and re.fullmatch(r'\?\?0' + owner + r'@@[AIQ]AE@(?:XZ|[^,\s@?][^,\s]*@Z)',
+                                             symbol):
+        return 'constructor'
+    if parts[1] == '~' + parts[0] and re.fullmatch(r'\?\?1' + owner + r'@@[AIQEMU]AE@XZ', symbol):
+        return 'destructor'
+    return None
+
+
+def comparison_lifetime_specs(metadata, target):
+    """Validate constructor/destructor identities kept apart from credited code."""
+    specs = target.get('comparison_lifetime_anchors', [])
+    if not isinstance(specs, list):
+        raise ValueError('comparison_lifetime_anchors must be a list.')
+    if not specs:
+        return []
+    credited = [item for key in ('functions', 'library_functions', 'unclassified_functions')
+                for item in target.get(key, [])]
+    anchors = target.get('comparison_anchors', [])
+    ranges = [(int(item['address'], 16), int(item['address'], 16) + item['size'])
+              for item in (*credited, *anchors)]
+    names = {item['name'] for item in (*credited, *anchors)}
+    rows = game_metadata_rows(metadata)
+    taken = {int(item['address'], 16) for item in (*credited, *anchors)}
+    symbols = {row['symbol'] for row in rows if int(row['address'], 16) in taken}
+    for item in specs:
+        if (not isinstance(item, dict) or set(item) != {'address', 'size', 'name', 'symbol', 'header'} or
+                not isinstance(item['address'], str) or
+                not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item['address']) or
+                type(item['size']) is not int or item['size'] <= 0 or
+                lifetime_identity_kind(item['name'], item['symbol']) is None or
+                not isinstance(item['header'], str) or
+                not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*\.h', item['header'])):
+            raise ValueError('Unsupported comparison-only lifetime identity.')
+        start, end = int(item['address'], 16), int(item['address'], 16) + item['size']
+        if (end > 0x100000000 or item['name'] in names or item['symbol'] in symbols or
+                any(start < right and left < end for left, right in ranges)):
+            raise ValueError('Comparison-only lifetime identities must be distinct from credited '
+                             'functions, anchors and each other.')
+        rows_at_address = [row for row in rows if int(row['address'], 16) == start]
+        if (len(rows_at_address) != 1 or rows_at_address[0]['type'] != 'function' or
+                rows_at_address[0]['size'] != str(item['size']) or
+                rows_at_address[0]['symbol'] != item['symbol']):
+            raise ValueError('Comparison-only lifetime identity must match one explicit CSV identity.')
+        ranges.append((start, end))
+        names.add(item['name'])
+        symbols.add(item['symbol'])
+    return specs
+
+
+def lifetime_identity_object(address, symbol):
+    """An x86 COFF object defining only the decorated symbol, as a trap.
+
+    It carries no constructor or destructor semantics (no base or member
+    calls, vptr stores or vtable), so it cannot stand in for the original
+    body: `mov eax, <original address>` names it, then int3 traps.
+    """
+    code = b'\xb8' + struct.pack('<I', address) + b'\xcc' * 3
+    name = symbol.encode('ascii') + b'\0'
+    raw = 20 + 40
+    table = raw + len(code)
+    header = struct.pack('<HHIIIHH', 0x14c, 1, 0, table, 1, 0, 0)
+    # .text: code, 16-byte alignment, execute and read; not a COMDAT, so
+    # /OPT:ICF never folds one identity into another.
+    section = struct.pack('<8sIIIIIIHHI', b'.text', 0, 0, len(code), raw, 0, 0, 0, 0, 0x60500020)
+    entry = struct.pack('<IIIhHBB', 0, 4, 0, 1, 0x20, 2, 0)
+    return header + section + code + entry + struct.pack('<I', 4 + len(name)) + name
+
+
+def generate_lifetime_identities(metadata, source, folder, specs):
+    """Write ignored comparison-only identity objects; never part of an export."""
+    if not specs:
+        return [], []
+    destination = (folder / 'comparison-lifetime').resolve()
+    if (not destination.is_relative_to(ROOT.resolve()) or
+            destination.is_relative_to(metadata.resolve()) or
+            destination.is_relative_to(source.resolve())):
+        raise ValueError('Lifetime identities require output outside reconstructed source.')
+    ignored = subprocess.run(['git', 'check-ignore', '--quiet', str(destination)], cwd=ROOT,
+                             capture_output=True, text=True, check=False)
+    if ignored.returncode != 0:
+        raise ValueError('Lifetime identities require ignored output inside this repository.')
+    paths = [destination / ('lifetime_' + item['address'][2:].lower() + '.obj') for item in specs]
+    if destination.exists() and any(path not in paths for path in destination.iterdir()):
+        raise ValueError('Unexpected files in comparison-lifetime output; use a fresh build directory.')
+    annotated = annotated_function_addresses(
+        [*sorted(source.rglob('*.cpp')), *sorted((metadata / 'support').glob('*.cpp'))])
+    for item in specs:
+        address = int(item['address'], 16)
+        if address in annotated:
+            raise ValueError(f'Lifetime identity {item["address"]} duplicates the prepared body in '
+                             f'{annotated[address].name}; use its CSV identity instead.')
+        # The shared declaration must exist; LINK then proves the decoration
+        # against the callers' undefined references.
+        header = (source / item['header']).resolve()
+        if not header.is_relative_to(source.resolve()) or not header.is_file():
+            raise ValueError('Lifetime identity header is not an actual source input.')
+        text = header.read_text(errors='replace')
+        owner = item['name'].split('::')[0]
+        declaration = {'constructor': r'(?<![A-Za-z_0-9~])', 'destructor': r'~'}[
+                           lifetime_identity_kind(item['name'], item['symbol'])] + owner + r'[ \t]*\('
+        if (not re.search(r'\b(?:struct|class)[ \t]+' + owner + r'\b[^;]*?\{', text) or
+                not re.search(declaration, text)):
+            raise ValueError(f'{item["header"]} does not declare {item["name"]}.')
+    destination.mkdir(parents=True, exist_ok=True)
+    records = []
+    for item, path in zip(specs, paths):
+        body = lifetime_identity_object(int(item['address'], 16), item['symbol'])
+        if path.exists() and path.read_bytes() != body:
+            raise ValueError('Comparison-only lifetime object changed; use a fresh build directory.')
+        if not path.exists():
+            path.write_bytes(body)
+        verify_comparison_anchor_object(path, item['symbol'])
+        records.append({'address': item['address'], 'original_bytes': item['size'],
+                        'name': item['name'], 'symbol': item['symbol'],
+                        'kind': lifetime_identity_kind(item['name'], item['symbol']),
+                        'object': str(path.relative_to(ROOT)), 'sha256': digest(path),
+                        'code_bytes': len(body) - 20 - 40 - 18 - 4 - len(item['symbol']) - 1,
+                        'qualified': False, 'image_execution_permitted': False})
+    return paths, records
+
+
+def coff_external_symbols(path):
+    """Defined and undefined external names of an x86 COFF object."""
+    data = Path(path).read_bytes()
+    if len(data) < 20 or struct.unpack_from('<H', data)[0] != 0x14c:
+        raise ValueError(f'Expected an x86 COFF object: {path}')
+    offset, count = struct.unpack_from('<II', data, 8)
+    strings = offset + count * 18
+    if offset < 20 or strings + 4 > len(data):
+        raise ValueError(f'Truncated COFF symbol table: {path}')
+    string_size, = struct.unpack_from('<I', data, strings)
+    if string_size < 4 or strings + string_size > len(data):
+        raise ValueError(f'Truncated COFF string table: {path}')
+    defined, undefined, index = set(), set(), 0
+    while index < count:
+        entry = offset + index * 18
+        auxiliary = data[entry + 17]
+        if index + 1 + auxiliary > count:
+            raise ValueError(f'Truncated COFF auxiliary records: {path}')
+        section, = struct.unpack_from('<h', data, entry + 12)
+        if data[entry + 16] == 2:
+            name = data[entry:entry + 8]
+            if name[:4] == b'\0' * 4:
+                start, = struct.unpack_from('<I', name, 4)
+                end = data.find(b'\0', strings + start, strings + string_size)
+                if not 4 <= start < string_size or end == -1:
+                    raise ValueError(f'Invalid COFF symbol name: {path}')
+                name = data[strings + start:end]
+            else:
+                name = name.rstrip(b'\0')
+            name = name.decode('ascii', 'replace')
+            if section > 0:
+                defined.add(name)
+            elif section == 0 and struct.unpack_from('<I', data, entry + 8)[0] == 0:
+                undefined.add(name)
+        index += 1 + auxiliary
+    return defined, undefined
+
+
+def verify_lifetime_identity_links(folder, records, map_path):
+    """Each identity must resolve a real caller reference and nothing else."""
+    if not records:
+        return
+    arguments = [line.strip().strip('"') for line in (folder / 'link.rsp').read_text().splitlines()]
+    compiled = [folder / name for name in arguments if re.fullmatch(r'[^\\/:"]+\.obj', name)]
+    references, definitions = set(), set()
+    for path in compiled:
+        defined, undefined = coff_external_symbols(path)
+        references |= undefined
+        definitions |= defined
+    owners = {}
+    for line in map_path.read_text(errors='replace').splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and re.fullmatch(r'[0-9a-fA-F]{4}:[0-9a-fA-F]{8}', parts[0]):
+            owners.setdefault(parts[1], set()).add(parts[-1])
+    for record in records:
+        obj = Path(record['object']).name
+        if record['symbol'] not in references:
+            raise ValueError(f'No compiled object calls lifetime identity {record["symbol"]}.')
+        if record['symbol'] in definitions or owners.get(record['symbol']) != {obj}:
+            raise ValueError(f'Lifetime identity {record["symbol"]} is not defined only by {obj}.')
+        if sum(Path(argument.replace('\\', '/')).name == obj for argument in arguments) != 1:
+            raise ValueError(f'Lifetime identity object {obj} is not linked exactly once.')
+
+
 def game_target(metadata):
     """Validate every registered group before invoking matching build tools."""
     path = metadata / 'targets/beachlife-uk-1.1.json'
@@ -838,6 +1506,9 @@ def game_target(metadata):
                 raise ValueError(f'Duplicate function address across matching groups: {item["address"]}')
             seen.add(start)
     comparison_anchor_specs(metadata, target)
+    comparison_lifetime_specs(metadata, target)
+    comparison_global_operand_specs(metadata, target)
+    game_runtime_cdecl_imports(target)
     return path, target
 
 
@@ -879,8 +1550,10 @@ def game(tool, args):
     compile_options = game_source_compile_options(target, [*sources, *support_sources])
     stdcall_imports = game_stdcall_imports(target)
     runtime_imports = game_runtime_stdcall_imports(target)
+    cdecl_imports = game_runtime_cdecl_imports(target)
     original_stdcall_imports = verify_stdcall_pe_imports(original, stdcall_imports, exact=False)
     original_runtime_imports = verify_runtime_original_imports(original, runtime_imports)
+    original_cdecl_imports = verify_runtime_cdecl_imports(original, cdecl_imports)
     # The fixture is part of the patchable source export, never a game driver.
     entry = metadata / 'fixtures/game.cpp'
     if not entry.is_file():
@@ -896,7 +1569,9 @@ def game(tool, args):
         save(target_path, target)
     anchors, anchor_records = generate_comparison_anchors(
         metadata, source, folder, comparison_anchor_specs(metadata, target))
-    inputs = set([target_path, *sources, *anchors, *source.rglob('*.h'),
+    lifetime_objects, lifetime_records = generate_lifetime_identities(
+        metadata, source, folder, comparison_lifetime_specs(metadata, target))
+    inputs = set([target_path, *sources, *anchors, *lifetime_objects, *source.rglob('*.h'),
                   *(path for path in metadata.rglob('*') if path.is_file()),
                   ROOT / 'tools/matching_imports.py', ROOT / 'tools/prepare_sources.py',
                   STLPORT_PIN, *stlport_headers,
@@ -914,8 +1589,8 @@ def game(tool, args):
                 for path in inputs}
     fingerprints = input_hashes()
     folder.mkdir(parents=True, exist_ok=True)
-    library = tool.runtime_library(folder)
-    link_flags = ['/fixed:no', library]
+    library = tool.runtime_library(folder, cdecl_imports) if cdecl_imports else tool.runtime_library(folder)
+    link_flags = ['/fixed:no', library, *(tool.native(path) for path in lifetime_objects)]
     import_libraries = []
     for dll, policy in stdcall_imports.items():
         library_path, adjustments = stdcall_import_library(
@@ -969,6 +1644,25 @@ def game(tool, args):
             raise ValueError('Generated stdcall import library changed during the build.')
     compiled_stdcall_imports = verify_stdcall_pe_imports(binary, stdcall_imports, exact=True)
     compiled_runtime_imports = verify_runtime_compiled_imports(binary, runtime_imports, original_runtime_imports)
+    compiled_cdecl_imports = {}
+    if cdecl_imports:
+        linked_imports = pe_imports(binary).get('MSVCRT.dll', {})
+        if not set(linked_imports) <= set(pe_imports(original).get('MSVCRT.dll', {})):
+            raise ValueError('Rebuilt runtime PE imports contain an unverified identity.')
+        compiled_cdecl_imports = {'linked': {name: linked_imports[name] for name in cdecl_imports
+                                             if name in linked_imports},
+                                  'omitted': [name for name in cdecl_imports if name not in linked_imports]}
+    verify_lifetime_identity_links(folder, lifetime_records, binary.with_suffix('.map'))
+    if any(digest(ROOT / record['object']) != record['sha256'] for record in lifetime_records):
+        raise ValueError('Generated lifetime identity object changed during the build.')
+    # The report ignore list works by name. reccmp names a credited overload
+    # by its qualified name without parameters, so an anchor of the other
+    # overload must not hide it; lifetime identities appear under their symbol.
+    credited_names = {item['name'].split('(')[0] for key in ('functions', 'library_functions',
+                                                              'unclassified_functions')
+                      for item in target.get(key, [])}
+    ignored = ['fixture_entry', *(item['name'] for item in anchor_records if item['name'] not in credited_names),
+               *(item['symbol'] for item in lifetime_records)]
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
     save(folder / 'reccmp-project.yml', {'targets': {'BEACHLIFE': {
@@ -976,40 +1670,70 @@ def game(tool, args):
         ([str(anchors[0].parent)] if anchors else []),
         'hash': {'sha256': target['sha256']},
         'data-sources': [str(path) for path in game_metadata_paths(metadata)],
-        'report': {'ignore-functions': ['fixture_entry'] +
-                   [item['name'] for item in anchor_records]}}}})
+        'report': {'ignore-functions': ignored}}}})
     save(folder / 'reccmp-user.yml', {'targets': {'BEACHLIFE': {'path': str(original)}}})
     save(folder / 'reccmp-build.yml', {'project': '.', 'targets': {'BEACHLIFE': {
         'path': str(binary), 'pdb': str(pdb)}}})
     reports = args.reports.resolve()
     reports.mkdir(parents=True, exist_ok=True)
-    output = tool.run([tool.reccmp, '--target', 'BEACHLIFE', '--json',
-                       str(reports / 'comparison.json'), '--no-color'], folder)
+    command, operand_validation = global_operand_command(
+        tool, metadata, target, source, sources, folder,
+        [tool.reccmp, '--target', 'BEACHLIFE', '--json', str(reports / 'comparison.json'), '--no-color'])
+    output = tool.run(command, folder)
     (reports / 'comparison.log').write_text(output)
     if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
         raise ValueError('Comparator reported an error; inspect comparison.log.')
     report = json.loads((reports / 'comparison.json').read_text())
     # Identical-code folding gives several symbols one rebuilt address and the
-    # comparator reports only one of their names. A folded function counts only
-    # when its rebuilt bytes equal the original bytes exactly.
-    rebuilt = {}
-    for line in binary.with_suffix('.map').read_text(errors='replace').splitlines():
+    # comparator reports only one of their names. A folded function or library
+    # row counts only through its own CSV symbol, at a rebuilt address that LINK
+    # shares with another name, over its own original extent, when the bytes are
+    # equal or differ only in absolute or relative operands that LINK resolved
+    # and that name the same identities on both sides.
+    map_path = binary.with_suffix('.map')
+    rebuilt, objects = {}, {}
+    for line in map_path.read_text(errors='replace').splitlines():
         parts = line.split()
         if len(parts) >= 3 and parts[1].startswith('?') and re.fullmatch(r'[0-9a-fA-F]{8}', parts[2]):
             rebuilt.setdefault(parts[1], int(parts[2], 16))
-    symbol_at = {int(row['address'], 16): row['symbol'] for row in game_metadata_rows(metadata)
-                 if row.get('type') == 'function' and row.get('symbol')}
+            objects.setdefault(parts[1], parts[-1])
+    linked = (folder / 'link.rsp').read_text().splitlines() if (folder / 'link.rsp').is_file() else []
+    metadata_rows = game_metadata_rows(metadata)
+    symbol_at = {int(row['address'], 16): row['symbol'] for row in metadata_rows
+                 if row.get('type') in FOLDED_ALIAS_TYPES and row.get('symbol')}
+    folding = {}
+    def folded_function(item):
+        start, size = int(item['address'], 16), item['size']
+        symbol = symbol_at.get(start, '')
+        address = rebuilt.get(symbol)
+        if 'publics' not in folding:
+            folding['publics'] = map_public_names(map_path)
+        if address is None or not folding['publics'].get(address, set()) - {symbol}:
+            raise ValueError(f"Comparator did not find {item['name']}.")
+        found = {'name': item['name'], 'address': item['address'], 'bytes': size,
+                 'normalized_match': 1.0, 'exact_bytes': True, 'folded': True}
+        original_code, rebuilt_code = read_va(original, start, size), read_va(binary, address, size)
+        if original_code == rebuilt_code:
+            return found
+        if 'relocations' not in folding:
+            folding['relocations'] = pe_base_relocations(binary)
+            folding['identities'] = relocated_operand_identities(
+                original, binary, metadata_rows, folding['publics'])
+        # A relative operand comes only from the alias's own linked COFF function.
+        candidates = folded_alias_objects(folder, linked, objects.get(symbol, ''), symbol)
+        relative = next((found for found in (folded_relative_operands(folder / name, symbol, rebuilt_code)
+                                             for name in candidates) if found), [])
+        operands = compare_relocated_alias(original_code, rebuilt_code, start, address, folding['relocations'],
+                                           relative, *folding['identities'])
+        if not operands:
+            raise ValueError(f"Comparator did not find {item['name']}; its folded alias differs.")
+        return found | {'exact_bytes': False, 'relocated_operands': operands}
     def compare_functions(items):
         functions = []
         for item in items:
             row = next((row for row in report['data'] if int(row['address'], 16) == int(item['address'], 16)), None)
             if row is None:
-                address = rebuilt.get(symbol_at.get(int(item['address'], 16), ''))
-                if address is None or read_va(original, int(item['address'], 16), item['size']) != \
-                        read_va(binary, address, item['size']):
-                    raise ValueError(f"Comparator did not find {item['name']}.")
-                functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
-                                  'normalized_match': 1.0, 'exact_bytes': True, 'folded': True})
+                functions.append(folded_function(item))
                 continue
             exact = read_va(original, int(item['address'], 16), item['size']) == read_va(binary, int(row['recomp'], 16), item['size'])
             functions.append({'name': item['name'], 'address': item['address'], 'bytes': item['size'],
@@ -1051,6 +1775,15 @@ def game(tool, args):
               'comparison_layout': 'Relocations enabled in rebuilt comparison image; original remains unchanged.'}
     if anchor_records:
         result['comparison_anchors'] = anchor_records
+        result['image_execution_permitted'] = False
+    if lifetime_records:
+        result['comparison_lifetime_anchors'] = lifetime_records
+        result['image_execution_permitted'] = False
+    if cdecl_imports:
+        result['runtime_cdecl_imports'] = {'original': original_cdecl_imports,
+                                           'compiled': compiled_cdecl_imports}
+    if operand_validation is not None:
+        result['comparison_global_operands'] = json.loads(operand_validation.read_text())
         result['image_execution_permitted'] = False
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
@@ -1097,4 +1830,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) > 2 and sys.argv[1] == 'compare-global-operands':
+        sys.exit(compare_global_operands(sys.argv[2], sys.argv[3:]))
+    else:
+        main()

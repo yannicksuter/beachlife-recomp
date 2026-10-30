@@ -1,0 +1,179 @@
+diff --git a/fixtures/game.d/fixture_0044f260.cpp b/fixtures/game.d/fixture_0044f260.cpp
+new file mode 100644
+index 0000000..26c38d0
+--- /dev/null
++++ b/fixtures/game.d/fixture_0044f260.cpp
+@@ -0,0 +1,7 @@
++#include "startup_variable_state.h"
++
++// Compile/link retention only; never execute the comparison image.
++extern "C" __declspec(dllexport) void Fixture_0044f260(VariableCatalog* self, unsigned int id, const char* key, const char* value)
++{
++    self->VariableCatalog::ParseVehicle(id, key, value);
++}
+diff --git a/metadata.d/0044f260.csv b/metadata.d/0044f260.csv
+new file mode 100644
+index 0000000..b95f4d5
+--- /dev/null
++++ b/metadata.d/0044f260.csv
+@@ -0,0 +1,22 @@
++address,type,size,symbol
++0x0044f260,function,1475,?ParseVehicle@VariableCatalog@@QAEXIPBD0@Z
++0x00574b4c,string,49,
++0x00574e38,string,6,
++0x00574f1c,string,11,
++0x00574f28,string,10,
++0x00574f54,string,7,
++0x00574f5c,string,5,
++0x0057500c,string,9,
++0x0057583c,string,64,
++0x0057587c,string,14,
++0x0057588c,string,14,
++0x0057589c,string,8,
++0x005758a4,string,57,
++0x005758e0,string,9,
++0x005758ec,string,7,
++0x005758f4,string,9,
++0x00575900,string,5,
++0x00575908,string,6,
++0x00575910,string,6,
++0x00575918,string,10,
++0x00575924,string,8,
+diff --git a/src/match_0044f260.cpp b/src/match_0044f260.cpp
+new file mode 100644
+index 0000000..ed5a7f3
+--- /dev/null
++++ b/src/match_0044f260.cpp
+@@ -0,0 +1,111 @@
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include "startup_variable_catalog_fields.h"
++#include "startup_game_file.h"
++#include <stdlib.h>
++#include <string.h>
++
++template <class T>
++static T& CatalogField(void* record, unsigned int offset)
++{
++    return *reinterpret_cast<T*>(static_cast<unsigned char*>(record) + offset);
++}
++
++// Retail expands VariableCatalog::FindStaff (0x00449440) inline here.
++static inline unsigned int FindStaffId(VariableCatalog* catalog, const char* name)
++{
++    unsigned char* storage = reinterpret_cast<unsigned char*>(catalog);
++    unsigned int count = *reinterpret_cast<unsigned int*>(storage + 0x14);
++    for (unsigned int index = 0; index < count; ++index)
++    {
++        const char* record = reinterpret_cast<const char*>(catalog) + 0x384c4 + index * 0x224;
++        if (strcmp(record, name) == 0)
++            return *reinterpret_cast<unsigned int*>(reinterpret_cast<unsigned char*>(catalog) + 0x384c0 + index * 0x224);
++    }
++    StartupFatal("WorldParams::GetStaffID - keyword not found - %s", name);
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0044f260
++void VariableCatalog::ParseVehicle(unsigned int id, const char* key, const char* value)
++{
++    unsigned char* record = CatalogRecordAddress(this, 0x3fb24, 0x274, id);
++    if (strcmp(key, "NAME") == 0)
++    {
++        strcpy(reinterpret_cast<char*>(record + 0x44), value);
++    }
++    else if (strcmp(key, "SPRITE") == 0)
++    {
++        strcpy(reinterpret_cast<char*>(record + 0xc4), value);
++    }
++    else if (strcmp(key, "GRIDWIDTH") == 0)
++    {
++        CatalogField<int>(record, 0x1c4) = atoi(value);
++    }
++    else if (strcmp(key, "GRIDHEIGHT") == 0)
++    {
++        CatalogField<int>(record, 0x1c8) = atoi(value);
++    }
++    else if (strcmp(key, "CAPACITY") == 0)
++    {
++        CatalogField<int>(record, 0x1cc) = atoi(value);
++    }
++    else if (strcmp(key, "TERRAIN") == 0)
++    {
++        return;
++    }
++    else if (strcmp(key, "MAX_SPEED") == 0)
++    {
++        CatalogField<float>(record, 0x1d4) = static_cast<float>(atof(value));
++    }
++    else if (strcmp(key, "TOWED") == 0)
++    {
++        strcpy(reinterpret_cast<char*>(record + 0x1e4), value);
++    }
++    else if (strcmp(key, "FORCE") == 0)
++    {
++        CatalogField<float>(record, 0x1d0) = static_cast<float>(atof(value));
++    }
++    else if (strcmp(key, "MASS") == 0)
++    {
++        CatalogField<float>(record, 0x1d8) = static_cast<float>(atof(value));
++    }
++    else if (strcmp(key, "MOVETYPE") == 0)
++    {
++        if (strcmp(value, "POINTS") == 0)
++        {
++            record[0x1dc] = 1;
++        }
++        else if (strcmp(value, "BOUNDARY") == 0)
++        {
++            record[0x1dc] = 2;
++        }
++        else
++        {
++            StartupFatal("WorldParams::AddVehicleData - Invalid Movement Type - %s", value);
++        }
++    }
++    else if (strcmp(key, "ANIMSET") == 0)
++    {
++        strcpy(reinterpret_cast<char*>(record + 0x224), value);
++    }
++    else if (strcmp(key, "STAFF") == 0)
++    {
++        unsigned int staff = FindStaffId(this, value);
++        unsigned int& count = CatalogField<unsigned int>(record, 0x1e0);
++        CatalogField<unsigned int>(record, 0x264 + count * 4) = staff;
++        ++count;
++    }
++    else if (strcmp(key, "CREATION_PNTX") == 0)
++    {
++        CatalogField<float>(record, 0x26c) = static_cast<float>(atof(value));
++    }
++    else if (strcmp(key, "CREATION_PNTY") == 0)
++    {
++        CatalogField<float>(record, 0x270) = static_cast<float>(atof(value));
++    }
++    else
++    {
++        StartupFatal("WorldParams::AddVehicleData - unrecognised Vehicle keyword - %s", key);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/0044f260.json b/targets/beachlife-uk-1.1.d/0044f260.json
+new file mode 100644
+index 0000000..2abb5c5
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0044f260.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x0044f260",
++      "size": 1475,
++      "name": "VariableCatalog::ParseVehicle",
++      "name_status": "reconstructed"
++    }
++  ],
++  "source_compile_options": {
++    "match_0044f260.cpp": [
++      "/Ob1"
++    ]
++  }
++}
