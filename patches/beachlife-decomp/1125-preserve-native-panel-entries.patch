@@ -1,0 +1,132 @@
+diff --git b/src/startup_screen_panel13c_contains_entry.cpp a/src/startup_screen_panel13c_contains_entry.cpp
+index 13cf299..a34e5fa 100644
+--- b/src/startup_screen_panel13c_contains_entry.cpp
++++ a/src/startup_screen_panel13c_contains_entry.cpp
+@@ -6,8 +6,8 @@
+ bool ScreenLoadPanel13cOwner::ContainsEntry(const char* directory, const char* name)
+ {
+     bool found = false;
+-    ScreenLoadPanel13cEntry** end = static_cast<ScreenLoadPanel13cEntries&>(entries_04)._M_finish;
+-    for (ScreenLoadPanel13cEntry** it = static_cast<ScreenLoadPanel13cEntries&>(entries_04)._M_start; it != end; ++it)
++    ScreenLoadPanel13cEntry** end = entries_04._M_finish;
++    for (ScreenLoadPanel13cEntry** it = entries_04._M_start; it != end; ++it)
+     {
+         ScreenLoadPanel13cEntry* entry = *it;
+         if (strcmp(entry->directory_04, directory) == 0 && strcmp(entry->name_00, name) == 0)
+diff --git b/src/startup_screen_panel13c_entry_count.cpp a/src/startup_screen_panel13c_entry_count.cpp
+index 750a356..ad6ee06 100644
+--- b/src/startup_screen_panel13c_entry_count.cpp
++++ a/src/startup_screen_panel13c_entry_count.cpp
+@@ -3,5 +3,5 @@
+ // FUNCTION: BEACHLIFE 0x004cdb40
+ int ScreenLoadPanel13cOwner::EntryCount()
+ {
+-    return static_cast<ScreenLoadPanel13cEntries&>(entries_04)._M_finish - static_cast<ScreenLoadPanel13cEntries&>(entries_04)._M_start;
++    return entries_04._M_finish - entries_04._M_start;
+ }
+diff --git b/src/startup_screen_panel13c_owner.h a/src/startup_screen_panel13c_owner.h
+index 0312a44..229c438 100644
+--- b/src/startup_screen_panel13c_owner.h
++++ a/src/startup_screen_panel13c_owner.h
+@@ -54,7 +54,7 @@ struct ScreenLoadPanel13cEntries : std::vector<ScreenLoadPanel13cEntry*>
+ struct ScreenLoadPanel13cOwner
+ {
+     WindowAudioState* audio_00;
+-    std::vector<ScreenLoadPanel13cEntry*> entries_04; // Fields read through the ScreenLoadPanel13cEntries view.
++    ScreenLoadPanel13cEntries entries_04;
+     int index_10;
+     unsigned int word_14;
+     unsigned char state_18;
+diff --git b/src/startup_screen_panel13c_owner_access.cpp a/src/startup_screen_panel13c_owner_access.cpp
+index a859fdc..3269d08 100644
+--- b/src/startup_screen_panel13c_owner_access.cpp
++++ a/src/startup_screen_panel13c_owner_access.cpp
+@@ -4,23 +4,23 @@
+ // FUNCTION: BEACHLIFE 0x004cdb90
+ unsigned int ScreenLoadPanel13cOwner::ReadEntryWord10(int index)
+ {
+-    return static_cast<ScreenLoadPanel13cEntries&>(entries_04)._M_start[index]->word_10;
++    return entries_04._M_start[index]->word_10;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004cdba0
+ const char* ScreenLoadPanel13cOwner::ReadEntryName(int index)
+ {
+-    return static_cast<ScreenLoadPanel13cEntries&>(entries_04)._M_start[index]->name_00;
++    return entries_04._M_start[index]->name_00;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004cdbb0
+ const char* ScreenLoadPanel13cOwner::ReadEntryDirectory(int index)
+ {
+-    return static_cast<ScreenLoadPanel13cEntries&>(entries_04)._M_start[index]->directory_04;
++    return entries_04._M_start[index]->directory_04;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004cdbc0
+ unsigned int ScreenLoadPanel13cOwner::ReadEntryWord18(int index)
+ {
+-    return static_cast<ScreenLoadPanel13cEntries&>(entries_04)._M_start[index]->word_18;
++    return entries_04._M_start[index]->word_18;
+ }
+diff --git b/src/startup_screen_panel13c_owner_destructor.cpp a/src/startup_screen_panel13c_owner_destructor.cpp
+index 42da96b..f9bfa25 100644
+--- b/src/startup_screen_panel13c_owner_destructor.cpp
++++ a/src/startup_screen_panel13c_owner_destructor.cpp
+@@ -9,22 +9,53 @@
+ // FUNCTION: BEACHLIFE 0x004cd9e0
+ ScreenLoadPanel13cOwner::~ScreenLoadPanel13cOwner()
+ {
+-    ScreenLoadPanel13cEntry** last = entries_04.end();
+-    for (ScreenLoadPanel13cEntry** position = entries_04.begin(); position != last; ++position)
++    ScreenLoadPanel13cEntry** last = entries_04._M_finish;
++    ScreenLoadPanel13cEntry** position = entries_04._M_start;
++    while (position != last)
+     {
+         ScreenLoadPanel13cEntry* entry = *position;
+         if (entry)
+         {
+             if (entry->name_00)
++            {
+                 ::operator delete(entry->name_00);
++            }
+             if (entry->directory_04)
++            {
+                 ::operator delete(entry->directory_04);
++            }
+             if (entry->owned_08)
++            {
+                 ::operator delete(entry->owned_08);
++            }
+             if (entry->owned_0c)
++            {
+                 ::operator delete(entry->owned_0c);
++            }
+             ::operator delete(entry);
+         }
++        ++position;
++    }
++
++    ScreenLoadPanel13cEntry** first = entries_04._M_finish;
++    last = entries_04._M_finish;
++    ScreenLoadPanel13cEntry** destination = entries_04._M_start;
++    if (first == last)
++    {
++        entries_04._M_finish = destination;
++    }
++    else
++    {
++        ptrdiff_t count = last - first;
++        size_t bytes = static_cast<size_t>(count) * sizeof(*first);
++        entries_04._M_finish = static_cast<ScreenLoadPanel13cEntry**>(memmove(destination, first, bytes)) + count;
++    }
++
++    ScreenLoadPanel13cEntry** storage = entries_04._M_start;
++    if (storage)
++    {
++        ptrdiff_t count = entries_04._M_end_of_storage._M_data - storage;
++        unsigned int bytes = static_cast<unsigned int>(count * sizeof(*storage));
++        NodeAllocator::deallocate(storage, bytes);
+     }
+-    entries_04.clear();
+ }

@@ -19,6 +19,8 @@ spec.loader.exec_module(matching)
 
 CONSTRUCTOR = '??0GeneratedItem@@QAE@UGeneratedRect@@PBD@Z'
 DESTRUCTOR = '??1GeneratedBase@@UAE@XZ'
+EH_VECTOR_CONSTRUCTOR = '??_L@YGXPAXIHP6EX0@Z1@Z'
+EH_VECTOR_DESTRUCTOR = '??_M@YGXPAXIHP6EX0@Z@Z'
 
 
 def coff_object(symbols):
@@ -74,6 +76,11 @@ class LifetimeIdentityTests(unittest.TestCase):
         self.assertEqual(kind('GeneratedBase::GeneratedBase', '??0GeneratedBase@@QAE@H@Z'), 'constructor')
         self.assertEqual(kind('GeneratedBase::~GeneratedBase', DESTRUCTOR), 'destructor')
         self.assertEqual(kind('GeneratedBase::~GeneratedBase', '??1GeneratedBase@@QAE@XZ'), 'destructor')
+        # Nested classes are decorated innermost scope first.
+        self.assertEqual(kind('Outer::GeneratedItem::GeneratedItem', '??0GeneratedItem@Outer@@QAE@XZ'),
+                         'constructor')
+        self.assertEqual(kind('GeneratedScript::Rule::~Rule', '??1Rule@GeneratedScript@@QAE@XZ'), 'destructor')
+        self.assertEqual(kind('A::B::Rule::~Rule', '??1Rule@B@A@@QAE@XZ'), 'destructor')
         for name, symbol in (
                 ('GeneratedItem::GeneratedItem', '??0GeneratedBase@@QAE@XZ'),       # other class
                 ('GeneratedItem::GeneratedItem', '??1GeneratedItem@@QAE@XZ'),       # destructor symbol
@@ -85,10 +92,59 @@ class LifetimeIdentityTests(unittest.TestCase):
                 ('GeneratedBase::~GeneratedBase', '??_GGeneratedBase@@UAEPAXI@Z'),
                 ('GeneratedItem::GeneratedItem', '??0GeneratedItem@@QAE@'),         # truncated
                 ('GeneratedItem::GeneratedItem', '??0GeneratedItem@@QAE@H@Z,x'),    # CSV injection
-                ('Outer::GeneratedItem::GeneratedItem', '??0GeneratedItem@Outer@@QAE@XZ'),
+                ('Outer::GeneratedItem::GeneratedItem', '??0GeneratedItem@@QAE@XZ'),         # scope missing
+                ('Outer::GeneratedItem::GeneratedItem', '??0Outer@GeneratedItem@@QAE@XZ'),   # scope order
+                ('GeneratedScript::Rule::~Rule', '??1Rule@Other@@QAE@XZ'),                   # other scope
+                ('GeneratedScript::Rule::~Rule', '??1Rule@@QAE@XZ'),
+                ('GeneratedScript::Rule::~GeneratedScript', '??1GeneratedScript@@QAE@XZ'),   # outer name
+                ('GeneratedScript::Rule::~Rule', '??0Rule@GeneratedScript@@QAE@XZ'),         # constructor symbol
+                ('int::Rule::~Rule', '??1Rule@int@@QAE@XZ'), ('::Rule::~Rule', '??1Rule@@@QAE@XZ'),
                 ('int::int', '??0int@@QAE@XZ'), (None, CONSTRUCTOR)):
             with self.subTest(name=name, symbol=symbol):
                 self.assertIsNone(kind(name, symbol))
+
+    def test_runtime_vector_iterators_are_identities_by_exact_name_and_decoration(self):
+        kind = matching.lifetime_identity_kind
+        self.assertEqual(kind("`eh vector constructor iterator'", EH_VECTOR_CONSTRUCTOR), 'vector-iterator')
+        self.assertEqual(kind("`eh vector destructor iterator'", EH_VECTOR_DESTRUCTOR), 'vector-iterator')
+        for name, symbol in (
+                ("`eh vector constructor iterator'", EH_VECTOR_DESTRUCTOR),          # swapped
+                ("`eh vector destructor iterator'", EH_VECTOR_CONSTRUCTOR),
+                ("`vector constructor iterator'", '??_H@YGXPAXIHP6EX0@Z@Z'),         # compiler COMDAT
+                ("`vector destructor iterator'", '??_I@YGXPAXIHP6EX0@Z@Z'),
+                ("`eh vector destructor iterator'", EH_VECTOR_DESTRUCTOR + 'x'),
+                ('GeneratedItem::GeneratedItem', EH_VECTOR_DESTRUCTOR)):
+            with self.subTest(name=name, symbol=symbol):
+                self.assertIsNone(kind(name, symbol))
+
+    def test_vector_iterator_identities_need_a_library_row_and_no_header(self):
+        helper = {'address': '0x00401400', 'size': 104, 'name': "`eh vector destructor iterator'",
+                  'symbol': EH_VECTOR_DESTRUCTOR}
+        with (self.metadata / 'metadata.csv').open('a') as stream:
+            stream.write(f'0x00401400,library,104,{EH_VECTOR_DESTRUCTOR}\n')
+        target = copy.deepcopy(self.target)
+        target['comparison_lifetime_anchors'].append(helper)
+        specs = matching.comparison_lifetime_specs(self.metadata, target)
+        self.assertEqual(specs[-1], helper)
+        (self.source / 'generated.h').write_text('// declares no runtime helper\n')
+        paths, records = matching.generate_lifetime_identities(
+            self.metadata, self.source, self.directory / 'helper', specs[-1:])
+        self.assertEqual([path.name for path in paths], ['lifetime_00401400.obj'])
+        self.assertEqual(matching.coff_external_symbols(paths[0]), ({EH_VECTOR_DESTRUCTOR}, set()))
+        self.assertEqual((records[0]['kind'], records[0]['qualified'], records[0]['image_execution_permitted']),
+                         ('vector-iterator', False, False))
+        for changes, message in (({'header': 'generated.h'}, 'Unsupported'),
+                                 ({'symbol': EH_VECTOR_CONSTRUCTOR}, 'Unsupported'),
+                                 ({'size': 106}, 'CSV identity')):
+            with self.subTest(changes=changes):
+                changed = copy.deepcopy(target)
+                changed['comparison_lifetime_anchors'][-1].update(changes)
+                with self.assertRaisesRegex(ValueError, message):
+                    matching.comparison_lifetime_specs(self.metadata, changed)
+        text = (self.metadata / 'metadata.csv').read_text()
+        (self.metadata / 'metadata.csv').write_text(text.replace('0x00401400,library,', '0x00401400,function,'))
+        with self.assertRaisesRegex(ValueError, 'CSV identity'):
+            matching.comparison_lifetime_specs(self.metadata, target)
 
     def test_specs_need_one_exact_csv_identity_and_a_free_range(self):
         self.assertEqual(matching.comparison_lifetime_specs(self.metadata, self.target),
@@ -186,6 +242,29 @@ class LifetimeIdentityTests(unittest.TestCase):
                 self.metadata, self.source, self.directory / 'missing',
                 matching.comparison_lifetime_specs(self.metadata, target))
         self.assertFalse((self.directory / 'body').exists())
+
+    def test_nested_identities_need_every_enclosing_class_in_the_header(self):
+        (self.metadata / 'metadata.csv').write_text(
+            'address,type,size,symbol\n0x00401000,function,64,?Parse@GeneratedOwner@@QAEXXZ\n'
+            '0x00401300,function,24,??1Rule@GeneratedScript@@QAE@XZ\n')
+        rule = {'address': '0x00401300', 'size': 24, 'name': 'GeneratedScript::Rule::~Rule',
+                'symbol': '??1Rule@GeneratedScript@@QAE@XZ', 'header': 'generated.h'}
+        target = {'functions': self.target['functions'], 'comparison_lifetime_anchors': [rule]}
+        specs = matching.comparison_lifetime_specs(self.metadata, target)
+        self.assertEqual(specs, [rule])
+        (self.source / 'generated.h').write_text(
+            'struct GeneratedScript\n{\n    struct Rule\n    {\n        ~Rule();\n    };\n    ~GeneratedScript();\n};\n')
+        paths, records = matching.generate_lifetime_identities(
+            self.metadata, self.source, self.directory / 'nested', specs)
+        self.assertEqual(records[0]['kind'], 'destructor')
+        self.assertEqual(matching.coff_external_symbols(paths[0]), ({rule['symbol']}, set()))
+        for header in ('struct Rule\n{\n    ~Rule();\n};\n',                          # not nested
+                       'struct GeneratedScript\n{\n    struct Rule;\n    ~GeneratedScript();\n};\n'):
+            with self.subTest(header=header):
+                (self.source / 'generated.h').write_text(header)
+                with self.assertRaisesRegex(ValueError, 'does not declare'):
+                    matching.generate_lifetime_identities(
+                        self.metadata, self.source, self.directory / 'undeclared', specs)
 
     def test_fragments_share_identities_and_imports_once(self):
         fragments = self.metadata / 'targets/beachlife-uk-1.1.d'
@@ -374,10 +453,20 @@ class LifetimeGameRunTests(unittest.TestCase):
         self.assertFalse(result['image_execution_permitted'])
         self.assertEqual(result['runtime_cdecl_imports'], {
             'original': {'modf': '0x4f3134'}, 'compiled': {'linked': {}, 'omitted': ['modf']}})
-        self.assertIn(self.root.relative_to(matching.ROOT).as_posix() +
-                      '/output/game/comparison-lifetime/lifetime_00401100.obj', result['input_sha256'])
+        self.assertIn(str(self.root.relative_to(matching.ROOT) / 'output/game/comparison-lifetime/lifetime_00401100.obj'),
+                      result['input_sha256'])
         project = json.loads((self.args.output / 'game/reccmp-project.yml').read_text())
         self.assertEqual(project['targets']['BEACHLIFE']['report']['ignore-functions'], ['fixture_entry', CONSTRUCTOR])
+
+    def test_an_annotated_copy_that_link_did_not_fold_is_recorded(self):
+        imports = {'MSVCRT.dll': {'modf': '0x4f3134'}}
+        self.assertNotIn('comparison_unfolded_annotations', self.run_game(lambda path: imports))
+        (self.source / 'copy.cpp').write_text('// FUNCTION: BEACHLIFE 0x00401000 FOLDED\nvoid ParseCopy() {}\n')
+        result = self.run_game(lambda path: imports)
+        self.assertEqual(result['comparison_unfolded_annotations'], [
+            {'address': '0x00401000', 'symbol': '?Parse@@YAXXZ', 'recomp': '0x00401010',
+             'sources': ['copy.cpp', 'parse.cpp']}])
+        self.assertEqual([item['normalized_match'] for item in result['functions']], [1.0])
 
     def test_an_anchor_never_hides_a_credited_overload_in_the_report(self):
         (self.source / 'generated.h').write_text(
@@ -398,6 +487,40 @@ class LifetimeGameRunTests(unittest.TestCase):
         project = json.loads((self.args.output / 'game/reccmp-project.yml').read_text())
         self.assertEqual(project['targets']['BEACHLIFE']['report']['ignore-functions'],
                          ['fixture_entry', 'Other', CONSTRUCTOR])
+
+    def test_opted_in_anchors_compile_with_stlport_like_their_callers(self):
+        (self.source / 'generated.h').write_text(
+            (self.source / 'generated.h').read_text() + 'void Load(int value);\nvoid Other(int value);\n')
+        (self.source / 'caller.cpp').write_text('#include "generated.h"\n')
+        anchors = [{'address': '0x00401200', 'size': 16, 'name': 'Load', 'symbol': '?Load@@YAXH@Z',
+                    'header': 'generated.h', 'kind': 'void-function', 'return_type': 'void',
+                    'parameters': ['int'], 'stlport': True},
+                   {'address': '0x00401300', 'size': 16, 'name': 'Other', 'symbol': '?Other@@YAXH@Z',
+                    'header': 'generated.h', 'kind': 'void-function', 'return_type': 'void', 'parameters': ['int']}]
+        self.target['comparison_anchors'] = anchors
+        self.target['stlport_sources'] = ['caller.cpp']
+        (self.metadata / 'targets/beachlife-uk-1.1.json').write_text(json.dumps(self.target))
+        with (self.metadata / 'metadata.csv').open('a') as stream:
+            stream.write('0x00401200,function,16,?Load@@YAXH@Z\n0x00401300,function,16,?Other@@YAXH@Z\n')
+        seen = {}
+
+        def build(folder, sources, name, extra_link=(), extra_compile=(), source_flags=None,
+                  source_includes=None, anchor_symbols=None):
+            seen.update(sources=sources, flags=source_flags, includes=source_includes)
+            return self.build(folder, sources, name, extra_link, extra_compile, source_flags, source_includes)
+
+        with patch.object(self.tool, 'build', build):
+            result = self.run_game(lambda path: {'MSVCRT.dll': {'modf': '0x4f3134'}})
+        generated = self.args.output.resolve() / 'game/comparison-only'
+        load, other = generated / 'anchor_00401200.cpp', generated / 'anchor_00401300.cpp'
+        self.assertIn(load, seen['sources'])
+        self.assertIn(other, seen['sources'])
+        include = self.args.stlport / 'stlport'
+        self.assertEqual(seen['includes'], {self.source / 'caller.cpp': [include], load: [include]})
+        self.assertEqual(seen['flags'][load], ['/D_STLP_NO_OWN_IOSTREAMS=1'])
+        self.assertNotIn(other, seen['flags'])
+        self.assertEqual(result['stlport_sources'], ['caller.cpp'])
+        self.assertEqual([record.get('stlport') for record in result['comparison_anchors']], [True, None])
 
     def build_without_anchor_check(self, folder, sources, name, extra_link=(), extra_compile=(), source_flags=None,
                                    source_includes=None, anchor_symbols=None):

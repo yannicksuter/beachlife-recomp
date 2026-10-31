@@ -1,0 +1,168 @@
+diff --git a/fixtures/game.d/fixture_004b2240.cpp b/fixtures/game.d/fixture_004b2240.cpp
+new file mode 100644
+index 0000000..cedd236
+--- /dev/null
++++ b/fixtures/game.d/fixture_004b2240.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004b2240(ScreenManager* item)
++{
++    item->ScreenManager::UpdatePointerInput();
++}
+diff --git a/metadata.d/004b2240.csv b/metadata.d/004b2240.csv
+new file mode 100644
+index 0000000..51bdfd4
+--- /dev/null
++++ b/metadata.d/004b2240.csv
+@@ -0,0 +1,5 @@
++address,type,size,symbol
++0x004b2240,function,554,?UpdatePointerInput@ScreenManager@@QAEXXZ
++0x004eab40,function,7,?ReadValue134@InputState@@QBEHXZ
++0x004eab50,function,7,?ReadValue138@InputState@@QBEHXZ
++0x004eaaf0,function,7,?ReadFirstButtonTransition@InputState@@QBEIXZ
+diff --git a/src/match_004b2240.cpp b/src/match_004b2240.cpp
+new file mode 100644
+index 0000000..6cc7cea
+--- /dev/null
++++ b/src/match_004b2240.cpp
+@@ -0,0 +1,117 @@
++#include "startup_pointer_list_operations.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_dialog.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_controller.h"
++
++static inline bool ActiveEmpty(const CircularList& list)
++{
++    return list.head->next == list.head;
++}
++
++// FUNCTION: BEACHLIFE 0x004b2240
++void ScreenManager::UpdatePointerInput()
++{
++    int x = startup_input_state->ReadValue134();
++    int y = startup_input_state->ReadValue138();
++    int wheel = startup_input_state->ReadWheel();
++    unsigned int buttons = startup_input_state->ReadFirstButtonTransition();
++    unsigned int release = startup_input_state->ReadSecondButtonTransition();
++
++    if (wheel)
++    {
++        bool consumed = false;
++        if (!ActiveEmpty(active))
++        {
++            ActiveScreenEntry* front = static_cast<CircularListValueNode*>(active.head->next)->entry;
++            if (front->state == 1)
++            {
++                word_94 = front->context;
++                consumed = front->item->HandleInput38(x, y, wheel);
++            }
++        }
++        if (!consumed && word_124)
++        {
++            word_124->HandleThreeWords(x, y, wheel);
++        }
++    }
++
++    // The first live screen that handles the click wins; a modal screen
++    // swallows the button words for everything behind it.
++    bool handled = false;
++    unsigned char modal = 0;
++    CircularListNode* clicked;
++    for (CircularListNode* node = active.head->next; node != active.head; node = node->next)
++    {
++        if (handled)
++        {
++            break;
++        }
++        ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++        if (entry->state == 1)
++        {
++            ScreenDialog* item = entry->item;
++            if (item->state_59)
++            {
++                modal = 1;
++            }
++            word_94 = entry->context;
++            handled = item->HandleTimedCoordinates(x, y, buttons);
++            if (handled)
++            {
++                clicked = node;
++            }
++            if (item->ReadState40() || modal)
++            {
++                buttons = 3;
++                release = 3;
++            }
++        }
++    }
++
++    if (handled)
++    {
++        if (clicked != active.head->next)
++        {
++            bool blocked = false;
++            ActiveScreenEntry* entry;
++            for (CircularListNode* other = active.head->next; other != active.head;
++                other = other->next)
++            {
++                if (blocked)
++                {
++                    break;
++                }
++                entry = static_cast<CircularListValueNode*>(other)->entry;
++                if (entry->item->state_59)
++                {
++                    blocked = true;
++                }
++            }
++            if (!blocked)
++            {
++                entry = static_cast<CircularListValueNode*>(clicked)->entry;
++                CircularListIterator position;
++                position.node = clicked;
++                active.Erase(position);
++                active.Insert(active.Begin(), entry);
++            }
++        }
++    }
++
++    if (mode != 2 && item_90 && !handled)
++    {
++        handled = item_90->HandleTimedCoordinates(x, y, buttons);
++    }
++    if (mode != 2 && item_90)
++    {
++        item_90->HandleTimedEvent(x, y, release);
++    }
++    HandleOverlayInput(x, y, buttons);
++    HandlePanelInput(x, y, buttons);
++    if (word_124 && !handled)
++    {
++        word_124->HandleFourWords(x, y, buttons, release);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/004b2240.json b/targets/beachlife-uk-1.1.d/004b2240.json
+new file mode 100644
+index 0000000..caf7cab
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004b2240.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x004b2240",
++      "size": 554,
++      "name": "ScreenManager::UpdatePointerInput",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004b2240.cpp": [
++      "/Ob1"
++    ]
++  }
++}
