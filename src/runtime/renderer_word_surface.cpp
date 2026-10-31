@@ -208,7 +208,7 @@ void WordSurface16::copy_from(
     }
 }
 
-void WordSurface16::blit_from(const WordSurface16& source,
+bool WordSurface16::blit_from(const WordSurface16& source,
     Rectangle source_rectangle,
     Rectangle destination_rectangle,
     bool use_source_key)
@@ -225,14 +225,14 @@ void WordSurface16::blit_from(const WordSurface16& source,
                rectangle.bottom > rectangle.top && rectangle.right <= width &&
                rectangle.bottom <= height;
     };
-    if (!contained(source_rectangle, source.width_, source.height_) ||
-        !contained(destination_rectangle, width_, height_))
-    {
-        throw std::out_of_range("Word surface blit rectangles must be nonempty and contained");
-    }
     if (use_source_key && !source.source_key_)
     {
         throw std::logic_error("Word surface source key has not been set");
+    }
+    if (!contained(source_rectangle, source.width_, source.height_) ||
+        !contained(destination_rectangle, width_, height_))
+    {
+        return false;
     }
     const int source_width = source_rectangle.right - source_rectangle.left;
     const int source_height = source_rectangle.bottom - source_rectangle.top;
@@ -245,7 +245,7 @@ void WordSurface16::blit_from(const WordSurface16& source,
             destination_rectangle.left,
             destination_rectangle.top,
             use_source_key);
-        return;
+        return true;
     }
 
     // Directional memmove ordering cannot protect every stretched self-blit.
@@ -283,6 +283,7 @@ void WordSurface16::blit_from(const WordSurface16& source,
             }
         }
     }
+    return true;
 }
 
 void WordSurface16::exchange_storage(WordSurface16& other)
