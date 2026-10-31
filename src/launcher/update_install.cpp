@@ -29,6 +29,9 @@
 #endif
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
+#include <spawn.h>
+#include <sys/wait.h>
+extern char** environ;
 #endif
 
 namespace beachlife::launcher
@@ -1165,11 +1168,42 @@ fs::path installed_launcher(const fs::path& base)
 #endif
 }
 
+#ifndef _WIN32
+namespace
+{
+// The app bundle `program` runs from on macOS, else empty.
+fs::path program_bundle([[maybe_unused]] const fs::path& program)
+{
+#ifdef __APPLE__
+    const fs::path macos = program.parent_path();
+    const fs::path bundle = macos.parent_path().parent_path();
+    if (macos.filename() == "MacOS" && macos.parent_path().filename() == "Contents" &&
+        app_bundle(bundle))
+    {
+        return bundle;
+    }
+#endif
+    return {};
+}
+} // namespace
+#endif
+
+bool restarts_in_place(const fs::path& program)
+{
+#ifdef _WIN32
+    (void)program;
+    return false;
+#else
+    return program_bundle(program).empty();
+#endif
+}
+
 std::string restart_launcher(const fs::path& program, int argc, char** argv)
 {
 #ifdef _WIN32
     (void)argc;
     (void)argv;
+    SetEnvironmentVariableW(L"BEACHLIFE_LAUNCHER_RESTARTED", L"1");
     std::wstring command = GetCommandLineW();
     STARTUPINFOW startup{};
     startup.cb = sizeof startup;
@@ -1194,6 +1228,43 @@ std::string restart_launcher(const fs::path& program, int argc, char** argv)
     CloseHandle(process.hProcess);
     return {};
 #else
+#ifdef __APPLE__
+    const fs::path bundle = program_bundle(program);
+    if (!bundle.empty())
+    {
+        // LaunchServices starts the new app in front, like a click in the Dock; a
+        // replaced process would stay behind whatever app macOS activates meanwhile.
+        // -n starts a second instance next to this one, which then exits.
+        std::string open = "/usr/bin/open", flag = "-n", env = "--env",
+                    restarted = "BEACHLIFE_LAUNCHER_RESTARTED=1", path = bundle.string(),
+                    args = "--args";
+        std::vector<char*> arguments = {
+            open.data(), flag.data(), env.data(), restarted.data(), path.data()};
+        if (argc > 1)
+        {
+            arguments.push_back(args.data());
+            arguments.insert(arguments.end(), argv + 1, argv + argc);
+        }
+        arguments.push_back(nullptr);
+        pid_t child = 0;
+        const int failed =
+            posix_spawn(&child, open.c_str(), nullptr, nullptr, arguments.data(), environ);
+        if (failed)
+        {
+            return std::strerror(failed);
+        }
+        int status = 0;
+        while (waitpid(child, &status, 0) < 0 && errno == EINTR)
+        {
+        }
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        {
+            return "open could not start " + path;
+        }
+        return {};
+    }
+#endif
+    setenv("BEACHLIFE_LAUNCHER_RESTARTED", "1", 1);
     std::vector<char*> arguments(argv, argv + argc);
     arguments.push_back(nullptr);
     execv(program.c_str(), arguments.data());

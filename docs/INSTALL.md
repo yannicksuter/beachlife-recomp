@@ -114,8 +114,9 @@ choice); the footer's button opens it again. Nothing is installed without asking
 **Update** (or **Install**, for a switch to a test build or back to a release)
 downloads the package for your system, checks it against GitHub's SHA-256,
 verifies every file against its `SOURCE-MANIFEST.json`, replaces only the
-package's own files and restarts the launcher. Anything else in the folder
-stays. A failed or interrupted replacement is rolled back or completed at the
+package's own files and restarts the launcher at once, in front of other
+windows; launcher settings you have not saved yet are still there, unsaved.
+Anything else in the folder stays. A failed or interrupted replacement is rolled back or completed at the
 next start. Copies that were not unpacked from a package (local builds) or a
 read-only folder get **Download**, which opens the release page instead.
 
