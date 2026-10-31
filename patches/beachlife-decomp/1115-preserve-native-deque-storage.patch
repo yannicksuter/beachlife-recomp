@@ -1,0 +1,867 @@
+diff --git b/src/startup_overlay_pending_deque.h a/src/startup_overlay_pending_deque.h
+index dc43065..2524786 100644
+--- b/src/startup_overlay_pending_deque.h
++++ a/src/startup_overlay_pending_deque.h
+@@ -3,6 +3,22 @@
+ 
+ #include "startup_world_deque.h"
+ 
+-typedef WorldDeque<unsigned int>::Type OverlayPendingDeque;
++struct OverlayPendingAllocator
++{
++};
++
++struct OverlayPendingDeque : WorldDequeStorage<unsigned int>
++{
++    explicit OverlayPendingDeque(const OverlayPendingAllocator& allocator = OverlayPendingAllocator(), unsigned int count = 0);
++    ~OverlayPendingDeque();
++    void InitializeMap(unsigned int count);
++    void CreateNodes(unsigned int** first, unsigned int** last);
++    void AppendBlock(const unsigned int& value);
++    void PushBack(const unsigned int& value);
++    void PopFront();
++    unsigned int Front() const;
++    bool Empty() const;
++    unsigned int Size() const;
++};
+ 
+ #endif
+diff --git b/src/startup_renderer_rectangle_queue.h a/src/startup_renderer_rectangle_queue.h
+index 5634ae8..9a14628 100644
+--- b/src/startup_renderer_rectangle_queue.h
++++ a/src/startup_renderer_rectangle_queue.h
+@@ -4,7 +4,44 @@
+ #include "startup_screen_item.h"
+ #include "startup_world_deque.h"
+ 
++struct RendererRectangleIterator
++{
++    ScreenRectangle* current;
++    ScreenRectangle* first;
++    ScreenRectangle* last;
++    ScreenRectangle** node;
++
++    RendererRectangleIterator();
++    RendererRectangleIterator(const RendererRectangleIterator& other); // 0x00426b00.
++    void Advance(int amount);                                          // 0x00411d80.
++};
++
++struct RendererRectangleTrivialTag
++{
++};
++void DestroyRectangleRange(RendererRectangleIterator first, RendererRectangleIterator last,
++    const RendererRectangleTrivialTag&);
++void DestroyRectangleRange(RendererRectangleIterator first, RendererRectangleIterator last, ScreenRectangle*);
++void DestroyRectangleRange(RendererRectangleIterator first, RendererRectangleIterator last);
++
+ // The retail deque stores eight rectangles in each 128-byte block.
+-typedef WorldDeque<ScreenRectangle>::Type RendererRectangleQueue;
++struct RendererRectangleQueue : WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>
++{
++    RendererRectangleQueue();
++    ~RendererRectangleQueue(); // 0x00411c20.
++    ScreenRectangle& At(int index);
++    const ScreenRectangle& At(int index) const;
++    void PopBack();
++    void PushBack(const ScreenRectangle& bounds);
++};
++
++template <>
++void WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>::InitializeMap(unsigned int count);
++template <>
++void WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>::CreateNodes(ScreenRectangle** first, ScreenRectangle** last);
++template <>
++void WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>::Deallocate(ScreenRectangle* storage, unsigned int count);
++template <>
++void WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>::AppendBlock(const ScreenRectangle& bounds);
+ 
+ #endif
+diff --git b/src/startup_ticker_storage.h a/src/startup_ticker_storage.h
+index 0e60647..e449783 100644
+--- b/src/startup_ticker_storage.h
++++ a/src/startup_ticker_storage.h
+@@ -3,11 +3,24 @@
+ #include "startup_world_deque.h"
+ struct TickerQueuedMessage;
+ struct TickerHistoryMessage;
+-typedef WorldDeque<TickerQueuedMessage*>::Type TickerQueuedDeque;
+-typedef WorldDeque<TickerHistoryMessage*>::Type TickerHistoryDeque;
+-typedef WorldDeque<TickerQueuedMessage*>::Iterator TickerQueuedIterator;
+-typedef WorldDeque<TickerHistoryMessage*>::Iterator TickerHistoryIterator;
+-TickerQueuedIterator FindQueuedMessage(TickerQueuedIterator first, TickerQueuedIterator last, unsigned int id);
+-TickerQueuedIterator FindQueuedMessage(TickerQueuedIterator first, TickerQueuedIterator last, const char* key);
++template <class Message>
++struct TickerDeque : WorldDequeStorage<Message*>
++{
++    typedef WorldDequeStorage<Message*> Storage;
++    typedef WorldDequeIterator<Message*> Iterator;
++    TickerDeque();
++    ~TickerDeque();
++    bool Empty() const;
++    unsigned int Size() const;
++    Message* Front() const;
++    Message*& operator[](int index);
++    Iterator Erase(Iterator position);
++    void PopFront();
++    void PushBack(Message* const& value);
++};
++WorldDequeIterator<TickerQueuedMessage*> FindQueuedMessage(WorldDequeIterator<TickerQueuedMessage*> first,
++    WorldDequeIterator<TickerQueuedMessage*> last, unsigned int id);
++WorldDequeIterator<TickerQueuedMessage*> FindQueuedMessage(WorldDequeIterator<TickerQueuedMessage*> first,
++    WorldDequeIterator<TickerQueuedMessage*> last, const char* key);
+ 
+ #endif
+diff --git b/src/startup_variable_state.h a/src/startup_variable_state.h
+index 2361956..4d55315 100644
+--- b/src/startup_variable_state.h
++++ a/src/startup_variable_state.h
+@@ -52,9 +52,9 @@ struct VariableTicker
+     void ClearFeedback(unsigned int kind);             // 0x0042b540.
+     void RemovePendingEntityMessages(unsigned int id); // 0x0042a680.
+     void RemoveNamedMessage(const char* name);         // 0x0042a760.
+-    TickerQueuedDeque pending_00;
+-    TickerHistoryDeque history_28;
+-    TickerHistoryIterator current_50;
++    TickerDeque<TickerQueuedMessage> pending_00;
++    TickerDeque<TickerHistoryMessage> history_28;
++    WorldDequeIterator<TickerHistoryMessage*> current_50;
+     int word_60;
+     int word_64;
+     int word_68;
+@@ -284,9 +284,9 @@ struct VariableEventSchedule
+     {
+         Entry();  // 0x00427cd0.
+         ~Entry(); // 0x00427d70.
+-        WorldDeque<int>::Type staff_00;
++        WorldDequeStorage<unsigned int> staff_00;
+         int staff_count_28;
+-        WorldDeque<int>::Type guests_2c;
++        WorldDequeStorage<unsigned int> guests_2c;
+         int guest_count_54;
+         float value_58;
+         float value_5c;
+@@ -595,7 +595,7 @@ struct VariableThought
+     unsigned int target_04;
+ };
+ 
+-typedef WorldDeque<VariableThought*>::Iterator ScreenContextRowIterator;
++typedef WorldDequeIterator<VariableThought*> ScreenContextRowIterator;
+ struct BuildingGuestQueue
+ {
+     ScreenMapPosition EntrancePosition();                                     // 0x004332e0.
+@@ -615,8 +615,8 @@ struct BuildingGuestQueue
+     void LoadState(GameFileReader* file); // 0x00435bd0.
+     unsigned int owner_00;
+     unsigned int word_04;
+-    WorldDeque<int>::Type guests_08;
+-    WorldDeque<int>::Type pending_30;
++    WorldDequeStorage<unsigned int> guests_08;
++    WorldDequeStorage<unsigned int> pending_30;
+     unsigned int word_58;
+     unsigned int word_5c;
+     unsigned int word_60;
+@@ -750,7 +750,7 @@ struct VariableWeather : WeatherRegistration
+     ScreenWorldPosition strike_point_2af4; // Saved as m_StrikePoint.x/.y/.z.
+     unsigned int values_2b00[26];
+     void* haze_2b68;
+-    WorldDeque<WorldWeatherEvent*>::Type events_2b6c;
++    WorldDequeStorage<WorldWeatherEvent*> events_2b6c;
+     int word_2b94;
+     unsigned int event_count_2b98;
+     int voice_2b9c;
+diff --git b/src/startup_world_deque.h a/src/startup_world_deque.h
+index 66f429b..65047ab 100644
+--- b/src/startup_world_deque.h
++++ a/src/startup_world_deque.h
+@@ -1,50 +1,97 @@
+ #ifndef STARTUP_WORLD_DEQUE_H
+ #define STARTUP_WORLD_DEQUE_H
+ 
+-#include <new>
+-
+-// The retail deques are STLport 4.5.3 std::deque instantiations: a 40-byte deque
+-// (start and finish iterators, map, map size) and 128-byte blocks holding 32
+-// pointers or integers, or 8 rectangles. Code using a deque needs its translation
+-// unit in the matching target's stlport_sources. Units compiled without STLport
+-// (declaration-only users such as comparison anchors) see layout stand-ins whose
+-// special members are private, so any use there fails to compile.
+-#ifdef _STLPORT_VERSION
+-#include <deque>
+-
++// Shared x86 deque storage; operations retain their separate retail bodies.
++struct ScreenRectangle;
+ template <class T>
+-struct WorldDeque
++struct WorldDequeBlockCount
++{
++    enum
++    {
++        value = 32
++    };
++};
++template <>
++struct WorldDequeBlockCount<ScreenRectangle>
+ {
+-    typedef std::deque<T> Type;
+-    typedef std::_Deque_iterator<T, std::_Nonconst_traits<T> > Iterator;
++    enum
++    {
++        value = 8
++    };
+ };
+-#else
+-struct WorldDequeLayout
++
++struct WorldDequeTrivialTag
+ {
+-private:
+-    WorldDequeLayout();
+-    WorldDequeLayout(const WorldDequeLayout&);
+-    ~WorldDequeLayout();
+-    WorldDequeLayout& operator=(const WorldDequeLayout&);
+-    void* words_[10];
+ };
+ 
+-struct WorldDequeIteratorLayout
++// The typed destruction dispatcher passes this tag to the folded 0x00437d10 body.
++template <class Iterator>
++void DestroyWorldDequeRange(Iterator first, Iterator last, const WorldDequeTrivialTag&);
++template <class Iterator, class T>
++void DestroyWorldDequeRange(Iterator first, Iterator last, T* value);
++template <class Iterator>
++void DestroyWorldDequeRange(Iterator first, Iterator last);
++struct WorldDequeAllocator
+ {
+-private:
+-    WorldDequeIteratorLayout();
+-    WorldDequeIteratorLayout(const WorldDequeIteratorLayout&);
+-    ~WorldDequeIteratorLayout();
+-    WorldDequeIteratorLayout& operator=(const WorldDequeIteratorLayout&);
+-    void* words_[4];
+ };
+ 
+ template <class T>
+-struct WorldDeque
++struct WorldDequeIterator
++{
++    T* current;
++    T* first;
++    T* last;
++    T** node;
++
++    WorldDequeIterator(); // 0x00426c60.
++    WorldDequeIterator(T* position, T* block_first, T* block_last, T** slot);
++    void Advance(int count);                      // 0x00426ce0.
++    WorldDequeIterator Advanced(int count) const; // 0x00426c70.
++    void Increment();                             // 0x00427830.
++    bool operator==(const WorldDequeIterator& other) const;
++    bool operator!=(const WorldDequeIterator& other) const;
++    void Decrement();                                    // 0x00427800.
++    int Distance(const WorldDequeIterator& other) const; // 0x00427a60.
++};
++
++template <class T, class Iterator = WorldDequeIterator<T> >
++struct WorldDequeStorage
+ {
+-    typedef WorldDequeLayout Type;
+-    typedef WorldDequeIteratorLayout Iterator;
++    typedef T value_type;
++    enum
++    {
++        block_size = WorldDequeBlockCount<T>::value
++    };
++    Iterator begin;
++    Iterator end;
++    T** map;
++    unsigned int map_count;
++
++    WorldDequeStorage();
++    WorldDequeStorage(const WorldDequeAllocator& allocator, unsigned int count);
++    ~WorldDequeStorage();
++    Iterator Erase(Iterator position);
++    Iterator Insert(Iterator position, const T& value);
++    void AppendBlock(const T& value);
++    void ReserveMap(unsigned int count, unsigned char front);
++    void PushFrontBlock(const T& value);
++    Iterator MakeHole(Iterator position);
++    Iterator InsertMiddle(Iterator position, const T& value);
++    WorldDequeStorage* Initialize(const WorldDequeAllocator&, unsigned int count);
++    void InitializeMap(unsigned int count);
++    void CreateNodes(T** first, T** last);
++    void DestroyNodes(T** first, T** last);
++    void PopFrontBlock();
++    void Destroy();
++    void Clear();
++    void ReleaseStorage();
++    void Deallocate(T* storage, unsigned int count);
++    Iterator Begin() const;
++    Iterator End() const;
++    T& At(int index);
++    void InitializeEmpty();
+ };
+-#endif
+ 
++template <class T>
++int WorldDequeDistance(const WorldDequeIterator<T>& first, const WorldDequeIterator<T>& last);
+ #endif
+diff --git b/src/startup_world_deque_inlines.h a/src/startup_world_deque_inlines.h
+index 4b40c4f..9ed0ca6 100644
+--- b/src/startup_world_deque_inlines.h
++++ a/src/startup_world_deque_inlines.h
+@@ -10,6 +10,323 @@
+ #include <string.h>
+ #include "startup_screen_shared_methods.h"
+ 
++// Shared implementation of the retail library's 32-element deque operations.
++template <class Iterator>
++int WorldDequeDistance(Iterator last, Iterator first)
++{
++    return 32 * (last.node - first.node - 1) + (last.current - last.first)
++         + (first.last - first.current);
++}
++
++template <class Iterator>
++static Iterator WorldDequeAdvance(Iterator position, int count)
++{
++    int offset = static_cast<int>(position.current - position.first) + count;
++    if (offset >= 0 && offset < 32)
++        position.current += count;
++    else
++    {
++        int block = offset > 0 ? offset / 32 : (offset + 1) / 32 - 1;
++        position.node += block;
++        position.first = *position.node;
++        position.last = position.first + 32;
++        position.current = position.first + offset - block * 32;
++    }
++    return position;
++}
++
++// Retail template body: 0x00427a90.
++template <class Iterator>
++Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result,
++    const WorldDequeRandomAccessTag&, int*)
++{
++    int count = WorldDequeDistance<Iterator>(last, first);
++    while (count > 0)
++    {
++        *result.current = *first.current;
++        first = WorldDequeAdvance(first, 1);
++        result = WorldDequeAdvance(result, 1);
++        --count;
++    }
++    return result;
++}
++
++// Retail template body: 0x0043b490.
++template <class Iterator>
++Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result, const WorldDequeIteratorTag&)
++{
++    return CopyWorldDeque(first, last, result, WorldDequeRandomAccessTag(), 0);
++}
++
++// Retail template body: 0x00462880.
++template <class Iterator>
++Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result)
++{
++    return CopyWorldDeque(first, last, result, WorldDequeIteratorTag());
++}
++
++// Retail template body: 0x00462b50.
++template <class Iterator>
++Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result,
++    const WorldDequeRandomAccessTag&, int*)
++{
++    int count = WorldDequeDistance<Iterator>(last, first);
++    while (count > 0)
++    {
++        last = WorldDequeAdvance(last, -1);
++        result = WorldDequeAdvance(result, -1);
++        *result.current = *last.current;
++        --count;
++    }
++    return result;
++}
++
++// Retail template body: 0x00462b00.
++template <class Iterator>
++Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result, const WorldDequeIteratorTag&)
++{
++    return CopyWorldDequeBackward(first, last, result, WorldDequeRandomAccessTag(), 0);
++}
++
++// Retail template body: 0x00462830.
++template <class Iterator>
++Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result)
++{
++    return CopyWorldDequeBackward(first, last, result, WorldDequeIteratorTag());
++}
++
++// Retail template body: 0x0042c570.
++template <class T, class Iterator>
++void WorldDequeStorage<T, Iterator>::ReserveMap(unsigned int count, unsigned char front)
++{
++    unsigned int old_nodes = static_cast<unsigned int>(end.node - begin.node) + 1;
++    unsigned int new_nodes = old_nodes + count;
++    T** new_begin;
++    if (map_count > new_nodes * 2)
++    {
++        new_begin = map + (map_count - new_nodes) / 2 + (front ? count : 0);
++        memmove(new_begin, begin.node, old_nodes * sizeof(T*));
++    }
++    else
++    {
++        unsigned int size = map_count + (map_count < count ? count : map_count) + 2;
++        T** new_map = static_cast<T**>(size == 0 ? 0 : NodeAllocator::allocate(size * sizeof(T*)));
++        new_begin = new_map + (size - new_nodes) / 2 + (front ? count : 0);
++        memmove(new_begin, begin.node, old_nodes * sizeof(T*));
++        if (this->map)
++        {
++            unsigned int bytes = map_count * sizeof(T*);
++            NodeAllocator::deallocate(this->map, bytes);
++        }
++        map = new_map;
++        map_count = size;
++    }
++    begin.node = new_begin;
++    begin.first = *new_begin;
++    begin.last = begin.first + block_size;
++    end.node = new_begin + old_nodes - 1;
++    end.first = *end.node;
++    end.last = end.first + block_size;
++}
++
++template <class T, class Iterator>
++static void WorldDequeAppendBlock(WorldDequeStorage<T, Iterator>& deque, const T& source)
++{
++    T value = source;
++    if (deque.map_count - (deque.end.node - deque.map) < 2)
++        deque.ReserveMap(1, 0);
++    deque.end.node[1] = static_cast<T*>(NodeAllocator::allocate(WorldDequeStorage<T, Iterator>::block_size * sizeof(T)));
++    if (deque.end.current)
++        *deque.end.current = value;
++    ++deque.end.node;
++    deque.end.first = *deque.end.node;
++    deque.end.last = deque.end.first + WorldDequeStorage<T, Iterator>::block_size;
++    deque.end.current = deque.end.first;
++}
++
++template <class T, class Iterator>
++static void WorldDequePushBack(WorldDequeStorage<T, Iterator>& deque, const T& value)
++{
++    if (deque.end.current == deque.end.last - 1)
++        deque.AppendBlock(value);
++    else
++    {
++        if (deque.end.current)
++            *deque.end.current = value;
++        ++deque.end.current;
++    }
++}
++
++template <class T, class Iterator>
++static void WorldDequePushFrontBlock(WorldDequeStorage<T, Iterator>& deque, const T& source)
++{
++    T value = source;
++    if (deque.begin.node == deque.map)
++        deque.ReserveMap(1, 1);
++    deque.begin.node[-1] = static_cast<T*>(NodeAllocator::allocate(WorldDequeStorage<T, Iterator>::block_size * sizeof(T)));
++    --deque.begin.node;
++    deque.begin.first = *deque.begin.node;
++    deque.begin.last = deque.begin.first + WorldDequeStorage<T, Iterator>::block_size;
++    deque.begin.current = deque.begin.last - 1;
++    ConstructTrivialValue(deque.begin.current, value);
++}
++
++template <class T, class Iterator>
++static void WorldDequePushFront(WorldDequeStorage<T, Iterator>& deque, const T& value)
++{
++    if (deque.begin.current == deque.begin.first)
++        deque.PushFrontBlock(value);
++    else
++    {
++        ConstructTrivialValue(deque.begin.current - 1, value);
++        --deque.begin.current;
++    }
++}
++
++// Retail template body: 0x00427240.
++template <class T, class Iterator>
++void WorldDequeStorage<T, Iterator>::AppendBlock(const T& source)
++{
++    T value = source;
++    if (map_count - (end.node - map) < 2)
++        ReserveMap(1, 0);
++    void* storage = NodeAllocator::allocate(block_size * sizeof(value_type));
++    end.node[1] = static_cast<T*>(storage);
++    if (end.current)
++        *end.current = value;
++    ++end.node;
++    end.first = *end.node;
++    end.last = end.first + block_size;
++    end.current = end.first;
++}
++
++template <class T, class Iterator>
++void WorldDequeStorage<T, Iterator>::PushFrontBlock(const T& value)
++{
++    WorldDequePushFrontBlock(*this, value);
++}
++
++template <class T, class Iterator>
++Iterator MakeWorldDequeHole(WorldDequeStorage<T, Iterator>& deque, Iterator position)
++{
++    int index = WorldDequeDistance<Iterator>(position, deque.begin);
++    unsigned int size = WorldDequeDistance<Iterator>(deque.end, deque.begin);
++    if (index < static_cast<int>(size / 2))
++    {
++        WorldDequePushFront(deque, *deque.begin.current);
++        position = WorldDequeAdvance(deque.begin, index);
++        CopyWorldDeque(WorldDequeAdvance(deque.begin, 2), WorldDequeAdvance(position, 1), WorldDequeAdvance(deque.begin, 1));
++    }
++    else
++    {
++        WorldDequePushBack(deque, *WorldDequeAdvance(deque.end, -1).current);
++        position = WorldDequeAdvance(deque.begin, index);
++        CopyWorldDequeBackward(position, WorldDequeAdvance(deque.end, -2), WorldDequeAdvance(deque.end, -1));
++    }
++    return position;
++}
++
++template <class T, class Iterator>
++Iterator EraseWorldDeque(WorldDequeStorage<T, Iterator>& deque, Iterator position)
++{
++    int index = WorldDequeDistance<Iterator>(position, deque.begin);
++    unsigned int size = WorldDequeDistance<Iterator>(deque.end, deque.begin);
++    if (static_cast<unsigned int>(index) < size / 2)
++    {
++        CopyWorldDequeBackward(deque.begin, position, WorldDequeAdvance(position, 1));
++        if (deque.begin.current == deque.begin.last - 1)
++        {
++            DeallocateImageListPointerSlots(deque.begin.first, 32);
++            ++deque.begin.node;
++            deque.begin.first = *deque.begin.node;
++            deque.begin.last = deque.begin.first + 32;
++            deque.begin.current = deque.begin.first;
++        }
++        else
++            ++deque.begin.current;
++    }
++    else
++    {
++        CopyWorldDeque(WorldDequeAdvance(position, 1), deque.end, position);
++        if (deque.end.current == deque.end.first)
++        {
++            DeallocateImageListPointerSlots(deque.end.first, 32);
++            --deque.end.node;
++            deque.end.first = *deque.end.node;
++            deque.end.last = deque.end.first + 32;
++            deque.end.current = deque.end.last;
++        }
++        --deque.end.current;
++    }
++    return WorldDequeAdvance(deque.begin, index);
++}
++
++// Retail template body: 0x0042c320.
++template <class Iterator, class Callback>
++Callback VisitWorldDeque(Iterator first, Iterator last, Callback callback)
++{
++    while (first.current != last.current)
++    {
++        callback(*first.current);
++        first = WorldDequeAdvance(first, 1);
++    }
++    return callback;
++}
++
++template <class T>
++int WorldDequeDistance(const WorldDequeIterator<T>& last, const WorldDequeIterator<T>& first)
++{
++    return 32 * (last.node - first.node - 1) + (last.current - last.first)
++         + (first.last - first.current);
++}
++template <class T>
++inline WorldDequeIterator<T>::WorldDequeIterator()
++    : current(0)
++    , first(0)
++    , last(0)
++    , node(0)
++{
++}
++template <class T>
++inline WorldDequeIterator<T>::WorldDequeIterator(T* position, T* block_first, T* block_last, T** slot)
++    : current(position)
++    , first(block_first)
++    , last(block_last)
++    , node(slot)
++{
++}
++template <class T>
++inline void WorldDequeIterator<T>::Advance(int count)
++{
++    int offset = static_cast<int>(current - first) + count;
++    if (offset >= 0 && offset < 32)
++        current += count;
++    else
++    {
++        int block = offset > 0 ? offset / 32 : (offset + 1) / 32 - 1;
++        node += block;
++        first = *node;
++        last = first + 32;
++        current = first + offset - block * 32;
++    }
++}
++template <class T>
++inline WorldDequeIterator<T> WorldDequeIterator<T>::Advanced(int count) const
++{
++    WorldDequeIterator<T> result(*this);
++    result.Advance(count);
++    return result;
++}
++template <class T>
++inline bool WorldDequeIterator<T>::operator==(const WorldDequeIterator<T>& other) const
++{
++    return current == other.current;
++}
++template <class T>
++inline bool WorldDequeIterator<T>::operator!=(const WorldDequeIterator<T>& other) const
++{
++    return current != other.current;
++}
+ template <class T>
+ void DeallocateImageListPointerSlots(T* storage, unsigned int count)
+ {
+@@ -17,4 +334,139 @@ void DeallocateImageListPointerSlots(T* storage, unsigned int count)
+         NodeAllocator::deallocate(storage, count * sizeof(T));
+ }
+ 
++template <class T, class Iterator>
++inline void WorldDequeStorage<T, Iterator>::CreateNodes(T** first, T** last)
++{
++
++    value_type** current = first;
++    try
++    {
++        while (current < last)
++        {
++            *current = static_cast<value_type*>(NodeAllocator::allocate(block_size * sizeof(value_type)));
++            ++current;
++        }
++    }
++    catch (...)
++    {
++        DestroyNodes(first, current);
++        throw;
++    }
++}
++
++template <class T, class Iterator>
++inline void WorldDequeStorage<T, Iterator>::Deallocate(T* storage, unsigned int count)
++{
++    DeallocateImageListPointerSlots(storage, count);
++}
++
++template <class T, class Iterator>
++inline void WorldDequeStorage<T, Iterator>::DestroyNodes(T** first, T** last)
++{
++    while (first < last)
++    {
++        Deallocate(*first, block_size);
++        ++first;
++    }
++}
++
++template <class T, class Iterator>
++inline void WorldDequeStorage<T, Iterator>::PopFrontBlock()
++{
++    Deallocate(begin.first, block_size);
++    ++begin.node;
++    begin.first = *begin.node;
++    begin.last = begin.first + block_size;
++    begin.current = begin.first;
++}
++
++template <class T, class Iterator>
++inline Iterator WorldDequeStorage<T, Iterator>::Begin() const
++{
++    return begin;
++}
++
++template <class T, class Iterator>
++inline Iterator WorldDequeStorage<T, Iterator>::End() const
++{
++    return end;
++}
++
++template <class T, class Iterator>
++inline T& WorldDequeStorage<T, Iterator>::At(int index)
++{
++    int offset = static_cast<int>(begin.current - begin.first) + index;
++    if (offset >= 0 && offset < block_size)
++        return begin.current[index];
++    int block = offset > 0 ? offset / block_size : (offset + 1) / block_size - 1;
++    return begin.node[block][offset - block * block_size];
++}
++
++template <class T, class Iterator>
++inline void WorldDequeStorage<T, Iterator>::Clear()
++{
++    for (T** node = begin.node + 1; node < end.node; ++node)
++        DeallocateImageListPointerSlots(*node, block_size);
++    if (begin.node != end.node)
++        DeallocateImageListPointerSlots(end.first, block_size);
++    end = begin;
++}
++
++template <class T, class Iterator>
++inline void WorldDequeStorage<T, Iterator>::ReleaseStorage()
++{
++    if (map)
++    {
++        DestroyNodes(begin.node, end.node + 1);
++        DeallocateImageListPointerSlots(map, map_count);
++    }
++}
++
++template <class Message>
++inline void TickerDeque<Message>::PushBack(Message* const& value)
++{
++    if (this->end.current == this->end.last - 1)
++        this->AppendBlock(value);
++    else
++    {
++        if (this->end.current)
++            ::new (this->end.current) Message*(value);
++        ++this->end.current;
++    }
++}
++inline unsigned int OverlayPendingDeque::Size() const
++{
++    return static_cast<unsigned int>(WorldDequeDistance<unsigned int>(end, begin));
++}
++
++template <class Deque>
++void InitializeWorldDequeMap(Deque& deque, unsigned int count)
++{
++    typedef typename Deque::value_type T;
++    unsigned int nodes = count / Deque::block_size + 1;
++    deque.map_count = nodes + 2 > 8 ? nodes + 2 : 8;
++    deque.map = static_cast<T**>(NodeAllocator::allocate(deque.map_count * sizeof(T*)));
++    T** first = deque.map + (deque.map_count - nodes) / 2;
++    T** last = first + nodes;
++    try
++    {
++        deque.CreateNodes(first, last);
++    }
++    catch (...)
++    {
++        DeallocateImageListPointerSlots(deque.map, deque.map_count);
++        deque.map = 0;
++        deque.map_count = 0;
++        throw;
++    }
++    deque.begin.node = first;
++    deque.begin.first = *first;
++    deque.begin.last = *first + Deque::block_size;
++    deque.end.node = last - 1;
++    deque.end.first = *(last - 1);
++    deque.end.last = deque.end.first + Deque::block_size;
++    deque.begin.current = deque.begin.first;
++    deque.end.current = deque.end.first + count % Deque::block_size;
++}
++
+ #endif
+diff --git b/src/startup_world_deque_operations.h a/src/startup_world_deque_operations.h
+index c1cf871..37d2efd 100644
+--- b/src/startup_world_deque_operations.h
++++ a/src/startup_world_deque_operations.h
+@@ -4,7 +4,49 @@
+ #include "startup_world_deque.h"
+ #include "startup_trivial_range_algorithms.h"
+ 
++template <class Iterator>
++int WorldDequeDistance(Iterator last, Iterator first);
++
+ template <class T>
+ void DeallocateImageListPointerSlots(T* storage, unsigned int count);
+ 
++template <class Iterator>
++static Iterator WorldDequeAdvance(Iterator position, int count);
++template <class T, class Iterator>
++static void WorldDequeAppendBlock(WorldDequeStorage<T, Iterator>& deque, const T& source);
++template <class T, class Iterator>
++static void WorldDequePushBack(WorldDequeStorage<T, Iterator>& deque, const T& value);
++template <class T, class Iterator>
++static void WorldDequePushFrontBlock(WorldDequeStorage<T, Iterator>& deque, const T& source);
++template <class T, class Iterator>
++static void WorldDequePushFront(WorldDequeStorage<T, Iterator>& deque, const T& value);
++template <class T, class Iterator>
++Iterator MakeWorldDequeHole(WorldDequeStorage<T, Iterator>& deque, Iterator position);
++template <class T, class Iterator>
++Iterator EraseWorldDeque(WorldDequeStorage<T, Iterator>& deque, Iterator position);
++template <class Iterator, class Callback>
++Callback VisitWorldDeque(Iterator first, Iterator last, Callback callback);
++
++struct WorldDequeIteratorTag
++{
++};
++struct WorldDequeRandomAccessTag
++{
++};
++
++template <class Iterator>
++Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result,
++    const WorldDequeRandomAccessTag&, int*);
++template <class Iterator>
++Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result, const WorldDequeIteratorTag&);
++template <class Iterator>
++Iterator CopyWorldDeque(Iterator first, Iterator last, Iterator result);
++template <class Iterator>
++Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result,
++    const WorldDequeRandomAccessTag&, int*);
++template <class Iterator>
++Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result, const WorldDequeIteratorTag&);
++template <class Iterator>
++Iterator CopyWorldDequeBackward(Iterator first, Iterator last, Iterator result);
++
+ #endif
+diff --git b/src/startup_world_entities.h a/src/startup_world_entities.h
+index f60a3e3..ac19ae3 100644
+--- b/src/startup_world_entities.h
++++ a/src/startup_world_entities.h
+@@ -434,7 +434,7 @@ struct WorldBuildingEntity : WorldStaticEntity
+     unsigned char flag_420;
+     unsigned char unknown_421[3];
+     int sound_id_424;
+-    WorldDeque<VariableThought*>::Type thoughts_428;
++    WorldDequeStorage<VariableThought*, ScreenContextRowIterator> thoughts_428;
+     int word_450;
+     float construction_time_454;
+     unsigned int word_458;
+@@ -1264,8 +1264,8 @@ struct WorldBuilderEntity : WorldStaffEntity
+     unsigned char flag_790;
+     unsigned char unknown_791[0x3];
+     unsigned int words_794[3];
+-    WorldDeque<int>::Type queue_7a0;
+-    WorldDeque<int>::Type queue_7c8;
++    WorldDequeStorage<int> queue_7a0;
++    WorldDequeStorage<int> queue_7c8;
+     unsigned int builder_index_7f0;
+     ScreenWorldPosition placement_position_7f4;
+     unsigned int word_800;
+diff --git b/src/startup_world_subsystems.h a/src/startup_world_subsystems.h
+index caedd14..f3cb5e5 100644
+--- b/src/startup_world_subsystems.h
++++ a/src/startup_world_subsystems.h
+@@ -471,8 +471,8 @@ struct WorldEventRecord
+ struct WorldSubsystem44 : WorldEventRegistration
+ {
+     WorldSubsystem44(); // 0x004250d0.
+-    WorldDeque<int>::Type indices_00;
+-    WorldDeque<WorldEventRecord*>::Type records_28;
++    WorldDequeStorage<int> indices_00;
++    WorldDequeStorage<WorldEventRecord*> records_28;
+     int word_50;
+     unsigned int count_54;
+     int word_58;
