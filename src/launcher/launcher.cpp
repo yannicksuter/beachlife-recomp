@@ -1428,8 +1428,27 @@ class Launcher
         }
         const std::string logs = path_utf8(log_folder_);
         at = setting_row(draw, iy, ix, iw, false, "Game log", logs.c_str(), dp(42));
-        if (ui::secondary_button(
-                "log_folder", "Open folder", Icon::Folder, at, {control_width(iw), dp(42)}))
+        // The last session's log opens in the system's text viewer, ready to send on.
+        const float half = (control_width(iw) - dp(10)) / 2;
+        const fs::path log_file = log_folder_ / "game.log";
+        std::error_code missing;
+        if (ui::secondary_button("open_log",
+                "Open log",
+                Icon::Terminal,
+                at,
+                {half, dp(42)},
+                fs::is_regular_file(log_file, missing)))
+        {
+            if (!SDL_OpenURL(file_url(path_utf8(log_file)).c_str()))
+            {
+                notice_ = std::string("Cannot open the log: ") + SDL_GetError();
+            }
+        }
+        if (ui::secondary_button("log_folder",
+                "Open folder",
+                Icon::Folder,
+                {at.x + half + dp(10), at.y},
+                {half, dp(42)}))
         {
             std::error_code ignored;
             fs::create_directories(path_from_utf8(logs), ignored);

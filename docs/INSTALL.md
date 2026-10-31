@@ -52,8 +52,9 @@ folder holding `beachlife.exe` or `beachlife`), on macOS in
 `~/Library/Logs/Beach Life`, where Console.app lists it; the session before it
 stays as `game-previous.log`. It records the game's own messages and,
 if the game stops unexpectedly, what stopped it with the call stack. The
-launcher mentions such a stop at its next start, and **Advanced → Game log →
-Open folder** opens the logs. When the game's folder cannot be written, the logs
+launcher mentions such a stop at its next start. **Advanced → Game log → Open
+log** opens the last session's log, ready to send on, and **Open folder** opens
+the folder with both logs. When the game's folder cannot be written, the logs
 go beside the launcher settings instead. They stay on your computer.
 
 Click **Save changes** to remember the path, display, diagnostics, update and
