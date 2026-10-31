@@ -1,6 +1,7 @@
 #include "platform/game_log.h"
 
 #include <array>
+#include <atomic>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -19,6 +20,8 @@
 #include <windows.h>
 #include <io.h>
 #else
+#include <cxxabi.h>
+#include <dlfcn.h>
 #include <execinfo.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -34,9 +37,21 @@ namespace fs = std::filesystem;
 constexpr char ended[] = "Beach Life: the session ended.\n";
 constexpr char exited[] = "Beach Life: the game exited.\n";
 constexpr char reported[] = "Beach Life: the launcher reported this stop.\n";
+// Begins the report of a crash or of an error that ended the session.
+constexpr char stopped[] = "\nBeach Life stopped: ";
 
 bool active = false;
 std::terminate_handler previous_terminate = nullptr;
+
+// Where the latest C++ exception on this thread was thrown, kept while a session
+// runs. The error that ends a session is caught after its own frames are gone.
+std::atomic<bool> keep_throw_sites = false;
+struct ThrowSite
+{
+    std::array<void*, 62> frames{};
+    int count = 0;
+};
+thread_local ThrowSite throw_site;
 
 #ifdef _WIN32
 FILE* log_file = nullptr; // the reopened stderr, or a file of its own beside a console
@@ -82,6 +97,20 @@ void say_where(const void* address)
             reinterpret_cast<std::uintptr_t>(address) - reinterpret_cast<std::uintptr_t>(module)));
     say(text);
 }
+
+// Sees every throw before any unwinding: llvm-mingw's libunwind raises
+// STATUS_GCC_THROW, MSVC 0xE06D7363.
+LONG WINAPI keep_throw_site(EXCEPTION_POINTERS* exception)
+{
+    const DWORD code = exception->ExceptionRecord->ExceptionCode;
+    if ((code == 0x20474343 || code == 0xE06D7363) && keep_throw_sites)
+    {
+        throw_site.count = RtlCaptureStackBackTrace(
+            1, static_cast<ULONG>(throw_site.frames.size()), throw_site.frames.data(), nullptr);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+PVOID throw_handler = nullptr;
 
 void say_stack()
 {
@@ -174,6 +203,33 @@ void put(int fd, const char* text)
     }
 }
 
+} // namespace
+} // namespace beachlife::platform
+
+// Throws compiled into the program pass here first: keep their call stack for the
+// session's log, then throw with the C++ runtime's own __cxa_throw. Declared by
+// <cxxabi.h>, and defined in its namespace like the runtimes' own definitions.
+namespace __cxxabiv1
+{
+extern "C" void __cxa_throw(void* object, std::type_info* type, void (*destroy)(void*))
+{
+    using beachlife::platform::throw_site;
+    if (beachlife::platform::keep_throw_sites)
+    {
+        throw_site.count =
+            backtrace(throw_site.frames.data(), static_cast<int>(throw_site.frames.size()));
+    }
+    using Throw = void (*)(void*, std::type_info*, void (*)(void*));
+    static const auto next = reinterpret_cast<Throw>(dlsym(RTLD_NEXT, "__cxa_throw"));
+    next(object, type, destroy);
+    std::abort(); // never reached: the runtime's __cxa_throw does not return
+}
+} // namespace __cxxabiv1
+
+namespace beachlife::platform
+{
+namespace
+{
 void say(const char* text)
 {
     if (log_fd >= 0)
@@ -223,7 +279,7 @@ const char* describe(int number)
 
 void crashed(int number, siginfo_t* info, void*)
 {
-    say("\nBeach Life stopped: ");
+    say(stopped);
     say(describe(number));
     // Codes 1 to 3 are the kernel's own memory faults (SEGV_MAPERR/ACCERR,
     // BUS_ADRALN/ADRERR/OBJERR); a signal sent by another process has no address.
@@ -279,6 +335,41 @@ void mark_exit()
 }
 } // namespace
 
+void log_fatal_error(const char* message)
+{
+    if (!active)
+    {
+        return;
+    }
+    say(stopped);
+    say(message);
+    say("\n");
+    if (throw_site.count <= 0)
+    {
+        say("No call stack was kept for it.\n");
+        return;
+    }
+    say("Call stack where it was thrown (newest first):\n");
+#ifdef _WIN32
+    for (int index = 0; index < throw_site.count; ++index)
+    {
+        say("  ");
+        say_where(throw_site.frames[index]);
+        say("\n");
+    }
+#else
+    // The first frame is __cxa_throw itself.
+    if (log_fd >= 0)
+    {
+        backtrace_symbols_fd(throw_site.frames.data() + 1, throw_site.count - 1, log_fd);
+    }
+    if (to_terminal)
+    {
+        backtrace_symbols_fd(throw_site.frames.data() + 1, throw_site.count - 1, STDERR_FILENO);
+    }
+#endif
+}
+
 GameLog::GameLog(const fs::path& folder, const std::string& header)
 {
     std::error_code error;
@@ -311,6 +402,7 @@ GameLog::GameLog(const fs::path& folder, const std::string& header)
     say("\n");
     previous_filter = SetUnhandledExceptionFilter(crashed);
     previous_abort = std::signal(SIGABRT, aborted);
+    throw_handler = AddVectoredExceptionHandler(1, keep_throw_site);
 #else
     fs::rename(file, folder / "game-previous.log", error);
     log_fd = ::open(file.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
@@ -344,6 +436,8 @@ GameLog::GameLog(const fs::path& folder, const std::string& header)
     }
 #endif
     previous_terminate = std::set_terminate(terminated);
+    throw_site.count = 0;
+    keep_throw_sites = true;
     static const bool exit_hook = std::atexit(mark_exit) == 0;
     (void)exit_hook;
     active = true;
@@ -357,8 +451,14 @@ GameLog::~GameLog()
     }
     say(ended);
     active = false;
+    keep_throw_sites = false;
     std::set_terminate(previous_terminate);
 #ifdef _WIN32
+    if (throw_handler)
+    {
+        RemoveVectoredExceptionHandler(throw_handler);
+        throw_handler = nullptr;
+    }
     SetUnhandledExceptionFilter(previous_filter);
     std::signal(SIGABRT, previous_abort ? previous_abort : SIG_DFL);
     if (own_file)
@@ -397,12 +497,15 @@ fs::path unreported_crash(const fs::path& folder)
         text.assign(std::istreambuf_iterator<char>(in), {});
     }
     std::erase(text, '\r'); // Windows writes the log in text mode
-    for (const char* line : {ended, exited, reported})
+    if (text.find(reported) != std::string::npos)
     {
-        if (text.find(line) != std::string::npos)
-        {
-            return {};
-        }
+        return {};
+    }
+    // An error that ended the session still lets it end in order.
+    if (text.find(stopped) == std::string::npos &&
+        (text.find(ended) != std::string::npos || text.find(exited) != std::string::npos))
+    {
+        return {};
     }
     std::ofstream(file, std::ios::binary | std::ios::app) << reported;
     return file;
