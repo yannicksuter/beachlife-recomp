@@ -9,6 +9,7 @@
 #include <exception>
 #include <fstream>
 #include <iterator>
+#include <string>
 #include <system_error>
 
 #ifdef _WIN32
@@ -395,6 +396,7 @@ fs::path unreported_crash(const fs::path& folder)
         }
         text.assign(std::istreambuf_iterator<char>(in), {});
     }
+    std::erase(text, '\r'); // Windows writes the log in text mode
     for (const char* line : {ended, exited, reported})
     {
         if (text.find(line) != std::string::npos)
