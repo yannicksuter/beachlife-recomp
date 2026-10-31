@@ -283,6 +283,57 @@ class MatchingInputTests(unittest.TestCase):
         self.assertEqual(rebuilt(0x430000), {'symbol:?copy@@YAXXZ'})
         self.assertEqual(rebuilt(0x430004), set())
 
+    def test_folded_identities_are_code_rows_whose_own_symbol_shares_its_address(self):
+        rows = [{'address': '0x1020', 'type': 'library', 'size': '8', 'symbol': '?Erase@List@@QAEXXZ'},
+                {'address': '0x1040', 'type': 'function', 'size': '4', 'symbol': '?Begin@List@@QAEXXZ'},
+                {'address': '0x1060', 'type': 'function', 'size': '4', 'symbol': '?Alone@@YAXXZ'},
+                {'address': '0x1080', 'type': 'global', 'size': '4', 'symbol': '?value@@3HA'},
+                {'address': '0x10a0', 'type': 'function', 'size': '4', 'symbol': '?Missing@@YAXXZ'},
+                {'address': '0x10c0', 'type': 'string', 'size': '4', 'symbol': ''}]
+        rebuilt = {'?Erase@List@@QAEXXZ': 0x2020, '?Begin@List@@QAEXXZ': 0x2040, '?Alone@@YAXXZ': 0x2060,
+                   '?value@@3HA': 0x3000}
+        publics = {0x2020: {'?Erase@List@@QAEXXZ', '?EraseOwner@@QAEXXZ'},
+                   0x2040: {'?Begin@List@@QAEXXZ', '?BeginStatus@@QBEXXZ'},
+                   0x2060: {'?Alone@@YAXXZ'}, 0x3000: {'?value@@3HA', '?other@@3HA'}}
+        self.assertEqual(matching.folded_identity_specs(rows, rebuilt, publics), [
+            {'address': '0x00001020', 'symbol': '?Erase@List@@QAEXXZ', 'recomp': '0x00002020',
+             'names': ['?Erase@List@@QAEXXZ', '?EraseOwner@@QAEXXZ']},
+            {'address': '0x00001040', 'symbol': '?Begin@List@@QAEXXZ', 'recomp': '0x00002040',
+             'names': ['?Begin@List@@QAEXXZ', '?BeginStatus@@QBEXXZ']}])
+
+    def test_folded_identity_binds_only_an_unmatched_address_at_its_map_address(self):
+        names = {0x2020: ['?Erase@List@@QAEXXZ', '?EraseOwner@@QAEXXZ'],
+                 0x2040: ['?Begin@List@@QAEXXZ'],
+                 0x2060: ['?Shared@@YAXXZ', '?SharedOwner@@YAXXZ', '?SharedToo@@YAXXZ'],
+                 0x2080: ['?Taken@@YAXXZ', '?TakenOwner@@YAXXZ'],
+                 0x2100: ['?Kept@@YAXXZ', '?KeptOwner@@YAXXZ'],
+                 0x2200: ['?Moved@@YAXXZ', '?MovedOwner@@YAXXZ']}
+        def spec(address, symbol, recomp):
+            return {'address': f'0x{address:08x}', 'symbol': symbol, 'recomp': f'0x{recomp:08x}',
+                    'names': names[recomp]}
+        # The PDB keeps one public per folded address.
+        pdb = {0x2020: {'?EraseOwner@@QAEXXZ'}, 0x2040: {'?Begin@List@@QAEXXZ'},
+               0x2060: {'?SharedOwner@@YAXXZ'}, 0x2080: {'?TakenOwner@@YAXXZ'},
+               0x2100: {'?KeptOwner@@YAXXZ'}, 0x2200: {'?Unrelated@@YAXXZ'}}
+        # reccmp's own matches, seen from both images.
+        original = {0x1100: 0x2100, 0x1120: 0x2400, 0x1300: 0x2080}
+        rebuilt = {recomp: address for address, recomp in original.items()}
+        specs = [spec(0x1020, '?Erase@List@@QAEXXZ', 0x2020),     # bound at its map address
+                 spec(0x1100, '?Kept@@YAXXZ', 0x2100),            # reccmp already bound it there
+                 spec(0x1120, '?Kept@@YAXXZ', 0x2100),            # reccmp bound it elsewhere
+                 spec(0x1040, '?Begin@List@@QAEXXZ', 0x2040),     # no other map name: fold not proven
+                 spec(0x1050, '?Absent@@YAXXZ', 0x2020),          # not a map name at that address
+                 spec(0x1060, '?Shared@@YAXXZ', 0x2060),          # first identity takes the address
+                 spec(0x1070, '?SharedToo@@YAXXZ', 0x2060),       # one rebuilt address per original
+                 spec(0x1080, '?Taken@@YAXXZ', 0x2080),           # rebuilt address already matched
+                 spec(0x1090, '?Moved@@YAXXZ', 0x2200),           # the PDB kept another body there
+                 spec(0x10a0, '?Erase@List@@QAEXXZ', 0x2020) | {'recomp': '0x00002300'}]  # no PDB public
+        records, pairs = matching.bind_folded_identities(specs, pdb, original.get, rebuilt.get)
+        self.assertEqual([record['bound'] for record in records],
+                         ['map', 'reccmp', 'other', False, False, 'map', False, False, False, False])
+        self.assertEqual(pairs, [(0x1020, 0x2020), (0x1060, 0x2060)])
+        self.assertEqual(records[0], specs[0] | {'bound': 'map'})
+
     def test_map_public_names_keep_every_name_at_an_address(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'generated.map'
@@ -333,6 +384,8 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.addCleanup(stlport_patch.stop)
         self.calls = []
         self.comparison_rows = []
+        self.policy_configs = []
+        self.folded_bound = False
         self.build_arguments = None
         self.tamper = False
         self.tamper_import = False
@@ -340,9 +393,13 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.tamper_sdk_pin = False
         self.tamper_sdk_compare = False
         self.tool = SimpleNamespace(decomp_root=self.metadata, output=self.args.output,
-                                    compiler=self.root / 'compiler/Bin', reccmp='generated-comparator',
+                                    compiler=self.root / 'compiler/Bin',
+                                    reccmp=str(self.root / 'comparator/reccmp-reccmp'),
                                     native=str, runtime_library=self.runtime_library,
                                     build=self.build, run=self.compare)
+        # Policies run reccmp in process through the interpreter beside it.
+        (self.root / 'comparator').mkdir()
+        (self.root / 'comparator/python').write_text('# generated interpreter placeholder\n')
         self.sdk_header = self.root / 'compiler/Include/FIXTURE.H'
         self.sdk_header.parent.mkdir(parents=True)
         self.sdk_header.write_bytes(b'// generated SDK declaration fixture\n')
@@ -381,6 +438,14 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
             self.sdk_header.write_bytes(b'changed during comparison')
         report = Path(arguments[arguments.index('--json') + 1])
         report.write_text(json.dumps({'data': self.comparison_rows}))
+        if 'compare-global-operands' in arguments:
+            # Stand-in for the in-process policies: record each folded identity.
+            config = json.loads(Path(arguments[arguments.index('compare-global-operands') + 1]).read_text())
+            self.policy_configs.append(config)
+            Path(config['validation']).write_text('[]')
+            if 'folded_validation' in config:
+                Path(config['folded_validation']).write_text(json.dumps(
+                    [item | {'bound': self.folded_bound} for item in config['folded_identities']]))
         return ''
 
     @staticmethod
@@ -919,6 +984,44 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual(result['library_functions'], [
             {'name': 'copy', 'address': '0x1020', 'bytes': 8, 'normalized_match': 1.0,
              'exact_bytes': True, 'folded': True}])
+
+    def test_folded_identity_reaches_the_comparator_so_callers_keep_it(self):
+        self.fold_library_row(['?copy@@YAXXZ', '?copy_aux@@YAXXZ'])
+        # The comparator binds the identity and compares the row directly.
+        self.folded_bound = 'map'
+        self.comparison_rows = [{'address': '0x1020', 'recomp': '0x2020', 'matching': 1.0}]
+        with patch.object(matching, 'read_va', return_value=b'samebody'):
+            result = self.run_game()
+        identity = {'address': '0x00001020', 'symbol': '?copy@@YAXXZ', 'recomp': '0x00002020',
+                    'names': ['?copy@@YAXXZ', '?copy_aux@@YAXXZ']}
+        self.assertEqual([config['folded_identities'] for config in self.policy_configs], [[identity]])
+        self.assertEqual(self.policy_configs[0]['operands'], [])
+        self.assertEqual(result['comparison_folded_identities'], [identity | {'bound': 'map'}])
+        self.assertNotIn('comparison_global_operands', result)
+        self.assertEqual(result['library_functions'], [
+            {'name': 'copy', 'address': '0x1020', 'bytes': 8, 'normalized_match': 1.0, 'exact_bytes': True}])
+
+    def test_unfolded_identities_keep_the_ordinary_comparator_command(self):
+        self.fold_library_row(['?copy@@YAXXZ'])
+        self.comparison_rows = [{'address': '0x1020', 'recomp': '0x2020', 'matching': 1.0}]
+        with patch.object(matching, 'read_va', return_value=b'samebody'):
+            result = self.run_game()
+        self.assertEqual(self.policy_configs, [])
+        self.assertNotIn('comparison_folded_identities', result)
+
+    def test_missing_folded_identity_validation_is_an_error(self):
+        self.fold_library_row(['?copy@@YAXXZ', '?copy_aux@@YAXXZ'])
+        compare = self.tool.run
+        def without_validation(arguments, folder):
+            output = compare(arguments, folder)
+            config = json.loads(Path(arguments[arguments.index('compare-global-operands') + 1]).read_text())
+            Path(config['folded_validation']).unlink()
+            return output
+        self.tool.run = without_validation
+        with patch.object(matching, 'read_va', return_value=b'samebody'), \
+                self.assertRaisesRegex(ValueError, 'did not validate the folded identities'):
+            self.run_game()
+        self.assertFalse((self.args.reports / 'result.json').exists())
 
     def test_unproven_fold_or_non_code_identity_is_not_credited(self):
         for names, csv_type in [(['?copy@@YAXXZ'], 'library'), (['?copy_aux@@YAXXZ'], 'library'),

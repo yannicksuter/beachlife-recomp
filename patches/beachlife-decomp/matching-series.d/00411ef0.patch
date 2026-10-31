@@ -1,13 +1,10 @@
 diff --git a/fixtures/game.d/fixture_00411ef0.cpp b/fixtures/game.d/fixture_00411ef0.cpp
 new file mode 100644
-index 0000000..869028c
+index 0000000..83ca607
 --- /dev/null
 +++ b/fixtures/game.d/fixture_00411ef0.cpp
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,6 @@
 +#include "startup_renderer_rectangle_queue.h"
-+#include "pool_chunk_acquire.h"
-+#include "pool_lock_guard.h"
-+#include "pool_lock_acquire.h"
 +#include <new>
 +extern "C" __declspec(dllexport) void Fixture_00411ef0(WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>* self)
 +{
@@ -23,17 +20,16 @@ index 0000000..19c6bfa
 +0x00411ef0,library,157,?ReleaseStorage@?$WorldDequeStorage@UScreenRectangle@@URendererRectangleIterator@@@@QAEXXZ
 diff --git a/src/match_00411ef0.cpp b/src/match_00411ef0.cpp
 new file mode 100644
-index 0000000..970413c
+index 0000000..90f0b6a
 --- /dev/null
 +++ b/src/match_00411ef0.cpp
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,17 @@
 +// LIBRARY: BEACHLIFE 0x00411ef0 SYMBOL
 +// ?ReleaseStorage@?$WorldDequeStorage@UScreenRectangle@@URendererRectangleIterator@@@@QAEXXZ
++#include "node_storage.h"
 +#include "startup_renderer_rectangle_queue.h"
-+#include "pool_chunk_acquire.h"
-+#include "pool_lock_guard.h"
-+#include "pool_lock_acquire.h"
-+#include <new>
++
++// The deque's blocks and map go back to the node allocator.
 +template <>
 +void WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>::ReleaseStorage()
 +{
@@ -41,41 +37,16 @@ index 0000000..970413c
 +    {
 +        ScreenRectangle** stop = end.node + 1;
 +        for (ScreenRectangle** node = begin.node; node < stop; ++node)
-+        {
-+            ScreenRectangle* released = *node;
-+            if (released)
-+            {
-+                AcquirePoolLock(&pool_lock_word);
-+                PoolChunkLink* returned = reinterpret_cast<PoolChunkLink*>(released);
-+                returned->next = pool_chunk_buckets[15];
-+                pool_chunk_buckets[15] = returned;
-+                pool_lock_word = 0;
-+            }
-+        }
-+        ScreenRectangle** released = map;
-+        if (released)
-+        {
-+            unsigned int bytes = map_count * sizeof(ScreenRectangle*);
-+            if (bytes > 128)
-+                ::operator delete(released);
-+            else
-+            {
-+                PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
-+                AcquirePoolLock(&pool_lock_word);
-+                PoolChunkLink* returned = reinterpret_cast<PoolChunkLink*>(released);
-+                returned->next = *bucket;
-+                *bucket = returned;
-+                pool_lock_word = 0;
-+            }
-+        }
++            _STL::allocator<ScreenRectangle>().deallocate(*node, block_size);
++        _STL::allocator<ScreenRectangle*>().deallocate(map, map_count);
 +    }
 +}
 diff --git a/targets/beachlife-uk-1.1.d/00411ef0.json b/targets/beachlife-uk-1.1.d/00411ef0.json
 new file mode 100644
-index 0000000..fb9b0b7
+index 0000000..bdfaece
 --- /dev/null
 +++ b/targets/beachlife-uk-1.1.d/00411ef0.json
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,15 @@
 +{
 +  "library_functions": [
 +    {
@@ -84,5 +55,10 @@ index 0000000..fb9b0b7
 +      "name": "WorldDequeStorage<ScreenRectangle, RendererRectangleIterator>::ReleaseStorage",
 +      "name_status": "Descriptive library identity; audited complete original code extent, excluding alignment."
 +    }
-+  ]
++  ],
++  "source_compile_options": {
++    "match_00411ef0.cpp": [
++      "/Ob1"
++    ]
++  }
 +}
