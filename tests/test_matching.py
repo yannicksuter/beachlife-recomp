@@ -334,6 +334,33 @@ class MatchingInputTests(unittest.TestCase):
         self.assertEqual(pairs, [(0x1020, 0x2020), (0x1060, 0x2060)])
         self.assertEqual(records[0], specs[0] | {'bound': 'map'})
 
+    def test_operands_of_a_folded_identity_held_by_another_original_name_the_rebuilt_address(self):
+        def record(address, symbol, recomp, names, bound=False):
+            return {'address': f'0x{address:08x}', 'symbol': symbol, 'recomp': f'0x{recomp:08x}',
+                    'names': names, 'bound': bound}
+        pdb = {0x2080: {'?Kept@@YAXXZ'}, 0x2100: {'?Other@@YAXXZ'}, 0x2200: {'?Lone@@YAXXZ'}}
+        rebuilt = {0x2080: 0x1300, 0x2100: 0x1400, 0x2300: 0x1500}
+        records = [record(0x1080, '?Taken@@YAXXZ', 0x2080, ['?Kept@@YAXXZ', '?Taken@@YAXXZ']),  # alias
+                   record(0x1090, '?Taken@@YAXXZ', 0x2080, ['?Kept@@YAXXZ', '?Taken@@YAXXZ'], 'map'),
+                   record(0x10a0, '?Absent@@YAXXZ', 0x2080, ['?Kept@@YAXXZ', '?Taken@@YAXXZ']),
+                   record(0x10b0, '?Moved@@YAXXZ', 0x2100, ['?Moved@@YAXXZ', '?MovedToo@@YAXXZ']),  # PDB kept
+                   record(0x10c0, '?Lone@@YAXXZ', 0x2200, ['?Lone@@YAXXZ', '?LoneToo@@YAXXZ']),     # unmatched
+                   record(0x1500, '?Self@@YAXXZ', 0x2300, ['?Self@@YAXXZ', '?SelfToo@@YAXXZ'])]     # no PDB
+        self.assertEqual(matching.folded_operand_aliases(records, pdb, rebuilt.get), {0x1080: 0x2080})
+        calls = []
+        def original(address, exact=False, indirect=False):
+            calls.append(('original', address, exact, indirect))
+            return 'original'
+        def recomp(address, exact=False, indirect=False):
+            calls.append(('recomp', address, exact, indirect))
+            return 'Kept (FUNCTION)'
+        lookup = matching.folded_operand_lookup(original, recomp, {0x1080: 0x2080})
+        self.assertEqual(lookup(0x1080), 'Kept (FUNCTION)')
+        self.assertEqual(lookup(0x1080, indirect=True), 'original')
+        self.assertEqual(lookup(0x1090, exact=True), 'original')
+        self.assertEqual(calls, [('recomp', 0x2080, True, False), ('original', 0x1080, False, True),
+                                 ('original', 0x1090, True, False)])
+
     def test_annotated_copies_that_link_kept_apart_are_reported(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1128,6 +1155,16 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
             with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
                 self.run_game()
             self.assertEqual(self.calls, [])
+
+    def test_a_registration_may_set_options_the_base_leaves_empty_once(self):
+        self.add_registration(0x1020, source_compile_options={'helper.cpp': ['/GX', '/Ob1']})
+        target = {'functions': [], 'source_compile_options': {'helper.cpp': [], 'other.cpp': ['/GX']}}
+        matching.merge_target_fragments(self.metadata, target)
+        self.assertEqual(target['source_compile_options'], {'helper.cpp': ['/GX', '/Ob1'], 'other.cpp': ['/GX']})
+        self.add_registration(0x1040, source_compile_options={'helper.cpp': ['/GX']})
+        with self.assertRaisesRegex(ValueError, 'Duplicate source_compile_options'):
+            matching.merge_target_fragments(
+                self.metadata, {'functions': [], 'source_compile_options': {'helper.cpp': []}})
 
     def test_duplicate_metadata_and_invalid_fragment_headers_fail_before_build(self):
         paths = self.add_registration(0x1020)

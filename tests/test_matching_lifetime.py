@@ -19,6 +19,8 @@ spec.loader.exec_module(matching)
 
 CONSTRUCTOR = '??0GeneratedItem@@QAE@UGeneratedRect@@PBD@Z'
 DESTRUCTOR = '??1GeneratedBase@@UAE@XZ'
+EH_VECTOR_CONSTRUCTOR = '??_L@YGXPAXIHP6EX0@Z1@Z'
+EH_VECTOR_DESTRUCTOR = '??_M@YGXPAXIHP6EX0@Z@Z'
 
 
 def coff_object(symbols):
@@ -100,6 +102,49 @@ class LifetimeIdentityTests(unittest.TestCase):
                 ('int::int', '??0int@@QAE@XZ'), (None, CONSTRUCTOR)):
             with self.subTest(name=name, symbol=symbol):
                 self.assertIsNone(kind(name, symbol))
+
+    def test_runtime_vector_iterators_are_identities_by_exact_name_and_decoration(self):
+        kind = matching.lifetime_identity_kind
+        self.assertEqual(kind("`eh vector constructor iterator'", EH_VECTOR_CONSTRUCTOR), 'vector-iterator')
+        self.assertEqual(kind("`eh vector destructor iterator'", EH_VECTOR_DESTRUCTOR), 'vector-iterator')
+        for name, symbol in (
+                ("`eh vector constructor iterator'", EH_VECTOR_DESTRUCTOR),          # swapped
+                ("`eh vector destructor iterator'", EH_VECTOR_CONSTRUCTOR),
+                ("`vector constructor iterator'", '??_H@YGXPAXIHP6EX0@Z@Z'),         # compiler COMDAT
+                ("`vector destructor iterator'", '??_I@YGXPAXIHP6EX0@Z@Z'),
+                ("`eh vector destructor iterator'", EH_VECTOR_DESTRUCTOR + 'x'),
+                ('GeneratedItem::GeneratedItem', EH_VECTOR_DESTRUCTOR)):
+            with self.subTest(name=name, symbol=symbol):
+                self.assertIsNone(kind(name, symbol))
+
+    def test_vector_iterator_identities_need_a_library_row_and_no_header(self):
+        helper = {'address': '0x00401400', 'size': 104, 'name': "`eh vector destructor iterator'",
+                  'symbol': EH_VECTOR_DESTRUCTOR}
+        with (self.metadata / 'metadata.csv').open('a') as stream:
+            stream.write(f'0x00401400,library,104,{EH_VECTOR_DESTRUCTOR}\n')
+        target = copy.deepcopy(self.target)
+        target['comparison_lifetime_anchors'].append(helper)
+        specs = matching.comparison_lifetime_specs(self.metadata, target)
+        self.assertEqual(specs[-1], helper)
+        (self.source / 'generated.h').write_text('// declares no runtime helper\n')
+        paths, records = matching.generate_lifetime_identities(
+            self.metadata, self.source, self.directory / 'helper', specs[-1:])
+        self.assertEqual([path.name for path in paths], ['lifetime_00401400.obj'])
+        self.assertEqual(matching.coff_external_symbols(paths[0]), ({EH_VECTOR_DESTRUCTOR}, set()))
+        self.assertEqual((records[0]['kind'], records[0]['qualified'], records[0]['image_execution_permitted']),
+                         ('vector-iterator', False, False))
+        for changes, message in (({'header': 'generated.h'}, 'Unsupported'),
+                                 ({'symbol': EH_VECTOR_CONSTRUCTOR}, 'Unsupported'),
+                                 ({'size': 106}, 'CSV identity')):
+            with self.subTest(changes=changes):
+                changed = copy.deepcopy(target)
+                changed['comparison_lifetime_anchors'][-1].update(changes)
+                with self.assertRaisesRegex(ValueError, message):
+                    matching.comparison_lifetime_specs(self.metadata, changed)
+        text = (self.metadata / 'metadata.csv').read_text()
+        (self.metadata / 'metadata.csv').write_text(text.replace('0x00401400,library,', '0x00401400,function,'))
+        with self.assertRaisesRegex(ValueError, 'CSV identity'):
+            matching.comparison_lifetime_specs(self.metadata, target)
 
     def test_specs_need_one_exact_csv_identity_and_a_free_range(self):
         self.assertEqual(matching.comparison_lifetime_specs(self.metadata, self.target),

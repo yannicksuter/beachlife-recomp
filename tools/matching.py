@@ -563,6 +563,10 @@ def merge_target_fragments(metadata, target):
              'comparison_lifetime_anchors', 'comparison_global_operands',
              'stlport_sources', 'runtime_cdecl_imports')
     mappings = ('source_compile_options', 'stdcall_imports', 'runtime_stdcall_imports')
+    # An empty option list in the base target pins nothing: one registration
+    # crediting a body of that shared source may set its options once.
+    options = target.get('source_compile_options', {})
+    open_options = {name for name, flags in options.items() if flags == []} if isinstance(options, dict) else set()
     for path in registration_files(metadata, 'targets/beachlife-uk-1.1.d', r'[0-9a-f]{8}\.json'):
         fragment = json.loads(path.read_text())
         if not isinstance(fragment, dict) or not fragment or set(fragment) - set(lists + mappings):
@@ -582,7 +586,11 @@ def merge_target_fragments(metadata, target):
                 if not isinstance(value, dict) or not isinstance(target.get(key, {}), dict):
                     raise ValueError(f'{key} must be a mapping in matching target fragment: {path}')
                 existing = target.setdefault(key, {})
-                if existing.keys() & value.keys():
+                duplicates = existing.keys() & value.keys()
+                if key == 'source_compile_options':
+                    duplicates -= open_options
+                    open_options -= value.keys()
+                if duplicates:
                     raise ValueError(f'Duplicate {key} entries in matching target fragment: {path}')
                 existing.update(value)
     drop_superseded_anchors(metadata, target)
@@ -1129,9 +1137,43 @@ def bind_folded_identities(specs, pdb_publics, original_match, rebuilt_match):
     return records, pairs
 
 
+def folded_operand_aliases(records, pdb_publics, rebuilt_match):
+    """Original identities whose folded rebuilt address another original holds.
+
+    /OPT:ICF can give several registered originals one rebuilt address, and
+    reccmp matches that address to one of them only; bind_folded_identities
+    then leaves the others unbound. An operand naming one of those others
+    (a call, or a pushed function address) is compared as that rebuilt
+    address: the LINK map names the identity's own symbol there beside
+    another name, the PDB public reccmp kept is one of those names, and the
+    address is matched to a different original. Returns {original: rebuilt}.
+    """
+    aliases = {}
+    for record in records:
+        if record['bound'] is not False:
+            continue
+        original, recomp = int(record['address'], 16), int(record['recomp'], 16)
+        names, kept = set(record['names']), pdb_publics.get(recomp, set())
+        holder = rebuilt_match(recomp)
+        if (record['symbol'] in names and names - {record['symbol']} and kept and kept <= names and
+                holder is not None and holder != original):
+            aliases[original] = recomp
+    return aliases
+
+
+def folded_operand_lookup(original_lookup, rebuilt_lookup, aliases):
+    """Name an aliased original address as the rebuilt address it folded into."""
+    def lookup(address, exact=False, indirect=False):
+        if not indirect and address in aliases:
+            return rebuilt_lookup(aliases[address], exact=True)
+        return original_lookup(address, exact=exact, indirect=indirect)
+    return lookup
+
+
 def compare_global_operands(configuration, arguments):
-    """Run pinned reccmp with instruction-scoped operand names and folded code
-    identities bound at their LINK map address; images stay unchanged."""
+    """Run pinned reccmp with instruction-scoped operand names, folded code
+    identities bound at their LINK map address and operands naming a folded
+    identity whose address another original holds; images stay unchanged."""
     import reccmp
     import reccmp.compare.core as reccmp_core
     from reccmp.compare.functions import FunctionComparator
@@ -1144,7 +1186,7 @@ def compare_global_operands(configuration, arguments):
     original_compare = FunctionComparator.compare_function
     original_load_cvdump, original_match_lines = reccmp_core.load_cvdump, reccmp_core.match_lines
     applied = {}
-    folded = {'publics': {}, 'records': None}
+    folded = {'publics': {}, 'records': None, 'aliases': {}}
 
     def load_cvdump(analysis, db, recomp_bin):
         for public in analysis.parser.publics:
@@ -1167,6 +1209,11 @@ def compare_global_operands(configuration, arguments):
             with db.batch() as batch:
                 for original, recomp in pairs:
                     batch.match(original, recomp)
+        folded['aliases'] = folded_operand_aliases(
+            folded['records'], folded['publics'], lambda address: matched(ImageId.RECOMP, address))
+        for record in folded['records']:
+            if int(record['address'], 16) in folded['aliases']:
+                record['bound'] = 'operand'
         return result
 
     def instructions(image, start, size):
@@ -1175,6 +1222,10 @@ def compare_global_operands(configuration, arguments):
                 if section.type == SectionType.CODE for inst in section.contents]
 
     def compare(self, match):
+        if folded['aliases'] and not getattr(self, 'folded_operand_lookup', False):
+            self.orig_sanitize.name_lookup = folded_operand_lookup(
+                self.orig_sanitize.name_lookup, self.recomp_sanitize.name_lookup, folded['aliases'])
+            self.folded_operand_lookup = True
         rules = sorted((item for item in config['operands'] if int(item['function'], 16) == match.orig_addr),
                        key=lambda item: item['instruction_offset'])
         if not rules:
@@ -1405,15 +1456,29 @@ def generate_comparison_anchors(metadata, source, folder, specs):
     return paths, records
 
 
+# VC6 calls these exception-aware array helpers for `new T[n]` and `delete[]`
+# of a class with a destructor, and for local arrays of one, under /GX. They are
+# static runtime-library code; the comparison link has only an import library,
+# so a caller needs an identity. The non-EH `vector constructor/destructor
+# iterator' (??_H, ??_I) are COMDATs each calling object defines: they need
+# only their CSV row and never an identity object.
+VECTOR_ITERATORS = {"`eh vector constructor iterator'": '??_L@YGXPAXIHP6EX0@Z1@Z',
+                    "`eh vector destructor iterator'": '??_M@YGXPAXIHP6EX0@Z@Z'}
+
+
 def lifetime_identity_kind(name, symbol):
-    """Constructor or destructor identity of one class, from its exact decoration.
+    """Constructor, destructor or array-helper identity, from its exact decoration.
 
     VC6 decorates a constructor ??0Class@@<access>AE@<parameters>Z and a
     destructor ??1Class@@<access>AE@XZ; only the class name is taken from it.
     A scalar deleting destructor needs no identity: VC6 generates it as a
     COMDAT wherever the class vtable is emitted. A nested class is decorated
     innermost scope first: Outer::Inner::~Inner is ??1Inner@Outer@@QAE@XZ.
+    The runtime's two exception-aware vector iterators are identified by
+    their exact special name and decoration only.
     """
+    if isinstance(name, str) and name in VECTOR_ITERATORS:
+        return 'vector-iterator' if VECTOR_ITERATORS[name] == symbol else None
     parts = name.split('::') if isinstance(name, str) else []
     scopes = parts[:-1]
     if (len(parts) < 2 or not isinstance(symbol, str) or
@@ -1429,7 +1494,7 @@ def lifetime_identity_kind(name, symbol):
 
 
 def comparison_lifetime_specs(metadata, target):
-    """Validate constructor/destructor identities kept apart from credited code."""
+    """Validate constructor/destructor and array-helper identities kept apart from credited code."""
     specs = target.get('comparison_lifetime_anchors', [])
     if not isinstance(specs, list):
         raise ValueError('comparison_lifetime_anchors must be a list.')
@@ -1445,13 +1510,17 @@ def comparison_lifetime_specs(metadata, target):
     taken = {int(item['address'], 16) for item in (*credited, *anchors)}
     symbols = {row['symbol'] for row in rows if int(row['address'], 16) in taken}
     for item in specs:
-        if (not isinstance(item, dict) or set(item) != {'address', 'size', 'name', 'symbol', 'header'} or
+        # A runtime array helper has no declaration in any header.
+        helper = isinstance(item, dict) and lifetime_identity_kind(
+            item.get('name'), item.get('symbol')) == 'vector-iterator'
+        if (not isinstance(item, dict) or
+                set(item) != {'address', 'size', 'name', 'symbol', *(() if helper else ('header',))} or
                 not isinstance(item['address'], str) or
                 not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item['address']) or
                 type(item['size']) is not int or item['size'] <= 0 or
                 lifetime_identity_kind(item['name'], item['symbol']) is None or
-                not isinstance(item['header'], str) or
-                not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*\.h', item['header'])):
+                (not helper and (not isinstance(item['header'], str) or
+                                 not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*\.h', item['header'])))):
             raise ValueError('Unsupported comparison-only lifetime identity.')
         start, end = int(item['address'], 16), int(item['address'], 16) + item['size']
         if (end > 0x100000000 or item['name'] in names or item['symbol'] in symbols or
@@ -1459,7 +1528,7 @@ def comparison_lifetime_specs(metadata, target):
             raise ValueError('Comparison-only lifetime identities must be distinct from credited '
                              'functions, anchors and each other.')
         rows_at_address = [row for row in rows if int(row['address'], 16) == start]
-        if (len(rows_at_address) != 1 or rows_at_address[0]['type'] != 'function' or
+        if (len(rows_at_address) != 1 or rows_at_address[0]['type'] != ('library' if helper else 'function') or
                 rows_at_address[0]['size'] != str(item['size']) or
                 rows_at_address[0]['symbol'] != item['symbol']):
             raise ValueError('Comparison-only lifetime identity must match one explicit CSV identity.')
@@ -1511,6 +1580,8 @@ def generate_lifetime_identities(metadata, source, folder, specs):
         if address in annotated:
             raise ValueError(f'Lifetime identity {item["address"]} duplicates the prepared body in '
                              f'{annotated[address].name}; use its CSV identity instead.')
+        if lifetime_identity_kind(item['name'], item['symbol']) == 'vector-iterator':
+            continue
         # The shared declaration must exist; LINK then proves the decoration
         # against the callers' undefined references.
         header = (source / item['header']).resolve()
