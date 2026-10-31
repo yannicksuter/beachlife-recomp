@@ -84,11 +84,15 @@ void install_staged_package(const std::filesystem::path& base,
 // The launcher program in `base` to start after an update.
 std::filesystem::path installed_launcher(const std::filesystem::path& base);
 
-// Starts `program` (the updated launcher) with this run's command line. On Linux
-// and macOS it replaces the running process and returns only on failure; on
-// Windows it starts a new process, allowed to take the foreground, and the caller
-// exits (call it while this launcher's window is still in front). Returns the
-// reason on failure, else empty.
+// Whether restart_launcher replaces this process (Linux, and macOS outside an app
+// bundle) rather than starting a new one (Windows, a macOS app bundle).
+bool restarts_in_place(const std::filesystem::path& program);
+
+// Starts `program` (the updated launcher) with this run's command line, marked by
+// BEACHLIFE_LAUNCHER_RESTARTED so that it brings its window to the front. In place
+// it returns only on failure. Otherwise the new process may take the foreground and
+// the caller exits: call it while this launcher's window is still in front. Returns
+// the reason on failure, else empty.
 std::string restart_launcher(const std::filesystem::path& program, int argc, char** argv);
 
 } // namespace beachlife::launcher

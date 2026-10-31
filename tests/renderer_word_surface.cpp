@@ -7,6 +7,7 @@
 #include <initializer_list>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace
@@ -133,7 +134,8 @@ void stretches()
     std::fill(pixels.begin(), pixels.end(), 7);
     destination.unlock();
     source.set_source_key(0);
-    destination.blit_from(source, {1, 1, 4, 3}, {1, 1, 6, 4}, true);
+    require(destination.blit_from(source, {1, 1, 4, 3}, {1, 1, 6, 4}, true),
+        "Contained keyed stretch was rejected");
     // 3x2 -> 5x3, with nonzero rectangle origins and keyed holes. No blending
     // or colour conversion is permitted, and words outside the target survive.
     equal(destination,
@@ -178,18 +180,20 @@ void stretches()
     WordSurface16 small(3, 2, WordFormat::Rgb565);
     assign(large, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15});
     large.set_source_key(1);
-    small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2});
+    require(small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2}), "Contained shrink was rejected");
     equal(small,
         std::array<std::uint16_t, 6>{1, 2, 4, 6, 7, 9},
         "Shrinking must use point samples and ignore an unrequested key");
 
     WordSurface16 overlap(6, 2, WordFormat::Rgb565);
     assign(overlap, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
-    overlap.blit_from(overlap, {1, 0, 4, 1}, {0, 0, 6, 2});
+    require(
+        overlap.blit_from(overlap, {1, 0, 4, 1}, {0, 0, 6, 2}), "Overlapping stretch was rejected");
     equal(overlap,
         std::array<std::uint16_t, 12>{2, 2, 3, 3, 4, 4, 2, 2, 3, 3, 4, 4},
         "Overlapping stretch must read the original source rectangle");
-    overlap.blit_from(overlap, {0, 0, 6, 2}, {1, 1, 4, 2});
+    require(
+        overlap.blit_from(overlap, {0, 0, 6, 2}, {1, 1, 4, 2}), "Overlapping shrink was rejected");
     equal(overlap,
         std::array<std::uint16_t, 12>{2, 2, 3, 3, 4, 4, 2, 2, 3, 4, 4, 4},
         "Overlapping shrink must read the original source rectangle");
@@ -199,7 +203,8 @@ void stretches()
     assign(high_bit, {0, 0x8000});
     assign(target555, {0x1234, 0x1234, 0x1234, 0x1234});
     high_bit.set_source_key(0);
-    target555.blit_from(high_bit, {0, 0, 2, 1}, {0, 0, 4, 1}, true);
+    require(target555.blit_from(high_bit, {0, 0, 2, 1}, {0, 0, 4, 1}, true),
+        "RGB555 keyed stretch was rejected");
     equal(target555,
         std::array<std::uint16_t, 4>{0x1234, 0x1234, 0x8000, 0x8000},
         "RGB555 stretched key comparison must retain bit15");
@@ -208,56 +213,40 @@ void stretches()
     rejects<std::logic_error>(
         [&]
         {
-            small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2});
+            (void)small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2});
         });
     small.unlock();
     large.lock();
     rejects<std::logic_error>(
         [&]
         {
-            small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2});
+            (void)small.blit_from(large, {0, 0, 5, 3}, {0, 0, 3, 2});
         });
     large.unlock();
     rejects<std::logic_error>(
         [&]
         {
-            small.blit_from(overlap, {0, 0, 6, 2}, {0, 0, 3, 2}, true);
+            (void)small.blit_from(overlap, {0, 0, 6, 2}, {0, 0, 3, 2}, true);
         });
     rejects<std::invalid_argument>(
         [&]
         {
-            small.blit_from(high_bit, {0, 0, 2, 1}, {0, 0, 3, 2});
+            (void)small.blit_from(high_bit, {0, 0, 2, 1}, {0, 0, 3, 2});
         });
-    rejects<std::out_of_range>(
-        [&]
-        {
-            small.blit_from(large, {-1, 0, 5, 3}, {0, 0, 3, 2});
-        });
-    rejects<std::out_of_range>(
-        [&]
-        {
-            small.blit_from(large, {0, 0, 6, 3}, {0, 0, 3, 2});
-        });
-    rejects<std::out_of_range>(
-        [&]
-        {
-            small.blit_from(large, {0, 0, 5, 3}, {-1, 0, 3, 2});
-        });
-    rejects<std::out_of_range>(
-        [&]
-        {
-            small.blit_from(large, {0, 0, 5, 3}, {0, 0, 4, 2});
-        });
-    rejects<std::out_of_range>(
-        [&]
-        {
-            small.blit_from(large, {0, 0, 0, 3}, {0, 0, 3, 2});
-        });
-    rejects<std::out_of_range>(
-        [&]
-        {
-            small.blit_from(large, {0, 0, 5, 3}, {3, 0, 0, 2});
-        });
+    // DirectDraw answers these with DDERR_INVALIDRECT and writes nothing.
+    for (const auto& [from, to] : std::initializer_list<std::pair<Rectangle, Rectangle>>{
+             {{-1, 0, 5, 3}, {0, 0, 3, 2}},
+             {{0, 0, 6, 3}, {0, 0, 3, 2}},
+             {{0, 0, 5, 3}, {-1, 0, 3, 2}},
+             {{0, 0, 5, 3}, {0, 0, 4, 2}},
+             {{0, 0, 0, 3}, {0, 0, 3, 2}},
+             {{0, 0, 5, 3}, {3, 0, 0, 2}},
+             {{0, 0, 5, 3}, {2, 0, 2, 2}},
+             {{0, 0, 5, 3}, {0, 1, 3, 1}},
+         })
+    {
+        require(!small.blit_from(large, from, to), "Invalid blit rectangle was accepted");
+    }
     equal(small,
         std::array<std::uint16_t, 6>{1, 2, 4, 6, 7, 9},
         "Rejected stretch modified destination storage");

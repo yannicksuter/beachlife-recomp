@@ -205,11 +205,13 @@ class Launcher
             poll_content();
             update_ = updates_->snapshot();
             prompt_update();
-            // The new files are in place: restart into them, after any unsaved settings.
+            // The new files are in place: restart into them at once. Settings not saved
+            // yet stay unsaved in the new launcher.
             if (update_.state == UpdateService::State::Installed && !restart_)
             {
                 restart_ = true;
-                close_requested_ = true;
+                running = false;
+                keep_unsaved_settings();
             }
             if (options_.smoke && options_.screenshot.empty())
             {
@@ -266,6 +268,10 @@ class Launcher
                 running = false;
             }
             require(SDL_RenderPresent(renderer_), "Cannot present the launcher");
+            if (frame == 0 && restarted_)
+            {
+                SDL_RaiseWindow(window_); // the updated launcher continues in front
+            }
             ++frame;
             if (options_.smoke && frame >= 3 * PageCount)
             {
@@ -325,6 +331,22 @@ class Launcher
         catch (const std::exception& error)
         {
             notice_ = error.what();
+        }
+        restarted_ = SDL_getenv("BEACHLIFE_LAUNCHER_RESTARTED") != nullptr;
+        SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "BEACHLIFE_LAUNCHER_RESTARTED");
+        // Changes not saved before an update restarted the launcher.
+        const fs::path unsaved = unsaved_settings_file(config_);
+        std::error_code ignored;
+        if (fs::exists(unsaved, ignored))
+        {
+            try
+            {
+                settings_ = load_settings(unsaved);
+            }
+            catch (const std::exception&)
+            {
+            }
+            fs::remove(unsaved, ignored);
         }
         if (!options_.source.empty())
         {
@@ -1428,8 +1450,27 @@ class Launcher
         }
         const std::string logs = path_utf8(log_folder_);
         at = setting_row(draw, iy, ix, iw, false, "Game log", logs.c_str(), dp(42));
-        if (ui::secondary_button(
-                "log_folder", "Open folder", Icon::Folder, at, {control_width(iw), dp(42)}))
+        // The last session's log opens in the system's text viewer, ready to send on.
+        const float half = (control_width(iw) - dp(10)) / 2;
+        const fs::path log_file = log_folder_ / "game.log";
+        std::error_code missing;
+        if (ui::secondary_button("open_log",
+                "Open log",
+                Icon::Terminal,
+                at,
+                {half, dp(42)},
+                fs::is_regular_file(log_file, missing)))
+        {
+            if (!SDL_OpenURL(file_url(path_utf8(log_file)).c_str()))
+            {
+                notice_ = std::string("Cannot open the log: ") + SDL_GetError();
+            }
+        }
+        if (ui::secondary_button("log_folder",
+                "Open folder",
+                Icon::Folder,
+                {at.x + half + dp(10), at.y},
+                {half, dp(42)}))
         {
             std::error_code ignored;
             fs::create_directories(path_from_utf8(logs), ignored);
@@ -2176,15 +2217,8 @@ class Launcher
             auto* draw = ImGui::GetWindowDrawList();
             const ImVec2 pos = ImGui::GetCursorScreenPos();
             const float width = dp(420);
-            ui::text_bold(draw,
-                Font::Heading,
-                pos,
-                col(color::text),
-                restart_ ? "Restart to finish the update?" : "Save your changes?");
-            const char* message =
-                restart_
-                    ? "The update is installed. Save your launcher settings before it restarts?"
-                    : "You changed launcher settings. Save them before closing?";
+            ui::text_bold(draw, Font::Heading, pos, col(color::text), "Save your changes?");
+            const char* message = "You changed launcher settings. Save them before closing?";
             ui::text(draw, Font::Body, {pos.x, pos.y + dp(34)}, col(color::muted), message, width);
             float y = pos.y + dp(34) + ui::text_size(Font::Body, message, width).y + dp(24);
             if (!notice_.empty())
@@ -2205,11 +2239,10 @@ class Launcher
                     {pos.x + width - dp(298), y},
                     {dp(108), height}))
             {
-                restart_ = false; // the new files stay for the next start
                 ImGui::CloseCurrentPopup();
             }
             if (ui::primary_button("save_close",
-                    restart_ ? "Save and restart" : "Save and close",
+                    "Save and close",
                     Icon::None,
                     {pos.x + width - dp(178), y},
                     {dp(178), height}) &&
@@ -2729,6 +2762,28 @@ class Launcher
         dialog_->completed = false;
     }
 
+    // Hands settings that are not saved yet to the launcher an update restarts into.
+    void keep_unsaved_settings()
+    {
+        if (settings_ == saved_)
+        {
+            return;
+        }
+        try
+        {
+            save_settings(unsaved_settings_file(config_), settings_);
+        }
+        catch (const std::exception& error)
+        {
+            std::fprintf(stderr, "Beach Life: unsaved settings are lost: %s\n", error.what());
+        }
+    }
+
+    static fs::path unsaved_settings_file(const fs::path& config)
+    {
+        return fs::path(config).concat(".unsaved");
+    }
+
     bool save()
     {
         try
@@ -2784,7 +2839,7 @@ class Launcher
     std::optional<UpdateChoice> switch_from_;
     std::string notes_source_;
     std::vector<NoteBlock> notes_;
-    bool restart_ = false, notice_success_ = false, play_ = false;
+    bool restart_ = false, restarted_ = false, notice_success_ = false, play_ = false;
     double notice_until_ = 0;
 };
 } // namespace
@@ -2881,14 +2936,12 @@ Outcome run(const Options& options)
         outcome.preview_screen = launcher.preview_screen();
         outcome.settings = launcher.settings();
         outcome.config = launcher.config();
-#ifdef _WIN32
-        // Windows lets only the foreground process bring a new window to the front:
-        // start the updated launcher while this window still is, not after it closed.
-        if (!restart.empty() && options.argv)
+        // Only the foreground process can bring a new one to the front: start the
+        // updated launcher while this window still is, not after it closed.
+        if (!restart.empty() && options.argv && !restarts_in_place(restart))
         {
             restart_error = restart_launcher(restart, options.argc, options.argv);
         }
-#endif
     }
     catch (const std::exception& error)
     {
@@ -2904,12 +2957,10 @@ Outcome run(const Options& options)
     {
         return outcome;
     }
-#ifdef _WIN32
-    const std::string& error = restart_error;
-#else
-    // An update replaced the program files; the old window and SDL are gone.
-    const std::string error = restart_launcher(restart, options.argc, options.argv);
-#endif
+    // In place, the old window and SDL are gone before the new program replaces this one.
+    const std::string error = restarts_in_place(restart)
+                                  ? restart_launcher(restart, options.argc, options.argv)
+                                  : restart_error;
     if (error.empty())
     {
         return outcome;

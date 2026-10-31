@@ -189,6 +189,17 @@ if(BUILD_TESTING)
     set_tests_properties(renderer_display PROPERTIES
         TIMEOUT 30 ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 
+    add_executable(game_log_tests tests/game_log.cpp)
+    target_link_libraries(game_log_tests PRIVATE beachlife_launcher_core)
+    set_target_properties(game_log_tests PROPERTIES CXX_EXTENSIONS OFF)
+    if(MSVC)
+        target_compile_options(game_log_tests PRIVATE /W4 /WX)
+    else()
+        target_compile_options(game_log_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME game_log COMMAND game_log_tests)
+    set_tests_properties(game_log PROPERTIES TIMEOUT 15)
+
     add_executable(launcher_content_tests tests/launcher_content.cpp)
     target_link_libraries(launcher_content_tests PRIVATE beachlife_launcher_core)
     add_test(NAME launcher_content

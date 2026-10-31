@@ -1,0 +1,109 @@
+diff --git a/src/startup_renderer_blit_surface.cpp b/src/startup_renderer_blit_surface.cpp
+index a81424cbece69dd1314c02670d5ff606033f1cac..835a7ceae39d784e347b5f98e0efc04e9d762b26 100644
+--- a/src/startup_renderer_blit_surface.cpp
++++ b/src/startup_renderer_blit_surface.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_screen_renderer.h"
++#include "surface_error_sink.h"
+ #include "runtime/renderer_fullscreen_display.h"
+ #include "runtime/renderer_word_surface.h"
+ #include <stdexcept>
+@@ -49,16 +50,14 @@ void ScreenRequestRenderer::BlitSurface(int x, int y, int surface)
+     if (!native_chain || native_back != &native_chain->back_surface() || !source->native_surface)
+         throw std::logic_error("BlitSurface requires the real mode0 back and source surfaces");
+ 
++    // BltFast copies the whole actual source unscaled; Blt stretches it to the
++    // entry's dimensions. A rejected rectangle is reported and draws nothing.
+     const auto description = source->native_surface->description();
+-    if (source->video_memory)
+-        native_back->copy_from(*source->native_surface,
++    const int columns = source->video_memory ? description.width : static_cast<int>(source->width);
++    const int rows = source->video_memory ? description.height : static_cast<int>(source->height);
++    if (!native_back->blit_from(*source->native_surface,
+             { 0, 0, description.width, description.height },
+-            x,
+-            y,
+-            true);
+-    else
+-        native_back->blit_from(*source->native_surface,
+-            { 0, 0, description.width, description.height },
+-            { x, y, static_cast<int>(x + source->width), static_cast<int>(y + source->height) },
+-            true);
++            { x, y, x + columns, y + rows },
++            true))
++        IgnoreSurfaceError(kInvalidRectangleResult);
+ }
+diff --git a/src/startup_renderer_blit_surface_region.cpp b/src/startup_renderer_blit_surface_region.cpp
+index 324aa2d4f50d093fb2cd1dbeb6833200a3ad9457..49f9731444b8bd89789ae2258481f42aabce9c3f 100644
+--- a/src/startup_renderer_blit_surface_region.cpp
++++ b/src/startup_renderer_blit_surface_region.cpp
+@@ -1,5 +1,6 @@
+ #include "startup_screen_item.h"
+ #include "startup_screen_renderer.h"
++#include "surface_error_sink.h"
+ #include "runtime/renderer_fullscreen_display.h"
+ #include "runtime/renderer_word_surface.h"
+ #include <cstdint>
+@@ -55,8 +56,10 @@ void ScreenRequestRenderer::BlitSurfaceRegion(
+     if (!native_chain || native_back != &native_chain->back_surface() || !image->native_surface)
+         throw std::logic_error("BlitSurfaceRegion requires the real mode0 back and source surfaces");
+ 
+-    native_back->blit_from(*image->native_surface,
+-        { source.left, source.top, source.right, source.bottom },
+-        { destination.left, destination.top, destination.right, destination.bottom },
+-        true);
++    // The pointer's edge clip can leave an empty rectangle, which Blt rejects.
++    if (!native_back->blit_from(*image->native_surface,
++            { source.left, source.top, source.right, source.bottom },
++            { destination.left, destination.top, destination.right, destination.bottom },
++            true))
++        IgnoreSurfaceError(kInvalidRectangleResult);
+ }
+diff --git a/src/startup_renderer_surface_helpers.cpp b/src/startup_renderer_surface_helpers.cpp
+index c6f35a80e1c55022f4c43646bea5bf02fc153008..df178404fcc8c46cf62fc41b8243a75e275633f7 100644
+--- a/src/startup_renderer_surface_helpers.cpp
++++ b/src/startup_renderer_surface_helpers.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_screen_renderer.h"
++#include "surface_error_sink.h"
+ #include "runtime/renderer_word_surface.h"
+ 
+ #include <stdexcept>
+@@ -68,16 +69,14 @@ void ScreenRequestRenderer::BlitBetweenSurfaces(int x, int y, int destination, i
+     ScreenSurfacePosition* image = surface_storage[source];
+     if (!target->native_surface || !image->native_surface)
+         throw std::logic_error("BlitBetweenSurfaces requires real source and destination surfaces");
++    // BltFast copies the whole actual source unscaled; Blt stretches it to the
++    // entry's dimensions. A rejected rectangle is reported and draws nothing.
+     const auto description = image->native_surface->description();
+-    if (image->video_memory)
+-        target->native_surface->copy_from(*image->native_surface,
++    const int columns = image->video_memory ? description.width : static_cast<int>(image->width);
++    const int rows = image->video_memory ? description.height : static_cast<int>(image->height);
++    if (!target->native_surface->blit_from(*image->native_surface,
+             { 0, 0, description.width, description.height },
+-            x,
+-            y,
+-            true);
+-    else
+-        target->native_surface->blit_from(*image->native_surface,
+-            { 0, 0, description.width, description.height },
+-            { x, y, static_cast<int>(x + image->width), static_cast<int>(y + image->height) },
+-            true);
++            { x, y, x + columns, y + rows },
++            true))
++        IgnoreSurfaceError(kInvalidRectangleResult);
+ }
+diff --git a/src/surface_error_sink.h b/src/surface_error_sink.h
+index c69be336230c829c93b5599ec475a060b0d9334e..b03e05dd40a4372213afc09ed8c2dfa9c08889f5 100644
+--- a/src/surface_error_sink.h
++++ b/src/surface_error_sink.h
+@@ -5,4 +5,8 @@
+ // Other users of the shared code address do not establish this prototype.
+ void IgnoreSurfaceError(int result);
+ 
++// DDERR_INVALIDRECT: DirectDraw's Blt/BltFast result for an empty rectangle or
++// one outside a surface without a clipper. Nothing is drawn.
++const int kInvalidRectangleResult = static_cast<int>(0x88760096u);
++
+ #endif

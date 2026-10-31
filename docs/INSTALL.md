@@ -52,8 +52,9 @@ folder holding `beachlife.exe` or `beachlife`), on macOS in
 `~/Library/Logs/Beach Life`, where Console.app lists it; the session before it
 stays as `game-previous.log`. It records the game's own messages and,
 if the game stops unexpectedly, what stopped it with the call stack. The
-launcher mentions such a stop at its next start, and **Advanced → Game log →
-Open folder** opens the logs. When the game's folder cannot be written, the logs
+launcher mentions such a stop at its next start. **Advanced → Game log → Open
+log** opens the last session's log, ready to send on, and **Open folder** opens
+the folder with both logs. When the game's folder cannot be written, the logs
 go beside the launcher settings instead. They stay on your computer.
 
 Click **Save changes** to remember the path, display, diagnostics, update and
@@ -113,8 +114,9 @@ choice); the footer's button opens it again. Nothing is installed without asking
 **Update** (or **Install**, for a switch to a test build or back to a release)
 downloads the package for your system, checks it against GitHub's SHA-256,
 verifies every file against its `SOURCE-MANIFEST.json`, replaces only the
-package's own files and restarts the launcher. Anything else in the folder
-stays. A failed or interrupted replacement is rolled back or completed at the
+package's own files and restarts the launcher at once, in front of other
+windows; launcher settings you have not saved yet are still there, unsaved.
+Anything else in the folder stays. A failed or interrupted replacement is rolled back or completed at the
 next start. Copies that were not unpacked from a package (local builds) or a
 read-only folder get **Download**, which opens the release page instead.
 
