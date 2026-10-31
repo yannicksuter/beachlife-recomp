@@ -1,0 +1,277 @@
+diff --git a/src/startup_game_render.cpp b/src/startup_game_render.cpp
+index 4d1e9b8959ff66cf4bbc991c36623916df8c8802..9587b6b7f37a289b4d7166872c5205fac10ef33f 100644
+--- a/src/startup_game_render.cpp
++++ b/src/startup_game_render.cpp
+@@ -16,7 +16,9 @@ void ScreenRequestGamePrefix::Render()
+ 
+     controller_selection.active->RenderBeforeScreens();
+     ScreenRequestRenderer* rectangle_renderer = screen_request_renderer;
+-    RenderRectangle bounds = { 0, 0, static_cast<int>(rectangle_renderer->width), static_cast<int>(rectangle_renderer->height) };
++    int height = rectangle_renderer->height;
++    int width = rectangle_renderer->width;
++    RenderRectangle bounds = { 0, 0, width, height };
+     rectangle_renderer->SetRectangle(bounds);
+     screens->RenderScreens();
+ 
+diff --git a/src/startup_overlay_archive_load.cpp b/src/startup_overlay_archive_load.cpp
+index d91567a7c3005a3cdb551ceeb82138a5ef06a6b1..9bf51f7c8a3000322439155ae403a800d6cf6191 100644
+--- a/src/startup_overlay_archive_load.cpp
++++ b/src/startup_overlay_archive_load.cpp
+@@ -10,18 +10,20 @@ void ExpandOverlayArchive(const unsigned char* source, void* destination); // 0x
+ // FUNCTION: BEACHLIFE 0x00408f30
+ OverlayArchive::OverlayArchive(const char* path)
+ {
++    int y;
++    int x;
+     file_40024 = fopen(path, "rb");
+     if (!file_40024)
+     {
+-        char message[128];
++        char message[120];
+         sprintf(message, "Couldn't load the scenarios BIZ file. %s", path);
+         StartupFatal(message);
+     }
+-    for (int y = 0; y < 32; ++y)
+-        for (int x = 0; x < 32; ++x)
++    for (y = 0; y < 32; ++y)
++        for (x = 0; x < 32; ++x)
+             fread(&offsets_40028[x][y], 4, 1, file_40024);
+-    for (int y = 0; y < 32; ++y)
+-        for (int x = 0; x < 32; ++x)
++    for (y = 0; y < 32; ++y)
++        for (x = 0; x < 32; ++x)
+             fread(&sizes_41028[x][y], 4, 1, file_40024);
+     for (int i = 0; i < 4; ++i)
+     {
+@@ -38,11 +40,14 @@ void OverlayArchive::LoadTile(int x, int y)
+     fread(overlay_archive_buffer, sizes_41028[x][y], 1, file_40024);
+     ExpandOverlayArchive(overlay_archive_buffer, tiles_04[next_00].colours);
+     if (screen_request_renderer->format_44 == 1)
++    {
++        unsigned short* pixel = tiles_04[next_00].colours;
+         for (int i = 0; i < 0x4000; ++i)
+         {
+-            unsigned int colour = tiles_04[next_00].colours[i];
+-            tiles_04[next_00].colours[i] = ((colour >> 1) & 0x7fe0) + (colour & 0x1f);
++            unsigned int colour = *pixel;
++            *pixel++ = ((colour >> 1) & 0x7fe0) + (colour & 0x1f);
+         }
++    }
+     tiles_04[next_00].x = x;
+     tiles_04[next_00].y = y;
+ }
+@@ -51,12 +56,10 @@ void OverlayArchive::LoadTile(int x, int y)
+ void OverlayArchive::LoadRow(int y, void* buffer)
+ {
+     fseek(file_40024, offsets_40028[0][y], SEEK_SET);
+-    unsigned char* destination = static_cast<unsigned char*>(buffer);
+     for (int x = 0; x < 32; ++x)
+     {
+         fread(overlay_archive_buffer, sizes_41028[x][y], 1, file_40024);
+-        ExpandOverlayArchive(overlay_archive_buffer, destination);
+-        destination += 0x10000;
++        ExpandOverlayArchive(overlay_archive_buffer, static_cast<unsigned char*>(buffer) + x * 0x10000);
+     }
+     if (screen_request_renderer->format_44 == 1)
+     {
+diff --git a/src/startup_overlay_world_coordinates.cpp b/src/startup_overlay_world_coordinates.cpp
+index 0484f82446f00858612d985599bdf07ddc9a9ae8..81cef7ad78330865fe82e74b63eee8aa8b012079 100644
+--- a/src/startup_overlay_world_coordinates.cpp
++++ b/src/startup_overlay_world_coordinates.cpp
+@@ -6,9 +6,12 @@
+ ScreenPoint OverlayMapPrefix::WorldToScreen(const ScreenWorldPosition& point)
+ {
+     int x = static_cast<int>(point.x);
+-    int y = static_cast<int>(static_cast<double>(point.y) * 0.5f);
+-    int height = static_cast<int>(HeightAt(x, y));
+-    return { x - scroll_x_c4, y - height - scroll_y_c8 };
++    int y = static_cast<int>(point.y * 0.5f);
++    y -= static_cast<int>(HeightAt(x, y));
++    ScreenPoint result;
++    result.x = x - scroll_x_c4;
++    result.y = y - scroll_y_c8;
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0041b360
+diff --git a/src/startup_renderer_clip.cpp b/src/startup_renderer_clip.cpp
+index 5c47df00ecadcae30c006a0d434ee9a076f2264b..1b203bc405a2eec41c0b4159e9b145f17416bdf5 100644
+--- a/src/startup_renderer_clip.cpp
++++ b/src/startup_renderer_clip.cpp
+@@ -12,7 +12,12 @@ bool ScreenRequestRenderer::ClipRectangle(int& destination_x, int& destination_y
+ 
+     // The source-level default is unresolved. The proposed defined domain uses
+     // modes 0/1/2, or an active unscaled flag; no fallback is invented here.
+-    if ((unscaled_clip_5c != 0 && clip_flag_5d == 0) || clip_mode_54 == 1 || unscaled_clip_5c != 0)
++    if (unscaled_clip_5c != 0 && clip_flag_5d == 0)
++    {
++        clip_right = clip_left + clip_rectangle.width;
++        clip_bottom = clip_top + clip_rectangle.height;
++    }
++    else if (clip_mode_54 == 1 || unscaled_clip_5c != 0)
+     {
+         clip_right = clip_left + clip_rectangle.width;
+         clip_bottom = clip_top + clip_rectangle.height;
+@@ -68,7 +73,11 @@ bool ScreenRequestRenderer::ClipRectangle(int& destination_x, int& destination_y
+ 
+     if (rectangle_enabled_4e != 0 && rectangle_suppressed_4d == 0 && rectangle_ready_4f != 0)
+     {
+-        ScreenRectangle bounds = { destination_x, destination_y, source_right - source_left + destination_x, destination_y - source_top + source_bottom };
++        ScreenRectangle bounds;
++        bounds.left = destination_x;
++        bounds.right = source_right - source_left + destination_x;
++        bounds.top = destination_y;
++        bounds.bottom = destination_y - source_top + source_bottom;
+         AccumulateRectangle(bounds);
+     }
+     return true;
+diff --git a/src/startup_renderer_water_tile.cpp b/src/startup_renderer_water_tile.cpp
+index a01fe92afde8f816e62e1b93c795a3f78c63da5a..bbeed6ebcfb248a5472eaf4e16f288b883a09277 100644
+--- a/src/startup_renderer_water_tile.cpp
++++ b/src/startup_renderer_water_tile.cpp
+@@ -20,10 +20,10 @@ void ScreenRequestRenderer::DrawWaterTile(int column, int row, const ScreenPoint
+     }
+     if (!ClipRectangle(x, y, left, top, right, bottom))
+         return;
+-    unsigned int stride = width;
+     const unsigned char* source = image->pixels;
+     int source_stride = image->width;
+     unsigned short* destination = pixels_1c;
++    unsigned int stride = width;
+     const unsigned char* waves = 0;
+     if (extra == 1)
+         waves = sea_state_134->TileData(column, row);
+diff --git a/src/startup_resource_raster_4087b0.cpp b/src/startup_resource_raster_4087b0.cpp
+index 2069bd7796a0840e740e44e93481b252e058368b..0781d0253d8666a81acdfadf5f976f5fd8be6aa8 100644
+--- a/src/startup_resource_raster_4087b0.cpp
++++ b/src/startup_resource_raster_4087b0.cpp
+@@ -7,21 +7,28 @@ void ResourceRasterAt004087b0(unsigned short* destination, const unsigned char*
+     int width, int height, int left, int top, int right, int bottom,
+     unsigned int flags, int frame_word)
+ {
+-    ScreenRequestRenderer* renderer = screen_request_renderer;
+-    unsigned int format = renderer->format_44;
+-    int mode = renderer->clip_mode_54;
+-    if (format == 1)
++    if (screen_request_renderer->format_44 == 1)
+     {
+-        if (mode == 2)
++        switch (screen_request_renderer->clip_mode_54)
++        {
++        case 2:
+             ResourceRasterAt00404750(destination, source, palette, stride, x, y, width, height, left, top, right, bottom, flags, frame_word);
+-        else
++            break;
++        default:
+             ResourceRasterAt00405180(destination, source, palette, stride, x, y, width, height, left, top, right, bottom, flags, frame_word);
++            break;
++        }
+     }
+     else
+     {
+-        if (mode == 2)
++        switch (screen_request_renderer->clip_mode_54)
++        {
++        case 2:
+             ResourceRasterAt00404750(destination, source, palette, stride, x, y, width, height, left, top, right, bottom, flags, frame_word);
+-        else
++            break;
++        default:
+             ResourceRasterAt00405180(destination, source, palette, stride, x, y, width, height, left, top, right, bottom, flags, frame_word);
++            break;
++        }
+     }
+ }
+diff --git a/src/startup_screen_dialog_resource_hit.cpp b/src/startup_screen_dialog_resource_hit.cpp
+index 1bf4b726e2b41239449a515b8b0708145b497512..3afe23b24e9081c87c656bf955ada38574f0db8e 100644
+--- a/src/startup_screen_dialog_resource_hit.cpp
++++ b/src/startup_screen_dialog_resource_hit.cpp
+@@ -10,13 +10,11 @@ bool ScreenDialogResource::TestPixel(int x, int y)
+     if (record->format_18 == 5)
+     {
+         int count = record->frame_count;
+-        if (count > 0)
+         {
+-            ScreenDialogResourceFrame** frames = record->frames;
+             int selected = -1;
+             for (int i = 0; i < count; ++i)
+             {
+-                if (strcmp("pick", frames[i]->name) == 0)
++                if (strcmp("pick", record->frames[i]->name) == 0)
+                 {
+                     selected = i;
+                     break;
+@@ -35,7 +33,8 @@ bool ScreenDialogResource::TestPixel(int x, int y)
+     int width = record->frames[word_10]->width_0e;
+     if (record->format_18 == 5)
+     {
+-        frame->time_04 = window_deactivation_state->time_158;
++        float time = window_deactivation_state->time_158;
++        frame->time_04 = time;
+     }
+ 
+     if (!pick)
+@@ -45,7 +44,7 @@ bool ScreenDialogResource::TestPixel(int x, int y)
+             int column = 0;
+             while (column < width)
+             {
+-                int packet = static_cast<signed char>(*data++);
++                signed char packet = static_cast<signed char>(*data++);
+                 if (packet >= 0)
+                 {
+                     column += packet;
+@@ -59,9 +58,9 @@ bool ScreenDialogResource::TestPixel(int x, int y)
+         }
+ 
+         int column = 0;
+-        while (column < x)
++        while (x > column)
+         {
+-            int packet = static_cast<signed char>(*data++);
++            signed char packet = static_cast<signed char>(*data++);
+             if (packet >= 0)
+             {
+                 column += packet;
+@@ -84,7 +83,7 @@ bool ScreenDialogResource::TestPixel(int x, int y)
+         int column = 0;
+         while (column < width)
+         {
+-            int packet = static_cast<signed char>(*data++);
++            signed char packet = static_cast<signed char>(*data++);
+             if (packet >= 0)
+             {
+                 column += packet;
+@@ -97,9 +96,9 @@ bool ScreenDialogResource::TestPixel(int x, int y)
+     }
+ 
+     int column = 0;
+-    while (column < x)
++    while (x > column)
+     {
+-        int packet = static_cast<signed char>(*data++);
++        signed char packet = static_cast<signed char>(*data++);
+         if (packet >= 0)
+         {
+             column += packet;
+diff --git a/src/startup_weather_haze_update.cpp b/src/startup_weather_haze_update.cpp
+index efdfaac5545b253215817c7e8a43f16e152bbc03..cc756272a14d37da0ccc97f11011a3d54750f801 100644
+--- a/src/startup_weather_haze_update.cpp
++++ b/src/startup_weather_haze_update.cpp
+@@ -25,6 +25,7 @@ void VariableWeather::UpdateHaze()
+ {
+     if (!haze_2b68)
+         return;
++
+     ScreenPoint point = overlay_map->WorldToScreen(strike_point_2af4);
+     point.x -= 100;
+     point.y -= screen_request_renderer->height;
+@@ -36,6 +37,7 @@ void VariableWeather::UpdateHaze()
+     if (screen_request_renderer->ClipRectangle(point.x, point.y, left, top, right, bottom))
+         RasterWeatherHaze(screen_request_renderer->buffer_130, static_cast<unsigned char*>(haze_2b68), 0, screen_request_renderer->width, point.x, point.y, 200, screen_request_renderer->height, left, top, right, bottom);
+     screen_request_renderer->SetUnscaledClip(0);
+-    screen_request_renderer->rectangle_suppressed_4d = 1;
+-    screen_request_renderer->word_50 = 0;
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    renderer->rectangle_suppressed_4d = 1;
++    renderer->word_50 = 0;
+ }

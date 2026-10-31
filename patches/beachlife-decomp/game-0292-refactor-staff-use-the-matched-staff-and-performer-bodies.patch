@@ -1,0 +1,306 @@
+diff --git a/src/startup_world_builder_update.cpp b/src/startup_world_builder_update.cpp
+index e70878e7af5e31feb3e140d33524c2a64aba5e72..353c12775227e2b82e051410c1cba96b6a9480a7 100644
+--- a/src/startup_world_builder_update.cpp
++++ b/src/startup_world_builder_update.cpp
+@@ -78,6 +78,8 @@ bool WorldBuilderEntity::Unknown14(ScreenModeCommand* command)
+     switch (command->words[2])
+     {
+     case 0x28:
++        word_98 = command->words[4];
++        break;
+     case 0x2e:
+         word_98 = command->words[4];
+         break;
+@@ -94,7 +96,7 @@ bool WorldBuilderEntity::Unknown14(ScreenModeCommand* command)
+     case 0x2c:
+         if (static_cast<unsigned int>(command->words[0]) == home_id_100)
+         {
+-            if ((state_3c >= 0x61 && state_3c <= 0x64) || state_3c == 0x67)
++            if (state_3c >= 0x61 && (state_3c <= 0x64 || state_3c == 0x67))
+                 window_deactivation_state->building_status_48->CancelBuilderTask(id_28);
+             SetMovementMode(0x4c);
+             Unknown08(0x4c);
+diff --git a/src/startup_world_cleaner_methods.cpp b/src/startup_world_cleaner_methods.cpp
+index 9b6fb78fd0908084ae463e2e8b68a53a53c9cc46..b4ed15497701bddb84ca7ab6c4828ea2c146062a 100644
+--- a/src/startup_world_cleaner_methods.cpp
++++ b/src/startup_world_cleaner_methods.cpp
+@@ -88,12 +88,16 @@ bool WorldCleanerEntity::Unknown0c()
+ // FUNCTION: BEACHLIFE 0x00466060
+ float WorldStaffEntity::PlayStaffAnimation(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char*)
+ {
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++    float clock = window_deactivation_state->time_158;
++    float duration = keyline_state_44->SetAnimation(animation, clock, &position_30);
+     if (duration == 0.0f || std::isnan(duration))
+         duration = 1.0f;
+-    keyline_state_44->word_08 = once ? 1 : hold ? 0
+-                                                : 2;
++    if (once)
++        keyline_state_44->word_08 = 1;
++    else if (hold)
++        keyline_state_44->word_08 = 0;
++    else
++        keyline_state_44->word_08 = 2;
+     if (!hold && next_state != static_cast<unsigned int>(-1))
+     {
+         ScreenModeCommand command;
+diff --git a/src/startup_world_lifeguard_methods.cpp b/src/startup_world_lifeguard_methods.cpp
+index 75e3d859e57c0e35a045369ce1d48a97c615d546..807260f6efecdae944847085a26a75fc73d64f04 100644
+--- a/src/startup_world_lifeguard_methods.cpp
++++ b/src/startup_world_lifeguard_methods.cpp
+@@ -115,7 +115,8 @@ bool WorldLifeguardEntity::Unknown14(ScreenModeCommand* command)
+     switch (command->words[2])
+     {
+     case 0x26:
+-        word_810 = word_814 = 0;
++        word_810 = 0;
++        word_814 = 0;
+         window_deactivation_state->ticker_30->ClearFeedback(7);
+         break;
+     case 0x55:
+@@ -139,12 +140,13 @@ bool WorldLifeguardEntity::Unknown14(ScreenModeCommand* command)
+             next.words[3] = 0;
+             next.words[4] = 0;
+             screen_mode_commands->QueueCommand(&next);
+-            next.words[0] = id_28;
+-            next.words[1] = id_28;
+-            next.words[2] = 3;
+-            next.words[3] = 0;
+-            next.words[4] = 0x4e;
+-            screen_mode_commands->QueueCommand(&next);
++            ScreenModeCommand following;
++            following.words[0] = id_28;
++            following.words[1] = id_28;
++            following.words[2] = 3;
++            following.words[3] = 0;
++            following.words[4] = 0x4e;
++            screen_mode_commands->QueueCommand(&following);
+         }
+         break;
+     }
+@@ -154,17 +156,27 @@ bool WorldLifeguardEntity::Unknown14(ScreenModeCommand* command)
+ // FUNCTION: BEACHLIFE 0x0047cd80
+ float WorldLifeguardEntity::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
+ {
+-    if (!std::strcmp(animation, "MessData"))
++    if (!strcmp(animation, "MessData"))
+         animation = reinterpret_cast<const char*>(current_command_fc->words[4].data);
+-    else if (!std::strcmp(animation, "ReturnAnimation"))
++    else if (!strcmp(animation, "ReturnAnimation"))
+         animation = return_animation_794;
+-    keyline_state_44->word_08 = once ? 1 : hold ? 0
+-                                                : 2;
++    if (once)
++        keyline_state_44->word_08 = 1;
++    else if (hold)
++        keyline_state_44->word_08 = 0;
++    else
++        keyline_state_44->word_08 = 2;
+     if (!hold)
+     {
+-        std::strcpy(return_animation_794, next_animation ? next_animation : animation);
+-        word_7e4 = next_state == static_cast<unsigned int>(-1) ? state_3c : next_state;
+-        if (std::strcmp(return_animation_794, animation) && state_3c != 0x15)
++        if (next_animation)
++            strcpy(return_animation_794, next_animation);
++        else
++            strcpy(return_animation_794, animation);
++        if (next_state == static_cast<unsigned int>(-1))
++            word_7e4 = state_3c;
++        else
++            word_7e4 = next_state;
++        if (strcmp(return_animation_794, animation) && state_3c != 0x15)
+         {
+             ScreenModeCommand command;
+             command.words[0] = id_28;
+@@ -175,11 +187,11 @@ float WorldLifeguardEntity::Unknown28(const char* animation, unsigned char once,
+             Unknown20(command);
+         }
+     }
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++    float duration = window_deactivation_state->time_158;
++    duration = keyline_state_44->SetAnimation(animation, duration, &position_30);
+     if (duration == 0.0f || std::isnan(duration))
+         duration = 1.0f;
+-    std::strcpy(current_animation_7bc, animation);
++    strcpy(current_animation_7bc, animation);
+     if (!hold && next_state != static_cast<unsigned int>(-1))
+     {
+         ScreenModeCommand command;
+diff --git a/src/startup_world_mechanic_animation.cpp b/src/startup_world_mechanic_animation.cpp
+index 150a1c8fc3692bce65e049c6e8424313e8bdf192..db95d76b5415ba48a62d42639aba3feb0d2a8c6a 100644
+--- a/src/startup_world_mechanic_animation.cpp
++++ b/src/startup_world_mechanic_animation.cpp
+@@ -5,8 +5,8 @@
+ // FUNCTION: BEACHLIFE 0x00455630
+ float WorldStaffEntity::PlayMechanicAnimation(const char* animation, unsigned char, unsigned int next_state, unsigned char suppress, const char*)
+ {
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->clock_158, &position);
++    float clock = window_deactivation_state->clock_158;
++    float duration = keyline_state_44->SetAnimation(animation, clock, &position_30);
+     if (!(duration < 0.0f || duration > 0.0f))
+         duration = 1.0f;
+     if (!static_cast<unsigned char>(suppress) && next_state != static_cast<unsigned int>(-1))
+diff --git a/src/startup_world_performer_placement.cpp b/src/startup_world_performer_placement.cpp
+index 385e1d519973fe0fc18a4ae717ee466d8b4b0b7e..51be2a03839475d262c79b747b610097f2f87f53 100644
+--- a/src/startup_world_performer_placement.cpp
++++ b/src/startup_world_performer_placement.cpp
+@@ -59,9 +59,10 @@ void WorldEntity20::SetVariant(unsigned int variant)
+ // FUNCTION: BEACHLIFE 0x0048cc60
+ void WorldEntity15::Unknown3c()
+ {
+-    resource_104->DrawWorld(&action_point_108, window_deactivation_state->time_158);
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    keyline_state_44->DrawWorld(&position, window_deactivation_state->time_158);
++    float time = window_deactivation_state->time_158;
++    resource_104->DrawWorld(&action_point_108, time);
++    time = window_deactivation_state->time_158;
++    keyline_state_44->DrawWorld(&position_30, time);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0049b930
+diff --git a/src/startup_world_performer_shared.cpp b/src/startup_world_performer_shared.cpp
+index 01c03d7d18732f534ee1b17da53bb082f338b598..94c1c2adfb99d7d8bb695f8d1eb28f392ca2cdd1 100644
+--- a/src/startup_world_performer_shared.cpp
++++ b/src/startup_world_performer_shared.cpp
+@@ -19,7 +19,17 @@ bool WorldPedestrianEntity::AcceptPerformerState(unsigned int state)
+ // FUNCTION: BEACHLIFE 0x0048d080
+ bool WorldPedestrianEntity::LeavePerformerState()
+ {
+-    return state_3c == 0 || state_3c == 1;
++    bool result = false;
++    switch (state_3c)
++    {
++    case 0:
++        result = true;
++        break;
++    case 1:
++        result = true;
++        break;
++    }
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00464590
+@@ -32,11 +42,11 @@ float WorldPedestrianEntity::PlayPerformerAnimation(const char* animation, unsig
+         keyline_state_44->word_08 = 0;
+     else
+         keyline_state_44->word_08 = 2;
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++    float clock = window_deactivation_state->time_158;
++    float duration = keyline_state_44->SetAnimation(animation, clock, &position_30);
+     if (duration == 0.0f || std::isnan(duration))
+         duration = 1.0f;
+-    if (!hold && next_state != 0xffffffffu)
++    if (!hold && next_state != static_cast<unsigned int>(-1))
+     {
+         ScreenModeCommand command;
+         command.words[0] = id_28;
+diff --git a/src/startup_world_representative_animation.cpp b/src/startup_world_representative_animation.cpp
+index 016f37271efb594a9454e01d50b18d122c1bc70a..2a49f30394095bf7ab8d09c2081ba7257c6952fd 100644
+--- a/src/startup_world_representative_animation.cpp
++++ b/src/startup_world_representative_animation.cpp
+@@ -17,8 +17,14 @@ float WorldRepresentativeEntity::Unknown28(const char* animation, unsigned char
+         keyline_state_44->word_08 = 2;
+     if (!static_cast<unsigned char>(suppress))
+     {
+-        strcpy(return_animation_808, return_animation ? return_animation : animation);
+-        word_858 = next_state == static_cast<unsigned int>(-1) ? state_3c : next_state;
++        if (return_animation)
++            strcpy(return_animation_808, return_animation);
++        else
++            strcpy(return_animation_808, animation);
++        if (next_state == static_cast<unsigned int>(-1))
++            word_858 = state_3c;
++        else
++            word_858 = next_state;
+         if (state_3c != word_858 || return_animation)
+         {
+             ScreenModeCommand command;
+@@ -30,8 +36,8 @@ float WorldRepresentativeEntity::Unknown28(const char* animation, unsigned char
+             screen_mode_commands->QueueCommand(&command);
+         }
+     }
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->clock_158, &position);
++    float duration = window_deactivation_state->clock_158;
++    duration = keyline_state_44->SetAnimation(animation, duration, &position_30);
+     if (!(duration < 0.0f || duration > 0.0f))
+         duration = 1.0f;
+     strcpy(current_animation_830, animation);
+diff --git a/src/startup_world_representative_targets.cpp b/src/startup_world_representative_targets.cpp
+index 31892a90a864d659c3e2a110f7c4d615fe8f6626..e003f212d56a92fce7d7a231cc65504e0c1922ae 100644
+--- a/src/startup_world_representative_targets.cpp
++++ b/src/startup_world_representative_targets.cpp
+@@ -106,15 +106,16 @@ void WorldRepresentativeEntity::StopTalking()
+     unsigned int index;
+     do
+     {
+-        index = static_cast<unsigned int>(std::rand()) % count;
+-    } while (buildings[index]->id_28 == word_98 || std::strstr(buildings[index]->name_06, "JETTY") != 0);
++        index = static_cast<unsigned int>(rand()) % count;
++    } while (buildings[index]->id_28 == word_98 || strstr(buildings[index]->name_06, "JETTY") != 0);
+     Unknown28("WALK_NORMAL", 0, ~0u, 1, 0);
++    unsigned int destination = buildings[index]->id_28;
+     ScreenModeCommand command;
+     command.words[0] = id_28;
+     command.words[1] = id_28;
+     command.words[2] = 9;
+     command.words[3] = 0;
+-    command.words[4] = buildings[index]->id_28;
++    command.words[4] = destination;
+     screen_mode_commands->QueueCommand(&command);
+ }
+ 
+diff --git a/src/startup_world_service_staff_methods.cpp b/src/startup_world_service_staff_methods.cpp
+index f4d30d30f36a0c28c6404d6cf0440b9d57d0c02c..13f90c0def5922ccb11c2e42c137854ab73f30db 100644
+--- a/src/startup_world_service_staff_methods.cpp
++++ b/src/startup_world_service_staff_methods.cpp
+@@ -83,10 +83,10 @@ void WorldServiceStaffEntity::Unknown24(ScreenModeCommand command, float delay)
+ // FUNCTION: BEACHLIFE 0x0048e890
+ void WorldServiceStaffEntity::Unknown3c()
+ {
+-    if (strcmp(staff_104->resource_cc, "NONE") != 0)
++    if (strcmp(staff_104->resource_cc, screen_dialog_none_name))
+     {
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        keyline_state_44->DrawWorld(&position, window_deactivation_state->time_158);
++        float time = window_deactivation_state->time_158;
++        keyline_state_44->DrawWorld(&position_30, time);
+     }
+ }
+ 
+diff --git a/src/startup_world_shark_methods.cpp b/src/startup_world_shark_methods.cpp
+index a428c813e236fd6fe6a64a0a2f1366964cd406fd..b010bc1e6dc22ca147c18851704bd3689c56d874 100644
+--- a/src/startup_world_shark_methods.cpp
++++ b/src/startup_world_shark_methods.cpp
+@@ -107,13 +107,19 @@ void WorldSharkEntity::Unknown24(ScreenModeCommand command, float delay)
+ // FUNCTION: BEACHLIFE 0x0048b940
+ float WorldSharkEntity::Unknown28(const char* animation, unsigned char once, unsigned int, unsigned char hold, const char*)
+ {
+-    if (!std::strcmp(animation, "MessData"))
++    if (!strcmp(animation, "MessData"))
+         animation = reinterpret_cast<const char*>(command_f4->words[4].data);
+-    keyline_state_44->word_08 = once ? 1 : hold ? 0
+-                                                : 2;
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
+-    return duration == 0.0f || std::isnan(duration) ? 1.0f : duration;
++    if (once)
++        keyline_state_44->word_08 = 1;
++    else if (hold)
++        keyline_state_44->word_08 = 0;
++    else
++        keyline_state_44->word_08 = 2;
++    float clock = window_deactivation_state->time_158;
++    float duration = keyline_state_44->SetAnimation(animation, clock, &position_30);
++    if (duration == 0.0f || std::isnan(duration))
++        return 1.0f;
++    return duration;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048ba00

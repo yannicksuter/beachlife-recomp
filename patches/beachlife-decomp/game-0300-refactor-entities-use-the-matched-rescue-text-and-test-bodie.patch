@@ -1,0 +1,239 @@
+diff --git a/src/startup_world_entity_bases.cpp b/src/startup_world_entity_bases.cpp
+index ab498948acfcaacb65f6ab1c47e6751d8c0881de..9de4d6d5cc13646636edb4e4785c681c97c542ad 100644
+--- a/src/startup_world_entity_bases.cpp
++++ b/src/startup_world_entity_bases.cpp
+@@ -34,7 +34,10 @@ WorldStaticEntity::WorldStaticEntity(const char* name)
+ {
+     footprint_x_58 = 0;
+     footprint_y_59 = 0;
+-    memset(flags_5a, 0, sizeof(flags_5a));
++    flags_5a[0] = 0;
++    flags_5a[1] = 0;
++    flags_5a[2] = 0;
++    flags_5a[3] = 0;
+     cleaning_requested_5e = 0;
+     repair_requested_5f = 0;
+ }
+diff --git a/src/startup_world_guest_rescue_action.cpp b/src/startup_world_guest_rescue_action.cpp
+index a58a8152c6dc36398f87089d5f4dacb1de392ea8..fc94b59f2847cab049865870a9d87822d8bc4e90 100644
+--- a/src/startup_world_guest_rescue_action.cpp
++++ b/src/startup_world_guest_rescue_action.cpp
+@@ -5,39 +5,63 @@
+ void WorldGuestEntity::PerformAction2()
+ {
+     --word_258;
++    float nearest_distance = 100000000.0f;
+     unsigned int count;
+     VariableEntity** lifeguards = variable_world->ByType(7, &count);
+-    float nearest_distance = 100000000.0f;
+     unsigned int nearest = -2;
++    ScreenModeCommand command;
++    command.words[0] = 0;
++    command.words[1] = 0;
++    command.words[2] = 0;
++    command.words[3] = 0;
++    command.words[4] = 0;
+     for (unsigned int i = 0; i < count; ++i)
+     {
+-        VariableEntity* lifeguard = lifeguards[i];
+-        if (word_258 == 0)
++        if (word_258 <= 0)
+         {
+-            ScreenModeCommand command = MakeGuestCommand(id_28, lifeguard->id_28, 62);
++            ScreenModeCommand next;
++            next.words[0] = id_28;
++            next.words[1] = lifeguards[i]->id_28;
++            next.words[2] = 62;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            command = next;
++
+             screen_mode_commands->QueueCommand(&command);
+         }
+-        long double x = static_cast<long double>(lifeguard->position_30.x) - position_30.x;
+-        long double y = static_cast<long double>(lifeguard->position_30.y) - position_30.y;
+-        long double z = static_cast<long double>(lifeguard->position_30.z) - position_30.z;
+-        long double distance = std::sqrt(z * z + y * y + x * x);
++        VariableEntity* lifeguard = lifeguards[i];
++        ScreenWorldPosition position = lifeguard->position_30;
++        long double x = static_cast<long double>(position.x) - position_30.x;
++        long double y = static_cast<long double>(position.y) - position_30.y;
++        long double z = static_cast<long double>(position.z) - position_30.z;
++        float distance = std::sqrt(z * z + y * y + x * x);
+         if (!(distance >= nearest_distance))
+         {
+             nearest_distance = static_cast<float>(distance);
+             nearest = lifeguard->id_28;
+         }
+     }
+-    if (word_258 == 0)
++    if (word_258 <= 0)
+     {
+         inactive_04 = 1;
+         PerformAction71();
+         if (word_338 != static_cast<unsigned int>(-1))
+-            --variable_world->FindObject(word_338)->AsBuilding()->word_1a0;
++        {
++            WorldBuildingEntity* building = static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_338));
++            --building->word_1a0;
++        }
+     }
+     if (nearest != static_cast<unsigned int>(-2) && !inactive_04)
+     {
+-        unsigned int area = CurrentScreenTerrain()->InfluenceAreaAt({ position_30.x, position_30.y, position_30.z });
+-        ScreenModeCommand command = MakeGuestCommand(id_28, nearest, 53, 0, area);
++        unsigned int area = CurrentScreenTerrain()->InfluenceAreaAt(position_30);
++        ScreenModeCommand next;
++        next.words[0] = id_28;
++        next.words[1] = nearest;
++        next.words[2] = 53;
++        next.words[3] = 0;
++        next.words[4] = area;
++        command = next;
++
+         screen_mode_commands->QueueCommand(&command);
+     }
+ }
+diff --git a/src/startup_world_lifeguard_text.cpp b/src/startup_world_lifeguard_text.cpp
+index 376e935c06f17c91e15f4ee0a6ec47ca519469ae..d2f5a2496139f16ff7ad414c06f1e59ac81c0309 100644
+--- a/src/startup_world_lifeguard_text.cpp
++++ b/src/startup_world_lifeguard_text.cpp
+@@ -45,63 +45,62 @@ const char* WorldLifeguardEntity::Notification(unsigned int flags)
+ void WorldLifeguardEntity::ReadText(const char* key, unsigned short* output)
+ {
+     wchar_t* text = reinterpret_cast<wchar_t*>(output);
+-    swprintf(text, L"");
++    swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_empty));
+     Notification(feedback_7fc[2]);
+-    if (!std::strcmp(key, "STAFF_ACTIVITY"))
++    if (!strcmp(key, "STAFF_ACTIVITY"))
+     {
+-        const char* activity = 0;
+         switch (state_3c)
+         {
+         case 0x4e:
+-            activity = "LIFEGUARD_PATROL";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_PATROL")));
+             break;
+         case 0x4f:
+-            activity = "LIFEGUARD_RESTING";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_RESTING")));
+             break;
+         case 0x50:
+-            activity = "LIFEGUARD_RESCUE";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_RESCUE")));
+             break;
+         case 0x51:
+-            activity = "LIFEGUARD_GOTO_TOWER";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_GOTO_TOWER")));
+             break;
+         case 0x52:
+-            activity = "LIFEGUARD_LEAVING_TOWER";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_LEAVING_TOWER")));
+             break;
+         case 0x53:
+-            activity = "LIFEGUARD_ON_TOWER";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_ON_TOWER")));
+             break;
+         case 0x54:
+-            activity = "LIFEGUARD_TALKING";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_TALKING")));
+             break;
+         case 0x55:
+-            swprintf(text, L"");
+-            return;
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_empty));
++            break;
+         case 0x56:
+-            activity = "LIFEGUARD_TELLOFF";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_TELLOFF")));
+             break;
+         case 0x57:
+-            activity = "LIFEGUARD_IDLE";
++            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("LIFEGUARD_IDLE")));
+             break;
++        default:
++            WorldStaffEntity::ReadText(key, output);
+         }
+-        if (activity)
+-        {
+-            swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText(activity)));
+-            return;
+-        }
+-        WorldStaffEntity::ReadText(key, output);
+-        return;
+     }
+-    if (!std::strcmp(key, "STAFF_NAME"))
++    else if (!strcmp(key, "STAFF_NAME"))
+         swprintf(text, reinterpret_cast<const wchar_t*>(personal_name_f8));
+-    else if (!std::strcmp(key, "RESCUE_ATTEMPTS_TODAY"))
++    else if (!strcmp(key, "RESCUE_ATTEMPTS_TODAY"))
+         swprintf(text, L"%d", word_810 + word_814);
+-    else if (!std::strcmp(key, "RESCUES_TODAY"))
++    else if (!strcmp(key, "RESCUES_TODAY"))
+         swprintf(text, L"%d", word_810);
+-    else if (!std::strcmp(key, "STAFF_JOB_TITLE"))
++    else if (!strcmp(key, "STAFF_JOB_TITLE"))
+         swprintf(text, reinterpret_cast<const wchar_t*>(screen_text_lookup->LookupText("STAFFB_TITLE_LIFEGUARD")));
+-    else if (!std::strcmp(key, "STAFF_BEACH_OPEN"))
+-        swprintf(text, L"%d", variable_world->FindObject(home_id_100)->AsBuilding()->BeachOpen(0) ? 1 : 0);
+-    else if (!std::strncmp(key, "STAFF_BEACH_OPEN_STATUS_", 24))
++    else if (!strcmp(key, "STAFF_BEACH_OPEN"))
++    {
++        if (variable_world->FindObject(home_id_100)->AsBuilding()->BeachOpen(0))
++            swprintf(text, L"%d", 1);
++        else
++            swprintf(text, L"%d", 0);
++    }
++    else if (!strncmp(key, "STAFF_BEACH_OPEN_STATUS_", 24))
+         swprintf(text, L"%d", 1);
+     else
+         WorldStaffEntity::ReadText(key, output);
+diff --git a/src/startup_world_test_destructor.cpp b/src/startup_world_test_destructor.cpp
+index aa35e6a99526491d94398e921a39980d40a2fbeb..200cfb2a1deff0af97e0df6215f628acee78cc27 100644
+--- a/src/startup_world_test_destructor.cpp
++++ b/src/startup_world_test_destructor.cpp
+@@ -15,19 +15,14 @@ WorldTestController::~WorldTestController()
+         screen_manager->panel_13c->StopPlayback();
+         screen_manager->byte_f8 = 0;
+         screen_manager->DisableOverlay();
+-
+-        WindowDeactivationState* old_world = object_88;
+-        if (old_world)
++        WindowDeactivationState* world = object_88;
++        if (world)
+         {
+-            old_world->~WindowDeactivationState();
+-            ::operator delete(old_world);
++            world->WindowDeactivationState::~WindowDeactivationState();
++            operator delete(world);
+             object_88 = 0;
+         }
+-
+         screen_request_renderer->SetClipMode(1);
+         active = 0;
+     }
+-
+-    // Genuine ControllerState destruction also runs when the active branch is
+-    // skipped or unwinds. The raw world is freed only after its destructor returns.
+ }
+diff --git a/src/startup_world_test_screen_methods.cpp b/src/startup_world_test_screen_methods.cpp
+index 220b9eba39d2a41d357a84c458f33acb83707a87..7cf21af020c642db19217c639e445aa1ff209764 100644
+--- a/src/startup_world_test_screen_methods.cpp
++++ b/src/startup_world_test_screen_methods.cpp
+@@ -25,10 +25,12 @@ void WorldTestController::Exit()
+     window_audio_state->StopAllSounds();
+     screen_manager->panel_13c->StopPlayback();
+     screen_manager->byte_f8 = 0;
+-    screen_manager->ShowCameraControls();
+-    if (object_88)
++    screen_manager->DisableOverlay();
++    WindowDeactivationState* world = object_88;
++    if (world)
+     {
+-        delete object_88;
++        world->WindowDeactivationState::~WindowDeactivationState();
++        operator delete(world);
+         object_88 = 0;
+     }
+     screen_request_renderer->SetClipMode(1);

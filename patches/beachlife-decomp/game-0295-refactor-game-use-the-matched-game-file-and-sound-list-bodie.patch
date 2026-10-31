@@ -1,0 +1,137 @@
+diff --git a/src/startup_game_file_constructor.cpp b/src/startup_game_file_constructor.cpp
+index b89dcc6e1ab9e85da9b4bac6a8a7fdc385bfd6c8..b9d16b7f1f86dd7917c34738612857710972ce34 100644
+--- a/src/startup_game_file_constructor.cpp
++++ b/src/startup_game_file_constructor.cpp
+@@ -6,7 +6,10 @@
+ GameFileReader::GameFileReader(int base, const char* path)
+     : GameFileBase(base)
+ {
+-    file_08 = fopen(path, write_mode ? "wb" : "rb");
++    if (!write_mode)
++        file_08 = fopen(path, "rb");
++    else
++        file_08 = fopen(path, "wb");
+     if (!write_mode)
+     {
+         unsigned char tag;
+@@ -23,9 +26,11 @@ GameFileReader::GameFileReader(int base, const char* path)
+         }
+         else
+         {
+-            for (int i = 0; i < length; ++i)
+             {
+-                fgetc(file_08);
++                for (int i = 0; i < length; ++i)
++                {
++                    fgetc(file_08);
++                }
+             }
+         }
+     }
+diff --git a/src/startup_game_file_write.cpp b/src/startup_game_file_write.cpp
+index d9f3e5f0598317404435579a20eb95d3edf3dae6..bd5241c09c4d1099ddd64a1e02490eec24f7826a 100644
+--- a/src/startup_game_file_write.cpp
++++ b/src/startup_game_file_write.cpp
+@@ -85,12 +85,14 @@ void GameFileReader::Unknown20(const char*, const unsigned int* values, int coun
+ void GameFileReader::Unknown14(const char*, const unsigned char* values, int count)
+ {
+     unsigned char tag = 10;
++    unsigned char value;
+     fwrite(&tag, 1, 1, file_08);
+     fwrite(&count, 4, 1, file_08);
+     for (int i = 0; i < count; ++i)
+     {
+-        unsigned char value = values[i];
++        value = *values;
+         fwrite(&value, 1, 1, file_08);
++        ++values;
+     }
+ }
+ 
+diff --git a/src/startup_game_object_sound_insert.cpp b/src/startup_game_object_sound_insert.cpp
+index dfb456a576c9be1f1e5d24217f8e0d79fbbd7c45..9ec147b03602b6d84aa2af91630d340037eb624c 100644
+--- a/src/startup_game_object_sound_insert.cpp
++++ b/src/startup_game_object_sound_insert.cpp
+@@ -49,9 +49,10 @@ static GameSoundNode* CreateObjectSoundNode(GameObjectSound* const& sound)
+ GameSoundIterator GameObjectSoundList::Insert(GameSoundIterator position, GameObjectSound* const& sound)
+ {
+     GameSoundNode* node = CreateObjectSoundNode(sound);
++    GameSoundNode* previous = position.node->previous;
+     node->next = position.node;
+-    node->previous = position.node->previous;
+-    position.node->previous->next = node;
++    node->previous = previous;
++    previous->next = node;
+     position.node->previous = node;
+     GameSoundIterator result;
+     result.node = node;
+diff --git a/src/startup_game_point_sound_insert.cpp b/src/startup_game_point_sound_insert.cpp
+index 98f89acc2e4800da46d263d9755fb02f988e1a4c..0f066b557e6ee8bdea48537087b9963f6c6fbe58 100644
+--- a/src/startup_game_point_sound_insert.cpp
++++ b/src/startup_game_point_sound_insert.cpp
+@@ -49,9 +49,10 @@ static GameSoundNode* CreatePointSoundNode(GamePointSound* const& sound)
+ GameSoundIterator GamePointSoundList::Insert(GameSoundIterator position, GamePointSound* const& sound)
+ {
+     GameSoundNode* node = CreatePointSoundNode(sound);
++    GameSoundNode* previous = position.node->previous;
+     node->next = position.node;
+-    node->previous = position.node->previous;
+-    position.node->previous->next = node;
++    node->previous = previous;
++    previous->next = node;
+     position.node->previous = node;
+     GameSoundIterator result;
+     result.node = node;
+diff --git a/src/startup_game_scenario_progress.cpp b/src/startup_game_scenario_progress.cpp
+index d184df7c338dae07bd752b1b5148b7492193e4ee..6aefe1efbd036a508c4fc7d278e638ef4564da7d 100644
+--- a/src/startup_game_scenario_progress.cpp
++++ b/src/startup_game_scenario_progress.cpp
+@@ -26,24 +26,24 @@ void ScreenRequestGamePrefix::SaveScenarioProgress()
+ // FUNCTION: BEACHLIFE 0x004e4000
+ void ScreenRequestGamePrefix::LoadScenarioProgress()
+ {
+-    unsigned int* words = words_70;
+-    for (int i = 0; i < 12; ++i)
+-        words[i] = 1;
+-    words[0] = 4;
+-    words[1] = 4;
+-    words[2] = 2;
++    int i;
++    for (i = 0; i < 12; ++i)
++        words_70[i] = 1;
++    words_70[0] = 4;
++    words_70[1] = 4;
++    words_70[2] = 2;
+     scenario_a0 = 0;
+ 
+     FILE* file = fopen(startup_game_state_path, "rb");
+     if (file)
+     {
+-        if (fread(words, 0x30, 1, file) != 1)
++        if (fread(words_70, 0x30, 1, file) != 1)
+         {
+-            for (int i = 0; i < 12; ++i)
+-                words[i] = 1;
+-            words[0] = 4;
+-            words[1] = 4;
+-            words[2] = 2;
++            for (i = 0; i < 12; ++i)
++                words_70[i] = 1;
++            words_70[0] = 4;
++            words_70[1] = 4;
++            words_70[2] = 2;
+             scenario_a0 = 0;
+         }
+         fclose(file);
+@@ -56,9 +56,9 @@ void ScreenRequestGamePrefix::LoadScenarioProgress()
+     }
+ 
+     int last = -1;
+-    for (int i = 0; i < 12; ++i)
++    for (i = 0; i < 12; ++i)
+     {
+-        if (static_cast<unsigned char>(words[i]) & 0x08)
++        if (static_cast<unsigned char>(words_70[i]) & 0x08)
+             last = i;
+     }
+     if (last == -1)

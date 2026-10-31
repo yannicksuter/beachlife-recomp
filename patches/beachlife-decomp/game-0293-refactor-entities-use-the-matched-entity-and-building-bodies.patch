@@ -1,0 +1,231 @@
+diff --git a/src/startup_entity_base_lifetime.cpp b/src/startup_entity_base_lifetime.cpp
+index 57f05a913d448a5a6ce9af20b86d31fd49081ba3..a1e93dfc6e63c89b6fbba2670eaf11da444b4d8b 100644
+--- a/src/startup_entity_base_lifetime.cpp
++++ b/src/startup_entity_base_lifetime.cpp
+@@ -47,8 +47,8 @@ void VariableEntity::ReadText(const char* key, unsigned short*)
+ // FUNCTION: BEACHLIFE 0x0049daf0
+ void VariableEntity::Unknown3c()
+ {
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    keyline_state_44->DrawWorld(&position, window_deactivation_state->time_158);
++    float time = window_deactivation_state->time_158;
++    keyline_state_44->DrawWorld(&position_30, time);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048e1c0
+@@ -81,6 +81,6 @@ void WorldMovingEntity::Destroy(unsigned int flags)
+ // FUNCTION: BEACHLIFE 0x00482910
+ void WorldMovingEntity::SetMovementPosition(ScreenWorldPosition position)
+ {
+-    SetMotionPosition({ position.x, position.y });
++    SetMotionPosition(ScreenMapPosition(position.x, position.y));
+     VariableEntity::SetWorldPosition(&position);
+ }
+diff --git a/src/startup_entity_building_actions.cpp b/src/startup_entity_building_actions.cpp
+index 3a7113acf6768a289ffc74b6aef90d5c01a6f1d3..890b63459756f738268750418dced548b1a9fd50 100644
+--- a/src/startup_entity_building_actions.cpp
++++ b/src/startup_entity_building_actions.cpp
+@@ -5,20 +5,21 @@
+ // FUNCTION: BEACHLIFE 0x0045c200
+ void VariableEntity::DismissStaff(unsigned int id)
+ {
+-    unsigned int count = AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90;
+-    unsigned int i = 0;
+-    while (i < count && AsBuilding()->staff_ids_64[i] != id)
+-        ++i;
+-    if (i == count)
+-        return;
+-    for (; i < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90 - 1; ++i)
+-        AsBuilding()->staff_ids_64[i] = AsBuilding()->staff_ids_64[i + 1];
+-    VariableEntity* staff = variable_world->FindObject(id);
+-    if (staff->AsStaff()->staff_104->female_c4 == 0)
+-        --AsBuilding()->staff_count_8c;
+-    else
+-        --AsBuilding()->pending_staff_90;
+-    staff->Unknown70();
++    for (unsigned int i = 0; i < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90; ++i)
++    {
++        if (AsBuilding()->staff_ids_64[i] == id)
++        {
++            for (unsigned int j = i; j < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90 - 1; ++j)
++                AsBuilding()->staff_ids_64[j] = AsBuilding()->staff_ids_64[j + 1];
++            VariableEntity* staff = variable_world->FindObject(id);
++            if (staff->AsStaff()->staff_104->female_c4 == 0)
++                --AsBuilding()->staff_count_8c;
++            else
++                --AsBuilding()->pending_staff_90;
++            staff->Unknown70();
++            return;
++        }
++    }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00460880
+diff --git a/src/startup_entity_building_contents.cpp b/src/startup_entity_building_contents.cpp
+index 6c54de72eda842bfef14d5b3ad9e72b8500dcc52..ce3c11ba05d13efcc3a2bacd7df0f9f663df3669 100644
+--- a/src/startup_entity_building_contents.cpp
++++ b/src/startup_entity_building_contents.cpp
+@@ -67,15 +67,23 @@ void VariableEntity::SetDrinkType(unsigned int type)
+         return;
+     VariableBuilding* building = AsBuilding()->building_60;
+     AsBuilding()->drink_type_210 = type;
++    int found = -1;
+     for (unsigned int i = 0; i < building->rows_1f4; ++i)
++    {
+         if (_stricmp("Beer", variable_catalog->FeatureName(building->features_1fc[i])) == 0)
+         {
+-            VariableCatalogUnlock* drink = variable_catalog->UnlockRecord(AsBuilding()->drink_type_210);
+-            AsBuilding()->feature_prices_1f8[i] = drink->base_value_c4;
+-            AsBuilding()->feature_prices_1f8[i] = static_cast<double>(drink->base_value_c4) + static_cast<double>(AsBuilding()->drink_value_20c) * drink->multiplier_c8;
+-            AsBuilding()->feature_values_1d0[i] = drink->feature_type_cc;
+-            return;
++            found = i;
++            break;
+         }
++    }
++    if (found != -1)
++    {
++        VariableCatalogUnlock* drink = variable_catalog->UnlockRecord(AsBuilding()->drink_type_210);
++        float base = drink->base_value_c4;
++        AsBuilding()->feature_prices_1f8[found] = base;
++        AsBuilding()->feature_prices_1f8[found] = static_cast<double>(base) + static_cast<double>(AsBuilding()->drink_value_20c) * drink->multiplier_c8;
++        AsBuilding()->feature_values_1d0[found] = drink->feature_type_cc;
++    }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0046ade0
+diff --git a/src/startup_entity_values.cpp b/src/startup_entity_values.cpp
+index 3627ddafeaff66d01db0bd84480e7fff253ed34c..ff4a9cc8bef4ebe803706bab150b252f09a57bdd 100644
+--- a/src/startup_entity_values.cpp
++++ b/src/startup_entity_values.cpp
+@@ -10,8 +10,8 @@ void VariableEntity::SetEntityId(unsigned int id)
+ // FUNCTION: BEACHLIFE 0x00453920
+ ScreenPoint VariableEntity::TilePosition()
+ {
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    return overlay_map->WorldToTile(&position);
++    ScreenPoint point = overlay_map->WorldToTile(&position_30);
++    return point;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00467d70
+diff --git a/src/startup_terrain_cell_entities.cpp b/src/startup_terrain_cell_entities.cpp
+index 5a8bb5a32fae1b4b6bc4e97caa04eaea92b7c622..5611f453d3b03f062cdec7b5d1804cb0d03ccbec 100644
+--- a/src/startup_terrain_cell_entities.cpp
++++ b/src/startup_terrain_cell_entities.cpp
+@@ -30,7 +30,13 @@ void ScreenTerrainCell::RemoveEntity(VariableEntity* entity)
+ // FUNCTION: BEACHLIFE 0x00445350
+ bool ScreenTerrainCell::ContainsEntity(VariableEntity* entity)
+ {
+-    return FindTerrainEntity(objects_4c.Begin(), objects_4c.End(), entity).node != objects_4c.head;
++    bool found = false;
++    CircularListNode* node = FindTerrainEntity(objects_4c.Begin(), objects_4c.End(), entity).node;
++    if (node != objects_4c.head)
++    {
++        found = true;
++    }
++    return found;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00445390
+diff --git a/src/startup_variable_entity_appeal.cpp b/src/startup_variable_entity_appeal.cpp
+index 8fef080ff8aa1723cdfb998e02742be215f0ca1f..89cdbf078bb78d2043a01e29de2617c2373b52d0 100644
+--- a/src/startup_variable_entity_appeal.cpp
++++ b/src/startup_variable_entity_appeal.cpp
+@@ -27,7 +27,11 @@ float VariableEntity::FemaleAppeal()
+ // FUNCTION: BEACHLIFE 0x00460370
+ bool VariableEntity::FlagAt00460370()
+ {
+-    return AsBuilding()->building_state_19c == 0;
++    if (AsBuilding()->building_state_19c != 0)
++    {
++        return false;
++    }
++    return true;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004607f0
+diff --git a/src/startup_variable_entity_base.cpp b/src/startup_variable_entity_base.cpp
+index 9147cf08d8969e8c6665d9e5fa6ed4fde04b0ccc..43eeb0db26adb0b306ee8733a125ca6f7151cb66 100644
+--- a/src/startup_variable_entity_base.cpp
++++ b/src/startup_variable_entity_base.cpp
+@@ -5,7 +5,7 @@
+ // FUNCTION: BEACHLIFE 0x00466e80
+ ScreenWorldPosition VariableEntity::Position()
+ {
+-    return { position_30.x, position_30.y, position_30.z };
++    return position_30;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00453850
+@@ -19,23 +19,24 @@ bool VariableEntity::Unknown0c()
+ // FUNCTION: BEACHLIFE 0x00453860
+ bool VariableEntity::Unknown14(ScreenModeCommand* command)
+ {
+-    if (command->words[2] == 4)
++    switch (command->words[2])
+     {
++    case 4:
+         if (command->words[4] < 6)
+             StartupFatal("BaseObject::Message - MT_SETOWNER - not a valid owner");
+         movement_2d = static_cast<unsigned char>(command->words[4]);
+         return true;
++    case 3:
++        if (!Unknown04(command->words[4]))
++            StartupFatal("BaseObject::Message - asked for an unsupported state %u  Object Type(%d) Sender(%d)", command->words[4], kind_2c, command->words[0]);
++        if (!Unknown10())
++            StartupFatal("BaseObject::Message - error processing OnStateExit()");
++        state_3c = command->words[4];
++        if (!Unknown08(command->words[4]))
++            StartupFatal("BaseObject::Message - error processing OnStateEntry(%d) Object Type(%d) Sender(%d)", command->words[4], kind_2c, command->words[0]);
++        return true;
+     }
+-    if (command->words[2] != 3)
+-        return false;
+-    if (!Unknown04(command->words[4]))
+-        StartupFatal("BaseObject::Message - asked for an unsupported state %u  Object Type(%d) Sender(%d)", command->words[4], kind_2c, command->words[0]);
+-    if (!Unknown10())
+-        StartupFatal("BaseObject::Message - error processing OnStateExit()");
+-    state_3c = command->words[4];
+-    if (!Unknown08(command->words[4]))
+-        StartupFatal("BaseObject::Message - error processing OnStateEntry(%d) Object Type(%d) Sender(%d)", command->words[4], kind_2c, command->words[0]);
+-    return true;
++    return false;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00453fa0
+diff --git a/src/startup_variable_entity_commands.cpp b/src/startup_variable_entity_commands.cpp
+index e3cc4a8e063ea920bc54aac563f312ee7c60a7f3..50086c5e1b6b9189fd61a121dee045bbf19d9c49 100644
+--- a/src/startup_variable_entity_commands.cpp
++++ b/src/startup_variable_entity_commands.cpp
+@@ -8,12 +8,7 @@ void VariableEntity::MoveTo(const ScreenWorldPosition* point)
+     AsStaff()->moving_138 = 1;
+     AsStaff()->target_x_140 = point->x;
+     AsStaff()->target_y_144 = point->y;
+-    ScreenModeCommand command;
+-    command.words[0] = id_28;
+-    command.words[1] = id_28;
+-    command.words[2] = 0x56;
+-    command.words[3] = 0;
+-    command.words[4] = 0;
++    ScreenModeCommand command(id_28, id_28, 0x56, 0, 0);
+     screen_mode_commands->QueueCommand(&command);
+ }
+ 
+diff --git a/src/startup_world_building_positions.cpp b/src/startup_world_building_positions.cpp
+index 2577bbe3b99959f1e135b455adf631361297e256..b2223562c21719fa090b8cd934083b95df19a3f7 100644
+--- a/src/startup_world_building_positions.cpp
++++ b/src/startup_world_building_positions.cpp
+@@ -66,7 +66,11 @@ ScreenWorldPosition WorldBuildingEntity::EntrancePosition()
+     if (building_queue_16c)
+     {
+         ScreenMapPosition position = building_queue_16c->EntrancePosition();
+-        return { position.x, position.y, 0.0f };
++        ScreenWorldPosition result;
++        result.x = position.x;
++        result.y = position.y;
++        result.z = 0.0f;
++        return result;
+     }
+     return staff_position_d8;
+ }

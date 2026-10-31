@@ -1,0 +1,319 @@
+diff --git a/src/startup_world_guest_animation.cpp b/src/startup_world_guest_animation.cpp
+index 3299903fca0d81f83b69ec26b4ff0705b9659e1b..3624a14a67557a5d018587ec51033c78ad1a3ce4 100644
+--- a/src/startup_world_guest_animation.cpp
++++ b/src/startup_world_guest_animation.cpp
+@@ -9,41 +9,63 @@ char world_guest_animation_buffer[40];
+ // FUNCTION: BEACHLIFE 0x0046fdb0
+ float WorldGuestEntity::Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation)
+ {
+-    if (std::strcmp(animation, "MessData") == 0)
++    if (strcmp(animation, "MessData") == 0)
++    {
+         animation = reinterpret_cast<const char*>(word_fc->words[4].data);
+-    if (std::strcmp(animation, "WalkAnimation") == 0)
++    }
++    if (strcmp(animation, "WalkAnimation") == 0)
++    {
+         animation = walk_animation_268;
+-    else if (std::strcmp(animation, "StandAnimation") == 0)
++    }
++    else if (strcmp(animation, "StandAnimation") == 0)
++    {
+         animation = text_290;
+-    else if (std::strcmp(animation, "ReturnAnimation") == 0)
++    }
++    else if (strcmp(animation, "ReturnAnimation") == 0)
++    {
+         animation = return_animation_2e1;
++    }
+     else if (_stricmp(animation, "FidgetAnimation1") == 0)
+     {
+-        std::strcpy(world_guest_animation_buffer, _stricmp(text_290, "D_STAND_NORMAL") == 0 ? "D_STAND" : text_290);
+-        std::strcat(world_guest_animation_buffer, "_FIDGET1");
++        if (_stricmp(text_290, "D_STAND_NORMAL") == 0)
++            strcpy(world_guest_animation_buffer, "D_STAND");
++        else
++            strcpy(world_guest_animation_buffer, text_290);
++        strcat(world_guest_animation_buffer, "_FIDGET1");
+         animation = world_guest_animation_buffer;
+     }
+     else if (_stricmp(animation, "FidgetAnimation2") == 0)
+     {
+-        std::strcpy(world_guest_animation_buffer, _stricmp(text_290, "D_STAND_NORMAL") == 0 ? "D_STAND" : text_290);
+-        std::strcat(world_guest_animation_buffer, "_FIDGET2");
++        if (_stricmp(text_290, "D_STAND_NORMAL") == 0)
++            strcpy(world_guest_animation_buffer, "D_STAND");
++        else
++            strcpy(world_guest_animation_buffer, text_290);
++        strcat(world_guest_animation_buffer, "_FIDGET2");
+         animation = world_guest_animation_buffer;
+     }
+-    keyline_state_44->word_08 = once ? 1 : hold ? 0
+-                                                : 2;
++    if (once)
++        keyline_state_44->word_08 = 1;
++    else if (hold)
++        keyline_state_44->word_08 = 0;
++    else
++        keyline_state_44->word_08 = 2;
+     if (!hold)
+     {
+-        const char* return_animation = next_animation ? next_animation : animation;
+         if (next_animation)
+         {
+-            if (std::strcmp(next_animation, "WalkAnimation") == 0)
+-                return_animation = walk_animation_268;
+-            else if (std::strcmp(next_animation, "StandAnimation") == 0)
+-                return_animation = text_290;
++            if (strcmp(next_animation, "WalkAnimation") == 0)
++                next_animation = walk_animation_268;
++            else if (strcmp(next_animation, "StandAnimation") == 0)
++                next_animation = text_290;
++            strcpy(return_animation_2e1, next_animation);
+         }
+-        std::strcpy(return_animation_2e1, return_animation);
+-        leave_state_30c = next_state == static_cast<unsigned int>(-1) ? state_3c : next_state;
+-        if (std::strcmp(return_animation_2e1, animation) && state_3c != 0x15)
++        else
++            strcpy(return_animation_2e1, animation);
++        if (next_state == static_cast<unsigned int>(-1))
++            leave_state_30c = state_3c;
++        else
++            leave_state_30c = next_state;
++        if (strcmp(return_animation_2e1, animation) && state_3c != 0x15)
+         {
+             ScreenModeCommand command;
+             command.words[0] = id_28;
+@@ -54,12 +76,14 @@ float WorldGuestEntity::Unknown28(const char* animation, unsigned char once, uns
+             Unknown20(command);
+         }
+     }
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
++    float duration = window_deactivation_state->time_158;
++    duration = keyline_state_44->SetAnimation(animation, duration, &position_30);
+     if (duration == 0.0f || std::isnan(duration))
++    {
+         duration = 1.0f;
+-    std::strcpy(current_animation_2b9, animation);
+-    if (!hold && (leave_state_30c != state_3c || std::strcmp(return_animation_2e1, animation)))
++    }
++    strcpy(current_animation_2b9, animation);
++    if (!hold && (leave_state_30c != state_3c || strcmp(return_animation_2e1, animation)))
+     {
+         ScreenModeCommand command;
+         command.words[0] = id_28;
+diff --git a/src/startup_world_guest_callbacks.cpp b/src/startup_world_guest_callbacks.cpp
+index 24d80969b1243072764f3e75183855b5afbf1c9b..ff34bd529d13a2e83adb479d227504d4c2939f4c 100644
+--- a/src/startup_world_guest_callbacks.cpp
++++ b/src/startup_world_guest_callbacks.cpp
+@@ -19,7 +19,7 @@ void WorldGuestEntity::Destroy(unsigned int flags)
+ bool WorldGuestEntity::Unknown0c()
+ {
+     float delta = window_deactivation_state->value_16c;
+-    if (!(guest_value_34c >= 0.0f) || state_3c != 0x1d)
++    if ((!(guest_value_34c >= 0.0f) && state_3c != 0x19) || state_3c != 0x1d)
+     {
+         int day_length;
+         startup_config_owner->GetInteger(&day_length, "iDAY_LENGTH_IN_SECONDS");
+@@ -31,23 +31,28 @@ bool WorldGuestEntity::Unknown0c()
+         }
+     }
+     float time = window_deactivation_state->time_158;
+-    if (!flag_5c && time - time_3e4 > 100.0f && state_3c == 0x23)
++    if (!flag_5c && time - time_3e4 > 100.0f)
+     {
+-        if (word_310)
++        if (state_3c == 0x23)
+         {
+-            screen_dialog_resources->Release(word_310);
+-            word_310 = 0;
++            if (word_310)
++            {
++                screen_dialog_resources->Release(word_310);
++                word_310 = 0;
++            }
++            variable_world->FindObject(word_32c);
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 12;
++            screen_mode_commands->QueueCommand(&command);
+         }
+-        variable_world->FindObject(word_32c);
+-        ScreenModeCommand command;
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = 3;
+-        command.words[3] = 0;
+-        command.words[4] = 12;
+-        screen_mode_commands->QueueCommand(&command);
++        else
++            time_3e4 = time;
+     }
+-    else if (flag_5c || time - time_3e4 > 100.0f)
++    else if (flag_5c)
+         time_3e4 = time;
+     if (word_3cc > 0.0f)
+     {
+@@ -71,9 +76,9 @@ bool WorldGuestEntity::Unknown0c()
+         float delay = static_cast<double>(std::rand()) * 3.0518509447574615e-05f * 10.0f + 10.0f;
+         screen_mode_commands->QueueDelayed(&command, delay);
+     }
+-    if (flag_330 && window_deactivation_state->time_158 > static_cast<double>(word_334) + 10.0f)
++    if (flag_330 && word_334 + 10.0f < static_cast<double>(window_deactivation_state->time_158))
+         flag_330 = 0;
+-    if (word_3dc && window_deactivation_state->time_158 > static_cast<double>(word_3e0) + 20.0f)
++    if (word_3dc && word_3e0 + 20.0f < static_cast<double>(window_deactivation_state->time_158))
+         word_3dc = 0;
+     script_f8->UpdateState(this, state_3c);
+     return true;
+diff --git a/src/startup_world_guest_destination_actions.cpp b/src/startup_world_guest_destination_actions.cpp
+index ec490efa94097a004beb266fd1ec3eff78d6bea7..bc0fb8bf08535e8f10426a7200933f41ee00549e 100644
+--- a/src/startup_world_guest_destination_actions.cpp
++++ b/src/startup_world_guest_destination_actions.cpp
+@@ -4,30 +4,31 @@
+ void WorldGuestEntity::PerformAction27()
+ {
+     word_338 = -1;
+-    if (days_344)
++    if (days_344 > 0)
+     {
+         unsigned int count;
+         VariableEntity** buildings = variable_world->FindNamed("HOTEL", &count);
+-        WorldBuildingEntity* hotel = buildings[0]->AsBuilding();
+-        if (hotel->AvailableRooms())
++
++        if (static_cast<WorldBuildingEntity*>(buildings[0])->AvailableRooms())
+         {
+-            word_338 = hotel->id_28;
+-            ++hotel->word_1a0;
++            word_338 = static_cast<WorldBuildingEntity*>(buildings[0])->id_28;
++            ++static_cast<WorldBuildingEntity*>(buildings[0])->word_1a0;
+         }
+         else
+         {
+             buildings = variable_world->FindNamed("ACCOMBLK", &count);
+-            for (unsigned int i = 0; i < count; ++i)
+-            {
+-                WorldBuildingEntity* building = buildings[i]->AsBuilding();
+-                if (building->AvailableRooms() && !building->FlagAt00460310()
+-                    && !building->FlagAt00460340() && building->FlagAt00460370())
++            if (count)
++                for (unsigned int i = 0; i < count; ++i)
+                 {
+-                    word_338 = building->id_28;
+-                    ++building->word_1a0;
+-                    break;
++
++                    if (static_cast<WorldBuildingEntity*>(buildings[i])->AvailableRooms() && !static_cast<WorldBuildingEntity*>(buildings[i])->FlagAt00460310()
++                        && !static_cast<WorldBuildingEntity*>(buildings[i])->FlagAt00460340() && static_cast<WorldBuildingEntity*>(buildings[i])->FlagAt00460370())
++                    {
++                        word_338 = static_cast<WorldBuildingEntity*>(buildings[i])->id_28;
++                        ++static_cast<WorldBuildingEntity*>(buildings[i])->word_1a0;
++                        i = count;
++                    }
+                 }
+-            }
+         }
+     }
+     if (word_338 == static_cast<unsigned int>(-1))
+diff --git a/src/startup_world_guest_draw.cpp b/src/startup_world_guest_draw.cpp
+index 5fe2f730040d8cd678954a093a931bc1e2ffb6a3..02faa614ac3662987648298856edfed76b79e52f 100644
+--- a/src/startup_world_guest_draw.cpp
++++ b/src/startup_world_guest_draw.cpp
+@@ -18,7 +18,7 @@ float VariableEntity::GuestFade()
+         return static_cast<float>(tint > 2.0 ? 2.0 : tint);
+     }
+     int days = static_cast<int>(window_deactivation_state->day_15c - guest->arrival_day_354);
+-    double tint = (days * 24.0 + window_deactivation_state->render_value_160 - guest->time_358) * 0.013888888992369175f;
++    double tint = (days * 24.0 + (static_cast<double>(window_deactivation_state->render_value_160) - guest->time_358)) * 0.013888888992369175f;
+     return static_cast<float>(tint > 1.0 ? 1.0 : tint);
+ }
+ 
+diff --git a/src/startup_world_guest_litter_action.cpp b/src/startup_world_guest_litter_action.cpp
+index 2af3361ccfe4cba0e27c949312c29e18c69d1578..58dd1544452d02b202f5c27117f64ca53323f209 100644
+--- a/src/startup_world_guest_litter_action.cpp
++++ b/src/startup_world_guest_litter_action.cpp
+@@ -4,30 +4,46 @@
+ // FUNCTION: BEACHLIFE 0x00477fb0
+ void WorldGuestEntity::PerformAction17()
+ {
+-    const char* litter;
+-    if (std::strcmp(current_animation_2b9, "D_STAND_DROPDRINK") == 0 || std::strcmp(current_animation_2b9, "D_WALK_DRINK") == 0)
+-        litter = std::rand() % 2 ? "Littercancrush" : "Littercanstand";
+-    else if (std::strcmp(current_animation_2b9, "D_STAND_DROPICE") == 0)
+-        litter = "Littericesplat";
+-    else if (std::strcmp(current_animation_2b9, "D_STAND_DROPBURGER") == 0 || std::strcmp(current_animation_2b9, "D_WALK_BURGER") == 0)
+-        litter = "Litterburger";
+-    else if (std::strcmp(current_animation_2b9, "D_STAND_VOMIT") == 0)
+-        litter = "LitterPuke";
+-    else
+-        return;
+     ScreenSceneryPlacement placement;
+     placement.word_4c = -2;
+-    std::strcpy(placement.name, litter);
++    if (strcmp(current_animation_2b9, "D_STAND_DROPDRINK") == 0 || strcmp(current_animation_2b9, "D_WALK_DRINK") == 0)
++    {
++        if (rand() % 2)
++            strcpy(placement.name, "Littercancrush");
++        else
++            strcpy(placement.name, "Littercanstand");
++    }
++    else if (strcmp(current_animation_2b9, "D_STAND_DROPICE") == 0)
++        strcpy(placement.name, "Littericesplat");
++    else if (strcmp(current_animation_2b9, "D_STAND_DROPBURGER") == 0 || strcmp(current_animation_2b9, "D_WALK_BURGER") == 0)
++        strcpy(placement.name, "Litterburger");
++    else if (strcmp(current_animation_2b9, "D_STAND_VOMIT") == 0)
++        strcpy(placement.name, "LitterPuke");
++    else
++        return;
++
+     if (!window_deactivation_state->flag_385)
+         return;
+-    std::strcpy(placement.model, "Litter");
+-    placement.tile = TilePosition();
++    strcpy(placement.model, "Litter");
++    {
++        ScreenPoint tile;
++        tile = TilePosition();
++        placement.tile = tile;
++    }
+     placement.enabled = 1;
+-    placement.rotation = std::rand() % 8;
++    placement.rotation = rand() % 8;
+     flag_330 = 1;
+-    word_334 = window_deactivation_state->time_158;
++    float time = window_deactivation_state->time_158;
++    word_334 = time;
+     word_3dc = 1;
+-    word_3e0 = window_deactivation_state->time_158;
+-    ScreenModeCommand command = MakeGuestCommand(-2, -2, 0, 0, 1);
++    time = window_deactivation_state->time_158;
++    word_3e0 = time;
++    ScreenModeCommand command;
++    command.words[0] = -2;
++    command.words[1] = -2;
++    command.words[2] = 0;
++    command.words[3] = 0;
++    command.words[4] = 1;
++
+     screen_mode_commands->QueuePlacement(&command, &placement);
+ }
+diff --git a/src/startup_world_guest_palette_actions.cpp b/src/startup_world_guest_palette_actions.cpp
+index 5da072a97b2078ff6b0ea38d757f80ed37792b38..37892890a3fed48da10e14262b2e11151bf86af1 100644
+--- a/src/startup_world_guest_palette_actions.cpp
++++ b/src/startup_world_guest_palette_actions.cpp
+@@ -40,8 +40,8 @@ void WorldGuestEntity::PerformAction20()
+ // FUNCTION: BEACHLIFE 0x00479730
+ void WorldGuestEntity::PerformAction25()
+ {
+-    ScreenWorldPosition other = variable_world->FindObject(word_32c)->Position();
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
++    ScreenWorldPosition other = variable_world->FindObject(word_32c)->position_30;
++    ScreenWorldPosition position = position_30;
+     CurrentVariableWorld()->FindObject(word_32c)->KeylineState()->FacePositions(position, other);
+     keyline_state_44->FacePositions(other, position);
+ }
