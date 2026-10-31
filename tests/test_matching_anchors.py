@@ -166,6 +166,43 @@ class ComparisonAnchorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'declaration'):
             matching.comparison_anchor_specs(self.metadata, target)
 
+    def test_existing_prepared_body_needs_an_identity_not_an_anchor(self):
+        # A destructor (or any callee) that already has a body in the export is
+        # named by its CSV identity; anchors stay for callees without a body.
+        (self.source / 'generated.h').write_text(
+            'struct GeneratedResult;\n'
+            'struct GeneratedOwner { ~GeneratedOwner(); GeneratedResult* Find(const char*); };\n')
+        (self.source / 'existing.cpp').write_text(
+            '#include "generated.h"\n\n// FUNCTION: BEACHLIFE 0x00401200\n'
+            'GeneratedOwner::~GeneratedOwner()\n{\n}\n'
+            '// GLOBAL: BEACHLIFE 0x00401100\nint generated_data;\n')
+        with (self.metadata / 'metadata.csv').open('a') as stream:
+            stream.write('0x00401200,function,16,??1GeneratedOwner@@QAE@XZ\n')
+        specs = matching.comparison_anchor_specs(self.metadata, self.target)
+        paths, records = matching.generate_comparison_anchors(
+            self.metadata, self.source, self.directory / 'output', specs)
+        self.assertEqual([path.name for path in paths], ['anchor_00401100.cpp'])
+        self.assertEqual([record['address'] for record in records], ['0x00401100'])
+        self.assertEqual(matching.annotated_function_addresses([self.source / 'existing.cpp']),
+                         {0x00401200: self.source / 'existing.cpp'})
+        support = self.metadata / 'support'
+        support.mkdir()
+        for path, text in ((self.source / 'existing.cpp', '// FUNCTION: BEACHLIFE 0x00401100\n'),
+                           (self.source / 'nested/folded.cpp', '// FUNCTION: BEACHLIFE 0x00401100 FOLDED\n'),
+                           (support / 'library.cpp', '  // LIBRARY: BEACHLIFE 0x00401100\n')):
+            with self.subTest(path=path.name):
+                path.parent.mkdir(exist_ok=True)
+                previous = (self.source / 'existing.cpp').read_text()
+                path.write_text(text)
+                with self.assertRaisesRegex(ValueError, 'CSV identity'):
+                    matching.generate_comparison_anchors(
+                        self.metadata, self.source, self.directory / 'rejected', specs)
+                if path.name == 'existing.cpp':
+                    path.write_text(previous)
+                else:
+                    path.unlink()
+        self.assertFalse((self.directory / 'rejected').exists())
+
     def test_credited_address_name_and_duplicate_anchor_are_rejected(self):
         for changed in ({'address': '0x00401000'}, {'name': 'GeneratedOwner::Lookup'}):
             target = copy.deepcopy(self.target)
@@ -176,6 +213,30 @@ class ComparisonAnchorTests(unittest.TestCase):
         target['comparison_anchors'].append(copy.deepcopy(self.anchor))
         with self.assertRaisesRegex(ValueError, 'distinct'):
             matching.comparison_anchor_specs(self.metadata, target)
+
+    def test_overloaded_anchors_keep_separate_symbols_and_addresses(self):
+        overload = dict(self.anchor, address='0x00401200', parameters=['const unsigned short*'],
+                        symbol='?Find@GeneratedOwner@@QAEPAXPBG@Z')
+        self.target['comparison_anchors'].append(overload)
+        with (self.metadata / 'metadata.csv').open('a') as stream:
+            stream.write('0x00401200,function,16,?Find@GeneratedOwner@@QAEPAXPBG@Z\n')
+        specs = matching.comparison_anchor_specs(self.metadata, self.target)
+        paths, records = matching.generate_comparison_anchors(
+            self.metadata, self.source, self.directory / 'output', specs)
+        self.assertEqual([path.name for path in paths], ['anchor_00401100.cpp', 'anchor_00401200.cpp'])
+        self.assertIn('Find(const char* argument)', paths[0].read_text())
+        self.assertIn('Find(const unsigned short* argument)', paths[1].read_text())
+        self.assertEqual([record['symbol'] for record in records], [item['symbol'] for item in specs])
+        self.assertTrue(all(not r['qualified'] and not r['image_execution_permitted'] for r in records))
+        for change in ({'symbol': self.anchor['symbol']}, {'address': '0x00401108'},
+                       {'parameters': self.anchor['parameters']},
+                       {'parameters': self.anchor['parameters'], 'return_type': 'void*'},
+                       {'name': 'GeneratedOwner::Lookup'}):
+            with self.subTest(change=change):
+                target = copy.deepcopy(self.target)
+                target['comparison_anchors'][1].update(change)
+                with self.assertRaisesRegex(ValueError, 'distinct'):
+                    matching.comparison_anchor_specs(self.metadata, target)
 
     def test_csv_and_declaration_must_be_exact(self):
         for changed in ({'header': '../generated.h'}, {'return_type': 'void*; bad()'},
@@ -442,6 +503,126 @@ class ComparisonAnchorObjectTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'exactly the declared symbol'):
                 tool.build(folder, [source], 'generated', anchor_symbols={source: '?Generated@@YAHXZ'})
 
+
+class ComparisonGlobalOperandTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.folder = Path(temporary.name)
+        self.symbol = '?GeneratedArray@@3PAHA'
+        self.caller = '?GeneratedCaller@@YAXXZ'
+        self.item = {'function': '0x00401000', 'instruction_offset': 0,
+                     'global': '0x00501000', 'source': 'generated.cpp'}
+        self.target = {'functions': [{'address': '0x00401000', 'size': 12, 'name': 'GeneratedCaller'}],
+                       'comparison_global_operands': [self.item]}
+        self.csv = ('address,type,size,symbol\n'
+                    '0x00401000,function,12,?GeneratedCaller@@YAXXZ\n'
+                    '0x00501000,global,16,?GeneratedArray@@3PAHA\n'
+                    '0x00501010,string,8,\n')
+        (self.folder / 'metadata.csv').write_text(self.csv)
+
+    def test_scope_keeps_the_real_array_and_adjacent_identity(self):
+        record, = matching.comparison_global_operand_specs(self.folder, self.target)
+        self.assertEqual(record['size'], 16)
+        self.assertEqual(record['global_symbol'], self.symbol)
+        self.assertEqual(record['function_symbol'], self.caller)
+        self.assertEqual((self.folder / 'metadata.csv').read_text(), self.csv)
+        self.assertEqual(self.item, {'function': '0x00401000', 'instruction_offset': 0,
+                                    'global': '0x00501000', 'source': 'generated.cpp'})
+        for change in ({'function': '0x00401001'}, {'instruction_offset': 8},
+                       {'instruction_offset': True}, {'instruction_offset': -1},
+                       {'global': '0x00501010'}, {'source': '../generated.cpp'},
+                       {'offset': 17}, {'unknown': True}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                matching.comparison_global_operand_specs(
+                    self.folder, dict(self.target, comparison_global_operands=[dict(self.item, **change)]))
+        with self.assertRaisesRegex(ValueError, 'unique instruction'):
+            matching.comparison_global_operand_specs(
+                self.folder, dict(self.target, comparison_global_operands=[self.item, self.item]))
+        for changed in (self.csv.replace('global,16', 'function,16'),
+                        self.csv.replace('function,12', 'function,13'),
+                        self.csv.replace('global,16', 'global,0'),
+                        self.csv.replace(self.symbol, ''), self.csv + self.csv.splitlines()[2] + '\n'):
+            with self.subTest(csv=changed), self.assertRaises(ValueError):
+                (self.folder / 'metadata.csv').write_text(changed)
+                matching.comparison_global_operand_specs(self.folder, self.target)
+
+    def test_member_of_the_element_past_the_end_is_bounded_by_the_element(self):
+        # A loop over &array[i].member ends at array + extent + member offset.
+        record, = matching.comparison_global_operand_specs(self.folder, dict(
+            self.target, comparison_global_operands=[dict(self.item, member_offset=4, element_size=8)]))
+        self.assertEqual((record['size'], record['addend']), (16, 20))
+        record, = matching.comparison_global_operand_specs(self.folder, self.target)
+        self.assertEqual(record['addend'], 16)
+        for change in ({'member_offset': 8, 'element_size': 8}, {'member_offset': 4, 'element_size': 6},
+                       {'member_offset': 4, 'element_size': 32}, {'member_offset': -1, 'element_size': 8},
+                       {'member_offset': True, 'element_size': 8}, {'member_offset': 4, 'element_size': 0},
+                       {'member_offset': 4}, {'element_size': 8}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                matching.comparison_global_operand_specs(self.folder, dict(
+                    self.target, comparison_global_operands=[dict(self.item, **change)]))
+
+    @staticmethod
+    def coff(symbol, global_symbol, addend=16, kind=6, target_index=1):
+        code = b'\x81\xff' + struct.pack('<I', addend) + b'\xc3'
+        names = symbol.encode() + b'\0' + global_symbol.encode() + b'\0'
+        table = 60 + len(code) + 10
+        header = struct.pack('<HHIIIHH', 0x14c, 1, 0, table, 2, 0, 0)
+        section = struct.pack('<8sIIIIIIHHI', b'.text', 0, 0, len(code), 60,
+                              60 + len(code), 0, 1, 0, 0x60000020)
+        function = struct.pack('<IIIhHBB', 0, 4, 0, 1, 0x20, 2, 0)
+        global_entry = struct.pack('<IIIhHBB', 0, 5 + len(symbol), 0, 0, 0, 2, 0)
+        return (header + section + code + struct.pack('<IIH', 2, target_index, kind) +
+                function + global_entry + struct.pack('<I', len(names) + 4) + names)
+
+    def test_coff_preserves_symbol_addend_and_relocation_kind(self):
+        path = self.folder / 'generated.obj'
+        path.write_bytes(self.coff(self.caller, self.symbol))
+        raw, relocations = matching.comparison_operand_coff(path, self.caller)
+        self.assertEqual(raw, b'\x81\xff\x10\0\0\0\xc3')
+        self.assertEqual(relocations, [(2, 6, self.symbol, 16)])
+        for data in (self.coff(self.caller, self.symbol, target_index=2),
+                     self.coff(self.caller, self.symbol)[:-1],
+                     self.coff('?Wrong@@YAXXZ', self.symbol)):
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                path.write_bytes(data)
+                matching.comparison_operand_coff(path, self.caller)
+
+    def test_only_exact_address_comparisons_are_admitted(self):
+        for opcode, register, immediate in ((b'\x3d', 'eax', 1), (b'\x81\xff', 'edi', 2)):
+            self.assertEqual(matching.comparison_array_end_instruction(
+                opcode + struct.pack('<I', 0x501010), 0x501010), (immediate, register))
+        for raw in (b'\x81\xff' + struct.pack('<I', 0x501014),  # past the real end
+                    b'\x81\x3d' + struct.pack('<II', 0x501010, 0),  # dereference
+                    b'\x68' + struct.pack('<I', 0x501010),  # not a comparison
+                    b'\xb8' + struct.pack('<I', 0x501010), b'\x83\xff\x10', b''):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                matching.comparison_array_end_instruction(raw, 0x501010)
+
+
+    def test_rebuilt_sites_come_from_exact_relocations(self):
+        value, symbol = 0x00601010, self.symbol
+        code = (b'\x90' + b'\x81\xf9' + struct.pack('<I', 16) + b'\x3d' + struct.pack('<I', 16) +
+                b'\xb8' + struct.pack('<I', 16) + b'\xc3')
+        linked = [(0x00402000, b'\x90'), (0x00402001, b'\x81\xf9' + struct.pack('<I', value)),
+                  (0x00402007, b'\x3d' + struct.pack('<I', value)),
+                  (0x0040200c, b'\xb8' + struct.pack('<I', value)), (0x00402011, b'\xc3')]
+        relocations = [(3, 6, symbol, 16), (8, 6, symbol, 16), (13, 6, symbol, 16)]
+        self.assertEqual(matching.comparison_array_end_sites(
+            linked, 0x00402000, code, relocations, symbol, 16, value), [(1, 'ecx'), (7, 'eax')])
+        for changed in ([(3, 6, symbol, 12), (8, 6, symbol, 16)],  # another addend
+                        [(3, 20, symbol, 16), (8, 6, symbol, 16)],  # relative, not DIR32
+                        [(3, 6, '?Adjacent@@3PADA', 16), (8, 6, symbol, 16)],  # adjacent entity
+                        [(2, 6, symbol, 16), (8, 6, symbol, 16)]):  # not the immediate
+            with self.subTest(relocations=changed):
+                self.assertEqual(matching.comparison_array_end_sites(
+                    linked, 0x00402000, code, changed, symbol, 16, value), [(7, 'eax')])
+        # The linked address must be the array end, and the opcode must agree with the object.
+        self.assertEqual(matching.comparison_array_end_sites(
+            linked, 0x00402000, code, relocations, symbol, 16, value + 4), [])
+        self.assertEqual(matching.comparison_array_end_sites(
+            linked, 0x00402000, b'\x90\x81\xfe' + code[3:], relocations, symbol, 16, value),
+            [(7, 'eax')])
 
 if __name__ == '__main__':
     unittest.main()

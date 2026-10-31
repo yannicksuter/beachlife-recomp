@@ -19,6 +19,7 @@ from pathlib import Path
 import secrets
 import subprocess
 import tempfile
+import time
 
 
 def run(*args, **options):
@@ -27,6 +28,20 @@ def run(*args, **options):
 
 def output(*args):
     return subprocess.check_output([str(arg) for arg in args], text=True)
+
+
+def retry(*args, attempts=5, delay=30):
+    """Stapling fetches the ticket from Apple's servers, which drop connections at times."""
+    for attempt in range(1, attempts + 1):
+        code = subprocess.run([str(arg) for arg in args]).returncode
+        if code == 0:
+            return
+        if attempt == attempts:
+            raise subprocess.CalledProcessError(code, [str(arg) for arg in args])
+        wait = delay * attempt
+        print(f'{" ".join(map(str, args[:3]))} failed with {code}; retrying in {wait} s '
+              f'({attempt} of {attempts - 1} retries)', flush=True)
+        time.sleep(wait)
 
 
 class Keychain:
@@ -83,8 +98,8 @@ def notarize(item, folder):
     if result.get('status') != 'Accepted':
         subprocess.run(['xcrun', 'notarytool', 'log', result.get('id', ''), *map(str, credentials)])
         raise SystemExit(f"Notarization {result.get('status')}: {result.get('message', '')}")
-    run('xcrun', 'stapler', 'staple', item)
-    run('xcrun', 'stapler', 'validate', item)
+    retry('xcrun', 'stapler', 'staple', item)
+    retry('xcrun', 'stapler', 'validate', item)
     kind = 'execute' if item.suffix == '.app' else 'open'
     extra = [] if kind == 'execute' else ['--context', 'context:primary-signature']
     run('spctl', '--assess', '--type', kind, *extra, '--verbose=2', item)

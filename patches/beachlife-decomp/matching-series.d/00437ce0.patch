@@ -21,67 +21,28 @@ index 0000000..6f4c0e5
 +0x00437df0,function,189,?CreateNode@WorldRepairAssignmentList@@QAEPAU?$WorldRepairNode@UWorldRepairAssignment@@@@ABQAUWorldRepairAssignment@@@Z
 diff --git a/src/match_00437ce0.cpp b/src/match_00437ce0.cpp
 new file mode 100644
-index 0000000..ad80bd2
+index 0000000..8e1b468
 --- /dev/null
 +++ b/src/match_00437ce0.cpp
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,41 @@
 +#include "startup_building_status.h"
 +#include "startup_world_repairs.h"
-+#include "pool_chunk_acquire.h"
-+#include "pool_lock_acquire.h"
-+#include "pool_lock_guard.h"
-+#include "pool_return.h"
++#include "node_storage.h"
 +
 +#include <new>
 +
 +template <class Node, class Value>
 +Node* AllocatePointerListNode_00437ce0(const Value& value, Value Node::* payload)
 +{
-+    const unsigned int block_size = (sizeof(Node) + 7u) & ~7u;
-+    const unsigned int bucket_index = (block_size - 1) / 8;
-+    PoolChunkLink* block;
-+    {
-+        AcquirePoolLock(&pool_lock_word);
-+        PoolLockGuard guard;
-+        block = pool_chunk_buckets[bucket_index];
-+        if (block)
-+        {
-+            pool_chunk_buckets[bucket_index] = block->next;
-+        }
-+        else
-+        {
-+            int count = 20;
-+            // Restore the storage-provider element type before any arithmetic.
-+            unsigned char* chunk = reinterpret_cast<unsigned char*>(AcquirePoolChunk(block_size, count));
-+            block = reinterpret_cast<PoolChunkLink*>(chunk);
-+            if (count != 1)
-+            {
-+                PoolChunkLink* next = ::new (chunk + block_size) PoolChunkLink;
-+                pool_chunk_buckets[bucket_index] = next;
-+                for (int index = 1;; ++index)
-+                {
-+                    PoolChunkLink* current = next;
-+                    if (count - 1 == index)
-+                    {
-+                        current->next = 0;
-+                        break;
-+                    }
-+                    next = ::new (chunk + block_size * (index + 1)) PoolChunkLink;
-+                    current->next = next;
-+                }
-+            }
-+        }
-+    }
-+    // Default initialization begins the complete native object lifetime without
-+    // initializing its links; payload construction still follows guard cleanup.
-+    Node* result = ::new (static_cast<void*>(block)) Node;
++    void* block = NodeAllocator::allocate(sizeof(Node));
++    Node* result = static_cast<Node*>(block);
 +    try
 +    {
 +        ::new (&(result->*payload)) Value(value);
 +    }
 +    catch (...)
 +    {
-+        ReturnPool(result, block_size);
++        NodeAllocator::deallocate(result, sizeof(Node));
 +        throw;
 +    }
 +    return result;
