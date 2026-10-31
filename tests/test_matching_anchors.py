@@ -251,6 +251,26 @@ class ComparisonAnchorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'CSV identity'):
             matching.comparison_anchor_specs(self.metadata, self.target)
 
+    def test_stlport_opt_in_is_explicit_and_recorded(self):
+        for value in (False, 1, 'true', None):
+            with self.subTest(value=value):
+                target = copy.deepcopy(self.target)
+                target['comparison_anchors'][0]['stlport'] = value
+                with self.assertRaisesRegex(ValueError, 'declaration'):
+                    matching.comparison_anchor_specs(self.metadata, target)
+        self.anchor['stlport'] = True
+        specs = matching.comparison_anchor_specs(self.metadata, self.target)
+        paths, records = matching.generate_comparison_anchors(
+            self.metadata, self.source, self.directory / 'output', specs)
+        self.assertTrue(records[0]['stlport'])
+        self.assertFalse(records[0]['qualified'])
+        # The opt-in changes the compile environment, never the generated definition.
+        del self.anchor['stlport']
+        plain = matching.generate_comparison_anchors(
+            self.metadata, self.source, self.directory / 'plain', [self.anchor])
+        self.assertEqual(paths[0].read_text(), plain[0][0].read_text())
+        self.assertNotIn('stlport', plain[1][0])
+
     def test_source_tree_and_unignored_destinations_are_rejected(self):
         specs = matching.comparison_anchor_specs(self.metadata, self.target)
         with self.assertRaisesRegex(ValueError, 'outside reconstructed source'):

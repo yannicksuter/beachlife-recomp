@@ -334,6 +334,35 @@ class MatchingInputTests(unittest.TestCase):
         self.assertEqual(pairs, [(0x1020, 0x2020), (0x1060, 0x2060)])
         self.assertEqual(records[0], specs[0] | {'bound': 'map'})
 
+    def test_annotated_copies_that_link_kept_apart_are_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'list.cpp').write_text(
+                '// LIBRARY: BEACHLIFE 0x1020\nvoid List::Erase()\n{\n}\n'
+                '// LIBRARY: BEACHLIFE 0x1060\n// FUNCTION: BEACHLIFE 0x1060\nvoid Stacked()\n{\n}\n')
+            (root / 'owner.cpp').write_text(
+                '// LIBRARY: BEACHLIFE 0x1020 FOLDED\nvoid Owner::Erase()\n{\n}\n'
+                '// FUNCTION: BEACHLIFE 0x1040 FOLDED\n// comment between\nvoid Owner::Begin()\n{\n}\n')
+            (root / 'status.cpp').write_text(
+                '// FUNCTION: BEACHLIFE 0x1040 FOLDED\nvoid Status::Begin()\n{\n}\n'
+                '// FUNCTION: BEACHLIFE 0x1080 FOLDED\nvoid Status::Missing()\n{\n}\n'
+                '// FUNCTION: BEACHLIFE 0x1080 FOLDED\nvoid Status::MissingToo()\n{\n}\n')
+            rows = [{'address': '0x1020', 'type': 'library', 'size': '8', 'symbol': '?Erase@List@@QAEXXZ'},
+                    {'address': '0x1040', 'type': 'function', 'size': '4', 'symbol': '?Begin@Owner@@QAEXXZ'},
+                    {'address': '0x1060', 'type': 'function', 'size': '4', 'symbol': '?Stacked@@YAXXZ'},
+                    {'address': '0x1080', 'type': 'global', 'size': '4', 'symbol': '?Missing@Status@@QAEXXZ'}]
+            rebuilt = {'?Erase@List@@QAEXXZ': 0x2020, '?Begin@Owner@@QAEXXZ': 0x2040, '?Stacked@@YAXXZ': 0x2060,
+                       '?Missing@Status@@QAEXXZ': 0x2080}
+            publics = {0x2020: {'?Erase@List@@QAEXXZ'}, 0x2040: {'?Begin@Owner@@QAEXXZ', '?Begin@Status@@QAEXXZ'},
+                       0x2060: {'?Stacked@@YAXXZ'}, 0x2080: {'?Missing@Status@@QAEXXZ'}}
+            paths = [root / name for name in ('list.cpp', 'owner.cpp', 'status.cpp')]
+            # Only 0x1020: two bodies, LINK kept the identity alone. 0x1040 folded,
+            # 0x1060 is one body with stacked annotations, 0x1080 has no code identity.
+            self.assertEqual(matching.unfolded_annotations(paths, rows, rebuilt, publics), [
+                {'address': '0x00001020', 'symbol': '?Erase@List@@QAEXXZ', 'recomp': '0x00002020',
+                 'sources': ['list.cpp', 'owner.cpp']}])
+            self.assertEqual(matching.unfolded_annotations(paths, rows, {}, publics), [])
+
     def test_map_public_names_keep_every_name_at_an_address(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'generated.map'
@@ -399,7 +428,8 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
                                     build=self.build, run=self.compare)
         # Policies run reccmp in process through the interpreter beside it.
         (self.root / 'comparator').mkdir()
-        (self.root / 'comparator/python').write_text('# generated interpreter placeholder\n')
+        interpreter = 'python.exe' if sys.platform == 'win32' else 'python'
+        (self.root / 'comparator' / interpreter).write_text('# generated interpreter placeholder\n')
         self.sdk_header = self.root / 'compiler/Include/FIXTURE.H'
         self.sdk_header.parent.mkdir(parents=True)
         self.sdk_header.write_bytes(b'// generated SDK declaration fixture\n')

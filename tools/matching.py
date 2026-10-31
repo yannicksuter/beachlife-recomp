@@ -809,9 +809,11 @@ def anchor_parameter(parameter, name=''):
 def anchor_declaration(item):
     """Validate the signature shape; the compiler checks the shared declaration."""
     required = {'address', 'size', 'name', 'symbol', 'header', 'kind', 'return_type', 'parameters'}
-    optional = {'calling_convention', 'qualifier'}
+    # stlport: true compiles the anchor like an stlport_sources translation
+    # unit, for a header whose closure reaches the STLport allocator.
+    optional = {'calling_convention', 'qualifier', 'stlport'}
     if (not isinstance(item, dict) or not required <= set(item) or set(item) - required - optional or
-            not isinstance(item['kind'], str) or
+            item.get('stlport', True) is not True or not isinstance(item['kind'], str) or
             not anchor_named_type(item['name']) or not isinstance(item['return_type'], str)):
         return False
     kinds = ('void', 'null-pointer', 'false', 'integer', 'float', 'double', 'aggregate', 'null-callback')
@@ -1129,7 +1131,7 @@ def bind_folded_identities(specs, pdb_publics, original_match, rebuilt_match):
 
 def compare_global_operands(configuration, arguments):
     """Run pinned reccmp with instruction-scoped operand names and folded code
-    identities bound through their own PDB publics; images stay unchanged."""
+    identities bound at their LINK map address; images stay unchanged."""
     import reccmp
     import reccmp.compare.core as reccmp_core
     from reccmp.compare.functions import FunctionComparator
@@ -1278,7 +1280,7 @@ def global_operand_command(tool, metadata, target, source, sources, folder, comm
                      if folded else {})})
     interpreter = Path(tool.reccmp).parent / ('python.exe' if os.name == 'nt' else 'python')
     if not interpreter.is_file():
-        raise ValueError('Global operands require the Python interpreter beside reccmp-reccmp.')
+        raise ValueError('Comparator policies require the Python interpreter beside reccmp-reccmp.')
     return ([str(interpreter), str(Path(__file__).resolve()), 'compare-global-operands',
              str(config), *command[1:]], validation if specs else None,
             folded_validation if folded else None)
@@ -1295,6 +1297,36 @@ def annotated_function_addresses(paths):
         for match in FUNCTION_ANNOTATION.finditer(path.read_text(errors='replace')):
             found.setdefault(int(match[1], 16), path)
     return found
+
+
+def unfolded_annotations(paths, metadata_rows, rebuilt, publics):
+    """Original addresses that several prepared bodies annotate but LINK kept apart.
+
+    Several annotations name one original address when the original shares a
+    body by identical-code folding (FOLDED copies). If the rebuilt copies
+    differ, for example through different inlining options, LINK cannot fold
+    them and callers of a copy name another function than the original. Each
+    record names the CSV identity at the address, the rebuilt address LINK gave
+    it, the only name there, and the annotating sources.
+    """
+    bodies = {}
+    for path in paths:
+        text = path.read_text(errors='replace')
+        for match in FUNCTION_ANNOTATION.finditer(text):
+            # Annotations stacked over one definition name one body.
+            body = re.compile(r'^[ \t]*(?!//)\S', re.M).search(text, match.end())
+            bodies.setdefault(int(match[1], 16), set()).add((path.name, body.start() if body else -1))
+    symbols = {int(row['address'], 16): row['symbol'] for row in metadata_rows
+               if row.get('type') in FOLDED_ALIAS_TYPES and row.get('symbol')}
+    result = []
+    for address, found in sorted(bodies.items()):
+        symbol = symbols.get(address)
+        recomp = rebuilt.get(symbol) if symbol else None
+        if len(found) < 2 or recomp is None or publics.get(recomp, set()) - {symbol}:
+            continue
+        result.append({'address': f'0x{address:08x}', 'symbol': symbol, 'recomp': f'0x{recomp:08x}',
+                       'sources': sorted(name for name, _ in found)})
+    return result
 
 
 def generate_comparison_anchors(metadata, source, folder, specs):
@@ -1368,6 +1400,7 @@ def generate_comparison_anchors(metadata, source, folder, specs):
         records.append({'address': item['address'], 'original_bytes': item['size'],
                         'name': item['name'], 'symbol': item['symbol'],
                         'source': str(path.relative_to(ROOT)), 'sha256': digest(path),
+                        **({'stlport': True} if item.get('stlport') else {}),
                         'qualified': False, 'image_execution_permitted': False})
     return paths, records
 
@@ -1378,17 +1411,19 @@ def lifetime_identity_kind(name, symbol):
     VC6 decorates a constructor ??0Class@@<access>AE@<parameters>Z and a
     destructor ??1Class@@<access>AE@XZ; only the class name is taken from it.
     A scalar deleting destructor needs no identity: VC6 generates it as a
-    COMDAT wherever the class vtable is emitted.
+    COMDAT wherever the class vtable is emitted. A nested class is decorated
+    innermost scope first: Outer::Inner::~Inner is ??1Inner@Outer@@QAE@XZ.
     """
     parts = name.split('::') if isinstance(name, str) else []
-    if (len(parts) != 2 or not re.fullmatch(ANCHOR_IDENTIFIER, parts[0]) or
-            parts[0] in ANCHOR_KEYWORDS or not isinstance(symbol, str)):
+    scopes = parts[:-1]
+    if (len(parts) < 2 or not isinstance(symbol, str) or
+            any(not re.fullmatch(ANCHOR_IDENTIFIER, scope) or scope in ANCHOR_KEYWORDS for scope in scopes)):
         return None
-    owner = re.escape(parts[0])
-    if parts[1] == parts[0] and re.fullmatch(r'\?\?0' + owner + r'@@[AIQ]AE@(?:XZ|[^,\s@?][^,\s]*@Z)',
-                                             symbol):
+    owner = '@'.join(re.escape(scope) for scope in reversed(scopes))
+    if parts[-1] == scopes[-1] and re.fullmatch(r'\?\?0' + owner + r'@@[AIQ]AE@(?:XZ|[^,\s@?][^,\s]*@Z)',
+                                                symbol):
         return 'constructor'
-    if parts[1] == '~' + parts[0] and re.fullmatch(r'\?\?1' + owner + r'@@[AIQEMU]AE@XZ', symbol):
+    if parts[-1] == '~' + scopes[-1] and re.fullmatch(r'\?\?1' + owner + r'@@[AIQEMU]AE@XZ', symbol):
         return 'destructor'
     return None
 
@@ -1482,10 +1517,11 @@ def generate_lifetime_identities(metadata, source, folder, specs):
         if not header.is_relative_to(source.resolve()) or not header.is_file():
             raise ValueError('Lifetime identity header is not an actual source input.')
         text = header.read_text(errors='replace')
-        owner = item['name'].split('::')[0]
+        scopes = item['name'].split('::')[:-1]
         declaration = {'constructor': r'(?<![A-Za-z_0-9~])', 'destructor': r'~'}[
-                           lifetime_identity_kind(item['name'], item['symbol'])] + owner + r'[ \t]*\('
-        if (not re.search(r'\b(?:struct|class)[ \t]+' + owner + r'\b[^;]*?\{', text) or
+                           lifetime_identity_kind(item['name'], item['symbol'])] + scopes[-1] + r'[ \t]*\('
+        # Every enclosing class of a nested one is defined in the same header.
+        if (any(not re.search(r'\b(?:struct|class)[ \t]+' + scope + r'\b[^;]*?\{', text) for scope in scopes) or
                 not re.search(declaration, text)):
             raise ValueError(f'{item["header"]} does not declare {item["name"]}.')
     destination.mkdir(parents=True, exist_ok=True)
@@ -1658,8 +1694,10 @@ def game(tool, args):
         folder.mkdir(parents=True, exist_ok=True)
         target_path = folder / 'target.json'
         save(target_path, target)
-    anchors, anchor_records = generate_comparison_anchors(
-        metadata, source, folder, comparison_anchor_specs(metadata, target))
+    anchor_specs = comparison_anchor_specs(metadata, target)
+    anchors, anchor_records = generate_comparison_anchors(metadata, source, folder, anchor_specs)
+    # Opted-in anchors compile with the same STLport include and define.
+    stlport_units = [*stlport_sources, *(path for path, item in zip(anchors, anchor_specs) if item.get('stlport'))]
     lifetime_objects, lifetime_records = generate_lifetime_identities(
         metadata, source, folder, comparison_lifetime_specs(metadata, target))
     inputs = set([target_path, *sources, *anchors, *lifetime_objects, *source.rglob('*.h'),
@@ -1715,14 +1753,14 @@ def game(tool, args):
     source_flags = {support / 'operator_delete.cpp': ['/O1']}
     for path, flags in compile_options.items():
         source_flags.setdefault(path, []).extend(flags)
-    for path in stlport_sources:
+    for path in stlport_units:
         source_flags.setdefault(path, []).append('/D_STLP_NO_OWN_IOSTREAMS=1')
     binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, entry, *fixtures], 'BeachLife', link_flags,
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
                              '/I' + tool.native(source)],
                             source_flags=source_flags,
-                            **({'source_includes': {path: [stlport_include] for path in stlport_sources}}
-                               if stlport_sources else {}),
+                            **({'source_includes': {path: [stlport_include] for path in stlport_units}}
+                               if stlport_units else {}),
                             **({'anchor_symbols': {path: record['symbol'] for path, record in
                                                    zip(anchors, anchor_records)}} if anchors else {}))
     if verify_sdk_headers(metadata, tool.compiler.parent / 'Include') != sdk_headers:
@@ -1788,6 +1826,7 @@ def game(tool, args):
                  if row.get('type') in FOLDED_ALIAS_TYPES and row.get('symbol')}
     folding = {'publics': map_public_names(map_path)}
     folded_specs = folded_identity_specs(metadata_rows, rebuilt, folding['publics'])
+    unfolded = unfolded_annotations([*sources, *support_sources], metadata_rows, rebuilt, folding['publics'])
     command, operand_validation, folded_validation = global_operand_command(
         tool, metadata, target, source, sources, folder,
         [tool.reccmp, '--target', 'BEACHLIFE', '--json', str(reports / 'comparison.json'), '--no-color'],
@@ -1882,6 +1921,9 @@ def game(tool, args):
         if not folded_validation.is_file():
             raise ValueError('Comparator did not validate the folded identities.')
         result['comparison_folded_identities'] = json.loads(folded_validation.read_text())
+    if unfolded:
+        # Diagnostic only: such a copy shows up as a mismatching call operand.
+        result['comparison_unfolded_annotations'] = unfolded
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
     if any(item['normalized_match'] != 1 for item in functions):
