@@ -2141,6 +2141,11 @@ probing support.
 The comparison metadata binds the current PDB public alias of a shared empty
 function. Its complete one-byte extent and the caller's complete extent are
 preserved; folded aliases are checked against the actual linked contribution.
+When distinct original functions fold to one rebuilt address, every proven
+original operand uses that shared rebuilt identity, regardless of which original
+reccmp retained. Unmatched groups select the lowest original address first.
+The LINK map and retained PDB public must prove the fold; indirect operands,
+interior addresses and identities already matched elsewhere are not redirected.
 
 
 The matching profile reconstructs the complete 593-byte scenery-list population

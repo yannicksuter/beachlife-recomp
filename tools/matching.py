@@ -1116,10 +1116,11 @@ def bind_folded_identities(specs, pdb_publics, original_match, rebuilt_match):
     map names its symbol and another name at that rebuilt address, the PDB
     public that reccmp kept there is one of those map names, and no other
     original address holds the address. Returns one record per identity and
-    the pairs to match.
+    the pairs to match. Unmatched groups choose the lowest original address,
+    independently of metadata input order.
     """
     records, pairs, used = [], [], set()
-    for item in specs:
+    for item in sorted(specs, key=lambda item: (int(item['address'], 16), item['symbol'])):
         original, recomp = int(item['address'], 16), int(item['recomp'], 16)
         names, kept = set(item['names']), pdb_publics.get(recomp, set())
         matched = original_match(original)
@@ -1138,25 +1139,28 @@ def bind_folded_identities(specs, pdb_publics, original_match, rebuilt_match):
 
 
 def folded_operand_aliases(records, pdb_publics, rebuilt_match):
-    """Original identities whose folded rebuilt address another original holds.
+    """Bind every proven folded original operand to its shared rebuilt address.
 
     /OPT:ICF can give several registered originals one rebuilt address, and
     reccmp matches that address to one of them only; bind_folded_identities
-    then leaves the others unbound. An operand naming one of those others
+    then leaves the others unbound. An operand naming any of those originals
     (a call, or a pushed function address) is compared as that rebuilt
     address: the LINK map names the identity's own symbol there beside
     another name, the PDB public reccmp kept is one of those names, and the
-    address is matched to a different original. Returns {original: rebuilt}.
+    address is matched. Include the original that currently holds that address
+    too, so the operand bindings do not depend on which original reccmp kept.
+    Originals already matched elsewhere are never redirected.
+    Returns {original: rebuilt}.
     """
     aliases = {}
     for record in records:
-        if record['bound'] is not False:
+        if record['bound'] not in (False, 'map', 'reccmp'):
             continue
         original, recomp = int(record['address'], 16), int(record['recomp'], 16)
         names, kept = set(record['names']), pdb_publics.get(recomp, set())
         holder = rebuilt_match(recomp)
         if (record['symbol'] in names and names - {record['symbol']} and kept and kept <= names and
-                holder is not None and holder != original):
+                holder is not None):
             aliases[original] = recomp
     return aliases
 
@@ -1212,7 +1216,7 @@ def compare_global_operands(configuration, arguments):
         folded['aliases'] = folded_operand_aliases(
             folded['records'], folded['publics'], lambda address: matched(ImageId.RECOMP, address))
         for record in folded['records']:
-            if int(record['address'], 16) in folded['aliases']:
+            if record['bound'] is False and int(record['address'], 16) in folded['aliases']:
                 record['bound'] = 'operand'
         return result
 

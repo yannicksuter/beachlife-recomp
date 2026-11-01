@@ -329,8 +329,9 @@ class MatchingInputTests(unittest.TestCase):
                  spec(0x1090, '?Moved@@YAXXZ', 0x2200),           # the PDB kept another body there
                  spec(0x10a0, '?Erase@List@@QAEXXZ', 0x2020) | {'recomp': '0x00002300'}]  # no PDB public
         records, pairs = matching.bind_folded_identities(specs, pdb, original.get, rebuilt.get)
-        self.assertEqual([record['bound'] for record in records],
-                         ['map', 'reccmp', 'other', False, False, 'map', False, False, False, False])
+        expected = ['map', 'reccmp', 'other', False, False, 'map', False, False, False, False]
+        self.assertEqual({record['address']: record['bound'] for record in records},
+                         {item['address']: bound for item, bound in zip(specs, expected)})
         self.assertEqual(pairs, [(0x1020, 0x2020), (0x1060, 0x2060)])
         self.assertEqual(records[0], specs[0] | {'bound': 'map'})
 
@@ -346,7 +347,8 @@ class MatchingInputTests(unittest.TestCase):
                    record(0x10b0, '?Moved@@YAXXZ', 0x2100, ['?Moved@@YAXXZ', '?MovedToo@@YAXXZ']),  # PDB kept
                    record(0x10c0, '?Lone@@YAXXZ', 0x2200, ['?Lone@@YAXXZ', '?LoneToo@@YAXXZ']),     # unmatched
                    record(0x1500, '?Self@@YAXXZ', 0x2300, ['?Self@@YAXXZ', '?SelfToo@@YAXXZ'])]     # no PDB
-        self.assertEqual(matching.folded_operand_aliases(records, pdb, rebuilt.get), {0x1080: 0x2080})
+        self.assertEqual(matching.folded_operand_aliases(records, pdb, rebuilt.get),
+                         {0x1080: 0x2080, 0x1090: 0x2080})
         calls = []
         def original(address, exact=False, indirect=False):
             calls.append(('original', address, exact, indirect))
@@ -360,6 +362,56 @@ class MatchingInputTests(unittest.TestCase):
         self.assertEqual(lookup(0x1090, exact=True), 'original')
         self.assertEqual(calls, [('recomp', 0x2080, True, False), ('original', 0x1080, False, True),
                                  ('original', 0x1090, True, False)])
+
+    def test_folded_operand_bindings_do_not_depend_on_the_retained_original(self):
+        symbols = ['?Unresolved04@ScreenItem@@UAEXM@Z', '?Unresolved4c@ScreenItem@@UAEXI@Z']
+        addresses = [0x0049dbe0, 0x004a1160]
+        recomp = 0x00421000
+        specs = [{'address': hex(address), 'symbol': symbol, 'recomp': hex(recomp), 'names': symbols}
+                 for address, symbol in zip(addresses, symbols)]
+        for kept_symbol in symbols:
+            for holder in addresses:
+                for ordered in (specs, specs[::-1]):
+                    with self.subTest(kept=kept_symbol, holder=holder, order=ordered[0]['address']):
+                        original = {holder: recomp}
+                        rebuilt = {recomp: holder}
+                        pdb = {recomp: {kept_symbol}}
+                        records, pairs = matching.bind_folded_identities(
+                            ordered, pdb, original.get, rebuilt.get)
+                        self.assertEqual(pairs, [])
+                        aliases = matching.folded_operand_aliases(records, pdb, rebuilt.get)
+                        self.assertEqual(aliases, dict.fromkeys(addresses, recomp))
+                        def old_lookup(address, exact=False, indirect=False):
+                            return 'retained' if address == holder else 'unmatched'
+                        def new_lookup(address, exact=False, indirect=False):
+                            return 'retained' if address == recomp and exact else 'different'
+                        lookup = matching.folded_operand_lookup(old_lookup, new_lookup, aliases)
+                        self.assertEqual([lookup(address) for address in addresses], ['retained'] * 2)
+                        self.assertEqual(lookup(0x004a1161), 'unmatched')
+                        self.assertEqual(lookup(0x004a2000), 'unmatched')
+                        self.assertEqual(lookup(addresses[1], indirect=True),
+                                         old_lookup(addresses[1], indirect=True))
+
+    def test_unmatched_folded_group_selects_the_lowest_original_in_either_order(self):
+        names = ['?First@@YAXXZ', '?Second@@YAXXZ']
+        specs = [{'address': hex(address), 'symbol': symbol, 'recomp': '0x3000', 'names': names}
+                 for address, symbol in zip((0x1000, 0x2000), names)]
+        for ordered in (specs, specs[::-1]):
+            records, pairs = matching.bind_folded_identities(
+                ordered, {0x3000: {names[1]}}, {}.get, {}.get)
+            self.assertEqual(pairs, [(0x1000, 0x3000)])
+            self.assertEqual(matching.folded_operand_aliases(
+                records, {0x3000: {names[1]}}, {0x3000: 0x1000}.get),
+                {0x1000: 0x3000, 0x2000: 0x3000})
+
+    def test_folded_operand_binding_does_not_redirect_an_original_matched_elsewhere(self):
+        names = ['?First@@YAXXZ', '?Second@@YAXXZ']
+        specs = [{'address': '0x1000', 'symbol': names[0], 'recomp': '0x3000', 'names': names}]
+        pdb = {0x3000: {names[1]}}
+        records, pairs = matching.bind_folded_identities(
+            specs, pdb, {0x1000: 0x4000}.get, {0x3000: 0x2000}.get)
+        self.assertEqual(pairs, [])
+        self.assertEqual(matching.folded_operand_aliases(records, pdb, {0x3000: 0x2000}.get), {})
 
     def test_annotated_copies_that_link_kept_apart_are_reported(self):
         with tempfile.TemporaryDirectory() as directory:
