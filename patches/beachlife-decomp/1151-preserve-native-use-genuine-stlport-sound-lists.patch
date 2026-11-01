@@ -1,0 +1,151 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 12d3d59..b227e9c 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -4478,9 +4478,9 @@ typedef char SharedWindowAudioState_bank_f4Offset[(offsetof(WindowAudioState, ba
+ 
+ typedef char SharedGameObjectSoundSize[(sizeof(GameObjectSound) == 0x30) ? 1 : -1];
+ typedef char SharedGamePointSoundSize[(sizeof(GamePointSound) == 0x40) ? 1 : -1];
+-typedef char SharedGameSoundNodeSize[(sizeof(WorldList<GamePointSound*>::Node) == 0xc) ? 1 : -1];
+-typedef char SharedGameSoundIteratorSize[(sizeof(WorldList<GamePointSound*>::Iterator) == 0x4) ? 1 : -1];
+-typedef char SharedGameSoundListSize[(sizeof(GamePointSoundList) == 0x4) ? 1 : -1];
++typedef char SharedGameSoundNodeSize[(sizeof(GameSoundNode) == 0xc) ? 1 : -1];
++typedef char SharedGameSoundIteratorSize[(sizeof(GameSoundIterator) == 0x4) ? 1 : -1];
++typedef char SharedGameSoundListSize[(sizeof(GameSoundList) == 0x4) ? 1 : -1];
+ typedef char SharedGamePointSoundListSize[(sizeof(GamePointSoundList) == 0x4) ? 1 : -1];
+ typedef char SharedGameObjectSoundListSize[(sizeof(GameObjectSoundList) == 0x4) ? 1 : -1];
+ typedef char SharedGameUpdatePairSize[(sizeof(GameUpdatePair) == 0xc) ? 1 : -1];
+diff --git b/src/startup_game_update_pair.h a/src/startup_game_update_pair.h
+index 992d99b..d005ecd 100644
+--- b/src/startup_game_update_pair.h
++++ a/src/startup_game_update_pair.h
+@@ -2,7 +2,6 @@
+ #define STARTUP_GAME_UPDATE_PAIR_H
+ 
+ #include "startup_sound_position.h"
+-#include "startup_world_list.h"
+ 
+ struct GameObjectSound
+ {
+@@ -28,8 +27,54 @@ struct GamePointSound
+     float retry_delay_3c;
+ };
+ 
+-typedef WorldList<GamePointSound*>::Type GamePointSoundList;
+-typedef WorldList<GameObjectSound*>::Type GameObjectSoundList;
++struct GameSoundNode
++{
++    GameSoundNode* next;
++    GameSoundNode* previous;
++    void* sound;
++};
++
++struct GameSoundIterator
++{
++    GameSoundNode* node;
++    GameSoundIterator operator++(int);
++};
++struct GameSoundList
++{
++    GameSoundNode* head;
++    GameSoundIterator Erase(GameSoundIterator position);
++};
++struct GameSoundAllocator
++{
++    GameSoundAllocator();
++    ~GameSoundAllocator();
++};
++struct GamePointSoundListBase : GameSoundList
++{
++    GamePointSoundListBase(const GameSoundAllocator& allocator, GameSoundNode* initial);
++    ~GamePointSoundListBase();
++};
++struct GameObjectSoundListBase : GameSoundList
++{
++    explicit GameObjectSoundListBase(const GameSoundAllocator& allocator);
++    ~GameObjectSoundListBase();
++};
++struct GamePointSoundList : GamePointSoundListBase
++{
++    explicit GamePointSoundList(const GameSoundAllocator& allocator = GameSoundAllocator());
++    ~GamePointSoundList();
++    GameSoundIterator Insert(GameSoundIterator position, GamePointSound* const& sound);
++    static void FreeNode(GameSoundNode* node);
++    void Clear();
++};
++struct GameObjectSoundList : GameObjectSoundListBase
++{
++    explicit GameObjectSoundList(const GameSoundAllocator& allocator = GameSoundAllocator());
++    ~GameObjectSoundList();
++    GameSoundIterator Insert(GameSoundIterator position, GameObjectSound* const& sound);
++    static void FreeNode(GameSoundNode* node);
++    void Clear();
++};
+ 
+ struct GameUpdatePair;
+ extern GameUpdatePair* game_update_pair;
+@@ -71,4 +116,6 @@ public:
+ 
+ extern const float game_sound_stop_fade; // 0x004f4d2c.
+ extern const float game_sound_retry_delay;
++GameSoundNode* __stdcall CreatePointSoundNode(GamePointSound* const& sound);   // 0x004d2f00; RET4.
++GameSoundNode* __stdcall CreateObjectSoundNode(GameObjectSound* const& sound); // 0x004d2fc0; RET4.
+ #endif
+diff --git b/src/startup_world_list.h a/src/startup_world_list.h
+deleted file mode 100644
+index b225ccf..0000000
+--- b/src/startup_world_list.h
++++ /dev/null
+@@ -1,52 +0,0 @@
+-#ifndef STARTUP_WORLD_LIST_H
+-#define STARTUP_WORLD_LIST_H
+-
+-#include <new>
+-
+-#ifdef _STLPORT_VERSION
+-#include <list>
+-
+-template <class T>
+-struct WorldList
+-{
+-    typedef std::list<T> Type;
+-    typedef typename std::list<T>::iterator Iterator;
+-    typedef std::_List_node<T> Node;
+-};
+-#else
+-struct WorldListLayout
+-{
+-private:
+-    WorldListLayout();
+-    WorldListLayout(const WorldListLayout&);
+-    ~WorldListLayout();
+-    WorldListLayout& operator=(const WorldListLayout&);
+-    void* head_;
+-};
+-
+-struct WorldListIteratorLayout
+-{
+-private:
+-    WorldListIteratorLayout();
+-    WorldListIteratorLayout(const WorldListIteratorLayout&);
+-    ~WorldListIteratorLayout();
+-    WorldListIteratorLayout& operator=(const WorldListIteratorLayout&);
+-    void* node_;
+-};
+-
+-struct WorldListNodeLayout
+-{
+-    void* words_[3];
+-};
+-
+-// Declaration-only units retain the x86 layout, not a second implementation.
+-template <class T>
+-struct WorldList
+-{
+-    typedef WorldListLayout Type;
+-    typedef WorldListIteratorLayout Iterator;
+-    typedef WorldListNodeLayout Node;
+-};
+-#endif
+-
+-#endif
