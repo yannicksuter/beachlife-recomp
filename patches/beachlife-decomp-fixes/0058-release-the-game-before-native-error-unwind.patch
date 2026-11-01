@@ -1,0 +1,42 @@
+diff --git a/src/winmain.cpp b/src/winmain.cpp
+index a36a49e..f0f41be 100644
+--- a/src/winmain.cpp
++++ b/src/winmain.cpp
+@@ -1,5 +1,6 @@
+ #include <windows.h>
+ #include "startup_application.h"
++#include <memory>
+ #include <stdio.h>
+ 
+ // FUNCTION: BEACHLIFE 0x004a07e0
+@@ -63,7 +64,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
+ 
+     if (first_instance && mmx)
+     {
+-        StartupConfig* config = new StartupConfig("data/script/gameparameters.pis");
++        std::unique_ptr<StartupConfig> config(new StartupConfig("data/script/gameparameters.pis"));
+         windowed = false;
+ 
+         WNDCLASSEXA window_class;
+@@ -118,7 +119,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
+         UpdateWindow(window);
+         CoInitialize(0);
+ 
+-        ScreenRequestGamePrefix* game = new ScreenRequestGamePrefix(instance, window);
++        // Native host failures throw through the loop. Release game-owned host
++        // resources before the outer runtime tears down SDL.
++        std::unique_ptr<ScreenRequestGamePrefix> game(new ScreenRequestGamePrefix(instance, window));
+         MSG message;
+         ZeroMemory(&message, sizeof(message));
+         while (message.message != WM_QUIT)
+@@ -139,8 +142,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
+             startup_frame_clock->value_20 = static_cast<int>(profiler->elapsed) / 1000;
+         }
+ 
+-        delete game;
+-        delete config;
++        game.reset();
++        config.reset();
+         CoUninitialize();
+         UnregisterClassA("app", window_class.hInstance);
+         ReleaseMutex(mutex);
