@@ -1,0 +1,176 @@
+diff --git a/src/startup_variable_catalog_parse.cpp b/src/startup_variable_catalog_parse.cpp
+index 8c6ca243e865e0aad87b4b669df3efee37c0b4f1..8287ea6b4cb4451472a8eae9667ebc30fb33fe86 100644
+--- a/src/startup_variable_catalog_parse.cpp
++++ b/src/startup_variable_catalog_parse.cpp
+@@ -4,21 +4,11 @@
+ #include <cstdlib>
+ #include <cstring>
+ 
+-static unsigned int& CatalogWord(void* base, unsigned int offset)
+-{
+-    return *reinterpret_cast<unsigned int*>(static_cast<unsigned char*>(base) + offset);
+-}
+-
+-static unsigned char* CatalogRecord(VariableCatalog* catalog, unsigned int offset, unsigned int stride, unsigned int index)
+-{
+-    return CatalogRecordAddress(catalog, offset, stride, index);
+-}
+-
+ static unsigned char* FindCatalogRecord(VariableCatalog* catalog, unsigned int count_offset, unsigned int offset, unsigned int stride, const char* name)
+ {
+-    for (unsigned int index = 0; index < CatalogWord(catalog, count_offset); ++index)
++    for (unsigned int index = 0; index < CatalogField<unsigned int>(catalog, count_offset); ++index)
+     {
+-        unsigned char* record = CatalogRecord(catalog, offset, stride, index);
++        unsigned char* record = CatalogRecordAddress(catalog, offset, stride, index);
+         if (strcmp(reinterpret_cast<char*>(record + 4), name) == 0)
+             return record;
+     }
+@@ -27,9 +17,9 @@ static unsigned char* FindCatalogRecord(VariableCatalog* catalog, unsigned int c
+ 
+ static unsigned char* BeginCatalogRecord(VariableCatalog* catalog, unsigned int count_offset, unsigned int offset, unsigned int stride, const char* name)
+ {
+-    unsigned int id = CatalogWord(catalog, count_offset);
+-    unsigned char* record = CatalogRecord(catalog, offset, stride, id);
+-    CatalogWord(record, 0) = id;
++    unsigned int id = CatalogField<unsigned int>(catalog, count_offset);
++    unsigned char* record = CatalogRecordAddress(catalog, offset, stride, id);
++    CatalogField<unsigned int>(record, 0) = id;
+     strcpy(reinterpret_cast<char*>(record + 4), name);
+     return record;
+ }
+@@ -44,25 +34,34 @@ static unsigned int NextCatalogValue(const char* data, unsigned int index)
+ // FUNCTION: BEACHLIFE 0x0044bd80
+ void VariableCatalog::ParseStaff(const char* key, const char* name, const char* gender, const char* wage, const char* resource, const char* role, const char* script, const char* base_wage, const char* value210, const char* value214, const char* morale, const char* shift_start, const char* shift_end)
+ {
+-    unsigned char* record = BeginCatalogRecord(this, 0x14, 0x384c0, 0x224, key);
++    unsigned int id = CatalogField<unsigned int>(this, 0x14);
++    unsigned char* record = CatalogRecordAddress(this, 0x384c0, 0x224, id);
++    CatalogField<unsigned int>(record, 0) = id;
++    strcpy(reinterpret_cast<char*>(record + 4), key);
+     strcpy(reinterpret_cast<char*>(record + 0x44), name);
+-    if (*gender == 'M')
+-        CatalogWord(record, 0xc4) = 0;
+-    else if (*gender == 'F')
+-        CatalogWord(record, 0xc4) = 1;
+-    else
++    switch (*gender)
++    {
++    case 'M':
++        CatalogField<unsigned int>(record, 0xc4) = 0;
++        break;
++    case 'F':
++        CatalogField<unsigned int>(record, 0xc4) = 1;
++        break;
++    default:
+         StartupFatal("WorldParams::AddStaff - sex isn't M or F - %s", key);
+-    CatalogWord(record, 0xc8) = atoi(wage);
++        break;
++    }
++    CatalogField<unsigned int>(record, 0xc8) = atoi(wage);
+     strcpy(reinterpret_cast<char*>(record + 0xcc), resource);
+     strcpy(reinterpret_cast<char*>(record + 0x1cc), role);
+     strcpy(reinterpret_cast<char*>(record + 0x1ec), script);
+-    CatalogWord(record, 0x20c) = atoi(base_wage);
+-    *reinterpret_cast<float*>(record + 0x210) = static_cast<float>(atof(value210));
+-    *reinterpret_cast<float*>(record + 0x214) = static_cast<float>(atof(value214));
+-    *reinterpret_cast<float*>(record + 0x218) = static_cast<float>(atof(morale));
+-    CatalogWord(record, 0x21c) = atoi(shift_start);
+-    CatalogWord(record, 0x220) = atoi(shift_end);
+-    ++CatalogWord(this, 0x14);
++    CatalogField<unsigned int>(record, 0x20c) = atoi(base_wage);
++    CatalogField<float>(record, 0x210) = static_cast<float>(atof(value210));
++    CatalogField<float>(record, 0x214) = static_cast<float>(atof(value214));
++    CatalogField<float>(record, 0x218) = static_cast<float>(atof(morale));
++    CatalogField<unsigned int>(record, 0x21c) = atoi(shift_start);
++    CatalogField<unsigned int>(record, 0x220) = atoi(shift_end);
++    ++CatalogField<unsigned int>(this, 0x14);
+ }
+ 
+ static bool GuestValueKey(const char* key)
+@@ -132,7 +131,7 @@ void VariableCatalog::ParseData(char* data, int size)
+             index = NextCatalogValue(data, cursor + 1);
+             record = BeginCatalogRecord(this, 0, 0x38, 0xc4, value);
+             strcpy(reinterpret_cast<char*>(record + 0x44), data + index);
+-            ++CatalogWord(this, 0);
++            ++CatalogField<unsigned int>(this, 0);
+         }
+         else if (strcmp(key, "COM") == 0)
+         {
+@@ -140,17 +139,17 @@ void VariableCatalog::ParseData(char* data, int size)
+             index = NextCatalogValue(data, display);
+             record = BeginCatalogRecord(this, 4, 0x1298, 0xc8, value);
+             strcpy(reinterpret_cast<char*>(record + 0x44), data + display);
+-            CatalogWord(record, 0xc4) = FindFeatureType(data + index);
+-            ++CatalogWord(this, 4);
++            CatalogField<unsigned int>(record, 0xc4) = FindFeatureType(data + index);
++            ++CatalogField<unsigned int>(this, 4);
+         }
+         else if (strcmp(key, "HOURS") == 0)
+         {
+             unsigned int first = NextCatalogValue(data, cursor + 1);
+             index = NextCatalogValue(data, first);
+             record = BeginCatalogRecord(this, 8, 0x32a0, 0x4c, value);
+-            *reinterpret_cast<float*>(record + 0x44) = static_cast<float>(atof(data + first));
+-            *reinterpret_cast<float*>(record + 0x48) = static_cast<float>(atof(data + index));
+-            ++CatalogWord(this, 8);
++            CatalogField<float>(record, 0x44) = static_cast<float>(atof(data + first));
++            CatalogField<float>(record, 0x48) = static_cast<float>(atof(data + index));
++            ++CatalogField<unsigned int>(this, 8);
+         }
+         else if (strcmp(key, "BUILD") == 0)
+         {
+@@ -169,19 +168,19 @@ void VariableCatalog::ParseData(char* data, int size)
+             index = NextCatalogValue(data, cursor + 1);
+             record = BeginCatalogRecord(this, 0x10, 0x37490, 0x128, value);
+             strcpy(reinterpret_cast<char*>(record + 0x44), data + index);
+-            CatalogWord(record, 0xc4) = 0;
+-            ++CatalogWord(this, 0x10);
++            CatalogField<unsigned int>(record, 0xc4) = 0;
++            ++CatalogField<unsigned int>(this, 0x10);
+         }
+         else if ((record = FindCatalogRecord(this, 0x10, 0x37490, 0x128, key)))
+         {
+             index = NextCatalogValue(data, cursor + 1);
+-            unsigned int id = CatalogWord(record, 0);
+-            record = CatalogRecord(this, 0x37490, 0x128, id);
++            unsigned int id = CatalogField<unsigned int>(record, 0);
++            record = CatalogRecordAddress(this, 0x37490, 0x128, id);
+             if (strcmp(value, "COMFAM") == 0)
+             {
+-                unsigned int count = CatalogWord(record, 0xc4);
+-                CatalogWord(record, 0xc8 + count * 4) = FindFeatureType(data + index);
+-                ++CatalogWord(record, 0xc4);
++                unsigned int count = CatalogField<unsigned int>(record, 0xc4);
++                CatalogField<unsigned int>(record, 0xc8 + count * 4) = FindFeatureType(data + index);
++                ++CatalogField<unsigned int>(record, 0xc4);
+             }
+             else
+                 StartupFatal("WorldParams::AddDesireComFamPull - hmmm - datakeyword should be COMFAM - %s", value);
+@@ -251,7 +250,7 @@ void VariableCatalog::ParseData(char* data, int size)
+         else if (strcmp(key, "EVENT") == 0)
+         {
+             BeginCatalogRecord(this, 0x24, 0x4e5e8, 0x58, value);
+-            ++CatalogWord(this, 0x24);
++            ++CatalogField<unsigned int>(this, 0x24);
+             index = cursor + 1;
+         }
+         else if (FindCatalogRecord(this, 0x24, 0x4e5e8, 0x58, key))
+@@ -273,7 +272,7 @@ void VariableCatalog::ParseData(char* data, int size)
+         else if (strcmp(key, "FINE") == 0)
+         {
+             BeginCatalogRecord(this, 0x2c, 0x4f114, 0x48, value);
+-            ++CatalogWord(this, 0x2c);
++            ++CatalogField<unsigned int>(this, 0x2c);
+             index = cursor + 1;
+         }
+         else if (FindCatalogRecord(this, 0x2c, 0x4f114, 0x48, key))
+@@ -281,7 +280,7 @@ void VariableCatalog::ParseData(char* data, int size)
+             index = NextCatalogValue(data, cursor + 1);
+             unsigned int id = FindCrime(key);
+             if (strcmp(value, "COST") == 0)
+-                *reinterpret_cast<float*>(CatalogRecord(this, 0x4f114, 0x48, id) + 0x44) = static_cast<float>(atof(data + index));
++                CatalogField<float>(CatalogRecordAddress(this, 0x4f114, 0x48, id), 0x44) = static_cast<float>(atof(data + index));
+             else
+                 StartupFatal("WorldParams::AddFineData - unrecognised event keyword - %s", value);
+         }

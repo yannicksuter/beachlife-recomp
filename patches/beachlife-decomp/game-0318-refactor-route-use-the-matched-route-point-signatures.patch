@@ -1,0 +1,122 @@
+diff --git a/src/startup_world_motion_routes.cpp b/src/startup_world_motion_routes.cpp
+index 3810affbaec3bf01a71e5e90e91c089802b11d6c..6d7f92bce27f357dd0aa405be7bd68d867f8d94a 100644
+--- a/src/startup_world_motion_routes.cpp
++++ b/src/startup_world_motion_routes.cpp
+@@ -18,7 +18,7 @@ void WorldMovingEntity::FindMotionRoute(ScreenPoint* start, ScreenPoint* end,
+         {
+             if (!(first & 0x8000) && !(last & 0x8000))
+             {
+-                route_b8 = world_subsystem_18->FindPathRoute(start->x, start->y, end->x, end->y, success);
++                route_b8 = world_subsystem_18->FindPathRoute(*start, *end, success);
+                 return;
+             }
+         }
+@@ -34,7 +34,7 @@ void WorldMovingEntity::FindMotionRoute(ScreenPoint* start, ScreenPoint* end,
+         if (AdjustRouteEndpoints(start, end, flags))
+         {
+             if (flags == 0x10000082u)
+-                route_b8 = world_subsystem_18->FindPathRoute(start->x, start->y, end->x, end->y, success);
++                route_b8 = world_subsystem_18->FindPathRoute(*start, *end, success);
+             else if (flags == 0x80000000u)
+                 route_b8 = world_subsystem_18->FindLandRoute(start->x, start->y, end->x, end->y, success, 0);
+         }
+diff --git a/src/startup_world_moving_commands.cpp b/src/startup_world_moving_commands.cpp
+index 1e3503d362badceb36037178dff50f867868d5fe..b3a760157d1ec9dfccdb17053585949febccb85b 100644
+--- a/src/startup_world_moving_commands.cpp
++++ b/src/startup_world_moving_commands.cpp
+@@ -51,8 +51,8 @@ static void FindOrdinaryMotionRoute(WorldMovingEntity* entity, ScreenPoint& star
+ {
+     bool permitted;
+     if (cell_test)
+-        permitted = world_subsystem_18->CanUseRouteCell(start.x, start.y, water ? 4 : 1)
+-                 && world_subsystem_18->CanUseRouteCell(end.x, end.y, water ? 4 : 1);
++        permitted = world_subsystem_18->CanUseRouteCell(start, water ? 4 : 1)
++                 && world_subsystem_18->CanUseRouteCell(end, water ? 4 : 1);
+     else
+         permitted = (MotionTileFlags(start) & 0x80000000u) && (MotionTileFlags(end) & 0x80000000u);
+     if (permitted && DifferentMotionTiles(start, end))
+@@ -227,11 +227,11 @@ bool WorldMovingEntity::Unknown14(ScreenModeCommand* command)
+             route_b8 = world_subsystem_18->FindLandRoute(start.x, start.y, end.x, end.y, &success, 1);
+         else if ((MotionTileFlags(start) & 0x60000000u) && (MotionTileFlags(end) & 0x60000000u)
+                  && DifferentMotionTiles(start, end))
+-            route_b8 = world_subsystem_18->FindVehicleRoute(start.x, start.y, end.x, end.y, &success);
++            route_b8 = world_subsystem_18->FindVehicleRoute(start, end, &success);
+         else if (DifferentMotionTiles(start, end))
+         {
+             if (AdjustRouteEndpoints(&start, &end, 0x60000000u))
+-                route_b8 = world_subsystem_18->FindVehicleRoute(start.x, start.y, end.x, end.y, &success);
++                route_b8 = world_subsystem_18->FindVehicleRoute(start, end, &success);
+             NotifyRouteTransition(&start, &end, 0x80000000u);
+         }
+         MarkMotionWaiting(this);
+@@ -248,7 +248,7 @@ bool WorldMovingEntity::Unknown14(ScreenModeCommand* command)
+         ScreenWorldPosition destination = MotionDestination(this);
+         ScreenPoint end = overlay_map->WorldToTile(&destination);
+         unsigned char success = 1;
+-        route_b8 = world_subsystem_18->FindVehicleRoute(start.x, start.y, end.x, end.y, &success);
++        route_b8 = world_subsystem_18->FindVehicleRoute(start, end, &success);
+         if (!route_b8)
+         {
+             flag_d4 = 0;
+diff --git a/src/startup_world_route_requests.cpp b/src/startup_world_route_requests.cpp
+index 95e678460b79f82c84959d7f48c9642439f719d7..04e60cc8d454b337b1e9472c4b7ec6bfe1da37fc 100644
+--- a/src/startup_world_route_requests.cpp
++++ b/src/startup_world_route_requests.cpp
+@@ -62,31 +62,30 @@ void* WorldSubsystem18::FindWaterRoute(int x1, int y1, int x2, int y2, unsigned
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00431b90
+-void* WorldSubsystem18::FindVehicleRoute(int x1, int y1, int x2, int y2, unsigned char* success)
++void* WorldSubsystem18::FindVehicleRoute(ScreenPoint start, ScreenPoint destination, unsigned char* success)
+ {
+     ScreenPoint* points = 0;
+-    unsigned int count = route_finder_00->FindVehicleRoute(x1, y1, x2, y2, &points);
++    unsigned int count = route_finder_00->FindVehicleRoute(start.x, start.y, destination.x, destination.y, &points);
+     if (count && points)
+-        return MakeRouteReference(points, count, x1, y1, x2, y2, 3);
++        return MakeRouteReference(points, count, start.x, start.y, destination.x, destination.y, 3);
+     *success = 0;
+     return 0;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00431c90
+-void* WorldSubsystem18::FindPathRoute(int x1, int y1, int x2, int y2, unsigned char* success)
++void* WorldSubsystem18::FindPathRoute(ScreenPoint start, ScreenPoint destination, unsigned char* success)
+ {
+     ScreenPoint* points = 0;
+-    unsigned int count = route_finder_00->FindGroundRoute(x1, y1, x2, y2, &points);
++    unsigned int count = route_finder_00->FindGroundRoute(start.x, start.y, destination.x, destination.y, &points);
+     if (count && points)
+-        return MakeRouteReference(points, count, x1, y1, x2, y2, 0);
++        return MakeRouteReference(points, count, start.x, start.y, destination.x, destination.y, 0);
+     *success = 0;
+     return 0;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00431d90
+-bool WorldSubsystem18::CanUseRouteCell(int x, int y, unsigned int kind)
++bool WorldSubsystem18::CanUseRouteCell(ScreenPoint point, unsigned int kind)
+ {
+-    ScreenPoint point = { x, y };
+     bool result = false;
+     switch (kind)
+     {
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index c0e896b82beb1d538b94b568eb6a048777dac0d9..efc5347c9613773c5a806b00f5e952b27a1766e7 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -147,11 +147,11 @@ inline WorldRouteRegistration::~WorldRouteRegistration()
+ 
+ struct WorldSubsystem18 : WorldRouteRegistration
+ {
+-    void* FindPathRoute(int x1, int y1, int x2, int y2, unsigned char* success);                          // 0x00431c90.
+-    bool CanUseRouteCell(int x, int y, unsigned int kind);                                                // 0x00431d90.
++    void* FindPathRoute(ScreenPoint start, ScreenPoint destination, unsigned char* success);              // 0x00431c90.
++    bool CanUseRouteCell(ScreenPoint point, unsigned int kind);                                           // 0x00431d90.
+     void* FindLandRoute(int x1, int y1, int x2, int y2, unsigned char* success, unsigned char shortcut);  // 0x00431990.
+     void* FindWaterRoute(int x1, int y1, int x2, int y2, unsigned char* success, unsigned char shortcut); // 0x00431a90.
+-    void* FindVehicleRoute(int x1, int y1, int x2, int y2, unsigned char* success);                       // 0x00431b90.
++    void* FindVehicleRoute(ScreenPoint start, ScreenPoint destination, unsigned char* success);           // 0x00431b90.
+     explicit WorldSubsystem18(ScreenTerrainGrid* terrain);                                                // 0x004318c0.
+     void ReleaseRoute(void* route);                                                                       // 0x00431e10.
+     void SaveRoute(void* route, GameFileReader* file);                                                    // 0x00431e80.
