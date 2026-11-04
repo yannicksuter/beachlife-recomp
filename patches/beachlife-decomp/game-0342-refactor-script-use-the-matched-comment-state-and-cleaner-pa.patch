@@ -1,0 +1,189 @@
+diff --git a/src/startup_world_cleaner_command.cpp b/src/startup_world_cleaner_command.cpp
+index 91856645fd283187f5817b873e6fdbc916bbde82..64ac6cc794b9509c72c85277a60fbc702d7b2e5f 100644
+--- a/src/startup_world_cleaner_command.cpp
++++ b/src/startup_world_cleaner_command.cpp
+@@ -3,37 +3,28 @@
+ #include "window_activation.h"
+ #include <cmath>
+ 
+-static void QueueCleanerCommand(unsigned int id, int type, int data)
+-{
+-    ScreenModeCommand command;
+-    command.words[0] = id;
+-    command.words[1] = id;
+-    command.words[2] = type;
+-    command.words[3] = 0;
+-    command.words[4] = data;
+-    screen_mode_commands->QueueCommand(&command);
+-}
+-
+ // FUNCTION: BEACHLIFE 0x00466120
+ bool WorldCleanerEntity::Unknown14(ScreenModeCommand* command)
+ {
+     switch (command->words[2])
+     {
+     case 0x26:
+-        words_78c[0] = words_78c[1] = words_78c[2] = 0;
++        words_78c[0] = 0;
++        words_78c[1] = 0;
++        words_78c[2] = 0;
+         window_deactivation_state->ticker_30->ClearFeedback(11);
+         break;
+     case 0x55:
+         if (static_cast<int>(window_deactivation_state->render_value_160) % 4 == 0 && !(morale_10c >= 0.6f))
+         {
+-            words_78c[4] &= ~0x800000u;
++            words_78c[4] &= ~0x800000;
+             words_78c[5] = 0;
+         }
+         break;
+     case 0x2c:
+         if (static_cast<unsigned int>(command->words[0]) == home_id_100)
+         {
+-            if ((state_3c >= 0x6d && state_3c <= 0x73) || (state_3c == 0x83 && !flag_766))
++            if (state_3c >= 0x6d && (state_3c <= 0x73 || state_3c == 0x83 && !flag_766))
+                 window_deactivation_state->cleaning_2c->ReleaseAssignment(word_98);
+             SetMovementMode(0x4c);
+             Unknown08(0x4c);
+@@ -42,43 +33,60 @@ bool WorldCleanerEntity::Unknown14(ScreenModeCommand* command)
+         {
+             switch (state_3c)
+             {
+-            case 0x6d:
+-            case 0x6f:
+-            case 0x70:
+             case 0x83:
++            {
+                 window_deactivation_state->cleaning_2c->RemoveRequest(word_98);
+-                QueueCleanerCommand(id_28, 0x15, 0);
++                ScreenModeCommand next(id_28, id_28, 0x15, 0, 0);
++                screen_mode_commands->QueueCommand(&next);
+                 SetMovementMode(0x68);
+                 Unknown08(0x68);
+                 break;
+-            case 0x6e:
+-            case 0x71:
++            }
+             case 0x73:
+             {
+-                ScreenModeCommand next;
+-                next.words[0] = id_28;
+-                next.words[1] = id_28;
+-                next.words[2] = 0x39;
+-                next.words[3] = 0;
+-                next.words[4] = 0;
+-                next.words[5] = state_3c;
+-                next.words[6] = 0;
++                ScreenModeCommand next(id_28, id_28, 0x39, 0, 0, 0.0f, 0x73);
++                screen_mode_commands->QueueCommand(&next);
++                break;
++            }
++            case 0x71:
++            {
++                ScreenModeCommand next(id_28, id_28, 0x39, 0, 0, 0.0f, 0x71);
++                screen_mode_commands->QueueCommand(&next);
++                break;
++            }
++            case 0x6e:
++            {
++                ScreenModeCommand next(id_28, id_28, 0x39, 0, 0, 0.0f, 0x6e);
+                 screen_mode_commands->QueueCommand(&next);
+                 break;
+             }
+             case 0x72:
++            {
+                 window_deactivation_state->cleaning_2c->RemoveRequest(word_98);
+-                QueueCleanerCommand(id_28, 0x6b, 0);
++                ScreenModeCommand next(id_28, id_28, 0x6b, 0, 0);
++                screen_mode_commands->QueueCommand(&next);
++                break;
++            }
++            case 0x6d:
++            case 0x6f:
++            case 0x70:
++                window_deactivation_state->cleaning_2c->RemoveRequest(word_98);
++                ScreenModeCommand idle(id_28, id_28, 0x15, 0, 0);
++                screen_mode_commands->QueueCommand(&idle);
++                SetMovementMode(0x68);
++                Unknown08(0x68);
+                 break;
+             }
+         }
+         break;
+     case 0x56:
+-        if (state_3c == 0x6d || state_3c == 0x6f || state_3c == 0x70)
++        if (state_3c == 0x6d || state_3c > 0x6e && state_3c <= 0x70)
+         {
+             window_deactivation_state->cleaning_2c->ReleaseAssignment(word_98);
+-            QueueCleanerCommand(id_28, 0x15, 0);
+-            QueueCleanerCommand(id_28, 3, 0x68);
++            ScreenModeCommand release(id_28, id_28, 0x15, 0, 0);
++            screen_mode_commands->QueueCommand(&release);
++            ScreenModeCommand next(id_28, id_28, 3, 0, 0x68);
++            screen_mode_commands->QueueCommand(&next);
+         }
+         break;
+     }
+diff --git a/src/startup_world_object_script_load.cpp b/src/startup_world_object_script_load.cpp
+index 6540bc8922a0ccbb5b2f0e283c18caa550ead215..850b1f89b74f88013a8c5748f1ceccf4095395b8 100644
+--- a/src/startup_world_object_script_load.cpp
++++ b/src/startup_world_object_script_load.cpp
+@@ -51,17 +51,20 @@ void WorldSubsystemScript::LoadScript(const char* path)
+ // FUNCTION: BEACHLIFE 0x004d5a80
+ int WorldSubsystemScript::SkipComments()
+ {
+-    if (*cursor_591c != '/')
+-        return 0;
+     int count = 0;
+-    do
++    if (*cursor_591c == '/')
+     {
+-        ++count;
+         ++cursor_591c;
+-    } while (*cursor_591c != '\n');
+-    count += SkipObjectScriptWhitespace(cursor_591c);
+-    count += SkipComments();
+-    count += SkipObjectScriptWhitespace(cursor_591c);
++        count = 1;
++        while (*cursor_591c != '\n')
++        {
++            ++count;
++            ++cursor_591c;
++        }
++        int whitespace = SkipObjectScriptWhitespace(cursor_591c);
++        count += SkipComments() + whitespace;
++        count += SkipObjectScriptWhitespace(cursor_591c);
++    }
+     return count;
+ }
+ 
+diff --git a/src/startup_world_object_script_parse_state.cpp b/src/startup_world_object_script_parse_state.cpp
+index 66c76f11627ad8e76bfabb9a31f7ae476cc4ede7..5e218f9ce322eaa6cfd25aaac5a4f07cf38bf8e3 100644
+--- a/src/startup_world_object_script_parse_state.cpp
++++ b/src/startup_world_object_script_parse_state.cpp
+@@ -170,20 +170,17 @@ int WorldSubsystemScript::ParseState()
+     int count = SkipStateWhitespace(cursor_591c);
+     char state[52];
+     int length = ReadToken(state);
+-    unsigned int index;
+-    for (index = 0; index < 137; ++index)
++    for (unsigned int index = 0; index < 137; ++index)
+     {
+         if (std::strcmp(state, object_script_states[index].name) == 0)
+         {
+             rules_00[count_5910].word_00 = object_script_states[index].state;
+-            break;
++            goto found;
+         }
+     }
+-    if (index == 137)
+-    {
+-        StartupFatal("ObjectScript::DetermineState - State doesnt exist check state decode table");
+-        length = 0;
+-    }
++    StartupFatal("ObjectScript::DetermineState - State doesnt exist check state decode table");
++    length = 0;
++found:
+     count += length;
+     count += SkipStateWhitespace(cursor_591c);
+     count += SkipComments();

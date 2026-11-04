@@ -146,6 +146,30 @@ class LifetimeIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'CSV identity'):
             matching.comparison_lifetime_specs(self.metadata, target)
 
+    def test_runtime_arithmetic_helpers_are_identities_by_exact_name_and_symbol(self):
+        kind = matching.lifetime_identity_kind
+        self.assertEqual(kind('_alldiv', '__alldiv'), 'runtime-helper')
+        for name, symbol in (('_alldiv', '_alldiv'), ('_alldiv', '__aulldiv'), ('_aulldiv', '__alldiv'),
+                             ('__alldiv', '__alldiv'), ('_alldiv', '__alldiv@16')):
+            with self.subTest(name=name, symbol=symbol):
+                self.assertIsNone(kind(name, symbol))
+        helper = {'address': '0x00401400', 'size': 170, 'name': '_alldiv', 'symbol': '__alldiv'}
+        with (self.metadata / 'metadata.csv').open('a') as stream:
+            stream.write('0x00401400,library,170,__alldiv\n')
+        target = copy.deepcopy(self.target)
+        target['comparison_lifetime_anchors'].append(helper)
+        specs = matching.comparison_lifetime_specs(self.metadata, target)
+        self.assertEqual(specs[-1], helper)
+        paths, records = matching.generate_lifetime_identities(
+            self.metadata, self.source, self.directory / 'helper', specs[-1:])
+        self.assertEqual(matching.coff_external_symbols(paths[0]), ({'__alldiv'}, set()))
+        self.assertEqual((records[0]['kind'], records[0]['qualified'], records[0]['image_execution_permitted']),
+                         ('runtime-helper', False, False))
+        changed = copy.deepcopy(target)
+        changed['comparison_lifetime_anchors'][-1]['header'] = 'generated.h'
+        with self.assertRaisesRegex(ValueError, 'Unsupported'):
+            matching.comparison_lifetime_specs(self.metadata, changed)
+
     def test_specs_need_one_exact_csv_identity_and_a_free_range(self):
         self.assertEqual(matching.comparison_lifetime_specs(self.metadata, self.target),
                          [self.identity, self.destructor])

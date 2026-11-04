@@ -1,0 +1,211 @@
+diff --git a/src/library_list_distance.cpp b/src/library_list_distance.cpp
+deleted file mode 100644
+index 753d8851eefb3ff5d5465da93b9bda3f9550ffdf..0000000000000000000000000000000000000000
+--- a/src/library_list_distance.cpp
++++ /dev/null
+@@ -1,10 +0,0 @@
+-#include "library_list_distance.h"
+-
+-// LIBRARY: BEACHLIFE 0x00420d60
+-int CountListRange(const CircularListIterator& first, const CircularListIterator& last, const ListIteratorTag&)
+-{
+-    unsigned int count = 0;
+-    for (CircularListNode* node = first.node; node != last.node; node = node->next)
+-        ++count;
+-    return count;
+-}
+diff --git a/src/library_list_distance.h b/src/library_list_distance.h
+deleted file mode 100644
+index 1aa8730493776a261bf398461128e84336bd6237..0000000000000000000000000000000000000000
+--- a/src/library_list_distance.h
++++ /dev/null
+@@ -1,46 +0,0 @@
+-#ifndef LIBRARY_LIST_DISTANCE_H
+-#define LIBRARY_LIST_DISTANCE_H
+-
+-#include "startup_list.h"
+-
+-// Library-side list size as the original expands it: the end and begin
+-// iterators and an empty iterator-category temporary are passed by reference
+-// to the shared counting body. Descriptive names; the original library
+-// declarations are not recovered.
+-struct ListIteratorTag
+-{
+-};
+-
+-// Actual shared cdecl body 0x00420d60: counts nodes from first up to last.
+-int CountListRange(const CircularListIterator& first, const CircularListIterator& last, const ListIteratorTag& category);
+-
+-inline ListIteratorTag ListIteratorCategory(const CircularListIterator&)
+-{
+-    return ListIteratorTag();
+-}
+-
+-inline CircularListIterator ListBegin(const CircularList& list)
+-{
+-    CircularListIterator result;
+-    result.node = list.head->next;
+-    return result;
+-}
+-
+-inline CircularListIterator ListEnd(const CircularList& list)
+-{
+-    CircularListIterator result;
+-    result.node = list.head;
+-    return result;
+-}
+-
+-inline int ListDistance(const CircularListIterator& first, const CircularListIterator& last)
+-{
+-    return CountListRange(first, last, ListIteratorCategory(first));
+-}
+-
+-inline int ListSize(const CircularList& list)
+-{
+-    return ListDistance(ListBegin(list), ListEnd(list));
+-}
+-
+-#endif
+diff --git a/src/startup_screen_terrain_lifetime.cpp b/src/startup_screen_terrain_lifetime.cpp
+index 232f4b696af113cf2347cc0da5396757240a1c31..d7b1eceed49fc5751e97ee6297bb3c08eea49507 100644
+--- a/src/startup_screen_terrain_lifetime.cpp
++++ b/src/startup_screen_terrain_lifetime.cpp
+@@ -37,24 +37,34 @@ ScreenTerrainGrid::~ScreenTerrainGrid() noexcept(false)
+ void ScreenTerrainGrid::LoadState(GameFileReader* file)
+ {
+     char name[128];
++    unsigned int version;
+     unsigned int value;
+     file->Unknown40();
+     file->ReadString(name, sizeof(name));
+-    file->Unknown68(&value);
++    file->Unknown68(&version);
+     file->ReadInt(&word_120);
+-    for (ScreenTerrainRouteNode* node = routes_1c; node; node = node->next_30)
++    ScreenTerrainRouteNode* node;
++    for (node = routes_1c; node; node = node->next_30)
+     {
+         file->Unknown68(&value);
+-        node->disabled_2c = value == 0;
++        if (value)
++            node->disabled_2c = 0;
++        else
++            node->disabled_2c = 1;
+     }
+-    for (ScreenTerrainRouteNode* node = routes_20; node; node = node->next_30)
++    for (node = routes_20; node; node = node->next_30)
+     {
+         file->Unknown68(&value);
+-        node->disabled_2c = value == 0;
++        if (value)
++            node->disabled_2c = 0;
++        else
++            node->disabled_2c = 1;
+     }
++    ScreenTerrainCell* cell = cells_0c;
+     for (unsigned int index = 0; index < width_04 * height_08; ++index)
+     {
+-        file->Unknown4c(&cells_0c[index].flags_48);
+-        file->Unknown48(&cells_0c[index].depth_50);
++        file->Unknown4c(&cell->flags_48);
++        file->Unknown48(&cell->depth_50);
++        ++cell;
+     }
+ }
+diff --git a/src/startup_variable_transport_queries.cpp b/src/startup_variable_transport_queries.cpp
+index dd2707e757bf3506f1b2d53def3f03fb965972e1..5866e3565894d5f6d389b0e0fa63e6b5f3a4abcb 100644
+--- a/src/startup_variable_transport_queries.cpp
++++ b/src/startup_variable_transport_queries.cpp
+@@ -61,24 +61,31 @@ float VariableTransport::FindNext(unsigned char mode, unsigned int* value)
+ // FUNCTION: BEACHLIFE 0x0042d2f0
+ float VariableTransport::ScheduleAt(unsigned int index)
+ {
+-    CircularListIterator list_iterator_3;
+-    list_iterator_3.node = scheduled_00.head->next;
+-    CircularListIterator list_iterator_4;
+-    list_iterator_4.node = scheduled_00.head;
+-    if (PointerListDistance(list_iterator_3, list_iterator_4) == 0)
++    CircularListIterator last;
++    last.node = scheduled_00.head;
++    CircularListIterator first;
++    first.node = scheduled_00.head->next;
++    if (PointerListDistance(first, last) == 0)
+         return -1.0f;
+     unsigned int day = window_deactivation_state->day_15c;
+     unsigned int eligible = 0;
+     for (CircularListNode* node = scheduled_00.head->next; node != scheduled_00.head; node = node->next)
+     {
+         WorldTransportRecord* record = static_cast<WorldTransportNode*>(node)->record;
+-        if (day != 0xffffffffu)
++        int skip = 0;
++        switch (record->repeat_5b0)
+         {
+-            if (record->repeat_5b0 == 0 && record->day_5ac != day)
+-                continue;
+-            if (record->repeat_5b0 == 2 && day < record->day_5ac)
+-                continue;
++        case 0:
++            if (record->day_5ac != day)
++                skip = 1;
++            break;
++        case 2:
++            if (day < record->day_5ac)
++                skip = 1;
++            break;
+         }
++        if (skip && day != 0xffffffffu)
++            continue;
+         if (eligible == index)
+             return record->time_5a8;
+         ++eligible;
+diff --git a/src/startup_world_cleaning_assignments.cpp b/src/startup_world_cleaning_assignments.cpp
+index 38a1132e61290ed2588eb65911d150da7fd4afa0..debaa35da59953ae323c74a8884205ead597227d 100644
+--- a/src/startup_world_cleaning_assignments.cpp
++++ b/src/startup_world_cleaning_assignments.cpp
+@@ -29,11 +29,7 @@ void WorldCleaningManager::AddAssignment(unsigned int id, unsigned char urgent)
+ // FUNCTION: BEACHLIFE 0x0041fd70
+ void WorldCleaningManager::RemoveAssignment(unsigned int id)
+ {
+-    CircularListIterator list_iterator_3;
+-    list_iterator_3.node = assignments_08.head->next;
+-    CircularListIterator list_iterator_4;
+-    list_iterator_4.node = assignments_08.head;
+-    CircularListNode* node = FindPointerListRecord(list_iterator_3, list_iterator_4, [id](CircularListNode* node)
++    CircularListNode* node = FindPointerListRecord(assignments_08.Begin(), assignments_08.End(), [id](CircularListNode* node)
+         { return static_cast<unsigned int>(CleaningRecord<WorldCleaningAssignment>(node)->id_00) == id; })
+                                  .node;
+     if (node != assignments_08.head)
+diff --git a/src/startup_world_cleaning_tasks.cpp b/src/startup_world_cleaning_tasks.cpp
+index 356db4430e5e07d048b626b1438fdd2ec2a2264e..7d60802e3f34bb29078b07b6e237b150d65ea0d4 100644
+--- a/src/startup_world_cleaning_tasks.cpp
++++ b/src/startup_world_cleaning_tasks.cpp
+@@ -17,22 +17,21 @@ static Record* CleaningRecord(CircularListNode* node)
+ void WorldCleaningManager::AddCleaningRequest(unsigned int id)
+ {
+     variable_world->FindObject(id);
+-    CircularListIterator list_iterator_1;
+-    list_iterator_1.node = requests_00.head->next;
+-    CircularListIterator list_iterator_2;
+-    list_iterator_2.node = requests_00.head;
+-    CircularListNode* node = FindPointerListRecord(list_iterator_1, list_iterator_2, [id](CircularListNode* node)
++    WorldCleaningRequest* request;
++    CircularListNode* node = FindPointerListRecord(requests_00.Begin(), requests_00.End(), [id](CircularListNode* node)
+         { return static_cast<unsigned int>(CleaningRecord<WorldCleaningRequest>(node)->id_00) == id; })
+                                  .node;
+     if (node != requests_00.head)
+     {
+-        ++CleaningRecord<WorldCleaningRequest>(node)->count_04;
++        request = CleaningRecord<WorldCleaningRequest>(node);
++        ++request->count_04;
+         return;
+     }
+-    WorldCleaningRequest* request = new (std::nothrow) WorldCleaningRequest;
++    request = new (std::nothrow) WorldCleaningRequest;
+     request->count_04 = 0;
+     request->id_00 = id;
+-    request->time_08 = window_deactivation_state->clock_158;
++    float time = window_deactivation_state->clock_158;
++    request->time_08 = time;
+     request->flag_0c = 0;
+     requests_00.Insert(requests_00.End(), request);
+ }

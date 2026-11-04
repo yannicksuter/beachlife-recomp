@@ -1242,19 +1242,32 @@ def equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linke
     function with the same code. A listed copy is a different linked function
     whose COFF code and relocations (offset, type, target symbol, stored
     addend) equal those of the identity's own function; operands naming the
-    copy are then compared as the identity."""
+    copy are then compared as the identity.
+
+    A copy that identical-code folding merged into a group of other empty or
+    identical bodies shares its rebuilt address with their identities. It may
+    only be listed with "function", the registered original function whose
+    operands alone are compared as the identity; every other operand naming
+    that shared address keeps its ordinary name."""
     configured = target.get('comparison_equivalent_copies', [])
     if not isinstance(configured, list):
         raise ValueError('comparison_equivalent_copies must be a list.')
     symbols = {int(row['address'], 16): row['symbol'] for row in metadata_rows
                if row.get('type') in FOLDED_ALIAS_TYPES and row.get('symbol')}
+    registered = {int(item['address'], 16) for item in target.get('functions', [])
+                  if isinstance(item, dict) and isinstance(item.get('address'), str)}
     result, seen = [], set()
     for item in configured:
-        if (not isinstance(item, dict) or set(item) != {'address', 'symbol'} or
+        if (not isinstance(item, dict) or set(item) - {'function'} != {'address', 'symbol'} or
                 not all(isinstance(value, str) and value for value in item.values()) or
-                item['symbol'] in seen):
+                (item['symbol'], item.get('function')) in seen):
             raise ValueError(f'Invalid comparison equivalent copy: {item}')
-        seen.add(item['symbol'])
+        seen.add((item['symbol'], item.get('function')))
+        scope = None
+        if 'function' in item:
+            scope = int(item['function'], 16)
+            if scope not in registered:
+                raise ValueError(f"Equivalent copy {item['symbol']} names no registered function.")
         address = int(item['address'], 16)
         identity = symbols.get(address)
         if identity is None or identity == item['symbol']:
@@ -1274,15 +1287,21 @@ def equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linke
         if not all(owners) or len(bodies) != 1:
             raise ValueError(f"Equivalent copy {item['symbol']} differs from {identity}.")
         result.append({'address': f'0x{address:08x}', 'symbol': item['symbol'], 'identity_symbol': identity,
-                       'recomp': f'0x{copy:08x}', 'identity_recomp': f'0x{recomp:08x}'})
+                       'recomp': f'0x{copy:08x}', 'identity_recomp': f'0x{recomp:08x}',
+                       **({'function': f'0x{scope:08x}'} if scope is not None else {})})
     return result
 
 
-def equivalent_copy_lookup(rebuilt_lookup, copies):
-    """Name a rebuilt copy's address as the identity function it duplicates."""
+def equivalent_copy_lookup(rebuilt_lookup, copies, scoped=None):
+    """Name a rebuilt copy's address as the identity function it duplicates.
+
+    scoped maps a copy only while the function in scoped['current'] is compared."""
     def lookup(address, exact=False, indirect=False):
-        if not indirect and address in copies:
-            return rebuilt_lookup(copies[address], exact=True)
+        if not indirect:
+            if scoped is not None and address in scoped['current']:
+                return rebuilt_lookup(scoped['current'][address], exact=True)
+            if address in copies:
+                return rebuilt_lookup(copies[address], exact=True)
         return rebuilt_lookup(address, exact=exact, indirect=indirect)
     return lookup
 
@@ -1305,7 +1324,12 @@ def compare_global_operands(configuration, arguments):
     applied = {}
     folded = {'publics': {}, 'records': None, 'aliases': {}, 'statics': None}
     copies = {int(item['recomp'], 16): int(item['identity_recomp'], 16)
-              for item in config.get('equivalent_copies', [])}
+              for item in config.get('equivalent_copies', []) if 'function' not in item}
+    scoped = {'current': {}, 'functions': {}}
+    for item in config.get('equivalent_copies', []):
+        if 'function' in item:
+            scoped['functions'].setdefault(int(item['function'], 16), {})[
+                int(item['recomp'], 16)] = int(item['identity_recomp'], 16)
 
     def load_cvdump(analysis, db, recomp_bin):
         for public in analysis.parser.publics:
@@ -1352,9 +1376,17 @@ def compare_global_operands(configuration, arguments):
             self.orig_sanitize.name_lookup = folded_operand_lookup(
                 self.orig_sanitize.name_lookup, self.recomp_sanitize.name_lookup, folded['aliases'])
             self.folded_operand_lookup = True
-        if copies and not getattr(self, 'equivalent_copy_lookup', False):
-            self.recomp_sanitize.name_lookup = equivalent_copy_lookup(self.recomp_sanitize.name_lookup, copies)
+        if (copies or scoped['functions']) and not getattr(self, 'equivalent_copy_lookup', False):
+            self.recomp_sanitize.name_lookup = equivalent_copy_lookup(
+                self.recomp_sanitize.name_lookup, copies, scoped)
             self.equivalent_copy_lookup = True
+        scoped['current'] = scoped['functions'].get(match.orig_addr, {})
+        try:
+            return compare_scoped(self, match)
+        finally:
+            scoped['current'] = {}
+
+    def compare_scoped(self, match):
         rules = sorted((item for item in config['operands'] if int(item['function'], 16) == match.orig_addr),
                        key=lambda item: item['instruction_offset'])
         if not rules:
@@ -1604,6 +1636,10 @@ def generate_comparison_anchors(metadata, source, folder, specs):
 # only their CSV row and never an identity object.
 VECTOR_ITERATORS = {"`eh vector constructor iterator'": '??_L@YGXPAXIHP6EX0@Z1@Z',
                     "`eh vector destructor iterator'": '??_M@YGXPAXIHP6EX0@Z@Z'}
+# Static arithmetic helpers the compiler calls by name, such as the signed
+# 64-bit division of `total / 10`. The retail image links the runtime body; the
+# comparison link has no static runtime library, so a caller needs an identity.
+RUNTIME_HELPERS = {'_alldiv': '__alldiv'}
 
 
 def lifetime_identity_kind(name, symbol):
@@ -1614,11 +1650,13 @@ def lifetime_identity_kind(name, symbol):
     A scalar deleting destructor needs no identity: VC6 generates it as a
     COMDAT wherever the class vtable is emitted. A nested class is decorated
     innermost scope first: Outer::Inner::~Inner is ??1Inner@Outer@@QAE@XZ.
-    The runtime's two exception-aware vector iterators are identified by
-    their exact special name and decoration only.
+    The runtime's two exception-aware vector iterators and its static
+    arithmetic helpers are identified by their exact name and symbol only.
     """
     if isinstance(name, str) and name in VECTOR_ITERATORS:
         return 'vector-iterator' if VECTOR_ITERATORS[name] == symbol else None
+    if isinstance(name, str) and name in RUNTIME_HELPERS:
+        return 'runtime-helper' if RUNTIME_HELPERS[name] == symbol else None
     parts = name.split('::') if isinstance(name, str) else []
     scopes = parts[:-1]
     if (len(parts) < 2 or not isinstance(symbol, str) or
@@ -1652,7 +1690,7 @@ def comparison_lifetime_specs(metadata, target):
     for item in specs:
         # A runtime array helper has no declaration in any header.
         helper = isinstance(item, dict) and lifetime_identity_kind(
-            item.get('name'), item.get('symbol')) == 'vector-iterator'
+            item.get('name'), item.get('symbol')) in ('vector-iterator', 'runtime-helper')
         if (not isinstance(item, dict) or
                 set(item) != {'address', 'size', 'name', 'symbol', *(() if helper else ('header',))} or
                 not isinstance(item['address'], str) or
@@ -1720,7 +1758,7 @@ def generate_lifetime_identities(metadata, source, folder, specs):
         if address in annotated:
             raise ValueError(f'Lifetime identity {item["address"]} duplicates the prepared body in '
                              f'{annotated[address].name}; use its CSV identity instead.')
-        if lifetime_identity_kind(item['name'], item['symbol']) == 'vector-iterator':
+        if lifetime_identity_kind(item['name'], item['symbol']) in ('vector-iterator', 'runtime-helper'):
             continue
         # The shared declaration must exist; LINK then proves the decoration
         # against the callers' undefined references.

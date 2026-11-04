@@ -1,24 +1,25 @@
 diff --git a/fixtures/game.d/fixture_0043eb50.cpp b/fixtures/game.d/fixture_0043eb50.cpp
 new file mode 100644
-index 0000000..8042e7f
+index 0000000..aee918b
 --- /dev/null
 +++ b/fixtures/game.d/fixture_0043eb50.cpp
-@@ -0,0 +1,7 @@
+@@ -0,0 +1,8 @@
 +#include "window_activation.h"
++#include "startup_world_script_values.h"
 +
 +// Compile/link retention only; this image is never executed.
-+extern "C" __declspec(dllexport) void Fixture_0043eb50(WindowDeactivationState* item, unsigned int kind, unsigned int data, unsigned int value_kind, unsigned int value)
++extern "C" __declspec(dllexport) void Fixture_0043eb50(WindowDeactivationState* item, unsigned int kind, unsigned int data, WorldScriptValue value)
 +{
-+    item->WriteScriptValue(kind, data, value_kind, value);
++    item->WriteScriptValue(kind, data, value);
 +}
 diff --git a/metadata.d/0043eb50.csv b/metadata.d/0043eb50.csv
 new file mode 100644
-index 0000000..f8c4b56
+index 0000000..17a4d06
 --- /dev/null
 +++ b/metadata.d/0043eb50.csv
 @@ -0,0 +1,9 @@
 +address,type,size,symbol
-+0x0043eb50,function,823,?WriteScriptValue@WindowDeactivationState@@QAEXIIII@Z
++0x0043eb50,function,823,?WriteScriptValue@WindowDeactivationState@@QAEXIIUWorldScriptValue@@@Z
 +0x004dab50,function,80,?ConvertWorldScriptNumber@@YANUWorldScriptValue@@@Z
 +0x005741a8,string,11,
 +0x00574194,string,20,
@@ -28,10 +29,10 @@ index 0000000..f8c4b56
 +0x004f3520,float,4,
 diff --git a/src/match_0043eb50.cpp b/src/match_0043eb50.cpp
 new file mode 100644
-index 0000000..c1c0cb6
+index 0000000..33d1929
 --- /dev/null
 +++ b/src/match_0043eb50.cpp
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,109 @@
 +#include "window_activation.h"
 +#include "startup_variable_state.h"
 +#include "startup_world_subsystems.h"
@@ -40,11 +41,8 @@ index 0000000..c1c0cb6
 +#include "startup_screen_load_dependencies.h"
 +#include "startup_config_owner.h"
 +
-+// The retail value operand is one by-value WorldScriptValue: value_kind and value
-+// are its two adjacent stack words and go to the converters unchanged.
 +// FUNCTION: BEACHLIFE 0x0043eb50
-+void WindowDeactivationState::WriteScriptValue(unsigned int kind, unsigned int data, unsigned int value_kind,
-+    unsigned int value)
++void WindowDeactivationState::WriteScriptValue(unsigned int kind, unsigned int data, WorldScriptValue value)
 +{
 +    int day_length;
 +    switch (kind)
@@ -52,7 +50,7 @@ index 0000000..c1c0cb6
 +    case 0xbc:
 +    {
 +        unsigned int mask = 1 << *reinterpret_cast<unsigned int*>(data);
-+        if (*reinterpret_cast<float*>(&value) != 0.0f)
++        if (*reinterpret_cast<float*>(&value.data) != 0.0f)
 +            word_3b4 |= mask;
 +        else
 +            word_3b4 &= ~mask;
@@ -61,24 +59,24 @@ index 0000000..c1c0cb6
 +    case 0xc2:
 +    {
 +        unsigned int index = *reinterpret_cast<unsigned int*>(data);
-+        words_3b8[index] = ConvertWorldScriptInteger(*reinterpret_cast<WorldScriptValue*>(&value_kind));
++        words_3b8[index] = ConvertWorldScriptInteger(value);
 +        break;
 +    }
 +    case 0xee:
 +    {
 +        VariableEconomy* economy = economy_1c;
-+        float number = static_cast<float>(ConvertWorldScriptNumber(*reinterpret_cast<WorldScriptValue*>(&value_kind)));
++        float number = static_cast<float>(ConvertWorldScriptNumber(value));
 +        economy->value_80 = number;
 +        break;
 +    }
 +    case 0xc5:
-+        *reinterpret_cast<float*>(&word_450) = static_cast<float>(ConvertWorldScriptNumber(*reinterpret_cast<WorldScriptValue*>(&value_kind)));
++        value_450 = static_cast<float>(ConvertWorldScriptNumber(value));
 +        flag_454 = 1;
 +        break;
 +    case 0xc6:
 +    {
 +        unsigned int index = *reinterpret_cast<unsigned int*>(data);
-+        int state = ConvertWorldScriptInteger(*reinterpret_cast<WorldScriptValue*>(&value_kind));
++        int state = ConvertWorldScriptInteger(value);
 +        if (objective_state_72c[index] != state)
 +        {
 +            objective_state_72c[index] = state;
@@ -89,7 +87,7 @@ index 0000000..c1c0cb6
 +    case 0xd2:
 +    {
 +        unsigned int index = variable_catalog->FindUnlock(reinterpret_cast<const char*>(data));
-+        if (ConvertWorldScriptInteger(*reinterpret_cast<WorldScriptValue*>(&value_kind)))
++        if (ConvertWorldScriptInteger(value))
 +            variable_catalog->UnlockRecord(index)->flag_d8 = 1;
 +        else
 +            variable_catalog->UnlockRecord(index)->flag_d8 = 0;
@@ -97,7 +95,7 @@ index 0000000..c1c0cb6
 +    }
 +    case 0xd3:
 +    {
-+        unsigned int drink = variable_catalog->FindUnlock(reinterpret_cast<const char*>(value));
++        unsigned int drink = variable_catalog->FindUnlock(reinterpret_cast<const char*>(value.data));
 +        variable_catalog->Building(variable_catalog->FindBuilding(reinterpret_cast<const char*>(data)))
 +            ->default_drink_e18 = drink;
 +        break;
@@ -105,7 +103,7 @@ index 0000000..c1c0cb6
 +    case 0xd5:
 +    {
 +        unsigned int index = variable_catalog->FindEvent(reinterpret_cast<const char*>(data));
-+        if (ConvertWorldScriptInteger(*reinterpret_cast<WorldScriptValue*>(&value_kind)))
++        if (ConvertWorldScriptInteger(value))
 +            variable_catalog->Event(index)->unlocked_44 = 1;
 +        else
 +            variable_catalog->Event(index)->unlocked_44 = 0;
@@ -117,7 +115,7 @@ index 0000000..c1c0cb6
 +        if (current == subsystem_20->FindState("STATE_WORLD_STARTUP"))
 +        {
 +            startup_config_owner->GetInteger(&day_length, "iDAY_LENGTH_IN_SECONDS");
-+            float time = *reinterpret_cast<float*>(&value) * (day_length * 0.0416666679f);
++            float time = *reinterpret_cast<float*>(&value.data) * (day_length * 0.0416666679f);
 +            clock_158 = time;
 +            float hour = time * (24.0f / day_length);
 +            render_value_160 = hour;
@@ -133,13 +131,13 @@ index 0000000..c1c0cb6
 +    case 0xdb:
 +    {
 +        VariableWeather* weather = variable_weather;
-+        weather->word_2ad8 = ConvertWorldScriptInteger(*reinterpret_cast<WorldScriptValue*>(&value_kind));
++        weather->word_2ad8 = ConvertWorldScriptInteger(value);
 +        break;
 +    }
 +    case 0xdf:
 +    {
 +        WorldSubsystem44* events = world_subsystem_44;
-+        events->word_5c = ConvertWorldScriptInteger(*reinterpret_cast<WorldScriptValue*>(&value_kind));
++        events->word_5c = ConvertWorldScriptInteger(value);
 +        break;
 +    }
 +    }

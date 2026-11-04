@@ -426,6 +426,44 @@ class MatchingInputTests(unittest.TestCase):
                 matching.equivalent_copy_specs({'comparison_equivalent_copies': [copy, copy]}, rows, rebuilt,
                                                objects, folder, linked)
 
+    def test_scoped_equivalent_copy_may_share_a_folded_address(self):
+        code = b'\x6a\x01\xe8\0\0\0\0\xc3'
+        rows = [{'address': '0x4d3890', 'type': 'function', 'size': '8', 'symbol': '?Ignore@@YAXH@Z'},
+                {'address': '0x437d10', 'type': 'function', 'size': '8', 'symbol': '?Empty@Item@@UAEXXZ'}]
+        rebuilt = {'?Ignore@@YAXH@Z': 0x431000, '?Empty@Item@@UAEXXZ': 0x432000,
+                   '?Slot@State@@QAEXXZ': 0x432000}
+        objects = {'?Ignore@@YAXH@Z': 'sink.obj', '?Empty@Item@@UAEXXZ': 'item.obj',
+                   '?Slot@State@@QAEXXZ': 'item.obj'}
+        linked = ['"/nologo"', '"sink.obj"', '"item.obj"', '"slot.obj"']
+        target = {'functions': [{'address': '0x004e9d00', 'size': 11, 'name': 'Forward'}]}
+        copy = {'address': '0x004d3890', 'symbol': '?Slot@State@@QAEXXZ', 'function': '0x004e9d00'}
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            for name, symbol in (('sink.obj', '?Ignore@@YAXH@Z'), ('item.obj', '?Empty@Item@@UAEXXZ'),
+                                 ('slot.obj', '?Slot@State@@QAEXXZ')):
+                (folder / name).write_bytes(MatchingInputTests.call_coff(symbol, '?ReturnPool@@YAXXZ', code))
+            specs = matching.equivalent_copy_specs(target | {'comparison_equivalent_copies': [copy]}, rows,
+                                                   rebuilt, objects, folder, linked)
+            self.assertEqual(specs, [{'address': '0x004d3890', 'symbol': '?Slot@State@@QAEXXZ',
+                                      'identity_symbol': '?Ignore@@YAXH@Z', 'recomp': '0x00432000',
+                                      'identity_recomp': '0x00431000', 'function': '0x004e9d00'}])
+            for reason, item in [('unregistered function', copy | {'function': '0x004e9d10'}),
+                                 ('empty function', copy | {'function': ''}),
+                                 ('other key', copy | {'scope': '0x004e9d00'})]:
+                with self.subTest(reason=reason), self.assertRaises(ValueError):
+                    matching.equivalent_copy_specs(target | {'comparison_equivalent_copies': [item]}, rows,
+                                                   rebuilt, objects, folder, linked)
+        names = {0x431000: 'Ignore', 0x432000: 'Item::Empty'}
+        scoped = {'current': {}}
+        lookup = matching.equivalent_copy_lookup(lambda address, exact=False, indirect=False:
+                                                 names.get(address), {}, scoped)
+        self.assertEqual(lookup(0x432000), 'Item::Empty')
+        scoped['current'] = {0x432000: 0x431000}
+        self.assertEqual(lookup(0x432000), 'Ignore')
+        self.assertEqual(lookup(0x432000, indirect=True), 'Item::Empty')
+        scoped['current'] = {}
+        self.assertEqual(lookup(0x432000), 'Item::Empty')
+
     def test_equivalent_copy_operands_name_the_identity_function(self):
         calls = []
         def rebuilt_lookup(address, exact=False, indirect=False):
