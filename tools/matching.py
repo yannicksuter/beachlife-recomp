@@ -561,7 +561,7 @@ def game_metadata_rows(metadata):
 def merge_target_fragments(metadata, target):
     lists = ('functions', 'library_functions', 'unclassified_functions', 'comparison_anchors',
              'comparison_lifetime_anchors', 'comparison_global_operands',
-             'stlport_sources', 'runtime_cdecl_imports')
+             'comparison_equivalent_copies', 'stlport_sources', 'runtime_cdecl_imports')
     mappings = ('source_compile_options', 'stdcall_imports', 'runtime_stdcall_imports')
     # An empty option list in the base target pins nothing: one registration
     # crediting a body of that shared source may set its options once.
@@ -576,7 +576,8 @@ def merge_target_fragments(metadata, target):
                 if not isinstance(value, list) or not isinstance(target.get(key, []), list):
                     raise ValueError(f'{key} must be a list in matching target fragment: {path}')
                 existing = target.setdefault(key, [])
-                if key in ('comparison_anchors', 'comparison_lifetime_anchors', 'runtime_cdecl_imports'):
+                if key in ('comparison_anchors', 'comparison_lifetime_anchors', 'comparison_equivalent_copies',
+                           'runtime_cdecl_imports'):
                     # A callee anchor or CRT import shared by parallel registrations
                     # is kept once; a different anchor at its address still fails later.
                     value = [item for index, item in enumerate(value)
@@ -1174,6 +1175,118 @@ def folded_operand_lookup(original_lookup, rebuilt_lookup, aliases):
     return lookup
 
 
+# A code identity of a translation-unit static, such as a dynamic initializer
+# thunk _$E1/_$E2, written OBJECT:NAME because every unit has its own copy.
+STATIC_IDENTITY = re.compile(r'([A-Za-z0-9_][A-Za-z0-9_.-]*\.obj):([A-Za-z_$?@][^\s:]*)')
+
+
+def map_static_symbols(path):
+    """The LINK map's static symbols by (object, name), with each rebuilt address."""
+    found, active = {}, False
+    for line in Path(path).read_text(errors='replace').splitlines():
+        if line.strip() == 'Static symbols':
+            active = True
+            continue
+        parts = line.split()
+        if active and len(parts) >= 4 and ':' in parts[0] and re.fullmatch(r'[0-9a-fA-F]{8}', parts[2]):
+            found.setdefault((parts[-1], parts[1]), []).append(int(parts[2], 16))
+    return found
+
+
+def static_identity_specs(metadata_rows, statics):
+    """Code rows whose symbol names one static of one linked object.
+
+    The name alone cannot bind an original address: reccmp would choose any
+    unit's copy. The row binds only when the map lists exactly one static of
+    that name for that object."""
+    result = []
+    for row in metadata_rows:
+        match = STATIC_IDENTITY.fullmatch(row.get('symbol') or '')
+        if row.get('type') not in FOLDED_ALIAS_TYPES or not match:
+            continue
+        addresses = statics.get((match[1], match[2]), [])
+        if len(addresses) != 1:
+            raise ValueError(f"Static identity {row['symbol']} does not name exactly one linked static.")
+        result.append({'address': f"0x{int(row['address'], 16):08x}", 'symbol': row['symbol'],
+                       'recomp': f'0x{addresses[0]:08x}'})
+    return result
+
+
+def bind_static_identities(specs, original_match, rebuilt_match):
+    """Match each static identity at its map address when both sides are free.
+
+    Returns one record per identity ('map' when bound here, 'reccmp' when
+    reccmp already chose the same address, 'other' or False otherwise) and the
+    pairs to match."""
+    records, pairs, used = [], [], set()
+    for item in sorted(specs, key=lambda item: int(item['address'], 16)):
+        original, recomp = int(item['address'], 16), int(item['recomp'], 16)
+        matched = original_match(original)
+        if matched is not None:
+            bound = 'reccmp' if matched == recomp else 'other'
+        elif rebuilt_match(recomp) is not None or recomp in used:
+            bound = False
+        else:
+            used.add(recomp)
+            pairs.append((original, recomp))
+            bound = 'map'
+        records.append(dict(item, bound=bound))
+    return records, pairs
+
+
+def equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linked=()):
+    """Unfolded linked copies of a registered code identity, proven identical.
+
+    LINK folds identical functions only when their COMDAT selections allow it,
+    so a pick-any vendor instantiation can stay apart from a no-duplicates
+    function with the same code. A listed copy is a different linked function
+    whose COFF code and relocations (offset, type, target symbol, stored
+    addend) equal those of the identity's own function; operands naming the
+    copy are then compared as the identity."""
+    configured = target.get('comparison_equivalent_copies', [])
+    if not isinstance(configured, list):
+        raise ValueError('comparison_equivalent_copies must be a list.')
+    symbols = {int(row['address'], 16): row['symbol'] for row in metadata_rows
+               if row.get('type') in FOLDED_ALIAS_TYPES and row.get('symbol')}
+    result, seen = [], set()
+    for item in configured:
+        if (not isinstance(item, dict) or set(item) != {'address', 'symbol'} or
+                not all(isinstance(value, str) and value for value in item.values()) or
+                item['symbol'] in seen):
+            raise ValueError(f'Invalid comparison equivalent copy: {item}')
+        seen.add(item['symbol'])
+        address = int(item['address'], 16)
+        identity = symbols.get(address)
+        if identity is None or identity == item['symbol']:
+            raise ValueError(f"Equivalent copy {item['symbol']} names no other code identity.")
+        recomp, copy = rebuilt.get(identity), rebuilt.get(item['symbol'])
+        if recomp is None or copy is None or recomp == copy:
+            raise ValueError(f"Equivalent copy {item['symbol']} is not a separate linked function.")
+        # The map names the kept section's object, which after folding can
+        # define another symbol; every linked object defining one is compared.
+        bodies, owners = set(), []
+        for symbol in (identity, item['symbol']):
+            names = folded_alias_objects(folder, linked, objects.get(symbol, ''), symbol)
+            owners.append(names)
+            for name in names:
+                code, relocations = comparison_operand_coff(folder / name, symbol)
+                bodies.add((code, tuple(relocations)))
+        if not all(owners) or len(bodies) != 1:
+            raise ValueError(f"Equivalent copy {item['symbol']} differs from {identity}.")
+        result.append({'address': f'0x{address:08x}', 'symbol': item['symbol'], 'identity_symbol': identity,
+                       'recomp': f'0x{copy:08x}', 'identity_recomp': f'0x{recomp:08x}'})
+    return result
+
+
+def equivalent_copy_lookup(rebuilt_lookup, copies):
+    """Name a rebuilt copy's address as the identity function it duplicates."""
+    def lookup(address, exact=False, indirect=False):
+        if not indirect and address in copies:
+            return rebuilt_lookup(copies[address], exact=True)
+        return rebuilt_lookup(address, exact=exact, indirect=indirect)
+    return lookup
+
+
 def compare_global_operands(configuration, arguments):
     """Run pinned reccmp with instruction-scoped operand names, folded code
     identities bound at their LINK map address and operands naming a folded
@@ -1190,7 +1303,9 @@ def compare_global_operands(configuration, arguments):
     original_compare = FunctionComparator.compare_function
     original_load_cvdump, original_match_lines = reccmp_core.load_cvdump, reccmp_core.match_lines
     applied = {}
-    folded = {'publics': {}, 'records': None, 'aliases': {}}
+    folded = {'publics': {}, 'records': None, 'aliases': {}, 'statics': None}
+    copies = {int(item['recomp'], 16): int(item['identity_recomp'], 16)
+              for item in config.get('equivalent_copies', [])}
 
     def load_cvdump(analysis, db, recomp_bin):
         for public in analysis.parser.publics:
@@ -1206,6 +1321,13 @@ def compare_global_operands(configuration, arguments):
             entity = db.get(image, address)
             return None if entity is None else (
                 entity.recomp_addr if image == ImageId.ORIG else entity.orig_addr)
+        folded['statics'], static_pairs = bind_static_identities(
+            config.get('static_identities', []),
+            lambda address: matched(ImageId.ORIG, address), lambda address: matched(ImageId.RECOMP, address))
+        if static_pairs:
+            with db.batch() as batch:
+                for original, recomp in static_pairs:
+                    batch.match(original, recomp)
         folded['records'], pairs = bind_folded_identities(
             config.get('folded_identities', []), folded['publics'],
             lambda address: matched(ImageId.ORIG, address), lambda address: matched(ImageId.RECOMP, address))
@@ -1230,6 +1352,9 @@ def compare_global_operands(configuration, arguments):
             self.orig_sanitize.name_lookup = folded_operand_lookup(
                 self.orig_sanitize.name_lookup, self.recomp_sanitize.name_lookup, folded['aliases'])
             self.folded_operand_lookup = True
+        if copies and not getattr(self, 'equivalent_copy_lookup', False):
+            self.recomp_sanitize.name_lookup = equivalent_copy_lookup(self.recomp_sanitize.name_lookup, copies)
+            self.equivalent_copy_lookup = True
         rules = sorted((item for item in config['operands'] if int(item['function'], 16) == match.orig_addr),
                        key=lambda item: item['instruction_offset'])
         if not rules:
@@ -1306,6 +1431,10 @@ def compare_global_operands(configuration, arguments):
         save(config['validation'], [applied[key] for key in sorted(applied)])
         if 'folded_validation' in config:
             save(config['folded_validation'], folded['records'] or [])
+        if 'static_validation' in config:
+            if folded['statics'] is None:
+                raise ValueError('Comparator did not reach the static identity binding.')
+            save(config['static_validation'], folded['statics'])
         return result
     finally:
         FunctionComparator.compare_function = original_compare
@@ -1313,11 +1442,13 @@ def compare_global_operands(configuration, arguments):
         sys.argv = previous_arguments
 
 
-def global_operand_command(tool, metadata, target, source, sources, folder, command, folded=()):
-    """Without configured operands or folded identities, return the ordinary
-    reccmp command unchanged. Otherwise also return the validation paths."""
+def global_operand_command(tool, metadata, target, source, sources, folder, command, folded=(),
+                           statics=(), copies=()):
+    """Without configured operands, folded or static identities or equivalent
+    copies, return the ordinary reccmp command unchanged. Otherwise also return
+    the validation paths."""
     specs = comparison_global_operand_specs(metadata, target)
-    if not specs and not folded:
+    if not specs and not folded and not statics and not copies:
         return command, None, None
     linked = (folder / 'link.rsp').read_text().splitlines() if specs else []
     for item in specs:
@@ -1328,11 +1459,16 @@ def global_operand_command(tool, metadata, target, source, sources, folder, comm
         item.update(object=str(obj), object_sha256=digest(obj))
     config, validation = folder / 'global-operands.json', folder / 'global-operands-validated.json'
     folded_validation = folder / 'folded-identities-validated.json'
+    static_validation = folder / 'static-identities-validated.json'
     validation.unlink(missing_ok=True)
     folded_validation.unlink(missing_ok=True)
+    static_validation.unlink(missing_ok=True)
     save(config, {'operands': specs, 'validation': str(validation),
                   **({'folded_identities': list(folded), 'folded_validation': str(folded_validation)}
-                     if folded else {})})
+                     if folded else {}),
+                  **({'static_identities': list(statics), 'static_validation': str(static_validation)}
+                     if statics else {}),
+                  **({'equivalent_copies': list(copies)} if copies else {})})
     interpreter = Path(tool.reccmp).parent / ('python.exe' if os.name == 'nt' else 'python')
     if not interpreter.is_file():
         raise ValueError('Comparator policies require the Python interpreter beside reccmp-reccmp.')
@@ -1902,14 +2038,24 @@ def game(tool, args):
     folding = {'publics': map_public_names(map_path)}
     folded_specs = folded_identity_specs(metadata_rows, rebuilt, folding['publics'])
     unfolded = unfolded_annotations([*sources, *support_sources], metadata_rows, rebuilt, folding['publics'])
+    static_specs = static_identity_specs(metadata_rows, map_static_symbols(map_path))
+    copy_specs = equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linked)
     command, operand_validation, folded_validation = global_operand_command(
         tool, metadata, target, source, sources, folder,
         [tool.reccmp, '--target', 'BEACHLIFE', '--json', str(reports / 'comparison.json'), '--no-color'],
-        folded_specs)
+        folded_specs, static_specs, copy_specs)
     output = tool.run(command, folder)
     (reports / 'comparison.log').write_text(output)
     if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
         raise ValueError('Comparator reported an error; inspect comparison.log.')
+    static_records = []
+    if static_specs:
+        static_validation = folder / 'static-identities-validated.json'
+        if not static_validation.is_file():
+            raise ValueError('Comparator did not validate the static identities.')
+        static_records = json.loads(static_validation.read_text())
+        if any(record['bound'] not in ('map', 'reccmp') for record in static_records):
+            raise ValueError('A static identity was not bound at its own map address.')
     report = json.loads((reports / 'comparison.json').read_text())
     def folded_function(item):
         start, size = int(item['address'], 16), item['size']
@@ -1996,6 +2142,10 @@ def game(tool, args):
         if not folded_validation.is_file():
             raise ValueError('Comparator did not validate the folded identities.')
         result['comparison_folded_identities'] = json.loads(folded_validation.read_text())
+    if static_records:
+        result['comparison_static_identities'] = static_records
+    if copy_specs:
+        result['comparison_equivalent_copies'] = copy_specs
     if unfolded:
         # Diagnostic only: such a copy shows up as a mismatching call operand.
         result['comparison_unfolded_annotations'] = unfolded
