@@ -28,6 +28,12 @@ handwritten. LLMs helped me analyze the crash reports of the many bugs that
 crashed the game. And hey, you will enjoy many more bugs with this project,
 because neither I nor any LLM is perfect.
 
+I am also bad at UI and design, worse than any AI, so LLMs help me there too. I
+value the time I invest in hard problems more than time spent on something that
+just makes me depressed. Do you want to step in here with your talent? Yes,
+please reach out to me by
+[opening an issue](https://github.com/yannicksuter/beachlife-recomp/issues).
+
 This project shares a lot of code with
 [Recharged](https://github.com/previouslevelgames/recharged), a port of a
 Nintendo Wii game into which I have already sunk thousands of hours.
