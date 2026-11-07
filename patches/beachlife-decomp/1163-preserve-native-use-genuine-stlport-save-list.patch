@@ -1,0 +1,67 @@
+diff --git b/src/startup_screen_manager.h a/src/startup_screen_manager.h
+index 7169f70..b015024 100644
+--- b/src/startup_screen_manager.h
++++ a/src/startup_screen_manager.h
+@@ -4,10 +4,6 @@
+ #include "startup_list.h"
+ #include "startup_screen_item.h"
+ #include "startup_controller_selection.h"
+-#include <stddef.h>
+-#ifdef _STLPORT_VERSION
+-#include <vector>
+-#endif
+ 
+ struct ScreenItem;
+ struct ScreenDialogResource;
+@@ -75,23 +71,39 @@ struct GameScenarioNameRange
+     ~GameScenarioNameRange();
+ };
+ 
+-// The save list is an STLport 4.5.3 std::vector<GameSaveRecord*>; its
+-// destructor is the library body 0x004e5400. Units compiled without STLport
+-// see a 12-byte layout stand-in whose special members are private, so any use
+-// there fails to compile.
+-#ifdef _STLPORT_VERSION
+-typedef std::vector<GameSaveRecord*> GameSaveRecordRange;
+-#else
++// End-of-storage slot of the save record range (as GameScenarioNameCapacity).
++struct GameSaveRecordCapacity
++{
++    GameSaveRecord** data;
++
++    GameSaveRecordCapacity(GameSaveRecord** value);
++    ~GameSaveRecordCapacity();
++};
++
++// Empty library dispatch tag for the folded pointer-vector growth arm.
++struct GameSaveRecordTrueType
++{
++};
++
+ struct GameSaveRecordRange
+ {
+-private:
++    GameSaveRecord** begin;
++    GameSaveRecord** end;
++    GameSaveRecordCapacity capacity;
++
+     GameSaveRecordRange();
+-    GameSaveRecordRange(const GameSaveRecordRange&);
++    // Actual 0x004e5400, 142B library body: frees the pointer storage only.
+     ~GameSaveRecordRange();
+-    GameSaveRecordRange& operator=(const GameSaveRecordRange&);
+-    void* words_[3];
++
++    // Shared physical library body 0x004e80d0, RET8; typed projection separate.
++    GameSaveRecord** Erase(GameSaveRecord** first, GameSaveRecord** last);
++    // Actual folded library child 0x004c3a30, RET20; body remains separate.
++    void InsertOverflow(GameSaveRecord** position,
++        GameSaveRecord* const& value,
++        const GameSaveRecordTrueType& plain,
++        unsigned int count,
++        bool at_end);
+ };
+-#endif
+ 
+ // Complete observed 200-byte x86 Game storage for the genuine constructor.
+ // The retained descriptive class name does not establish a native owner layout.

@@ -41,7 +41,7 @@ read the same pin and select the native profile. For an explicit export, use the
 full revision from `source.json`:
 
 ```sh
-DECOMP_REVISION=3ca8a928a6cd71327d687189448f72d9e9b3dc07
+DECOMP_REVISION=7e14889ab1ecfa64f09176a693c853bfc598c130
 python3 tools/prepare_sources.py --output build/native-decomp/prepared \
   --decomp-only --decomp-revision "$DECOMP_REVISION" --decomp-profile native
 python3 tools/prepare_sources.py --output build/native-decomp/prepared \

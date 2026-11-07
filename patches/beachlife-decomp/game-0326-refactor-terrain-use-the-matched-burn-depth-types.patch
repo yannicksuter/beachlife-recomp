@@ -1,0 +1,74 @@
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index dc00b3fbe453f29108c1e9f0dd8ed3e942d04984..82f09413473e4888114108dbd339cb7729c14a27 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -89,8 +89,8 @@ struct ScreenDialogResource
+ {
+     void BurnTerrain(const ScreenWorldPosition* position);                                                                                                     // 0x00415090.
+     ScreenRectangle WorldRectangle(const ScreenWorldPosition* position);                                                                                       // 0x00412b80.
+-    void BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth);                                                             // 0x00415210.
+-    void BurnTerrainClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth);                    // 0x004146f0.
++    void BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y, unsigned short depth);                                                           // 0x00415210.
++    void BurnTerrainClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, unsigned short depth);                  // 0x004146f0.
+     void BurnBuildingFootprint(const ScreenWorldPosition* position, unsigned int width, unsigned int height);                                                  // 0x004155f0.
+     void BurnBuildingTiles(int tile_x, int tile_y, int offset_x, int offset_y, float depth_step, unsigned int depth);                                          // 0x00415890.
+     void BurnBuildingClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, float depth_step, unsigned int depth); // 0x00415c40.
+diff --git a/src/startup_screen_dialog_resource_terrain.cpp b/src/startup_screen_dialog_resource_terrain.cpp
+index bf6f82c2a396cd471335a552b32a3ab7279d30e9..5aca9c53c9f9574d1a97a6286fc424f75ae0f5e6 100644
+--- a/src/startup_screen_dialog_resource_terrain.cpp
++++ b/src/startup_screen_dialog_resource_terrain.cpp
+@@ -20,7 +20,11 @@ void ScreenDialogResource::BurnTerrain(const ScreenWorldPosition* position)
+     screen.y += SelectedFrame()->word_14;
+     screen.x += overlay_map->scroll_x_c4;
+     screen.y += overlay_map->scroll_y_c8;
+-    ScreenRectangle rectangle = { 0, 0, SelectedFrame()->width_0e, SelectedFrame()->height_10 };
++    ScreenRectangle rectangle;
++    rectangle.top = 0;
++    rectangle.right = SelectedFrame()->width_0e;
++    rectangle.left = 0;
++    rectangle.bottom = SelectedFrame()->height_10;
+     bool clipped = false;
+     if (screen.x < 0)
+     {
+@@ -44,12 +48,16 @@ void ScreenDialogResource::BurnTerrain(const ScreenWorldPosition* position)
+         screen.y = 0;
+         clipped = true;
+     }
+-    unsigned int depth = overlay_map->DepthAt(position);
++    unsigned short depth = overlay_map->DepthAt(position);
+     if (!(depth & 1))
+         ++depth;
+     int size = overlay_map->tile_size_dc;
++    int column = screen.x / size;
++    int row = screen.y / size;
++    int x_offset = screen.x % size;
++    int y_offset = screen.y % size;
+     if (clipped)
+-        BurnTerrainClippedTiles(&rectangle, screen.x / size, screen.y / size, screen.x % size, screen.y % size, depth);
++        BurnTerrainClippedTiles(&rectangle, column, row, x_offset, y_offset, depth);
+     else
+-        BurnTerrainTiles(screen.x / size, screen.y / size, screen.x % size, screen.y % size, depth);
++        BurnTerrainTiles(column, row, x_offset, y_offset, depth);
+ }
+diff --git a/src/startup_screen_dialog_terrain_tiles.cpp b/src/startup_screen_dialog_terrain_tiles.cpp
+index 2b458bb56f851dcd1fbb06c014c490bdbb9ce239..19e3805726025a4e19986becb43ce7fc2000b48b 100644
+--- a/src/startup_screen_dialog_terrain_tiles.cpp
++++ b/src/startup_screen_dialog_terrain_tiles.cpp
+@@ -48,7 +48,7 @@ static void BurnTerrainPixel(unsigned int* pixel, const unsigned char* data, con
+ 
+ // FUNCTION: BEACHLIFE 0x00415210
+ void ScreenDialogResource::BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y,
+-    unsigned int depth)
++    unsigned short depth)
+ {
+     const unsigned char* data = SelectedFrame()->SelectData(word_14, word_18);
+     OverlayMapPrefix* map = overlay_map;
+@@ -96,7 +96,7 @@ void ScreenDialogResource::BurnTerrainTiles(int tile_x, int tile_y, int offset_x
+ 
+ // FUNCTION: BEACHLIFE 0x004146f0
+ void ScreenDialogResource::BurnTerrainClippedTiles(const ScreenRectangle* rectangle,
+-    int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth)
++    int tile_x, int tile_y, int offset_x, int offset_y, unsigned short depth)
+ {
+     const unsigned char* data = SelectedFrame()->SelectData(word_14, word_18);
+     OverlayMapPrefix* map = overlay_map;

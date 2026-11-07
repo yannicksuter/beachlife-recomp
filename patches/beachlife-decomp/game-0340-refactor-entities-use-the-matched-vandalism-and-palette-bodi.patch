@@ -1,0 +1,229 @@
+diff --git a/src/startup_entity_building_contents.cpp b/src/startup_entity_building_contents.cpp
+index ce3c11ba05d13efcc3a2bacd7df0f9f663df3669..8e5de4618c5536d9d165a3fc6adefd8880d5c3a2 100644
+--- a/src/startup_entity_building_contents.cpp
++++ b/src/startup_entity_building_contents.cpp
+@@ -9,14 +9,23 @@ static bool IsBuildingStaff(unsigned char kind)
+ // FUNCTION: BEACHLIFE 0x00461f10
+ void VariableEntity::OpenBuildingContents()
+ {
+-    for (unsigned int i = 0; i < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90; ++i)
+-        if (IsBuildingStaff(variable_world->FindObject(AsBuilding()->staff_ids_64[i])->kind_2c))
+-            variable_world->FindObject(AsBuilding()->staff_ids_64[i])->visible_40 = 1;
+-    for (unsigned int i = 0; i < AsBuilding()->additional_staff_count_bc; ++i)
+-        if (IsBuildingStaff(variable_world->FindObject(AsBuilding()->additional_staff_94[i])->kind_2c))
+-            variable_world->FindObject(AsBuilding()->additional_staff_94[i])->visible_40 = 1;
+-    for (int i = 0; i < AsBuilding()->contents_count_36c; ++i)
+-        variable_world->FindObject(AsBuilding()->contents_370[i])->OpenContainedEntity();
++    if (AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90)
++    {
++        for (unsigned int i = 0; i < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90; ++i)
++            if (IsBuildingStaff(variable_world->FindObject(AsBuilding()->staff_ids_64[i])->kind_2c))
++                variable_world->FindObject(AsBuilding()->staff_ids_64[i])->visible_40 = 1;
++    }
++    if (AsBuilding()->additional_staff_count_bc)
++    {
++        for (unsigned int j = 0; j < AsBuilding()->additional_staff_count_bc; ++j)
++            if (IsBuildingStaff(variable_world->FindObject(AsBuilding()->additional_staff_94[j])->kind_2c))
++                variable_world->FindObject(AsBuilding()->additional_staff_94[j])->visible_40 = 1;
++    }
++    if (AsBuilding()->contents_count_36c)
++    {
++        for (int k = 0; k < AsBuilding()->contents_count_36c; ++k)
++            variable_world->FindObject(AsBuilding()->contents_370[k])->OpenContainedEntity();
++    }
+     if (AsBuilding()->events_170)
+         AsBuilding()->events_170->Open();
+ }
+diff --git a/src/startup_entity_strike_scenery.cpp b/src/startup_entity_strike_scenery.cpp
+index f9cc2f167a992890c642ec0979de0c68d2f9b977..1685329e1731e711272f919d2bda971875d2485c 100644
+--- a/src/startup_entity_strike_scenery.cpp
++++ b/src/startup_entity_strike_scenery.cpp
+@@ -8,28 +8,28 @@
+ void VariableEntity::StrikeScenery()
+ {
+     WorldSceneryEntity* scenery = AsScenery();
+-    if (scenery->byte_a0 != 1)
++    scenery->SetVandalized(1);
++    if (!_stricmp(keyline_state_44->name, "street_lamp"))
+     {
+-        scenery->byte_a0 = 1;
+-        scenery->word_a4 = 1;
+-        scenery->word_ac = keyline_state_44->word_10;
+-        ScreenModeCommand command;
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = 0x54;
+-        command.words[3] = 0;
+-        command.words[4] = 0;
+-        screen_mode_commands->QueueCommand(&command);
++        float time = window_deactivation_state->time_158;
++        keyline_state_44->SetAnimation("StreetLamp_Van_2Static", time, 0);
+     }
+-    if (!_stricmp(keyline_state_44->name, "street_lamp"))
+-        keyline_state_44->SetAnimation("StreetLamp_Van_2Static", window_deactivation_state->time_158, 0);
+     else if (!_stricmp(keyline_state_44->name, "bin"))
+     {
+         if (scenery->word_90 == scenery->scenery_f4->capacity_2dc)
+-            keyline_state_44->SetAnimation("fullbin_vandalise_static", window_deactivation_state->time_158, 0);
++        {
++            float time = window_deactivation_state->time_158;
++            keyline_state_44->SetAnimation("fullbin_vandalise_static", time, 0);
++        }
+         else
+-            keyline_state_44->SetAnimation("emptybin_vandalise_static", window_deactivation_state->time_158, 0);
++        {
++            float time = window_deactivation_state->time_158;
++            keyline_state_44->SetAnimation("emptybin_vandalise_static", time, 0);
++        }
+     }
+     else if (!_stricmp(keyline_state_44->name, "bench"))
+-        keyline_state_44->SetAnimation("bench_vandalise_static", window_deactivation_state->time_158, 0);
++    {
++        float time = window_deactivation_state->time_158;
++        keyline_state_44->SetAnimation("bench_vandalise_static", time, 0);
++    }
+ }
+diff --git a/src/startup_world_guest_palette_actions.cpp b/src/startup_world_guest_palette_actions.cpp
+index 37892890a3fed48da10e14262b2e11151bf86af1..c5a5d5d47c579de76581785874fbe423f28412da 100644
+--- a/src/startup_world_guest_palette_actions.cpp
++++ b/src/startup_world_guest_palette_actions.cpp
+@@ -4,17 +4,60 @@
+ // FUNCTION: BEACHLIFE 0x004775e0
+ void WorldGuestEntity::PerformAction7()
+ {
+-    bool fixed_palette = guest_f4->unknown_1e0[8] != 0;
+-    int count;
+-    if (guest_f4->word_1c4 == 1)
+-        count = 4;
++    if (!guest_f4->unknown_1e0[8])
++    {
++        if (guest_f4->word_1c4 == 1)
++        {
++            int group = (rand() % 4) * 5;
++            int palette = rand() % 7 + group * 2 + 2;
++            if (palette >= keyline_state_44->record->palette_count)
++                palette = keyline_state_44->record->palette_count - 1;
++            keyline_state_44->word_1c = palette;
++        }
++        else if (_stricmp(keyline_state_44->name, "FAT_BLOKE") == 0)
++        {
++            int group = (rand() % 3) * 5;
++            int palette = rand() % 7 + group * 2 + 2;
++            if (palette >= keyline_state_44->record->palette_count)
++                palette = keyline_state_44->record->palette_count - 1;
++            keyline_state_44->word_1c = palette;
++        }
++        else
++        {
++            int group = (rand() % 6) * 5;
++            int palette = rand() % 7 + group * 2 + 2;
++            if (palette >= keyline_state_44->record->palette_count)
++                palette = keyline_state_44->record->palette_count - 1;
++            keyline_state_44->word_1c = palette;
++        }
++    }
+     else
+-        count = _stricmp(keyline_state_44->name, "FAT_BLOKE") == 0 ? 3 : 6;
+-    int palette = (std::rand() % count) * 10;
+-    palette += fixed_palette ? 1 : std::rand() % 7 + 2;
+-    if (palette >= keyline_state_44->record->palette_count)
+-        palette = keyline_state_44->record->palette_count - 1;
+-    keyline_state_44->word_1c = palette;
++    {
++        if (guest_f4->word_1c4 == 1)
++        {
++            int group = (rand() % 4) * 5;
++            int palette = group * 2 + 1;
++            if (palette >= keyline_state_44->record->palette_count)
++                palette = keyline_state_44->record->palette_count - 1;
++            keyline_state_44->word_1c = palette;
++        }
++        else if (_stricmp(keyline_state_44->name, "FAT_BLOKE") == 0)
++        {
++            int group = (rand() % 3) * 5;
++            int palette = group * 2 + 1;
++            if (palette >= keyline_state_44->record->palette_count)
++                palette = keyline_state_44->record->palette_count - 1;
++            keyline_state_44->word_1c = palette;
++        }
++        else
++        {
++            int group = (rand() % 6) * 5;
++            int palette = group * 2 + 1;
++            if (palette >= keyline_state_44->record->palette_count)
++                palette = keyline_state_44->record->palette_count - 1;
++            keyline_state_44->word_1c = palette;
++        }
++    }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00478570
+diff --git a/src/startup_world_performer_lifetime.cpp b/src/startup_world_performer_lifetime.cpp
+index 033813013ab3b1489b194ffd66db1b50557d25d3..2d279d4dd658247b2c4f3693555c8d330a1bb2af 100644
+--- a/src/startup_world_performer_lifetime.cpp
++++ b/src/startup_world_performer_lifetime.cpp
+@@ -86,31 +86,51 @@ void* WorldEntity20::Destroy(unsigned int flags)
+ void WorldEntity14::SetOwner(unsigned int owner)
+ {
+     type_f8 = owner;
+-    int palette;
+     switch (owner)
+     {
+     case 0:
++    {
++        keyline_state_44 = screen_dialog_resources->Find("GAIL");
++        int group = (rand() % 4) * 5;
++        int palette = rand() % 7 + group * 2 + 2;
++        if (palette >= keyline_state_44->record->palette_count)
++            palette = keyline_state_44->record->palette_count - 1;
++        keyline_state_44->word_1c = palette;
++        break;
++    }
+     case 1:
+     {
+-        keyline_state_44 = screen_dialog_resources->Find(owner == 0 ? "GAIL" : "SHAZ");
+-        int group = rand() % 4;
+-        palette = rand() % 7 + group * 10 + 2;
++        keyline_state_44 = screen_dialog_resources->Find("SHAZ");
++        int group = (rand() % 4) * 5;
++        int palette = rand() % 7 + group * 2 + 2;
++        if (palette >= keyline_state_44->record->palette_count)
++            palette = keyline_state_44->record->palette_count - 1;
++        keyline_state_44->word_1c = palette;
+         break;
+     }
+     case 2:
+-        keyline_state_44 = screen_dialog_resources->Find("FAT_BLOKE");
+-        palette = rand() % keyline_state_44->record->palette_count;
++    {
++        ScreenDialogResource* keyline = screen_dialog_resources->Find("FAT_BLOKE");
++        keyline_state_44 = keyline;
++        int count = keyline->record->palette_count;
++        int palette = rand() % count;
++        if (palette >= keyline_state_44->record->palette_count)
++            palette = keyline_state_44->record->palette_count - 1;
++        keyline_state_44->word_1c = palette;
+         break;
++    }
+     case 3:
+-        keyline_state_44 = screen_dialog_resources->Find("FIT_BLOKE");
+-        palette = rand() % keyline_state_44->record->palette_count;
++    {
++        ScreenDialogResource* keyline = screen_dialog_resources->Find("FIT_BLOKE");
++        keyline_state_44 = keyline;
++        int count = keyline->record->palette_count;
++        int palette = rand() % count;
++        if (palette >= keyline_state_44->record->palette_count)
++            palette = keyline_state_44->record->palette_count - 1;
++        keyline_state_44->word_1c = palette;
+         break;
+-    default:
+-        return;
+     }
+-    if (palette >= keyline_state_44->record->palette_count)
+-        palette = keyline_state_44->record->palette_count - 1;
+-    keyline_state_44->word_1c = palette;
++    }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048c350

@@ -335,6 +335,146 @@ class MatchingInputTests(unittest.TestCase):
         self.assertEqual(pairs, [(0x1020, 0x2020), (0x1060, 0x2060)])
         self.assertEqual(records[0], specs[0] | {'bound': 'map'})
 
+    def test_static_identity_names_one_static_of_one_linked_object(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'BeachLife.map'
+            path.write_text(' 0001:00000010       ?Public@@YAXXZ             00401010 f   one.obj\r\n'
+                            '\r\n Static symbols\r\n\r\n'
+                            ' 0001:000000d0       _$E2                       004010d0 f   one.obj\r\n'
+                            ' 0001:000000e0       _$E1                       004010e0 f   one.obj\r\n'
+                            ' 0001:00000130       _$E2                       00401130 f   two.obj\r\n'
+                            ' 0001:00000140       _$E2                       00401140 f   twice.obj\r\n'
+                            ' 0001:00000150       _$E2                       00401150 f   twice.obj\r\n')
+            statics = matching.map_static_symbols(path)
+        self.assertEqual(statics[('one.obj', '_$E2')], [0x4010d0])
+        self.assertEqual(statics[('twice.obj', '_$E2')], [0x401140, 0x401150])
+        self.assertNotIn(('one.obj', '?Public@@YAXXZ'), statics)
+        rows = [{'address': '0x4ec0d0', 'type': 'function', 'size': '5', 'symbol': 'one.obj:_$E2'},
+                {'address': '0x4ec0e0', 'type': 'function', 'size': '10', 'symbol': 'one.obj:_$E1'},
+                {'address': '0x4ec130', 'type': 'function', 'size': '5', 'symbol': 'two.obj:_$E2'},
+                {'address': '0x4ec200', 'type': 'global', 'size': '4', 'symbol': 'one.obj:_$E2'},
+                {'address': '0x4ec300', 'type': 'function', 'size': '4', 'symbol': '?Public@@YAXXZ'}]
+        self.assertEqual(matching.static_identity_specs(rows, statics), [
+            {'address': '0x004ec0d0', 'symbol': 'one.obj:_$E2', 'recomp': '0x004010d0'},
+            {'address': '0x004ec0e0', 'symbol': 'one.obj:_$E1', 'recomp': '0x004010e0'},
+            {'address': '0x004ec130', 'symbol': 'two.obj:_$E2', 'recomp': '0x00401130'}])
+        for symbol in ('twice.obj:_$E2', 'absent.obj:_$E2', 'one.obj:_$E3'):
+            with self.subTest(symbol=symbol), self.assertRaises(ValueError):
+                matching.static_identity_specs([{'address': '0x1', 'type': 'function', 'symbol': symbol}],
+                                               statics)
+
+    def test_static_identity_binds_only_when_both_sides_are_unmatched(self):
+        def spec(address, recomp):
+            return {'address': f'0x{address:08x}', 'symbol': f'one.obj:_$E{address}', 'recomp': f'0x{recomp:08x}'}
+        original = {0x1100: 0x2100, 0x1200: 0x2400}
+        rebuilt = {recomp: address for address, recomp in original.items()}
+        specs = [spec(0x1300, 0x2300), spec(0x1100, 0x2100), spec(0x1200, 0x2200),
+                 spec(0x1400, 0x2400), spec(0x1500, 0x2300)]
+        records, pairs = matching.bind_static_identities(specs, original.get, rebuilt.get)
+        self.assertEqual({record['address']: record['bound'] for record in records},
+                         {'0x00001100': 'reccmp', '0x00001200': 'other', '0x00001300': 'map',
+                          '0x00001400': False, '0x00001500': False})
+        self.assertEqual(pairs, [(0x1300, 0x2300)])
+
+    def test_equivalent_copy_needs_identical_coff_code_and_relocations(self):
+        code = b'\x6a\x01\xe8\0\0\0\0\xc3'
+        rows = [{'address': '0x4209d0', 'type': 'function', 'size': '8', 'symbol': '?Erase@List@@QAEXXZ'},
+                {'address': '0x420a00', 'type': 'global', 'size': '4', 'symbol': '?value@@3HA'}]
+        rebuilt = {'?Erase@List@@QAEXXZ': 0x431000, '?erase@?$list@PAH@@QAEXXZ': 0x433a80,
+                   '?Folded@@QAEXXZ': 0x431000}
+        objects = {'?Erase@List@@QAEXXZ': 'identity.obj', '?erase@?$list@PAH@@QAEXXZ': 'copy.obj',
+                   '?Folded@@QAEXXZ': 'identity.obj'}
+        copy = {'address': '0x004209d0', 'symbol': '?erase@?$list@PAH@@QAEXXZ'}
+        linked = ['"/nologo"', '"identity.obj"', '"copy.obj"', '"kept.obj"']
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / 'identity.obj').write_bytes(
+                MatchingInputTests.call_coff('?Erase@List@@QAEXXZ', '?ReturnPool@@YAXXZ', code))
+            (folder / 'copy.obj').write_bytes(
+                MatchingInputTests.call_coff('?erase@?$list@PAH@@QAEXXZ', '?ReturnPool@@YAXXZ', code))
+            specs = matching.equivalent_copy_specs({'comparison_equivalent_copies': [copy]}, rows, rebuilt,
+                                                   objects, folder, linked)
+            self.assertEqual(specs, [{'address': '0x004209d0', 'symbol': '?erase@?$list@PAH@@QAEXXZ',
+                                      'identity_symbol': '?Erase@List@@QAEXXZ', 'recomp': '0x00433a80',
+                                      'identity_recomp': '0x00431000'}])
+            self.assertEqual(matching.equivalent_copy_specs({}, rows, rebuilt, objects, folder, linked), [])
+            # After folding the map can name another symbol's object for the identity.
+            (folder / 'kept.obj').write_bytes(
+                MatchingInputTests.call_coff('?Folded@@QAEXXZ', '?ReturnPool@@YAXXZ', code))
+            self.assertEqual(matching.equivalent_copy_specs(
+                {'comparison_equivalent_copies': [copy]}, rows, rebuilt,
+                objects | {'?Erase@List@@QAEXXZ': 'kept.obj'}, folder, linked), specs)
+            for reason, data, item in [
+                    ('other callee', MatchingInputTests.call_coff(
+                        '?erase@?$list@PAH@@QAEXXZ', '?Other@@YAXXZ', code), copy),
+                    ('other code', MatchingInputTests.call_coff(
+                        '?erase@?$list@PAH@@QAEXXZ', '?ReturnPool@@YAXXZ', b'\x6a\x02' + code[2:]), copy),
+                    ('folded, not a copy', None, {'address': '0x004209d0', 'symbol': '?Folded@@QAEXXZ'}),
+                    ('no code identity', None, {'address': '0x00420a00', 'symbol': copy['symbol']}),
+                    ('the identity itself', None, {'address': '0x004209d0', 'symbol': '?Erase@List@@QAEXXZ'}),
+                    ('not linked', None, {'address': '0x004209d0', 'symbol': '?Missing@@QAEXXZ'}),
+                    ('extra key', None, copy | {'size': '8'})]:
+                with self.subTest(reason=reason):
+                    if data is not None:
+                        (folder / 'copy.obj').write_bytes(data)
+                    with self.assertRaises(ValueError):
+                        matching.equivalent_copy_specs({'comparison_equivalent_copies': [item]}, rows, rebuilt,
+                                                       objects, folder, linked)
+            (folder / 'copy.obj').write_bytes(
+                MatchingInputTests.call_coff('?erase@?$list@PAH@@QAEXXZ', '?ReturnPool@@YAXXZ', code))
+            with self.assertRaises(ValueError):
+                matching.equivalent_copy_specs({'comparison_equivalent_copies': [copy, copy]}, rows, rebuilt,
+                                               objects, folder, linked)
+
+    def test_scoped_equivalent_copy_may_share_a_folded_address(self):
+        code = b'\x6a\x01\xe8\0\0\0\0\xc3'
+        rows = [{'address': '0x4d3890', 'type': 'function', 'size': '8', 'symbol': '?Ignore@@YAXH@Z'},
+                {'address': '0x437d10', 'type': 'function', 'size': '8', 'symbol': '?Empty@Item@@UAEXXZ'}]
+        rebuilt = {'?Ignore@@YAXH@Z': 0x431000, '?Empty@Item@@UAEXXZ': 0x432000,
+                   '?Slot@State@@QAEXXZ': 0x432000}
+        objects = {'?Ignore@@YAXH@Z': 'sink.obj', '?Empty@Item@@UAEXXZ': 'item.obj',
+                   '?Slot@State@@QAEXXZ': 'item.obj'}
+        linked = ['"/nologo"', '"sink.obj"', '"item.obj"', '"slot.obj"']
+        target = {'functions': [{'address': '0x004e9d00', 'size': 11, 'name': 'Forward'}]}
+        copy = {'address': '0x004d3890', 'symbol': '?Slot@State@@QAEXXZ', 'function': '0x004e9d00'}
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            for name, symbol in (('sink.obj', '?Ignore@@YAXH@Z'), ('item.obj', '?Empty@Item@@UAEXXZ'),
+                                 ('slot.obj', '?Slot@State@@QAEXXZ')):
+                (folder / name).write_bytes(MatchingInputTests.call_coff(symbol, '?ReturnPool@@YAXXZ', code))
+            specs = matching.equivalent_copy_specs(target | {'comparison_equivalent_copies': [copy]}, rows,
+                                                   rebuilt, objects, folder, linked)
+            self.assertEqual(specs, [{'address': '0x004d3890', 'symbol': '?Slot@State@@QAEXXZ',
+                                      'identity_symbol': '?Ignore@@YAXH@Z', 'recomp': '0x00432000',
+                                      'identity_recomp': '0x00431000', 'function': '0x004e9d00'}])
+            for reason, item in [('unregistered function', copy | {'function': '0x004e9d10'}),
+                                 ('empty function', copy | {'function': ''}),
+                                 ('other key', copy | {'scope': '0x004e9d00'})]:
+                with self.subTest(reason=reason), self.assertRaises(ValueError):
+                    matching.equivalent_copy_specs(target | {'comparison_equivalent_copies': [item]}, rows,
+                                                   rebuilt, objects, folder, linked)
+        names = {0x431000: 'Ignore', 0x432000: 'Item::Empty'}
+        scoped = {'current': {}}
+        lookup = matching.equivalent_copy_lookup(lambda address, exact=False, indirect=False:
+                                                 names.get(address), {}, scoped)
+        self.assertEqual(lookup(0x432000), 'Item::Empty')
+        scoped['current'] = {0x432000: 0x431000}
+        self.assertEqual(lookup(0x432000), 'Ignore')
+        self.assertEqual(lookup(0x432000, indirect=True), 'Item::Empty')
+        scoped['current'] = {}
+        self.assertEqual(lookup(0x432000), 'Item::Empty')
+
+    def test_equivalent_copy_operands_name_the_identity_function(self):
+        calls = []
+        def rebuilt_lookup(address, exact=False, indirect=False):
+            calls.append((address, exact, indirect))
+            return {0x431000: 'List::Erase', 0x433a80: 'list::erase'}.get(address)
+        lookup = matching.equivalent_copy_lookup(rebuilt_lookup, {0x433a80: 0x431000})
+        self.assertEqual(lookup(0x433a80), 'List::Erase')
+        self.assertEqual(lookup(0x433a80, indirect=True), 'list::erase')
+        self.assertEqual(lookup(0x431000), 'List::Erase')
+        self.assertEqual(calls, [(0x431000, True, False), (0x433a80, False, True), (0x431000, False, False)])
+
     def test_operands_of_a_folded_identity_held_by_another_original_name_the_rebuilt_address(self):
         def record(address, symbol, recomp, names, bound=False):
             return {'address': f'0x{address:08x}', 'symbol': symbol, 'recomp': f'0x{recomp:08x}',

@@ -1,0 +1,84 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 8cd4cd1..01a2409 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -567,7 +567,7 @@ extern "C"
+ 
+ // Comparison-only live aggregate and writable terminated name; never run this image.
+ typedef char resource_lookup_pointer_width[sizeof(void*) == 4 ? 1 : -1];
+-typedef char resource_lookup_prefix_extent[sizeof(ScreenDialogResourceLookup) == 20 ? 1 : -1];
++typedef char resource_lookup_prefix_extent[sizeof(ScreenDialogResourceLookup) == 0x1b0 ? 1 : -1];
+ typedef char resource_lookup_count_offset[offsetof(ScreenDialogResourceLookup, record_count) == 12 ? 1 : -1];
+ typedef char resource_lookup_records_offset[offsetof(ScreenDialogResourceLookup, records) == 16 ? 1 : -1];
+ 
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index d978b68..e31aa32 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -2,6 +2,8 @@
+ #ifndef STARTUP_SCREEN_DIALOG_RESOURCE_H
+ #define STARTUP_SCREEN_DIALOG_RESOURCE_H
+ 
++#include "startup_world_list.h"
++
+ struct ScreenWorldPosition;
+ struct ScreenMapPosition;
+ struct ScreenRectangle;
+@@ -164,17 +166,29 @@ struct ScreenDialogResourceLookup;
+ struct ScreenDialogResourceRegistration
+ {
+     explicit ScreenDialogResourceRegistration(ScreenDialogResourceLookup* owner);
+-    ~ScreenDialogResourceRegistration(); // 0x00417de0.
++    ~ScreenDialogResourceRegistration();
+ };
+ 
+-// Only this lookup prefix is established; no complete manager lifetime claim.
++struct ScreenDialogPaletteModifiers;
++
++// Complete 0x1b0-byte x86 owner. The loaded-resource list is the genuine
++// STLport list in STLport units and a layout-only stand-in elsewhere.
+ struct ScreenDialogResourceLookup : ScreenDialogResourceRegistration
+ {
+-    unsigned char unknown_00[0x0c];
++    FILE* metadata_file;
++    int data_file;
++    ScreenDialogPaletteModifiers* palette_modifiers;
+     int record_count;
+     ScreenDialogResourceRecord** records;
++    WorldList<ScreenDialogResource*>::Type loaded_resources;
++    unsigned char unknown_18[4];
++    unsigned int word_1c;
++    char recent_names[5][80];
+ 
+-    void Update(float time); // 0x00417b90.
++    ScreenDialogResourceLookup();  // 0x004175b0.
++    ~ScreenDialogResourceLookup(); // 0x00417710.
++    int Load();                    // 0x00417820.
++    void Update(float time);       // 0x00417b90.
+ 
+     ScreenDialogResource* Lookup(const char* name);
+     ScreenDialogResource* Find(const char* name);
+@@ -183,8 +197,23 @@ struct ScreenDialogResourceLookup : ScreenDialogResourceRegistration
+ 
+ extern int screen_dialog_resource_update_index; // 0x005a8924.
+ extern ScreenDialogResourceLookup* screen_dialog_resources;
++// Writable, initially empty source of the five recent names (0x005a8930).
++extern char screen_dialog_resource_initial_name[];
+ extern const char screen_dialog_clear_name[];
+ extern const char screen_dialog_none_name[];
+ extern const char screen_dialog_fallback_name[];
+ 
++inline ScreenDialogResourceRegistration::ScreenDialogResourceRegistration(ScreenDialogResourceLookup* owner)
++{
++    screen_dialog_resources = owner;
++}
++
++// Expanded by /Ob1 owners; unwinding and /Ob0 callers use the shared
++// out-of-line copy emitted by match_00417de0.cpp.
++// FUNCTION: BEACHLIFE 0x00417de0
++inline ScreenDialogResourceRegistration::~ScreenDialogResourceRegistration()
++{
++    screen_dialog_resources = 0;
++}
++
+ #endif

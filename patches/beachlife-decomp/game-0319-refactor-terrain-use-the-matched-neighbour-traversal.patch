@@ -1,0 +1,246 @@
+diff --git a/src/startup_screen_mode_pointer_entities.cpp b/src/startup_screen_mode_pointer_entities.cpp
+index 2f9f36c4093e2b5a279d646a51f2df7e3afbf58d..f6956cbe8694c02f7dda37e2c4f6f4b1390e91e8 100644
+--- a/src/startup_screen_mode_pointer_entities.cpp
++++ b/src/startup_screen_mode_pointer_entities.cpp
+@@ -33,7 +33,7 @@ unsigned char ScreenMode4Controller::SelectBuildingAtPointer(unsigned char flag,
+     if (selected)
+         return selected;
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(tile.x, tile.y, neighbours);
++    screen_terrain_grid->Neighbours(tile, neighbours);
+     for (int index = 0; index < 8 && !selected; ++index)
+     {
+         objects = neighbours[index]->Objects();
+@@ -64,7 +64,7 @@ unsigned char ScreenMode4Controller::SelectGuestAtPointer(unsigned char flag, Sc
+     if (selected)
+         return selected;
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(tile.x, tile.y, neighbours);
++    screen_terrain_grid->Neighbours(tile, neighbours);
+     for (int index = 0; index < 8 && !selected; ++index)
+     {
+         objects = neighbours[index]->Objects();
+diff --git a/src/startup_screen_mode_remove.cpp b/src/startup_screen_mode_remove.cpp
+index b99348f5e6cb8b5cb36ef0171d07f6881abdde1a..a0462dbca4bc73a404a93d3fb49967db01c2b70c 100644
+--- a/src/startup_screen_mode_remove.cpp
++++ b/src/startup_screen_mode_remove.cpp
+@@ -6,7 +6,7 @@
+ static bool PathHasClearNeighbours(const ScreenPoint* point)
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(point->x, point->y, neighbours);
++    screen_terrain_grid->Neighbours(*point, neighbours);
+     for (int index = 0; index < 8; ++index)
+         if (neighbours[index]->flags_48 & 0x10)
+             return false;
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 7897d623ce96f2321137464927dd25c9e61ce6b0..b401f49f8f87484ed9a6d4eab97500f5ec68f6d3 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -120,7 +120,7 @@ struct ScreenTerrainGrid : TerrainRegistration
+     void ArrivalPosition(ScreenWorldPosition* position, int* heading, ScreenPoint* tile);   // 0x00447880.
+     void DeparturePosition(ScreenWorldPosition* position, int* heading, ScreenPoint* tile); // 0x004478d0.
+     CircularList* ObjectsAt(int x, int y);                                                  // 0x00446130.
+-    void Neighbours(int x, int y, ScreenTerrainCell** output);                              // 0x00445e40.
++    void Neighbours(ScreenPoint neighbour, ScreenTerrainCell** output);                     // 0x00445e40.
+     unsigned int TileIndex(int x, int y);                                                   // 0x0041f850.
+     ScreenPoint WorldToTile(ScreenWorldPosition position);                                  // 0x00446170.
+     int CountWaterTiles(int left, int top, int right, int bottom);                          // 0x004468a0.
+diff --git a/src/startup_screen_terrain_queries.cpp b/src/startup_screen_terrain_queries.cpp
+index 1a094cfb08a878269a14ddd44c1f6b1eeb8cb691..de75fea38671c4568b4648cdfe8070ef2d9c9795 100644
+--- a/src/startup_screen_terrain_queries.cpp
++++ b/src/startup_screen_terrain_queries.cpp
+@@ -2,14 +2,26 @@
+ #include "startup_variable_state.h"
+ 
+ // FUNCTION: BEACHLIFE 0x00445e40
+-void ScreenTerrainGrid::Neighbours(int x, int y, ScreenTerrainCell** output)
++void ScreenTerrainGrid::Neighbours(ScreenPoint neighbour, ScreenTerrainCell** output)
+ {
+-    for (int direction = 0; direction < 8; ++direction)
+-    {
+-        ScreenPoint neighbour;
+-        Step(x, y, direction, &neighbour);
+-        output[direction] = cells_0c + TileIndex(neighbour.x, neighbour.y);
+-    }
++    int y = neighbour.y;
++    int x = neighbour.x;
++    Step(x, y, 0, &neighbour);
++    output[0] = cells_0c + TileIndex(neighbour.x, neighbour.y);
++    Step(x, y, 1, &neighbour);
++    output[1] = cells_0c + TileIndex(neighbour.x, neighbour.y);
++    Step(x, y, 2, &neighbour);
++    output[2] = cells_0c + TileIndex(neighbour.x, neighbour.y);
++    Step(x, y, 3, &neighbour);
++    output[3] = cells_0c + TileIndex(neighbour.x, neighbour.y);
++    Step(x, y, 4, &neighbour);
++    output[4] = cells_0c + TileIndex(neighbour.x, neighbour.y);
++    Step(x, y, 5, &neighbour);
++    output[5] = cells_0c + TileIndex(neighbour.x, neighbour.y);
++    Step(x, y, 6, &neighbour);
++    output[6] = cells_0c + TileIndex(neighbour.x, neighbour.y);
++    Step(x, y, 7, &neighbour);
++    output[7] = cells_0c + TileIndex(neighbour.x, neighbour.y);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00446130
+diff --git a/src/startup_world_vehicle_commands.cpp b/src/startup_world_vehicle_commands.cpp
+index 3ba67a0607c0facc6376c114aded6faa6f07cba0..da4ca5f32ab3d5f73e6582303ce732e218ee2b8e 100644
+--- a/src/startup_world_vehicle_commands.cpp
++++ b/src/startup_world_vehicle_commands.cpp
+@@ -100,12 +100,12 @@ bool WorldVehicleEntity::Unknown14(ScreenModeCommand* incoming)
+             if (flag_8e4)
+             {
+                 ScreenTerrainCell* neighbours[8];
+-                screen_terrain_grid->Neighbours(word_964, word_968, neighbours);
++                screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
+                 for (int i = 0; i < 8; ++i)
+                     neighbours[i]->flags_48 &= ~0x10u;
+                 ScreenModeCommand message = command(id_28, id_28, 0xa, static_cast<int>(route_5d4[vehicle_variant_5cd].x), static_cast<int>(route_5d4[vehicle_variant_5cd].y));
+                 screen_mode_commands->QueueCommand(&message);
+-                screen_terrain_grid->Neighbours(word_964, word_968, neighbours);
++                screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
+                 for (int i = 0; i < 8; ++i)
+                     neighbours[i]->flags_48 |= 0x10;
+                 flag_8e4 = 0;
+diff --git a/src/startup_world_vehicle_enter.cpp b/src/startup_world_vehicle_enter.cpp
+index ee054b817f8c4d2b5429e99c4a490221d7558d75..91b174cca093ae65804dda1b4f40fe7357ec885e 100644
+--- a/src/startup_world_vehicle_enter.cpp
++++ b/src/startup_world_vehicle_enter.cpp
+@@ -47,7 +47,7 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+     auto neighbours = [&](bool set)
+     {
+         ScreenTerrainCell* cells[8];
+-        screen_terrain_grid->Neighbours(word_964, word_968, cells);
++        screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), cells);
+         for (int i = 0; i < 8; ++i)
+             if (set)
+                 cells[i]->flags_48 |= 0x10;
+@@ -57,7 +57,7 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+     auto footprint = [&](ScreenPoint tile, int heading, bool set)
+     {
+         ScreenTerrainCell* cells[8];
+-        screen_terrain_grid->Neighbours(tile.x, tile.y, cells);
++        screen_terrain_grid->Neighbours(tile, cells);
+         ScreenTerrainGrid* grid = screen_terrain_grid;
+         ScreenTerrainCell* center = &grid->cells_0c[grid->TileIndex(tile.x, tile.y)];
+         auto flag = [&](ScreenTerrainCell* cell)
+diff --git a/src/startup_world_vehicle_math.cpp b/src/startup_world_vehicle_math.cpp
+index e2febb09f780a6a544a40407500671e90170f31d..49d66e42725e85c496e8cd925f87afb338654930 100644
+--- a/src/startup_world_vehicle_math.cpp
++++ b/src/startup_world_vehicle_math.cpp
+@@ -21,7 +21,7 @@ int WorldDirection(ScreenMapPosition direction, unsigned int count)
+ void RestoreVehicleReturn(int x, int y, int direction)
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(x, y, neighbours);
++    screen_terrain_grid->Neighbours({ x, y }, neighbours);
+     switch (direction)
+     {
+     case 1:
+diff --git a/src/startup_world_vehicle_methods.cpp b/src/startup_world_vehicle_methods.cpp
+index 5fcd5593898afb4ec9145e3492e3898c2407fd94..3046891c32d25ec54b17b62d37e33c76f5b5c129 100644
+--- a/src/startup_world_vehicle_methods.cpp
++++ b/src/startup_world_vehicle_methods.cpp
+@@ -25,7 +25,7 @@ WorldVehicleEntity::~WorldVehicleEntity() noexcept(false)
+     if (vehicle_type_f8 == 6)
+     {
+         ScreenTerrainCell* neighbours[8];
+-        screen_terrain_grid->Neighbours(word_964, word_968, neighbours);
++        screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
+         for (int i = 0; i < 8; ++i)
+             neighbours[i]->flags_48 &= ~0x10u;
+     }
+@@ -36,7 +36,7 @@ WorldVehicleEntity::~WorldVehicleEntity() noexcept(false)
+         int heading = heading_5d0;
+         ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(Position());
+         ScreenTerrainCell* neighbours[8];
+-        screen_terrain_grid->Neighbours(tile.x, tile.y, neighbours);
++        screen_terrain_grid->Neighbours(tile, neighbours);
+         ScreenTerrainGrid* grid = screen_terrain_grid;
+         grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48 &= ~0x10u;
+         if (heading == 1 || heading == 5)
+diff --git a/src/startup_world_vehicle_roaming.cpp b/src/startup_world_vehicle_roaming.cpp
+index a5d08fa5d323beca4011ce0c2ded7262805040f5..a645c3c3e7ebeb2c97dd776a93e9a891285628c3 100644
+--- a/src/startup_world_vehicle_roaming.cpp
++++ b/src/startup_world_vehicle_roaming.cpp
+@@ -104,7 +104,7 @@ void WorldVehicleEntity::SwimVehicle()
+ bool WorldVehicleEntity::FindFishingPoint()
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(word_964, word_968, neighbours);
++    screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
+     for (int i = 0; i < 8; ++i)
+         neighbours[i]->flags_48 &= ~0x10u;
+     ScreenPoint point = TilePosition();
+@@ -121,7 +121,7 @@ bool WorldVehicleEntity::FindFishingPoint()
+             break;
+         if (count > 1)
+         {
+-            grid->Neighbours(point.x, point.y, neighbours);
++            grid->Neighbours(point, neighbours);
+             bool clear = true;
+             for (int i = 0; i < 8; ++i)
+                 if (!(neighbours[i]->flags_48 & 0x60000000) || (neighbours[i]->flags_48 & 0x10))
+@@ -140,7 +140,7 @@ bool WorldVehicleEntity::FindFishingPoint()
+         MoveVehicleToRoamPoint(this);
+     else
+         FaceVehicle(facing % 8);
+-    screen_terrain_grid->Neighbours(word_964, word_968, neighbours);
++    screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
+     for (int i = 0; i < 8; ++i)
+         neighbours[i]->flags_48 |= 0x10;
+     return true;
+diff --git a/src/startup_world_vehicle_terrain.cpp b/src/startup_world_vehicle_terrain.cpp
+index 31e493dc19d50fc8b7bc888d8f72f13fd912cae5..1d531292f533beffa3cc32349a1636c660261f94 100644
+--- a/src/startup_world_vehicle_terrain.cpp
++++ b/src/startup_world_vehicle_terrain.cpp
+@@ -3,7 +3,7 @@
+ static void ChangeVehicleApproach(int x, int y, int direction, unsigned char restore)
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(x, y, neighbours);
++    screen_terrain_grid->Neighbours({ x, y }, neighbours);
+     static const unsigned char indices[4][4] = {
+         { 7, 6, 5, 4 }, { 0, 1, 7, 6 }, { 0, 1, 2, 3 }, { 2, 3, 4, 5 }
+     };
+@@ -23,7 +23,7 @@ static void ChangeVehicleApproach(int x, int y, int direction, unsigned char res
+ void ClearVehicleApproach(ScreenPoint point, int direction)
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(point.x, point.y, neighbours);
++    screen_terrain_grid->Neighbours(point, neighbours);
+     switch (direction)
+     {
+     case 1:
+@@ -57,7 +57,7 @@ void ClearVehicleApproach(ScreenPoint point, int direction)
+ void RestoreVehicleApproach(ScreenPoint point, int direction)
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(point.x, point.y, neighbours);
++    screen_terrain_grid->Neighbours(point, neighbours);
+     switch (direction)
+     {
+     case 1:
+@@ -91,7 +91,7 @@ void RestoreVehicleApproach(ScreenPoint point, int direction)
+ void ClearVehicleReturn(ScreenPoint point, int direction)
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(point.x, point.y, neighbours);
++    screen_terrain_grid->Neighbours(point, neighbours);
+     switch (direction)
+     {
+     case 1:
+diff --git a/src/startup_world_vehicle_update.cpp b/src/startup_world_vehicle_update.cpp
+index c2316da76028451cd2288c23792a5795d65ad6ba..ea20d4fdbad609f66fb14f4448ae36556fbf1375 100644
+--- a/src/startup_world_vehicle_update.cpp
++++ b/src/startup_world_vehicle_update.cpp
+@@ -21,7 +21,7 @@ bool WorldVehicleEntity::Unknown0c()
+     auto neighbours = [&](bool set)
+     {
+         ScreenTerrainCell* cells[8];
+-        screen_terrain_grid->Neighbours(word_964, word_968, cells);
++        screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), cells);
+         for (int i = 0; i < 8; ++i)
+             if (set)
+                 cells[i]->flags_48 |= 0x10;

@@ -1,0 +1,127 @@
+diff --git a/src/startup_screen_close_active.cpp b/src/startup_screen_close_active.cpp
+index 0ed664a3538c05d84b868d77b03ea499414d1eae..bc51399be043a6718304333b94eda787186b5185 100644
+--- a/src/startup_screen_close_active.cpp
++++ b/src/startup_screen_close_active.cpp
+@@ -16,15 +16,14 @@ void ScreenManager::CloseActiveScreens()
+         ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
+         ScreenDialog* item = entry->item;
+         entry->state = 2;
+-        unsigned int group = item->group_7c;
+-        ScreenRectangle rectangle;
+-        rectangle = item->GetRectangle();
++        int group = item->group_7c;
++        // Retail keeps the address of the returned rectangle; standard C++
++        // needs a named copy of the temporary.
++        ScreenRectangle placement = item->GetRectangle();
+         if (mode != 6 && previous_mode != 6)
+-            screen_request_game->placement->WritePlacement(rectangle.left, rectangle.top, static_cast<int>(group));
+-
+-        ScreenRequestContext* context = entry->context;
+-        if (context)
+-            context->Replaced();
++            screen_request_game->placement->WritePlacement(placement.left, placement.top, group);
++        if (entry->context)
++            entry->context->Replaced();
+         node = node->next;
+     } while (node != active.head);
+ }
+diff --git a/src/startup_screen_dialog_resource_manager_constructor.cpp b/src/startup_screen_dialog_resource_manager_constructor.cpp
+index 08af175cddf3912b951cb5b5ef6ea9127e4398b0..aeb493e833add54c6f72fb91786bbf8901593601 100644
+--- a/src/startup_screen_dialog_resource_manager_constructor.cpp
++++ b/src/startup_screen_dialog_resource_manager_constructor.cpp
+@@ -1,6 +1,3 @@
+-#include "pool_chunk_acquire.h"
+-#include "pool_lock_guard.h"
+-#include "pool_lock_acquire.h"
+ #include "startup_screen_dialog_resource.h"
+ #include "startup_screen_palette_modifiers.h"
+ 
+@@ -11,7 +8,6 @@
+ // FUNCTION: BEACHLIFE 0x004175b0
+ ScreenDialogResourceLookup::ScreenDialogResourceLookup()
+     : ScreenDialogResourceRegistration(this)
+-    , loaded_resources()
+ {
+     for (int index = 0; index < 5; ++index)
+         strcpy(recent_names[index], screen_dialog_resource_initial_name);
+@@ -24,24 +20,5 @@ ScreenDialogResourceLookup::ScreenDialogResourceLookup()
+         SDL_ShowSimpleMessageBox(0, "Sorry", "Couldn't Initialise SpriteEngine", 0);
+ 
+     palette_modifiers = new ScreenDialogPaletteModifiers;
+-    {
+-        ScreenDialogResourceNode* node = loaded_resources.head->next;
+-        while (node != loaded_resources.head)
+-        {
+-            ScreenDialogResourceNode* released = node;
+-            node = node->next;
+-            if (released != 0)
+-            {
+-                unsigned int pool_bytes = sizeof(ScreenDialogResourceNode);
+-                PoolChunkLink* volatile* bucket = pool_chunk_buckets + (pool_bytes - 1) / 8;
+-                AcquirePoolLock(&pool_lock_word);
+-                PoolChunkLink* returned = ::new (static_cast<void*>(released)) PoolChunkLink;
+-                returned->next = *bucket;
+-                *bucket = returned;
+-                pool_lock_word = 0;
+-            }
+-        }
+-        loaded_resources.head->next = loaded_resources.head;
+-        loaded_resources.head->previous = loaded_resources.head;
+-    }
++    loaded_resources.Clear();
+ }
+diff --git a/src/startup_screen_dialog_resource_manager_destructor.cpp b/src/startup_screen_dialog_resource_manager_destructor.cpp
+index c01e02a7792d8888912a0f71246a05f40e415bc7..a66b219824c594be2be0e6579fc0c0567f7b845e 100644
+--- a/src/startup_screen_dialog_resource_manager_destructor.cpp
++++ b/src/startup_screen_dialog_resource_manager_destructor.cpp
+@@ -18,7 +18,10 @@ ScreenDialogResourceLookup::~ScreenDialogResourceLookup()
+     {
+         ScreenDialogResourceRecord* record = records[index];
+         if (record->reference_count != 0)
+-            StartupFatal("Sprite Engine Closing down, but someone still has a handle to %s", record->name);
++        {
++            const char* name = record->name;
++            StartupFatal("Sprite Engine Closing down, but someone still has a handle to %s", name);
++        }
+         else
+             delete record;
+     }
+diff --git a/src/startup_screen_overlay_position.cpp b/src/startup_screen_overlay_position.cpp
+index bf392503892870827ffaaf7548f024cfc3bcc75d..111fe2ad12d30f6e5e281c2f33aa8a285fed238d 100644
+--- a/src/startup_screen_overlay_position.cpp
++++ b/src/startup_screen_overlay_position.cpp
+@@ -6,24 +6,18 @@
+ // FUNCTION: BEACHLIFE 0x004b0d80
+ void ScreenManager::UpdateOverlayPosition()
+ {
+-    ScreenRequestRenderer* initial_renderer = renderer;
+-    unsigned int offset = initial_renderer->width < 800 ? 170 : 190;
+-    int top = static_cast<int>(initial_renderer->height - offset);
++    unsigned int height = renderer->height;
++    unsigned int offset;
++    if (renderer->width < 800)
++        offset = 170;
++    else
++        offset = 190;
++    int top = static_cast<int>(height - offset);
+     ScreenDialogResource* resource = overlay_resource_164;
+     layout_y_150 = top;
+-
+-    ScreenDialogResourceRecord* record = resource->record;
+-    unsigned int frame_index = resource->word_10;
+-    ScreenDialogResourceFrame* frame = record->frames[frame_index];
+-    int frame_width = frame->width_0e;
+-    int item_top = top + 69;
+-    ScreenItem* item = item_160;
+-    layout_bottom_158 = top + frame_width;
+-
+-    ScreenRectangle rectangle;
+-    rectangle = item->GetRectangle();
+-    item_160->SetRectanglePosition(rectangle.left, item_top);
+-
++    ScreenDialogResourceFrame* frame = resource->record->frames[resource->word_10];
++    layout_bottom_158 = top + frame->width_0e;
++    item_160->SetRectanglePosition(item_160->GetRectangle().left, top + 69);
+     ScreenPoint position = { 9, top };
+     renderer->PositionSurface(surface_b8, position);
+ }
