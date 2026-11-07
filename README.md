@@ -10,6 +10,44 @@ Faithful reconstruction advances through [source patches](patches/README.md)
 over a pinned baseline in this repository. New launcher, data, runtime and native platform code lives in
 `src/`. The original executable never runs inside the port.
 
+## Disclaimer
+
+This project is AI-assisted. English is not my native language, and most of the
+documentation has been rewritten by LLMs.
+
+I am a software engineer and have been working on software projects for more
+than 30 years: from the demoscene, to freelancing in the games industry, to
+failed startup dreams, to big and heavy projects in the commercial market.
+
+This project is a labor of love for a game I remember enjoying, and for many
+hours of happy memories playing it with my girlfriend, now my wife, more than
+20 years ago.
+
+The decompilation and recompilation are crafted by hand, and most of the code is
+handwritten. LLMs helped me analyze the crash reports of the many bugs that
+crashed the game. And hey, you will enjoy many more bugs with this project,
+because neither I nor any LLM is perfect.
+
+This project shares a lot of code with
+[Recharged](https://github.com/previouslevelgames/recharged), a port of a
+Nintendo Wii game into which I have already sunk thousands of hours.
+
+I know that AI creates anxiety. In the hands of professionals, AI is an amazing
+tool, and the results speak for themselves. Society is learning to use these
+tools, just as we had to learn to use a chainsaw: dangerous tools, but
+incredible efficiency multipliers when used the right way.
+
+If you have a personal problem with AI, please ignore this project. I do it for
+me, not at all to please you. If you enjoy the result, or if you want to share
+your excitement with me or contribute great ideas, you will make my day even
+nicer. Otherwise, I am happy to ignore you completely :) I don't challenge your
+dislike of AI, but then please be consistent and delete your operating system,
+your browser and your phone: more or less everything you use now and will use
+in the future.
+
+We are all on a learning journey: we have to live through this change and find
+our place in this digital world on steroids.
+
 ## Current status
 
 Every native package includes the playable decompiled game.
