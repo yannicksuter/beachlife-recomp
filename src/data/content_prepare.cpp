@@ -1,5 +1,8 @@
 #include "content_prepare.h"
+#include "clickteam_patch.h"
+#include "game_disc.h"
 #include "game_index.h"
+#include "game_path.h"
 #include "local_files.h"
 #include "platform/path.h"
 #include "platform/sha256.h"
@@ -10,8 +13,11 @@ extern "C"
 #include <md5/md5.h>
 }
 
+#include <algorithm>
 #include <array>
 #include <fstream>
+#include <map>
+#include <optional>
 
 namespace beachlife::data
 {
@@ -103,6 +109,98 @@ void claim_directory(const std::filesystem::path& root, const std::string& ident
     }
 }
 
+struct Planned
+{
+    const GameAsset* asset = nullptr; // null for a file the patch adds
+    const ClickteamPatch::Entry* patch = nullptr;
+    std::string path;
+    std::uint64_t size = 0;
+};
+
+// The 1.1 patch replaces data files and adds a few. The disc's executable is
+// kept: the runtime reads the disc's own module image, and the patch would
+// turn it into the copy-protected retail 1.1 build. Entries for files outside
+// Data (readmes) are ignored.
+std::vector<Planned> plan_files(const GameIndex& game, const ClickteamPatch* patch)
+{
+    // Each official patch updates the text of every language it serves (the UK
+    // patch text_uk, the European and Polish ones the five European texts), so
+    // a patch without the selected language's text belongs to another edition.
+    constexpr std::array<std::pair<std::string_view, std::string_view>, 6> texts{{
+        {"en", "data/text_uk.ble"},
+        {"fr", "data/text_french.ble"},
+        {"it", "data/text_italian.ble"},
+        {"de", "data/text_german.ble"},
+        {"es", "data/text_spanish.ble"},
+        {"pl", "data/text_polish.ble"},
+    }};
+    std::map<std::string, const ClickteamPatch::Entry*> entries;
+    static const std::vector<ClickteamPatch::Entry> none;
+    for (const auto& entry : patch ? patch->entries() : none)
+    {
+        const bool ascii = std::all_of(entry.path.begin(),
+            entry.path.end(),
+            [](unsigned char c)
+            {
+                return c < 128;
+            });
+        const auto key = ascii ? normalize_game_path(entry.path).key : std::string{};
+        if (!key.starts_with("data/"))
+        {
+            continue;
+        }
+        if (!entry.supported)
+        {
+            throw std::runtime_error("The 1.1 patch uses an unsupported operation.");
+        }
+        if (!entries.emplace(key, &entry).second)
+        {
+            throw std::runtime_error("The 1.1 patch names one file twice.");
+        }
+    }
+    std::vector<Planned> plan;
+    for (const auto& asset : game.files)
+    {
+        const auto found = entries.find(normalize_game_path(asset.path).key);
+        const ClickteamPatch::Entry* entry = nullptr;
+        if (found != entries.end())
+        {
+            entry = found->second;
+            entries.erase(found);
+        }
+        plan.push_back({&asset, entry, asset.path, entry ? entry->size : asset.size});
+    }
+    if (patch)
+    {
+        const auto text = std::find_if(texts.begin(),
+            texts.end(),
+            [&](const auto& item)
+            {
+                return item.first == game.language;
+            });
+        if (text == texts.end() ||
+            std::none_of(plan.begin(),
+                plan.end(),
+                [&](const Planned& file)
+                {
+                    return file.patch && normalize_game_path(file.path).key == text->second;
+                }))
+        {
+            throw std::runtime_error(
+                "This 1.1 patch is for another edition: it does not update this language.");
+        }
+    }
+    // Patches of files this disc does not install are skipped.
+    for (const auto& [key, entry] : entries)
+    {
+        if (entry->added)
+        {
+            plan.push_back({nullptr, entry, normalize_game_path(entry->path).display, entry->size});
+        }
+    }
+    return plan;
+}
+
 // The original MD5 establishes that a surviving entry belongs to this source;
 // the new manifest records SHA-256 for subsequent VFS integrity checks.
 std::string reusable_file(const std::filesystem::path& root,
@@ -141,6 +239,28 @@ std::string reusable_file(const std::filesystem::path& root,
 }
 } // namespace
 
+void copy_loose_file(const IsoSource& source,
+    const GameAsset& asset,
+    const std::function<void(std::span<const unsigned char>)>& sink)
+{
+    auto file = source.open(asset.source_path);
+    if (file->size() != asset.size)
+    {
+        throw std::runtime_error("A loose game file changed size.");
+    }
+    std::array<unsigned char, 65536> buffer{};
+    std::uint64_t done = 0;
+    while (const auto received = file->read(buffer))
+    {
+        done += received;
+        sink(std::span(buffer).first(received));
+    }
+    if (done != asset.size)
+    {
+        throw std::runtime_error("A loose game file is truncated.");
+    }
+}
+
 PrepareResult prepare_content(const std::filesystem::path& image,
     const std::filesystem::path& cache,
     const PrepareOptions& options)
@@ -148,12 +268,22 @@ PrepareResult prepare_content(const std::filesystem::path& image,
     PrepareResult result;
     result.manifest.source_sha256 = fingerprint(image, options, "fingerprint");
     const IsoSource source(image);
-    CabinetReader cabinet(source);
-    const auto game = map_game_files(cabinet.index(), source.index());
+    GameDisc disc(source);
+    const auto game = disc.map(options.language);
+    std::optional<ClickteamPatch> patch;
+    if (!options.patch.empty())
+    {
+        patch.emplace(options.patch);
+        result.manifest.patch_sha256 = patch->sha256();
+    }
+    const auto plan = plan_files(game, patch ? &*patch : nullptr);
     result.manifest.profile = game.profile;
     result.manifest.language = game.language;
-    result.manifest.total_bytes = game.total_bytes;
-    if (game.total_bytes > max_content_bytes)
+    for (const auto& file : plan)
+    {
+        result.manifest.total_bytes += file.size;
+    }
+    if (result.manifest.total_bytes > max_content_bytes)
     {
         throw std::runtime_error("The game content exceeds the supported size limit.");
     }
@@ -171,21 +301,22 @@ PrepareResult prepare_content(const std::filesystem::path& image,
     // Reject an unsafe readiness marker even when all data is reusable.
     content_file_size(result.root, "manifest.json");
 
-    PrepareProgress progress{"checking", {}, 0, game.total_bytes, 0, game.files.size()};
+    const auto total = result.manifest.total_bytes;
+    PrepareProgress progress{"checking", {}, 0, total, 0, plan.size()};
     std::uint64_t needed = 0;
     std::vector<std::size_t> pending;
     report(options, progress);
-    for (std::size_t i = 0; i < game.files.size(); ++i)
+    for (std::size_t i = 0; i < plan.size(); ++i)
     {
-        const auto& asset = game.files[i];
-        progress.path = asset.path;
+        const auto& file = plan[i];
+        progress.path = file.path;
         const auto before = progress.completed_bytes;
-        auto sha = reusable_file(result.root / "files",
-            asset,
-            cabinet.index().files[asset.cabinet_index].md5,
-            options,
-            progress);
-        progress.completed_bytes = before + asset.size;
+        // Loose, Wise and patched files have no installer MD5; they are made again.
+        const auto md5 = file.patch ? std::string{} : disc.expected_md5(*file.asset);
+        auto sha = md5.empty()
+                       ? std::string{}
+                       : reusable_file(result.root / "files", *file.asset, md5, options, progress);
+        progress.completed_bytes = before + file.size;
         ++progress.completed_files;
         if (sha.empty())
         {
@@ -193,13 +324,13 @@ PrepareResult prepare_content(const std::filesystem::path& image,
             // A failed repair leaves verified entries available for resumption.
             remove_content_file(result.root / "manifest.json");
             pending.push_back(i);
-            needed += asset.size;
+            needed += file.size;
         }
         else
         {
             ++result.files_reused;
         }
-        result.manifest.files.push_back({{asset.path, asset.size}, std::move(sha)});
+        result.manifest.files.push_back({{file.path, file.size}, std::move(sha)});
         report(options, progress);
     }
     constexpr std::uint64_t headroom = 32 * 1024 * 1024;
@@ -212,25 +343,55 @@ PrepareResult prepare_content(const std::filesystem::path& image,
     report(options, progress);
     for (const auto i : pending)
     {
-        const auto& asset = game.files[i];
-        progress.path = asset.path;
-        const auto destination = result.root / "files" / platform::utf8_path(asset.path);
-        const auto parent = platform::utf8_path(asset.path).parent_path();
+        const auto& file = plan[i];
+        progress.path = file.path;
+        const auto destination = result.root / "files" / platform::utf8_path(file.path);
+        const auto parent = platform::utf8_path(file.path).parent_path();
         if (!parent.empty())
         {
             ensure_content_directory(result.root / "files", platform::utf8(parent));
         }
         StagedFile staged(result.root / ".stage", std::to_string(i) + ".part");
         platform::Sha256 hash;
-        cabinet.extract(asset.cabinet_index,
-            [&](std::span<const unsigned char> bytes)
+        const auto sink = [&](std::span<const unsigned char> bytes)
+        {
+            cancel(options);
+            staged.write(bytes);
+            hash.update(bytes.data(), bytes.size());
+            progress.completed_bytes += bytes.size();
+            report(options, progress);
+        };
+        if (!file.patch)
+        {
+            disc.extract(*file.asset, sink);
+        }
+        else if (file.patch->added)
+        {
+            sink(patch->added(*file.patch));
+        }
+        else
+        {
+            constexpr std::uint64_t max_patched_bytes = 256 * 1024 * 1024;
+            if (file.asset->size > max_patched_bytes)
             {
-                cancel(options);
-                staged.write(bytes);
-                hash.update(bytes.data(), bytes.size());
-                progress.completed_bytes += bytes.size();
-                report(options, progress);
-            });
+                throw std::runtime_error("A file the 1.1 patch changes is too large.");
+            }
+            std::vector<unsigned char> original;
+            original.reserve(static_cast<std::size_t>(file.asset->size));
+            disc.extract(*file.asset,
+                [&](std::span<const unsigned char> bytes)
+                {
+                    cancel(options);
+                    original.insert(original.end(), bytes.begin(), bytes.end());
+                });
+            const auto patched = patch->apply(*file.patch, original);
+            if (!patched)
+            {
+                throw std::runtime_error(
+                    "This 1.1 patch does not fit " + file.path + " on this disc.");
+            }
+            sink(*patched);
+        }
         cancel(options);
         staged.commit(destination);
         result.manifest.files[i].sha256 = hash.finish_hex();
@@ -250,12 +411,7 @@ PrepareResult prepare_content(const std::filesystem::path& image,
     // Publication is the commit point: cancellation after it is a ready result.
     if (options.progress)
     {
-        options.progress({"ready",
-            {},
-            game.total_bytes,
-            game.total_bytes,
-            game.files.size(),
-            game.files.size()});
+        options.progress({"ready", {}, total, total, plan.size(), plan.size()});
     }
     return result;
 }

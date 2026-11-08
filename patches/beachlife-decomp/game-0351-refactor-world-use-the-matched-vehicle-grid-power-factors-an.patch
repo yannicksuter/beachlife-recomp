@@ -1,0 +1,515 @@
+diff --git a/src/startup_variable_entity_appeal.cpp b/src/startup_variable_entity_appeal.cpp
+index 89cdbf078bb78d2043a01e29de2617c2373b52d0..0f7879b65dc086419bec9708c5463d81f4904dd8 100644
+--- a/src/startup_variable_entity_appeal.cpp
++++ b/src/startup_variable_entity_appeal.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_variable_state.h"
++#include "startup_world_power_factors.h"
+ 
+ // FUNCTION: BEACHLIFE 0x00460510
+ float VariableEntity::MaleAppeal()
+@@ -34,26 +35,38 @@ bool VariableEntity::FlagAt00460370()
+     return true;
+ }
+ 
++// GLOBAL: BEACHLIFE 0x004f3668
++extern const float building_power_factor_full = 1.0f;
++// GLOBAL: BEACHLIFE 0x004f366c
++extern const float building_power_factor_high = 0.75f;
++// GLOBAL: BEACHLIFE 0x004f3670
++extern const float building_power_factor_half = 0.5f;
++// GLOBAL: BEACHLIFE 0x004f3674
++extern const float building_power_factor_low = 0.25f;
++
+ // FUNCTION: BEACHLIFE 0x004607f0
+ int VariableEntity::PowerOutput()
+ {
+     int output = AsBuilding()->building_60->power_cf4;
+     if (output < 0)
+     {
+-        if (AsBuilding()->building_state_19c != 0)
+-            return 0;
+-        output = static_cast<int>(0u - static_cast<unsigned int>(output));
+-        switch (AsBuilding()->power_state_33c)
++        if (AsBuilding()->building_state_19c == 0)
+         {
+-        case 0:
+-            return static_cast<int>(static_cast<double>(output) * 1.0f);
+-        case 1:
+-            return static_cast<int>(static_cast<double>(output) * 0.75f);
+-        case 2:
+-            return static_cast<int>(static_cast<double>(output) * 0.5f);
+-        case 3:
+-            return static_cast<int>(static_cast<double>(output) * 0.25f);
++            output = static_cast<int>(0u - static_cast<unsigned int>(output));
++            switch (AsBuilding()->power_state_33c)
++            {
++            case 0:
++                return static_cast<int>(static_cast<double>(output) * building_power_factor_full);
++            case 1:
++                return static_cast<int>(static_cast<double>(output) * building_power_factor_high);
++            case 2:
++                return static_cast<int>(static_cast<double>(output) * building_power_factor_half);
++            case 3:
++                return static_cast<int>(static_cast<double>(output) * building_power_factor_low);
++            }
+         }
++        else
++            return 0;
+     }
+     return output;
+ }
+diff --git a/src/startup_world_accessors.cpp b/src/startup_world_accessors.cpp
+index c392947e1ffeab46521cf0b7d1e28f277bee2cf1..229655062b602156369d5fb5225f9ef8651bc91b 100644
+--- a/src/startup_world_accessors.cpp
++++ b/src/startup_world_accessors.cpp
+@@ -11,10 +11,11 @@ unsigned int ScreenDialogResource::SelectedFrameHeight()
+ // FUNCTION: BEACHLIFE 0x00466ea0
+ void ScreenDialogResource::SelectVariant(int variant)
+ {
+-    char message[80];
+-    if (variant >= SelectedFrame()->plane_count_0c)
++    unsigned int count = record->frames[word_10]->plane_count_0c;
++    if (variant >= static_cast<int>(count))
+     {
+-        variant = SelectedFrame()->plane_count_0c - 1;
++        char message[80];
++        variant = record->frames[word_10]->plane_count_0c - 1;
+         sprintf(message, "%s %d", name, variant);
+     }
+     word_18 = variant;
+diff --git a/src/startup_world_building_text.cpp b/src/startup_world_building_text.cpp
+index 52b41129ad02b393d2dd199153f6b532a9742065..e324ec4b5906c33f62c805187988f096d6a21595 100644
+--- a/src/startup_world_building_text.cpp
++++ b/src/startup_world_building_text.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_world_entities.h"
++#include "startup_world_power_factors.h"
+ #include "startup_world_repairs.h"
+ #include "startup_world_subsystems.h"
+ #include "startup_building_status.h"
+@@ -121,7 +122,7 @@ void WorldBuildingEntity::ReadText(const char* key, unsigned short* output)
+             if (building_state_19c == 0)
+             {
+                 value = abs(value);
+-                const float scale[] = { 1.0f, 0.75f, 0.5f, 0.25f };
++                const float scale[] = { building_power_factor_full, building_power_factor_high, building_power_factor_half, building_power_factor_low };
+                 if (power_state_33c < 4)
+                     value = static_cast<int>(static_cast<long double>(value) * scale[power_state_33c]);
+             }
+diff --git a/src/startup_world_cleaner_state.cpp b/src/startup_world_cleaner_state.cpp
+index a0f0323384944a0319b0e9faff7537e39d3cffe0..df0568d6dd1a31c5bace7180c57eef703748e51a 100644
+--- a/src/startup_world_cleaner_state.cpp
++++ b/src/startup_world_cleaner_state.cpp
+@@ -3,11 +3,6 @@
+ 
+ extern unsigned int world_cleaner_count;
+ 
+-static void ReadCleanerWord(GameFileReader* file, unsigned int* word)
+-{
+-    file->ReadInt(reinterpret_cast<int*>(word));
+-}
+-
+ // FUNCTION: BEACHLIFE 0x004668e0
+ void WorldCleanerEntity::Unknown48(GameFileReader* file)
+ {
+@@ -39,7 +34,7 @@ void WorldCleanerEntity::Unknown48(GameFileReader* file)
+ // FUNCTION: BEACHLIFE 0x00466ab0
+ void WorldCleanerEntity::Unknown4c(GameFileReader* file)
+ {
+-    ReadCleanerWord(file, &world_cleaner_count);
++    file->ReadInt(reinterpret_cast<int*>(&world_cleaner_count));
+     file->ReadByte(&litter_found_77c);
+     file->ReadByte(&toilet_found_77d);
+     file->ReadByte(&bin_found_77e);
+@@ -47,19 +42,19 @@ void WorldCleanerEntity::Unknown4c(GameFileReader* file)
+     file->ReadByte(&clean_litter_780);
+     file->ReadByte(&clean_bins_781);
+     file->ReadFloat(&time_784);
+-    ReadCleanerWord(file, &litter_distance_788);
+-    ReadCleanerWord(file, &toilets_today_78c);
+-    ReadCleanerWord(file, &bins_today_790);
+-    ReadCleanerWord(file, &litter_today_794);
+-    ReadCleanerWord(file, &busy_toilet_798);
+-    ReadCleanerWord(file, &feedback_status_79c);
+-    ReadCleanerWord(file, &required_feedback_7a0);
+-    ReadCleanerWord(file, &current_feedback_7a4);
++    file->ReadInt(reinterpret_cast<int*>(&litter_distance_788));
++    file->ReadInt(reinterpret_cast<int*>(&toilets_today_78c));
++    file->ReadInt(reinterpret_cast<int*>(&bins_today_790));
++    file->ReadInt(reinterpret_cast<int*>(&litter_today_794));
++    file->ReadInt(reinterpret_cast<int*>(&busy_toilet_798));
++    file->ReadInt(reinterpret_cast<int*>(&feedback_status_79c));
++    file->ReadInt(reinterpret_cast<int*>(&required_feedback_7a0));
++    file->ReadInt(reinterpret_cast<int*>(&current_feedback_7a4));
+     file->ReadFloat(&bin_position_7b0.x);
+     file->ReadFloat(&bin_position_7b0.y);
+     file->ReadFloat(&bin_position_7b0.z);
+-    ReadCleanerWord(file, &word_7bc);
+-    ReadCleanerWord(file, &word_7c0);
++    file->ReadInt(reinterpret_cast<int*>(&word_7bc));
++    file->ReadInt(reinterpret_cast<int*>(&word_7c0));
+     file->ReadByte(&flag_7c4);
+     WorldStaffEntity::Unknown4c(file);
+ }
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 31902ef0ee8a1b73a948d3fc06f6d1cf873028e8..0baff94570e321d1bf7de4463d51a55b520184cb 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -674,8 +674,7 @@ struct WorldVehicleEntity : WorldMovingEntity
+     int departure_heading_95c;
+     unsigned char flag_960;
+     unsigned char unknown_961[0x3];
+-    unsigned int word_964;
+-    unsigned int word_968;
++    ScreenPoint current_grid_964; // Saved as m_CurrGridXY.
+ };
+ static_assert(sizeof(void*) != 4 || sizeof(WorldVehicleEntity) == 0x96c);
+ 
+diff --git a/src/startup_world_power_factors.h b/src/startup_world_power_factors.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..dd616bad3ede6dbec741b02d8fa8a7f6f5a7a441
+--- /dev/null
++++ b/src/startup_world_power_factors.h
+@@ -0,0 +1,11 @@
++#ifndef STARTUP_WORLD_POWER_FACTORS_H
++#define STARTUP_WORLD_POWER_FACTORS_H
++
++// Output factors of the four building power states (full, three quarters, half,
++// quarter); PowerOutput and WorldBuildingEntity::ReadText read them.
++extern const float building_power_factor_full;
++extern const float building_power_factor_high;
++extern const float building_power_factor_half;
++extern const float building_power_factor_low;
++
++#endif
+diff --git a/src/startup_world_security_callbacks.cpp b/src/startup_world_security_callbacks.cpp
+index 7d5e85d6f42dee28a2f60247aabaf3f485435a61..bbb5300a682a15a9504d59552c4283806970498b 100644
+--- a/src/startup_world_security_callbacks.cpp
++++ b/src/startup_world_security_callbacks.cpp
+@@ -74,11 +74,10 @@ void WorldSecurityEntity::WriteValue(const char* key, const void* value)
+ // FUNCTION: BEACHLIFE 0x00489ab0
+ void WorldSecurityEntity::ReadText(const char* key, unsigned short* output)
+ {
+-    static const unsigned short empty[] = { 0 };
+     static const unsigned short integer[] = { '%', 'd', 0 };
+     static const unsigned short currency[] = { '$', '%', 'd', 0 };
+     static const unsigned short number[] = { '%', 'f', 0 };
+-    swprintf(output, empty);
++    swprintf(output, screen_text_empty);
+     Notification(current_feedback_7c8);
+     if (std::strcmp(key, "STAFF_ACTIVITY") == 0)
+     {
+@@ -224,7 +223,7 @@ const char* WorldSecurityEntity::Notification(unsigned int flags)
+ void WorldSecurityEntity::Dismiss()
+ {
+     WorldStaffEntity::Dismiss();
+-    if (((state_3c >= 0x7d && state_3c <= 0x7f) || (state_3c == 0x83 && !flag_766)) && word_77c)
++    if (state_3c >= 0x7d && (state_3c <= 0x7f || (state_3c == 0x83 && !flag_766)) && word_77c)
+     {
+         ScreenModeCommand command;
+         command.words[0] = id_28;
+diff --git a/src/startup_world_staff_read_text.cpp b/src/startup_world_staff_read_text.cpp
+index a5524c487c1fb9a0f72e138d30510c26862277ec..159917557b8bf447d06b88a237c4280d58526d9a 100644
+--- a/src/startup_world_staff_read_text.cpp
++++ b/src/startup_world_staff_read_text.cpp
+@@ -84,11 +84,32 @@ void WorldMechanicEntity::ReadText(const char* key, unsigned short* output)
+     swprintf(output, screen_text_empty);
+     if (strcmp(key, "STAFF_ACTIVITY") == 0)
+     {
+-        static const char* activities[] = { "MECHANIC_REPAIR", "MECHANIC_RESTING", "MECHANIC_HEAD_HOME", "MECHANIC_CHOOSE_JOB", "MECHANIC_GO_REST", "MECHANIC_GO_REPAIR", "MECHANIC_IDLE" };
+-        if (state_3c >= 88 && state_3c <= 94)
+-            wcscpy(output, screen_text_lookup->LookupText(activities[state_3c - 88]));
+-        else
++        switch (state_3c)
++        {
++        case 89:
++            wcscpy(output, screen_text_lookup->LookupText("MECHANIC_RESTING"));
++            break;
++        case 88:
++            wcscpy(output, screen_text_lookup->LookupText("MECHANIC_REPAIR"));
++            break;
++        case 90:
++            wcscpy(output, screen_text_lookup->LookupText("MECHANIC_HEAD_HOME"));
++            break;
++        case 91:
++            wcscpy(output, screen_text_lookup->LookupText("MECHANIC_CHOOSE_JOB"));
++            break;
++        case 92:
++            wcscpy(output, screen_text_lookup->LookupText("MECHANIC_GO_REST"));
++            break;
++        case 93:
++            wcscpy(output, screen_text_lookup->LookupText("MECHANIC_GO_REPAIR"));
++            break;
++        case 94:
++            wcscpy(output, screen_text_lookup->LookupText("MECHANIC_IDLE"));
++            break;
++        default:
+             WorldStaffEntity::ReadText(key, output);
++        }
+     }
+     else if (strcmp(key, "MECHANIC_VANDALS") == 0)
+         swprintf(output, staff_integer_format, (word_778 >> 1) & 1);
+diff --git a/src/startup_world_staff_state.cpp b/src/startup_world_staff_state.cpp
+index 4734bb3a7c5566785052fd22a70dca3e69249580..21c563bce85b0ad0b7cdc4698d7478207571fd8e 100644
+--- a/src/startup_world_staff_state.cpp
++++ b/src/startup_world_staff_state.cpp
+@@ -4,11 +4,6 @@
+ extern unsigned int world_mechanic_count;
+ extern unsigned int world_representative_count;
+ 
+-static void ReadStaffWord(GameFileReader* file, unsigned int* value)
+-{
+-    file->ReadInt(reinterpret_cast<int*>(value));
+-}
+-
+ // FUNCTION: BEACHLIFE 0x00482300
+ void WorldMechanicEntity::Unknown48(GameFileReader* file)
+ {
+@@ -37,7 +32,7 @@ void WorldMechanicEntity::Unknown48(GameFileReader* file)
+ // FUNCTION: BEACHLIFE 0x004824a0
+ void WorldMechanicEntity::Unknown4c(GameFileReader* file)
+ {
+-    ReadStaffWord(file, &world_mechanic_count);
++    file->ReadInt(reinterpret_cast<int*>(&world_mechanic_count));
+     unsigned char enabled;
+     file->ReadByte(&enabled);
+     word_778 = (word_778 & ~2u) | ((enabled & 1u) << 1);
+@@ -48,18 +43,18 @@ void WorldMechanicEntity::Unknown4c(GameFileReader* file)
+     file->ReadByte(&found_repair_780);
+     file->ReadByte(&found_better_job_781);
+     file->ReadFloat(&time_784);
+-    ReadStaffWord(file, &feedback_status_788);
+-    ReadStaffWord(file, &required_feedback_78c);
+-    ReadStaffWord(file, &current_feedback_790);
+-    ReadStaffWord(file, &repair_type_7a0);
++    file->ReadInt(reinterpret_cast<int*>(&feedback_status_788));
++    file->ReadInt(reinterpret_cast<int*>(&required_feedback_78c));
++    file->ReadInt(reinterpret_cast<int*>(&current_feedback_790));
++    file->ReadInt(reinterpret_cast<int*>(&repair_type_7a0));
+     file->ReadFloat(&watering_position_7b4.x);
+     file->ReadFloat(&watering_position_7b4.y);
+     file->ReadFloat(&watering_position_7b4.z);
+-    ReadStaffWord(file, &inspections_today_7a4);
+-    ReadStaffWord(file, &repairs_today_7a8);
+-    ReadStaffWord(file, &vandals_today_7ac);
+-    ReadStaffWord(file, &watered_today_7b0);
+-    ReadStaffWord(file, &action_state_79c);
++    file->ReadInt(reinterpret_cast<int*>(&inspections_today_7a4));
++    file->ReadInt(reinterpret_cast<int*>(&repairs_today_7a8));
++    file->ReadInt(reinterpret_cast<int*>(&vandals_today_7ac));
++    file->ReadInt(reinterpret_cast<int*>(&watered_today_7b0));
++    file->ReadInt(reinterpret_cast<int*>(&action_state_79c));
+     WorldStaffEntity::Unknown4c(file);
+ }
+ 
+@@ -102,15 +97,15 @@ void WorldRepresentativeEntity::Unknown48(GameFileReader* file)
+ // FUNCTION: BEACHLIFE 0x00488e70
+ void WorldRepresentativeEntity::Unknown4c(GameFileReader* file)
+ {
+-    ReadStaffWord(file, &world_representative_count);
+-    ReadStaffWord(file, &word_778);
++    file->ReadInt(reinterpret_cast<int*>(&world_representative_count));
++    file->ReadInt(reinterpret_cast<int*>(&word_778));
+     for (int i = 0; i < 7; ++i)
+         file->Unknown60(values_77c + i * 5, 5);
+     file->ReadText(return_animation_808, 40);
+     file->ReadText(current_animation_830, 40);
+-    ReadStaffWord(file, &word_858);
++    file->ReadInt(reinterpret_cast<int*>(&word_858));
+     file->ReadByte(&flag_85c);
+-    ReadStaffWord(file, &action_state_860);
++    file->ReadInt(reinterpret_cast<int*>(&action_state_860));
+     unsigned int attached;
+     file->Unknown68(&attached);
+     if (attached)
+@@ -122,16 +117,16 @@ void WorldRepresentativeEntity::Unknown4c(GameFileReader* file)
+     }
+     file->ReadInt(&attached_x_868);
+     file->ReadInt(&attached_y_86c);
+-    ReadStaffWord(file, &feedback_870[0]);
+-    ReadStaffWord(file, &feedback_870[1]);
+-    ReadStaffWord(file, &feedback_870[2]);
+-    ReadStaffWord(file, &word_884);
+-    ReadStaffWord(file, &word_888);
+-    ReadStaffWord(file, &word_88c);
++    file->ReadInt(reinterpret_cast<int*>(&feedback_870[0]));
++    file->ReadInt(reinterpret_cast<int*>(&feedback_870[1]));
++    file->ReadInt(reinterpret_cast<int*>(&feedback_870[2]));
++    file->ReadInt(reinterpret_cast<int*>(&word_884));
++    file->ReadInt(reinterpret_cast<int*>(&word_888));
++    file->ReadInt(reinterpret_cast<int*>(&word_88c));
+     file->ReadFloat(&value_894);
+     file->ReadByte(&flag_898);
+     file->ReadFloat(&guest_offset_y_8a0);
+     file->ReadFloat(&guest_offset_x_89c);
+-    ReadStaffWord(file, &guest_opinion_8a8);
++    file->ReadInt(reinterpret_cast<int*>(&guest_opinion_8a8));
+     WorldStaffEntity::Unknown4c(file);
+ }
+diff --git a/src/startup_world_vehicle_commands.cpp b/src/startup_world_vehicle_commands.cpp
+index 7832db6a9ca932cfe7a1117c6a37ae00c3452ef0..19ff4afefe1caa4385033509319b897a3ff42937 100644
+--- a/src/startup_world_vehicle_commands.cpp
++++ b/src/startup_world_vehicle_commands.cpp
+@@ -98,12 +98,12 @@ bool WorldVehicleEntity::Unknown14(ScreenModeCommand* incoming)
+             if (flag_8e4)
+             {
+                 ScreenTerrainCell* neighbours[8];
+-                screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
++                screen_terrain_grid->Neighbours(current_grid_964, neighbours);
+                 for (int i = 0; i < 8; ++i)
+                     neighbours[i]->flags_48 &= ~0x10u;
+                 ScreenModeCommand message = command(id_28, id_28, 0xa, static_cast<int>(route_5d4[vehicle_variant_5cd].x), static_cast<int>(route_5d4[vehicle_variant_5cd].y));
+                 screen_mode_commands->QueueCommand(&message);
+-                screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
++                screen_terrain_grid->Neighbours(current_grid_964, neighbours);
+                 for (int i = 0; i < 8; ++i)
+                     neighbours[i]->flags_48 |= 0x10;
+                 flag_8e4 = 0;
+diff --git a/src/startup_world_vehicle_constructor.cpp b/src/startup_world_vehicle_constructor.cpp
+index 9cd778e725be48608f5d19c20d1253a9b30ab7a1..21b80b12058ecbee13a535c3ce6b7b4fbce34f0b 100644
+--- a/src/startup_world_vehicle_constructor.cpp
++++ b/src/startup_world_vehicle_constructor.cpp
+@@ -94,7 +94,8 @@ WorldVehicleEntity::WorldVehicleEntity(const char* name)
+         words_904[i] = 0;
+     circuit_920 = nullptr;
+     flag_924 = flag_8e4 = flag_8e5 = flag_960 = 0;
+-    word_964 = word_968 = -1;
++    current_grid_964.x = -1;
++    current_grid_964.y = -1;
+     if (vehicle_type_f8 == 5)
+     {
+         resource_928 = screen_dialog_resources->Find("Coach");
+diff --git a/src/startup_world_vehicle_enter.cpp b/src/startup_world_vehicle_enter.cpp
+index eb193e428dae5806cf963b3ed059a8ca5216ce98..8361f1d75fc5e7674aaa68a03a7a86975ef4a221 100644
+--- a/src/startup_world_vehicle_enter.cpp
++++ b/src/startup_world_vehicle_enter.cpp
+@@ -47,7 +47,7 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+     auto neighbours = [&](bool set)
+     {
+         ScreenTerrainCell* cells[8];
+-        screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), cells);
++        screen_terrain_grid->Neighbours(current_grid_964, cells);
+         for (int i = 0; i < 8; ++i)
+             if (set)
+                 cells[i]->flags_48 |= 0x10;
+diff --git a/src/startup_world_vehicle_methods.cpp b/src/startup_world_vehicle_methods.cpp
+index 3046891c32d25ec54b17b62d37e33c76f5b5c129..7e52d836f4fef7d43132e52e6505458b71012b4d 100644
+--- a/src/startup_world_vehicle_methods.cpp
++++ b/src/startup_world_vehicle_methods.cpp
+@@ -25,29 +25,33 @@ WorldVehicleEntity::~WorldVehicleEntity() noexcept(false)
+     if (vehicle_type_f8 == 6)
+     {
+         ScreenTerrainCell* neighbours[8];
+-        screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
++        screen_terrain_grid->Neighbours(current_grid_964, neighbours);
+         for (int i = 0; i < 8; ++i)
+-            neighbours[i]->flags_48 &= ~0x10u;
++            neighbours[i]->flags_48 &= ~0x10;
+     }
+-    if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
++    if (vehicle_type_f8 == 1 || vehicle_type_f8 == 0)
+     {
+-        ScreenWorldPosition point = { route_5d4[vehicle_variant_5cd].x, route_5d4[vehicle_variant_5cd].y, 0.0f };
+-        CurrentScreenTerrain()->WorldToTile(point);
++        ScreenPoint target = CurrentScreenTerrain()->WorldToTile(ScreenWorldPosition(route_5d4[vehicle_variant_5cd].x, route_5d4[vehicle_variant_5cd].y, 0.0f));
+         int heading = heading_5d0;
+-        ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(Position());
++        ScreenPoint tile;
++        tile = CurrentScreenTerrain()->WorldToTile(Position());
+         ScreenTerrainCell* neighbours[8];
+         screen_terrain_grid->Neighbours(tile, neighbours);
+         ScreenTerrainGrid* grid = screen_terrain_grid;
+-        grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48 &= ~0x10u;
+-        if (heading == 1 || heading == 5)
++        ScreenTerrainCell* cell = &grid->cells_0c[grid->TileIndex(tile.x, tile.y)];
++        cell->flags_48 &= ~0x10u;
++        switch (heading)
+         {
++        case 1:
++        case 5:
+             neighbours[0]->flags_48 &= ~0x10u;
+             neighbours[4]->flags_48 &= ~0x10u;
+-        }
+-        else if (heading == 3 || heading == 7)
+-        {
++            break;
++        case 3:
++        case 7:
+             neighbours[2]->flags_48 &= ~0x10u;
+             neighbours[6]->flags_48 &= ~0x10u;
++            break;
+         }
+     }
+     if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1 || vehicle_type_f8 == 5)
+diff --git a/src/startup_world_vehicle_roaming.cpp b/src/startup_world_vehicle_roaming.cpp
+index e36ed044c6332a6a70e7a151985d404386192be3..3493ed94ab6cf94958804c7e7e7f8db94e126c90 100644
+--- a/src/startup_world_vehicle_roaming.cpp
++++ b/src/startup_world_vehicle_roaming.cpp
+@@ -109,7 +109,7 @@ void WorldVehicleEntity::SwimVehicle()
+ bool WorldVehicleEntity::FindFishingPoint()
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
++    screen_terrain_grid->Neighbours(current_grid_964, neighbours);
+     for (int i = 0; i < 8; ++i)
+         neighbours[i]->flags_48 &= ~0x10u;
+     ScreenPoint point = TilePosition();
+@@ -145,7 +145,7 @@ bool WorldVehicleEntity::FindFishingPoint()
+         MoveVehicleToRoamPoint(this);
+     else
+         FaceVehicle(facing % 8);
+-    screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), neighbours);
++    screen_terrain_grid->Neighbours(current_grid_964, neighbours);
+     for (int i = 0; i < 8; ++i)
+         neighbours[i]->flags_48 |= 0x10;
+     return true;
+diff --git a/src/startup_world_vehicle_state.cpp b/src/startup_world_vehicle_state.cpp
+index 41a63bc8ef8f5415e9327eefe24b547f3ad5acbf..92666b96fd201397436fa1bfed39303280c504f8 100644
+--- a/src/startup_world_vehicle_state.cpp
++++ b/src/startup_world_vehicle_state.cpp
+@@ -66,8 +66,8 @@ void WorldVehicleEntity::Unknown48(GameFileReader* file)
+     file->Unknown24("m_iFerryEntryDir", arrival_heading_958);
+     file->Unknown24("m_iFerryExitDir", departure_heading_95c);
+     file->Unknown34("m_bGotGrid", flag_960);
+-    file->Unknown24("m_CurrGridXY.x", word_964);
+-    file->Unknown24("m_CurrGridXY.y", word_968);
++    file->Unknown24("m_CurrGridXY.x", current_grid_964.x);
++    file->Unknown24("m_CurrGridXY.y", current_grid_964.y);
+     WorldMovingEntity::Unknown48(file);
+ }
+ 
+@@ -136,8 +136,8 @@ void WorldVehicleEntity::Unknown4c(GameFileReader* file)
+     file->Unknown68(reinterpret_cast<unsigned int*>(&arrival_heading_958));
+     file->Unknown68(reinterpret_cast<unsigned int*>(&departure_heading_95c));
+     file->ReadByte(&flag_960);
+-    file->Unknown68(reinterpret_cast<unsigned int*>(&word_964));
+-    file->Unknown68(reinterpret_cast<unsigned int*>(&word_968));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&current_grid_964.x));
++    file->Unknown68(reinterpret_cast<unsigned int*>(&current_grid_964.y));
+     if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
+     {
+         words_904[3] = window_deactivation_state->VehicleCircuitCount(vehicle_type_f8);
+diff --git a/src/startup_world_vehicle_update.cpp b/src/startup_world_vehicle_update.cpp
+index 156c2873483ce1fe6fd62a8a618b0c46fc022eae..4b0e96d0e791ad9d4d760037bbafdcc6822c3d10 100644
+--- a/src/startup_world_vehicle_update.cpp
++++ b/src/startup_world_vehicle_update.cpp
+@@ -12,7 +12,7 @@ bool WorldVehicleEntity::Unknown0c()
+     auto neighbours = [&](bool set)
+     {
+         ScreenTerrainCell* cells[8];
+-        screen_terrain_grid->Neighbours(ScreenPoint(word_964, word_968), cells);
++        screen_terrain_grid->Neighbours(current_grid_964, cells);
+         for (int i = 0; i < 8; ++i)
+             if (set)
+                 cells[i]->flags_48 |= 0x10;
+@@ -190,8 +190,7 @@ bool WorldVehicleEntity::Unknown0c()
+         SelectVehicleVariant(keyline_state_44, 0);
+     ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+     ScreenPoint tile = overlay_map->WorldToTile(&position);
+-    word_964 = tile.x;
+-    word_968 = tile.y;
++    current_grid_964 = tile;
+     if (vehicle_type_f8 == 6)
+     {
+         neighbours(true);

@@ -1,5 +1,6 @@
 #include "cabinet.h"
 #include "content_prepare.h"
+#include "game_disc.h"
 #include "game_index.h"
 #include "game_path.h"
 #include "platform/path.h"
@@ -71,25 +72,50 @@ std::uint64_t number(std::string_view text)
     return value;
 }
 
-int run(const std::vector<std::string>& args)
+int run(std::vector<std::string> args)
 {
     try
     {
+        std::string language, patch;
+        for (auto it = args.begin(); it != args.end(); ++it)
+        {
+            if (*it == "--patch")
+            {
+                if (std::next(it) == args.end() || !patch.empty())
+                {
+                    throw std::invalid_argument("--patch needs one patch file.");
+                }
+                patch = *std::next(it);
+                it = std::prev(args.erase(it, std::next(it, 2)));
+            }
+            else if (*it == "--language")
+            {
+                if (std::next(it) == args.end() || !language.empty())
+                {
+                    throw std::invalid_argument("--language needs one language code.");
+                }
+                language = *std::next(it);
+                it = std::prev(args.erase(it, std::next(it, 2)));
+            }
+        }
         if (args.size() == 2 && args[1] == "--help")
         {
             std::cout
                 << "beachlife-data list image.iso\n"
                    "beachlife-data cabinets image.iso\n"
-                   "beachlife-data game-files image.iso\n"
+                   "beachlife-data game-files image.iso [--language code]\n"
                    "beachlife-data game-cat image.iso logical/path\n"
                    "beachlife-data cat image.iso logical/path\n"
                    "beachlife-data read image.iso logical/path offset count\n\n"
-                   "beachlife-data prepare image.iso [cache-directory]\n"
+                   "beachlife-data prepare image.iso [cache-directory] [--language code]\n"
+                   "    [--patch 1.1-patch.exe]\n"
                    "beachlife-data vfs-list prepared-directory\n"
                    "beachlife-data vfs-cat prepared-directory logical/path\n"
                    "beachlife-data vfs-read prepared-directory logical/path offset count\n"
                    "beachlife-data verify prepared-directory\n\n"
                    "List/prepare commands return JSON. Cat/read write raw bytes to stdout.\n"
+                   "--language selects a European disc's game language (fr, it, de, es, pl).\n"
+                   "--patch applies an official 1.1 patch to the disc's data files.\n"
                    "Preparation progress goes to stderr; Ctrl+C cancels and permits resuming.\n";
             return 0;
         }
@@ -107,6 +133,8 @@ int run(const std::vector<std::string>& args)
             auto previous = std::chrono::steady_clock::time_point{};
             std::string phase;
             beachlife::data::PrepareOptions options;
+            options.language = language;
+            options.patch = beachlife::platform::utf8_path(patch);
             options.cancelled = []
             {
                 return interrupted != 0;
@@ -169,16 +197,15 @@ int run(const std::vector<std::string>& args)
         if (args.size() == 3 && args[1] == "game-files")
         {
             const beachlife::data::IsoSource source(image);
-            beachlife::data::write_game_index_json(std::cout,
-                beachlife::data::map_game_files(
-                    beachlife::data::index_cabinet(source), source.index()));
+            beachlife::data::write_game_index_json(
+                std::cout, beachlife::data::GameDisc(source).map(language));
             return std::cout ? 0 : 1;
         }
         if (args.size() == 4 && args[1] == "game-cat")
         {
             const beachlife::data::IsoSource source(image);
-            beachlife::data::CabinetReader cabinet(source);
-            const auto index = beachlife::data::map_game_files(cabinet.index(), source.index());
+            beachlife::data::GameDisc disc(source);
+            const auto index = disc.map(language);
             const auto key = beachlife::data::normalize_game_path(args[3]).key;
             const auto found = std::find_if(index.files.begin(),
                 index.files.end(),
@@ -196,16 +223,16 @@ int run(const std::vector<std::string>& args)
                 throw std::runtime_error("Cannot set binary output.");
             }
 #endif
-            cabinet.extract(found->cabinet_index,
-                [&](std::span<const unsigned char> bytes)
+            const auto sink = [&](std::span<const unsigned char> bytes)
+            {
+                std::cout.write(reinterpret_cast<const char*>(bytes.data()),
+                    static_cast<std::streamsize>(bytes.size()));
+                if (!std::cout)
                 {
-                    std::cout.write(reinterpret_cast<const char*>(bytes.data()),
-                        static_cast<std::streamsize>(bytes.size()));
-                    if (!std::cout)
-                    {
-                        throw std::runtime_error("Cannot write output.");
-                    }
-                });
+                    throw std::runtime_error("Cannot write output.");
+                }
+            };
+            disc.extract(*found, sink);
             std::cout.flush();
             return std::cout ? 0 : 1;
         }

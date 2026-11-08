@@ -17,6 +17,69 @@ matching = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(matching)
 
 
+class FixtureGroupTests(unittest.TestCase):
+    def write(self, folder, address, text='// retention fixture\n'):
+        path = folder / f'fixture_{address:08x}.cpp'
+        path.write_text(text)
+        return path
+
+    def test_fixtures_group_by_profile_and_address_range_and_keep_declarations_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            low, high = self.write(folder, 0x00401000), self.write(folder, 0x0040f000)
+            stl = self.write(folder, 0x00402000)
+            other = self.write(folder, 0x00410000)
+            typedef = self.write(folder, 0x00403000, 'typedef std::deque<int> Deque;\nvoid f() {}\n')
+            static = self.write(folder, 0x00404000, 'void f()\n{\n    static volatile int marker;\n}\n')
+            standalone, units, stlport, records = matching.fixture_groups(
+                [low, high, stl, other, typedef, static], [stl], folder / 'out')
+            self.assertEqual(standalone, [typedef, static])
+            self.assertEqual([unit.name for unit in units],
+                             ['fixture_group_plain_00400000_e3b0c442.cpp', 'fixture_group_plain_00410000_e3b0c442.cpp',
+                              'fixture_group_stlport_00400000_e3b0c442.cpp'])
+            self.assertEqual(stlport, [units[2]])
+            self.assertEqual(units[0].read_text().splitlines()[1:],
+                             ['#include "fixture_00401000.cpp"', '#include "fixture_0040f000.cpp"'])
+            self.assertEqual(records[0], {'unit': units[0].name, 'includes': [], 'fixtures': [low.name, high.name]})
+
+    def test_fixtures_with_different_include_lines_never_share_a_unit(self):
+        # A <windows.h> macro (FindText -> FindTextA) seen by one member must
+        # not rename the declarations another member includes later.
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            config = self.write(folder, 0x004e0000, '#include "config.h"\n// fixture\n')
+            same = self.write(folder, 0x004e1000, '#include "config.h"\n// fixture\n')
+            windows = self.write(folder, 0x004e2000, '#include <windows.h>\n#include "config.h"\n// fixture\n')
+            _, units, _, records = matching.fixture_groups([config, same, windows], [], folder / 'out')
+            self.assertEqual(len(units), 2)
+            self.assertEqual(sorted(record['fixtures'] for record in records),
+                             [[config.name, same.name], [windows.name]])
+
+    def test_a_new_fixture_changes_only_its_own_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            first, second = self.write(folder, 0x00401000), self.write(folder, 0x00420000)
+            _, units, _, _ = matching.fixture_groups([first, second], [], folder / 'out')
+            before = {unit.name: (unit.read_text(), unit.stat().st_mtime_ns) for unit in units}
+            added = self.write(folder, 0x00421000)
+            _, units, _, _ = matching.fixture_groups([first, second, added], [], folder / 'out')
+            after = {unit.name: (unit.read_text(), unit.stat().st_mtime_ns) for unit in units}
+            self.assertEqual(after['fixture_group_plain_00400000_e3b0c442.cpp'], before['fixture_group_plain_00400000_e3b0c442.cpp'])
+            self.assertNotEqual(after['fixture_group_plain_00420000_e3b0c442.cpp'][0],
+                                before['fixture_group_plain_00420000_e3b0c442.cpp'][0])
+            _, units, _, _ = matching.fixture_groups([second, added], [], folder / 'out')
+            self.assertEqual(sorted(path.name for path in (folder / 'out/fixture-groups').iterdir()),
+                             ['fixture_group_plain_00420000_e3b0c442.cpp'])
+
+    def test_unexpected_fixture_names_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            odd = folder / 'fixture_extra.cpp'
+            odd.write_text('// fixture\n')
+            with self.assertRaises(ValueError):
+                matching.fixture_groups([odd], [], folder / 'out')
+
+
 class MatchingInputTests(unittest.TestCase):
     def test_unpacked_source_keeps_its_identity_without_disabling_other_icf(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -581,6 +644,16 @@ class MatchingInputTests(unittest.TestCase):
                 {'address': '0x00001020', 'symbol': '?Erase@List@@QAEXXZ', 'recomp': '0x00002020',
                  'sources': ['list.cpp', 'owner.cpp']}])
             self.assertEqual(matching.unfolded_annotations(paths, rows, {}, publics), [])
+
+    def test_unfolded_identities_bind_their_own_rebuilt_address(self):
+        records = [{'address': '0x004d3890', 'symbol': '?Ignore@@YAXH@Z', 'recomp': '0x00457810',
+                    'sources': ['folded.cpp', 'sink.cpp']}]
+        self.assertEqual(matching.unfolded_identity_pairs(records), [(0x004d3890, 0x00457810)])
+        # A folded copy that claimed the address through its annotation line is a failure.
+        bound = matching.unfolded_identity_results(records, {0x004d3890: 0x00457810}.get)
+        claimed = matching.unfolded_identity_results(records, {0x004d3890: 0x0044fbc0}.get)
+        self.assertEqual([item['bound'] for item in bound + claimed], [True, False])
+        self.assertEqual(matching.unfolded_identity_results(records, {}.get)[0]['bound'], False)
 
     def test_map_public_names_keep_every_name_at_an_address(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1189,7 +1262,12 @@ class MatchingCompilerOptionsTests(unittest.TestCase):
         self.assertEqual([row['address'] for row in result['functions']],
                          ['0x1000', '0x00001020', '0x00001040'])
         self.assertTrue(result['functions'][-1]['folded'])
-        self.assertEqual(compiled[-3:], [self.metadata / 'fixtures/game.cpp', earlier[2], later[2]])
+        group = self.args.output / 'game/fixture-groups/fixture_group_plain_00000000_e3b0c442.cpp'
+        self.assertEqual(compiled[-2:], [self.metadata / 'fixtures/game.cpp', group])
+        self.assertEqual(group.read_text().splitlines()[1:],
+                         ['#include "fixture_00001020.cpp"', '#include "fixture_00001040.cpp"'])
+        self.assertEqual(result['retention_fixture_groups'],
+                         [{'unit': group.name, 'includes': [], 'fixtures': [earlier[2].name, later[2].name]}])
         self.assertEqual(result['source_compile_options'], {'helper.cpp': ['/GX']})
         project = json.loads((self.args.output / 'game/reccmp-project.yml').read_text())
         self.assertEqual(project['targets']['BEACHLIFE']['data-sources'],

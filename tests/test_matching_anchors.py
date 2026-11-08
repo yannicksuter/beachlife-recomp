@@ -366,14 +366,15 @@ class ComparisonAnchorTests(unittest.TestCase):
 
     def test_free_functions_bind_the_header_declaration_before_definition(self):
         for convention, symbol in (('__cdecl', '?GeneratedFree@@YAHH@Z'),
-                                   ('__stdcall', '_GeneratedFree@4')):
+                                   ('__stdcall', '_GeneratedFree@4'),
+                                   ('__fastcall', '?GeneratedFree@@YIHH@Z')):
             body = self.generate(kind='integer-function', return_type='int', name='GeneratedFree',
                                  symbol=symbol, parameters=['int'], calling_convention=convention)
             binding = ('typedef int (' + convention + ' *comparison_anchor_signature)(int);\n'
                        'static comparison_anchor_signature const comparison_anchor_declaration = &GeneratedFree;')
             self.assertIn(binding, body)
             self.assertLess(body.index(binding), body.index(f'int {convention} GeneratedFree('))
-        for changes in ({'calling_convention': '__fastcall'}, {'qualifier': 'const'},
+        for changes in ({'calling_convention': '__thiscall'}, {'qualifier': 'const'},
                         {'name': 'GeneratedFree()'}, {'symbol': 'plain undecorated'}):
             with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, 'declaration'):
                 self.generate(**({'kind': 'void-function', 'return_type': 'void',

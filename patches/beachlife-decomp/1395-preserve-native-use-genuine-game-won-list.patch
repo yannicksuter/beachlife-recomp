@@ -1,0 +1,111 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index dc61a34..b9cc5a5 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4396,6 +4396,7 @@ typedef char Decl2RoutesWorldSubsystem18route_finder_00Offset[(offsetof(WorldSub
+ 
+ #include "startup_game_won.h"
+ 
++typedef char Decl2GuiGameWonListNodeSize[(sizeof(GameWonListNode) == 0xc) ? 1 : -1];
+ typedef char Decl2GuiGameWonListSize[(sizeof(GameWonList) == 0x4) ? 1 : -1];
+ typedef char Decl2GuiGameWonControllerSize[(sizeof(GameWonController) == 0x94) ? 1 : -1];
+ typedef char Decl2GuiGameWonControllerlist_90Offset[(offsetof(GameWonController, list_90) == 0x90) ? 1 : -1];
+diff --git a/src/startup_game_won.h b/src/startup_game_won.h
+index 74d0675..d82ae9c 100644
+--- a/src/startup_game_won.h
++++ b/src/startup_game_won.h
+@@ -3,17 +3,39 @@
+ 
+ #include "startup_controller.h"
+ #include "startup_list.h"
+-#include "startup_world_list.h"
+ 
+ extern const char* game_won_music;
+ 
+ struct ScreenItem;
+-struct ScreenTextItem;
+ 
+-// The credit items are an STLport 4.5.3 std::list<ScreenTextItem*>: its insert
+-// 0x004e8a50 and node constructor 0x004e8a80 are separate instances from
+-// list<ScreenItem*>'s. Units compiled without STLport see a layout stand-in.
+-typedef WorldList<ScreenTextItem*>::Type GameWonList;
++struct GameWonListNode : CircularListNode
++{
++    ScreenItem* item;
++};
++
++struct GameWonListAllocator
++{
++    GameWonListAllocator();
++    ~GameWonListAllocator();
++};
++
++struct GameWonListBase
++{
++    CircularListNode* head;
++    explicit GameWonListBase(const GameWonListAllocator& allocator);
++    ~GameWonListBase();
++};
++
++struct GameWonList : GameWonListBase
++{
++    explicit GameWonList(const GameWonListAllocator& allocator = GameWonListAllocator());
++    ~GameWonList();
++    GameWonListNode* CreateNode(ScreenItem* const& item);
++    CircularListIterator Insert(CircularListIterator position, ScreenItem* const& item);
++    void Clear();
++    CircularListIterator Begin() const;
++    CircularListIterator End() const;
++};
+ 
+ struct GameWonController : ControllerState
+ {
+@@ -36,4 +58,6 @@ struct GameWonController : ControllerState
+     virtual void ControllerSlot24();                       // 0x00437d10.
+ };
+ 
++static const unsigned int game_won_node_bytes = (sizeof(GameWonListNode) + 7u) & ~7u;
++
+ #endif
+diff --git a/src/startup_game_won_list.h b/src/startup_game_won_list.h
+deleted file mode 100644
+index 853a791..0000000
+--- a/src/startup_game_won_list.h
++++ /dev/null
+@@ -1,14 +0,0 @@
+-#ifndef STARTUP_GAME_WON_LIST_H
+-#define STARTUP_GAME_WON_LIST_H
+-
+-#include "startup_game_won.h"
+-
+-// Matching retention of the credit list's out-of-line vendor members: insert
+-// 0x004e8a50 and the protected node constructor 0x004e8a80.
+-struct GameWonListRetention : GameWonList
+-{
+-    static void Insert(GameWonListRetention* self, ScreenTextItem* const& item);
+-    static void CreateNode(GameWonListRetention* self, ScreenTextItem* const& item);
+-};
+-
+-#endif
+diff --git a/src/startup_pointer_list_inlines.h b/src/startup_pointer_list_inlines.h
+index d504539..5ddc729 100644
+--- a/src/startup_pointer_list_inlines.h
++++ b/src/startup_pointer_list_inlines.h
+@@ -113,5 +113,17 @@ inline CircularListIterator WorldRepairAssignmentList::Erase(CircularListIterato
+ {
+     return ErasePointerListNode<WorldRepairNode<WorldRepairAssignment> >(position);
+ }
++inline CircularListIterator GameWonList::Begin() const
++{
++    CircularListIterator result;
++    result.node = head->next;
++    return result;
++}
++inline CircularListIterator GameWonList::End() const
++{
++    CircularListIterator result;
++    result.node = head;
++    return result;
++}
+ 
+ #endif

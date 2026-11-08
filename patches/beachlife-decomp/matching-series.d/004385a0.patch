@@ -1,0 +1,158 @@
+diff --git a/fixtures/game.d/fixture_004385a0.cpp b/fixtures/game.d/fixture_004385a0.cpp
+new file mode 100644
+index 0000000..78ebe2d
+--- /dev/null
++++ b/fixtures/game.d/fixture_004385a0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_variable_state.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004385a0(VariableWeather* weather)
++{
++    weather->Update();
++}
+diff --git a/metadata.d/004385a0.csv b/metadata.d/004385a0.csv
+new file mode 100644
+index 0000000..8a16177
+--- /dev/null
++++ b/metadata.d/004385a0.csv
+@@ -0,0 +1,5 @@
++address,type,size,symbol
++0x004385a0,function,1020,?Update@VariableWeather@@QAEXXZ
++0x00438ab0,function,4647,?UpdateLighting@VariableWeather@@QAEXXZ
++0x00573af4,string,10,
++0x00573b00,string,11,
+diff --git a/src/match_004385a0.cpp b/src/match_004385a0.cpp
+new file mode 100644
+index 0000000..5797635
+--- /dev/null
++++ b/src/match_004385a0.cpp
+@@ -0,0 +1,90 @@
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++#include "window_activation.h"
++#include "window_audio.h"
++#include <string.h>
++
++// Keeps the rain loop matching the weather. As an inline helper it spends the
++// update's inline budget as in the original: every events_2b6c access calls
++// the deque iterator's _M_advance out of line.
++static inline void UpdateRainSound(VariableWeather* weather)
++{
++    switch (weather->lighting_2c38)
++    {
++    case 3:
++        if (weather->audio_mode_2ba0 != 2)
++        {
++            if (weather->voice_2b9c != -1)
++                window_audio_state->StopSound(weather->voice_2b9c, 2.0f);
++            weather->voice_2b9c = window_audio_state->PlaySoundAtLevel("rain_loop", weather_rain_level, 2, 5.0f);
++            weather->audio_mode_2ba0 = 2;
++        }
++        else
++            window_audio_state->SetSoundLevel(weather->voice_2b9c, weather_rain_level);
++        break;
++    case 4:
++    case 5:
++        if (weather->audio_mode_2ba0 != 3)
++        {
++            if (weather->voice_2b9c != -1)
++                window_audio_state->StopSound(weather->voice_2b9c, 2.0f);
++            weather->voice_2b9c = window_audio_state->PlaySoundAtLevel("rain_heavy", weather_rain_level, 2, 5.0f);
++            weather->audio_mode_2ba0 = 3;
++        }
++        else
++            window_audio_state->SetSoundLevel(weather->voice_2b9c, weather_rain_level);
++        break;
++    default:
++        if (weather->audio_mode_2ba0)
++        {
++            if (weather->voice_2b9c != -1)
++                window_audio_state->StopSound(weather->voice_2b9c, 2.0f);
++            weather->audio_mode_2ba0 = 0;
++        }
++        break;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004385a0
++void VariableWeather::Update()
++{
++    unsigned int day = window_deactivation_state->day_15c;
++    float time = window_deactivation_state->render_value_160;
++    while (word_2b94 < event_count_2b98)
++    {
++        if (!(events_2b6c[word_2b94]->day_08 < day
++                || events_2b6c[word_2b94]->day_08 == day && events_2b6c[word_2b94]->time_04 < time))
++            break;
++        word_2c34 = lighting_2c38;
++        lighting_2c38 = events_2b6c[word_2b94]->kind_00;
++        value_2ac8 = events_2b6c[word_2b94]->time_04;
++        memcpy(values_2b00, events_2b6c[word_2b94]->values_0c, sizeof(values_2b00));
++        ++word_2b94;
++        ScreenModeCommand command;
++        command.words[0] = -2;
++        command.words[1] = 0;
++        command.words[2] = 0x48;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        unsigned int count;
++        VariableEntity** guests = variable_world->ByType(3, &count);
++        for (unsigned int index = 0; index < count; ++index)
++        {
++            guests[index]->WeatherChanged();
++            if (lighting_2c38 >= 3)
++            {
++                command.words[1] = guests[index]->id_28;
++                screen_mode_commands->QueueCommand(&command);
++            }
++        }
++    }
++    UpdateLighting();
++    if (word_2b94 == event_count_2b98 && word_2ad8)
++    {
++        day_offset_2adc += word_2ad8;
++        word_2b94 = 0;
++        for (unsigned int index = 0; index < event_count_2b98; ++index)
++            events_2b6c[index]->day_08 += word_2ad8;
++    }
++    UpdateRainSound(this);
++}
+diff --git a/targets/beachlife-uk-1.1.d/004385a0.json b/targets/beachlife-uk-1.1.d/004385a0.json
+new file mode 100644
+index 0000000..c204a85
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004385a0.json
+@@ -0,0 +1,32 @@
++{
++  "functions": [
++    {
++      "address": "0x004385a0",
++      "size": 1020,
++      "name": "VariableWeather::Update",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x00438ab0",
++      "size": 4647,
++      "name": "VariableWeather::UpdateLighting",
++      "symbol": "?UpdateLighting@VariableWeather@@QAEXXZ",
++      "header": "startup_variable_state.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
++    }
++  ],
++  "source_compile_options": {
++    "match_004385a0.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004385a0.cpp",
++    "fixture_004385a0.cpp"
++  ]
++}

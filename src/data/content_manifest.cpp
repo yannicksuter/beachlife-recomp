@@ -1,4 +1,5 @@
 #include "content_manifest.h"
+#include "game_index.h"
 #include "game_path.h"
 #include "local_files.h"
 #include "platform/json.h"
@@ -88,8 +89,9 @@ std::string string(const platform::JsonValue& value)
 
 void validate(const ContentManifest& manifest)
 {
-    if (!digest(manifest.source_sha256) || manifest.profile != "uk-english-v1" ||
-        manifest.language != "en")
+    if (!digest(manifest.source_sha256) ||
+        (!manifest.patch_sha256.empty() && !digest(manifest.patch_sha256)) ||
+        !supported_game_profile(manifest.profile, manifest.language))
     {
         throw std::runtime_error("Unsupported content manifest identity/profile.");
     }
@@ -157,7 +159,8 @@ void validate(const ContentManifest& manifest)
         throw std::runtime_error("Prepared game data requires BeachLife.exe; prepare or repair it "
                                  "from the original ISO.");
     }
-    if (!ini || !data || total != manifest.total_bytes)
+    // Only the Wise-installed set has no BeachLife.ini (its installer writes none).
+    if ((!ini && manifest.profile != "uk-wise-v1") || !data || total != manifest.total_bytes)
     {
         throw std::runtime_error("Incomplete content manifest or incorrect total size.");
     }
@@ -166,14 +169,33 @@ void validate(const ContentManifest& manifest)
 
 std::string ContentManifest::identity() const
 {
+    // An unpatched set keeps the identity it always had.
     return platform::sha256_hex("beachlife-content-" + std::to_string(content_format) + "\n" +
-                                source_sha256 + "\n" + profile + "\n" + language + "\n");
+                                source_sha256 + "\n" + profile + "\n" + language + "\n" +
+                                (patch_sha256.empty() ? "" : "patch " + patch_sha256 + "\n"));
 }
 
 ContentManifest parse_content_manifest(std::string_view text)
 {
     const auto root = platform::parse_json(text);
-    fields(root, {"format", "source_sha256", "profile", "language", "total_bytes", "files"});
+    const bool patched =
+        root.is_object() &&
+        std::find(root.names().begin(), root.names().end(), "patch_sha256") != root.names().end();
+    if (patched)
+    {
+        fields(root,
+            {"format",
+                "source_sha256",
+                "patch_sha256",
+                "profile",
+                "language",
+                "total_bytes",
+                "files"});
+    }
+    else
+    {
+        fields(root, {"format", "source_sha256", "profile", "language", "total_bytes", "files"});
+    }
     if (number(root["format"]) != content_format ||
         root["files"].type() != platform::JsonValue::Type::Array)
     {
@@ -181,6 +203,14 @@ ContentManifest parse_content_manifest(std::string_view text)
     }
     ContentManifest result;
     result.source_sha256 = string(root["source_sha256"]);
+    if (patched)
+    {
+        result.patch_sha256 = string(root["patch_sha256"]);
+        if (result.patch_sha256.empty())
+        {
+            throw std::runtime_error("Invalid content manifest patch.");
+        }
+    }
     result.profile = string(root["profile"]);
     result.language = string(root["language"]);
     result.total_bytes = number(root["total_bytes"]);
@@ -198,8 +228,12 @@ std::string content_manifest_json(const ContentManifest& manifest)
 {
     validate(manifest);
     std::ostringstream out;
-    out << "{\"format\":" << content_format << ",\"source_sha256\":\"" << manifest.source_sha256
-        << "\",\"profile\":\"" << manifest.profile << "\",\"language\":\"" << manifest.language
+    out << "{\"format\":" << content_format << ",\"source_sha256\":\"" << manifest.source_sha256;
+    if (!manifest.patch_sha256.empty())
+    {
+        out << "\",\"patch_sha256\":\"" << manifest.patch_sha256;
+    }
+    out << "\",\"profile\":\"" << manifest.profile << "\",\"language\":\"" << manifest.language
         << "\",\"total_bytes\":" << manifest.total_bytes << ",\"files\":[";
     for (std::size_t i = 0; i < manifest.files.size(); ++i)
     {

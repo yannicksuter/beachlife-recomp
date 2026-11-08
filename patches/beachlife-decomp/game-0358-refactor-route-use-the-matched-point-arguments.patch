@@ -1,0 +1,274 @@
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 0fb2af8eac4ea2fd688d1aaf552e98bf449d930c..30753cb6eec9b8256042078369bca077dd65d8a4 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -85,7 +85,7 @@ inline TerrainRegistration::~TerrainRegistration()
+ struct ScreenTerrainGrid : TerrainRegistration
+ {
+     ScreenMapPosition TileWorldPosition(ScreenPoint tile);      // 0x004463c0.
+-    bool TilesConnected(int x1, int y1, int x2, int y2);        // 0x00445d30.
++    bool TilesConnected(ScreenPoint from, ScreenPoint to);      // 0x00445d30.
+     unsigned int InfluenceAreaAt(ScreenWorldPosition position); // 0x00447120.
+     int NearestRouteIndex(ScreenWorldPosition position);        // 0x00446d90.
+     bool RouteEnabled(unsigned int kind, unsigned int index);   // 0x00447690.
+diff --git a/src/startup_screen_terrain_motion.cpp b/src/startup_screen_terrain_motion.cpp
+index 2ee87b5e04360c8bcbc2d8bbb0a16261a28464cf..8147bddb5eac612d8798ddd6e187294e41dd18f4 100644
+--- a/src/startup_screen_terrain_motion.cpp
++++ b/src/startup_screen_terrain_motion.cpp
+@@ -1,5 +1,10 @@
+ #include "startup_screen_mode_world.h"
+ 
++static inline unsigned int HalfTile(const ScreenTerrainGrid* grid)
++{
++    return static_cast<unsigned int>(grid->tile_size_00) >> 1;
++}
++
+ // FUNCTION: BEACHLIFE 0x00446350
+ ScreenWorldPosition ScreenTerrainGrid::TileCenter(int x, int y)
+ {
+@@ -15,10 +20,12 @@ ScreenWorldPosition ScreenTerrainGrid::TileCenter(int x, int y)
+ // FUNCTION: BEACHLIFE 0x004463c0
+ ScreenMapPosition ScreenTerrainGrid::TileWorldPosition(ScreenPoint tile)
+ {
+-    unsigned int half = static_cast<unsigned int>(tile_size_00) >> 1;
+-    unsigned int world_x = half * tile.x;
+-    unsigned int world_y = static_cast<unsigned int>(tile_size_00) * tile.y + (tile.x & 1) * half;
+-    return { static_cast<float>(world_x), static_cast<float>(world_y) };
++    int x = tile.x;
++    unsigned int column = HalfTile(this) * x;
++    unsigned int row = tile_size_00 * tile.y + (x & 1) * HalfTile(this);
++    ScreenMapPosition position(static_cast<float>(column),
++        static_cast<float>(HalfTile(this)) + (static_cast<float>(row) - static_cast<float>(HalfTile(this))));
++    return position;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00446bd0
+@@ -49,15 +56,16 @@ ScreenMapPosition ScreenTerrainGrid::OffsetPosition(ScreenMapPosition origin, Sc
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00445d30
+-bool ScreenTerrainGrid::TilesConnected(int x1, int y1, int x2, int y2)
++bool ScreenTerrainGrid::TilesConnected(ScreenPoint from, ScreenPoint to)
+ {
+-    for (int direction = 0; direction < 8; ++direction)
++    ScreenPoint next[8];
++    int direction = 0;
++    do
+     {
+-        ScreenPoint next;
+-        Step(x1, y1, direction, &next);
+-        if (next.x == x2 && next.y == y2)
++        Step(from.x, from.y, direction, &next[direction]);
++        if (next[direction].x == to.x && next[direction].y == to.y)
+             return true;
+-    }
++    } while (++direction < 8);
+     return false;
+ }
+ 
+diff --git a/src/startup_world_moving_commands.cpp b/src/startup_world_moving_commands.cpp
+index b3a760157d1ec9dfccdb17053585949febccb85b..c864756aa74eac3e52dcd8ea97f6988061c7b79f 100644
+--- a/src/startup_world_moving_commands.cpp
++++ b/src/startup_world_moving_commands.cpp
+@@ -79,7 +79,7 @@ static void CheckDirectMotionRoute(WorldMovingEntity* entity, ScreenPoint start,
+ {
+     bool start_blocked = !(MotionTileFlags(start) & 0x10000082u);
+     bool end_blocked = !(MotionTileFlags(end) & 0x10000082u);
+-    bool connected = screen_terrain_grid->TilesConnected(start.x, start.y, end.x, end.y)
++    bool connected = screen_terrain_grid->TilesConnected(start, end)
+                   || !DifferentMotionTiles(start, end);
+     if ((start_blocked && end_blocked) || !connected)
+     {
+diff --git a/src/startup_world_route_finder.cpp b/src/startup_world_route_finder.cpp
+index 83ecfdbdd77c7a53eb078aabb0cc173e7243ba49..5cbd0fae1770b9f472acf7e8ba598ebcd76dd99a 100644
+--- a/src/startup_world_route_finder.cpp
++++ b/src/startup_world_route_finder.cpp
+@@ -31,56 +31,50 @@ static unsigned int CopyFoundRoute(WorldRouteFinder* finder, ScreenPoint** point
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004309e0
+-unsigned int WorldRouteFinder::FindLandRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut)
++unsigned int WorldRouteFinder::FindLandRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut)
+ {
+     flags_04[0] = shortcut;
+     flags_04[2] = 0;
+-    start_0c = { x1, y1 };
++    CopyRoutePoint(start_0c, from);
+     ++generation_08;
+     callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+     { return finder->CanUseLandCell(point); };
+-    ScreenPoint start = { x1, y1 };
+-    ScreenPoint end = { x2, y2 };
+-    bool start_allowed = CanUseLandCell(&start);
+-    bool end_allowed = callback_90(this, &end);
+-    if (!start_allowed || !end_allowed || (x1 == x2 && y1 == y2) || !SearchRoute(x1, y1, x2, y2))
++    bool start_allowed = CanUseLandCell(&from);
++    bool end_allowed = callback_90(this, &to);
++    if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+         return 0;
+     return CopyFoundRoute(this, points, false);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00430b00
+-unsigned int WorldRouteFinder::FindWaterRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut)
++unsigned int WorldRouteFinder::FindWaterRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut)
+ {
+     flags_04[0] = shortcut;
+     flags_04[2] = 0;
+-    start_0c = { x1, y1 };
++    CopyRoutePoint(start_0c, from);
+     ++generation_08;
+     callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+     { return finder->CanUseWaterCell(point); };
+-    ScreenPoint start = { x1, y1 };
+-    ScreenPoint end = { x2, y2 };
+-    bool start_allowed = CanUseWaterCell(&start);
+-    bool end_allowed = callback_90(this, &end);
+-    if (!start_allowed || !end_allowed || (x1 == x2 && y1 == y2) || !SearchRoute(x1, y1, x2, y2))
++    bool start_allowed = CanUseWaterCell(&from);
++    bool end_allowed = callback_90(this, &to);
++    if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+         return 0;
+     return CopyFoundRoute(this, points, false);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00430c20
+-unsigned int WorldRouteFinder::FindVehicleRoute(int x1, int y1, int x2, int y2, ScreenPoint** points)
++unsigned int WorldRouteFinder::FindVehicleRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points)
+ {
+     flags_04[1] = 1;
+     flags_04[0] = 0;
+     flags_04[2] = 0;
+     callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+     { return finder->CanUseVehicleCell(point); };
+-    start_0c = { x1, y1 };
++    CopyRoutePoint(start_0c, from);
+     ++generation_08;
+-    ScreenPoint start = { x1, y1 };
+-    ScreenPoint end = { x2, y2 };
+-    bool start_allowed = callback_90(this, &start);
+-    bool end_allowed = callback_90(this, &end);
+-    if (!start_allowed || !end_allowed || (x1 == x2 && y1 == y2) || !SearchRoute(x1, y1, x2, y2))
++    bool start_allowed = callback_90(this, &from);
++    bool end_allowed = callback_90(this, &to);
++    if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+     {
+         flags_04[1] = 0;
+         return 0;
+@@ -91,21 +85,18 @@ unsigned int WorldRouteFinder::FindVehicleRoute(int x1, int y1, int x2, int y2,
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00430d50
+-unsigned int WorldRouteFinder::FindGroundRoute(int x1, int y1, int x2, int y2, ScreenPoint** points)
++unsigned int WorldRouteFinder::FindGroundRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points)
+ {
+     ++generation_08;
+     flags_04[2] = 1;
+     flags_04[0] = 0;
+     callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+     { return finder->CanUseGroundCell(point); };
+-    start_0c = { x1, y1 };
+-    ScreenPoint start = { x1, y1 };
+-    ScreenPoint end = { x2, y2 };
+-    bool start_allowed = callback_90(this, &start);
+-    bool end_allowed = callback_90(this, &end);
+-    if (!start_allowed || !end_allowed || (x1 == x2 && y1 == y2) || !SearchRoute(x1, y1, x2, y2))
++    CopyRoutePoint(start_0c, from);
++    bool start_allowed = callback_90(this, &from);
++    bool end_allowed = callback_90(this, &to);
++    if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+         return 0;
+-
+     ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
+     int count = 0;
+     while (cell && cell->visited_generation_08 == generation_08)
+diff --git a/src/startup_world_route_requests.cpp b/src/startup_world_route_requests.cpp
+index 614c082e2538860074d45bc0a6b18c3810eb050b..6bef3fc0b125663e0cab9f5cc487786068e4a189 100644
+--- a/src/startup_world_route_requests.cpp
++++ b/src/startup_world_route_requests.cpp
+@@ -45,7 +45,7 @@ static WorldRouteReference* MakeRouteReference(ScreenPoint* points, unsigned int
+ void* WorldSubsystem18::FindLandRoute(int x1, int y1, int x2, int y2, unsigned char* success, unsigned char shortcut)
+ {
+     ScreenPoint* points = 0;
+-    unsigned int count = route_finder_00->FindLandRoute(x1, y1, x2, y2, &points, shortcut);
++    unsigned int count = route_finder_00->FindLandRoute(ScreenPoint(x1, y1), ScreenPoint(x2, y2), &points, shortcut);
+     if (count && points)
+         return MakeRouteReference(points, count, x1, y1, x2, y2, 1);
+     *success = 0;
+@@ -56,7 +56,7 @@ void* WorldSubsystem18::FindLandRoute(int x1, int y1, int x2, int y2, unsigned c
+ void* WorldSubsystem18::FindWaterRoute(int x1, int y1, int x2, int y2, unsigned char* success, unsigned char shortcut)
+ {
+     ScreenPoint* points = 0;
+-    unsigned int count = route_finder_00->FindWaterRoute(x1, y1, x2, y2, &points, shortcut);
++    unsigned int count = route_finder_00->FindWaterRoute(ScreenPoint(x1, y1), ScreenPoint(x2, y2), &points, shortcut);
+     if (count && points)
+         return MakeRouteReference(points, count, x1, y1, x2, y2, 4);
+     *success = 0;
+@@ -67,7 +67,7 @@ void* WorldSubsystem18::FindWaterRoute(int x1, int y1, int x2, int y2, unsigned
+ void* WorldSubsystem18::FindVehicleRoute(ScreenPoint start, ScreenPoint destination, unsigned char* success)
+ {
+     ScreenPoint* points = 0;
+-    unsigned int count = route_finder_00->FindVehicleRoute(start.x, start.y, destination.x, destination.y, &points);
++    unsigned int count = route_finder_00->FindVehicleRoute(start, destination, &points);
+     if (count && points)
+         return MakeRouteReference(points, count, start.x, start.y, destination.x, destination.y, 3);
+     *success = 0;
+@@ -78,7 +78,7 @@ void* WorldSubsystem18::FindVehicleRoute(ScreenPoint start, ScreenPoint destinat
+ void* WorldSubsystem18::FindPathRoute(ScreenPoint start, ScreenPoint destination, unsigned char* success)
+ {
+     ScreenPoint* points = 0;
+-    unsigned int count = route_finder_00->FindGroundRoute(start.x, start.y, destination.x, destination.y, &points);
++    unsigned int count = route_finder_00->FindGroundRoute(start, destination, &points);
+     if (count && points)
+         return MakeRouteReference(points, count, start.x, start.y, destination.x, destination.y, 0);
+     *success = 0;
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 194654fe05c5da8b1e0b8c6d7704440e6624d197..50b30ffddf8a2d6cc423e4d89982629ce3d38682 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -15,18 +15,18 @@ struct WorldExpressionBranchData;
+ struct WorldExpressionSwitchData;
+ struct WorldRouteFinder
+ {
+-    unsigned int FindLandRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut);  // 0x004309e0.
+-    unsigned int FindWaterRoute(int x1, int y1, int x2, int y2, ScreenPoint** points, unsigned char shortcut); // 0x00430b00.
+-    unsigned int FindVehicleRoute(int x1, int y1, int x2, int y2, ScreenPoint** points);                       // 0x00430c20.
+-    unsigned int FindGroundRoute(int x1, int y1, int x2, int y2, ScreenPoint** points);                        // 0x00430d50.
+-    bool SearchRoute(int x1, int y1, int x2, int y2);                                                          // 0x00430f00.
+-    void ExpandRouteCell(ScreenTerrainCell* cell, int x, int y);                                               // 0x004310b0.
+-    bool CanUseVehicleCell(const ScreenPoint* point);                                                          // 0x00431650.
+-    bool CanUsePathCell(const ScreenPoint* point);                                                             // 0x004316a0.
+-    bool CanUseGroundCell(const ScreenPoint* point);                                                           // 0x004316f0.
+-    bool CanUseLandCell(const ScreenPoint* point);                                                             // 0x00431760.
+-    bool CanUseWaterCell(const ScreenPoint* point);                                                            // 0x004317c0.
+-    explicit WorldRouteFinder(ScreenTerrainGrid* terrain);                                                     // 0x00430930.
++    unsigned int FindLandRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut);  // 0x004309e0.
++    unsigned int FindWaterRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut); // 0x00430b00.
++    unsigned int FindVehicleRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points);                       // 0x00430c20.
++    unsigned int FindGroundRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points);                        // 0x00430d50.
++    bool SearchRoute(int x1, int y1, int x2, int y2);                                                            // 0x00430f00.
++    void ExpandRouteCell(ScreenTerrainCell* cell, int x, int y);                                                 // 0x004310b0.
++    bool CanUseVehicleCell(const ScreenPoint* point);                                                            // 0x00431650.
++    bool CanUsePathCell(const ScreenPoint* point);                                                               // 0x004316a0.
++    bool CanUseGroundCell(const ScreenPoint* point);                                                             // 0x004316f0.
++    bool CanUseLandCell(const ScreenPoint* point);                                                               // 0x00431760.
++    bool CanUseWaterCell(const ScreenPoint* point);                                                              // 0x004317c0.
++    explicit WorldRouteFinder(ScreenTerrainGrid* terrain);                                                       // 0x00430930.
+     struct AllocationNode
+     {
+         void* data;
+@@ -52,6 +52,14 @@ struct WorldRouteFinder
+     void PropagateRouteCost(ScreenTerrainCell* cell);                                                                 // 0x00431520.
+ };
+ 
++// The route searches record their start through this reference copy, so VC6
++// keeps the stores in order and reloads the cell predicate before calling it.
++inline void CopyRoutePoint(ScreenPoint& target, const ScreenPoint& source)
++{
++    target.x = source.x;
++    target.y = source.y;
++}
++
+ struct WorldRouteData
+ {
+     WorldRouteData();                     // 0x004303b0.

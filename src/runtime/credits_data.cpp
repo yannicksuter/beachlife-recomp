@@ -3,7 +3,9 @@
 #include "platform/sha256.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -14,7 +16,9 @@ namespace
 {
 using Bytes = std::span<const unsigned char>;
 constexpr std::uint32_t image_base = 0x00400000;
-constexpr std::uint32_t rows_rva = 0x00180170;
+// Where the builds keep the same table: 1.1 (both the September and October
+// builds) and 1.0 (UK, European and US discs, protected or not).
+constexpr std::array<std::uint32_t, 2> rows_rvas{0x00180170, 0x0017f030};
 constexpr std::size_t row_bytes = 20;
 constexpr std::size_t payload_bytes =
     CreditsData::row_count * row_bytes + CreditsData::format_bytes;
@@ -47,7 +51,7 @@ std::uint32_t u32(Bytes bytes, std::size_t at)
            (static_cast<std::uint32_t>(bytes[at + 3]) << 24);
 }
 
-std::size_t payload_offset(Bytes bytes)
+std::size_t payload_offset(Bytes bytes, std::uint32_t rows_rva)
 {
     if (u16(bytes, 0) != 0x5a4d)
     {
@@ -140,12 +144,12 @@ CreditsData CreditsData::read_verified(
     const data::FileSource& source, std::string_view expected_sha256)
 {
     auto file = source.open(filename);
-    if (!file || file->size() != supported_file_bytes)
+    if (!file || file->size() < payload_bytes || file->size() > max_file_bytes)
     {
         throw std::runtime_error("The selected executable is not a supported credits-data source.");
     }
     file->seek(0);
-    std::vector<unsigned char> bytes(supported_file_bytes);
+    std::vector<unsigned char> bytes(static_cast<std::size_t>(file->size()));
     std::size_t done = 0;
     while (done != bytes.size())
     {
@@ -156,14 +160,38 @@ CreditsData CreditsData::read_verified(
         }
         done += received;
     }
-    if (file->size() != supported_file_bytes ||
-        platform::sha256_hex(std::string_view(
-            reinterpret_cast<const char*>(bytes.data()), bytes.size())) != expected_sha256)
+    if (file->size() != bytes.size())
     {
-        throw std::runtime_error("The selected executable revision is not supported for credits.");
+        throw std::runtime_error("The credits-data source changed while it was read.");
+    }
+    // The table is identical in every known build; only its address differs.
+    // Accept exactly the audited table bytes at one of those addresses.
+    std::optional<std::size_t> found;
+    for (const auto rows_rva : rows_rvas)
+    {
+        std::size_t offset = 0;
+        try
+        {
+            offset = payload_offset(bytes, rows_rva);
+        }
+        catch (const std::runtime_error&)
+        {
+            continue;
+        }
+        if (platform::sha256_hex(std::string_view(
+                reinterpret_cast<const char*>(bytes.data() + offset), payload_bytes)) ==
+            expected_sha256)
+        {
+            found = offset;
+            break;
+        }
+    }
+    if (!found)
+    {
+        throw std::runtime_error("The selected executable has no supported credits table.");
     }
 
-    const auto offset = payload_offset(bytes);
+    const auto offset = *found;
     CreditsData result;
     for (std::size_t index = 0; index < row_count; ++index)
     {

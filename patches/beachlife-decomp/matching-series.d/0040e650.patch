@@ -1,0 +1,133 @@
+diff --git a/fixtures/game.d/fixture_0040e650.cpp b/fixtures/game.d/fixture_0040e650.cpp
+new file mode 100644
+index 0000000..8956a42
+--- /dev/null
++++ b/fixtures/game.d/fixture_0040e650.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_0040e650(ScreenRequestRenderer* renderer, int x, int y, int surface)
++{
++    renderer->ScreenRequestRenderer::BlitSurface(x, y, surface);
++}
+diff --git a/metadata.d/0040e650.csv b/metadata.d/0040e650.csv
+new file mode 100644
+index 0000000..8fad675
+--- /dev/null
++++ b/metadata.d/0040e650.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x0040e650,function,409,?BlitSurface@ScreenRequestRenderer@@QAEXHHH@Z
+diff --git a/src/match_0040e650.cpp b/src/match_0040e650.cpp
+new file mode 100644
+index 0000000..215101f
+--- /dev/null
++++ b/src/match_0040e650.cpp
+@@ -0,0 +1,82 @@
++#include "startup_directdraw_surface.h"
++#include "startup_screen_item.h"
++#include "startup_screen_renderer.h"
++#include "surface_error_sink.h"
++
++// BltFast is the surface's slot 7 (+0x1c), inside the declared prefix's unused slots.
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceBltFastMethod)(
++    DirectDrawSurface7Prefix*, unsigned int, unsigned int, DirectDrawSurface7Prefix*, SurfaceApiRectangle*, unsigned int);
++
++// FUNCTION: BEACHLIFE 0x0040e650
++void ScreenRequestRenderer::BlitSurface(int x, int y, int surface)
++{
++    if (software_mode)
++    {
++        unsigned int key = fill_color;
++        if (x < 0 || y < 0)
++        {
++            return;
++        }
++
++        ScreenSurfacePosition* source = surfaces[surface];
++        unsigned int columns = source->pitch >> 1;
++        unsigned short* from = source->pixels;
++        unsigned int rows = source->height;
++        current_surface = 0;
++        unsigned short* pixels = AccessPixels();
++        if (!pixels)
++        {
++            return;
++        }
++
++        unsigned int pitch = surfaces[current_surface]->pitch >> 1;
++        unsigned short* row = pixels + pitch * y + x;
++        for (unsigned int line = 0; line < rows; ++line)
++        {
++            unsigned short* to = row;
++            for (unsigned int column = 0; column < columns; ++column)
++            {
++                unsigned short value = *from++;
++                if (value != key)
++                {
++                    *to = value;
++                }
++                ++to;
++            }
++            row += pitch;
++        }
++
++        if (!software_mode)
++        {
++            DirectDrawSurface7Prefix* locked = surfaces[current_surface]->surface;
++            locked->vtable->Unlock(locked, 0);
++        }
++        pixels_locked = 0;
++        return;
++    }
++
++    ScreenSurfacePosition* source = surfaces[surface];
++    if (source->video_memory)
++    {
++        int result = reinterpret_cast<SurfaceBltFastMethod>(back_surface->vtable->unused_18[1])(
++            back_surface, x, y, source->surface, 0, 0x11);
++        if (result < 0)
++        {
++            IgnoreSurfaceError(result);
++        }
++    }
++    else
++    {
++        ScreenRectangle rectangle;
++        rectangle.left = x;
++        rectangle.top = y;
++        rectangle.bottom = y + source->height;
++        rectangle.right = x + source->width;
++        int result = back_surface->vtable->Blt(
++            back_surface, reinterpret_cast<SurfaceApiRectangle*>(&rectangle), source->surface, 0, 0x01008000, 0);
++        if (result < 0)
++        {
++            IgnoreSurfaceError(result);
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/0040e650.json b/targets/beachlife-uk-1.1.d/0040e650.json
+new file mode 100644
+index 0000000..0417759
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0040e650.json
+@@ -0,0 +1,18 @@
++{
++  "functions": [
++    {
++      "address": "0x0040e650",
++      "size": 409,
++      "name": "ScreenRequestRenderer::BlitSurface",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_0040e650.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_0040e650.cpp"
++  ]
++}

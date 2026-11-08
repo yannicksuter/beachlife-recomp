@@ -1,0 +1,123 @@
+diff --git a/src/startup_screen_manager_active_operations.cpp b/src/startup_screen_manager_active_operations.cpp
+index 404f390b3f554275571b68d1047b6e69dd9a48d7..9bff1f98637c87fa324efb20b8a9ad939f191f49 100644
+--- a/src/startup_screen_manager_active_operations.cpp
++++ b/src/startup_screen_manager_active_operations.cpp
+@@ -48,10 +48,10 @@ bool ScreenManager::CloseContextScreens(ScreenRequestContext* context)
+         if (entry->context == context)
+         {
+             ScreenDialog* item = entry->item;
+-            unsigned int group = item->group_7c;
++            int group = item->group_7c;
+             ScreenRectangle placement = item->GetRectangle();
+             if (mode != 6 && previous_mode != 6)
+-                screen_request_game->placement->WritePlacement(placement.left, placement.top, static_cast<int>(group));
++                screen_request_game->placement->WritePlacement(placement.left, placement.top, group);
+             entry->state = 2;
+             entry->context->Replaced();
+             closed = true;
+diff --git a/src/startup_screen_manager_close.cpp b/src/startup_screen_manager_close.cpp
+index 7385783afac9885ea50033fe08de7ef7bb0cc566..57d84b10393ebc67d488d2742895a19a8bb0cd87 100644
+--- a/src/startup_screen_manager_close.cpp
++++ b/src/startup_screen_manager_close.cpp
+@@ -6,27 +6,20 @@
+ // FUNCTION: BEACHLIFE 0x004b17e0
+ bool ScreenManager::CloseScreen(const char* name)
+ {
+-    CircularListIterator last = active.End();
+-    CircularListIterator first = active.Begin();
++    bool result = false;
+     CircularListIterator found;
+-    FindScreenByName(&found, first, last, name);
+-    if (found.node == active.head)
+-        return false;
+-
+-    CircularListValueNode* node = static_cast<CircularListValueNode*>(found.node);
+-    node->entry->state = 2;
+-    ScreenDialog* item = node->entry->item;
+-    unsigned int group = item->group_7c;
+-    ScreenRectangle rectangle;
+-    rectangle = item->GetRectangle();
+-    if (mode != 6 && previous_mode != 6)
++    CircularListNode* node = FindScreenByName(&found, active.Begin(), active.End(), name)->node;
++    if (node != active.head)
+     {
+-        screen_request_game->placement->WritePlacement(
+-            rectangle.left, rectangle.top, static_cast<int>(group));
++        static_cast<CircularListValueNode*>(node)->entry->state = 2;
++        ScreenDialog* item = static_cast<CircularListValueNode*>(node)->entry->item;
++        int group = item->group_7c;
++        ScreenRectangle placement = item->GetRectangle();
++        if (mode != 6 && previous_mode != 6)
++            screen_request_game->placement->WritePlacement(placement.left, placement.top, group);
++        if (static_cast<CircularListValueNode*>(node)->entry->context)
++            static_cast<CircularListValueNode*>(node)->entry->context->Replaced();
++        result = true;
+     }
+-
+-    ScreenRequestContext* context = node->entry->context;
+-    if (context)
+-        context->Replaced();
+-    return true;
++    return result;
+ }
+diff --git a/src/startup_screen_manager_words.cpp b/src/startup_screen_manager_words.cpp
+index b6498d7782e323746fbf9f18b85ce662ff0ebec5..ef1b4f42568301e0ab7c4204510dc88752233e8c 100644
+--- a/src/startup_screen_manager_words.cpp
++++ b/src/startup_screen_manager_words.cpp
+@@ -9,6 +9,7 @@
+ // FUNCTION: BEACHLIFE 0x004b1be0
+ void ScreenManager::SetWord(unsigned int index, unsigned int value)
+ {
++    // The words are consecutive members from word_54; address the slot as bytes.
+     unsigned char* slot = reinterpret_cast<unsigned char*>(this) + offsetof(ScreenManager, word_54) + index * 4;
+     unsigned int previous;
+     std::memcpy(&previous, slot, sizeof(previous));
+@@ -16,35 +17,31 @@ void ScreenManager::SetWord(unsigned int index, unsigned int value)
+     switch (index)
+     {
+     case 1:
+-    case 2:
+-    case 10:
+         if (previous != value)
+-        {
+-            ScreenRequestContext* saved = request_context_94;
+-            for (CircularListNode* node = active.head->next; node != active.head; node = node->next)
+-            {
+-                ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
+-                if (entry->state == 1)
+-                {
+-                    request_context_94 = entry->context;
+-                    entry->item->Unresolved08();
+-                    PrepareNamedScreen(entry->item->name, 1);
+-                }
+-            }
+-            request_context_94 = saved;
+-        }
++            RefreshScreenContents();
+         break;
+     case 6:
+         if (previous != value)
+             PrepareNamedScreen("ObjectBrowser", 0);
+         break;
++    case 10:
++        if (previous != value)
++            RefreshScreenContents();
++        break;
++    case 2:
++        if (previous != value)
++            RefreshScreenContents();
++        break;
+     case 7:
+     case 9:
+     case 12:
+         break;
+     default:
+         for (CircularListNode* node = active.head->next; node != active.head; node = node->next)
+-            static_cast<CircularListValueNode*>(node)->entry->item->MarkPrepared();
++        {
++            ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++            entry->item->MarkPrepared();
++        }
+         break;
+     }
+ }

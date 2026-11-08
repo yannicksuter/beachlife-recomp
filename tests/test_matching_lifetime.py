@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import struct
 import sys
@@ -486,10 +487,16 @@ class LifetimeGameRunTests(unittest.TestCase):
         imports = {'MSVCRT.dll': {'modf': '0x4f3134'}}
         self.assertNotIn('comparison_unfolded_annotations', self.run_game(lambda path: imports))
         (self.source / 'copy.cpp').write_text('// FUNCTION: BEACHLIFE 0x00401000 FOLDED\nvoid ParseCopy() {}\n')
+        # The comparator binds that identity first, so the policy wrapper runs.
+        (self.root / 'comparator').mkdir()
+        (self.root / 'comparator' / ('python.exe' if os.name == 'nt' else 'python')).write_bytes(b'')
+        self.tool.reccmp = str(self.root / 'comparator' / 'reccmp-reccmp')
         result = self.run_game(lambda path: imports)
-        self.assertEqual(result['comparison_unfolded_annotations'], [
-            {'address': '0x00401000', 'symbol': '?Parse@@YAXXZ', 'recomp': '0x00401010',
-             'sources': ['copy.cpp', 'parse.cpp']}])
+        record = {'address': '0x00401000', 'symbol': '?Parse@@YAXXZ', 'recomp': '0x00401010',
+                  'sources': ['copy.cpp', 'parse.cpp']}
+        self.assertEqual(result['comparison_unfolded_annotations'], [record])
+        config = json.loads((self.args.output / 'game/global-operands.json').read_text())
+        self.assertEqual(config['unfolded_identities'], [record])
         self.assertEqual([item['normalized_match'] for item in result['functions']], [1.0])
 
     def test_an_anchor_never_hides_a_credited_overload_in_the_report(self):

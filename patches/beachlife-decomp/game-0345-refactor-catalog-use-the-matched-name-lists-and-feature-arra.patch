@@ -1,0 +1,283 @@
+diff --git a/src/startup_catalog_constructor.cpp b/src/startup_catalog_constructor.cpp
+index b539c0e424059b67dc05e4b332e9f4efcef09e8a..f27a9cb94f4f3c27216ee636d343954ff44da2ed 100644
+--- a/src/startup_catalog_constructor.cpp
++++ b/src/startup_catalog_constructor.cpp
+@@ -22,7 +22,13 @@ VariableCatalog::VariableCatalog(const char* buildings, const char* guests)
+     memset(CatalogRecordAddress(this, 0x4e5e8, 0, 0), 0, 0x1b8 * 4);
+     memset(CatalogRecordAddress(this, 0x4f114, 0, 0), 0, 0x24 * 4);
+     memset(CatalogRecordAddress(this, 0x5409c, 0, 0), 0, 0x4856 * 4);
+-    memset(CatalogRecordAddress(this, 0x409dc, 0, 0), 0, 0x3703 * 4);
++    // Retail clears 0x409dc..0x4e5e8 (0x3703 words): the name lists and counts.
++    memset(male_names_409dc, 0, sizeof(male_names_409dc));
++    memset(female_names_42cdc, 0, sizeof(female_names_42cdc));
++    memset(surnames_44fdc, 0, sizeof(surnames_44fdc));
++    male_name_count_4e5dc = 0;
++    female_name_count_4e5e0 = 0;
++    surname_count_4e5e4 = 0;
+     const char* paths[2] = { buildings, guests };
+     for (int index = 0; index < 2; ++index)
+     {
+diff --git a/src/startup_variable_catalog_destructor.cpp b/src/startup_variable_catalog_destructor.cpp
+index 6dcc872e58bcbabe6f41fb3682f8d11e8ec8c3e2..c713ad29354169ca343b9f0ef523449fd6bede98 100644
+--- a/src/startup_variable_catalog_destructor.cpp
++++ b/src/startup_variable_catalog_destructor.cpp
+@@ -6,48 +6,46 @@
+ // FUNCTION: BEACHLIFE 0x00448d90
+ VariableCatalog::~VariableCatalog() noexcept(false)
+ {
+-    for (unsigned int i = 0; i < building_count_0c; ++i)
++    unsigned int i;
++    for (i = 0; i < building_count_0c; ++i)
+     {
+-        VariableBuilding* building = Building(i);
+-        if (building->count_d88 != 0)
+-            ::operator delete(building->data_d84);
+-        if (building->count_d8c != 0)
+-            ::operator delete(building->data_d90);
++        if (buildings_341c[i].count_d88)
++            ::operator delete(buildings_341c[i].data_d84);
++        if (buildings_341c[i].count_d8c)
++            ::operator delete(buildings_341c[i].data_d90);
+     }
+-    for (unsigned int i = 0; i < object_count_30; ++i)
++    for (i = 0; i < object_count_30; ++i)
+     {
+-        VariableCatalogObjectDefinition* object = reinterpret_cast<VariableCatalogObjectDefinition*>(
+-            CatalogRecordAddress(this, 0x4f1a4, 0x428, i));
+-        if (object->data_3e0)
+-            ::operator delete(object->data_3e0);
+-        if (object->data_3e8)
+-            ::operator delete(object->data_3e8);
+-        if (object->data_3f0)
+-            ::operator delete(object->data_3f0);
+-        if (object->frames_3f4)
++        if (objects_4f1a4[i].data_3e0)
++            ::operator delete(objects_4f1a4[i].data_3e0);
++        if (objects_4f1a4[i].data_3e8)
++            ::operator delete(objects_4f1a4[i].data_3e8);
++        if (objects_4f1a4[i].data_3f0)
++            ::operator delete(objects_4f1a4[i].data_3f0);
++        if (objects_4f1a4[i].frames_3f4)
+         {
+-            for (unsigned int j = 0; j < object->frame_count_3d0; ++j)
++            for (unsigned int j = 0; j < objects_4f1a4[i].frame_count_3d0; ++j)
+             {
+-                if (object->frames_3f4[j])
+-                    ::operator delete(object->frames_3f4[j]);
++                if (objects_4f1a4[i].frames_3f4[j])
++                    ::operator delete(objects_4f1a4[i].frames_3f4[j]);
+             }
+-            ::operator delete(object->frames_3f4);
++            ::operator delete(objects_4f1a4[i].frames_3f4);
+         }
+-        if (object->data_3fc)
+-            ::operator delete(object->data_3fc);
+-        if (object->data_408)
+-            ::operator delete(object->data_408);
+-        if (object->data_404)
+-            ::operator delete(object->data_404);
+-        if (object->data_40c)
+-            ::operator delete(object->data_40c);
+-        if (object->data_410)
+-            ::operator delete(object->data_410);
+-        if (object->data_400)
+-            ::operator delete(object->data_400);
+-        for (int j = 0; j < object->name_count_3d4; ++j)
+-            ::operator delete(object->names_344[j]);
+-        if (object->names_344)
+-            ::operator delete(object->names_344);
++        if (objects_4f1a4[i].data_3fc)
++            ::operator delete(objects_4f1a4[i].data_3fc);
++        if (objects_4f1a4[i].data_408)
++            ::operator delete(objects_4f1a4[i].data_408);
++        if (objects_4f1a4[i].data_404)
++            ::operator delete(objects_4f1a4[i].data_404);
++        if (objects_4f1a4[i].data_40c)
++            ::operator delete(objects_4f1a4[i].data_40c);
++        if (objects_4f1a4[i].data_410)
++            ::operator delete(objects_4f1a4[i].data_410);
++        if (objects_4f1a4[i].data_400)
++            ::operator delete(objects_4f1a4[i].data_400);
++        for (int k = 0; k < objects_4f1a4[i].name_count_3d4; ++k)
++            ::operator delete(objects_4f1a4[i].names_344[k]);
++        if (objects_4f1a4[i].names_344)
++            ::operator delete(objects_4f1a4[i].names_344);
+     }
+ }
+diff --git a/src/startup_variable_catalog_fields.h b/src/startup_variable_catalog_fields.h
+index f6097009c8834922e1df4d7b97378a72d8fb7e2b..22cf3b801d8d8ba9b49990efc435c128183e5ba8 100644
+--- a/src/startup_variable_catalog_fields.h
++++ b/src/startup_variable_catalog_fields.h
+@@ -13,8 +13,11 @@ static unsigned char* CatalogRecordAddress(VariableCatalog* catalog, unsigned in
+         return reinterpret_cast<unsigned char*>(&catalog->objects_4f1a4[index]);
+     if (offset < 0x341c)
+         return reinterpret_cast<unsigned char*>(catalog) + offset + stride * index;
+-    if (offset < 0x4f1a4)
++    if (offset < 0x409dc)
+         return catalog->unknown_37490 + (offset - 0x37490) + stride * index;
++    // 0x409dc..0x4e5e8 holds the named name lists and their counts.
++    if (offset < 0x4f1a4)
++        return catalog->unknown_4e5e8 + (offset - 0x4e5e8) + stride * index;
+     return catalog->unknown_5409c + (offset - 0x5409c) + stride * index;
+ }
+ 
+diff --git a/src/startup_variable_catalog_parse_records.cpp b/src/startup_variable_catalog_parse_records.cpp
+index 3d9559237ede6d140acd0cc579873051c577f6d1..2edffbf61ce2b6054e5f7e425673ed160d9d7170 100644
+--- a/src/startup_variable_catalog_parse_records.cpp
++++ b/src/startup_variable_catalog_parse_records.cpp
+@@ -57,24 +57,20 @@ void VariableCatalog::ParseVehicle(unsigned int id, const char* key, const char*
+ // FUNCTION: BEACHLIFE 0x0044f830
+ void VariableCatalog::ParseName(const char* kind, const char* value)
+ {
+-    unsigned char* names = CatalogRecordAddress(this, 0x409dc, 0, 0);
+     if (strcmp(kind, "MALENAME") == 0)
+     {
+-        unsigned int& count = CatalogField<unsigned int>(names, 0xdc00);
+-        strcpy(reinterpret_cast<char*>(names + count * 64), value);
+-        ++count;
++        strcpy(male_names_409dc[male_name_count_4e5dc], value);
++        ++male_name_count_4e5dc;
+     }
+     else if (strcmp(kind, "FEMALENAME") == 0)
+     {
+-        unsigned int& count = CatalogField<unsigned int>(names, 0xdc04);
+-        strcpy(reinterpret_cast<char*>(names + (count + 0x8c) * 64), value);
+-        ++count;
++        strcpy(female_names_42cdc[female_name_count_4e5e0], value);
++        ++female_name_count_4e5e0;
+     }
+     else if (strcmp(kind, "SURNAME") == 0)
+     {
+-        unsigned int& count = CatalogField<unsigned int>(names, 0xdc08);
+-        strcpy(reinterpret_cast<char*>(names + (count + 0x118) * 64), value);
+-        ++count;
++        strcpy(surnames_44fdc[surname_count_4e5e4], value);
++        ++surname_count_4e5e4;
+     }
+     else
+         StartupFatal("WorldParams::AddNameData - unrecognised comment keyword - %s", kind);
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 86dfdd29985c17a74f76708184ae675e36dd17e4..76d0fa0b3e4a5163050979dc66eece1b282546de 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -160,7 +160,11 @@ struct VariableBuilding
+     unsigned int word_1f8;
+     unsigned int features_1fc[5];
+     float appeal_210[5][2];
+-    unsigned char unknown_238[0x50];
++    unsigned char unknown_238[0x14];
++    // Per-feature words copied into WorldBuildingEntity::feature_values_1d0 (float bits).
++    unsigned int feature_values_24c[5];
++    unsigned char unknown_260[0x14];
++    float feature_prices_274[5]; // Copied into WorldBuildingEntity::feature_prices_1f8.
+     unsigned int capacity_288;
+     unsigned char unknown_28c[4];
+     unsigned int staff_index_290;
+@@ -684,7 +688,16 @@ struct VariableCatalog : CatalogRegistration
+     unsigned int scenery_count_34;
+     unsigned char unknown_38[0x33e4];
+     VariableBuilding buildings_341c[59];
+-    unsigned char unknown_37490[0x17d14];
++    unsigned char unknown_37490[0x954c];
++    // Name lists filled by ParseName 0x0044f830; staff and guest constructors pick
++    // random entries.
++    char male_names_409dc[140][64];
++    char female_names_42cdc[140][64];
++    char surnames_44fdc[600][64];
++    unsigned int male_name_count_4e5dc;
++    unsigned int female_name_count_4e5e0;
++    unsigned int surname_count_4e5e4;
++    unsigned char unknown_4e5e8[0xbbc];
+     VariableCatalogObjectDefinition objects_4f1a4[19];
+     unsigned char unknown_5409c[0x12158];
+ 
+diff --git a/src/startup_world_building_commands.cpp b/src/startup_world_building_commands.cpp
+index 6686fc2af8ddc0f3e1ae06d195071020f22c3fc9..965ae73be729d9215f7611a1854a9c16b87103cb 100644
+--- a/src/startup_world_building_commands.cpp
++++ b/src/startup_world_building_commands.cpp
+@@ -475,7 +475,7 @@ bool WorldBuildingEntity::Unknown14(ScreenModeCommand* incoming)
+                 appeal_1a8[i][0] *= scale;
+                 memcpy(&scale, building_60->unknown_238 + i * 4, 4);
+                 appeal_1a8[i][1] *= scale;
+-                memcpy(&scale, building_60->unknown_238 + 0x28 + i * 4, 4);
++                memcpy(&scale, building_60->unknown_260 + i * 4, 4);
+                 feature_scale_1e4[i] *= scale;
+             }
+         }
+diff --git a/src/startup_world_building_constructor.cpp b/src/startup_world_building_constructor.cpp
+index 4aa490ecfd3df1b92ad26427e1d9edccb511b8ec..17cbead4e55009829b09a8d14e8cffb55bd0e2c1 100644
+--- a/src/startup_world_building_constructor.cpp
++++ b/src/startup_world_building_constructor.cpp
+@@ -47,8 +47,8 @@ WorldBuildingEntity::WorldBuildingEntity(const char* name)
+         {
+             appeal_1a8[i][0] = building_60->appeal_210[i][0];
+             appeal_1a8[i][1] = building_60->appeal_210[i][1];
+-            memcpy(&feature_values_1d0[i], building_60->unknown_238 + 0x14 + i * 4, 4);
+-            memcpy(&feature_prices_1f8[i], building_60->unknown_238 + 0x3c + i * 4, 4);
++            feature_values_1d0[i] = building_60->feature_values_24c[i];
++            feature_prices_1f8[i] = building_60->feature_prices_274[i];
+             feature_scale_1e4[i] = 1.0f;
+         }
+         drink_value_20c = 0.5f;
+diff --git a/src/startup_world_building_feature_values.cpp b/src/startup_world_building_feature_values.cpp
+index 23b3791af827a3150a01076663e716ed48f8ea68..0c903e61036141c30aca3bc30df9729879bb153e 100644
+--- a/src/startup_world_building_feature_values.cpp
++++ b/src/startup_world_building_feature_values.cpp
+@@ -41,6 +41,6 @@ float WorldBuildingEntity::FeatureDuration(unsigned int feature)
+         return catalog->Event(events_170->CurrentEvent())->start_48 * feature_scale_1e4[feature];
+     }
+     float value;
+-    memcpy(&value, building_60->unknown_238 + 0x14 + feature * 4, sizeof(value));
++    memcpy(&value, &building_60->feature_values_24c[feature], sizeof(value));
+     return value * feature_scale_1e4[feature];
+ }
+diff --git a/src/startup_world_guest_constructor.cpp b/src/startup_world_guest_constructor.cpp
+index 733bc68683532d461c9fb483946b12fd1973d4e4..7968b4c3c26eb551a0bc423bfb682955c06849ee 100644
+--- a/src/startup_world_guest_constructor.cpp
++++ b/src/startup_world_guest_constructor.cpp
+@@ -27,12 +27,10 @@ static float RandomGuestValue(unsigned int index)
+     long double fraction = static_cast<long double>(random) * 3.0518509447574615e-05f;
+     return static_cast<float>(fraction * (static_cast<long double>(variable_guest_constructor_template->ranges_200[index][1]) - *low) + *low);
+ }
+-static unsigned short* GuestNameKey(unsigned int count_offset, unsigned int names_offset)
++static unsigned short* GuestNameKey(unsigned int count, const char (*names)[64])
+ {
+-    // Retail catalog offsets, mapped into the catalog's native layout.
+-    unsigned int count = CatalogField<unsigned int>(CatalogRecordAddress(variable_catalog, count_offset, 0, 0), 0);
+     unsigned int index = static_cast<unsigned int>(rand()) % count;
+-    const char* key = reinterpret_cast<const char*>(CatalogRecordAddress(variable_catalog, names_offset, 64, index));
++    const char* key = names[index];
+     unsigned short* wide = static_cast<unsigned short*>(::operator new((strlen(key) + 1) * sizeof(unsigned short)));
+     MultiByteToWideChar(0, 0, key, -1, reinterpret_cast<LPWSTR>(wide), strlen(key) + 1);
+     return wide;
+@@ -117,8 +115,10 @@ WorldGuestEntity::WorldGuestEntity(const char* name)
+     word_348 = 0;
+     flag_3d1 = 0;
+     bool female = guest_f4->word_1c4 != 0;
+-    unsigned short* first_key = GuestNameKey(female ? 0x4e5e0 : 0x4e5dc, female ? 0x42cdc : 0x409dc);
+-    unsigned short* last_key = GuestNameKey(0x4e5e4, 0x44fdc);
++    unsigned short* first_key = female
++                                  ? GuestNameKey(variable_catalog->female_name_count_4e5e0, variable_catalog->female_names_42cdc)
++                                  : GuestNameKey(variable_catalog->male_name_count_4e5dc, variable_catalog->male_names_409dc);
++    unsigned short* last_key = GuestNameKey(variable_catalog->surname_count_4e5e4, variable_catalog->surnames_44fdc);
+     const unsigned short* first = screen_text_lookup->LookupText(first_key);
+     const unsigned short* last = screen_text_lookup->LookupText(last_key);
+     ::operator delete(first_key);
+diff --git a/src/startup_world_staff_names.h b/src/startup_world_staff_names.h
+index 805cdcdb20d286ae2077602560ea82e9f473620a..69c88e9d7736651d37fa603f660b086151f65657 100644
+--- a/src/startup_world_staff_names.h
++++ b/src/startup_world_staff_names.h
+@@ -12,11 +12,9 @@
+ // Shared spelling of the inline name generation in the staff constructors.
+ static void AssignStaffName(WorldStaffEntity* staff, bool female, const unsigned short* format, int count)
+ {
+-    // Retail offsets 0x4e5dc/0x4e5e0 (counts) and 0x409dc/0x42cdc (64-byte
+-    // names), mapped into the catalog's native layout.
+-    unsigned int names = CatalogField<unsigned int>(CatalogRecordAddress(variable_catalog, female ? 0x4e5e0 : 0x4e5dc, 0, 0), 0);
++    unsigned int names = female ? variable_catalog->female_name_count_4e5e0 : variable_catalog->male_name_count_4e5dc;
+     unsigned int index = static_cast<unsigned int>(rand()) % names;
+-    const char* key = reinterpret_cast<const char*>(CatalogRecordAddress(variable_catalog, female ? 0x42cdc : 0x409dc, 64, index));
++    const char* key = female ? variable_catalog->female_names_42cdc[index] : variable_catalog->male_names_409dc[index];
+     unsigned short* wide = static_cast<unsigned short*>(::operator new((strlen(key) + 1) * sizeof(unsigned short)));
+     MultiByteToWideChar(0, 0, key, -1, reinterpret_cast<LPWSTR>(wide), strlen(key) + 1);
+     unsigned short surname[64];

@@ -1,0 +1,507 @@
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 0469e2f8e230d5f54fb831367c6d649966ef7966..86dfdd29985c17a74f76708184ae675e36dd17e4 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -250,7 +250,7 @@ struct VariableGuestState
+     unsigned char max_days_1ea;
+     unsigned char unknown_1eb;
+     float value_1ec;
+-    unsigned char unknown_1f0[0x10];
++    float decay_1f0[4]; // Need decay rates per elapsed time unit.
+     float ranges_200[34][2];
+     float hours_310[2];
+     float hours_318[2];
+@@ -896,4 +896,9 @@ float GetGameVersion();                // 0x004e3cb0, existing version.cpp.
+ 
+ #include "startup_world_entities.h"
+ 
++extern int weather_haze_jitter;
++// Sound level of the rain loops; one named constant shared by the weather update
++// 0x004385a0 and its sibling at 0x004390e6.
++extern const float weather_rain_level; // 0x004f3494.
++
+ #endif
+diff --git a/src/startup_weather_haze.cpp b/src/startup_weather_haze.cpp
+index bb05d9fa2fad4ee9a8145a2fef8652d467f43b2b..280c5eb843d11eeda65c9a94aa54fd53994bcf36 100644
+--- a/src/startup_weather_haze.cpp
++++ b/src/startup_weather_haze.cpp
+@@ -4,9 +4,6 @@
+ #include <cstring>
+ #include <new>
+ 
+-// GLOBAL: BEACHLIFE 0x005baba4
+-int weather_haze_jitter = 0;
+-
+ // FUNCTION: BEACHLIFE 0x00439d20
+ void VariableWeather::PrepareHaze()
+ {
+diff --git a/src/startup_weather_haze_globals.cpp b/src/startup_weather_haze_globals.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2bee412c32832e9d22441430f60ad1f07d29004
+--- /dev/null
++++ b/src/startup_weather_haze_globals.cpp
+@@ -0,0 +1,7 @@
++#include "startup_variable_state.h"
++
++// GLOBAL: BEACHLIFE 0x005baba4
++int weather_haze_jitter = 0;
++
++// GLOBAL: BEACHLIFE 0x004f3494
++extern const float weather_rain_level = 0.8f;
+diff --git a/src/startup_weather_lighting.cpp b/src/startup_weather_lighting.cpp
+index 7695f06c91813518743d36d05b238a92871bc8ce..c9ba1409cb8091ea08898026314fad1bfdd30340 100644
+--- a/src/startup_weather_lighting.cpp
++++ b/src/startup_weather_lighting.cpp
+@@ -161,7 +161,7 @@ void VariableWeather::UpdateLighting()
+                         else
+                         {
+                             voice = window_audio_state->PlaySound("thunderclap", 1, 0.0f);
+-                            window_audio_state->SetSoundLevel(voice, 0.8f);
++                            window_audio_state->SetSoundLevel(voice, weather_rain_level);
+                         }
+                         value_2bac = window_deactivation_state->time_158;
+                         flag_2ba4 = 1;
+diff --git a/src/startup_weather_update.cpp b/src/startup_weather_update.cpp
+index 5b90fbb26b30c56487ea19e34f5a60a37f148ea8..6e5b7e5f6d2dc29cae3306a7854a4f41388274b3 100644
+--- a/src/startup_weather_update.cpp
++++ b/src/startup_weather_update.cpp
+@@ -76,12 +76,12 @@ void VariableWeather::Update()
+         return;
+     }
+     if (audio_mode_2ba0 == mode)
+-        window_audio_state->SetSoundLevel(voice_2b9c, 0.8f);
++        window_audio_state->SetSoundLevel(voice_2b9c, weather_rain_level);
+     else
+     {
+         if (voice_2b9c != -1)
+             window_audio_state->StopSound(voice_2b9c, 2.0f);
+-        voice_2b9c = window_audio_state->PlaySoundAtLevel(sound, 0.8f, 2, 5.0f);
++        voice_2b9c = window_audio_state->PlaySoundAtLevel(sound, weather_rain_level, 2, 5.0f);
+         audio_mode_2ba0 = mode;
+     }
+ }
+diff --git a/src/startup_world_guest_needs_update.cpp b/src/startup_world_guest_needs_update.cpp
+index a38da53cbab3a1460d22ba4424cbc3f49155fc0a..68ccd677bee6ef5bf78dc2cf52e9fd0dcc07bc00 100644
+--- a/src/startup_world_guest_needs_update.cpp
++++ b/src/startup_world_guest_needs_update.cpp
+@@ -3,12 +3,10 @@
+ // FUNCTION: BEACHLIFE 0x0046ab00
+ void WorldGuestEntity::PerformAction0()
+ {
+-    float decay[4];
+-    std::memcpy(decay, guest_f4->unknown_1f0, sizeof(decay));
+-    guest_value_254 = static_cast<float>(static_cast<long double>(guest_value_254) - static_cast<long double>(window_deactivation_state->value_16c) * decay[0]);
+-    weather_values_16c[20] = static_cast<float>(static_cast<long double>(weather_values_16c[20]) - static_cast<long double>(window_deactivation_state->value_16c) * decay[2]);
+-    weather_values_16c[19] = static_cast<float>(static_cast<long double>(weather_values_16c[19]) - static_cast<long double>(window_deactivation_state->value_16c) * decay[1]);
+-    weather_values_16c[18] = static_cast<float>(static_cast<long double>(weather_values_16c[18]) - static_cast<long double>(window_deactivation_state->value_16c) * decay[3]);
++    guest_value_254 = static_cast<float>(static_cast<long double>(guest_value_254) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->decay_1f0[0]);
++    weather_values_16c[20] = static_cast<float>(static_cast<long double>(weather_values_16c[20]) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->decay_1f0[2]);
++    weather_values_16c[19] = static_cast<float>(static_cast<long double>(weather_values_16c[19]) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->decay_1f0[1]);
++    weather_values_16c[18] = static_cast<float>(static_cast<long double>(weather_values_16c[18]) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->decay_1f0[3]);
+     if (!(guest_value_254 >= 0.0f))
+         guest_value_254 = 0.0f;
+     for (unsigned int index : { 20u, 19u, 18u })
+diff --git a/src/startup_world_vehicle_animation_names.cpp b/src/startup_world_vehicle_animation_names.cpp
+index 6fa16f6ec5be42681865f931d6e6a7e6ae97d8ab..17cf5ca7c765a095971e4bac364a34e1831ee11b 100644
+--- a/src/startup_world_vehicle_animation_names.cpp
++++ b/src/startup_world_vehicle_animation_names.cpp
+@@ -143,3 +143,114 @@ const char* vehicle_animation_57c480 = "d_walk_onbus_nobag";
+ 
+ // GLOBAL: BEACHLIFE 0x0057c484
+ const char* vehicle_animation_57c484 = "bags_offbus";
++
++// GLOBAL: BEACHLIFE 0x0057c2ec
++const char* vehicle_normal_animation = "d_jetski_normal";
++
++// GLOBAL: BEACHLIFE 0x0057c2f0
++const char* vehicle_offset_animation = "d_jetski_normal_offset";
++
++// GLOBAL: BEACHLIFE 0x0057c324
++const char* speedboat_normal_animation = "boat_normal";
++
++// GLOBAL: BEACHLIFE 0x0057c328
++const char* speedboat_offset_animation = "boat_fast_rot";
++
++// GLOBAL: BEACHLIFE 0x0057c3a4
++const char* world_fishing_rod1_animation = "rod01_bob";
++
++// GLOBAL: BEACHLIFE 0x0057c3c0
++const char* world_fishing_rod2_animation = "rod02_bob";
++
++// GLOBAL: BEACHLIFE 0x0057c394
++const char* world_fishing_driver_animation = "fish_driver";
++
++// GLOBAL: BEACHLIFE 0x0057c494
++const char* vehicle_door_open_sound = "doorhissopen";
++
++// GLOBAL: BEACHLIFE 0x0057c2dc
++const char* vehicle_animation_57c2dc = "d_jetski_turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c2e0
++const char* vehicle_animation_57c2e0 = "d_jetski_turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c308
++const char* vehicle_animation_57c308 = "d_wake_turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c30c
++const char* vehicle_animation_57c30c = "d_wake_turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c334
++const char* vehicle_animation_57c334 = "boat_turn_left";
++
++// GLOBAL: BEACHLIFE 0x0057c338
++const char* vehicle_animation_57c338 = "boat_turn_right";
++
++// GLOBAL: BEACHLIFE 0x0057c374
++const char* vehicle_animation_57c374 = "turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c378
++const char* vehicle_animation_57c378 = "turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c38c
++const char* vehicle_animation_57c38c = "boat_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c390
++const char* vehicle_animation_57c390 = "boat_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c39c
++const char* vehicle_animation_57c39c = "fish_driver_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3ac
++const char* vehicle_animation_57c3ac = "rod01_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3b0
++const char* vehicle_animation_57c3b0 = "rod01_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3c8
++const char* vehicle_animation_57c3c8 = "rod02_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3cc
++const char* vehicle_animation_57c3cc = "rod02_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c3e0
++const char* vehicle_animation_57c3e0 = "d_jetski_turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c3e4
++const char* vehicle_animation_57c3e4 = "d_jetski_turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c3f8
++const char* vehicle_animation_57c3f8 = "boat_driver_turn_left";
++
++// GLOBAL: BEACHLIFE 0x0057c3fc
++const char* vehicle_animation_57c3fc = "boat_driver_turn_right";
++
++// GLOBAL: BEACHLIFE 0x0057c408
++const char* vehicle_animation_57c408 = "boat_pass_turn_left";
++
++// GLOBAL: BEACHLIFE 0x0057c40c
++const char* vehicle_animation_57c40c = "boat_pass_turn_right";
++
++// GLOBAL: BEACHLIFE 0x0057c418
++const char* vehicle_animation_57c418 = "d_ped_turn_l_pass";
++
++// GLOBAL: BEACHLIFE 0x0057c41c
++const char* vehicle_animation_57c41c = "d_ped_turn_r_pass";
++
++// GLOBAL: BEACHLIFE 0x0057c42c
++const char* vehicle_animation_57c42c = "d_ped_turn_l";
++
++// GLOBAL: BEACHLIFE 0x0057c430
++const char* vehicle_animation_57c430 = "d_ped_turn_r";
++
++// GLOBAL: BEACHLIFE 0x0057c454
++const char* vehicle_animation_57c454 = "fish_man1_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c458
++const char* vehicle_animation_57c458 = "fish_man2_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c45c
++const char* vehicle_animation_57c45c = "fish_man1_turn";
++
++// GLOBAL: BEACHLIFE 0x0057c460
++const char* vehicle_animation_57c460 = "fish_man2_turn";
+diff --git a/src/startup_world_vehicle_animation_names.h b/src/startup_world_vehicle_animation_names.h
+index b1625d0a1ffcad1d04f2edb5ee85aafc8015c01b..07e79930c144a6bf0f030c8b38f5602360252e84 100644
+--- a/src/startup_world_vehicle_animation_names.h
++++ b/src/startup_world_vehicle_animation_names.h
+@@ -1,50 +1,81 @@
+ #ifndef STARTUP_WORLD_VEHICLE_ANIMATION_NAMES_H
+ #define STARTUP_WORLD_VEHICLE_ANIMATION_NAMES_H
+ 
++extern const char* vehicle_animation_57c2dc;       // 0x0057c2dc.
++extern const char* vehicle_animation_57c2e0;       // 0x0057c2e0.
+ extern const char* vehicle_normal_animation;       // 0x0057c2ec.
++extern const char* vehicle_offset_animation;       // 0x0057c2f0.
+ extern const char* vehicle_animation_57c300;       // 0x0057c300.
++extern const char* vehicle_animation_57c308;       // 0x0057c308.
++extern const char* vehicle_animation_57c30c;       // 0x0057c30c.
+ extern const char* vehicle_animation_57c314;       // 0x0057c314.
+ extern const char* vehicle_animation_57c31c;       // 0x0057c31c.
+ extern const char* vehicle_animation_57c320;       // 0x0057c320.
+ extern const char* speedboat_normal_animation;     // 0x0057c324.
++extern const char* speedboat_offset_animation;     // 0x0057c328.
++extern const char* vehicle_animation_57c334;       // 0x0057c334.
++extern const char* vehicle_animation_57c338;       // 0x0057c338.
+ extern const char* vehicle_animation_57c33c;       // 0x0057c33c.
+ extern const char* vehicle_animation_57c364;       // 0x0057c364.
+ extern const char* vehicle_animation_57c368;       // 0x0057c368.
+ extern const char* vehicle_animation_57c36c;       // 0x0057c36c.
+ extern const char* vehicle_animation_57c370;       // 0x0057c370.
++extern const char* vehicle_animation_57c374;       // 0x0057c374.
++extern const char* vehicle_animation_57c378;       // 0x0057c378.
+ extern const char* vehicle_animation_57c380;       // 0x0057c380.
+ extern const char* vehicle_animation_57c384;       // 0x0057c384.
+ extern const char* vehicle_animation_57c388;       // 0x0057c388.
++extern const char* vehicle_animation_57c38c;       // 0x0057c38c.
++extern const char* vehicle_animation_57c390;       // 0x0057c390.
+ extern const char* world_fishing_driver_animation; // 0x0057c394.
+ extern const char* vehicle_animation_57c398;       // 0x0057c398.
++extern const char* vehicle_animation_57c39c;       // 0x0057c39c.
+ extern const char* vehicle_animation_57c3a0;       // 0x0057c3a0.
+ extern const char* world_fishing_rod1_animation;   // 0x0057c3a4.
+ extern const char* vehicle_animation_57c3a8;       // 0x0057c3a8.
++extern const char* vehicle_animation_57c3ac;       // 0x0057c3ac.
++extern const char* vehicle_animation_57c3b0;       // 0x0057c3b0.
+ extern const char* vehicle_animation_57c3b4;       // 0x0057c3b4.
+ extern const char* vehicle_animation_57c3b8;       // 0x0057c3b8.
+ extern const char* vehicle_animation_57c3bc;       // 0x0057c3bc.
+ extern const char* world_fishing_rod2_animation;   // 0x0057c3c0.
+ extern const char* vehicle_animation_57c3c4;       // 0x0057c3c4.
++extern const char* vehicle_animation_57c3c8;       // 0x0057c3c8.
++extern const char* vehicle_animation_57c3cc;       // 0x0057c3cc.
+ extern const char* vehicle_animation_57c3d0;       // 0x0057c3d0.
+ extern const char* vehicle_animation_57c3d4;       // 0x0057c3d4.
+ extern const char* vehicle_animation_57c3d8;       // 0x0057c3d8.
+ extern const char* vehicle_animation_57c3dc;       // 0x0057c3dc.
++extern const char* vehicle_animation_57c3e0;       // 0x0057c3e0.
++extern const char* vehicle_animation_57c3e4;       // 0x0057c3e4.
+ extern const char* vehicle_animation_57c3ec;       // 0x0057c3ec.
+ extern const char* vehicle_animation_57c3f0;       // 0x0057c3f0.
+ extern const char* vehicle_animation_57c3f4;       // 0x0057c3f4.
++extern const char* vehicle_animation_57c3f8;       // 0x0057c3f8.
++extern const char* vehicle_animation_57c3fc;       // 0x0057c3fc.
+ extern const char* vehicle_animation_57c400;       // 0x0057c400.
+ extern const char* vehicle_animation_57c404;       // 0x0057c404.
++extern const char* vehicle_animation_57c408;       // 0x0057c408.
++extern const char* vehicle_animation_57c40c;       // 0x0057c40c.
+ extern const char* vehicle_animation_57c410;       // 0x0057c410.
+ extern const char* vehicle_animation_57c414;       // 0x0057c414.
++extern const char* vehicle_animation_57c418;       // 0x0057c418.
++extern const char* vehicle_animation_57c41c;       // 0x0057c41c.
+ extern const char* vehicle_animation_57c420;       // 0x0057c420.
+ extern const char* vehicle_animation_57c424;       // 0x0057c424.
+ extern const char* vehicle_animation_57c428;       // 0x0057c428.
++extern const char* vehicle_animation_57c42c;       // 0x0057c42c.
++extern const char* vehicle_animation_57c430;       // 0x0057c430.
+ extern const char* vehicle_animation_57c434;       // 0x0057c434.
+ extern const char* vehicle_animation_57c438;       // 0x0057c438.
+ extern const char* vehicle_animation_57c43c;       // 0x0057c43c.
+ extern const char* vehicle_animation_57c440;       // 0x0057c440.
+ extern const char* vehicle_animation_57c44c;       // 0x0057c44c.
+ extern const char* vehicle_animation_57c450;       // 0x0057c450.
++extern const char* vehicle_animation_57c454;       // 0x0057c454.
++extern const char* vehicle_animation_57c458;       // 0x0057c458.
++extern const char* vehicle_animation_57c45c;       // 0x0057c45c.
++extern const char* vehicle_animation_57c460;       // 0x0057c460.
+ extern const char* vehicle_animation_57c464;       // 0x0057c464.
+ extern const char* vehicle_animation_57c468;       // 0x0057c468.
+ extern const char* vehicle_animation_57c46c;       // 0x0057c46c.
+@@ -55,4 +86,6 @@ extern const char* vehicle_animation_57c47c;       // 0x0057c47c.
+ extern const char* vehicle_animation_57c480;       // 0x0057c480.
+ extern const char* vehicle_animation_57c484;       // 0x0057c484.
+ 
++extern const char* vehicle_door_open_sound; // 0x0057c494.
++
+ #endif
+diff --git a/src/startup_world_vehicle_commands.cpp b/src/startup_world_vehicle_commands.cpp
+index da4ca5f32ab3d5f73e6582303ce732e218ee2b8e..7832db6a9ca932cfe7a1117c6a37ae00c3452ef0 100644
+--- a/src/startup_world_vehicle_commands.cpp
++++ b/src/startup_world_vehicle_commands.cpp
+@@ -1,12 +1,10 @@
+ #include "startup_world_entities.h"
++#include "startup_world_vehicle_animation_names.h"
+ #include "startup_screen_mode_world.h"
+ #include "window_activation.h"
+ #include "window_audio.h"
+ #include <bit>
+ 
+-// GLOBAL: BEACHLIFE 0x0057c494
+-const char* vehicle_door_open_sound = "doorhissopen";
+-
+ // FUNCTION: BEACHLIFE 0x00496860
+ bool WorldVehicleEntity::Unknown14(ScreenModeCommand* incoming)
+ {
+diff --git a/src/startup_world_vehicle_constructor.cpp b/src/startup_world_vehicle_constructor.cpp
+index fda2252f5e5a115928512696df38cff239fd04d2..9cd778e725be48608f5d19c20d1253a9b30ab7a1 100644
+--- a/src/startup_world_vehicle_constructor.cpp
++++ b/src/startup_world_vehicle_constructor.cpp
+@@ -1,15 +1,9 @@
+ #include "startup_world_entity_construction.h"
++#include "startup_world_vehicle_animation_names.h"
+ #include "startup_screen_mode_world.h"
+ #include "window_activation.h"
+ #include <string.h>
+ 
+-// GLOBAL: BEACHLIFE 0x0057c3a4
+-const char* world_fishing_rod1_animation = "rod01_bob";
+-// GLOBAL: BEACHLIFE 0x0057c3c0
+-const char* world_fishing_rod2_animation = "rod02_bob";
+-// GLOBAL: BEACHLIFE 0x0057c394
+-const char* world_fishing_driver_animation = "fish_driver";
+-
+ // FUNCTION: BEACHLIFE 0x004946a0
+ WorldVehicleEntity::WorldVehicleEntity(const char* name)
+     : WorldMovingEntity(name)
+diff --git a/src/startup_world_vehicle_enter.cpp b/src/startup_world_vehicle_enter.cpp
+index 91b174cca093ae65804dda1b4f40fe7357ec885e..1cbe68597d11db0b95941aa876427e552846540d 100644
+--- a/src/startup_world_vehicle_enter.cpp
++++ b/src/startup_world_vehicle_enter.cpp
+@@ -1,11 +1,11 @@
+ #include "startup_world_vehicle_helpers.h"
++#include "startup_world_vehicle_animation_names.h"
+ #include "startup_screen_mode_world.h"
+ #include "startup_screen_shared_methods.h"
+ #include "startup_game_update_pair.h"
+ #include "window_audio.h"
+ #include <math.h>
+ 
+-extern const char* vehicle_door_open_sound;
+ // GLOBAL: BEACHLIFE 0x0057c48c
+ const char* vehicle_jetski_sound = "newjetskirev";
+ // GLOBAL: BEACHLIFE 0x0057c490
+diff --git a/src/startup_world_vehicle_turn_animation.cpp b/src/startup_world_vehicle_turn_animation.cpp
+index d7c0c31eed895cc51d176cd96b7ddf95f46e6096..cffd5b9cc3e2dd4340f0dc28d04b763d512828e9 100644
+--- a/src/startup_world_vehicle_turn_animation.cpp
++++ b/src/startup_world_vehicle_turn_animation.cpp
+@@ -1,98 +1,15 @@
+ #include "startup_world_vehicle_helpers.h"
+-
+-// GLOBAL: BEACHLIFE 0x0057c2dc
+-const char* vehicle_animation_57c2dc = "d_jetski_turn_l";
+-
+-// GLOBAL: BEACHLIFE 0x0057c2e0
+-const char* vehicle_animation_57c2e0 = "d_jetski_turn_r";
+-
+-// GLOBAL: BEACHLIFE 0x0057c308
+-const char* vehicle_animation_57c308 = "d_wake_turn_r";
+-
+-// GLOBAL: BEACHLIFE 0x0057c30c
+-const char* vehicle_animation_57c30c = "d_wake_turn_l";
+-
+-// GLOBAL: BEACHLIFE 0x0057c334
+-const char* vehicle_animation_57c334 = "boat_turn_left";
+-
+-// GLOBAL: BEACHLIFE 0x0057c338
+-const char* vehicle_animation_57c338 = "boat_turn_right";
+-
+-// GLOBAL: BEACHLIFE 0x0057c374
+-const char* vehicle_animation_57c374 = "turn_l";
+-
+-// GLOBAL: BEACHLIFE 0x0057c378
+-const char* vehicle_animation_57c378 = "turn_r";
+-
+-// GLOBAL: BEACHLIFE 0x0057c38c
+-const char* vehicle_animation_57c38c = "boat_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c390
+-const char* vehicle_animation_57c390 = "boat_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c39c
+-const char* vehicle_animation_57c39c = "fish_driver_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c3ac
+-const char* vehicle_animation_57c3ac = "rod01_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c3b0
+-const char* vehicle_animation_57c3b0 = "rod01_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c3c8
+-const char* vehicle_animation_57c3c8 = "rod02_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c3cc
+-const char* vehicle_animation_57c3cc = "rod02_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c3e0
+-const char* vehicle_animation_57c3e0 = "d_jetski_turn_l";
+-
+-// GLOBAL: BEACHLIFE 0x0057c3e4
+-const char* vehicle_animation_57c3e4 = "d_jetski_turn_r";
+-
+-// GLOBAL: BEACHLIFE 0x0057c3f8
+-const char* vehicle_animation_57c3f8 = "boat_driver_turn_left";
+-
+-// GLOBAL: BEACHLIFE 0x0057c3fc
+-const char* vehicle_animation_57c3fc = "boat_driver_turn_right";
+-
+-// GLOBAL: BEACHLIFE 0x0057c408
+-const char* vehicle_animation_57c408 = "boat_pass_turn_left";
+-
+-// GLOBAL: BEACHLIFE 0x0057c40c
+-const char* vehicle_animation_57c40c = "boat_pass_turn_right";
+-
+-// GLOBAL: BEACHLIFE 0x0057c418
+-const char* vehicle_animation_57c418 = "d_ped_turn_l_pass";
+-
+-// GLOBAL: BEACHLIFE 0x0057c41c
+-const char* vehicle_animation_57c41c = "d_ped_turn_r_pass";
+-
+-// GLOBAL: BEACHLIFE 0x0057c42c
+-const char* vehicle_animation_57c42c = "d_ped_turn_l";
+-
+-// GLOBAL: BEACHLIFE 0x0057c430
+-const char* vehicle_animation_57c430 = "d_ped_turn_r";
+-
+-// GLOBAL: BEACHLIFE 0x0057c454
+-const char* vehicle_animation_57c454 = "fish_man1_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c458
+-const char* vehicle_animation_57c458 = "fish_man2_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c45c
+-const char* vehicle_animation_57c45c = "fish_man1_turn";
+-
+-// GLOBAL: BEACHLIFE 0x0057c460
+-const char* vehicle_animation_57c460 = "fish_man2_turn";
++#include "startup_world_vehicle_animation_names.h"
+ 
+ // FUNCTION: BEACHLIFE 0x00495be0
+ void WorldVehicleEntity::StartTurnAnimation()
+ {
+-    const char* animation;
+-    const char* first;
+-    const char* second;
++    // Retail leaves these unset for vehicle types 2, 3 and 5 (BOAT, BANANA,
++    // BUS) and the second name for type 0, then passes a stale stack word to
++    // SetAnimation. An empty name takes SetAnimation's not-found fallback.
++    const char* animation = "";
++    const char* first = "";
++    const char* second = "";
+     ScreenWorldPosition position = Position();
+     if (flag_901)
+     {
+diff --git a/src/startup_world_vehicle_update.cpp b/src/startup_world_vehicle_update.cpp
+index ea20d4fdbad609f66fb14f4448ae36556fbf1375..156c2873483ce1fe6fd62a8a618b0c46fc022eae 100644
+--- a/src/startup_world_vehicle_update.cpp
++++ b/src/startup_world_vehicle_update.cpp
+@@ -1,20 +1,11 @@
+ #include "startup_world_vehicle_helpers.h"
++#include "startup_world_vehicle_animation_names.h"
+ #include "startup_screen_mode_world.h"
+ #include "startup_game_file.h"
+ #include "window_audio.h"
+ #include <math.h>
+ #include <string.h>
+ 
+-extern const char* vehicle_door_open_sound;
+-// GLOBAL: BEACHLIFE 0x0057c2ec
+-const char* vehicle_normal_animation = "d_jetski_normal";
+-// GLOBAL: BEACHLIFE 0x0057c2f0
+-const char* vehicle_offset_animation = "d_jetski_normal_offset";
+-// GLOBAL: BEACHLIFE 0x0057c324
+-const char* speedboat_normal_animation = "boat_normal";
+-// GLOBAL: BEACHLIFE 0x0057c328
+-const char* speedboat_offset_animation = "boat_fast_rot";
+-
+ // FUNCTION: BEACHLIFE 0x00494e20
+ bool WorldVehicleEntity::Unknown0c()
+ {

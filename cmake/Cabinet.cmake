@@ -37,9 +37,11 @@ function(beachlife_add_cabinet_dependencies)
 endfunction()
 beachlife_add_cabinet_dependencies()
 
-add_library(beachlife_cabinet STATIC src/data/cabinet.cpp src/data/game_index.cpp
-    src/data/content_manifest.cpp src/data/content_storage.cpp src/data/content_prepare.cpp)
-target_link_libraries(beachlife_cabinet PUBLIC beachlife_data PRIVATE beachlife_unshield beachlife_formats)
+add_library(beachlife_cabinet STATIC src/data/cabinet.cpp src/data/clickteam_patch.cpp src/data/game_index.cpp
+    src/data/content_manifest.cpp src/data/content_storage.cpp src/data/content_prepare.cpp
+    src/data/game_disc.cpp src/data/wise.cpp)
+target_link_libraries(beachlife_cabinet PUBLIC beachlife_data PRIVATE beachlife_unshield beachlife_formats
+    ZLIB::ZLIBSTATIC)
 set_target_properties(beachlife_cabinet PROPERTIES CXX_EXTENSIONS OFF)
 if(MSVC)
     target_compile_options(beachlife_cabinet PRIVATE /W4 /WX)

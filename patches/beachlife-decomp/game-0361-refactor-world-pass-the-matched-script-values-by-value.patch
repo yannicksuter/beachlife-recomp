@@ -1,0 +1,1551 @@
+diff --git a/src/startup_entity_script_values.cpp b/src/startup_entity_script_values.cpp
+index 0dffae84d59d15d773716c87be13519588fd0a67..c6cb37a340eae757b21db187f6aac2ce39792855 100644
+--- a/src/startup_entity_script_values.cpp
++++ b/src/startup_entity_script_values.cpp
+@@ -10,34 +10,34 @@ static WorldScriptValue EntityScriptBoolean(std::uintptr_t data, unsigned char v
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00453a50
+-WorldScriptValue VariableEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue VariableEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0x36:
+-        return { 1, data };
++        return { 1, key.data };
+     case 0x58:
+         return { 2, static_cast<unsigned int>(variable_weather->lighting_2c38) };
+     case 0x59:
+         return { 2, 3 };
+     case 0xb8:
+-        return EntityScriptBoolean(data, unknown_05);
++        return EntityScriptBoolean(key.data, unknown_05);
+     case 0xe1:
+-        return EntityScriptBoolean(data, !window_deactivation_state->flag_17c);
++        return EntityScriptBoolean(key.data, !window_deactivation_state->flag_17c);
+     case 0xe2:
+         return { 2, id_28 };
+     case 0xe3:
+-        return { 2, static_cast<unsigned int>(rand()) % *reinterpret_cast<unsigned int*>(data) };
++        return { 2, static_cast<unsigned int>(rand()) % *reinterpret_cast<unsigned int*>(key.data) };
+     case 0xe4:
+-        return EntityScriptBoolean(data, static_cast<unsigned int>(rand()) % *reinterpret_cast<unsigned int*>(data) == 0);
++        return EntityScriptBoolean(key.data, static_cast<unsigned int>(rand()) % *reinterpret_cast<unsigned int*>(key.data) == 0);
+     case 0xe5:
+         return { 2, static_cast<unsigned int>(-1) };
+     case 0xe6:
+-        return EntityScriptBoolean(data, 1);
++        return EntityScriptBoolean(key.data, 1);
+     case 0xe7:
+-        return EntityScriptBoolean(data, 0);
++        return EntityScriptBoolean(key.data, 0);
+     case 0xe8:
+-        return { 3, *reinterpret_cast<unsigned int*>(data) };
++        return { 3, *reinterpret_cast<unsigned int*>(key.data) };
+     case 0xe9:
+         return { 2, state_3c };
+     case 0xea:
+@@ -51,21 +51,21 @@ WorldScriptValue VariableEntity::Unknown2c(unsigned int kind, std::uintptr_t dat
+     case 0xf4:
+         return { 2, word_4c };
+     default:
+-        return { kind, data };
++        return { key.kind, key.data };
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00453d40
+-void VariableEntity::Unknown30(unsigned int kind, std::uintptr_t, unsigned int, std::uintptr_t value)
++void VariableEntity::Unknown30(unsigned int kind, std::uintptr_t, WorldScriptValue value)
+ {
+-    unsigned int bits = static_cast<unsigned int>(value);
++    unsigned int bits = static_cast<unsigned int>(value.data);
+     switch (kind)
+     {
+     case 0x4a:
+-        inactive_04 = static_cast<unsigned char>(value);
++        inactive_04 = static_cast<unsigned char>(value.data);
+         break;
+     case 0xb8:
+-        unknown_05 = static_cast<unsigned char>(value);
++        unknown_05 = static_cast<unsigned char>(value.data);
+         break;
+     case 0xc3:
+     {
+@@ -111,12 +111,12 @@ void VariableEntity::Unknown30(unsigned int kind, std::uintptr_t, unsigned int,
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004859e0
+-WorldScriptValue WorldMovingEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldMovingEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0xef:
+-        return EntityScriptBoolean(data, flag_5c);
++        return EntityScriptBoolean(key.data, flag_5c);
+     case 0xf0:
+         return { 2, word_98 };
+     case 0xf1:
+@@ -124,24 +124,24 @@ WorldScriptValue WorldMovingEntity::Unknown2c(unsigned int kind, std::uintptr_t
+     {
+         VariableEntity* entity = variable_world->FindObject(word_98);
+         if (entity->kind_2c != 2)
+-            return { kind, data };
++            return { key.kind, key.data };
+         WorldBuildingEntity* building = entity->AsBuilding();
+         ScreenWorldPosition position = building->flag_cb ? building->entrance_position_e4 : building->StaffPosition();
+-        int coordinate = TruncateFloatToWord(kind == 0xf1 ? position.x : position.y);
++        int coordinate = TruncateFloatToWord(key.kind == 0xf1 ? position.x : position.y);
+         return { 2, static_cast<unsigned int>(coordinate) };
+     }
+     case 0x54:
+         return { 2, static_cast<unsigned int>(variable_world->FindObject(word_98)->keyline_state_44->word_18) };
+     default:
+-        return VariableEntity::Unknown2c(kind, data);
++        return VariableEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00485c50
+-void WorldMovingEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldMovingEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+     if (kind == 0xf0)
+-        word_98 = ConvertWorldScriptInteger({ value_kind, value });
++        word_98 = ConvertWorldScriptInteger(value);
+     else
+-        VariableEntity::Unknown30(kind, data, value_kind, value);
++        VariableEntity::Unknown30(kind, data, value);
+ }
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 76d0fa0b3e4a5163050979dc66eece1b282546de..5c6c71e166fb86339da6f8328654e7974dffde71 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -430,8 +430,8 @@ struct VariableEntity
+     virtual void Unknown20(ScreenModeCommand command);                                                                                           // 0x0048e1c0.
+     virtual void Unknown24(ScreenModeCommand command, float delay);                                                                              // 0x0048e1e0.
+     virtual float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x00453a40.
+-    virtual WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data);                                                                  // 0x00453a50.
+-    virtual void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value);                               // 0x00453d40.
++    virtual WorldScriptValue Unknown2c(WorldScriptValue key);                                                                                    // 0x00453a50.
++    virtual void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value);                                                      // 0x00453d40.
+     virtual void Unknown34(unsigned int value) { IgnoreScreenAction(); }                                                                         // Folded 0x0049dbe0.
+     virtual void SetWorldPosition(const ScreenWorldPosition* position);                                                                          // 0x00453950.
+     virtual void Unknown3c();                                                                                                                    // 0x0049daf0.
+diff --git a/src/startup_world_builder_script.cpp b/src/startup_world_builder_script.cpp
+index d1fdcb6568ae899a5cfb53574cc7c41e972da5ab..3db5c38d41500091963f83b35cc05fe94f6632a1 100644
+--- a/src/startup_world_builder_script.cpp
++++ b/src/startup_world_builder_script.cpp
+@@ -11,9 +11,9 @@ extern unsigned int world_builders_whistling;
+ ScreenWorldPosition BuilderTaskPosition(unsigned int building, unsigned int builder, ScreenWorldPosition position); // 0x004564b0.
+ 
+ // FUNCTION: BEACHLIFE 0x00454ff0
+-WorldScriptValue WorldBuilderEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldBuilderEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0x40:
+         return { 2, words_794[0] };
+@@ -39,7 +39,7 @@ WorldScriptValue WorldBuilderEntity::Unknown2c(unsigned int kind, std::uintptr_t
+     case 0xb3:
+     {
+         ScreenWorldPosition position = BuilderTaskPosition(word_98, builder_index_7f0, { position_30.x, position_30.y, position_30.z });
+-        return { 2, static_cast<unsigned int>(TruncateFloatToWord(kind == 0xb2 ? position.x : position.y)) };
++        return { 2, static_cast<unsigned int>(TruncateFloatToWord(key.kind == 0xb2 ? position.x : position.y)) };
+     }
+     case 0xb4:
+     {
+@@ -89,32 +89,32 @@ WorldScriptValue WorldBuilderEntity::Unknown2c(unsigned int kind, std::uintptr_t
+     case 0x107:
+         return { 2, words_794[2] };
+     default:
+-        return WorldStaffEntity::Unknown2c(kind, data);
++        return WorldStaffEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00454cc0
+-void WorldBuilderEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldBuilderEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+     switch (kind)
+     {
+     case 0x38:
+-        keyline_state_44->SelectVariant(ConvertWorldScriptInteger({ value_kind, value }));
++        keyline_state_44->SelectVariant(ConvertWorldScriptInteger(value));
+         break;
+     case 0x40:
+-        words_794[0] = ConvertWorldScriptInteger({ value_kind, value });
++        words_794[0] = ConvertWorldScriptInteger(value);
+         break;
+     case 0xff:
+-        word_784 = ConvertWorldScriptInteger({ value_kind, value });
++        word_784 = ConvertWorldScriptInteger(value);
+         break;
+     case 0x100:
+-        word_788 = ConvertWorldScriptInteger({ value_kind, value });
++        word_788 = ConvertWorldScriptInteger(value);
+         break;
+     case 0x101:
+-        world_builders_whistling = ConvertWorldScriptInteger({ value_kind, value });
++        world_builders_whistling = ConvertWorldScriptInteger(value);
+         break;
+     case 0x104:
+-        word_800 = ConvertWorldScriptInteger({ value_kind, value });
++        word_800 = ConvertWorldScriptInteger(value);
+         if (word_800 == 0)
+             window_deactivation_state->building_status_48->SetBuilderLocation(id_28, 0);
+         if (word_800 == 1)
+@@ -132,13 +132,13 @@ void WorldBuilderEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsig
+             window_deactivation_state->building_status_48->SetBuilderLocation(id_28, 5);
+         break;
+     case 0x106:
+-        words_794[1] = ConvertWorldScriptInteger({ value_kind, value });
++        words_794[1] = ConvertWorldScriptInteger(value);
+         break;
+     case 0x107:
+-        words_794[2] = ConvertWorldScriptInteger({ value_kind, value });
++        words_794[2] = ConvertWorldScriptInteger(value);
+         break;
+     default:
+-        WorldStaffEntity::Unknown30(kind, data, value_kind, value);
++        WorldStaffEntity::Unknown30(kind, data, value);
+     }
+ }
+ 
+diff --git a/src/startup_world_cleaner_values.cpp b/src/startup_world_cleaner_values.cpp
+index f75e293ac3c8f8efa5390293709dc35e6a379eee..6443dfbf5c2859fd6bce20cc06471947d6af1c71 100644
+--- a/src/startup_world_cleaner_values.cpp
++++ b/src/startup_world_cleaner_values.cpp
+@@ -11,18 +11,18 @@ static WorldScriptValue CleanerBoolean(std::uintptr_t data, unsigned char value)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004653f0
+-WorldScriptValue WorldCleanerEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldCleanerEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0x40:
+         return { 2, word_7bc };
+     case 0x6a:
+-        return CleanerBoolean(data, litter_found_77c);
++        return CleanerBoolean(key.data, litter_found_77c);
+     case 0x6b:
+-        return CleanerBoolean(data, bin_found_77e);
++        return CleanerBoolean(key.data, bin_found_77e);
+     case 0x6e:
+-        return CleanerBoolean(data, toilet_found_77d);
++        return CleanerBoolean(key.data, toilet_found_77d);
+     case 0x6f:
+     {
+         float duration = static_cast<double>(window_deactivation_state->render_value_160) - time_784;
+@@ -43,7 +43,7 @@ WorldScriptValue WorldCleanerEntity::Unknown2c(unsigned int kind, std::uintptr_t
+     case 0x77:
+         return { 2, static_cast<unsigned int>(static_cast<int>(bin_position_7b0.y)) };
+     case 0x78:
+-        return CleanerBoolean(data, flag_7c4);
++        return CleanerBoolean(key.data, flag_7c4);
+     case 0x79:
+         return { 2, word_7c0 };
+     case 0x7a:
+@@ -51,39 +51,39 @@ WorldScriptValue WorldCleanerEntity::Unknown2c(unsigned int kind, std::uintptr_t
+     case 0xb7:
+         return { 2, wages_108 };
+     case 0xfc:
+-        return CleanerBoolean(data, !variable_world->FindObject(home_id_100)->FlagAt00460370());
++        return CleanerBoolean(key.data, !variable_world->FindObject(home_id_100)->FlagAt00460370());
+     default:
+-        return WorldStaffEntity::Unknown2c(kind, data);
++        return WorldStaffEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00465780
+-void WorldCleanerEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldCleanerEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+     switch (kind)
+     {
+     case 0x38:
+-        keyline_state_44->SelectVariant(ConvertWorldScriptInteger({ value_kind, value }));
++        keyline_state_44->SelectVariant(ConvertWorldScriptInteger(value));
+         break;
+     case 0x40:
+-        word_7bc = ConvertWorldScriptInteger({ value_kind, value });
++        word_7bc = ConvertWorldScriptInteger(value);
+         break;
+     case 0x71:
+     {
+-        unsigned int distance = ConvertWorldScriptInteger({ value_kind, value });
++        unsigned int distance = ConvertWorldScriptInteger(value);
+         litter_distance_788 = distance * distance;
+         break;
+     }
+     case 0x78:
+-        flag_7c4 = static_cast<unsigned char>(value);
++        flag_7c4 = static_cast<unsigned char>(value.data);
+         break;
+     case 0x79:
+-        word_7c0 = ConvertWorldScriptInteger({ value_kind, value });
++        word_7c0 = ConvertWorldScriptInteger(value);
+         break;
+     case 0x7a:
+-        word_134 = ConvertWorldScriptInteger({ value_kind, value });
++        word_134 = ConvertWorldScriptInteger(value);
+         break;
+     default:
+-        WorldStaffEntity::Unknown30(kind, data, value_kind, value);
++        WorldStaffEntity::Unknown30(kind, data, value);
+     }
+ }
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 241beda69d3a0838d318330dabf9092ace0b6d30..b87535d6f0244d5303d2891dfe465931e12f869c 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -59,35 +59,35 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldStaticEntity) == 0x60);
+ 
+ struct WorldMovingEntity : VariableEntity
+ {
+-    void SteerTowardTarget();                                                                                       // 0x00482940.
+-    void SteerArriving();                                                                                           // 0x00482ab0.
+-    void SteerFollowing();                                                                                          // 0x00482c30.
+-    void IntegrateVelocity(float step);                                                                             // 0x00482d90.
+-    void SetSteeringTarget(ScreenMapPosition position);                                                             // 0x00486b60.
+-    void UpdateSteeringTarget();                                                                                    // 0x004831d0.
+-    bool IntegrateMotion(float step);                                                                               // 0x00482f00.
+-    void AdvanceMotion();                                                                                           // 0x004835a0.
+-    void PrepareMove(ScreenModeCommand* command);                                                                   // 0x00483db0.
+-    bool ReachedDestination();                                                                                      // 0x00483e70.
+-    void FindMotionRoute(ScreenPoint* start, ScreenPoint* end, unsigned char* success, unsigned int flags);         // 0x00483f60.
+-    bool AdjustRouteEndpoints(ScreenPoint* start, ScreenPoint* end, unsigned int flags);                            // 0x00485f20.
+-    void NotifyRouteTransition(ScreenPoint* start, ScreenPoint* end, unsigned int flags);                           // 0x00485ca0.
+-    explicit WorldMovingEntity(const char* name);                                                                   // 0x00482770.
+-    ~WorldMovingEntity() noexcept(false);                                                                           // 0x004828b0.
+-    void* Destroy(unsigned int flags) override;                                                                     // 0x00482890.
+-    bool Unknown0c() override;                                                                                      // 0x00483a80.
+-    bool Unknown14(ScreenModeCommand* command) override;                                                            // 0x00484120.
+-    void Unknown20(ScreenModeCommand command) override;                                                             // Folded 0x004859c0.
+-    void Unknown24(ScreenModeCommand command, float delay) override;                                                // Folded 0x004859d0.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                    // 0x004859e0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override; // 0x00485c50.
+-    void Unknown48(GameFileReader* file) override;                                                                  // 0x00486480.
+-    void Unknown4c(GameFileReader* file) override;                                                                  // 0x004867e0.
+-    virtual void SetMovementPosition(ScreenWorldPosition position);                                                 // 0x00482910.
+-    void SetMotionPosition(ScreenMapPosition position);                                                             // 0x00486b20.
+-    ScreenMapPosition MotionPosition() const;                                                                       // 0x00486ae0.
+-    ScreenMapPosition MotionVelocity() const;                                                                       // 0x00486b00.
+-    void SetMotionVelocity(ScreenMapPosition velocity);                                                             // 0x00486b40.
++    void SteerTowardTarget();                                                                               // 0x00482940.
++    void SteerArriving();                                                                                   // 0x00482ab0.
++    void SteerFollowing();                                                                                  // 0x00482c30.
++    void IntegrateVelocity(float step);                                                                     // 0x00482d90.
++    void SetSteeringTarget(ScreenMapPosition position);                                                     // 0x00486b60.
++    void UpdateSteeringTarget();                                                                            // 0x004831d0.
++    bool IntegrateMotion(float step);                                                                       // 0x00482f00.
++    void AdvanceMotion();                                                                                   // 0x004835a0.
++    void PrepareMove(ScreenModeCommand* command);                                                           // 0x00483db0.
++    bool ReachedDestination();                                                                              // 0x00483e70.
++    void FindMotionRoute(ScreenPoint* start, ScreenPoint* end, unsigned char* success, unsigned int flags); // 0x00483f60.
++    bool AdjustRouteEndpoints(ScreenPoint* start, ScreenPoint* end, unsigned int flags);                    // 0x00485f20.
++    void NotifyRouteTransition(ScreenPoint* start, ScreenPoint* end, unsigned int flags);                   // 0x00485ca0.
++    explicit WorldMovingEntity(const char* name);                                                           // 0x00482770.
++    ~WorldMovingEntity() noexcept(false);                                                                   // 0x004828b0.
++    void* Destroy(unsigned int flags) override;                                                             // 0x00482890.
++    bool Unknown0c() override;                                                                              // 0x00483a80.
++    bool Unknown14(ScreenModeCommand* command) override;                                                    // 0x00484120.
++    void Unknown20(ScreenModeCommand command) override;                                                     // Folded 0x004859c0.
++    void Unknown24(ScreenModeCommand command, float delay) override;                                        // Folded 0x004859d0.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                              // 0x004859e0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                // 0x00485c50.
++    void Unknown48(GameFileReader* file) override;                                                          // 0x00486480.
++    void Unknown4c(GameFileReader* file) override;                                                          // 0x004867e0.
++    virtual void SetMovementPosition(ScreenWorldPosition position);                                         // 0x00482910.
++    void SetMotionPosition(ScreenMapPosition position);                                                     // 0x00486b20.
++    ScreenMapPosition MotionPosition() const;                                                               // 0x00486ae0.
++    ScreenMapPosition MotionVelocity() const;                                                               // 0x00486b00.
++    void SetMotionVelocity(ScreenMapPosition velocity);                                                     // 0x00486b40.
+     unsigned int word_58;
+     unsigned char flag_5c;
+     unsigned char unknown_5d[0x3];
+@@ -130,17 +130,17 @@ struct WorldPedestrianEntity : WorldMovingEntity
+     bool LeaveContestState();                      // 0x0049e080.
+     bool LeavePerformerState();                    // 0x0048d080.
+     float PlayPerformerAnimation(const char* animation, unsigned char once, unsigned int next_state,
+-        unsigned char hold, const char* next_animation);                                                            // 0x00464590.
+-    WorldScriptValue ReadPerformerValue(unsigned int kind, std::uintptr_t data);                                    // 0x004533b0.
+-    explicit WorldPedestrianEntity(const char* name);                                                               // 0x0047c350.
+-    ~WorldPedestrianEntity() noexcept(false);                                                                       // 0x0047c390.
+-    void* Destroy(unsigned int flags) override;                                                                     // 0x0047c370.
+-    bool Unknown0c() override;                                                                                      // 0x0047c3a0.
+-    bool Unknown14(ScreenModeCommand* command) override;                                                            // 0x0047c580.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                    // 0x0047c590.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override; // 0x0047c5d0.
+-    void Unknown48(GameFileReader* file) override;                                                                  // 0x0047c5f0.
+-    void Unknown4c(GameFileReader* file) override;                                                                  // 0x0047c600.
++        unsigned char hold, const char* next_animation);                                     // 0x00464590.
++    WorldScriptValue ReadPerformerValue(WorldScriptValue key);                               // 0x004533b0.
++    explicit WorldPedestrianEntity(const char* name);                                        // 0x0047c350.
++    ~WorldPedestrianEntity() noexcept(false);                                                // 0x0047c390.
++    void* Destroy(unsigned int flags) override;                                              // 0x0047c370.
++    bool Unknown0c() override;                                                               // 0x0047c3a0.
++    bool Unknown14(ScreenModeCommand* command) override;                                     // 0x0047c580.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                               // 0x0047c590.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override; // 0x0047c5d0.
++    void Unknown48(GameFileReader* file) override;                                           // 0x0047c5f0.
++    void Unknown4c(GameFileReader* file) override;                                           // 0x0047c600.
+ };
+ static_assert(sizeof(void*) != 4 || sizeof(WorldPedestrianEntity) == 0xf4);
+ 
+@@ -159,8 +159,8 @@ struct WorldStaffEntity : WorldPedestrianEntity
+     bool Unknown14(ScreenModeCommand* command) override;                                                                                          // 0x0048ee00.
+     void ReadText(const char* key, unsigned short* output) override;                                                                              // 0x0048f8d0.
+     void WriteValue(const char* key, const void* value) override;                                                                                 // 0x0048feb0.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x0048f100.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x0048f5a0.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x0048f100.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x0048f5a0.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x0048f730.
+     void Unknown40() override;                                                                                                                    // 0x00490b50.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x004903f0.
+@@ -504,8 +504,8 @@ struct WorldGuestEntity : WorldPedestrianEntity
+     void Unknown20(ScreenModeCommand command) override;                                                                                           // 0x0046fd50.
+     void Unknown24(ScreenModeCommand command, float delay) override;                                                                              // 0x0046fd80.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x0046fdb0.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x00470280.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00470f80.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x00470280.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00470f80.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x00471980.
+     void Unknown3c() override;                                                                                                                    // 0x00467b20.
+     void Unknown40() override;                                                                                                                    // 0x00467d80.
+@@ -679,26 +679,26 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldVehicleEntity) == 0x96c);
+ 
+ struct WorldObjectEntity : WorldStaticEntity
+ {
+-    bool ReceiveGuest(unsigned int id);                                                                             // 0x00491740.
+-    bool IsEmpty();                                                                                                 // 0x00491710.
+-    void SetPlacementType(unsigned int type);                                                                       // 0x00491990.
+-    void SetRotation(unsigned int rotation);                                                                        // 0x00494060.
+-    void CopyPosition(ScreenWorldPosition position);                                                                // 0x00441f60.
+-    ~WorldObjectEntity() noexcept(false);                                                                           // 0x00491600.
+-    explicit WorldObjectEntity(const char* name);                                                                   // 0x00491260.
+-    void* Destroy(unsigned int flags) override;                                                                     // 0x004915e0.
+-    bool Unknown04(unsigned int state) override { return AcceptInitialWorldState(state); }                          // Folded 0x00491ef0.
+-    bool Unknown08(unsigned int state) override;                                                                    // 0x00491f10.
+-    bool Unknown0c() override;                                                                                      // 0x00491fc0.
+-    bool Unknown10() override { return AcceptWorldStateExit(); }                                                    // Folded 0x0048e880.
+-    bool Unknown14(ScreenModeCommand* command) override;                                                            // 0x004920e0.
+-    void ReadText(const char* key, unsigned short* output) override;                                                // 0x00492060.
+-    void WriteValue(const char* key, const void* value) override;                                                   // 0x00491ff0.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                    // 0x00494010.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override; // 0x00494040.
+-    void Unknown3c() override;                                                                                      // 0x00491aa0.
+-    void Unknown48(GameFileReader* file) override;                                                                  // 0x00494360.
+-    void Unknown4c(GameFileReader* file) override;                                                                  // 0x00494530.
++    bool ReceiveGuest(unsigned int id);                                                      // 0x00491740.
++    bool IsEmpty();                                                                          // 0x00491710.
++    void SetPlacementType(unsigned int type);                                                // 0x00491990.
++    void SetRotation(unsigned int rotation);                                                 // 0x00494060.
++    void CopyPosition(ScreenWorldPosition position);                                         // 0x00441f60.
++    ~WorldObjectEntity() noexcept(false);                                                    // 0x00491600.
++    explicit WorldObjectEntity(const char* name);                                            // 0x00491260.
++    void* Destroy(unsigned int flags) override;                                              // 0x004915e0.
++    bool Unknown04(unsigned int state) override { return AcceptInitialWorldState(state); }   // Folded 0x00491ef0.
++    bool Unknown08(unsigned int state) override;                                             // 0x00491f10.
++    bool Unknown0c() override;                                                               // 0x00491fc0.
++    bool Unknown10() override { return AcceptWorldStateExit(); }                             // Folded 0x0048e880.
++    bool Unknown14(ScreenModeCommand* command) override;                                     // 0x004920e0.
++    void ReadText(const char* key, unsigned short* output) override;                         // 0x00492060.
++    void WriteValue(const char* key, const void* value) override;                            // 0x00491ff0.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                               // 0x00494010.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override; // 0x00494040.
++    void Unknown3c() override;                                                               // 0x00491aa0.
++    void Unknown48(GameFileReader* file) override;                                           // 0x00494360.
++    void Unknown4c(GameFileReader* file) override;                                           // 0x00494530.
+     VariableCatalogObjectDefinition* definition_60;
+     int word_64;
+     unsigned char unknown_68[4];
+@@ -768,8 +768,8 @@ struct WorldLifeguardEntity : WorldStaffEntity
+     void Unknown20(ScreenModeCommand command) override;                                                                                           // 0x004812a0.
+     void Unknown24(ScreenModeCommand command, float delay) override;                                                                              // 0x004812d0.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x0047cd80.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x0047dc50.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x0047e060.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x0047dc50.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x0047e060.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x0047d430.
+     void Unknown3c() override;                                                                                                                    // 0x0047e7e0.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0047f1e0.
+@@ -822,8 +822,8 @@ struct WorldMechanicEntity : WorldStaffEntity
+     void Unknown20(ScreenModeCommand command) override;                                                                                           // 0x004812a0.
+     void Unknown24(ScreenModeCommand command, float delay) override;                                                                              // 0x004812d0.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00455630.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x00480d50.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00480fd0.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x00480d50.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00480fd0.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x004813a0.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x00482300.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x004824a0.
+@@ -868,8 +868,8 @@ struct WorldRepresentativeEntity : WorldStaffEntity
+     void Unknown20(ScreenModeCommand command) override;                                                                                           // 0x004812a0.
+     void Unknown24(ScreenModeCommand command, float delay) override;                                                                              // 0x004812d0.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00487a40.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x00487f20.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00488180.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x00487f20.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00488180.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x00487c70.
+     void Unknown3c() override;                                                                                                                    // 0x004884f0.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x00488c60.
+@@ -929,8 +929,8 @@ struct WorldBuilderEntity : WorldStaffEntity
+     void Unknown20(ScreenModeCommand command) override;                                                                                           // 0x004812a0.
+     void Unknown24(ScreenModeCommand command, float delay) override;                                                                              // 0x004812d0.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00455630.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x00454ff0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00454cc0.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x00454ff0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00454cc0.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x00454920.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x00455ae0.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x00455c90.
+@@ -976,8 +976,8 @@ struct WorldCleanerEntity : WorldStaffEntity
+     void Unknown20(ScreenModeCommand command) override;                                                                                           // 0x004812a0.
+     void Unknown24(ScreenModeCommand command, float delay) override;                                                                              // 0x004812d0.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00466060.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x004653f0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00465780.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x004653f0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00465780.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x004659e0.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x004668e0.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x00466ab0.
+@@ -1029,8 +1029,8 @@ struct WorldSecurityEntity : WorldStaffEntity
+     void Unknown20(ScreenModeCommand command) override;                                                                                           // 0x004812a0.
+     void Unknown24(ScreenModeCommand command, float delay) override;                                                                              // 0x004812d0.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00466060.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x004895d0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x004899c0.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x004895d0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x004899c0.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x00489ef0.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0048b0c0.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x0048b340.
+@@ -1087,8 +1087,8 @@ struct WorldSharkEntity : WorldMovingEntity
+     void Unknown20(ScreenModeCommand command) override;                                                                                           // 0x0048b8e0.
+     void Unknown24(ScreenModeCommand command, float delay) override;                                                                              // 0x0048b910.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x0048b940.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x0048ba00.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x0048bc30.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x0048ba00.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x0048bc30.
+     void Unknown34(unsigned int value) override;                                                                                                  // 0x0048bcf0.
+     void Unknown3c() override;                                                                                                                    // 0x0048b8d0.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0048c050.
+@@ -1122,8 +1122,8 @@ struct WorldEntity14 : WorldPedestrianEntity
+     bool Unknown10() override;                                                                                                                    // 0x0048d080.
+     bool Unknown14(ScreenModeCommand* command) override;                                                                                          // 0x00462e10.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00464590.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x004533b0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x004637f0.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x004533b0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x004637f0.
+     void Unknown34(unsigned int value) override { IgnoreScreenAction(); }                                                                         // Folded 0x004c3d20.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x00463810.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x00463880.
+@@ -1149,8 +1149,8 @@ struct WorldEntity15 : WorldPedestrianEntity
+     bool Unknown10() override;                                                                                                                    // 0x0048d080.
+     bool Unknown14(ScreenModeCommand* command) override;                                                                                          // 0x0048c3d0.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00464590.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x004533b0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00464660.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x004533b0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00464660.
+     void Unknown3c() override;                                                                                                                    // 0x0048cc60.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0048d090.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x0048d180.
+@@ -1178,8 +1178,8 @@ struct WorldEntity16 : WorldPedestrianEntity
+     bool Unknown10() override;                                                                                                                    // 0x0049bfe0.
+     bool Unknown14(ScreenModeCommand* command) override;                                                                                          // 0x0049b180.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00464590.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x004533b0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00464660.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x004533b0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00464660.
+     void Unknown3c() override;                                                                                                                    // 0x0049b930.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0049c020.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x0049c110.
+@@ -1207,8 +1207,8 @@ struct WorldEntity17 : WorldPedestrianEntity
+     bool Unknown10() override;                                                                                                                    // 0x0049e080.
+     bool Unknown14(ScreenModeCommand* command) override;                                                                                          // 0x00463d40.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00464590.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x004533b0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00464660.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x004533b0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00464660.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x00464a10.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x00464ab0.
+     unsigned int action_f4;
+@@ -1234,8 +1234,8 @@ struct WorldEntity18 : WorldPedestrianEntity
+     bool Unknown10() override;                                                                                                                    // 0x0049e080.
+     bool Unknown14(ScreenModeCommand* command) override;                                                                                          // 0x0049c320.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00464590.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x004533b0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00464660.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x004533b0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00464660.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x0049e0a0.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x0049e150.
+     unsigned int action_f4;
+@@ -1280,8 +1280,8 @@ struct WorldEntity20 : WorldPedestrianEntity
+     bool Unknown10() override;                                                                                                                    // 0x0048d080.
+     bool Unknown14(ScreenModeCommand* command) override;                                                                                          // 0x00452dc0.
+     float Unknown28(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation) override; // 0x00464590.
+-    WorldScriptValue Unknown2c(unsigned int kind, std::uintptr_t data) override;                                                                  // 0x004533b0.
+-    void Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value) override;                               // 0x00464660.
++    WorldScriptValue Unknown2c(WorldScriptValue key) override;                                                                                    // 0x004533b0.
++    void Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value) override;                                                      // 0x00464660.
+     void Unknown48(GameFileReader* file) override;                                                                                                // 0x00453630.
+     void Unknown4c(GameFileReader* file) override;                                                                                                // 0x004536d0.
+     unsigned int action_state_f4;
+diff --git a/src/startup_world_entity17_shared.cpp b/src/startup_world_entity17_shared.cpp
+index f6ea3b318fc2626b16ca90637d083ab664f15f20..51793e090b6925a849bb30c662134ad07bc1022e 100644
+--- a/src/startup_world_entity17_shared.cpp
++++ b/src/startup_world_entity17_shared.cpp
+@@ -6,13 +6,13 @@ float WorldEntity17::Unknown28(const char* animation, unsigned char once,
+     return PlayPerformerAnimation(animation, once, next_state, hold, next_animation);
+ }
+ 
+-WorldScriptValue WorldEntity17::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldEntity17::Unknown2c(WorldScriptValue key)
+ {
+-    return ReadPerformerValue(kind, data);
++    return ReadPerformerValue(key);
+ }
+ 
+ // FOLDED: BEACHLIFE 0x00464660
+-void WorldEntity17::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++void WorldEntity17::Unknown30(unsigned int, std::uintptr_t, WorldScriptValue)
+ {
+     IgnoreScreenAction();
+ }
+diff --git a/src/startup_world_entity18_shared.cpp b/src/startup_world_entity18_shared.cpp
+index 52fd382786c394e9d03b29d13e271093c26d46ae..7b7e6beda1efba91fc088575b3e57d636e773b10 100644
+--- a/src/startup_world_entity18_shared.cpp
++++ b/src/startup_world_entity18_shared.cpp
+@@ -5,14 +5,14 @@ float WorldEntity18::Unknown28(const char* animation, unsigned char once, unsign
+     return PlayPerformerAnimation(animation, once, next_state, hold, next_animation);
+ }
+ 
+-WorldScriptValue WorldEntity18::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldEntity18::Unknown2c(WorldScriptValue key)
+ {
+-    return ReadPerformerValue(kind, data);
++    return ReadPerformerValue(key);
+ }
+ 
+ // Folded RET16 at 0x00464660, shared with the other performers.
+ // FOLDED: BEACHLIFE 0x00464660
+-void WorldEntity18::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++void WorldEntity18::Unknown30(unsigned int, std::uintptr_t, WorldScriptValue)
+ {
+     IgnoreScreenAction();
+ }
+diff --git a/src/startup_world_guest_script_values.cpp b/src/startup_world_guest_script_values.cpp
+index d6bc28a94ee6474f5282b94b3c30c255a7e65c31..19681d1fbb821b2e500584eb1ac86425bd8183ec 100644
+--- a/src/startup_world_guest_script_values.cpp
++++ b/src/startup_world_guest_script_values.cpp
+@@ -24,9 +24,9 @@ static WorldScriptValue GuestBoolean(unsigned char value)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00470280
+-WorldScriptValue WorldGuestEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldGuestEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0:
+         return GuestInteger(word_fc->words[0]);
+@@ -151,7 +151,7 @@ WorldScriptValue WorldGuestEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+     case 0x44:
+     case 0x45:
+     {
+-        bool lowest = kind == 0x42 || kind == 0x43;
++        bool lowest = key.kind == 0x42 || key.kind == 0x43;
+         float opinion = lowest ? 2.0f : -1.0f;
+         unsigned int index = 7;
+         for (unsigned int i = 0; i < 7; ++i)
+@@ -162,7 +162,7 @@ WorldScriptValue WorldGuestEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+                 index = i;
+             }
+         }
+-        if (kind == 0x42 || kind == 0x44)
++        if (key.kind == 0x42 || key.kind == 0x44)
+             return GuestInteger(index);
+         if (opinion > 0.5f)
+             return GuestInteger(3);
+@@ -194,7 +194,7 @@ WorldScriptValue WorldGuestEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+     case 0x5b:
+     {
+         unsigned int count;
+-        VariableEntity** objects = variable_world->FindNamed(kind == 0x4d ? "HOTEL" : "COMPLAINTHUT", &count);
++        VariableEntity** objects = variable_world->FindNamed(key.kind == 0x4d ? "HOTEL" : "COMPLAINTHUT", &count);
+         return GuestInteger((*objects)->id_28);
+     }
+     case 0x4e:
+@@ -265,14 +265,14 @@ WorldScriptValue WorldGuestEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+     case 0x68:
+         return GuestBoolean(HasSatDown());
+     default:
+-        return WorldPedestrianEntity::Unknown2c(kind, data);
++        return WorldPedestrianEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00470f80
+-void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+-    WorldScriptValue operand = { value_kind, value };
++    WorldScriptValue operand = value;
+     switch (kind)
+     {
+     case 1:
+@@ -285,10 +285,10 @@ void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+         word_250 = ConvertWorldScriptInteger(operand);
+         break;
+     case 4:
+-        std::strcpy(walk_animation_268, reinterpret_cast<const char*>(value));
++        std::strcpy(walk_animation_268, reinterpret_cast<const char*>(value.data));
+         break;
+     case 7:
+-        flag_2b8 = value;
++        flag_2b8 = value.data;
+         break;
+     case 9:
+         guest_value_254 = ConvertWorldScriptNumber(operand);
+@@ -350,10 +350,10 @@ void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+         happiness_264 = ConvertWorldScriptNumber(operand);
+         break;
+     case 0x2e:
+-        flag_228 = value;
++        flag_228 = value.data;
+         break;
+     case 0x32:
+-        flag_229 = value;
++        flag_229 = value.data;
+         break;
+     case 0x33:
+         walkpoints_22c[word_250].x = ConvertWorldScriptNumber(operand);
+@@ -365,14 +365,14 @@ void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+         word_314 = ConvertWorldScriptInteger(operand);
+         break;
+     case 0x37:
+-        std::strcpy(text_290, reinterpret_cast<const char*>(value));
++        std::strcpy(text_290, reinterpret_cast<const char*>(value.data));
+         break;
+     case 0x38:
+         keyline_state_44->SelectVariant((ConvertWorldScriptInteger(operand) + 8) % 8);
+         break;
+     case 0x39:
+     {
+-        const char* name = reinterpret_cast<const char*>(value);
++        const char* name = reinterpret_cast<const char*>(value.data);
+         bool none = _stricmp(name, "NONE") == 0;
+         if (word_310)
+         {
+@@ -386,7 +386,7 @@ void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+     case 0x3a:
+         if (word_310)
+         {
+-            const char* animation = reinterpret_cast<const char*>(value);
++            const char* animation = reinterpret_cast<const char*>(value.data);
+             if (std::strstr(animation, "Reverse_"))
+             {
+                 word_310->word_08 = 1;
+@@ -404,7 +404,7 @@ void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+         }
+         break;
+     case 0x3b:
+-        if (_stricmp(reinterpret_cast<const char*>(value), "MyDir") == 0 && word_310)
++        if (_stricmp(reinterpret_cast<const char*>(value.data), "MyDir") == 0 && word_310)
+             word_310->SelectVariant(keyline_state_44->rotation_18);
+         break;
+     case 0x3c:
+@@ -434,7 +434,7 @@ void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+         break;
+     }
+     case 0x48:
+-        flag_330 = value;
++        flag_330 = value.data;
+         break;
+     case 0x51:
+         if (variable_world->FindObject(word_32c))
+@@ -444,19 +444,19 @@ void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+         }
+         break;
+     case 0x53:
+-        flag_35c = value;
++        flag_35c = value.data;
+         break;
+     case 0x55:
+         guest_value_360 = ConvertWorldScriptNumber(operand);
+         break;
+     case 0x56:
+-        flag_364 = value;
++        flag_364 = value.data;
+         break;
+     case 0x5a:
+-        unhappy_departure_3d0 = value;
++        unhappy_departure_3d0 = value.data;
+         break;
+     case 0x5c:
+-        flag_3d1 = value;
++        flag_3d1 = value.data;
+         break;
+     case 0x5e:
+         word_350 = ConvertWorldScriptInteger(operand);
+@@ -465,12 +465,12 @@ void WorldGuestEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+         word_3d8 = ConvertWorldScriptInteger(operand);
+         break;
+     case 0x64:
+-        flag_3ac = value;
++        flag_3ac = value.data;
+         break;
+     case 0x69:
+         guest_value_34c = ConvertWorldScriptNumber(operand);
+         break;
+     default:
+-        WorldPedestrianEntity::Unknown30(kind, data, value_kind, value);
++        WorldPedestrianEntity::Unknown30(kind, data, value);
+     }
+ }
+diff --git a/src/startup_world_lifeguard_values.cpp b/src/startup_world_lifeguard_values.cpp
+index db2934bf09b84826d674433164475586d1ad0134..bce05f8977dd34aa71d22d8973e88066ae397f1e 100644
+--- a/src/startup_world_lifeguard_values.cpp
++++ b/src/startup_world_lifeguard_values.cpp
+@@ -19,12 +19,12 @@ static WorldScriptValue LifeguardFloat(float value)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0047dc50
+-WorldScriptValue WorldLifeguardEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldLifeguardEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0x32:
+-        return LifeguardBoolean(data, flag_7e8);
++        return LifeguardBoolean(key.data, flag_7e8);
+     case 0x3d:
+         return { 1, reinterpret_cast<std::uintptr_t>(current_animation_7bc) };
+     case 0x40:
+@@ -34,13 +34,13 @@ WorldScriptValue WorldLifeguardEntity::Unknown2c(unsigned int kind, std::uintptr
+     case 0x98:
+         return LifeguardFloat(exit_point_788.y);
+     case 0x99:
+-        return LifeguardBoolean(data, flag_778);
++        return LifeguardBoolean(key.data, flag_778);
+     case 0x9a:
+         return { 2, saving_id_77c };
+     case 0x9b:
+-        return LifeguardBoolean(data, flags_828[1]);
++        return LifeguardBoolean(key.data, flags_828[1]);
+     case 0x9c:
+-        return LifeguardBoolean(data, flags_828[2]);
++        return LifeguardBoolean(key.data, flags_828[2]);
+     case 0x9d:
+         return { 2, word_820 };
+     case 0x9e:
+@@ -62,38 +62,38 @@ WorldScriptValue WorldLifeguardEntity::Unknown2c(unsigned int kind, std::uintptr
+         std::strcpy(lifeguard_animation_name, "rescue_swim");
+         return { 2, reinterpret_cast<std::uintptr_t>(lifeguard_animation_name) };
+     case 0xa3:
+-        return LifeguardBoolean(data, flags_828[0]);
++        return LifeguardBoolean(key.data, flags_828[0]);
+     case 0xa4:
+-        return LifeguardBoolean(data, flags_828[3]);
++        return LifeguardBoolean(key.data, flags_828[3]);
+     case 0xa6:
+         return { 2, 600 };
+     case 0xa7:
+-        return LifeguardBoolean(data, flag_779);
++        return LifeguardBoolean(key.data, flag_779);
+     case 0xa8:
+-        return LifeguardBoolean(data, variable_world->FindObject(saving_id_77c)->AsGuest()->lightning_state_318 == 1);
++        return LifeguardBoolean(key.data, variable_world->FindObject(saving_id_77c)->AsGuest()->lightning_state_318 == 1);
+     case 0xe0:
+         std::strcpy(lifeguard_animation_name, "D_STAND_SAD");
+         return { 2, reinterpret_cast<std::uintptr_t>(lifeguard_animation_name) };
+     case 0xfc:
+-        return LifeguardBoolean(data, !variable_world->FindObject(home_id_100)->FlagAt00460370());
++        return LifeguardBoolean(key.data, !variable_world->FindObject(home_id_100)->FlagAt00460370());
+     default:
+-        return WorldStaffEntity::Unknown2c(kind, data);
++        return WorldStaffEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0047e060
+-void WorldLifeguardEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldLifeguardEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+     switch (kind)
+     {
+     case 0x32:
+-        flag_7e8 = static_cast<unsigned char>(value);
++        flag_7e8 = static_cast<unsigned char>(value.data);
+         break;
+     case 0x38:
+-        keyline_state_44->SelectVariant(ConvertWorldScriptInteger({ value_kind, value }));
++        keyline_state_44->SelectVariant(ConvertWorldScriptInteger(value));
+         break;
+     case 0x39:
+-        if (!std::strcmp(reinterpret_cast<const char*>(value), "NONE"))
++        if (!std::strcmp(reinterpret_cast<const char*>(value.data), "NONE"))
+         {
+             if (attached_7f0)
+             {
+@@ -102,58 +102,58 @@ void WorldLifeguardEntity::Unknown30(unsigned int kind, std::uintptr_t data, uns
+             }
+         }
+         else
+-            attached_7f0 = screen_dialog_resources->Find(reinterpret_cast<const char*>(value));
++            attached_7f0 = screen_dialog_resources->Find(reinterpret_cast<const char*>(value.data));
+         break;
+     case 0x3a:
+         if (attached_7f0)
+         {
+             ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-            attached_7f0->SetAnimation(reinterpret_cast<const char*>(value), window_deactivation_state->time_158, &position);
++            attached_7f0->SetAnimation(reinterpret_cast<const char*>(value.data), window_deactivation_state->time_158, &position);
+         }
+         break;
+     case 0x3b:
+-        if (!std::strcmp(reinterpret_cast<const char*>(value), "MyDir") && attached_7f0)
++        if (!std::strcmp(reinterpret_cast<const char*>(value.data), "MyDir") && attached_7f0)
+             attached_7f0->SelectVariant(keyline_state_44->word_18);
+         break;
+     case 0x3e:
+-        attached_x_7f4 = ConvertWorldScriptInteger({ value_kind, value });
++        attached_x_7f4 = ConvertWorldScriptInteger(value);
+         break;
+     case 0x3f:
+-        attached_y_7f8 = ConvertWorldScriptInteger({ value_kind, value });
++        attached_y_7f8 = ConvertWorldScriptInteger(value);
+         break;
+     case 0x40:
+-        action_state_7ec = ConvertWorldScriptInteger({ value_kind, value });
++        action_state_7ec = ConvertWorldScriptInteger(value);
+         break;
+     case 0x97:
+-        exit_point_788.x = ConvertWorldScriptNumber({ value_kind, value });
++        exit_point_788.x = ConvertWorldScriptNumber(value);
+         break;
+     case 0x98:
+-        exit_point_788.y = ConvertWorldScriptNumber({ value_kind, value });
++        exit_point_788.y = ConvertWorldScriptNumber(value);
+         break;
+     case 0x99:
+-        flag_778 = static_cast<unsigned char>(value);
++        flag_778 = static_cast<unsigned char>(value.data);
+         if (flag_778)
+             AddThought(0x40);
+         break;
+     case 0x9a:
+-        saving_id_77c = ConvertWorldScriptInteger({ value_kind, value });
++        saving_id_77c = ConvertWorldScriptInteger(value);
+         break;
+     case 0x9b:
+-        flags_828[1] = static_cast<unsigned char>(value);
++        flags_828[1] = static_cast<unsigned char>(value.data);
+         break;
+     case 0x9c:
+-        flags_828[2] = static_cast<unsigned char>(value);
++        flags_828[2] = static_cast<unsigned char>(value.data);
+         break;
+     case 0x9d:
+-        word_820 = ConvertWorldScriptInteger({ value_kind, value });
++        word_820 = ConvertWorldScriptInteger(value);
+         break;
+     case 0xa4:
+-        flags_828[3] = static_cast<unsigned char>(value);
++        flags_828[3] = static_cast<unsigned char>(value.data);
+         break;
+     case 0xa5:
+-        flags_828[4] = static_cast<unsigned char>(value);
++        flags_828[4] = static_cast<unsigned char>(value.data);
+         break;
+     default:
+-        WorldStaffEntity::Unknown30(kind, data, value_kind, value);
++        WorldStaffEntity::Unknown30(kind, data, value);
+     }
+ }
+diff --git a/src/startup_world_object_script.cpp b/src/startup_world_object_script.cpp
+index cb500e889b0e8fb520899e5f33d445279d624349..3c75958eb11a2c479e6399cf44fbe4336abc36bc 100644
+--- a/src/startup_world_object_script.cpp
++++ b/src/startup_world_object_script.cpp
+@@ -1,13 +1,13 @@
+ #include "startup_world_entities.h"
+ 
+ // FUNCTION: BEACHLIFE 0x00494010
+-WorldScriptValue WorldObjectEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldObjectEntity::Unknown2c(WorldScriptValue key)
+ {
+-    return VariableEntity::Unknown2c(kind, data);
++    return VariableEntity::Unknown2c(key);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00494040
+-void WorldObjectEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldObjectEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+-    VariableEntity::Unknown30(kind, data, value_kind, value);
++    VariableEntity::Unknown30(kind, data, value);
+ }
+diff --git a/src/startup_world_pedestrian_dispatch.cpp b/src/startup_world_pedestrian_dispatch.cpp
+index b31f5dd618cce3fedf74d4df0425fd703a9df23a..e00f0b0db3e6e64e67df63da714643fb397d3754 100644
+--- a/src/startup_world_pedestrian_dispatch.cpp
++++ b/src/startup_world_pedestrian_dispatch.cpp
+@@ -16,18 +16,17 @@ bool WorldPedestrianEntity::Unknown14(ScreenModeCommand* command)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0047c590
+-WorldScriptValue WorldPedestrianEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldPedestrianEntity::Unknown2c(WorldScriptValue key)
+ {
+-    if (kind == 0x110)
+-        return { kind, data };
+-    return WorldMovingEntity::Unknown2c(kind, data);
++    if (key.kind == 0x110)
++        return { key.kind, key.data };
++    return WorldMovingEntity::Unknown2c(key);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0047c5d0
+-void WorldPedestrianEntity::Unknown30(unsigned int kind, std::uintptr_t data,
+-    unsigned int value_kind, std::uintptr_t value)
++void WorldPedestrianEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+-    WorldMovingEntity::Unknown30(kind, data, value_kind, value);
++    WorldMovingEntity::Unknown30(kind, data, value);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0047c5f0
+diff --git a/src/startup_world_performer_shared.cpp b/src/startup_world_performer_shared.cpp
+index 94c1c2adfb99d7d8bb695f8d1eb28f392ca2cdd1..21b1f9fac0a508a352c511c31d26538d8a0e9220 100644
+--- a/src/startup_world_performer_shared.cpp
++++ b/src/startup_world_performer_shared.cpp
+@@ -60,9 +60,9 @@ float WorldPedestrianEntity::PlayPerformerAnimation(const char* animation, unsig
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004533b0
+-WorldScriptValue WorldPedestrianEntity::ReadPerformerValue(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldPedestrianEntity::ReadPerformerValue(WorldScriptValue key)
+ {
+-    return WorldPedestrianEntity::Unknown2c(kind, data);
++    return WorldPedestrianEntity::Unknown2c(key);
+ }
+ 
+ bool WorldEntity15::Unknown04(unsigned int state)
+@@ -103,42 +103,42 @@ float WorldEntity20::Unknown28(const char* animation, unsigned char once, unsign
+     return PlayPerformerAnimation(animation, once, next_state, hold, next_animation);
+ }
+ 
+-WorldScriptValue WorldEntity14::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldEntity14::Unknown2c(WorldScriptValue key)
+ {
+-    return ReadPerformerValue(kind, data);
++    return ReadPerformerValue(key);
+ }
+-WorldScriptValue WorldEntity15::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldEntity15::Unknown2c(WorldScriptValue key)
+ {
+-    return ReadPerformerValue(kind, data);
++    return ReadPerformerValue(key);
+ }
+-WorldScriptValue WorldEntity16::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldEntity16::Unknown2c(WorldScriptValue key)
+ {
+-    return ReadPerformerValue(kind, data);
++    return ReadPerformerValue(key);
+ }
+-WorldScriptValue WorldEntity20::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldEntity20::Unknown2c(WorldScriptValue key)
+ {
+-    return ReadPerformerValue(kind, data);
++    return ReadPerformerValue(key);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004637f0
+-void WorldEntity14::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldEntity14::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+-    WorldPedestrianEntity::Unknown30(kind, data, value_kind, value);
++    WorldPedestrianEntity::Unknown30(kind, data, value);
+ }
+ 
+ // The other performer setters share the retail RET16 at 0x00464660.
+ // FOLDED: BEACHLIFE 0x00464660
+-void WorldEntity15::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++void WorldEntity15::Unknown30(unsigned int, std::uintptr_t, WorldScriptValue)
+ {
+     IgnoreScreenAction();
+ }
+ // FOLDED: BEACHLIFE 0x00464660
+-void WorldEntity16::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++void WorldEntity16::Unknown30(unsigned int, std::uintptr_t, WorldScriptValue)
+ {
+     IgnoreScreenAction();
+ }
+ // FUNCTION: BEACHLIFE 0x00464660
+-void WorldEntity20::Unknown30(unsigned int, std::uintptr_t, unsigned int, std::uintptr_t)
++void WorldEntity20::Unknown30(unsigned int, std::uintptr_t, WorldScriptValue)
+ {
+     IgnoreScreenAction();
+ }
+diff --git a/src/startup_world_script_expression_evaluate.cpp b/src/startup_world_script_expression_evaluate.cpp
+index 376baf40c65aebfb3092cf66de2a752e33bc497e..b963e7bd05a709d7199ec1b0cedc328d18629cbe 100644
+--- a/src/startup_world_script_expression_evaluate.cpp
++++ b/src/startup_world_script_expression_evaluate.cpp
+@@ -23,21 +23,21 @@ ScreenModeCommand WorldSubsystemScript::Expression::MakeCommand(VariableEntity*
+ {
+     ScreenModeCommand command;
+     command.words[2] = data->word_00;
+-    command.words[1] = ExpressionCommandWord(entity->Unknown2c(data->operands_04[0].kind, data->operands_04[0].data), true);
+-    command.words[4] = ExpressionCommandWord(entity->Unknown2c(data->operands_04[1].kind, data->operands_04[1].data), true);
+-    command.words[3] = ExpressionCommandWord(entity->Unknown2c(data->operands_04[2].kind, data->operands_04[2].data), true);
++    command.words[1] = ExpressionCommandWord(entity->Unknown2c(WorldScriptValue { data->operands_04[0].kind, data->operands_04[0].data }), true);
++    command.words[4] = ExpressionCommandWord(entity->Unknown2c(WorldScriptValue { data->operands_04[1].kind, data->operands_04[1].data }), true);
++    command.words[3] = ExpressionCommandWord(entity->Unknown2c(WorldScriptValue { data->operands_04[2].kind, data->operands_04[2].data }), true);
+     if (data->operands_04[3].kind != 0x110)
+     {
+-        WorldScriptValue value = entity->Unknown2c(data->operands_04[3].kind, data->operands_04[3].data);
++        WorldScriptValue value = entity->Unknown2c(WorldScriptValue { data->operands_04[3].kind, data->operands_04[3].data });
+         float number = value.kind == 0 ? static_cast<float>(static_cast<unsigned char>(value.data))
+                      : value.kind == 2 ? static_cast<float>(static_cast<unsigned int>(value.data))
+                                        : ExpressionValueFloat(value);
+         command.words[6] = std::bit_cast<unsigned int>(number);
+     }
+     command.words[5] = data->operands_04[4].kind == 0x110 ? ScreenModeCommandWord(entity->state_3c)
+-                                                          : ExpressionCommandWord(entity->Unknown2c(data->operands_04[4].kind, data->operands_04[4].data), false);
++                                                          : ExpressionCommandWord(entity->Unknown2c(WorldScriptValue { data->operands_04[4].kind, data->operands_04[4].data }), false);
+     command.words[0] = data->operands_04[5].kind == 0x110 ? ScreenModeCommandWord(entity->id_28)
+-                                                          : ExpressionCommandWord(entity->Unknown2c(data->operands_04[5].kind, data->operands_04[5].data), false);
++                                                          : ExpressionCommandWord(entity->Unknown2c(WorldScriptValue { data->operands_04[5].kind, data->operands_04[5].data }), false);
+     return command;
+ }
+ 
+@@ -49,7 +49,7 @@ bool WorldSubsystemScript::Expression::Evaluate(VariableEntity* entity, unsigned
+         return true;
+     if (right_kind == 0x110)
+     {
+-        WorldScriptValue value = entity->Unknown2c(left_kind, left_data);
++        WorldScriptValue value = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
+         if (value.kind == 0)
+             return static_cast<unsigned char>(value.data) != 0;
+         if (value.kind == 2)
+@@ -65,7 +65,7 @@ bool WorldSubsystemScript::Expression::Evaluate(VariableEntity* entity, unsigned
+     {
+         if (comparison != 4 && comparison != 7)
+             return false;
+-        WorldScriptValue value = entity->Unknown2c(left_kind, left_data);
++        WorldScriptValue value = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
+         int result = _stricmp(reinterpret_cast<const char*>(value.data), reinterpret_cast<const char*>(right_data));
+         return comparison == 4 ? result == 0 : result != 0;
+     }
+@@ -75,8 +75,8 @@ bool WorldSubsystemScript::Expression::Evaluate(VariableEntity* entity, unsigned
+         return EqualOperands(entity, left_kind, left_data, right_kind, right_data);
+     if (comparison == 7)
+         return UnequalOperands(entity, left_kind, left_data, right_kind, right_data);
+-    WorldScriptValue left = entity->Unknown2c(left_kind, left_data);
+-    WorldScriptValue right = entity->Unknown2c(right_kind, right_data);
++    WorldScriptValue left = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
++    WorldScriptValue right = entity->Unknown2c(WorldScriptValue { right_kind, right_data });
+     if (comparison == 0)
+         return ConvertWorldScriptInteger(left) && ConvertWorldScriptInteger(right);
+     if (comparison == 1)
+@@ -109,8 +109,8 @@ bool WorldSubsystemScript::Expression::Evaluate(VariableEntity* entity, unsigned
+ bool WorldSubsystemScript::Expression::EqualOperands(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+     unsigned int right_kind, std::uintptr_t right_data)
+ {
+-    WorldScriptValue left = entity->Unknown2c(left_kind, left_data);
+-    WorldScriptValue right = entity->Unknown2c(right_kind, right_data);
++    WorldScriptValue left = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
++    WorldScriptValue right = entity->Unknown2c(WorldScriptValue { right_kind, right_data });
+     if (left.kind == 1)
+         return std::strcmp(reinterpret_cast<const char*>(left.data), reinterpret_cast<const char*>(right.data)) == 0;
+     if (left.kind == 2)
+@@ -125,8 +125,8 @@ bool WorldSubsystemScript::Expression::EqualOperands(VariableEntity* entity, uns
+ bool WorldSubsystemScript::Expression::UnequalOperands(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+     unsigned int right_kind, std::uintptr_t right_data)
+ {
+-    WorldScriptValue left = entity->Unknown2c(left_kind, left_data);
+-    WorldScriptValue right = entity->Unknown2c(right_kind, right_data);
++    WorldScriptValue left = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
++    WorldScriptValue right = entity->Unknown2c(WorldScriptValue { right_kind, right_data });
+     if (left.kind == 2)
+         return static_cast<unsigned int>(left.data) != static_cast<unsigned int>(ConvertWorldScriptInteger(right));
+     double first = ConvertWorldScriptNumber(left);
+diff --git a/src/startup_world_script_expression_update.cpp b/src/startup_world_script_expression_update.cpp
+index b53f41ea6d86bdcf88fe61337de31d5847ca31c4..3ce8abfd10ecebbe9b46c8dcdf0361c2cf1ee034 100644
+--- a/src/startup_world_script_expression_update.cpp
++++ b/src/startup_world_script_expression_update.cpp
+@@ -97,7 +97,7 @@ void WorldSubsystemScript::Expression::Update(VariableEntity* entity)
+             WorldExpressionSwitchData::Case* item = data->cases_00;
+             if (data->value_04.kind == 0xe3 || data->value_04.kind == 0xe4)
+             {
+-                WorldScriptValue value = entity->Unknown2c(data->value_04.kind, data->value_04.data);
++                WorldScriptValue value = entity->Unknown2c(WorldScriptValue { data->value_04.kind, data->value_04.data });
+                 unsigned int kind;
+                 if (data->value_04.kind == 0xe4)
+                     kind = static_cast<unsigned char>(value.data) ? 0xe6 : 0xe7;
+@@ -139,8 +139,8 @@ void WorldSubsystemScript::Expression::Update(VariableEntity* entity)
+         {
+             unsigned int operation = expression->kind_04;
+             WorldActionArithmeticData* data = static_cast<WorldActionArithmeticData*>(expression->data_08);
+-            WorldScriptValue left = entity->Unknown2c(data->left_00.kind, data->left_00.data);
+-            WorldScriptValue right = entity->Unknown2c(data->right_08.kind, data->right_08.data);
++            WorldScriptValue left = entity->Unknown2c(WorldScriptValue { data->left_00.kind, data->left_00.data });
++            WorldScriptValue right = entity->Unknown2c(WorldScriptValue { data->right_08.kind, data->right_08.data });
+             unsigned int kind;
+             unsigned int result;
+             if (left.kind == 2)
+@@ -173,14 +173,14 @@ void WorldSubsystemScript::Expression::Update(VariableEntity* entity)
+                 result = std::bit_cast<unsigned int>(value);
+                 kind = 3;
+             }
+-            entity->Unknown30(data->left_00.kind, data->left_00.data, kind, result);
++            entity->Unknown30(data->left_00.kind, data->left_00.data, WorldScriptValue { kind, result });
+             break;
+         }
+         case 10:
+         {
+             WorldActionArithmeticData* data = static_cast<WorldActionArithmeticData*>(expression->data_08);
+-            WorldScriptValue value = entity->Unknown2c(data->right_08.kind, data->right_08.data);
+-            entity->Unknown30(data->left_00.kind, data->left_00.data, value.kind, value.data);
++            WorldScriptValue value = entity->Unknown2c(WorldScriptValue { data->right_08.kind, data->right_08.data });
++            entity->Unknown30(data->left_00.kind, data->left_00.data, value);
+             break;
+         }
+         case 11:
+diff --git a/src/startup_world_security_script.cpp b/src/startup_world_security_script.cpp
+index 6806becbc0d638944653a55c1dbfff3a3120dab7..949617c8cbb1ace947f32c14b251efbad8c5ceac 100644
+--- a/src/startup_world_security_script.cpp
++++ b/src/startup_world_security_script.cpp
+@@ -7,9 +7,9 @@
+ extern const char* world_security_dialog_name;
+ 
+ // FUNCTION: BEACHLIFE 0x004895d0
+-WorldScriptValue WorldSecurityEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldSecurityEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0x40:
+         return { 2, word_7d4 };
+@@ -56,33 +56,33 @@ WorldScriptValue WorldSecurityEntity::Unknown2c(unsigned int kind, std::uintptr_
+     case 0xfa:
+     {
+         WorldBuildingEntity* home = static_cast<WorldBuildingEntity*>(variable_world->FindObject(home_id_100));
+-        return { 2, static_cast<unsigned int>(static_cast<int>(kind == 0xf9 ? home->entrance_position_e4.x : home->entrance_position_e4.y)) };
++        return { 2, static_cast<unsigned int>(static_cast<int>(key.kind == 0xf9 ? home->entrance_position_e4.x : home->entrance_position_e4.y)) };
+     }
+     case 0xfb:
+         return { 2, home_id_100 };
+     case 0xfc:
+         return { 0, !variable_world->FindObject(home_id_100)->FlagAt00460370() };
+     default:
+-        return WorldStaffEntity::Unknown2c(kind, data);
++        return WorldStaffEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004899c0
+-void WorldSecurityEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldSecurityEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+     switch (kind)
+     {
+     case 0x38:
+-        keyline_state_44->SelectVariant(ConvertWorldScriptInteger({ value_kind, value }));
++        keyline_state_44->SelectVariant(ConvertWorldScriptInteger(value));
+         break;
+     case 0x40:
+-        word_7d4 = ConvertWorldScriptInteger({ value_kind, value });
++        word_7d4 = ConvertWorldScriptInteger(value);
+         break;
+     case 0x92:
+-        speed_80 = static_cast<float>(static_cast<unsigned int>(ConvertWorldScriptInteger({ value_kind, value })));
++        speed_80 = static_cast<float>(static_cast<unsigned int>(ConvertWorldScriptInteger(value)));
+         break;
+     default:
+-        WorldStaffEntity::Unknown30(kind, data, value_kind, value);
++        WorldStaffEntity::Unknown30(kind, data, value);
+     }
+ }
+ 
+diff --git a/src/startup_world_shark_methods.cpp b/src/startup_world_shark_methods.cpp
+index 95580e079800b4c029ba089c480e0ab996606046..d5acda4aa0f7fea244f5a5692addc13203c3ded1 100644
+--- a/src/startup_world_shark_methods.cpp
++++ b/src/startup_world_shark_methods.cpp
+@@ -126,9 +126,9 @@ float WorldSharkEntity::Unknown28(const char* animation, unsigned char once, uns
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048ba00
+-WorldScriptValue WorldSharkEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldSharkEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0:
+         return { 2, static_cast<unsigned int>(command_f4->words[0]) };
+@@ -149,19 +149,19 @@ WorldScriptValue WorldSharkEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+     case 0x10f:
+         return { 2, owner_120 };
+     default:
+-        return WorldMovingEntity::Unknown2c(kind, data);
++        return WorldMovingEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048bc30
+-void WorldSharkEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldSharkEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+     if (kind == 0x40)
+-        action_state_110 = ConvertWorldScriptInteger({ value_kind, value });
++        action_state_110 = ConvertWorldScriptInteger(value);
+     else if (kind == 0x38)
+-        keyline_state_44->SelectVariant(ConvertWorldScriptInteger({ value_kind, value }));
++        keyline_state_44->SelectVariant(ConvertWorldScriptInteger(value));
+     else
+-        WorldMovingEntity::Unknown30(kind, data, value_kind, value);
++        WorldMovingEntity::Unknown30(kind, data, value);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048bcf0
+diff --git a/src/startup_world_staff_script_values.cpp b/src/startup_world_staff_script_values.cpp
+index 8a4c55cf4049d8de830ead4d38c252cf72f9fae8..26f8b822a1942fc66b4f797a3ae862a007619b4e 100644
+--- a/src/startup_world_staff_script_values.cpp
++++ b/src/startup_world_staff_script_values.cpp
+@@ -30,9 +30,9 @@ static int StaffScriptDistance(float first, float second)
+ char mechanic_script_animation[40];
+ 
+ // FUNCTION: BEACHLIFE 0x0048f100
+-WorldScriptValue WorldStaffEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldStaffEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0:
+         return { 2, current_command_fc->words[0].data };
+@@ -66,11 +66,11 @@ WorldScriptValue WorldStaffEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+         return { 2, home->FlagAt00460370() ? 1u : 0u };
+     }
+     case 0x7e:
+-        return StaffScriptBoolean(data, moving_138);
++        return StaffScriptBoolean(key.data, moving_138);
+     case 0x7f:
+         return { 2, static_cast<unsigned int>(target_13c) };
+     case 0x80:
+-        return StaffScriptBoolean(data, flag_124);
++        return StaffScriptBoolean(key.data, flag_124);
+     case 0x81:
+         return { 2, static_cast<unsigned int>(TruncateFloatToWord(target_x_140)) };
+     case 0x82:
+@@ -85,17 +85,17 @@ WorldScriptValue WorldStaffEntity::Unknown2c(unsigned int kind, std::uintptr_t d
+         bool near = static_cast<long double>(StaffScriptDistance(home.x, position_30.x)) < 0.1f;
+         if (near)
+             near = static_cast<long double>(StaffScriptDistance(home.y, position_30.y)) < 0.1f;
+-        return StaffScriptBoolean(data, near);
++        return StaffScriptBoolean(key.data, near);
+     }
+     default:
+-        return WorldPedestrianEntity::Unknown2c(kind, data);
++        return WorldPedestrianEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048f5a0
+-void WorldStaffEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldStaffEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+-    WorldScriptValue source = { value_kind, value };
++    WorldScriptValue source = value;
+     switch (kind)
+     {
+     case 0x47:
+@@ -104,7 +104,7 @@ void WorldStaffEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+     case 0x80:
+     {
+         float number;
+-        unsigned int bits = value;
++        unsigned int bits = value.data;
+         memcpy(&number, &bits, sizeof(number));
+         flag_124 = number > 0.9;
+         break;
+@@ -116,15 +116,15 @@ void WorldStaffEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigne
+         word_774 = ConvertWorldScriptInteger(source);
+         break;
+     default:
+-        WorldPedestrianEntity::Unknown30(kind, data, value_kind, value);
++        WorldPedestrianEntity::Unknown30(kind, data, value);
+         break;
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00480d50
+-WorldScriptValue WorldMechanicEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldMechanicEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0x40:
+         return { 2, action_state_79c };
+@@ -138,11 +138,11 @@ WorldScriptValue WorldMechanicEntity::Unknown2c(unsigned int kind, std::uintptr_
+     case 0x7a:
+         return { 2, word_134 };
+     case 0xa9:
+-        return StaffScriptBoolean(data, found_repair_780);
++        return StaffScriptBoolean(key.data, found_repair_780);
+     case 0xaa:
+-        return StaffScriptBoolean(data, found_better_job_781);
++        return StaffScriptBoolean(key.data, found_better_job_781);
+     case 0xab:
+-        return StaffScriptBoolean(data, variable_world->FindObject(word_98)->kind_2c == 2);
++        return StaffScriptBoolean(key.data, variable_world->FindObject(word_98)->kind_2c == 2);
+     case 0xad:
+         return { 2, repair_type_7a0 };
+     case 0xae:
+@@ -150,14 +150,14 @@ WorldScriptValue WorldMechanicEntity::Unknown2c(unsigned int kind, std::uintptr_
+     case 0xaf:
+         return { 2, static_cast<unsigned int>(TruncateFloatToWord(watering_position_7b4.y)) };
+     default:
+-        return WorldStaffEntity::Unknown2c(kind, data);
++        return WorldStaffEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00480fd0
+-void WorldMechanicEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldMechanicEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+-    WorldScriptValue source = { value_kind, value };
++    WorldScriptValue source = value;
+     switch (kind)
+     {
+     case 0x38:
+@@ -170,21 +170,21 @@ void WorldMechanicEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsi
+         word_134 = ConvertWorldScriptInteger(source);
+         break;
+     case 0xa9:
+-        found_repair_780 = static_cast<unsigned char>(value);
++        found_repair_780 = static_cast<unsigned char>(value.data);
+         break;
+     case 0xaa:
+-        found_better_job_781 = static_cast<unsigned char>(value);
++        found_better_job_781 = static_cast<unsigned char>(value.data);
+         break;
+     default:
+-        WorldStaffEntity::Unknown30(kind, data, value_kind, value);
++        WorldStaffEntity::Unknown30(kind, data, value);
+         break;
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00487f20
+-WorldScriptValue WorldRepresentativeEntity::Unknown2c(unsigned int kind, std::uintptr_t data)
++WorldScriptValue WorldRepresentativeEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (kind)
++    switch (key.kind)
+     {
+     case 0:
+         return { 2, current_command_fc->words[0].data };
+@@ -193,7 +193,7 @@ WorldScriptValue WorldRepresentativeEntity::Unknown2c(unsigned int kind, std::ui
+     case 0x2b:
+         return { 2, current_command_fc->words[3].data };
+     case 0x32:
+-        return StaffScriptBoolean(data, flag_85c);
++        return StaffScriptBoolean(key.data, flag_85c);
+     case 0x3d:
+         return { 1, reinterpret_cast<std::uintptr_t>(current_animation_830) };
+     case 0x40:
+@@ -220,24 +220,24 @@ WorldScriptValue WorldRepresentativeEntity::Unknown2c(unsigned int kind, std::ui
+     case 0x10f:
+         return { 2, home_id_100 };
+     default:
+-        return WorldStaffEntity::Unknown2c(kind, data);
++        return WorldStaffEntity::Unknown2c(key);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00488180
+-void WorldRepresentativeEntity::Unknown30(unsigned int kind, std::uintptr_t data, unsigned int value_kind, std::uintptr_t value)
++void WorldRepresentativeEntity::Unknown30(unsigned int kind, std::uintptr_t data, WorldScriptValue value)
+ {
+-    WorldScriptValue source = { value_kind, value };
++    WorldScriptValue source = value;
+     switch (kind)
+     {
+     case 0x32:
+-        flag_85c = static_cast<unsigned char>(value);
++        flag_85c = static_cast<unsigned char>(value.data);
+         break;
+     case 0x38:
+         keyline_state_44->SelectVariant(ConvertWorldScriptInteger(source));
+         break;
+     case 0x39:
+-        if (_stricmp(reinterpret_cast<const char*>(value), "NONE") == 0)
++        if (_stricmp(reinterpret_cast<const char*>(value.data), "NONE") == 0)
+         {
+             if (attached_864)
+             {
+@@ -246,17 +246,17 @@ void WorldRepresentativeEntity::Unknown30(unsigned int kind, std::uintptr_t data
+             }
+         }
+         else
+-            attached_864 = screen_dialog_resources->Find(reinterpret_cast<const char*>(value));
++            attached_864 = screen_dialog_resources->Find(reinterpret_cast<const char*>(value.data));
+         break;
+     case 0x3a:
+         if (attached_864)
+         {
+             ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-            attached_864->SetAnimation(reinterpret_cast<const char*>(value), window_deactivation_state->clock_158, &position);
++            attached_864->SetAnimation(reinterpret_cast<const char*>(value.data), window_deactivation_state->clock_158, &position);
+         }
+         break;
+     case 0x3b:
+-        if (_stricmp(reinterpret_cast<const char*>(value), "MyDir") == 0 && attached_864)
++        if (_stricmp(reinterpret_cast<const char*>(value.data), "MyDir") == 0 && attached_864)
+             attached_864->SelectVariant(keyline_state_44->word_18);
+         break;
+     case 0x3e:
+@@ -272,10 +272,10 @@ void WorldRepresentativeEntity::Unknown30(unsigned int kind, std::uintptr_t data
+         word_778 = ConvertWorldScriptInteger(source);
+         break;
+     case 0x10c:
+-        flag_898 = static_cast<unsigned char>(value);
++        flag_898 = static_cast<unsigned char>(value.data);
+         break;
+     default:
+-        WorldStaffEntity::Unknown30(kind, data, value_kind, value);
++        WorldStaffEntity::Unknown30(kind, data, value);
+         break;
+     }
+ }

@@ -24,16 +24,18 @@ struct CreditsRow
 
 // An owned, verified input snapshot. No executable is mapped or loaded as code.
 // Read through an explicit FileSource, including the prepared local game cache.
-// Preparation retains BeachLife.exe as data; this reader still checks its revision.
+// Preparation retains BeachLife.exe as data; this reader checks the table itself.
 class CreditsData
 {
   public:
     static constexpr std::size_t row_count = 205;
     static constexpr std::size_t format_bytes = 16;
-    static constexpr std::size_t supported_file_bytes = 1617920;
+    static constexpr std::size_t max_file_bytes = 64 * 1024 * 1024;
     static constexpr std::string_view filename = "BeachLife.exe";
+    // SHA-256 of the audited 205 records and format (4,116 bytes). Every known
+    // build carries this table unchanged, so the data is checked, not the build.
     static constexpr std::string_view supported_sha256 =
-        "983c098f69314c142ac8fd0d74fa34d098a49bd59f1aed88fb67a525c4b7f9e9";
+        "09d2666d71fbd430311272ca5972916b59fe1d53a194a4da570da95575887adc";
 
     static CreditsData read(const data::FileSource& source);
     // Optional until the retail credits consumer requests its first row. An

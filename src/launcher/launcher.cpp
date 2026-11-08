@@ -1,6 +1,7 @@
 #include "launcher.h"
 #include "build_version.h"
 #include "content_service.h"
+#include "data/game_index.h"
 #include "image.h"
 #include "platform/app_icon.h"
 #include "platform/game_log.h"
@@ -92,6 +93,7 @@ struct DialogResult
     std::mutex mutex;
     bool pending = false;
     bool completed = false;
+    bool patch = false; // the 1.1 patch was requested instead of the ISO
     std::string path;
     std::string error;
 };
@@ -668,7 +670,8 @@ class Launcher
             Icon::Globe,
             color::lagoon,
             "Game language",
-            content_status_.language == "en" ? "English" : "Not detected yet",
+            game_language().empty() ? "Not detected yet"
+                                    : std::string(data::language_name(game_language())),
             "Offered from your game data",
             PageFiles);
         summary_card("display",
@@ -1054,20 +1057,91 @@ class Launcher
             "Only languages present in your game data will be offered. Installer languages are "
             "separate.");
         const ImVec2 box{ix, iy}, box_end{ix + std::min(iw, dp(380)), iy + dp(44)};
-        draw->AddRectFilled(box, box_end, col({0.02f, 0.05f, 0.09f, 1}, 0.45f), dp(12));
-        draw->AddRect(box, box_end, col(color::white, 0.06f), dp(12), 0, 1);
-        ui::text(draw,
-            Font::Body,
-            {box.x + dp(14), box.y + (dp(44) - ui::font_size(Font::Body)) * 0.5f},
-            col(ready ? color::text : color::dim),
-            content_status_.language == "en" ? "English" : "Waiting for content detection");
-        const ImVec2 caret{box_end.x - dp(22), box.y + dp(22)};
-        const ImVec2 points[] = {{caret.x - dp(5), caret.y - dp(2.5f)},
-            {caret.x, caret.y + dp(2.5f)},
-            {caret.x + dp(5), caret.y - dp(2.5f)}};
-        draw->AddPolyline(points, 3, col(color::dim), 0, dp(1.6f));
+        const auto& offered = content_status_.languages;
+        if (offered.empty())
+        {
+            draw->AddRectFilled(box, box_end, col({0.02f, 0.05f, 0.09f, 1}, 0.45f), dp(12));
+            draw->AddRect(box, box_end, col(color::white, 0.06f), dp(12), 0, 1);
+            ui::text(draw,
+                Font::Body,
+                {box.x + dp(14), box.y + (dp(44) - ui::font_size(Font::Body)) * 0.5f},
+                col(color::dim),
+                "Waiting for content detection");
+        }
+        else
+        {
+            // A European disc offers five languages; each is prepared as its own set.
+            std::vector<std::string> names;
+            int chosen = -1;
+            for (std::size_t i = 0; i < offered.size(); ++i)
+            {
+                names.emplace_back(data::language_name(offered[i]));
+                if (offered[i] == game_language())
+                {
+                    chosen = static_cast<int>(i);
+                }
+            }
+            if (ui::dropdown("game_language",
+                    names,
+                    &chosen,
+                    box,
+                    {box_end.x - box.x, dp(44)},
+                    offered.size() > 1 && !content_status_.busy()) &&
+                chosen >= 0)
+            {
+                settings_.language = offered[static_cast<std::size_t>(chosen)];
+                select_source(false);
+            }
+        }
         iy += dp(44) + pad;
         language_panel.end(iy);
+        y = iy + dp(18);
+
+        PanelScope patch_panel(draw, {left, y}, available);
+        iy = y + pad;
+        iy += section(draw,
+            {ix, iy},
+            iw,
+            Icon::Refresh,
+            color::lagoon,
+            "Official 1.1 patch",
+            "Optional. Choose UKBeachLifePatch.exe, EuroBeachLifePatch.exe or "
+            "BeachLifePolishPatch.exe to update a 1.0 disc's game data while preparing. The "
+            "patch is read, never run.");
+        const float clear_width = dp(96);
+        ImGui::SetCursorScreenPos({ix, iy});
+        ImGui::SetNextItemWidth(iw - browse_width - clear_width - dp(24));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+            {dp(14), (field_height - ui::font_size(Font::Body)) * 0.5f});
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, dp(12));
+        if (ImGui::InputTextWithHint(
+                "##patch", "No patch: the disc's own game data is used", &settings_.patch))
+        {
+            select_source(false);
+        }
+        ImGui::PopStyleVar(2);
+        const bool idle = !pending && !content_status_.busy();
+        if (ui::secondary_button("browse_patch",
+                "Browse\xE2\x80\xA6",
+                Icon::Folder,
+                {ix + iw - browse_width - clear_width - dp(12), iy},
+                {browse_width, field_height},
+                idle))
+        {
+            browse(true);
+        }
+        if (ui::secondary_button("clear_patch",
+                "Clear",
+                Icon::Revert,
+                {ix + iw - clear_width, iy},
+                {clear_width, field_height},
+                idle && !settings_.patch.empty()))
+        {
+            settings_.patch.clear();
+            select_source(false);
+        }
+        iy += field_height + pad;
+        patch_panel.end(iy);
         y = iy + dp(20);
 
         ui::icon(draw, Icon::Shield, {left + dp(9), y + dp(8)}, dp(17), col(color::palm, 0.85f));
@@ -1610,8 +1684,9 @@ class Launcher
             color::sun);
         text_y += ui::font_size(Font::Title) + dp(10);
         const char* summary =
-            "This first build lets you choose and remember your game source. Gameplay and "
-            "game-language detection are still in development.";
+            "This first build lets you choose and remember your game source. Gameplay is "
+            "still in development; the UK, European and US discs and their languages are "
+            "supported.";
         ui::text(draw, Font::Body, {x, text_y}, col(color::muted), summary, width);
         text_y += ui::text_size(Font::Body, summary, width).y + dp(18);
         if (ui::secondary_button(
@@ -1721,6 +1796,18 @@ class Launcher
             return "Your game files need attention.";
         }
         return {};
+    }
+
+    // The language the game will use: the saved choice when the disc offers it,
+    // otherwise the disc's first language.
+    std::string game_language() const
+    {
+        const auto& offered = content_status_.languages;
+        if (std::find(offered.begin(), offered.end(), settings_.language) != offered.end())
+        {
+            return settings_.language;
+        }
+        return offered.empty() ? std::string{} : offered.front();
     }
 
     void select_source(bool clear_binding = true)
@@ -2724,9 +2811,10 @@ class Launcher
         ImGui::Dummy({width, std::max(0.0f, y - origin.y)});
     }
 
-    void browse()
+    void browse(bool patch = false)
     {
-        static const SDL_DialogFileFilter filters[] = {{"ISO disc image", "iso"}};
+        static const SDL_DialogFileFilter iso[] = {{"ISO disc image", "iso"}};
+        static const SDL_DialogFileFilter patches[] = {{"Beach Life 1.1 patch", "exe"}};
         {
             const std::lock_guard lock(dialog_->mutex);
             if (dialog_->pending)
@@ -2734,9 +2822,11 @@ class Launcher
                 return;
             }
             dialog_->pending = true;
+            dialog_->patch = patch;
         }
         auto* owner = new std::shared_ptr<DialogResult>(dialog_);
-        SDL_ShowOpenFileDialog(dialog_result, owner, window_, filters, 1, nullptr, false);
+        SDL_ShowOpenFileDialog(
+            dialog_result, owner, window_, patch ? patches : iso, 1, nullptr, false);
     }
 
     void consume_dialog()
@@ -2751,7 +2841,13 @@ class Launcher
             notice_ = "Cannot open the file picker: " + dialog_->error +
                       ". You can paste the path instead.";
         }
-        if (!dialog_->path.empty())
+        if (!dialog_->path.empty() && dialog_->patch)
+        {
+            settings_.patch = dialog_->path;
+            select_source(false);
+            notice_.clear();
+        }
+        else if (!dialog_->path.empty())
         {
             settings_.source = dialog_->path;
             select_source();

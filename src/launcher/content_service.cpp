@@ -1,5 +1,11 @@
 #include "content_service.h"
+#include "data/game_disc.h"
+#include "data/game_index.h"
 #include "platform/path.h"
+#include "platform/sha256.h"
+#include <algorithm>
+#include <array>
+#include <fstream>
 #include <utility>
 
 namespace beachlife::launcher
@@ -38,6 +44,29 @@ std::optional<Stamp> stamp(const std::filesystem::path& source)
         return {};
     }
     return Stamp{size, static_cast<std::int64_t>(modified.time_since_epoch().count())};
+}
+
+// Whether a prepared set carries the selected 1.1 patch: none for none, else
+// the same file. Like the ISO, a patch file that cannot be reached now keeps
+// the set it was prepared with.
+bool patch_matches(const std::string& selected, const std::string& applied)
+{
+    if (selected.empty() || applied.empty())
+    {
+        return selected.empty() == applied.empty();
+    }
+    std::ifstream file(platform::utf8_path(selected), std::ios::binary);
+    if (!file)
+    {
+        return true;
+    }
+    platform::Sha256 hash;
+    std::array<char, 65536> buffer{};
+    while (file.read(buffer.data(), buffer.size()) || file.gcount())
+    {
+        hash.update(buffer.data(), static_cast<std::size_t>(file.gcount()));
+    }
+    return hash.finish_hex() == applied;
 }
 } // namespace
 
@@ -222,6 +251,29 @@ ContentResult open_content(const Settings& settings,
     const auto path = platform::utf8(image);
     const auto before = stamp(image);
     check_cancelled();
+    // The disc's layout and languages come from its small installer metadata;
+    // no game data is read. The saved language is a preference: a disc that
+    // does not offer it plays in its first language.
+    std::string layout_error;
+    if (before && status.source.readable)
+    {
+        try
+        {
+            const data::IsoSource iso(image);
+            status.languages = data::GameDisc(iso).map().languages;
+        }
+        catch (const std::exception& error)
+        {
+            layout_error = error.what();
+        }
+    }
+    const auto& offered = status.languages;
+    const std::string language =
+        std::find(offered.begin(), offered.end(), settings.language) != offered.end()
+            ? settings.language
+        : offered.empty() ? std::string{}
+                          : offered.front();
+    check_cancelled();
 
     // After publication the prepared set is committed: a late cancel still returns
     // it, so the caller can remember it instead of preparing it again.
@@ -253,10 +305,21 @@ ContentResult open_content(const Settings& settings,
             binding.identity.find_first_not_of("0123456789abcdef") == std::string::npos &&
             binding.source == path && (!before || *before == Stamp{binding.size, binding.modified}))
         {
+            const auto inspected = status.source;
             try
             {
                 mount(binding);
-                return result;
+                // A set prepared for another language or patch is not this selection.
+                if ((language.empty() || status.language == language) &&
+                    patch_matches(settings.patch, result.source->manifest().patch_sha256))
+                {
+                    return result;
+                }
+                result.source.reset();
+                ContentService::Status unbound;
+                unbound.source = inspected;
+                unbound.languages = std::move(status.languages);
+                status = std::move(unbound);
             }
             catch (const data::PreparationCancelled&)
             {
@@ -267,10 +330,11 @@ ContentResult open_content(const Settings& settings,
                 status.error = "Prepared game data needs repair: " + std::string(error.what());
             }
         }
-        status.state = status.source.readable ? State::NeedsPreparation : State::Failed;
+        status.state = status.source.readable && layout_error.empty() ? State::NeedsPreparation
+                                                                      : State::Failed;
         if (status.state == State::Failed && status.error.empty())
         {
-            status.error = status.source.detail;
+            status.error = layout_error.empty() ? status.source.detail : layout_error;
         }
         return result;
     }
@@ -278,7 +342,14 @@ ContentResult open_content(const Settings& settings,
     {
         throw std::runtime_error("Preparation needs the original ISO. " + status.source.detail);
     }
-    const auto prepared = data::prepare_content(image, cache, options);
+    if (!layout_error.empty())
+    {
+        throw std::runtime_error(layout_error);
+    }
+    auto selected = options;
+    selected.language = language;
+    selected.patch = platform::utf8_path(settings.patch);
+    const auto prepared = data::prepare_content(image, cache, selected);
     if (stamp(image) != before)
     {
         throw std::runtime_error("The ISO changed during setup. Select it again to prepare it.");

@@ -1,0 +1,124 @@
+diff --git a/src/startup_list.h b/src/startup_list.h
+index c80f96e..cfd148d 100644
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -10,8 +10,6 @@ struct WorldCleaningAssignment;
+ struct SavedScreenPlacement;
+ struct SavedScreenPlacementNode;
+ 
+-typedef WorldCleaningRequest* const& WorldCleaningRequestReference;
+-typedef WorldCleaningAssignment* const& WorldCleaningAssignmentReference;
+ typedef WorldTransportRecord* const& WorldTransportRecordReference;
+ 
+ // Observed node prefix only; the original value type is unknown.
+@@ -54,10 +52,6 @@ struct CircularList
+     CircularListIterator Insert(CircularListIterator position, ActiveScreenEntry* const& entry);
+     CircularListIterator Insert(CircularListIterator position, SavedScreenPlacement* const& placement);
+     CircularListIterator Insert(CircularListIterator position, WorldTransportRecord* const& record);
+-    CircularListIterator Insert(CircularListIterator position, WorldCleaningRequest* const& record);
+-    CircularListIterator Insert(CircularListIterator position, WorldCleaningAssignment* const& record);
+-    CircularListValueNode* CreateNode(WorldCleaningRequest* const& record);
+-    CircularListValueNode* CreateNode(WorldCleaningAssignment* const& record);
+     WorldTransportNode* CreateNode(WorldTransportRecord* const& record);
+     CircularListValueNode* CreateNode(ActiveScreenEntry* const& entry);
+     SavedScreenPlacementNode* CreateNode(SavedScreenPlacement* const& placement);
+diff --git a/src/startup_world_cleaning_lists.h b/src/startup_world_cleaning_lists.h
+new file mode 100644
+index 0000000..3becec7
+--- /dev/null
++++ b/src/startup_world_cleaning_lists.h
+@@ -0,0 +1,57 @@
++#ifndef STARTUP_WORLD_CLEANING_LISTS_H
++#define STARTUP_WORLD_CLEANING_LISTS_H
++
++#include "startup_world_subsystems.h"
++
++#include <algorithm>
++
++// Matching retention of the cleaning lists' out-of-line vendor members: insert
++// 0x00420b40/0x00420bb0 and their node constructors 0x00420be0/0x00420ca0.
++struct WorldCleaningRequestListRetention : WorldCleaningRequestList
++{
++    static void Insert(WorldCleaningRequestListRetention* self, WorldCleaningRequest* const& request);
++    static void CreateNode(WorldCleaningRequestListRetention* self, WorldCleaningRequest* const& request);
++};
++
++struct WorldCleaningAssignmentListRetention : WorldCleaningAssignmentList
++{
++    static void Insert(WorldCleaningAssignmentListRetention* self, WorldCleaningAssignment* const& assignment);
++    static void CreateNode(WorldCleaningAssignmentListRetention* self, WorldCleaningAssignment* const& assignment);
++};
++
++typedef WorldList<WorldCleaningRequest*>::Node WorldCleaningRequestNode;
++typedef WorldList<WorldCleaningAssignment*>::Node WorldCleaningAssignmentNode;
++
++// The record searches as retail's /Ob1 methods make them: begin(), end() and
++// the search stay out of line and the found node is read from the result.
++inline std::_List_node_base* FindCleaningNode(WorldCleaningRequestList& list, unsigned int id)
++{
++    return FindListRecord(list.begin(), list.end(), ListRecordIdEquals<WorldCleaningRequest>(id))._M_node;
++}
++inline std::_List_node_base* FindCleaningNode(WorldCleaningAssignmentList& list, unsigned int id)
++{
++    return FindListRecord(list.begin(), list.end(), ListRecordIdEquals<WorldCleaningAssignment>(id))._M_node;
++}
++
++// The image folds both instances with the other pointer-delete callbacks
++// (0x004209c0).
++template <class Record>
++void DeleteCleaningRecord(Record* record)
++{
++    ::operator delete(record);
++}
++// VC6 does not instantiate a function template whose address is only passed.
++template void DeleteCleaningRecord<WorldCleaningRequest>(WorldCleaningRequest*);
++template void DeleteCleaningRecord<WorldCleaningAssignment>(WorldCleaningAssignment*);
++
++// Retail's release of both lists (destructor and LoadState).
++inline void ClearCleaningLists(WorldCleaningManager* manager)
++{
++    std::for_each(manager->requests_00.begin(), manager->requests_00.end(), DeleteCleaningRecord<WorldCleaningRequest>);
++    manager->requests_00.clear();
++    std::for_each(
++        manager->assignments_08.begin(), manager->assignments_08.end(), DeleteCleaningRecord<WorldCleaningAssignment>);
++    manager->assignments_08.clear();
++}
++
++#endif
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 51823ce..38e9074 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -8,6 +8,7 @@
+ #include "startup_screen_mode_world.h"
+ #include "startup_screen_point.h"
+ #include "startup_world_deque.h"
++#include "startup_world_list.h"
+ #include "startup_world_script_values.h"
+ struct GameFileReader;
+ struct WorldActionBranchData;
+@@ -424,6 +425,12 @@ struct WorldCleaningAssignment
+     unsigned char unknown_06[2];
+ };
+ 
++// The cleaning lists are STLport 4.5.3 std::list<WorldCleaningRequest*> and
++// std::list<WorldCleaningAssignment*> (destructor instances 0x00420a00 and
++// 0x00420aa0). Units compiled without STLport see a layout stand-in.
++typedef WorldList<WorldCleaningRequest*>::Type WorldCleaningRequestList;
++typedef WorldList<WorldCleaningAssignment*>::Type WorldCleaningAssignmentList;
++
+ struct WorldCleaningManager
+ {
+     unsigned int ClaimRequest(unsigned int id, unsigned int cleaner); // 0x00420360.
+@@ -431,9 +438,9 @@ struct WorldCleaningManager
+     unsigned int ObjectTask(unsigned int id);                         // 0x004205d0.
+     void AddCleaningRequest(unsigned int id);                         // 0x0041fae0.
+     WorldCleaningManager();                                           // 0x0041f8b0.
+-    CircularList requests_00;
++    WorldCleaningRequestList requests_00;
+     int word_04;
+-    CircularList assignments_08;
++    WorldCleaningAssignmentList assignments_08;
+     int word_0c;
+     ~WorldCleaningManager();                 // 0x0041f9b0.
+     void LoadState(GameFileReader* file);    // 0x004207f0.

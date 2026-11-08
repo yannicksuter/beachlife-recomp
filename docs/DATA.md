@@ -37,7 +37,7 @@ the repository. The defaults are:
 | macOS | `~/Library/Application Support/BeachLife/content` |
 | Linux | `$XDG_DATA_HOME/beachlife/content`, or `~/.local/share/beachlife/content` |
 
-Each ISO/import-format/language selection gets its own identity directory.
+Each ISO/import-format/language/patch selection gets its own identity directory.
 Identity uses the full ISO SHA-256, independent of its filename and application
 version. Format changes can deliberately select a new directory. Inside it,
 `files/` contains the game's relative paths and `manifest.json` records the
@@ -159,8 +159,9 @@ format/range fixtures, and `content_startup` checks preview pixels, offline read
 failure propagation and cancellation before presentation.
 
 Launcher settings format 3 remembers the prepared identity and the absolute ISO
-path, size and modification time; format 4 adds the performance overlay, and
-formats 1 to 3 still load. Normal startup
+path, size and modification time; format 4 adds the performance overlay, format 5
+the game language of a European disc, format 6 the official 1.1 patch, and formats
+1 to 5 still load. Normal startup
 checks that stamp and the prepared manifest/files, or uses the remembered set
 when the ISO is absent or unreachable (removed media, a drive without its disc). This quick source check is not a content hash: a change
 that preserves both size and timestamp needs explicit **Verify and repair** or
@@ -191,8 +192,40 @@ The startup worker translates callbacks into loading-screen status snapshots
 and handles `PreparationCancelled` separately from errors. Callbacks must not
 throw after `ready`: publication
 has already completed. `PrepareResult` supplies the prepared root, manifest,
-language/profile and reuse counts. The default profile currently supports the
-observed English layout; installer translations are not game languages.
+language/profile and reuse counts. Three disc layouts are supported: the UK disc
+(profile `uk-english-v1`, English), the European disc (`euro-v1`: French,
+Italian, German, Spanish or Polish, in the game's own `Language` order) and the
+US *Virtual Resort: Spring Break* disc (`us-english-v1`, English).
+`PrepareOptions::language` (`--language` in the data tool) selects a European
+disc's language; each language is prepared as its own set, with that language's
+`BeachLife.ini`. The US build opens `_us` file names; the US set keeps every file
+under its own name (its GUI scripts name the US screens) and also provides the
+text, menu, intro, game-won and loading files under the names the UK code opens.
+`SpringBreak.exe` is stored as `BeachLife.exe`, the module the runtime reads.
+A disc without InstallShield cabinets is read through a Wise installer instead:
+the 2006 PLAY magazine cover disc (`uk-wise-v1`) installs the same UK 1.1 game
+files with one Wise executable. Its raw-deflate streams and their CRC-32 values
+are read directly (the installer never runs), the installation script names
+each file and its stream, and every file is checked against its size and CRC-32.
+That installer writes no `BeachLife.ini`, so this set has none and the game uses
+its defaults.
+
+`PrepareOptions::patch` (`--patch` in the data tool) applies an official 1.1
+patch to a 1.0 disc: `UKBeachLifePatch.exe` for the UK disc,
+`EuroBeachLifePatch.exe` or `BeachLifePolishPatch.exe` for the European disc.
+They are Clickteam Patch Maker executables, read as data and never run: a tag
+chain (compressed with Patch Maker's deflate variant) lists each file, its known
+original sizes and its patch data, which copies runs of the original and inserts
+literals. Every patched or added file must match its size and the patch's own
+checksum, and a file the patch names but this disc does not have the expected
+version of stops preparation. The patch must update the selected language's
+text file, so a patch for another edition is rejected. The disc's executable is
+kept, because the runtime reads the disc's own module and the patch would turn
+it into the copy-protected retail 1.1 build. The patch's SHA-256 joins the set's
+identity and manifest; an unpatched set keeps its identity. A patched UK 1.0
+disc matches the UK 1.1 disc except the executable and the sprite pack
+(`blsprite.dat`/`.hdr`), which the 1.1 disc carries in a newer version that the
+patch does not include.
 
 The runtime retains the mounted source through `FileSource`, independently
 of the graphics API. Keep the mount for the runtime's
@@ -243,8 +276,11 @@ unterminated names, invalid group ranges and linked-list cycles report errors.
 Names retain their original bytes: JSON maps each byte
 to the same Unicode code point (`name_encoding: byte-values`) until a source's
 character encoding is established. This is not game-language detection.
-The mapper accepts only the observed ASCII path encoding and English group
-layout. Shared payload links are resolved with bounds, cycle and checksum
+The mapper accepts the observed ASCII game paths and the UK and European group
+layouts; non-ASCII readme names in the disc root are installer documents and are
+skipped. Retail pressings wrap the root executable in copy protection after the
+installer was built, so it differs from its descriptor: only that file is copied
+from the disc as it is (it is read as data, never run). Shared payload links are resolved with bounds, cycle and checksum
 consistency checks. The streaming reader rejects split and obfuscated members;
 unknown editions/layouts require qualification before support is added.
 

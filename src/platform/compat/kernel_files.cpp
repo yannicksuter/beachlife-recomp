@@ -19,6 +19,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <system_error>
+#include <utility>
 
 namespace beachlife::compat::kernel
 {
@@ -211,6 +212,20 @@ DWORD file_error(const std::error_code& error)
     return file_error(error.value());
 }
 
+namespace
+{
+std::string user_folder = "BeachLife";
+}
+
+std::string set_user_folder(std::string name)
+{
+    if (name.empty() || name.find_first_of("/\\:") != std::string::npos)
+    {
+        throw std::invalid_argument("Invalid user folder name.");
+    }
+    return std::exchange(user_folder, std::move(name));
+}
+
 fs::path user_root()
 {
     // Checks and automation use their own profile so they never change the
@@ -221,7 +236,7 @@ fs::path user_root()
         return fs::weakly_canonical(beachlife::platform::utf8_path(override));
     }
     std::unique_ptr<char, decltype(&SDL_free)> path(
-        SDL_GetPrefPath("BeachLife", "BeachLife"), SDL_free);
+        SDL_GetPrefPath("BeachLife", user_folder.c_str()), SDL_free);
     if (!path)
     {
         throw std::runtime_error("SDL_GetPrefPath failed");

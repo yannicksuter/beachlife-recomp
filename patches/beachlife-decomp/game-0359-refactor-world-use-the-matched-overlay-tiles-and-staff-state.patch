@@ -1,0 +1,224 @@
+diff --git a/src/startup_overlay_cache_updates.cpp b/src/startup_overlay_cache_updates.cpp
+index 0d971aab2229da7b1a4fb81e83c62c34e92f15b7..eff9ca7ae497d4c0d26ef0b7f2e6fd636cacd95c 100644
+--- a/src/startup_overlay_cache_updates.cpp
++++ b/src/startup_overlay_cache_updates.cpp
+@@ -82,13 +82,12 @@ bool OverlayMapPrefix::Unload()
+     {
+         for (int x = 0; x < 32; ++x)
+         {
+-            OverlayCachedTile& tile = cached_tiles_e0[y * cache_width_d4 + x];
+-            if (tile.ready && tile.view)
++            if (cached_tiles_e0[y * cache_width_d4 + x].ready && cached_tiles_e0[y * cache_width_d4 + x].view)
+             {
+-                mapped_file_f4->ReleaseView(tile.view);
+-                tile.view = 0;
++                mapped_file_f4->ReleaseView(cached_tiles_e0[y * cache_width_d4 + x].view);
++                cached_tiles_e0[y * cache_width_d4 + x].view = 0;
+             }
+-            tile.ready = 0;
++            cached_tiles_e0[y * cache_width_d4 + x].ready = 0;
+         }
+     }
+     delete mapped_file_f4;
+diff --git a/src/startup_overlay_lifecycle.cpp b/src/startup_overlay_lifecycle.cpp
+index 08806da77a6044f1fc7a2b09389a97d1e9ee6562..f972ffd89b0251769d6dcc667d2102655fade4ff 100644
+--- a/src/startup_overlay_lifecycle.cpp
++++ b/src/startup_overlay_lifecycle.cpp
+@@ -10,7 +10,6 @@ OverlayMapPrefix::~OverlayMapPrefix() noexcept(false)
+     if (loaded_c0)
+         Unload();
+     delete archive_154;
+-    pending_104.Clear();
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0041b900
+diff --git a/src/startup_overlay_refresh_tile.cpp b/src/startup_overlay_refresh_tile.cpp
+index 2ff1c34b595190352a1dfbc1e25164ee2c3f759e..fd146291f009aa5a5c3e3a62fa7d50de8256e4e0 100644
+--- a/src/startup_overlay_refresh_tile.cpp
++++ b/src/startup_overlay_refresh_tile.cpp
+@@ -1,22 +1,21 @@
+ #include "startup_screen_overlay_layout.h"
+ 
++static inline void MapTile(OverlayMapPrefix* map, int x, int y)
++{
++    map->cached_tiles_e0[y * map->cache_width_d4 + x].ready = 1;
++    unsigned int pixels = static_cast<unsigned int>(map->tile_size_dc) * map->tile_size_dc;
++    unsigned int offset = (y * map->cache_width_d4 + x) * pixels * 4;
++    void* view = map->mapped_file_f4->MapView(offset, pixels * 4);
++    map->cached_tiles_e0[y * map->cache_width_d4 + x].view = view;
++}
++
+ // FUNCTION: BEACHLIFE 0x00419d50
+ void OverlayMapPrefix::RefreshTile(int x, int y)
+ {
+     if (!cached_tiles_e0[y * cache_height_d8 + x].ready)
+-    {
+-        cached_tiles_e0[y * cache_width_d4 + x].ready = 1;
+-        unsigned int bytes = tile_size_dc * tile_size_dc * 4;
+-        void* view = mapped_file_f4->MapView((y * cache_width_d4 + x) * bytes, bytes);
+-        cached_tiles_e0[y * cache_width_d4 + x].view = view;
+-    }
++        MapTile(this, x, y);
+     if (!cached_tiles_e0[y * cache_width_d4 + x].ready)
+-    {
+-        cached_tiles_e0[y * cache_width_d4 + x].ready = 1;
+-        unsigned int bytes = tile_size_dc * tile_size_dc * 4;
+-        void* view = mapped_file_f4->MapView((y * cache_width_d4 + x) * bytes, bytes);
+-        cached_tiles_e0[y * cache_width_d4 + x].view = view;
+-    }
++        MapTile(this, x, y);
+     unsigned short* view = static_cast<unsigned short*>(cached_tiles_e0[y * cache_width_d4 + x].view);
+     unsigned short* depths = archive_154->Depths(x, y);
+     unsigned short* colours = archive_154->Colours(x, y);
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 0baff94570e321d1bf7de4463d51a55b520184cb..241beda69d3a0838d318330dabf9092ace0b6d30 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -173,7 +173,6 @@ struct WorldStaffEntity : WorldPedestrianEntity
+     virtual void Dismiss();                                                                                                                       // 0x00490a00.
+     virtual void DirectTo(unsigned int id) { IgnoreScreenWord(id); }                                                                              // Folded 0x0049dbe0.
+     bool IsOnDuty();                                                                                                                              // 0x0048ffb0.
+-    bool EnterDefaultScriptState(unsigned int state);                                                                                             // 0x00486fc0.
+     float PlayStaffAnimation(const char* animation, unsigned char once, unsigned int next_state, unsigned char hold, const char* next_animation); // 0x00466060.
+     bool FindInteractionOffset(ScreenWorldPosition* position, int x, int y);                                                                      // 0x0048fff0.
+     bool LeaveScriptState();                                                                                                                      // 0x00487110.
+diff --git a/src/startup_world_staff_script.cpp b/src/startup_world_staff_script.cpp
+index 08487323dbb3787a17337892101215dc1ea0f2c3..054353bb9fdaf4e11c257386c34fb84b04f77e34 100644
+--- a/src/startup_world_staff_script.cpp
++++ b/src/startup_world_staff_script.cpp
+@@ -47,22 +47,24 @@ bool WorldMechanicEntity::Unknown04(unsigned int state)
+     return false;
+ }
+ 
+-static void NotifyStaffHome(WorldStaffEntity* entity)
+-{
+-    ScreenModeCommand command;
+-    command.words[0] = entity->id_28;
+-    command.words[1] = entity->home_id_100;
+-    command.words[2] = 0x25;
+-    command.words[3] = 0;
+-    command.words[4] = 0;
+-    screen_mode_commands->QueueCommand(&command);
+-}
+-
++// Retail folds WorldSecurityEntity::Unknown08 into this body.
+ // FUNCTION: BEACHLIFE 0x00486fc0
+-bool WorldStaffEntity::EnterDefaultScriptState(unsigned int state)
++bool WorldRepresentativeEntity::Unknown08(unsigned int state)
+ {
+-    if (state == 1)
+-        NotifyStaffHome(this);
++    switch (state)
++    {
++    case 1:
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = home_id_100;
++        command.words[2] = 0x25;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++        break;
++    }
++    }
+     script_f4->EnterState(this, state);
+     return true;
+ }
+@@ -141,12 +143,23 @@ void WorldMechanicEntity::Unknown24(ScreenModeCommand command, float delay)
+     QueueDelayedScriptCommand(command, delay);
+ }
+ 
+-bool WorldRepresentativeEntity::Unknown08(unsigned int state)
+-{
+-    return EnterDefaultScriptState(state);
+-}
+-
++// Same body as 0x00486fc0 (the folded slot of WorldSecurityEntity's vtable).
+ bool WorldSecurityEntity::Unknown08(unsigned int state)
+ {
+-    return EnterDefaultScriptState(state);
++    switch (state)
++    {
++    case 1:
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = home_id_100;
++        command.words[2] = 0x25;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++        break;
++    }
++    }
++    script_f4->EnterState(this, state);
++    return true;
+ }
+diff --git a/src/startup_world_vehicle_enter.cpp b/src/startup_world_vehicle_enter.cpp
+index 8361f1d75fc5e7674aaa68a03a7a86975ef4a221..87f73f42929c0d3b569cc2b00a54c874bc9cf93d 100644
+--- a/src/startup_world_vehicle_enter.cpp
++++ b/src/startup_world_vehicle_enter.cpp
+@@ -232,7 +232,7 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+                 cell->flags_48 &= ~0x10u;
+             go(vehicle_type_f8 == 4 ? 0xc : 0xb, route_5d4[vehicle_variant_5cd]);
+             if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
+-                RestoreVehicleReturn(tile.x, tile.y, heading_5d0);
++                RestoreVehicleReturn(tile, heading_5d0);
+             cell->flags_48 |= 0x10;
+         }
+         else
+diff --git a/src/startup_world_vehicle_helpers.h b/src/startup_world_vehicle_helpers.h
+index 8d0321aaead4166a68edd405b50d36a3c1782d92..864510d7b49c9ab441d882e2185dd0f76ea85f25 100644
+--- a/src/startup_world_vehicle_helpers.h
++++ b/src/startup_world_vehicle_helpers.h
+@@ -12,7 +12,7 @@ int WorldDirection(ScreenMapPosition direction, unsigned int directions); // 0x0
+ void ClearVehicleApproach(ScreenPoint point, int direction);              // 0x00497640.
+ void RestoreVehicleApproach(ScreenPoint point, int direction);            // 0x00497740.
+ void ClearVehicleReturn(ScreenPoint point, int direction);                // 0x00497840.
+-void RestoreVehicleReturn(int x, int y, int direction);                   // 0x00497940.
++void RestoreVehicleReturn(ScreenPoint point, int direction);              // 0x00497940.
+ 
+ inline float VehicleSquareRoot(float squared)
+ {
+diff --git a/src/startup_world_vehicle_math.cpp b/src/startup_world_vehicle_math.cpp
+index 49d66e42725e85c496e8cd925f87afb338654930..d1bb9cd2b7ce76de747de79079150b957e5e9d69 100644
+--- a/src/startup_world_vehicle_math.cpp
++++ b/src/startup_world_vehicle_math.cpp
+@@ -18,10 +18,10 @@ int WorldDirection(ScreenMapPosition direction, unsigned int count)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00497940
+-void RestoreVehicleReturn(int x, int y, int direction)
++void RestoreVehicleReturn(ScreenPoint point, int direction)
+ {
+     ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours({ x, y }, neighbours);
++    screen_terrain_grid->Neighbours(point, neighbours);
+     switch (direction)
+     {
+     case 1:
+@@ -36,17 +36,17 @@ void RestoreVehicleReturn(int x, int y, int direction)
+         neighbours[0]->flags_48 &= ~0x10u;
+         neighbours[7]->flags_48 &= ~0x10u;
+         break;
+-    case 7:
+-        neighbours[3]->flags_48 &= ~0x10u;
+-        neighbours[4]->flags_48 &= ~0x10u;
+-        neighbours[5]->flags_48 &= ~0x10u;
+-        neighbours[6]->flags_48 &= ~0x10u;
+-        break;
+     case 5:
+         neighbours[4]->flags_48 &= ~0x10u;
+         neighbours[1]->flags_48 &= ~0x10u;
+         neighbours[2]->flags_48 &= ~0x10u;
+         neighbours[3]->flags_48 &= ~0x10u;
+         break;
++    case 7:
++        neighbours[3]->flags_48 &= ~0x10u;
++        neighbours[4]->flags_48 &= ~0x10u;
++        neighbours[5]->flags_48 &= ~0x10u;
++        neighbours[6]->flags_48 &= ~0x10u;
++        break;
+     }
+ }

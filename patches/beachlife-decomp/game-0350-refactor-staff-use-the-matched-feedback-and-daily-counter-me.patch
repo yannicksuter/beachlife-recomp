@@ -1,0 +1,1188 @@
+diff --git a/src/startup_world_cleaner_actions.cpp b/src/startup_world_cleaner_actions.cpp
+index 38274d212cbab35c7f259d8f5655f0c716e6e669..746788a89eb7ca4d822057e37dbbd446e6514588 100644
+--- a/src/startup_world_cleaner_actions.cpp
++++ b/src/startup_world_cleaner_actions.cpp
+@@ -22,7 +22,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+     {
+         unsigned int kind = 0;
+         ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        word_98 = window_deactivation_state->cleaning_2c->FindUrgentTask(&position, &kind, flags_77c[5], flags_77c[4], flags_77c[3]);
++        word_98 = window_deactivation_state->cleaning_2c->FindUrgentTask(&position, &kind, clean_bins_781, clean_litter_780, clean_toilets_77f);
+         if (word_98 != static_cast<unsigned int>(-1))
+         {
+             flag_7c4 = 1;
+@@ -32,19 +32,19 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+     }
+     case 0x7d:
+     {
+-        flags_77c[0] = flags_77c[2] = flags_77c[1] = 0;
++        litter_found_77c = bin_found_77e = toilet_found_77d = 0;
+         unsigned int kind = 0;
+         ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        word_98 = window_deactivation_state->cleaning_2c->FindTask(&position, &kind, flags_77c[5], flags_77c[4], flags_77c[3]);
++        word_98 = window_deactivation_state->cleaning_2c->FindTask(&position, &kind, clean_bins_781, clean_litter_780, clean_toilets_77f);
+         if (word_98 != static_cast<unsigned int>(-1))
+         {
+             time_784 = window_deactivation_state->render_value_160;
+             if (kind == 0)
+-                flags_77c[0] = 1;
++                litter_found_77c = 1;
+             else if (kind == 1)
+-                flags_77c[2] = 1;
++                bin_found_77e = 1;
+             else if (kind == 2)
+-                flags_77c[1] = 1;
++                toilet_found_77d = 1;
+         }
+         return;
+     }
+@@ -60,7 +60,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+             entity->SetCleaningRequested(0);
+             entity->inactive_04 = 1;
+         }
+-        ++words_78c[2];
++        ++litter_today_794;
+         AddThought(0x40);
+         return;
+     }
+@@ -79,7 +79,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         entity->SetSceneryContents(0);
+         AddThought(8);
+         window_deactivation_state->cleaning_2c->RemoveRequest(word_98);
+-        ++words_78c[1];
++        ++bins_today_790;
+         return;
+     }
+     case 0x73:
+@@ -90,16 +90,16 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         entity->word_354 = 0;
+         if (static_cast<int>(entity->word_360) > 2)
+         {
+-            words_78c[3] = target;
+-            words_78c[5] = 0;
+-            words_78c[4] &= ~2u;
++            busy_toilet_798 = target;
++            required_feedback_7a0 = 0;
++            feedback_status_79c &= ~2u;
+         }
+         entity->SetFlag5a(0);
+         StoreSharedByte5c(entity->flags_5a[2], 0);
+         entity->SetCleaningRequested(0);
+         AddThought(0x10);
+         window_deactivation_state->cleaning_2c->RemoveRequest(word_98);
+-        ++words_78c[0];
++        ++toilets_today_78c;
+         return;
+     }
+     case 0x74:
+@@ -135,8 +135,8 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         return;
+     }
+     case 0xad:
+-        words_78c[4] &= ~4u;
+-        words_78c[5] = 0;
++        feedback_status_79c &= ~4u;
++        required_feedback_7a0 = 0;
+         break;
+     case 0xae:
+         inactive_04 = 1;
+@@ -145,21 +145,21 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         screen_manager->SetNamedItemFlag("CleanerIcon", 1);
+         return;
+     case 0xb0:
+-        words_78c[6] = words_78c[5];
+-        words_78c[5] = 0;
++        current_feedback_7a4 = required_feedback_7a0;
++        required_feedback_7a0 = 0;
+         Unknown50(1, 1);
+         screen_manager->ApplyScreenWord(world_cleaner_dialog_name, 2);
+-        AddThought(words_78c[6]);
++        AddThought(current_feedback_7a4);
+         screen_manager->SetNamedItemFlag("CleanerIcon", 0);
+         return;
+     case 0xb1:
+     {
+-        words_78c[6] = words_78c[5];
+-        words_78c[5] = 0;
+-        const char* text = Notification(words_78c[6]);
++        current_feedback_7a4 = required_feedback_7a0;
++        required_feedback_7a0 = 0;
++        const char* text = Notification(current_feedback_7a4);
+         if (text)
+             window_deactivation_state->ticker_30->AddMessage(text, id_28, 0xc);
+-        AddThought(words_78c[6]);
++        AddThought(current_feedback_7a4);
+         screen_manager->SetNamedItemFlag("CleanerIcon", 0);
+         return;
+     }
+diff --git a/src/startup_world_cleaner_command.cpp b/src/startup_world_cleaner_command.cpp
+index 64ac6cc794b9509c72c85277a60fbc702d7b2e5f..88b87a6a9c0436d24c746db2406febbbfc0cf020 100644
+--- a/src/startup_world_cleaner_command.cpp
++++ b/src/startup_world_cleaner_command.cpp
+@@ -9,16 +9,16 @@ bool WorldCleanerEntity::Unknown14(ScreenModeCommand* command)
+     switch (command->words[2])
+     {
+     case 0x26:
+-        words_78c[0] = 0;
+-        words_78c[1] = 0;
+-        words_78c[2] = 0;
++        toilets_today_78c = 0;
++        bins_today_790 = 0;
++        litter_today_794 = 0;
+         window_deactivation_state->ticker_30->ClearFeedback(11);
+         break;
+     case 0x55:
+         if (static_cast<int>(window_deactivation_state->render_value_160) % 4 == 0 && !(morale_10c >= 0.6f))
+         {
+-            words_78c[4] &= ~0x800000;
+-            words_78c[5] = 0;
++            feedback_status_79c &= ~0x800000;
++            required_feedback_7a0 = 0;
+         }
+         break;
+     case 0x2c:
+diff --git a/src/startup_world_cleaner_state.cpp b/src/startup_world_cleaner_state.cpp
+index 5962a007128c768d32966a06adeee4e82a7af950..a0f0323384944a0319b0e9faff7537e39d3cffe0 100644
+--- a/src/startup_world_cleaner_state.cpp
++++ b/src/startup_world_cleaner_state.cpp
+@@ -12,21 +12,21 @@ static void ReadCleanerWord(GameFileReader* file, unsigned int* word)
+ void WorldCleanerEntity::Unknown48(GameFileReader* file)
+ {
+     file->Unknown28("m_sCleanerCount", world_cleaner_count);
+-    file->Unknown34("m_bLitterFound", flags_77c[0]);
+-    file->Unknown34("m_bToiletFound", flags_77c[1]);
+-    file->Unknown34("m_bBinFound", flags_77c[2]);
+-    file->Unknown34("m_bCleanToilets", flags_77c[3]);
+-    file->Unknown34("m_bCleanLitter", flags_77c[4]);
+-    file->Unknown34("m_bCleanBins", flags_77c[5]);
++    file->Unknown34("m_bLitterFound", litter_found_77c);
++    file->Unknown34("m_bToiletFound", toilet_found_77d);
++    file->Unknown34("m_bBinFound", bin_found_77e);
++    file->Unknown34("m_bCleanToilets", clean_toilets_77f);
++    file->Unknown34("m_bCleanLitter", clean_litter_780);
++    file->Unknown34("m_bCleanBins", clean_bins_781);
+     WriteStateFloat(file, "m_fLastTaskTime", time_784);
+     file->Unknown28("m_LitterDistance", litter_distance_788);
+-    file->Unknown28("m_ToiletsToday", words_78c[0]);
+-    file->Unknown28("m_BinsToday", words_78c[1]);
+-    file->Unknown28("m_LitterToday", words_78c[2]);
+-    file->Unknown28("m_BusyToilet", words_78c[3]);
+-    file->Unknown28("m_FeedbackStatus", words_78c[4]);
+-    file->Unknown28("m_RequiredFeedback", words_78c[5]);
+-    file->Unknown28("m_CurrentFeedback", words_78c[6]);
++    file->Unknown28("m_ToiletsToday", toilets_today_78c);
++    file->Unknown28("m_BinsToday", bins_today_790);
++    file->Unknown28("m_LitterToday", litter_today_794);
++    file->Unknown28("m_BusyToilet", busy_toilet_798);
++    file->Unknown28("m_FeedbackStatus", feedback_status_79c);
++    file->Unknown28("m_RequiredFeedback", required_feedback_7a0);
++    file->Unknown28("m_CurrentFeedback", current_feedback_7a4);
+     WriteStateFloat(file, "m_BinPos.x", bin_position_7b0.x);
+     WriteStateFloat(file, "m_BinPos.y", bin_position_7b0.y);
+     WriteStateFloat(file, "m_BinPos.z", bin_position_7b0.z);
+@@ -40,21 +40,21 @@ void WorldCleanerEntity::Unknown48(GameFileReader* file)
+ void WorldCleanerEntity::Unknown4c(GameFileReader* file)
+ {
+     ReadCleanerWord(file, &world_cleaner_count);
+-    file->ReadByte(&flags_77c[0]);
+-    file->ReadByte(&flags_77c[1]);
+-    file->ReadByte(&flags_77c[2]);
+-    file->ReadByte(&flags_77c[3]);
+-    file->ReadByte(&flags_77c[4]);
+-    file->ReadByte(&flags_77c[5]);
++    file->ReadByte(&litter_found_77c);
++    file->ReadByte(&toilet_found_77d);
++    file->ReadByte(&bin_found_77e);
++    file->ReadByte(&clean_toilets_77f);
++    file->ReadByte(&clean_litter_780);
++    file->ReadByte(&clean_bins_781);
+     file->ReadFloat(&time_784);
+     ReadCleanerWord(file, &litter_distance_788);
+-    ReadCleanerWord(file, &words_78c[0]);
+-    ReadCleanerWord(file, &words_78c[1]);
+-    ReadCleanerWord(file, &words_78c[2]);
+-    ReadCleanerWord(file, &words_78c[3]);
+-    ReadCleanerWord(file, &words_78c[4]);
+-    ReadCleanerWord(file, &words_78c[5]);
+-    ReadCleanerWord(file, &words_78c[6]);
++    ReadCleanerWord(file, &toilets_today_78c);
++    ReadCleanerWord(file, &bins_today_790);
++    ReadCleanerWord(file, &litter_today_794);
++    ReadCleanerWord(file, &busy_toilet_798);
++    ReadCleanerWord(file, &feedback_status_79c);
++    ReadCleanerWord(file, &required_feedback_7a0);
++    ReadCleanerWord(file, &current_feedback_7a4);
+     file->ReadFloat(&bin_position_7b0.x);
+     file->ReadFloat(&bin_position_7b0.y);
+     file->ReadFloat(&bin_position_7b0.z);
+diff --git a/src/startup_world_cleaner_text.cpp b/src/startup_world_cleaner_text.cpp
+index 35ab9f2da595fd37149db387c6c05f2a992c81d9..763413b979f2f75e10b7bde606338fda76895fcb 100644
+--- a/src/startup_world_cleaner_text.cpp
++++ b/src/startup_world_cleaner_text.cpp
+@@ -40,11 +40,11 @@ void WorldCleanerEntity::Unknown50(int first, int second)
+ void WorldCleanerEntity::WriteValue(const char* key, const void* value)
+ {
+     if (!std::strcmp(key, "CLEANER_TOILETS"))
+-        flags_77c[3] = *static_cast<const unsigned char*>(value);
++        clean_toilets_77f = *static_cast<const unsigned char*>(value);
+     else if (!std::strcmp(key, "CLEANER_BINS"))
+-        flags_77c[5] = *static_cast<const unsigned char*>(value);
++        clean_bins_781 = *static_cast<const unsigned char*>(value);
+     else if (!std::strcmp(key, "CLEANER_LITTER"))
+-        flags_77c[4] = *static_cast<const unsigned char*>(value);
++        clean_litter_780 = *static_cast<const unsigned char*>(value);
+     else
+         WorldStaffEntity::WriteValue(key, value);
+ }
+@@ -54,7 +54,7 @@ void WorldCleanerEntity::ReadText(const char* key, unsigned short* output)
+ {
+     wchar_t* text = reinterpret_cast<wchar_t*>(output);
+     swprintf(text, L"");
+-    Notification(words_78c[6]);
++    Notification(current_feedback_7a4);
+     if (!std::strcmp(key, "STAFF_ACTIVITY"))
+     {
+         const char* activity = 0;
+@@ -103,17 +103,17 @@ void WorldCleanerEntity::ReadText(const char* key, unsigned short* output)
+     }
+     else if (!std::strcmp(key, "CLEANER_TOILETS"))
+     {
+-        swprintf(text, L"%d", flags_77c[3]);
++        swprintf(text, L"%d", clean_toilets_77f);
+         return;
+     }
+     else if (!std::strcmp(key, "CLEANER_BINS"))
+     {
+-        swprintf(text, L"%d", flags_77c[5]);
++        swprintf(text, L"%d", clean_bins_781);
+         return;
+     }
+     else if (!std::strcmp(key, "CLEANER_LITTER"))
+     {
+-        swprintf(text, L"%d", flags_77c[4]);
++        swprintf(text, L"%d", clean_litter_780);
+         return;
+     }
+     else if (!std::strcmp(key, "STAFF_NAME"))
+@@ -123,17 +123,17 @@ void WorldCleanerEntity::ReadText(const char* key, unsigned short* output)
+     }
+     else if (!std::strcmp(key, "TOILETS_CLEANED"))
+     {
+-        swprintf(text, L"%d", words_78c[0]);
++        swprintf(text, L"%d", toilets_today_78c);
+         return;
+     }
+     else if (!std::strcmp(key, "BINS_EMPTIED"))
+     {
+-        swprintf(text, L"%d", words_78c[1]);
++        swprintf(text, L"%d", bins_today_790);
+         return;
+     }
+     else if (!std::strcmp(key, "LITTER_SWEPT"))
+     {
+-        swprintf(text, L"%d", words_78c[2]);
++        swprintf(text, L"%d", litter_today_794);
+         return;
+     }
+     else if (!std::strcmp(key, "STAFF_JOB_TITLE"))
+diff --git a/src/startup_world_cleaner_values.cpp b/src/startup_world_cleaner_values.cpp
+index 58e003062f424a01e08caa5bfa29ba37d70706bd..f75e293ac3c8f8efa5390293709dc35e6a379eee 100644
+--- a/src/startup_world_cleaner_values.cpp
++++ b/src/startup_world_cleaner_values.cpp
+@@ -18,11 +18,11 @@ WorldScriptValue WorldCleanerEntity::Unknown2c(unsigned int kind, std::uintptr_t
+     case 0x40:
+         return { 2, word_7bc };
+     case 0x6a:
+-        return CleanerBoolean(data, flags_77c[0]);
++        return CleanerBoolean(data, litter_found_77c);
+     case 0x6b:
+-        return CleanerBoolean(data, flags_77c[2]);
++        return CleanerBoolean(data, bin_found_77e);
+     case 0x6e:
+-        return CleanerBoolean(data, flags_77c[1]);
++        return CleanerBoolean(data, toilet_found_77d);
+     case 0x6f:
+     {
+         float duration = static_cast<double>(window_deactivation_state->render_value_160) - time_784;
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index d5f4c5aa43b87b1a55f67a0aee04068fdb4f4496..31902ef0ee8a1b73a948d3fc06f6d1cf873028e8 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -841,12 +841,17 @@ struct WorldMechanicEntity : WorldStaffEntity
+     unsigned char found_better_job_781;
+     unsigned char unknown_782[2];
+     float time_784;
+-    unsigned int words_788[3];
++    unsigned int feedback_status_788;
++    unsigned int required_feedback_78c;
++    unsigned int current_feedback_790;
+     unsigned int word_794;
+     unsigned int word_798;
+     unsigned int action_state_79c;
+     unsigned int repair_type_7a0;
+-    unsigned int words_7a4[4];
++    unsigned int inspections_today_7a4;
++    unsigned int repairs_today_7a8;
++    unsigned int vandals_today_7ac;
++    unsigned int watered_today_7b0;
+     ScreenWorldPosition watering_position_7b4;
+ };
+ static_assert(sizeof(void*) != 4 || sizeof(WorldMechanicEntity) == 0x7c0);
+@@ -983,11 +988,22 @@ struct WorldCleanerEntity : WorldStaffEntity
+     void Dismiss() override;                                                                                                                      // 0x00466c00.
+     void DirectTo(unsigned int id) override;                                                                                                      // 0x00466c50.
+     unsigned char unknown_778[0x4];
+-    unsigned char flags_77c[6];
++    unsigned char litter_found_77c;
++    unsigned char toilet_found_77d;
++    unsigned char bin_found_77e;
++    unsigned char clean_toilets_77f;
++    unsigned char clean_litter_780;
++    unsigned char clean_bins_781;
+     unsigned char unknown_782[0x2];
+     float time_784;
+     unsigned int litter_distance_788;
+-    unsigned int words_78c[7];
++    unsigned int toilets_today_78c;
++    unsigned int bins_today_790;
++    unsigned int litter_today_794;
++    unsigned int busy_toilet_798;
++    unsigned int feedback_status_79c;
++    unsigned int required_feedback_7a0;
++    unsigned int current_feedback_7a4;
+     unsigned char unknown_7a8[8];
+     ScreenWorldPosition bin_position_7b0;
+     unsigned int word_7bc;
+@@ -1032,13 +1048,21 @@ struct WorldSecurityEntity : WorldStaffEntity
+     unsigned int word_78c;
+     unsigned int word_790;
+     unsigned char flag_794;
+-    unsigned char flags_795[3];
++    unsigned char misdemeanour_found_795;
++    unsigned char should_reprimand_796;
++    unsigned char should_detain_797;
+     unsigned char flag_798;
+     unsigned char unknown_799[3];
+     ScreenWorldPosition patrol_position_79c;
+-    unsigned int words_7a8[5];
++    unsigned int minor_fines_today_7a8;
++    unsigned int serious_fines_today_7ac;
++    unsigned int vandals_today_7b0;
++    unsigned int fights_today_7b4;
++    unsigned int jailed_today_7b8;
+     unsigned int word_7bc;
+-    unsigned int words_7c0[3];
++    unsigned int feedback_status_7c0;
++    unsigned int required_feedback_7c4;
++    unsigned int current_feedback_7c8;
+     unsigned char unknown_7cc[0x8];
+     unsigned int word_7d4;
+     unsigned int word_7d8;
+diff --git a/src/startup_world_security_callbacks.cpp b/src/startup_world_security_callbacks.cpp
+index 90bb98c26d9516cc61506582de7f3368c4aecb7c..7d5e85d6f42dee28a2f60247aabaf3f485435a61 100644
+--- a/src/startup_world_security_callbacks.cpp
++++ b/src/startup_world_security_callbacks.cpp
+@@ -79,7 +79,7 @@ void WorldSecurityEntity::ReadText(const char* key, unsigned short* output)
+     static const unsigned short currency[] = { '$', '%', 'd', 0 };
+     static const unsigned short number[] = { '%', 'f', 0 };
+     swprintf(output, empty);
+-    Notification(words_7c0[2]);
++    Notification(current_feedback_7c8);
+     if (std::strcmp(key, "STAFF_ACTIVITY") == 0)
+     {
+         switch (state_3c)
+@@ -132,7 +132,7 @@ void WorldSecurityEntity::ReadText(const char* key, unsigned short* output)
+     else if (std::strcmp(key, "GUARD_CAUTIONED_TODAY") == 0)
+         swprintf(output, integer, word_7bc);
+     else if (std::strcmp(key, "GUARD_DETAINED_TODAY") == 0)
+-        swprintf(output, integer, words_7a8[4]);
++        swprintf(output, integer, jailed_today_7b8);
+     else if (std::strcmp(key, "GUARD_FINES_TODAY_$") == 0)
+         swprintf(output, currency, static_cast<int>(SecurityFloatWord(word_7e0)));
+     else if (std::strcmp(key, "SECURITY_HARSHNESS") == 0)
+diff --git a/src/startup_world_security_crime.cpp b/src/startup_world_security_crime.cpp
+index 05b55b6a15b0720dc25bfa228eafecc2e64d4b15..0152f9c6461235e697152338dc6722a957f5a516 100644
+--- a/src/startup_world_security_crime.cpp
++++ b/src/startup_world_security_crime.cpp
+@@ -8,68 +8,68 @@
+ 
+ static void NotifySecurityConditions(WorldSecurityEntity* guard)
+ {
+-    guard->words_7c0[2] = guard->words_7c0[1];
+-    guard->words_7c0[1] = 0;
+-    const char* message = guard->Notification(guard->words_7c0[2]);
++    guard->current_feedback_7c8 = guard->required_feedback_7c4;
++    guard->required_feedback_7c4 = 0;
++    const char* message = guard->Notification(guard->current_feedback_7c8);
+     if (message)
+         window_deactivation_state->ticker_30->AddMessage(message, guard->id_28, 13);
+-    guard->AddThought(guard->words_7c0[2]);
++    guard->AddThought(guard->current_feedback_7c8);
+     screen_manager->SetNamedItemFlag("SecurityGuardIcon", 0);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048a550
+ void WorldSecurityEntity::UpdateConditions()
+ {
+-    if (words_7c0[1])
++    if (required_feedback_7c4)
+         return;
+-    if (!(words_7c0[0] & 2))
++    if (!(feedback_status_7c0 & 2))
+     {
+-        words_7c0[0] |= 2;
++        feedback_status_7c0 |= 2;
+         if (!(window_deactivation_state->ticker_30->Feedback(12) & 2))
+         {
+             unsigned int guests = variable_world->CountType(3);
+             if (guests > variable_world->HasNamed("bin") * 15)
+             {
+-                words_7c0[1] |= 2;
++                required_feedback_7c4 |= 2;
+                 window_deactivation_state->ticker_30->AddFeedback(2, 12);
+                 NotifySecurityConditions(this);
+             }
+         }
+     }
+-    if (static_cast<int>(words_7a8[2]) > 5 && !(words_7c0[0] & 4))
++    if (static_cast<int>(vandals_today_7b0) > 5 && !(feedback_status_7c0 & 4))
+     {
+-        words_7c0[0] |= 4;
++        feedback_status_7c0 |= 4;
+         if (!(window_deactivation_state->ticker_30->Feedback(12) & 4))
+         {
+-            words_7c0[1] |= 4;
++            required_feedback_7c4 |= 4;
+             window_deactivation_state->ticker_30->AddFeedback(4, 12);
+             NotifySecurityConditions(this);
+         }
+     }
+-    if (static_cast<int>(words_7a8[3]) > 5 && !(words_7c0[0] & 8))
++    if (static_cast<int>(fights_today_7b4) > 5 && !(feedback_status_7c0 & 8))
+     {
+-        words_7c0[0] |= 8;
++        feedback_status_7c0 |= 8;
+         if (!(window_deactivation_state->ticker_30->Feedback(12) & 8))
+         {
+-            words_7c0[1] |= 8;
++            required_feedback_7c4 |= 8;
+             window_deactivation_state->ticker_30->AddFeedback(8, 12);
+             NotifySecurityConditions(this);
+         }
+     }
+-    if (!(words_7c0[0] & 0x400000))
++    if (!(feedback_status_7c0 & 0x400000))
+     {
+-        words_7c0[0] |= 0x400000;
++        feedback_status_7c0 |= 0x400000;
+         if (flag_766)
+         {
+-            words_7c0[1] |= 0x400000;
++            required_feedback_7c4 |= 0x400000;
+             NotifySecurityConditions(this);
+             flag_766 = 0;
+         }
+     }
+-    if (!(words_7c0[0] & 0x800000) && !(morale_10c >= 0.6f))
++    if (!(feedback_status_7c0 & 0x800000) && !(morale_10c >= 0.6f))
+     {
+-        words_7c0[0] |= 0x800000;
+-        words_7c0[1] |= 0x800000;
++        feedback_status_7c0 |= 0x800000;
++        required_feedback_7c4 |= 0x800000;
+         VariableTicker* ticker = window_deactivation_state->ticker_30;
+         ticker->AddMessage(Notification(0x100000), id_28, 7);
+         AddThought(0x800000);
+@@ -164,8 +164,8 @@ void WorldSecurityEntity::DirectTo(unsigned int id)
+         flag_766 = 0;
+         return;
+     }
+-    words_7c0[1] = 0;
+-    words_7c0[0] &= ~0x400000u;
++    required_feedback_7c4 = 0;
++    feedback_status_7c0 &= ~0x400000u;
+     flag_766 = 1;
+     ScreenModeCommand command;
+     command.words[0] = id_28;
+@@ -216,19 +216,19 @@ void WorldSecurityEntity::ChooseCrimeAction()
+     }
+     if (guest->word_3dc == 3)
+     {
+-        if (static_cast<int>(++words_7a8[2]) > 5)
++        if (static_cast<int>(++vandals_today_7b0) > 5)
+         {
+-            words_7c0[1] = 0;
+-            words_7c0[0] &= ~4u;
++            required_feedback_7c4 = 0;
++            feedback_status_7c0 &= ~4u;
+         }
+         AddThought(word_790 == 2 ? 0x400 : 0x80);
+     }
+     else if (guest->word_3dc == 2)
+     {
+-        if (static_cast<int>(++words_7a8[3]) > 5)
++        if (static_cast<int>(++fights_today_7b4) > 5)
+         {
+-            words_7c0[1] = 0;
+-            words_7c0[0] &= ~8u;
++            required_feedback_7c4 = 0;
++            feedback_status_7c0 &= ~8u;
+         }
+         AddThought(word_790 == 2 ? 0x800 : 0x100);
+     }
+@@ -237,8 +237,8 @@ void WorldSecurityEntity::ChooseCrimeAction()
+         unsigned int guests = variable_world->CountType(3);
+         if (guests > variable_world->HasNamed("bin") * 15)
+         {
+-            words_7c0[1] = 0;
+-            words_7c0[0] &= ~2u;
++            required_feedback_7c4 = 0;
++            feedback_status_7c0 &= ~2u;
+         }
+         AddThought(word_790 == 2 ? 0x200 : 0x40);
+     }
+diff --git a/src/startup_world_security_save.cpp b/src/startup_world_security_save.cpp
+index 69e22d3863e316356ee09eb580e1442414980cb9..55219a91b1dd636dbaf6568fd7c5a495950d0401 100644
+--- a/src/startup_world_security_save.cpp
++++ b/src/startup_world_security_save.cpp
+@@ -22,21 +22,21 @@ void WorldSecurityEntity::Unknown48(GameFileReader* file)
+     file->Unknown24("m_eSeverity", word_78c);
+     file->Unknown24("m_eAction", word_790);
+     file->Unknown34("m_bDoubleFine", flag_794);
+-    file->Unknown34("m_bMisdemeanourFound", flags_795[0]);
+-    file->Unknown34("m_bShouldReprimand", flags_795[1]);
+-    file->Unknown34("m_bShouldDetain", flags_795[2]);
++    file->Unknown34("m_bMisdemeanourFound", misdemeanour_found_795);
++    file->Unknown34("m_bShouldReprimand", should_reprimand_796);
++    file->Unknown34("m_bShouldDetain", should_detain_797);
+     file->Unknown34("m_NotEnoughBins", flag_798);
+     file->Unknown30("m_MisdemeanourPos.x", std::bit_cast<unsigned int>(patrol_position_79c.x));
+     file->Unknown30("m_MisdemeanourPos.y", std::bit_cast<unsigned int>(patrol_position_79c.y));
+     file->Unknown30("m_MisdemeanourPos.z", std::bit_cast<unsigned int>(patrol_position_79c.z));
+-    file->Unknown24("m_iNumMinorFinesToday", words_7a8[0]);
+-    file->Unknown24("m_iNumSeriousFinesToday", words_7a8[1]);
+-    file->Unknown24("m_iNumVandals", words_7a8[2]);
+-    file->Unknown24("m_iNumFights", words_7a8[3]);
+-    file->Unknown24("m_iNumJailed", words_7a8[4]);
+-    file->Unknown28("m_FeedbackStatus", words_7c0[0]);
+-    file->Unknown28("m_RequiredFeedback", words_7c0[1]);
+-    file->Unknown28("m_CurrentFeedback", words_7c0[2]);
++    file->Unknown24("m_iNumMinorFinesToday", minor_fines_today_7a8);
++    file->Unknown24("m_iNumSeriousFinesToday", serious_fines_today_7ac);
++    file->Unknown24("m_iNumVandals", vandals_today_7b0);
++    file->Unknown24("m_iNumFights", fights_today_7b4);
++    file->Unknown24("m_iNumJailed", jailed_today_7b8);
++    file->Unknown28("m_FeedbackStatus", feedback_status_7c0);
++    file->Unknown28("m_RequiredFeedback", required_feedback_7c4);
++    file->Unknown28("m_CurrentFeedback", current_feedback_7c8);
+     file->Unknown28("m_ActionState", word_7d4);
+     file->Unknown30("m_fMinorFineAmount", word_7d8);
+     file->Unknown30("m_fSeriousFineAmount", word_7dc);
+@@ -72,21 +72,21 @@ void WorldSecurityEntity::Unknown4c(GameFileReader* file)
+         word_790 = value;
+     }
+     file->ReadByte(&flag_794);
+-    file->ReadByte(&flags_795[0]);
+-    file->ReadByte(&flags_795[1]);
+-    file->ReadByte(&flags_795[2]);
++    file->ReadByte(&misdemeanour_found_795);
++    file->ReadByte(&should_reprimand_796);
++    file->ReadByte(&should_detain_797);
+     file->ReadByte(&flag_798);
+     file->ReadFloat(&patrol_position_79c.x);
+     file->ReadFloat(&patrol_position_79c.y);
+     file->ReadFloat(&patrol_position_79c.z);
+-    file->Unknown68(&words_7a8[0]);
+-    file->Unknown68(&words_7a8[1]);
+-    file->Unknown68(&words_7a8[2]);
+-    file->Unknown68(&words_7a8[3]);
+-    file->Unknown68(&words_7a8[4]);
+-    file->ReadInt(reinterpret_cast<int*>(&words_7c0[0]));
+-    file->ReadInt(reinterpret_cast<int*>(&words_7c0[1]));
+-    file->ReadInt(reinterpret_cast<int*>(&words_7c0[2]));
++    file->Unknown68(&minor_fines_today_7a8);
++    file->Unknown68(&serious_fines_today_7ac);
++    file->Unknown68(&vandals_today_7b0);
++    file->Unknown68(&fights_today_7b4);
++    file->Unknown68(&jailed_today_7b8);
++    file->ReadInt(reinterpret_cast<int*>(&feedback_status_7c0));
++    file->ReadInt(reinterpret_cast<int*>(&required_feedback_7c4));
++    file->ReadInt(reinterpret_cast<int*>(&current_feedback_7c8));
+     file->ReadInt(reinterpret_cast<int*>(&word_7d4));
+     ReadFloatWord(file, &word_7d8);
+     ReadFloatWord(file, &word_7dc);
+diff --git a/src/startup_world_security_script.cpp b/src/startup_world_security_script.cpp
+index 9fc52d5eaaf2639c7ce3153ee44236f580b214cc..6806becbc0d638944653a55c1dbfff3a3120dab7 100644
+--- a/src/startup_world_security_script.cpp
++++ b/src/startup_world_security_script.cpp
+@@ -15,7 +15,7 @@ WorldScriptValue WorldSecurityEntity::Unknown2c(unsigned int kind, std::uintptr_
+         return { 2, word_7d4 };
+     case 0x85:
+     {
+-        unsigned char found = flags_795[0];
++        unsigned char found = misdemeanour_found_795;
+         if (found)
+             AddThought(0x20);
+         return { 0, found };
+@@ -25,9 +25,9 @@ WorldScriptValue WorldSecurityEntity::Unknown2c(unsigned int kind, std::uintptr_
+     case 0x87:
+         return { 3, std::bit_cast<unsigned int>(patrol_position_79c.y) };
+     case 0x88:
+-        return { 0, flags_795[1] };
++        return { 0, should_reprimand_796 };
+     case 0x89:
+-        return { 0, flags_795[2] };
++        return { 0, should_detain_797 };
+     case 0x8a:
+         return { 2, word_788 };
+     case 0x8b:
+@@ -37,9 +37,9 @@ WorldScriptValue WorldSecurityEntity::Unknown2c(unsigned int kind, std::uintptr_
+     case 0x8d:
+         return { 2, word_780 };
+     case 0x8e:
+-        return { 2, words_7a8[0] };
++        return { 2, minor_fines_today_7a8 };
+     case 0x8f:
+-        return { 2, words_7a8[1] };
++        return { 2, serious_fines_today_7ac };
+     case 0x90:
+         return { 3, word_7d8 };
+     case 0x91:
+@@ -101,7 +101,7 @@ void WorldSecurityEntity::Unknown34(unsigned int value)
+         AddThought(0x20000000);
+         break;
+     case 0x7e:
+-        flags_795[0] = FindCrime(&patrol_position_79c);
++        misdemeanour_found_795 = FindCrime(&patrol_position_79c);
+         break;
+     case 0x7f:
+     case 0x80:
+@@ -109,7 +109,10 @@ void WorldSecurityEntity::Unknown34(unsigned int value)
+         bool serious = value == 0x7f;
+         float fine = std::bit_cast<float>(serious ? word_7dc : word_7d8);
+         word_7e0 = std::bit_cast<unsigned int>(fine + std::bit_cast<float>(word_7e0));
+-        ++words_7a8[serious ? 1 : 0];
++        if (serious)
++            ++serious_fines_today_7ac;
++        else
++            ++minor_fines_today_7a8;
+         VariableCatalog* catalog = variable_catalog;
+         float income = std::bit_cast<float>(catalog->Crime(catalog->FindCrime(serious ? "SERIOUS" : "MINOR"))->value_44);
+         window_deactivation_state->economy_1c->value_80 += income;
+@@ -119,7 +122,7 @@ void WorldSecurityEntity::Unknown34(unsigned int value)
+         break;
+     }
+     case 0x81:
+-        ++words_7a8[4];
++        ++jailed_today_7b8;
+         break;
+     case 0x82:
+         ++word_7bc;
+@@ -153,21 +156,21 @@ void WorldSecurityEntity::Unknown34(unsigned int value)
+         screen_manager->SetNamedItemState("SecurityIcon", 1);
+         break;
+     case 0xb0:
+-        words_7c0[2] = words_7c0[1];
+-        words_7c0[1] = 0;
++        current_feedback_7c8 = required_feedback_7c4;
++        required_feedback_7c4 = 0;
+         Unknown50(1, 1);
+         screen_manager->ApplyScreenWord(world_security_dialog_name, 2);
+-        AddThought(words_7c0[2]);
++        AddThought(current_feedback_7c8);
+         screen_manager->SetNamedItemState("SecurityGuardIcon", 0);
+         break;
+     case 0xb1:
+     {
+-        words_7c0[2] = words_7c0[1];
+-        words_7c0[1] = 0;
+-        const char* message = Notification(words_7c0[2]);
++        current_feedback_7c8 = required_feedback_7c4;
++        required_feedback_7c4 = 0;
++        const char* message = Notification(current_feedback_7c8);
+         if (message)
+             window_deactivation_state->ticker_30->AddMessage(message, id_28, 13);
+-        AddThought(words_7c0[2]);
++        AddThought(current_feedback_7c8);
+         screen_manager->SetNamedItemState("SecurityGuardIcon", 0);
+         break;
+     }
+diff --git a/src/startup_world_security_update.cpp b/src/startup_world_security_update.cpp
+index c9fd399d1dd52478da735d2a9385db9da53b4d9f..ff7154dbcb149ba4d76153356fc872f4d5bd0f31 100644
+--- a/src/startup_world_security_update.cpp
++++ b/src/startup_world_security_update.cpp
+@@ -42,15 +42,15 @@ bool WorldSecurityEntity::Unknown14(ScreenModeCommand* command)
+     switch (command->words[2])
+     {
+     case 0x26:
+-        words_7a8[0] = words_7a8[1] = word_7e0 = word_7bc = words_7a8[2] = words_7a8[3] = 0;
++        minor_fines_today_7a8 = serious_fines_today_7ac = word_7e0 = word_7bc = vandals_today_7b0 = fights_today_7b4 = 0;
+         window_deactivation_state->ticker_30->ClearFeedback(12);
+-        words_7a8[4] = 0;
++        jailed_today_7b8 = 0;
+         break;
+     case 0x55:
+         if (static_cast<int>(window_deactivation_state->render_value_160) % 4 == 0 && !(morale_10c >= 0.6f))
+         {
+-            words_7c0[0] &= ~0x800000;
+-            words_7c0[1] = 0;
++            feedback_status_7c0 &= ~0x800000;
++            required_feedback_7c4 = 0;
+         }
+         break;
+     case 0x2c:
+diff --git a/src/startup_world_staff_constructors.cpp b/src/startup_world_staff_constructors.cpp
+index 4ed755349ae169881cda59b01fbb395b7063c8e8..4440f567cd6bce060fdc4583a891a49b6554973f 100644
+--- a/src/startup_world_staff_constructors.cpp
++++ b/src/startup_world_staff_constructors.cpp
+@@ -42,13 +42,16 @@ WorldServiceStaffEntity::WorldServiceStaffEntity(const char* name)
+ WorldLifeguardEntity::WorldLifeguardEntity(const char* name)
+     : WorldStaffEntity(name)
+ {
+-    flag_778 = flag_779 = 0;
++    flag_778 = 0;
++    flag_779 = 0;
+     word_7e4 = 0;
+     flag_7e8 = 0;
+     action_state_7ec = 0;
+     attached_7f0 = 0;
+-    attached_x_7f4 = attached_y_7f8 = 0;
+-    return_animation_794[0] = current_animation_7bc[0] = 0;
++    attached_x_7f4 = 0;
++    attached_y_7f8 = 0;
++    return_animation_794[0] = 0;
++    current_animation_7bc[0] = 0;
+     script_f4 = world_subsystem_3c->FindScript("LifeGuardLogic");
+     keyline_state_44 = screen_dialog_resources->Find(staff_104->resource_cc);
+     keyline_state_44->flag_29 = variable_world->keylines_34404;
+@@ -63,27 +66,36 @@ WorldLifeguardEntity::WorldLifeguardEntity(const char* name)
+     feedback_7fc[0] = 0xfe;
+     feedback_7fc[1] = 1;
+     feedback_7fc[2] = 0;
+-    word_810 = word_814 = word_81c = word_820 = 0;
++    word_810 = 0;
++    word_814 = 0;
++    word_81c = 0;
++    word_820 = 0;
+     flag_818 = 0;
+     VariableCatalog* catalog = variable_catalog;
+     bool female = catalog->Staff(catalog->FindStaff(name))->female_c4 != 0;
+     static const unsigned short format[] = { 'I', 'D', '_', 'L', 'I', 'F', 'E', '_', 'G', 'U', 'A', 'R', 'D', '_', '%', 'd', 0 };
+     AssignStaffName(this, female, format, 24);
+-    for (int i = 0; i < 5; ++i)
+-        flags_828[i] = 0;
++    flags_828[0] = 0;
++    flags_828[1] = 0;
++    flags_828[2] = 0;
++    flags_828[3] = 0;
++    flags_828[4] = 0;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00480630
+ WorldMechanicEntity::WorldMechanicEntity(const char* name)
+     : WorldStaffEntity(name)
++    , feedback_status_788(0x3e)
++    , required_feedback_78c(1)
++    , current_feedback_790(0)
++    , inspections_today_7a4(0)
++    , repairs_today_7a8(0)
++    , vandals_today_7ac(0)
++    , watered_today_7b0(0)
+ {
+-    words_788[0] = 0x3e;
+-    words_788[1] = 1;
+-    words_788[2] = 0;
+-    for (int i = 0; i < 4; ++i)
+-        words_7a4[i] = 0;
+     script_f4 = world_subsystem_3c->FindScript("MechanicLogic");
+-    time_784 = window_deactivation_state->render_value_160;
++    float time = window_deactivation_state->render_value_160;
++    time_784 = time;
+     if (world_mechanic_count == 0)
+     {
+         screen_manager->SetFeatureAvailability(8, true);
+@@ -103,12 +115,15 @@ WorldMechanicEntity::WorldMechanicEntity(const char* name)
+ WorldRepresentativeEntity::WorldRepresentativeEntity(const char* name)
+     : WorldStaffEntity(name)
+ {
+-    word_778 = word_858 = 0;
++    word_778 = 0;
++    word_858 = 0;
+     flag_85c = 0;
+     action_state_860 = 0;
+     attached_864 = 0;
+-    attached_x_868 = attached_y_86c = 0;
+-    return_animation_808[0] = current_animation_830[0] = 0;
++    attached_x_868 = 0;
++    attached_y_86c = 0;
++    return_animation_808[0] = 0;
++    current_animation_830[0] = 0;
+     script_f4 = world_subsystem_3c->FindScript("RepresentiveLogic");
+     memset(values_77c, 0, sizeof(values_77c));
+     if (world_representative_count == 0)
+@@ -116,7 +131,8 @@ WorldRepresentativeEntity::WorldRepresentativeEntity(const char* name)
+         screen_manager->SetFeatureAvailability(9, true);
+         window_deactivation_state->ticker_30->RemoveNamedMessage("FEEDBACK_NO_REPS");
+     }
+-    keyline_state_44 = screen_dialog_resources->Find(staff_104->resource_cc);
++    const char* resource = staff_104->resource_cc;
++    keyline_state_44 = screen_dialog_resources->Find(resource);
+     speed_80 = 50.0f;
+     acceleration_7c = 30.0f;
+     ++world_representative_count;
+@@ -129,8 +145,10 @@ WorldRepresentativeEntity::WorldRepresentativeEntity(const char* name)
+     word_890 = 0;
+     value_894 = 0.5f;
+     flag_898 = 0;
+-    guest_offset_x_89c = guest_offset_y_8a0 = 0.0f;
+-    word_8a4 = guest_opinion_8a8 = 0;
++    guest_offset_x_89c = 0.0f;
++    guest_offset_y_8a0 = 0.0f;
++    word_8a4 = 0;
++    guest_opinion_8a8 = 0;
+     VariableCatalog* catalog = variable_catalog;
+     bool female = catalog->Staff(catalog->FindStaff(name))->female_c4 != 0;
+     static const unsigned short format[] = { 'I', 'D', '_', 'R', 'E', 'P', '_', '%', 'd', 0 };
+@@ -185,20 +203,26 @@ WorldBuilderEntity::WorldBuilderEntity(const char* name)
+ // FUNCTION: BEACHLIFE 0x00464b30
+ WorldCleanerEntity::WorldCleanerEntity(const char* name)
+     : WorldStaffEntity(name)
++    , litter_found_77c(0)
++    , toilet_found_77d(0)
++    , bin_found_77e(0)
++    , clean_toilets_77f(1)
++    , clean_litter_780(1)
++    , clean_bins_781(1)
++    , toilets_today_78c(0)
++    , bins_today_790(0)
++    , litter_today_794(0)
++    , busy_toilet_798(0)
++    , feedback_status_79c(0x2000007e)
++    , required_feedback_7a0(1)
++    , current_feedback_7a4(0)
++    , word_7bc(0)
++    , word_7c0(0)
++    , flag_7c4(0)
+ {
+-    for (int i = 0; i < 3; ++i)
+-        flags_77c[i] = 0;
+-    for (int i = 3; i < 6; ++i)
+-        flags_77c[i] = 1;
+-    for (int i = 0; i < 4; ++i)
+-        words_78c[i] = 0;
+-    words_78c[4] = 0x2000007e;
+-    words_78c[5] = 1;
+-    words_78c[6] = 0;
+-    word_7bc = word_7c0 = 0;
+-    flag_7c4 = 0;
+     script_f4 = world_subsystem_3c->FindScript("CleanerLogic");
+-    time_784 = window_deactivation_state->render_value_160;
++    float time = window_deactivation_state->render_value_160;
++    time_784 = time;
+     if (world_cleaner_count == 0)
+     {
+         screen_manager->SetFeatureAvailability(11, true);
+@@ -216,17 +240,23 @@ WorldCleanerEntity::WorldCleanerEntity(const char* name)
+ // FUNCTION: BEACHLIFE 0x00489140
+ WorldSecurityEntity::WorldSecurityEntity(const char* name)
+     : WorldStaffEntity(name)
++    , misdemeanour_found_795(0)
++    , should_reprimand_796(0)
++    , should_detain_797(0)
++    , minor_fines_today_7a8(0)
++    , serious_fines_today_7ac(0)
++    , vandals_today_7b0(0)
++    , fights_today_7b4(0)
++    , jailed_today_7b8(0)
++    , feedback_status_7c0(30)
++    , required_feedback_7c4(1)
++    , current_feedback_7c8(0)
++    , word_7d4(0)
++    , word_7e0(0)
+ {
+-    for (int i = 0; i < 3; ++i)
+-        flags_795[i] = 0;
+-    for (int i = 0; i < 5; ++i)
+-        words_7a8[i] = 0;
+-    words_7c0[0] = 30;
+-    words_7c0[1] = 1;
+-    words_7c0[2] = 0;
+-    word_7d4 = word_7e0 = 0;
+     script_f4 = world_subsystem_3c->FindScript("SecurityLogic");
+-    word_77c = word_780 = -1;
++    word_77c = -1;
++    word_780 = -1;
+     word_788 = 1;
+     value_784 = 0.5f;
+     if (world_security_count == 0)
+@@ -235,13 +265,13 @@ WorldSecurityEntity::WorldSecurityEntity(const char* name)
+         window_deactivation_state->ticker_30->RemoveNamedMessage("FEEDBACK_NO_SECURITY");
+     }
+     speed_80 = 50.0f;
+-    keyline_state_44 = screen_dialog_resources->Find(staff_104->resource_cc);
++    const char* resource = staff_104->resource_cc;
++    keyline_state_44 = screen_dialog_resources->Find(resource);
+     keyline_state_44->flag_29 = variable_world->keylines_34404;
+-    VariableCatalog* catalog = variable_catalog;
+-    word_7d8 = catalog->Crime(catalog->FindCrime("MINOR"))->value_44;
+-    catalog = variable_catalog;
+-    word_7dc = catalog->Crime(catalog->FindCrime("SERIOUS"))->value_44;
+-    word_7e4 = word_7bc = 0;
++    word_7d8 = variable_catalog->Crime(variable_catalog->FindCrime("MINOR"))->value_44;
++    word_7dc = variable_catalog->Crime(variable_catalog->FindCrime("SERIOUS"))->value_44;
++    word_7e4 = 0;
++    word_7bc = 0;
+     ++world_security_count;
+     static const unsigned short format[] = { 'I', 'D', '_', 'S', 'E', 'C', 'U', 'R', 'I', 'T', 'Y', '_', 'G', 'U', 'A', 'R', 'D', '_', '%', 'd', 0 };
+     AssignStaffName(this, false, format, 31);
+diff --git a/src/startup_world_staff_job_helpers.cpp b/src/startup_world_staff_job_helpers.cpp
+index 2158ddc966960fb350ecdafa8216c5c999d16cd7..3753cde7342c3f2eea347e66b3ad849abc27e132 100644
+--- a/src/startup_world_staff_job_helpers.cpp
++++ b/src/startup_world_staff_job_helpers.cpp
+@@ -25,8 +25,8 @@ void WorldMechanicEntity::DirectTo(unsigned int id)
+     {
+         found_repair_780 = 0;
+         flag_766 = 1;
+-        words_788[1] = 0;
+-        words_788[0] &= ~0x400000u;
++        required_feedback_78c = 0;
++        feedback_status_788 &= ~0x400000u;
+         command.words[0] = id_28;
+         command.words[1] = id_28;
+         command.words[2] = 0x3c;
+diff --git a/src/startup_world_staff_messages.cpp b/src/startup_world_staff_messages.cpp
+index 6abfa1f8b407a9da832a1c8118dcb4994b9830f9..f5ba4a6dbf1b4feff735d174ba29772903c08d45 100644
+--- a/src/startup_world_staff_messages.cpp
++++ b/src/startup_world_staff_messages.cpp
+@@ -60,17 +60,17 @@ bool WorldMechanicEntity::Unknown14(ScreenModeCommand* command)
+     switch (command->words[2])
+     {
+     case 0x26:
+-        words_7a4[3] = 0;
+-        words_7a4[2] = 0;
+-        words_7a4[1] = 0;
+-        words_7a4[0] = 0;
++        watered_today_7b0 = 0;
++        vandals_today_7ac = 0;
++        repairs_today_7a8 = 0;
++        inspections_today_7a4 = 0;
+         window_deactivation_state->ticker_30->ClearFeedback(8);
+         break;
+     case 0x55:
+         if (static_cast<int>(window_deactivation_state->render_value_160) % 4 == 0 && !(morale_10c >= 0.6f))
+         {
+-            words_788[0] &= ~0x800000u;
+-            words_788[1] = 0;
++            feedback_status_788 &= ~0x800000u;
++            required_feedback_78c = 0;
+         }
+         break;
+     case 0x2c:
+diff --git a/src/startup_world_staff_read_text.cpp b/src/startup_world_staff_read_text.cpp
+index b1107079d63d735e536fa1a4204bbb56dff1f6cc..a5524c487c1fb9a0f72e138d30510c26862277ec 100644
+--- a/src/startup_world_staff_read_text.cpp
++++ b/src/startup_world_staff_read_text.cpp
+@@ -80,7 +80,7 @@ void WorldStaffEntity::ReadText(const char* key, unsigned short* output)
+ // FUNCTION: BEACHLIFE 0x00481ae0
+ void WorldMechanicEntity::ReadText(const char* key, unsigned short* output)
+ {
+-    Notification(words_788[2]);
++    Notification(current_feedback_790);
+     swprintf(output, screen_text_empty);
+     if (strcmp(key, "STAFF_ACTIVITY") == 0)
+     {
+@@ -99,13 +99,13 @@ void WorldMechanicEntity::ReadText(const char* key, unsigned short* output)
+     else if (strcmp(key, "STAFF_NAME") == 0)
+         swprintf(output, personal_name_f8);
+     else if (strcmp(key, "INSPECT_TODAY") == 0)
+-        swprintf(output, staff_integer_format, words_7a4[0]);
++        swprintf(output, staff_integer_format, inspections_today_7a4);
+     else if (strcmp(key, "REPAIRS_TODAY") == 0)
+-        swprintf(output, staff_integer_format, words_7a4[1]);
++        swprintf(output, staff_integer_format, repairs_today_7a8);
+     else if (strcmp(key, "VANDAL_REPAIRS_TODAY") == 0)
+-        swprintf(output, staff_integer_format, words_7a4[2]);
++        swprintf(output, staff_integer_format, vandals_today_7ac);
+     else if (strcmp(key, "WATERED_TODAY") == 0)
+-        swprintf(output, staff_integer_format, words_7a4[3]);
++        swprintf(output, staff_integer_format, watered_today_7b0);
+     else if (strcmp(key, "STAFF_JOB_TITLE") == 0)
+         swprintf(output, screen_text_lookup->LookupText("STAFFB_TITLE_MECHANIC"));
+     else
+diff --git a/src/startup_world_staff_script_actions.cpp b/src/startup_world_staff_script_actions.cpp
+index 130063e6f14a01366dc9c3180e79540e3a7b9e35..d236a19230f43e3f091b84ef38c1dd65e6686929 100644
+--- a/src/startup_world_staff_script_actions.cpp
++++ b/src/startup_world_staff_script_actions.cpp
+@@ -153,9 +153,21 @@ void WorldMechanicEntity::Unknown34(unsigned int kind)
+     case 0x9f:
+     {
+         window_deactivation_state->repairs_28->MarkRepairing(word_98);
+-        static const unsigned int counters[] = { 0, 2, 1, 3 };
+-        if (repair_type_7a0 <= 3)
+-            ++words_7a4[counters[repair_type_7a0]];
++        switch (repair_type_7a0)
++        {
++        case 0:
++            ++inspections_today_7a4;
++            break;
++        case 1:
++            ++vandals_today_7ac;
++            break;
++        case 2:
++            ++repairs_today_7a8;
++            break;
++        case 3:
++            ++watered_today_7b0;
++            break;
++        }
+         break;
+     }
+     case 0xa0:
+@@ -171,8 +183,8 @@ void WorldMechanicEntity::Unknown34(unsigned int kind)
+         keyline_state_44->SelectVariant(5);
+         break;
+     case 0xad:
+-        words_788[1] = 0;
+-        words_788[0] &= ~2u;
++        required_feedback_78c = 0;
++        feedback_status_788 &= ~2u;
+         WorldStaffEntity::Unknown34(kind);
+         break;
+     case 0xae:
+@@ -182,21 +194,21 @@ void WorldMechanicEntity::Unknown34(unsigned int kind)
+         screen_manager->SetNamedItemFlag("MechanicIcon", 1);
+         break;
+     case 0xb0:
+-        words_788[2] = words_788[1];
+-        words_788[1] = 0;
++        current_feedback_790 = required_feedback_78c;
++        required_feedback_78c = 0;
+         Unknown50(1, 1);
+         screen_manager->ApplyScreenWord("MechanicDialog", 2);
+-        AddThought(words_788[2]);
++        AddThought(current_feedback_790);
+         screen_manager->SetNamedItemFlag("MechanicIcon", 0);
+         break;
+     case 0xb1:
+     {
+-        words_788[2] = words_788[1];
+-        words_788[1] = 0;
+-        const char* message = Notification(words_788[2]);
++        current_feedback_790 = required_feedback_78c;
++        required_feedback_78c = 0;
++        const char* message = Notification(current_feedback_790);
+         if (message)
+             window_deactivation_state->ticker_30->AddMessage(message, id_28, 9);
+-        AddThought(words_788[2]);
++        AddThought(current_feedback_790);
+         screen_manager->SetNamedItemFlag("MechanicIcon", 0);
+         break;
+     }
+diff --git a/src/startup_world_staff_state.cpp b/src/startup_world_staff_state.cpp
+index 90917a58cf9fafbcd6cff97abd675e7454dded12..4734bb3a7c5566785052fd22a70dca3e69249580 100644
+--- a/src/startup_world_staff_state.cpp
++++ b/src/startup_world_staff_state.cpp
+@@ -19,17 +19,17 @@ void WorldMechanicEntity::Unknown48(GameFileReader* file)
+     file->Unknown34("m_bFoundRepair", found_repair_780);
+     file->Unknown34("m_bFoundBetterJob", found_better_job_781);
+     WriteStateFloat(file, "m_fLastTaskTime", time_784);
+-    file->Unknown28("m_FeedbackStatus", words_788[0]);
+-    file->Unknown28("m_RequiredFeedback", words_788[1]);
+-    file->Unknown28("m_CurrentFeedback", words_788[2]);
++    file->Unknown28("m_FeedbackStatus", feedback_status_788);
++    file->Unknown28("m_RequiredFeedback", required_feedback_78c);
++    file->Unknown28("m_CurrentFeedback", current_feedback_790);
+     file->Unknown28("m_dwRepairType", repair_type_7a0);
+     WriteStateFloat(file, "m_WateringPos.x", watering_position_7b4.x);
+     WriteStateFloat(file, "m_WateringPos.y", watering_position_7b4.y);
+     WriteStateFloat(file, "m_WateringPos.z", watering_position_7b4.z);
+-    file->Unknown28("m_dwInspectionsToday", words_7a4[0]);
+-    file->Unknown28("m_dwRepairsToday", words_7a4[1]);
+-    file->Unknown28("m_dwVandalsToday", words_7a4[2]);
+-    file->Unknown28("m_dwWateredToday", words_7a4[3]);
++    file->Unknown28("m_dwInspectionsToday", inspections_today_7a4);
++    file->Unknown28("m_dwRepairsToday", repairs_today_7a8);
++    file->Unknown28("m_dwVandalsToday", vandals_today_7ac);
++    file->Unknown28("m_dwWateredToday", watered_today_7b0);
+     file->Unknown28("m_ActionState", action_state_79c);
+     WorldStaffEntity::Unknown48(file);
+ }
+@@ -48,17 +48,17 @@ void WorldMechanicEntity::Unknown4c(GameFileReader* file)
+     file->ReadByte(&found_repair_780);
+     file->ReadByte(&found_better_job_781);
+     file->ReadFloat(&time_784);
+-    ReadStaffWord(file, &words_788[0]);
+-    ReadStaffWord(file, &words_788[1]);
+-    ReadStaffWord(file, &words_788[2]);
++    ReadStaffWord(file, &feedback_status_788);
++    ReadStaffWord(file, &required_feedback_78c);
++    ReadStaffWord(file, &current_feedback_790);
+     ReadStaffWord(file, &repair_type_7a0);
+     file->ReadFloat(&watering_position_7b4.x);
+     file->ReadFloat(&watering_position_7b4.y);
+     file->ReadFloat(&watering_position_7b4.z);
+-    ReadStaffWord(file, &words_7a4[0]);
+-    ReadStaffWord(file, &words_7a4[1]);
+-    ReadStaffWord(file, &words_7a4[2]);
+-    ReadStaffWord(file, &words_7a4[3]);
++    ReadStaffWord(file, &inspections_today_7a4);
++    ReadStaffWord(file, &repairs_today_7a8);
++    ReadStaffWord(file, &vandals_today_7ac);
++    ReadStaffWord(file, &watered_today_7b0);
+     ReadStaffWord(file, &action_state_79c);
+     WorldStaffEntity::Unknown4c(file);
+ }
+diff --git a/src/startup_world_worker_feedback.cpp b/src/startup_world_worker_feedback.cpp
+index 2470b6ad4195684a179cfd76c34e43f55bbd071e..0bbb51b39d214fcbfcd74d2a3e19bccae6feab6f 100644
+--- a/src/startup_world_worker_feedback.cpp
++++ b/src/startup_world_worker_feedback.cpp
+@@ -28,9 +28,9 @@ static void PostLowMorale(WorldStaffEntity* staff, unsigned int& tested, unsigne
+ // FUNCTION: BEACHLIFE 0x00466510
+ void WorldCleanerEntity::UpdateFeedback()
+ {
+-    unsigned int& tested = words_78c[4];
+-    unsigned int& pending = words_78c[5];
+-    unsigned int& last = words_78c[6];
++    unsigned int& tested = feedback_status_79c;
++    unsigned int& pending = required_feedback_7a0;
++    unsigned int& last = current_feedback_7a4;
+     if (pending)
+         return;
+     if (!(tested & 4))
+@@ -46,10 +46,10 @@ void WorldCleanerEntity::UpdateFeedback()
+     if (!(tested & 2))
+     {
+         tested |= 2;
+-        if (words_78c[3])
++        if (busy_toilet_798)
+         {
+             PostWorkerFeedback(this, pending, last, 2, 12, "CleanerIcon");
+-            words_78c[3] = 0;
++            busy_toilet_798 = 0;
+         }
+     }
+     if (!(tested & 0x400000))
+@@ -67,9 +67,9 @@ void WorldCleanerEntity::UpdateFeedback()
+ // FUNCTION: BEACHLIFE 0x00481f70
+ void WorldMechanicEntity::UpdateFeedback()
+ {
+-    unsigned int& tested = words_788[0];
+-    unsigned int& pending = words_788[1];
+-    unsigned int& last = words_788[2];
++    unsigned int& tested = feedback_status_788;
++    unsigned int& pending = required_feedback_78c;
++    unsigned int& last = current_feedback_790;
+     if (pending)
+         return;
+     if (!(tested & 2))
+@@ -162,8 +162,8 @@ void WorldCleanerEntity::DirectTo(unsigned int id)
+     }
+     else
+     {
+-        words_78c[5] = 0;
+-        words_78c[4] &= ~0x400000u;
++        required_feedback_7a0 = 0;
++        feedback_status_79c &= ~0x400000u;
+         flag_766 = 1;
+     }
+     ScreenModeCommand command;
