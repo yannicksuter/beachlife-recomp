@@ -661,6 +661,66 @@ def game_stlport_sources(target, sources):
     return [available[name] for name in sorted(configured)]
 
 
+# VC6's program database accepts a limited number of modules (LNK1140), and
+# every registration adds a retention fixture object. Fixtures with the same
+# compile profile, the same #include lines (so every member preprocesses
+# exactly as it would alone: a <windows.h> macro such as FindText cannot rename
+# another member's call) and one 64 KiB range of original addresses therefore
+# share a generated unit that #includes them. A new registration changes only
+# its own group, and compile errors still name the fixture.
+FIXTURE_GROUP_SPAN = 0x10000
+FIXTURE_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*([<"][^>"]+[>"])', re.M)
+# A fixture that declares anything at file scope (types, typedefs, statics,
+# namespaces, macros or pragmas) could clash with another fixture of its
+# group, so it keeps its own object.
+FIXTURE_STANDALONE = re.compile(
+    r'^[ \t]*(?:static|namespace|using|struct|class|union|enum|typedef|template|#[ \t]*(?:define|undef|pragma))\b',
+    re.M)
+
+
+def fixture_groups(fixtures, stlport_units, folder):
+    """Return (standalone fixtures, generated group units, STLport group units, records).
+
+    A unit includes its fixtures by name; compile it with their folder as an
+    include directory, so the generated text does not depend on the checkout.
+    """
+    stlport = set(stlport_units)
+    standalone, buckets = [], {}
+    for path in fixtures:
+        address = re.fullmatch(r'fixture_([0-9a-f]{8})\.cpp', path.name)
+        if not address:
+            raise ValueError(f'Unexpected retention fixture name: {path.name}')
+        text = path.read_text(encoding='utf-8')
+        if FIXTURE_STANDALONE.search(text):
+            standalone.append(path)
+            continue
+        key = ('stlport' if path in stlport else 'plain', int(address[1], 16) // FIXTURE_GROUP_SPAN,
+               tuple(FIXTURE_INCLUDE.findall(text)))
+        buckets.setdefault(key, []).append(path)
+    group_folder = folder / 'fixture-groups'
+    group_folder.mkdir(parents=True, exist_ok=True)
+    expected = set()
+    units, stlport_groups, records = [], [], []
+    for (profile, bucket, includes), members in sorted(buckets.items()):
+        tag = hashlib.sha256('\n'.join(includes).encode()).hexdigest()[:8]
+        unit = group_folder / f'fixture_group_{profile}_{bucket * FIXTURE_GROUP_SPAN:08x}_{tag}.cpp'
+        members = sorted(members, key=lambda path: path.name)
+        text = ('// Generated retention fixture group; one #include per fixture.\n' +
+                ''.join(f'#include "{path.name}"\n' for path in members))
+        # Rewrite only on change, so an unchanged group keeps its timestamp.
+        if not unit.is_file() or unit.read_text(encoding='utf-8') != text:
+            unit.write_text(text, encoding='utf-8')
+        expected.add(unit.name)
+        units.append(unit)
+        if profile == 'stlport':
+            stlport_groups.append(unit)
+        records.append({'unit': unit.name, 'includes': list(includes), 'fixtures': [path.name for path in members]})
+    for stale in group_folder.glob('*.cpp'):
+        if stale.name not in expected:
+            stale.unlink()
+    return standalone, units, stlport_groups, records
+
+
 def game_stdcall_imports(target):
     """Resolve opt-in DLL export policies without changing the CRT import route."""
     configured = target.get('stdcall_imports', {})
@@ -1995,9 +2055,12 @@ def game(tool, args):
     anchors, anchor_records = generate_comparison_anchors(metadata, source, folder, anchor_specs)
     # Opted-in anchors compile with the same STLport include and define.
     stlport_units = [*stlport_sources, *(path for path, item in zip(anchors, anchor_specs) if item.get('stlport'))]
+    standalone_fixtures, fixture_units, stlport_fixture_units, fixture_group_records = fixture_groups(
+        fixtures, stlport_units, folder)
+    stlport_units.extend(stlport_fixture_units)
     lifetime_objects, lifetime_records = generate_lifetime_identities(
         metadata, source, folder, comparison_lifetime_specs(metadata, target))
-    inputs = set([target_path, *sources, *anchors, *lifetime_objects, *source.rglob('*.h'),
+    inputs = set([target_path, *sources, *anchors, *lifetime_objects, *fixture_units, *source.rglob('*.h'),
                   *(path for path in metadata.rglob('*') if path.is_file()),
                   ROOT / 'tools/matching_imports.py', ROOT / 'tools/prepare_sources.py',
                   STLPORT_PIN, *stlport_headers,
@@ -2052,12 +2115,15 @@ def game(tool, args):
         source_flags.setdefault(path, []).extend(flags)
     for path in stlport_units:
         source_flags.setdefault(path, []).append('/D_STLP_NO_OWN_IOSTREAMS=1')
-    binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, entry, *fixtures], 'BeachLife', link_flags,
+    source_includes = {path: [stlport_include] for path in stlport_units}
+    for unit in fixture_units:
+        source_includes.setdefault(unit, []).append(metadata / 'fixtures/game.d')
+    binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, entry, *standalone_fixtures,
+                                      *fixture_units], 'BeachLife', link_flags,
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
                              '/I' + tool.native(source)],
                             source_flags=source_flags,
-                            **({'source_includes': {path: [stlport_include] for path in stlport_units}}
-                               if stlport_units else {}),
+                            **({'source_includes': source_includes} if source_includes else {}),
                             **({'anchor_symbols': {path: record['symbol'] for path, record in
                                                    zip(anchors, anchor_records)}} if anchors else {}))
     if verify_sdk_headers(metadata, tool.compiler.parent / 'Include') != sdk_headers:
@@ -2199,6 +2265,7 @@ def game(tool, args):
               'sdk_headers_sha256': sdk_headers,
               'stlport_root': str(stlport_include.parent),
               'stlport_sources': [path.name for path in stlport_sources],
+              'retention_fixture_groups': fixture_group_records,
               'link_abi_support': abi_support,
               'stdcall_import_libraries': import_libraries,
               'original_stdcall_imports': original_stdcall_imports,

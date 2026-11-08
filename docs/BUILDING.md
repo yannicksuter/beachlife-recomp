@@ -116,7 +116,19 @@ The prepared matching target JSON can declare `source_compile_options` for a
 qualified source file. It maps a `.cpp` basename, unique across game and support
 sources, to a list containing `/GX`, `/Ob1`, or both. Unknown files, directory
 paths, ambiguous basenames, duplicate flags and other options are rejected.
-The comparison retention fixture cannot receive these options. Unlisted files
+The comparison retention fixture cannot receive these options.
+
+VC6's program database accepts a limited number of linked modules (LNK1140), so
+retention fixtures are not compiled one object each. Fixtures with the same
+profile (STLport or not), the same `#include` lines and the same 64 KiB range of
+original addresses share a generated unit under `game/fixture-groups/` that
+includes them by name; the result lists the groups as `retention_fixture_groups`.
+Identical include lines make every member preprocess as it would alone, so a
+`<windows.h>` macro such as `FindText` cannot rename another member's call. A new registration changes
+only its own group. A fixture that declares anything at file scope (types,
+typedefs, statics, namespaces, macros or pragmas) keeps its own object, so it
+cannot clash with the others. Match sources and support files stay one object
+each, in their existing order. Unlisted files
 retain the default compiler settings; the runtime release wrapper retains its
 existing `/O1` setting even when additional qualified options apply. Add target
 changes through a reconstruction patch and verify that all retained methods still
