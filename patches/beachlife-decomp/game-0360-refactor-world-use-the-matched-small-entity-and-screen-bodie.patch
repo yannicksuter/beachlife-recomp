@@ -1,0 +1,166 @@
+diff --git a/src/startup_entity_base_lifetime.cpp b/src/startup_entity_base_lifetime.cpp
+index 586bb30ea5d2290fa9d913378a6467c830d90431..5927c9c2aa6f18fd1da716673c7d66cb8d99b58a 100644
+--- a/src/startup_entity_base_lifetime.cpp
++++ b/src/startup_entity_base_lifetime.cpp
+@@ -32,7 +32,8 @@ void VariableEntity::SetWorldPosition(const ScreenWorldPosition* position)
+     ScreenTerrainCell* cell = CurrentScreenTerrain()->CellAt(*position);
+     if (!cell->ContainsEntity(this))
+     {
+-        CurrentScreenTerrain()->CellAt({ position_30.x, position_30.y, position_30.z })->RemoveEntity(this);
++        ScreenTerrainCell* old = CurrentScreenTerrain()->CellAt(position_30);
++        old->RemoveEntity(this);
+         cell->AddEntity(this);
+     }
+     position_30.x = position->x;
+diff --git a/src/startup_entity_pointer_selection.cpp b/src/startup_entity_pointer_selection.cpp
+index 27abda2f74ae6bac96608bc4148c5e145f04f293..5b43be05585b8a9649b688bcd297f60ef534a6eb 100644
+--- a/src/startup_entity_pointer_selection.cpp
++++ b/src/startup_entity_pointer_selection.cpp
+@@ -6,7 +6,7 @@
+ // FUNCTION: BEACHLIFE 0x0045f170
+ ScreenRectangle* VariableEntity::BuildingRectangle()
+ {
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
++    ScreenWorldPosition position = position_30;
+     ScreenPoint point = overlay_map->WorldToScreen(position);
+     point.x += keyline_state_44->CurrentFrameValue();
+     point.y += keyline_state_44->SelectedFrame()->word_14;
+diff --git a/src/startup_screen_load.cpp b/src/startup_screen_load.cpp
+index 256bb0b0bc5ce32d74f757ef373a1888738c3d5b..f028605e8c3367437d1846abda40c2ffe7eaa5b0 100644
+--- a/src/startup_screen_load.cpp
++++ b/src/startup_screen_load.cpp
+@@ -116,12 +116,18 @@ void ScreenManager::LoadScreen(const char* path)
+     }
+     if (window_deactivation_state)
+     {
+-        SetFeatureAvailability(9, variable_world->CountType(9) != 0);
+-        SetFeatureAvailability(11, variable_world->CountType(11) != 0);
+-        SetFeatureAvailability(8, variable_world->CountType(8) != 0);
+-        SetFeatureAvailability(7, variable_world->CountType(7) != 0);
+-        SetFeatureAvailability(12, variable_world->CountType(12) != 0);
+-        SetFeatureAvailability(10, variable_world->CountType(10) != 0);
++        unsigned int count = variable_world->CountType(9);
++        SetFeatureAvailability(9, count != 0);
++        count = variable_world->CountType(11);
++        SetFeatureAvailability(11, count != 0);
++        count = variable_world->CountType(8);
++        SetFeatureAvailability(8, count != 0);
++        count = variable_world->CountType(7);
++        SetFeatureAvailability(7, count != 0);
++        count = variable_world->CountType(12);
++        SetFeatureAvailability(12, count != 0);
++        count = variable_world->CountType(10);
++        SetFeatureAvailability(10, count != 0);
+         if (window_deactivation_state)
+         {
+             const char* resource;
+diff --git a/src/startup_screen_mode_remove.cpp b/src/startup_screen_mode_remove.cpp
+index a0462dbca4bc73a404a93d3fb49967db01c2b70c..191e5d974e12162d70ef5aedfd786dba5e64e3d2 100644
+--- a/src/startup_screen_mode_remove.cpp
++++ b/src/startup_screen_mode_remove.cpp
+@@ -17,13 +17,19 @@ static bool PathHasClearNeighbours(const ScreenPoint* point)
+ unsigned char ScreenMode10Controller::CanRemove(const ScreenPoint* point)
+ {
+     unsigned char removable = 0;
++    bool occupied = false;
+     CircularList* list = screen_terrain_grid->ObjectsAt(point->x, point->y);
+-    bool occupied = list->head->next != list->head;
+     for (CircularListNode* node = list->head->next; node != list->head; node = node->next)
+     {
++        occupied = true;
+         VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
+-        if (entity->kind_2c == 1 && entity->AsScenery()->scenery_f4->removable_311 && entity->state_3c != 4)
+-            removable = 1;
++        switch (entity->kind_2c)
++        {
++        case 1:
++            if (entity->AsScenery()->scenery_f4->removable_311 && entity->state_3c != 4)
++                removable = 1;
++            break;
++        }
+     }
+     ScreenTerrainGrid* grid = screen_terrain_grid;
+     unsigned int flags = grid->cells_0c[grid->TileIndex(point->x, point->y)].flags_48;
+diff --git a/src/startup_variable_transport_schedule_save.cpp b/src/startup_variable_transport_schedule_save.cpp
+index 0a69ccd82054f0a3d7796c9f84d578f7ec9190b5..b63700e7ecedc327fcb1cf26675480240207c57f 100644
+--- a/src/startup_variable_transport_schedule_save.cpp
++++ b/src/startup_variable_transport_schedule_save.cpp
+@@ -13,7 +13,8 @@ void VariableTransport::Schedule(const WorldTransportRecord* record)
+     *copy = *record;
+     if (copy->repeat_5b0 == 3)
+     {
+-        copy->time_5a8 = window_deactivation_state->render_value_160;
++        float time = window_deactivation_state->render_value_160;
++        copy->time_5a8 = time;
+         copy->day_5ac = window_deactivation_state->day_15c;
+         pending_08.Insert(pending_08.End(), copy);
+         return;
+@@ -21,8 +22,7 @@ void VariableTransport::Schedule(const WorldTransportRecord* record)
+     CircularListIterator position = scheduled_00.Begin();
+     while (position.node != scheduled_00.head)
+     {
+-        WorldTransportRecord* current = static_cast<WorldTransportNode*>(position.node)->record;
+-        if (current->time_5a8 >= copy->time_5a8)
++        if (static_cast<WorldTransportNode*>(position.node)->record->time_5a8 >= copy->time_5a8)
+             break;
+         position.node = position.node->next;
+     }
+diff --git a/src/startup_world_security_callbacks.cpp b/src/startup_world_security_callbacks.cpp
+index bbb5300a682a15a9504d59552c4283806970498b..e3d19e211ad8bf0f2e056404d50dd726bfdc2d88 100644
+--- a/src/startup_world_security_callbacks.cpp
++++ b/src/startup_world_security_callbacks.cpp
+@@ -50,7 +50,7 @@ bool WorldSecurityEntity::Unknown04(unsigned int state)
+ // FUNCTION: BEACHLIFE 0x00489df0
+ void WorldSecurityEntity::WriteValue(const char* key, const void* value)
+ {
+-    if (std::strcmp(key, "SECURITY_HARSHNESS") == 0)
++    if (strcmp(key, "SECURITY_HARSHNESS") == 0)
+     {
+         value_784 = *static_cast<const float*>(value);
+         switch (static_cast<int>(static_cast<double>(value_784) * 5.0f))
+@@ -62,6 +62,9 @@ void WorldSecurityEntity::WriteValue(const char* key, const void* value)
+         case 2:
+             word_788 = 1;
+             break;
++        case 3:
++            word_788 = 2;
++            break;
+         default:
+             word_788 = 2;
+             break;
+diff --git a/src/startup_world_shark_methods.cpp b/src/startup_world_shark_methods.cpp
+index 7cf6eef5d546f88554a7987058191ca1d880822e..95580e079800b4c029ba089c480e0ab996606046 100644
+--- a/src/startup_world_shark_methods.cpp
++++ b/src/startup_world_shark_methods.cpp
+@@ -210,8 +210,15 @@ void WorldSharkEntity::Unknown4c(GameFileReader* file)
+ {
+     file->ReadInt(reinterpret_cast<int*>(&word_f8));
+     file->ReadInt(reinterpret_cast<int*>(&word_fc));
+-    for (int i = 0; i < 4; ++i)
+-        file->Unknown68(&swim_rectangle_100[i]);
++    unsigned int value;
++    file->Unknown68(&value);
++    swim_rectangle_100[0] = value;
++    file->Unknown68(&value);
++    swim_rectangle_100[1] = value;
++    file->Unknown68(&value);
++    swim_rectangle_100[2] = value;
++    file->Unknown68(&value);
++    swim_rectangle_100[3] = value;
+     file->ReadInt(reinterpret_cast<int*>(&action_state_110));
+     file->ReadInt(&word_114);
+     file->ReadInt(reinterpret_cast<int*>(&word_11c));
+diff --git a/src/window_sound_has_sound.cpp b/src/window_sound_has_sound.cpp
+index 13b3de55605d3407b749e8ea16cd6793c728be67..66b9b28674c17875f499c949ce3da1aa15f082fd 100644
+--- a/src/window_sound_has_sound.cpp
++++ b/src/window_sound_has_sound.cpp
+@@ -5,5 +5,8 @@ bool WindowSoundBank::HasSound(const char* name)
+ {
+     WindowSoundIterator found = { 0, 0 };
+     found = FindSoundKey(ScreenTextKey(name));
+-    return found.bucket != EndSound().bucket;
++    bool result = false;
++    if (found.bucket != EndSound().bucket)
++        result = true;
++    return result;
+ }

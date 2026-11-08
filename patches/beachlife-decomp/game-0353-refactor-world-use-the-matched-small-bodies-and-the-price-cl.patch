@@ -1,0 +1,221 @@
+diff --git a/src/startup_game_time_and_loading.cpp b/src/startup_game_time_and_loading.cpp
+index a9b09a435556529f2777b1f32ec980ede54a0c7f..149a89253886879da3cfaebde655e78cd7ff6606 100644
+--- a/src/startup_game_time_and_loading.cpp
++++ b/src/startup_game_time_and_loading.cpp
+@@ -54,7 +54,7 @@ void ScreenRequestGamePrefix::ShowLoadingScreen(const char* path)
+     else
+         image->ConvertPalette(0);
+     ScreenRectangle bounds = { 0, 0, 800, 600 };
+-    ScreenPoint position = { 0, 0 };
++    ScreenPoint position(0, 0);
+     screen_request_renderer->DrawTga(position, bounds, image, 0, 0, 0);
+     delete image;
+ }
+diff --git a/src/startup_screen_checkbox_slot0c.cpp b/src/startup_screen_checkbox_slot0c.cpp
+index 72e4b215f25d98364011103db44803af3c80e4e9..387123f22008169b44c57c9a34c9c7b51afa0ee4 100644
+--- a/src/startup_screen_checkbox_slot0c.cpp
++++ b/src/startup_screen_checkbox_slot0c.cpp
+@@ -6,29 +6,18 @@
+ // FUNCTION: BEACHLIFE 0x004c19b0
+ void ScreenCheckBox::Unresolved0c()
+ {
+-    char description[80];
+     if (preparation_flag)
+     {
+-        unsigned int selected = word_4c;
+-        if (selected <= 1)
++        switch (word_4c)
+         {
+-            ScreenDialogResource* resource = resource_48;
+-            ScreenDialogResourceRecord* record = resource->record;
+-            unsigned int frame_index = resource->word_10;
+-            int plane = static_cast<int>(selected);
+-            if (record->frames[frame_index]->plane_count_0c <= selected)
+-            {
+-                ScreenDialogResourceFrame* frame = record->frames[frame_index];
+-                const char* name = resource->name;
+-                plane = static_cast<int>(frame->plane_count_0c) - 1;
+-                sprintf(description, "%s %d", name, plane);
+-            }
+-            resource->word_18 = static_cast<unsigned int>(plane);
++        case 0:
++            resource_48->SelectVariant(0);
++            break;
++        case 1:
++            resource_48->SelectVariant(1);
++            break;
+         }
+-
+-        int y = rectangle.top;
+-        int x = rectangle.left;
+-        resource_48->Draw(x, y, 0, 999999.0f);
++        resource_48->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
+         preparation_flag = 0;
+     }
+ }
+diff --git a/src/startup_screen_tab_destructor.cpp b/src/startup_screen_tab_destructor.cpp
+index 0785f91fded63f19886beccc8cc457564583d8f1..5e106683e1926e548623466b77ad25ade126ea27 100644
+--- a/src/startup_screen_tab_destructor.cpp
++++ b/src/startup_screen_tab_destructor.cpp
+@@ -7,6 +7,6 @@
+ // FUNCTION: BEACHLIFE 0x004c07c0
+ ScreenTabItem::~ScreenTabItem()
+ {
+-    if (resource != 0)
++    if (resource)
+         screen_dialog_resources->Release(resource);
+ }
+diff --git a/src/startup_world_guest_feature_reactions.cpp b/src/startup_world_guest_feature_reactions.cpp
+index 2b8eb156457bf3c813d79bb8520387c9d8b16a8a..c648a2e0e30367369f668ef0f3363ec85a4a6230 100644
+--- a/src/startup_world_guest_feature_reactions.cpp
++++ b/src/startup_world_guest_feature_reactions.cpp
+@@ -204,9 +204,9 @@ void WorldGuestEntity::PerformAction34()
+         GuestNegativeOpinion(this);
+         unsigned int thought = GuestFeatureThought(this, building, "GUEST_THOUGHT_EXSPENSIVE_");
+         building->AddThought(screen_text_lookup->LookupText(thought), id_28);
++        if (!(happiness_values_1d4[3] >= 0.0f))
++            happiness_values_1d4[3] = 0.0f;
+     }
+-    if (!(happiness_values_1d4[3] >= 0.0f))
+-        happiness_values_1d4[3] = 0.0f;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00476a10
+diff --git a/src/startup_world_performer_lifetime.cpp b/src/startup_world_performer_lifetime.cpp
+index 2d279d4dd658247b2c4f3693555c8d330a1bb2af..bfd34633d47d00384dc9a2bc0474fc404916c572 100644
+--- a/src/startup_world_performer_lifetime.cpp
++++ b/src/startup_world_performer_lifetime.cpp
+@@ -173,12 +173,19 @@ void WorldEntity16::SetOwner(unsigned int owner)
+ void WorldEntity20::SetOwner(unsigned int owner)
+ {
+     type_f8 = owner;
+-    keyline_state_44 = screen_dialog_resources->Find(owner == 0 ? "Gail" : "Shaz");
++    if (owner == 0)
++        keyline_state_44 = screen_dialog_resources->Find("Gail");
++    else
++        keyline_state_44 = screen_dialog_resources->Find("Shaz");
++
++    // Retail calls rand() for the group first (one expression in matching,
++    // where VC6 fixes the order); the host needs the sequence spelled out.
+     int group = rand() % 6;
+-    int palette = rand() % 7 + group * 10 + 2;
+-    if (palette >= keyline_state_44->record->palette_count)
+-        palette = keyline_state_44->record->palette_count - 1;
+-    keyline_state_44->word_1c = palette;
++    int palette = group * 10 + rand() % 7 + 2;
++    ScreenDialogResource* resource = keyline_state_44;
++    if (palette >= resource->record->palette_count)
++        palette = resource->record->palette_count - 1;
++    resource->word_1c = palette;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00462de0
+diff --git a/src/startup_world_queries.cpp b/src/startup_world_queries.cpp
+index 5214df6cc430c01cd7042a7be3592af1210149b6..ceca2a73098a284612a40e0b9d1f2931fb58d10d 100644
+--- a/src/startup_world_queries.cpp
++++ b/src/startup_world_queries.cpp
+@@ -58,24 +58,51 @@ VariableEntity** VariableWorldPrefix::SelectedBuildings(unsigned int* count)
+ VariableEntity** VariableWorldPrefix::InRectangle(unsigned char type, unsigned int* count,
+     const ScreenWorldPosition* low, const ScreenWorldPosition* high)
+ {
++    unsigned int found = 0;
+     float left = low->x;
+-    float top = low->y;
++    // Retail adds in x87 precision and rounds once when it stores the edge.
+     float right = static_cast<float>((static_cast<long double>(high->x) - low->x) + left);
++    float top = low->y;
+     float bottom = static_cast<float>((static_cast<long double>(high->y) - low->y) + top);
+-    unsigned int found = 0;
+-    VariableEntity** entries = type == 2 ? buildings_12120 : type == 3 ? guests_128f0
+-                                                                       : entities_14060;
+-    unsigned int* size = type == 2 ? &buildings_04 : type == 3 ? &guests_08
+-                                                               : &entities_0c;
+-    for (unsigned int index = 0; index < *size; ++index)
++    unsigned int i;
++    if (type == 2)
+     {
+-        VariableEntity* entity = entries[index];
+-        if (type != 2 && type != 3 && entity->kind_2c != type)
+-            continue;
+-        float x = entity->position_30.x;
+-        float y = entity->position_30.y;
+-        if (x >= left && !(x > right) && y >= top && !(y > bottom))
+-            matches_24234[found++] = entity;
++        for (i = 0; i < buildings_04; ++i)
++        {
++            VariableEntity* entity = buildings_12120[i];
++            ScreenWorldPosition position;
++            float x = entity->position_30.x;
++            position.y = entity->position_30.y;
++            if (x >= left && !(x > right) && position.y >= top && !(position.y > bottom))
++                matches_24234[found++] = entity;
++        }
++    }
++    else if (type == 3)
++    {
++        for (i = 0; i < guests_08; ++i)
++        {
++            VariableEntity* entity = guests_128f0[i];
++            ScreenWorldPosition position;
++            float x = entity->position_30.x;
++            position.y = entity->position_30.y;
++            if (x >= left && !(x > right) && position.y >= top && !(position.y > bottom))
++                matches_24234[found++] = entity;
++        }
++    }
++    else
++    {
++        for (i = 0; i < entities_0c; ++i)
++        {
++            VariableEntity* entity = entities_14060[i];
++            if (entity->kind_2c == type)
++            {
++                ScreenWorldPosition position;
++                float x = entity->position_30.x;
++                position.y = entity->position_30.y;
++                if (x >= left && !(x > right) && position.y >= top && !(position.y > bottom))
++                    matches_24234[found++] = entity;
++            }
++        }
+     }
+     *count = found;
+     return matches_24234;
+diff --git a/src/startup_world_repair_assignments.cpp b/src/startup_world_repair_assignments.cpp
+index fb4d9e68aad298bcb7d832bdf1b77cb9de8c913a..1fb61dab4d635d94c56bf59b7edf0bde9ab20d1d 100644
+--- a/src/startup_world_repair_assignments.cpp
++++ b/src/startup_world_repair_assignments.cpp
+@@ -153,11 +153,13 @@ unsigned int WorldRepairManager::AssignmentType(unsigned int id)
+ unsigned int WorldRepairManager::FindWateringJob(const ScreenWorldPosition* position)
+ {
+     unsigned int id = SelectWateringJob(position, 0);
+-    if (id == static_cast<unsigned int>(-1))
++    if (id != static_cast<unsigned int>(-1))
++    {
++        AddAssignment(id, 0, 3);
++        variable_world->FindObject(id)->AsStatic()->SetRepairAssigned(1);
+         return id;
+-    AddAssignment(id, 0, 3);
+-    variable_world->FindObject(id)->AsStatic()->SetRepairAssigned(1);
+-    return id;
++    }
++    return static_cast<unsigned int>(-1);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004367a0
+diff --git a/src/startup_world_route_requests.cpp b/src/startup_world_route_requests.cpp
+index 04e60cc8d454b337b1e9472c4b7ec6bfe1da37fc..614c082e2538860074d45bc0a6b18c3810eb050b 100644
+--- a/src/startup_world_route_requests.cpp
++++ b/src/startup_world_route_requests.cpp
+@@ -10,8 +10,10 @@ WorldRouteData::WorldRouteData()
+     count_08 = 0;
+     points_0c = 0;
+     flag_24 = 1;
+-    start_10 = { -1, -1 };
+-    destination_18 = { -1, -1 };
++    start_10.x = -1;
++    start_10.y = -1;
++    destination_18.x = -1;
++    destination_18.y = -1;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004305b0

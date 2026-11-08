@@ -1,0 +1,490 @@
+diff --git a/src/startup_screen_manager_set_mode.cpp b/src/startup_screen_manager_set_mode.cpp
+index 8f65624e34920ae254feeb8064ac99a9f52e540a..2d807cf9d691d0b6229e0de716e693388fc51a88 100644
+--- a/src/startup_screen_manager_set_mode.cpp
++++ b/src/startup_screen_manager_set_mode.cpp
+@@ -16,46 +16,21 @@ void ScreenManager::SetMode(int value)
+     case 7:
+     case 8:
+     {
+-        CircularListIterator last = active.End();
+-        CircularListIterator first = active.Begin();
+         CircularListIterator found;
+-        FindScreenByName(&found, first, last, "SceneryPanel");
+-        if (found.node == active.head)
+-        {
++        CircularListNode* node = FindScreenByName(&found, active.Begin(), active.End(), "SceneryPanel")->node;
++        if (node == active.head)
+             break;
+-        }
+-        if (static_cast<CircularListValueNode*>(found.node)->entry->item->word_74 != 1)
+-        {
++        if (static_cast<CircularListValueNode*>(node)->entry->item->word_74 != 1)
+             break;
+-        }
+-
+-        last = active.End();
+-        first = active.Begin();
+-        FindScreenByName(&found, first, last, "SceneryPanel");
+-        if (found.node != active.head)
+-        {
+-            static_cast<CircularListValueNode*>(found.node)
+-                ->entry->item->BeginTransition(4, 1.0f, 0);
+-        }
+-
+-        last = active.End();
+-        first = active.Begin();
+-        FindScreenByName(&found, first, last, "SceneryPanel");
+-        if (found.node != active.head)
+-        {
+-            static_cast<CircularListValueNode*>(found.node)->entry->item->word_74 = 0;
+-        }
+-
+-        ScreenChildLink* node = items_head;
+-        while (node != 0)
+-        {
+-            if (node->item->kind_28 == 0)
+-            {
+-                static_cast<ScreenButtonPrefix*>(node->item)
+-                    ->ReplaceNamedResource("MinSceneryPanel", "UI3_sc_in");
+-            }
+-            node = node->next;
+-        }
++        node = FindScreenByName(&found, active.Begin(), active.End(), "SceneryPanel")->node;
++        if (node != active.head)
++            static_cast<CircularListValueNode*>(node)->entry->item->BeginTransition(4, 1.0f, 0);
++        node = FindScreenByName(&found, active.Begin(), active.End(), "SceneryPanel")->node;
++        if (node != active.head)
++            static_cast<CircularListValueNode*>(node)->entry->item->word_74 = 0;
++        for (ScreenChildLink* link = items_head; link != 0; link = link->next)
++            if (link->item->kind_28 == 0)
++                static_cast<ScreenButtonPrefix*>(link->item)->ReplaceNamedResource("MinSceneryPanel", "UI3_sc_in");
+         break;
+     }
+     case 6:
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 738e83e922a0a928aab0fcd0306582e090e4fd43..0fb2af8eac4ea2fd688d1aaf552e98bf449d930c 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -84,7 +84,7 @@ inline TerrainRegistration::~TerrainRegistration()
+ 
+ struct ScreenTerrainGrid : TerrainRegistration
+ {
+-    ScreenMapPosition TileWorldPosition(int x, int y);          // 0x004463c0.
++    ScreenMapPosition TileWorldPosition(ScreenPoint tile);      // 0x004463c0.
+     bool TilesConnected(int x1, int y1, int x2, int y2);        // 0x00445d30.
+     unsigned int InfluenceAreaAt(ScreenWorldPosition position); // 0x00447120.
+     int NearestRouteIndex(ScreenWorldPosition position);        // 0x00446d90.
+@@ -305,4 +305,6 @@ struct ScreenModeCommandQueue : ScreenModeCommandRegistration
+ extern ScreenModeCommandQueue* screen_mode_commands;                                                      // 0x005ab148.
+ void BroadcastTypeCommand(ScreenModeCommandQueue* queue, unsigned char type, ScreenModeCommand* command); // 0x00441380.
+ 
++#include "startup_screen_terrain_inlines.h"
++
+ #endif
+diff --git a/src/startup_screen_terrain.cpp b/src/startup_screen_terrain.cpp
+index 12d1e1b675ac5e649db057799b1b138dd0406d77..afbd236dc5f74a04d5141c16893d1b0c6464bca0 100644
+--- a/src/startup_screen_terrain.cpp
++++ b/src/startup_screen_terrain.cpp
+@@ -80,25 +80,25 @@ ScreenWorldPosition ScreenTerrainGrid::TilePosition(int x, int y, int direction)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004464f0
+-void ScreenTerrainGrid::BuildingBounds(ScreenPoint& point, unsigned int width, unsigned int height,
+-    int* first, int* last, unsigned int rotation)
++void ScreenTerrainGrid::BuildingBounds(
++    ScreenPoint& point, unsigned int width, unsigned int height, int* first, int* last, unsigned int rotation)
+ {
+-    point.x = static_cast<unsigned int>(point.x) % width_04;
+-    point.y = static_cast<unsigned int>(point.y + 1) % height_08;
++    int remaining;
++    Step(point.x, point.y, 3, &point);
+     switch (rotation)
+     {
+     case 0:
+         *first = 2;
+         *last = 4;
+-        for (int remaining = static_cast<int>(width - 1); remaining > 0; --remaining)
++        for (remaining = width - 1; remaining > 0; --remaining)
+             screen_terrain_grid->Step(point.x, point.y, 0, &point);
+-        for (int remaining = static_cast<int>(height - 1); remaining > 0; --remaining)
++        for (remaining = height - 1; remaining > 0; --remaining)
+             screen_terrain_grid->Step(point.x, point.y, 6, &point);
+         break;
+     case 1:
+         *first = 2;
+         *last = 0;
+-        for (int remaining = static_cast<int>(height - 1); remaining > 0; --remaining)
++        for (remaining = height - 1; remaining > 0; --remaining)
+             screen_terrain_grid->Step(point.x, point.y, 6, &point);
+         break;
+     case 2:
+@@ -108,7 +108,7 @@ void ScreenTerrainGrid::BuildingBounds(ScreenPoint& point, unsigned int width, u
+     case 3:
+         *first = 6;
+         *last = 4;
+-        for (int remaining = static_cast<int>(width - 1); remaining > 0; --remaining)
++        for (remaining = width - 1; remaining > 0; --remaining)
+             screen_terrain_grid->Step(point.x, point.y, 0, &point);
+         break;
+     }
+diff --git a/src/startup_screen_terrain_inlines.h b/src/startup_screen_terrain_inlines.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..973c6a11b8e385c5a422234ae3c2b81d9750eaa0
+--- /dev/null
++++ b/src/startup_screen_terrain_inlines.h
+@@ -0,0 +1,81 @@
++#ifndef STARTUP_SCREEN_TERRAIN_INLINES_H
++#define STARTUP_SCREEN_TERRAIN_INLINES_H
++
++#include "startup_screen_mode_world.h"
++
++// Retail expands the step inline in its /Ob1 callers and keeps one shared
++// out-of-line copy for the others; every caller sees this definition.
++// FUNCTION: BEACHLIFE 0x00446080
++inline void ScreenTerrainGrid::Step(int x, int y, int direction, ScreenPoint* result)
++{
++    unsigned int column = x;
++    unsigned int row = y;
++    if (x & 1)
++    {
++        switch (direction)
++        {
++        case 0:
++            column = x + 1;
++            break;
++        case 1:
++            column = x + 2;
++            break;
++        case 2:
++            row = y + 1;
++            column = x + 1;
++            break;
++        case 3:
++            row = y + 1;
++            break;
++        case 4:
++            row = y + 1;
++            column = x - 1;
++            break;
++        case 5:
++            column = x - 2;
++            break;
++        case 6:
++            column = x - 1;
++            break;
++        case 7:
++            row = y - 1;
++            break;
++        }
++    }
++    else
++    {
++        switch (direction)
++        {
++        case 0:
++            column = x + 1;
++            row = y - 1;
++            break;
++        case 1:
++            column = x + 2;
++            break;
++        case 2:
++            column = x + 1;
++            break;
++        case 3:
++            row = y + 1;
++            break;
++        case 4:
++            column = x - 1;
++            break;
++        case 5:
++            column = x - 2;
++            break;
++        case 6:
++            column = x - 1;
++            row = y - 1;
++            break;
++        case 7:
++            row = y - 1;
++            break;
++        }
++    }
++    result->x = column % width_04;
++    result->y = row % height_08;
++}
++
++#endif
+diff --git a/src/startup_screen_terrain_motion.cpp b/src/startup_screen_terrain_motion.cpp
+index 219319f1a5e449cb699b8b9c11e9f3404989b11d..2ee87b5e04360c8bcbc2d8bbb0a16261a28464cf 100644
+--- a/src/startup_screen_terrain_motion.cpp
++++ b/src/startup_screen_terrain_motion.cpp
+@@ -13,11 +13,11 @@ ScreenWorldPosition ScreenTerrainGrid::TileCenter(int x, int y)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004463c0
+-ScreenMapPosition ScreenTerrainGrid::TileWorldPosition(int x, int y)
++ScreenMapPosition ScreenTerrainGrid::TileWorldPosition(ScreenPoint tile)
+ {
+     unsigned int half = static_cast<unsigned int>(tile_size_00) >> 1;
+-    unsigned int world_x = half * x;
+-    unsigned int world_y = static_cast<unsigned int>(tile_size_00) * y + (x & 1) * half;
++    unsigned int world_x = half * tile.x;
++    unsigned int world_y = static_cast<unsigned int>(tile_size_00) * tile.y + (tile.x & 1) * half;
+     return { static_cast<float>(world_x), static_cast<float>(world_y) };
+ }
+ 
+@@ -28,16 +28,21 @@ ScreenMapPosition ScreenTerrainGrid::OffsetPosition(ScreenMapPosition origin, Sc
+     switch (rotation)
+     {
+     case 0:
+-        result = { origin.x + offset.x, origin.y + offset.y };
++        result.x = offset.x + origin.x;
++        result.y = offset.y + origin.y;
+         break;
+     case 1:
+-        result = { origin.x + offset.y, origin.y - offset.x };
++        result.x = origin.x;
++        result.x += offset.y;
++        result.y = origin.y - offset.x;
+         break;
+     case 2:
+-        result = { origin.x - offset.x, origin.y - offset.y };
++        result.x = origin.x - offset.x;
++        result.y = origin.y - offset.y;
+         break;
+     case 3:
+-        result = { origin.x - offset.y, origin.y + offset.x };
++        result.x = origin.x - offset.y;
++        result.y = offset.x + origin.y;
+         break;
+     }
+     return result;
+diff --git a/src/startup_screen_terrain_queries.cpp b/src/startup_screen_terrain_queries.cpp
+index 42fc17dda5772fcde8a922d48b071c36f99bee98..4d4506c9957b38417dc3c67c233636df410a6b1f 100644
+--- a/src/startup_screen_terrain_queries.cpp
++++ b/src/startup_screen_terrain_queries.cpp
+@@ -33,17 +33,23 @@ CircularList* ScreenTerrainGrid::ObjectsAt(int x, int y)
+ // FUNCTION: BEACHLIFE 0x00446420
+ bool ScreenTerrainGrid::OutsideArea(int x, int y, unsigned int width, unsigned int height)
+ {
+-    ScreenTerrainGrid* grid = screen_terrain_grid;
+-    ScreenPoint left = { x, y };
+-    ScreenPoint right = { x, y };
+-    for (int remaining = static_cast<int>(width); remaining > 0; --remaining)
+-        grid->Step(left.x, left.y, 6, &left);
+-    for (int remaining = static_cast<int>(height); remaining > 0; --remaining)
+-        grid->Step(right.x, right.y, 0, &right);
+-    ScreenPoint far = right;
+-    for (int remaining = static_cast<int>(width); remaining > 0; --remaining)
+-        grid->Step(far.x, far.y, 6, &far);
+-    return right.x < left.x || y < far.y;
++    ScreenPoint left;
++    left.x = x;
++    left.y = y;
++    ScreenPoint right;
++    right.x = x;
++    right.y = y;
++    int remaining;
++    for (remaining = static_cast<int>(width); remaining > 0; --remaining)
++        screen_terrain_grid->Step(left.x, left.y, 6, &left);
++    for (remaining = static_cast<int>(height); remaining > 0; --remaining)
++        screen_terrain_grid->Step(right.x, right.y, 0, &right);
++    ScreenPoint corner = right;
++    for (remaining = static_cast<int>(width); remaining > 0; --remaining)
++        screen_terrain_grid->Step(corner.x, corner.y, 6, &corner);
++    if (right.x < left.x || y < corner.y)
++        return true;
++    return false;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00446650
+diff --git a/src/startup_screen_terrain_step.cpp b/src/startup_screen_terrain_step.cpp
+deleted file mode 100644
+index ec5555c9214e3017d5cdab52abb9cb4b19d849ad..0000000000000000000000000000000000000000
+--- a/src/startup_screen_terrain_step.cpp
++++ /dev/null
+@@ -1,46 +0,0 @@
+-#include "startup_screen_mode_world.h"
+-
+-// FUNCTION: BEACHLIFE 0x00446080
+-void ScreenTerrainGrid::Step(int x, int y, int direction, ScreenPoint* result)
+-{
+-    unsigned int next_x = static_cast<unsigned int>(x);
+-    unsigned int next_y = static_cast<unsigned int>(y);
+-    bool odd = (next_x & 1) != 0;
+-    switch (direction)
+-    {
+-    case 0:
+-        ++next_x;
+-        if (!odd)
+-            --next_y;
+-        break;
+-    case 1:
+-        next_x += 2;
+-        break;
+-    case 2:
+-        ++next_x;
+-        if (odd)
+-            ++next_y;
+-        break;
+-    case 3:
+-        ++next_y;
+-        break;
+-    case 4:
+-        --next_x;
+-        if (odd)
+-            ++next_y;
+-        break;
+-    case 5:
+-        next_x -= 2;
+-        break;
+-    case 6:
+-        --next_x;
+-        if (!odd)
+-            --next_y;
+-        break;
+-    case 7:
+-        --next_y;
+-        break;
+-    }
+-    result->x = static_cast<int>(next_x % width_04);
+-    result->y = static_cast<int>(next_y % height_08);
+-}
+diff --git a/src/startup_terrain_constructor.cpp b/src/startup_terrain_constructor.cpp
+index e88f98d8a18fed6875ee6f66101f55f36b36ee51..b6ac4527b23ac577ba3220ae8699012135c9cc42 100644
+--- a/src/startup_terrain_constructor.cpp
++++ b/src/startup_terrain_constructor.cpp
+@@ -82,7 +82,7 @@ ScreenTerrainGrid::ScreenTerrainGrid(unsigned int width, unsigned int height, in
+         for (int y = 0; y < 32; ++y)
+         {
+             bool water = false;
+-            ScreenPoint point = { x << 7, y << 7 };
++            ScreenPoint point(x << 7, y << 7);
+             ScreenWorldPosition position = overlay_map->ScreenToWorld(point);
+             ScreenPoint tile = overlay_map->WorldToTile(&position);
+             ScreenTerrainGrid* terrain = screen_terrain_grid;
+diff --git a/src/startup_weather_screen_size.cpp b/src/startup_weather_screen_size.cpp
+index 7f811dac4d760c4fd634f17a233b396c86dd33bc..1c6070d3272186ff068db789e39ac4e9375fa4db 100644
+--- a/src/startup_weather_screen_size.cpp
++++ b/src/startup_weather_screen_size.cpp
+@@ -8,13 +8,15 @@ ScreenPoint weather_particles[8000];
+ // FUNCTION: BEACHLIFE 0x00438520
+ void VariableWeather::RefreshForScreenSize()
+ {
+-    for (ScreenPoint* particle = weather_particles; particle != weather_particles + 8000; ++particle)
++    for (int index = 0; index < 8000; ++index)
+     {
+-        unsigned int width = overlay_map->view_ac.right;
+         unsigned int height = overlay_map->view_ac.bottom;
++        unsigned int width = overlay_map->view_ac.right;
+         unsigned int y = static_cast<unsigned int>(std::rand()) % height;
+         unsigned int x = static_cast<unsigned int>(std::rand()) % width;
+-        particle->x = x;
+-        particle->y = y;
++        ScreenPoint point;
++        point.x = x;
++        point.y = y;
++        weather_particles[index] = point;
+     }
+ }
+diff --git a/src/startup_world_motion_progress.cpp b/src/startup_world_motion_progress.cpp
+index e6dbc31708ef513648af84aa6312719389ea4fad..bf46d027527ab1f40ce7742c24151f19f767a4e6 100644
+--- a/src/startup_world_motion_progress.cpp
++++ b/src/startup_world_motion_progress.cpp
+@@ -127,7 +127,7 @@ void WorldMovingEntity::AdvanceMotion()
+         {
+             WorldRoutePosition* route = static_cast<WorldRoutePosition*>(route_b8);
+             ScreenPoint point = route->data_00->points_0c[route->index_08];
+-            ScreenMapPosition position = screen_terrain_grid->TileWorldPosition(point.x, point.y);
++            ScreenMapPosition position = screen_terrain_grid->TileWorldPosition(point);
+             float x = position.x - motion_64[0];
+             long double y = static_cast<long double>(position.y) - motion_64[1];
+             float rounded_y = static_cast<float>(y);
+diff --git a/src/startup_world_motion_target.cpp b/src/startup_world_motion_target.cpp
+index 8974988e10f0fdfe3c2df08aee4e0e82930e798b..710cf6ee456a331abd36e76de81690a3972c0625 100644
+--- a/src/startup_world_motion_target.cpp
++++ b/src/startup_world_motion_target.cpp
+@@ -46,7 +46,7 @@ void WorldMovingEntity::UpdateSteeringTarget()
+         ScreenPoint current = route->data_00->points_0c[route->index_08];
+         unsigned int offset = MotionWord(values_d8[0]);
+         ScreenPoint target = route->Position();
+-        ScreenMapPosition position = CurrentScreenTerrain()->TileWorldPosition(target.x, target.y);
++        ScreenMapPosition position = CurrentScreenTerrain()->TileWorldPosition(target);
+         if (offset)
+         {
+             ScreenMapPosition adjustment = offset == 1 ? motion_positive_offset : motion_negative_offset;
+diff --git a/src/startup_world_moving_update.cpp b/src/startup_world_moving_update.cpp
+index c52c9ae7f0c4fbf2e1d6565ba605da8a9f846e29..cc8835fa9d7994902cafc5f0b59297be33823488 100644
+--- a/src/startup_world_moving_update.cpp
++++ b/src/startup_world_moving_update.cpp
+@@ -21,8 +21,7 @@ bool WorldMovingEntity::Unknown0c()
+             if (!word_ec && flag_d4 && values_d8[2] > 0.0f && route_b8)
+             {
+                 WorldRouteData* route = static_cast<WorldRoutePosition*>(route_b8)->data_00;
+-                ScreenMapPosition destination = screen_terrain_grid->TileWorldPosition(
+-                    route->destination_18.x, route->destination_18.y);
++                ScreenMapPosition destination = screen_terrain_grid->TileWorldPosition(route->destination_18);
+                 long double x = static_cast<long double>(motion_64[0]) - destination.x;
+                 long double y = static_cast<long double>(motion_64[1]) - destination.y;
+                 float distance = MotionSquareRoot(static_cast<float>(y * y + x * x));
+diff --git a/src/startup_world_route_reference.cpp b/src/startup_world_route_reference.cpp
+index aa0b87517f20f621cd5327eb342f8c0b200a1ec3..711b5a7957571ef85c55ab8717759d9d3cdc7589 100644
+--- a/src/startup_world_route_reference.cpp
++++ b/src/startup_world_route_reference.cpp
+@@ -26,9 +26,9 @@ bool WorldRouteReference::IsStraight()
+     if (count <= 1)
+         return false;
+     ScreenPoint point = data_00->points_0c[0];
+-    ScreenMapPosition previous = screen_terrain_grid->TileWorldPosition(point.x, point.y);
++    ScreenMapPosition previous = screen_terrain_grid->TileWorldPosition(point);
+     point = data_00->points_0c[1];
+-    ScreenMapPosition current = screen_terrain_grid->TileWorldPosition(point.x, point.y);
++    ScreenMapPosition current = screen_terrain_grid->TileWorldPosition(point);
+     ScreenMapPosition direction;
+     direction.x = static_cast<float>(static_cast<long double>(current.x) - previous.x);
+     long double y = static_cast<long double>(current.y) - previous.y;
+@@ -43,7 +43,7 @@ bool WorldRouteReference::IsStraight()
+     for (int i = 2; i < count; ++i)
+     {
+         point = data_00->points_0c[i];
+-        current = screen_terrain_grid->TileWorldPosition(point.x, point.y);
++        current = screen_terrain_grid->TileWorldPosition(point);
+         long double x = static_cast<long double>(current.x) - previous.x;
+         y = static_cast<long double>(current.y) - previous.y;
+         direction.x = static_cast<float>(x);
+diff --git a/src/startup_world_vehicle_enter.cpp b/src/startup_world_vehicle_enter.cpp
+index 1cbe68597d11db0b95941aa876427e552846540d..eb193e428dae5806cf963b3ed059a8ca5216ce98 100644
+--- a/src/startup_world_vehicle_enter.cpp
++++ b/src/startup_world_vehicle_enter.cpp
+@@ -95,7 +95,8 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+     auto circuit_point = [&](int index)
+     {
+         auto* entries = static_cast<WindowDeactivationState::ScriptEntry*>(circuit_920);
+-        return screen_terrain_grid->TileWorldPosition(entries[index].first, entries[index].second);
++        return screen_terrain_grid->TileWorldPosition(
++            ScreenPoint(static_cast<int>(entries[index].first), static_cast<int>(entries[index].second)));
+     };
+     auto sound = [&](const char* name)
+     {
+@@ -114,7 +115,7 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+             {
+                 ScreenTerrainGrid* grid = screen_terrain_grid;
+                 ScreenPoint tile = TilePosition();
+-                ScreenMapPosition first = grid->TileWorldPosition(tile.x, tile.y);
++                ScreenMapPosition first = grid->TileWorldPosition(tile);
+                 ScreenMapPosition second = circuit_point(i);
+                 long double x = static_cast<long double>(second.x) - first.x;
+                 long double y = static_cast<long double>(second.y) - first.y;
+diff --git a/src/startup_world_vehicle_turn.cpp b/src/startup_world_vehicle_turn.cpp
+index 8c6ce87466f0103c08bc40b4756ed66d8c5f307f..a0fb06f536ddd6d724762a3da3cc809e2ed611c6 100644
+--- a/src/startup_world_vehicle_turn.cpp
++++ b/src/startup_world_vehicle_turn.cpp
+@@ -110,7 +110,7 @@ void WorldVehicleEntity::StartCircuit()
+     else
+     {
+         ScreenPoint tile = circuit[words_904[6]];
+-        ScreenMapPosition point = screen_terrain_grid->TileWorldPosition(tile.x, tile.y);
++        ScreenMapPosition point = screen_terrain_grid->TileWorldPosition(tile);
+         command.words[2] = 11;
+         command.words[3] = static_cast<int>(point.x);
+         command.words[4] = static_cast<int>(point.y);

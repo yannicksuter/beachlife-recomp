@@ -1,0 +1,277 @@
+diff --git a/src/startup_screen_manager_build_panels.cpp b/src/startup_screen_manager_build_panels.cpp
+index 79cfb90bc464787e005ea457f63a26a0973bc017..d89386b4ca2ed3af7936a69f448139c15661f7bf 100644
+--- a/src/startup_screen_manager_build_panels.cpp
++++ b/src/startup_screen_manager_build_panels.cpp
+@@ -9,24 +9,29 @@
+ // FUNCTION: BEACHLIFE 0x004ae6a0
+ void ScreenManager::ToggleBuildList()
+ {
+-    if (mode == 2 || HasActiveScreen())
++    if (mode != 2)
+     {
++        if (!HasActiveScreen())
++        {
++            previous_mode = 4;
++            for (CircularListNode* node = active.head->next; node != active.head; node = node->next)
++            {
++                ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++                entry->state = 2;
++                ScreenDialog* item = entry->item;
++                int group = item->group_7c;
++                SavePlacement(item->GetRectangle(), group);
++                if (entry->context)
++                    entry->context->Replaced();
++            }
++            if (!CloseScreen("BuildPanel"))
++                RequestScreen("BuildPanel", 0, 0);
++            return;
++        }
+         window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
+         return;
+     }
+-    previous_mode = 4;
+-    for (CircularListNode* node = active.head->next; node != active.head; node = node->next)
+-    {
+-        ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
+-        entry->state = 2;
+-        ScreenDialog* item = entry->item;
+-        unsigned int group = item->group_7c;
+-        SavePlacement(item->GetRectangle(), static_cast<int>(group));
+-        if (entry->context)
+-            entry->context->Replaced();
+-    }
+-    if (!CloseScreen("BuildPanel"))
+-        RequestScreen("BuildPanel", 0, 0);
++    window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004ae780
+diff --git a/src/startup_screen_manager_map.cpp b/src/startup_screen_manager_map.cpp
+index 29f0c9fcfebd2783dfa13660f704b10995bcaae7..d4bdf075d92fc84e59b01ff65e7686c882134182 100644
+--- a/src/startup_screen_manager_map.cpp
++++ b/src/startup_screen_manager_map.cpp
+@@ -29,24 +29,25 @@ void ScreenManager::HandleOverlayInput(int x, int y, unsigned int buttons)
+ // FUNCTION: BEACHLIFE 0x004b2080
+ void ScreenManager::UpdateTrackedEntity()
+ {
+-    if (word_98 == -1)
+-        return;
+-    VariableEntity* entity = variable_world->FindObject(word_98);
+-    if (!entity)
++    if (word_98 != -1)
+     {
+-        word_98 = -1;
+-        return;
++        VariableEntity* entity = variable_world->FindObject(word_98);
++        if (entity)
++        {
++            ScreenWorldPosition position = entity->position_30;
++            int x;
++            int y;
++            overlay_map->ProjectWorldPosition(&position, &x, &y);
++            ScreenRequestRenderer* current = renderer;
++            x -= static_cast<int>(static_cast<long double>(current->width)
++                                  / (static_cast<long double>(std::bit_cast<float>(current->word_58)) * 2.0L));
++            y -= static_cast<int>(static_cast<long double>(current->height)
++                                  / (static_cast<long double>(std::bit_cast<float>(current->word_58)) * 2.0L));
++            overlay_map->SetViewPosition(x, y);
++        }
++        else
++            word_98 = -1;
+     }
+-    ScreenWorldPosition position = { entity->position_30.x, entity->position_30.y, entity->position_30.z };
+-    int x;
+-    int y;
+-    overlay_map->ProjectWorldPosition(&position, &x, &y);
+-    ScreenRequestRenderer* current = renderer;
+-    x -= static_cast<int>(static_cast<long double>(current->width)
+-                          / (static_cast<long double>(std::bit_cast<float>(current->word_58)) * 2.0L));
+-    y -= static_cast<int>(static_cast<long double>(current->height)
+-                          / (static_cast<long double>(std::bit_cast<float>(current->word_58)) * 2.0L));
+-    overlay_map->SetViewPosition(x, y);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004b2ae0
+diff --git a/src/startup_screen_manager_menu_panels.cpp b/src/startup_screen_manager_menu_panels.cpp
+index 99611d17c6529ffac5f537c7bc6d647050c9c66a..172ef1f9af56a840c777f3b407ab4e4eefee4e6d 100644
+--- a/src/startup_screen_manager_menu_panels.cpp
++++ b/src/startup_screen_manager_menu_panels.cpp
+@@ -3,6 +3,7 @@
+ #include "startup_screen_load_dependencies.h"
+ #include "window_activation.h"
+ #include "startup_screen_dialog.h"
++#include "startup_gui_load_game_menu.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004ae360
+ void ScreenManager::ToggleLoadGamePanel()
+@@ -12,19 +13,17 @@ void ScreenManager::ToggleLoadGamePanel()
+         window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
+         return;
+     }
+-    CircularListIterator last = active.End();
+-    CircularListIterator first = active.Begin();
+     CircularListIterator found;
+-    FindScreenByName(&found, first, last, "LoadGameMenu");
+-    if (found.node == active.head)
++    CircularListNode* node = FindScreenByName(&found, active.Begin(), active.End(), screen_button_action_name_0057e04c)->node;
++    if (node == active.head)
+     {
+         CloseScreen("SaveGameMenu");
+         screen_request_game->RefreshSaveRecords();
+-        RequestScreen("LoadGameMenu", 0, 0);
++        RequestScreen(screen_button_action_name_0057e04c, 0, 0);
+         screen_request_game->PopulateLoadGameMenu();
+     }
+     else
+-        CloseScreen("LoadGameMenu");
++        CloseScreen(screen_button_action_name_0057e04c);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004ae440
+@@ -35,13 +34,11 @@ void ScreenManager::ToggleSaveGamePanel()
+         window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
+         return;
+     }
+-    CircularListIterator last = active.End();
+-    CircularListIterator first = active.Begin();
+     CircularListIterator found;
+-    FindScreenByName(&found, first, last, "SaveGameMenu");
+-    if (found.node == active.head)
++    CircularListNode* node = FindScreenByName(&found, active.Begin(), active.End(), "SaveGameMenu")->node;
++    if (node == active.head)
+     {
+-        CloseScreen("LoadGameMenu");
++        CloseScreen(screen_button_action_name_0057e04c);
+         screen_request_game->RefreshSaveRecords();
+         RequestScreen("SaveGameMenu", 0, 0);
+         screen_request_game->PopulateSaveGameMenu();
+@@ -58,20 +55,16 @@ void ScreenManager::ToggleOptions()
+         window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
+         return;
+     }
+-    CircularListIterator last = active.End();
+-    CircularListIterator first = active.Begin();
+     CircularListIterator found;
+-    FindScreenByName(&found, first, last, "InGameOptions");
+-    if (found.node != active.head)
++    CircularListNode* node = FindScreenByName(&found, active.Begin(), active.End(), "InGameOptions")->node;
++    if (node != active.head)
+         CloseScreen("InGameOptions");
+     else
+     {
+         RequestScreen("InGameOptions", 0, 0);
+-        last = active.End();
+-        first = active.Begin();
+-        FindScreenByName(&found, first, last, "InGameOptions");
+-        if (found.node != active.head)
+-            static_cast<CircularListValueNode*>(found.node)->entry->item->Unresolved4c(0);
++        node = FindScreenByName(&found, active.Begin(), active.End(), "InGameOptions")->node;
++        if (node != active.head)
++            static_cast<CircularListValueNode*>(node)->entry->item->Unresolved4c(0);
+     }
+ }
+ 
+diff --git a/src/startup_screen_overlay_position.cpp b/src/startup_screen_overlay_position.cpp
+index 111fe2ad12d30f6e5e281c2f33aa8a285fed238d..d6ec50d648e3c300f658a5c3c36c90dee4d573a3 100644
+--- a/src/startup_screen_overlay_position.cpp
++++ b/src/startup_screen_overlay_position.cpp
+@@ -18,6 +18,6 @@ void ScreenManager::UpdateOverlayPosition()
+     ScreenDialogResourceFrame* frame = resource->record->frames[resource->word_10];
+     layout_bottom_158 = top + frame->width_0e;
+     item_160->SetRectanglePosition(item_160->GetRectangle().left, top + 69);
+-    ScreenPoint position = { 9, top };
++    ScreenPoint position(9, top);
+     renderer->PositionSurface(surface_b8, position);
+ }
+diff --git a/src/startup_world_builder_update.cpp b/src/startup_world_builder_update.cpp
+index e078928a71c7aa234742f7e00c8d6d6b43dd83ef..f879e884f1f4e4960826c59551daa2ee532ac4a4 100644
+--- a/src/startup_world_builder_update.cpp
++++ b/src/startup_world_builder_update.cpp
+@@ -47,18 +47,24 @@ WorldBuilderEntity::~WorldBuilderEntity() noexcept(false)
+ // FUNCTION: BEACHLIFE 0x00455590
+ bool WorldBuilderEntity::Unknown08(unsigned int state)
+ {
+-    if (state == 1)
++    switch (state)
++    {
++    case 1:
+     {
+         ScreenModeCommand command;
+         command.words[0] = id_28;
+         command.words[1] = home_id_100;
+         command.words[2] = 0x25;
+-        command.words[3] = command.words[4] = 0;
++        command.words[3] = 0;
++        command.words[4] = 0;
+         screen_mode_commands->QueueCommand(&command);
+         window_deactivation_state->building_status_48->ActivateBuilder(id_28);
++        break;
+     }
+-    else if (state == 0x60)
++    case 0x60:
+         word_98 = home_id_100;
++        break;
++    }
+     script_f4->EnterState(this, state);
+     return true;
+ }
+diff --git a/src/startup_world_cleaner_methods.cpp b/src/startup_world_cleaner_methods.cpp
+index 881a122c613a710c08a1bea4eddb49efcb26f0bb..4413944c58cab98bc5d686fd8f724ec051efe114 100644
+--- a/src/startup_world_cleaner_methods.cpp
++++ b/src/startup_world_cleaner_methods.cpp
+@@ -62,7 +62,9 @@ bool WorldCleanerEntity::Unknown04(unsigned int state)
+ // FUNCTION: BEACHLIFE 0x00465920
+ bool WorldCleanerEntity::Unknown08(unsigned int state)
+ {
+-    if (state == 1)
++    switch (state)
++    {
++    case 1:
+     {
+         ScreenModeCommand command;
+         command.words[0] = id_28;
+@@ -71,9 +73,12 @@ bool WorldCleanerEntity::Unknown08(unsigned int state)
+         command.words[3] = 0;
+         command.words[4] = 0;
+         screen_mode_commands->QueueCommand(&command);
++        break;
+     }
+-    else if (state == 0x69)
++    case 0x69:
+         word_98 = home_id_100;
++        break;
++    }
+     script_f4->EnterState(this, state);
+     return true;
+ }
+diff --git a/src/startup_world_staff_script.cpp b/src/startup_world_staff_script.cpp
+index c97f6d2381d0e1f3b564c85e16b8e23d14271f33..08487323dbb3787a17337892101215dc1ea0f2c3 100644
+--- a/src/startup_world_staff_script.cpp
++++ b/src/startup_world_staff_script.cpp
+@@ -70,10 +70,23 @@ bool WorldStaffEntity::EnterDefaultScriptState(unsigned int state)
+ // FUNCTION: BEACHLIFE 0x00481220
+ bool WorldMechanicEntity::Unknown08(unsigned int state)
+ {
+-    if (state == 1)
+-        NotifyStaffHome(this);
+-    else if (state == 92)
++    switch (state)
++    {
++    case 1:
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = home_id_100;
++        command.words[2] = 0x25;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        screen_mode_commands->QueueCommand(&command);
++        break;
++    }
++    case 92:
+         word_98 = home_id_100;
++        break;
++    }
+     script_f4->EnterState(this, state);
+     return true;
+ }

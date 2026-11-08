@@ -1,0 +1,265 @@
+diff --git a/src/startup_screen_button_constants.h b/src/startup_screen_button_constants.h
+index 12e673041a8f170763ea78ad4def0e6334a38981..0c0794ee9ba3f1ff44a3be722bd281957fa3cfd1 100644
+--- a/src/startup_screen_button_constants.h
++++ b/src/startup_screen_button_constants.h
+@@ -12,4 +12,9 @@ extern char screen_button_state_variable_prefix[];       // 0x0057e1e8, initiall
+ extern char screen_button_state_key_format[]; // 0x0057e21c, initially "%s_STATE".
+ extern char screen_button_click_sound[12];    // 0x0057e210, initially "ButtonClick".
+ 
++// Actual .rdata 0x004f4368 (0.75f, initial and released button scale) and
++// 0x004f436c (0.05f, held-button repeat interval).
++extern const float screen_button_default_scale;
++extern const float screen_button_repeat_interval;
++
+ #endif
+diff --git a/src/startup_screen_button_constructor.cpp b/src/startup_screen_button_constructor.cpp
+index 9a015c4d97cb693cf243b5eac42f0e3241f7e2de..8ef3ff9e03a2667d94c491af8a09b9fb601193be 100644
+--- a/src/startup_screen_button_constructor.cpp
++++ b/src/startup_screen_button_constructor.cpp
+@@ -4,6 +4,8 @@
+ #include <new>
+ #include <string.h>
+ 
++extern const float screen_button_default_scale = 0.75f;
++
+ // FUNCTION: BEACHLIFE 0x004a0b40
+ ScreenButtonPrefix::ScreenButtonPrefix(ScreenRectangle initial,
+     const char* first_name,
+@@ -13,7 +15,7 @@ ScreenButtonPrefix::ScreenButtonPrefix(ScreenRectangle initial,
+     : ScreenItem(initial)
+     , word_4c(0)
+     , text_54(0)
+-    , value_6c(0.75f)
++    , value_6c(screen_button_default_scale)
+     , resource_name_70(0)
+     , resource_74(0)
+ {
+diff --git a/src/startup_screen_button_globals.cpp b/src/startup_screen_button_globals.cpp
+index 6848359f82116f0e9dc658578eaac60298875501..46d22dd47c330682166fd58371e7bcfaea9b1a10 100644
+--- a/src/startup_screen_button_globals.cpp
++++ b/src/startup_screen_button_globals.cpp
+@@ -2,3 +2,9 @@
+ 
+ // GLOBAL: BEACHLIFE 0x0057e210
+ char screen_button_click_sound[12] = "ButtonClick";
++
++// Writable 12-byte slot; the next string starts at 0x0057e228.
++// GLOBAL: BEACHLIFE 0x0057e21c
++char screen_button_state_key_format[12] = "%s_STATE";
++
++extern const float screen_button_repeat_interval = 0.05f;
+diff --git a/src/startup_screen_button_state_key_globals.cpp b/src/startup_screen_button_state_key_globals.cpp
+deleted file mode 100644
+index 9c7b9e17b30f52723bce87215e792c88a4cedbdd..0000000000000000000000000000000000000000
+--- a/src/startup_screen_button_state_key_globals.cpp
++++ /dev/null
+@@ -1,5 +0,0 @@
+-#include "startup_screen_button_constants.h"
+-
+-// DATA: BEACHLIFE 0x0057e21c
+-// Writable 12-byte slot (the next string starts at 0x0057e228).
+-char screen_button_state_key_format[12] = "%s_STATE";
+diff --git a/src/startup_screen_button_timed_coordinates.cpp b/src/startup_screen_button_timed_coordinates.cpp
+index 9567978d5766a3da25de764a1c05c36db2270f54..3050f333c16013fedae9ecd6c94c84472425fd29 100644
+--- a/src/startup_screen_button_timed_coordinates.cpp
++++ b/src/startup_screen_button_timed_coordinates.cpp
+@@ -1,84 +1,76 @@
+ #include "startup_frame_clock.h"
+ #include "startup_input_motion.h"
+ #include "startup_screen_button.h"
++#include "startup_screen_button_constants.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004a17a0
+ bool ScreenButtonPrefix::HandleTimedCoordinates(int x, int y, int value)
+ {
+-    if (state_30 == 0)
++    bool result = false;
++    if (state_30 != 0)
+     {
+-        return false;
+-    }
+-
+-    ScreenItem::HandleTimedCoordinates(x, y, value);
+-    state_41 = 0;
+-    if (value == 3)
+-    {
+-        state_40 = 0;
+-    }
+-    else
+-    {
+-        TestRectangle(x, y);
+-    }
+-
+-    switch (value)
+-    {
+-    case 0:
+-        if (word_44 == 0)
++        ScreenItem::HandleTimedCoordinates(x, y, value);
++        state_41 = 0;
++        if (value != 3)
++            TestRectangle(x, y);
++        else
++            state_40 = 0;
++        switch (value)
+         {
+-            if (ReadState40() != 0)
++        case 2:
++            if (word_44 == 1 && ReadState40() != 0)
+             {
+-                word_44 = 2;
+-            }
+-        }
+-        else if (word_44 == 2)
+-        {
+-            if (ReadState40() == 0)
+-            {
+-                word_44 = 0;
+-            }
+-        }
+-        break;
+-    case 1:
+-        if (ReadState40() != 0 && word_44 == 2)
+-        {
+-            word_44 = 4;
+-            time_58 = startup_frame_clock->seconds;
+-            value_6c = 0.75f;
+-            flag_7d = 0;
+-            return true;
+-        }
+-        break;
+-    case 2:
+-        if (word_44 == 1 && ReadState40() != 0)
+-        {
+-            if (flag_50 != 0)
+-            {
+-                if (startup_frame_clock->seconds - time_58 >= value_6c)
++                if (flag_50 != 0)
++                {
++                    if (startup_frame_clock->seconds - time_58 >= value_6c)
++                    {
++                        action_5c(word_2c);
++                        float now = startup_frame_clock->seconds;
++                        state_42 = 1;
++                        time_58 = now;
++                        value_6c = screen_button_repeat_interval;
++                        state_41 = 1;
++                        result = true;
++                        break;
++                    }
++                }
++                else
+                 {
+-                    action_5c(word_2c);
+                     float now = startup_frame_clock->seconds;
+-                    state_42 = 1;
+                     time_58 = now;
+-                    value_6c = 0.05f;
+-                    state_41 = 1;
+-                    return true;
+                 }
++                state_41 = 1;
+             }
+-            else
++            break;
++        case 1:
++            if (ReadState40() != 0 && word_44 == 2)
+             {
+-                time_58 = startup_frame_clock->seconds;
++                word_44 = 4;
++                float now = startup_frame_clock->seconds;
++                time_58 = now;
++                value_6c = screen_button_default_scale;
++                flag_7d = 0;
++                result = true;
+             }
+-            state_41 = 1;
+-        }
+-        break;
+-    case 3:
+-        if (word_44 == 2)
+-        {
+-            word_44 = 0;
++            break;
++        case 0:
++            switch (word_44)
++            {
++            case 2:
++                if (ReadState40() == 0)
++                    word_44 = 0;
++                break;
++            case 0:
++                if (ReadState40() != 0)
++                    word_44 = 2;
++                break;
++            }
++            break;
++        case 3:
++            if (word_44 == 2)
++                word_44 = 0;
++            break;
+         }
+-        break;
+     }
+-
+-    return false;
++    return result;
+ }
+diff --git a/src/startup_screen_button_update.cpp b/src/startup_screen_button_update.cpp
+index fc2602a8dc159a79335ee49f694a4ade4acfc045..4a13da136fc0331b72297ced1464f29e496b58a9 100644
+--- a/src/startup_screen_button_update.cpp
++++ b/src/startup_screen_button_update.cpp
+@@ -14,7 +14,7 @@ void ScreenButtonPrefix::Unresolved04(float elapsed)
+     if (state_30 == 0)
+         return;
+ 
+-    if (word_4c >= 1 && word_4c <= 2)
++    if (static_cast<int>(word_4c) > 0 && static_cast<int>(word_4c) <= 2)
+     {
+         unsigned short state_text[32];
+         char key[128];
+@@ -50,9 +50,10 @@ void ScreenButtonPrefix::Unresolved04(float elapsed)
+         }
+     }
+ 
+-    if (word_44 == 4)
++    switch (word_44)
+     {
+-        if (startup_frame_clock->seconds - time_58 >= 0.05f)
++    case 4:
++        if (startup_frame_clock->seconds - time_58 >= screen_button_repeat_interval)
+         {
+             window_audio_state->PlaySound(screen_button_click_sound, 1, 0.0f);
+             if (flag_7d == 0)
+@@ -65,11 +66,12 @@ void ScreenButtonPrefix::Unresolved04(float elapsed)
+             state_42 = 1;
+             time_58 = now;
+         }
+-        return;
+-    }
+-
+-    if (word_44 == 1 && flag_7c == 0 && startup_frame_clock->seconds - time_58 >= 0.05f && ReadState41() == 0)
+-    {
+-        word_44 = ReadState40() != 0 ? 2 : 0;
++        break;
++    case 1:
++        if (flag_7c == 0 && startup_frame_clock->seconds - time_58 >= screen_button_repeat_interval && ReadState41() == 0)
++        {
++            word_44 = ReadState40() != 0 ? 2 : 0;
++        }
++        break;
+     }
+ }
+diff --git a/src/window_activation.h b/src/window_activation.h
+index fd015741ae2afe675b8a3283bc801b608fc4b9cd..b4b0596d9c8ba91df641a63dbbe20c5238173a90 100644
+--- a/src/window_activation.h
++++ b/src/window_activation.h
+@@ -11,9 +11,6 @@ struct OverlayMapPrefix;
+ struct VariableTransport;
+ struct VariableTicker;
+ 
+-// Activation and the full Game owner are the same retail object.
+-using WindowActivationTarget = ScreenRequestGamePrefix;
+-
+ struct GameFileReader;
+ struct VariableCatalog;
+ struct ScreenModeCommandQueue;

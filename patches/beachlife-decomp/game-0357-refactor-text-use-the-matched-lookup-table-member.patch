@@ -1,0 +1,255 @@
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index cbddb0ca306e07407b81b88443e37be713df00a3..7eaba8487ab7a1a08858aef03d206eae45c4c265 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -58,7 +58,9 @@ struct ScreenTextBucketArray
+     }
+     ~ScreenTextBucketArray()
+     {
+-        delete[] buckets;
++        ScreenTextBucket* storage = buckets;
++        if (storage != 0)
++            delete[] storage;
+     }
+ };
+ 
+@@ -131,11 +133,20 @@ inline ScreenTextLookupRegistration::~ScreenTextLookupRegistration()
+     screen_text_lookup = 0;
+ }
+ 
+-// Original 36036-byte x86 owner. Its table occupies +00..17; values begin +20.
+-// Native pointer widths determine host offsets; all translation units use this
+-// full owning declaration together. Original x86 offsets are not host offsets.
+-struct ScreenTextLookup : ScreenTextLookupRegistration, ScreenTextTable
++// Expanded by its owners: the completed table only runs its member and base
++// cleanup (bucket array delete[], then the storage base).
++// FUNCTION: BEACHLIFE 0x0049f4f0
++inline ScreenTextTable::~ScreenTextTable()
+ {
++}
++
++// Original 36036-byte x86 owner. The empty registration base occupies no
++// storage before the table member (+00..17); values begin +20. Native pointer
++// widths determine host offsets; all translation units use this full owning
++// declaration together. Original x86 offsets are not host offsets.
++struct ScreenTextLookup : ScreenTextLookupRegistration
++{
++    ScreenTextTable table;
+     char* file_18; // Decoded .ble contents while loading.
+     int index_1c;  // Next free entry in values.
+     ScreenTextValue values[4500];
+diff --git a/src/startup_screen_text_end.cpp b/src/startup_screen_text_end.cpp
+index 073a1dd47b2e715e968fcdaba8d3ad628b5961bc..3c724a43c2ef5911355e06c08f60b37756e91474 100644
+--- a/src/startup_screen_text_end.cpp
++++ b/src/startup_screen_text_end.cpp
+@@ -4,5 +4,5 @@
+ // FUNCTION: BEACHLIFE 0x004d2450
+ ScreenTextIterator ScreenTextLookup::EndText()
+ {
+-    return StringKeyEnd<ScreenTextIterator>(*this);
++    return StringKeyEnd<ScreenTextIterator>(table, this);
+ }
+diff --git a/src/startup_screen_text_find.cpp b/src/startup_screen_text_find.cpp
+index 91fccea18a8ca15bc7070faaaf4b05b47964ffeb..deeb8fe62ce26e22562d39223a952c0eb1d46602 100644
+--- a/src/startup_screen_text_find.cpp
++++ b/src/startup_screen_text_find.cpp
+@@ -4,5 +4,5 @@
+ // FUNCTION: BEACHLIFE 0x004d2310
+ ScreenTextIterator ScreenTextLookup::FindText(const ScreenTextKey& key)
+ {
+-    return FindStringKey(*this, key, EndText());
++    return FindStringKey(table, this, key, EndText());
+ }
+diff --git a/src/startup_screen_text_lookup_constructor.cpp b/src/startup_screen_text_lookup_constructor.cpp
+index 9820a75c9141408fb3f118dd70043e4b6ae2ffc9..62a0be19adcdbcd2a00d7fafef4088ea3b3fcc15 100644
+--- a/src/startup_screen_text_lookup_constructor.cpp
++++ b/src/startup_screen_text_lookup_constructor.cpp
+@@ -61,18 +61,18 @@ void ConvertKey(const char* start, int bytes, char* key)
+ // FUNCTION: BEACHLIFE 0x0049efb0
+ ScreenTextLookup::ScreenTextLookup(const char* name)
+     : ScreenTextLookupRegistration(this)
+-    , ScreenTextTable(4500)
++    , table(4500)
+ {
+     file_18 = 0;
+     index_1c = 0;
+     memset(values, 0, sizeof(values));
+-    ScreenTextBucket* bucket = buckets;
+-    for (int count = end_index; count > 0; --count)
++    ScreenTextBucket* bucket = table.buckets;
++    for (int count = table.end_index; count > 0; --count)
+     {
+         bucket->unavailable = 1;
+         ++bucket;
+     }
+-    used_14 = 0;
++    table.used_14 = 0;
+ 
+     // The original trivial allocations are scalar-freed. Use real scalar host
+     // storage for those arrays of implicit-lifetime character/code-unit values.
+@@ -137,23 +137,23 @@ ScreenTextLookup::ScreenTextLookup(const char* name)
+             unsigned int hash = 0;
+             for (const char* character = key; *character; ++character)
+                 hash = hash * 5 + *character;
+-            unsigned int first = hash % bucket_count;
++            unsigned int first = hash % table.bucket_count;
+             unsigned int slot = first;
+-            bool found = buckets[slot].unavailable != 0;
++            bool found = table.buckets[slot].unavailable != 0;
+             while (!found)
+             {
+-                if (static_cast<int>(++slot) >= bucket_count)
++                if (static_cast<int>(++slot) >= table.bucket_count)
+                     slot = 0;
+                 if (slot == first)
+                     break;
+-                found = buckets[slot].unavailable != 0;
++                found = table.buckets[slot].unavailable != 0;
+             }
+             if (found)
+             {
+-                buckets[slot].key = key;
+-                buckets[slot].value = entry;
+-                buckets[slot].unavailable = 0;
+-                ++used_14;
++                table.buckets[slot].key = key;
++                table.buckets[slot].value = entry;
++                table.buckets[slot].unavailable = 0;
++                ++table.used_14;
+             }
+             ++index_1c;
+         }
+diff --git a/src/startup_screen_text_lookup_destructor.cpp b/src/startup_screen_text_lookup_destructor.cpp
+index 42b25caa62e6faf6a64daa5c0c088d885c40e62e..aa37602b7ad3e4d2c2eea0355747282777b6b5ee 100644
+--- a/src/startup_screen_text_lookup_destructor.cpp
++++ b/src/startup_screen_text_lookup_destructor.cpp
+@@ -5,28 +5,24 @@
+ // FUNCTION: BEACHLIFE 0x0049f290
+ ScreenTextLookup::~ScreenTextLookup()
+ {
+-    ScreenTextBucket* bucket = buckets;
+-    for (int count = end_index; count > 0; --count)
++    unsigned int index;
++    int count = table.end_index;
++    ScreenTextBucket* entry = table.buckets;
++    while (count > 0)
+     {
+-        bucket->unavailable = 1;
+-        ++bucket;
++        entry->unavailable = 1;
++        ++entry;
++        --count;
+     }
+-    used_14 = 0;
++    table.used_14 = 0;
+ 
+-    unsigned int index = 0;
+-    ScreenTextValue* value = values;
+-    while (index < static_cast<unsigned int>(index_1c))
++    // The constructor allocates these arrays as scalar host storage.
++    for (index = 0; index < static_cast<unsigned int>(index_1c); ++index)
+     {
+-        ::operator delete(const_cast<char*>(value->key));
+-        ::operator delete(const_cast<unsigned short*>(value->text));
+-        ++index;
+-        ++value;
++        ::operator delete(const_cast<char*>(values[index].key));
++        ::operator delete(const_cast<unsigned short*>(values[index].text));
+     }
+ 
+-    char* path = path_8cc0;
+-    if (path)
+-        ::operator delete(path);
+-
+-    // The real table base then destroys its bucket array/storage base, followed
+-    // by the registration base's unconditional clear. file_18 is not freed here.
++    if (path_8cc0)
++        ::operator delete(path_8cc0);
+ }
+diff --git a/src/startup_screen_text_table_destructor.cpp b/src/startup_screen_text_table_destructor.cpp
+deleted file mode 100644
+index 9bcd2b370ab31029283c85bd4e2d6e9744d499ea..0000000000000000000000000000000000000000
+--- a/src/startup_screen_text_table_destructor.cpp
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#include "startup_screen_text.h"
+-
+-// FUNCTION: BEACHLIFE 0x0049f4f0
+-ScreenTextTable::~ScreenTextTable()
+-{
+-    // Automatic bucket-array cleanup performs the real delete[], followed by
+-    // the real storage-base destructor on both normal and exceptional paths.
+-}
+diff --git a/src/startup_string_key_lookup.h b/src/startup_string_key_lookup.h
+index 9bde935b3a1c7fafa26a16e7e17f52559d21fc87..1afd643ba76fc251c5ae421a749d8aa567b46d05 100644
+--- a/src/startup_string_key_lookup.h
++++ b/src/startup_string_key_lookup.h
+@@ -4,8 +4,8 @@
+ #include <string.h>
+ // The text and sound lookup specializations share these folded retail bodies.
+ // Keep both owners and bucket types intact instead of casting their layouts.
+-template <class Lookup, class Key, class Iterator>
+-inline Iterator FindStringKey(Lookup& lookup, const Key& key, Iterator end)
++template <class Table, class Owner, class Key, class Iterator>
++inline Iterator FindStringKey(Table& table, Owner* owner, const Key& key, Iterator end)
+ {
+     const char* cursor = key.text;
+     unsigned int hash = 0;
+@@ -15,27 +15,27 @@ inline Iterator FindStringKey(Lookup& lookup, const Key& key, Iterator end)
+         ++cursor;
+     }
+ 
+-    int first = static_cast<int>(hash % static_cast<unsigned int>(lookup.bucket_count));
++    int first = static_cast<int>(hash % static_cast<unsigned int>(table.bucket_count));
+     int index = first;
+     do
+     {
+-        if (lookup.buckets[index].unavailable == 0
+-            && _stricmp(lookup.buckets[index].key, key.text) == 0)
++        if (table.buckets[index].unavailable == 0
++            && _stricmp(table.buckets[index].key, key.text) == 0)
+         {
+-            Iterator found = { lookup.buckets + index, &lookup };
++            Iterator found = { table.buckets + index, owner };
+             return found;
+         }
+         ++index;
+-        if (index >= lookup.bucket_count)
++        if (index >= table.bucket_count)
+             index = 0;
+     } while (index != first);
+     return end;
+ }
+ 
+-template <class Iterator, class Lookup>
+-inline Iterator StringKeyEnd(Lookup& lookup)
++template <class Iterator, class Table, class Owner>
++inline Iterator StringKeyEnd(Table& table, Owner* owner)
+ {
+-    Iterator end = { lookup.buckets + lookup.end_index, &lookup };
++    Iterator end = { table.buckets + table.end_index, owner };
+     return end;
+ }
+ 
+diff --git a/src/window_sound_end.cpp b/src/window_sound_end.cpp
+index 4d8f2ecce895dfb07b23e2c98bfd8b1b0dd72c0b..146eccc27b8c77c0efdb2dd944ef3c75f4e6353b 100644
+--- a/src/window_sound_end.cpp
++++ b/src/window_sound_end.cpp
+@@ -4,5 +4,5 @@
+ // Typed receiver adapter of the folded iterator end at 0x004d2450.
+ WindowSoundIterator WindowSoundBank::EndSound()
+ {
+-    return StringKeyEnd<WindowSoundIterator>(*this);
++    return StringKeyEnd<WindowSoundIterator>(*this, this);
+ }
+diff --git a/src/window_sound_find_key.cpp b/src/window_sound_find_key.cpp
+index 5ec69c5c2cb77939f7460769ffe0fa8afa453e32..9d65168ea9eb8032488d00de54977388d5988119 100644
+--- a/src/window_sound_find_key.cpp
++++ b/src/window_sound_find_key.cpp
+@@ -4,5 +4,5 @@
+ // Typed receiver adapter of the folded lookup at 0x004d2310.
+ WindowSoundIterator WindowSoundBank::FindSoundKey(const ScreenTextKey& key)
+ {
+-    return FindStringKey(*this, key, EndSound());
++    return FindStringKey(*this, this, key, EndSound());
+ }

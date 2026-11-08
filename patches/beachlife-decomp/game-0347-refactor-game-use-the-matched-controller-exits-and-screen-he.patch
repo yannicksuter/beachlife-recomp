@@ -1,0 +1,258 @@
+diff --git a/src/startup_font_measure_text.cpp b/src/startup_font_measure_text.cpp
+index 542562fa4c600998c8848c91aa12ae3c9c503154..26dae7739e6d16588677608c8de3447f9e13346e 100644
+--- a/src/startup_font_measure_text.cpp
++++ b/src/startup_font_measure_text.cpp
+@@ -5,18 +5,14 @@
+ unsigned int ScreenFontRenderer::MeasureText(const unsigned short* text)
+ {
+     ScreenFontData* data = data_1c;
++    const signed char* kerning = data->kerning;
+     unsigned int width = 0;
+     while (*text != 0)
+     {
+-        unsigned int current = *text;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = text[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
++        unsigned short current = *text;
++        unsigned short advance = data->glyphs[current][2] - data->glyphs[current][0];
++        if (text[1] != 0)
++            advance += kerning[current * 255 + text[1]];
+         width += advance;
+         ++text;
+     }
+diff --git a/src/startup_game_object_sound_control.cpp b/src/startup_game_object_sound_control.cpp
+index dad3fccbae63c9cd6526bbbc3971fa22d62620d6..7ec2adc4f130151d3b6af7c1714d2f542ca51c15 100644
+--- a/src/startup_game_object_sound_control.cpp
++++ b/src/startup_game_object_sound_control.cpp
+@@ -4,8 +4,6 @@
+ #include "window_audio_initialization.h"
+ #include <cstring>
+ 
+-extern const float game_sound_stop_fade;
+-
+ // FUNCTION: BEACHLIFE 0x004d2840
+ void GameUpdatePair::AddObjectSound(const char* name, unsigned int id, float volume, unsigned int limit)
+ {
+diff --git a/src/startup_game_object_sounds.cpp b/src/startup_game_object_sounds.cpp
+index d4b8677775f86755dc2ea1b67ffa915ba78f84dd..ae51c9cba42a12dc4913b1e6a0124029eacce9bd 100644
+--- a/src/startup_game_object_sounds.cpp
++++ b/src/startup_game_object_sounds.cpp
+@@ -8,7 +8,6 @@
+ // Positional-sound tuning words shared by both scheduler passes (0x004f4d24..).
+ extern const float game_sound_start_fade;  // 0.1, 0x004f4d24.
+ extern const float game_sound_level_fade;  // 0.1, 0x004f4d28.
+-extern const float game_sound_stop_fade;   // 0.2, 0x004f4d2c.
+ extern const float game_sound_music_level; // 0.05, 0x004f4d34.
+ 
+ // FUNCTION: BEACHLIFE 0x004d2990
+@@ -39,32 +38,27 @@ void GameUpdatePair::UpdateObjectSounds(float)
+         if (sound->playing_28)
+         {
+             bool out_of_range = distance > far_distance;
+-            if ((!sound->ignores_music_29 && window_audio_state->IsStreamPlaying() &&
+-                    window_audio_state->stream_volume_10 > game_sound_music_level) ||
+-                out_of_range)
++            if ((!sound->ignores_music_29 && window_audio_state->IsStreamPlaying() && window_audio_state->stream_volume_10 > game_sound_music_level) || out_of_range)
+             {
+                 window_audio_state->StopSound(sound->voice_2c, game_sound_stop_fade);
+                 sound->playing_28 = 0;
+             }
+             else
+             {
+-                float level =
+-                    distance > far_distance ? 0.0f
+-                    : distance < near_distance
+-                        ? 1.0f
+-                        : 1.0f - (distance - near_distance) / (far_distance - near_distance);
++                float level = distance > far_distance ? 0.0f
++                            : distance < near_distance
++                                ? 1.0f
++                                : 1.0f - (distance - near_distance) / (far_distance - near_distance);
+                 window_audio_state->FadeSoundLevel(
+                     sound->voice_2c, level * sound->volume_04, game_sound_level_fade);
+             }
+         }
+         else if (distance < far_distance)
+         {
+-            if (sound->ignores_music_29 || !window_audio_state->IsStreamPlaying() ||
+-                !(window_audio_state->stream_volume_10 > game_sound_music_level))
++            if (sound->ignores_music_29 || !window_audio_state->IsStreamPlaying() || !(window_audio_state->stream_volume_10 > game_sound_music_level))
+             {
+                 float level = distance < near_distance ? 1.0f
+-                                                       : 1.0f - (distance - near_distance) /
+-                                                                    (far_distance - near_distance);
++                                                       : 1.0f - (distance - near_distance) / (far_distance - near_distance);
+                 float volume = level * sound->volume_04;
+                 int voice = window_audio_state->PlaySoundAtLevel(
+                     sound->name_08, volume, 2, game_sound_start_fade);
+diff --git a/src/startup_game_point_sounds.cpp b/src/startup_game_point_sounds.cpp
+index e5c4b47284616a8397f13c70fbb24c79d053ea1a..45839e62815fd42bcdf40e79ac00a2c0e62d70a6 100644
+--- a/src/startup_game_point_sounds.cpp
++++ b/src/startup_game_point_sounds.cpp
+@@ -3,7 +3,6 @@
+ #include "window_audio_initialization.h"
+ 
+ // Retry window for a point sound that could not start, 0.25 (0x004f4d30).
+-extern const float game_sound_retry_delay;
+ 
+ // FUNCTION: BEACHLIFE 0x004d2bd0
+ void GameUpdatePair::UpdatePointSounds(float delta)
+diff --git a/src/startup_game_time_and_loading.cpp b/src/startup_game_time_and_loading.cpp
+index 23c8796f5e918f207f8c6f88d0f151c4afbfbed5..a9b09a435556529f2777b1f32ec980ede54a0c7f 100644
+--- a/src/startup_game_time_and_loading.cpp
++++ b/src/startup_game_time_and_loading.cpp
+@@ -49,7 +49,10 @@ const unsigned short* ScreenRequestGamePrefix::ScenarioDirectory()
+ void ScreenRequestGamePrefix::ShowLoadingScreen(const char* path)
+ {
+     TgaImage* image = LoadTgaFile(path);
+-    image->ConvertPalette(screen_request_renderer->format_44 == 1);
++    if (screen_request_renderer->format_44 == 1)
++        image->ConvertPalette(1);
++    else
++        image->ConvertPalette(0);
+     ScreenRectangle bounds = { 0, 0, 800, 600 };
+     ScreenPoint position = { 0, 0 };
+     screen_request_renderer->DrawTga(position, bounds, image, 0, 0, 0);
+diff --git a/src/startup_game_update_pair.h b/src/startup_game_update_pair.h
+index d48d05992263c8f8253b9654b046a4b8fe97aa76..93ec138bf8047be31f95d0e7fea41bc19190463e 100644
+--- a/src/startup_game_update_pair.h
++++ b/src/startup_game_update_pair.h
+@@ -175,6 +175,9 @@ struct GameUpdatePair;
+ // Actual slot 0x005baefc.
+ extern GameUpdatePair* game_update_pair;
+ 
++extern const float game_sound_stop_fade; // 0x004f4d2c.
++extern const float game_sound_retry_delay;
++
+ // Empty first base that publishes the scheduler while it is constructed; its
+ // out-of-line destructor 0x004d3080 clears the slot again.
+ struct GameUpdatePairRegistration
+diff --git a/src/startup_profiler_constructor.cpp b/src/startup_profiler_constructor.cpp
+index 1d37d68554acf7348e47ebb319ed51a0c900e494..f2e89c69b4893d5d5b081e25a83949a73f509618 100644
+--- a/src/startup_profiler_constructor.cpp
++++ b/src/startup_profiler_constructor.cpp
+@@ -4,11 +4,10 @@
+ StartupProfiler::StartupProfiler()
+ {
+     Reset();
+-    elapsed = 0;
+     long long total = 0;
++    elapsed = 0;
+     overhead = 0;
+-
+-    for (int sample = 0; sample < 10; ++sample)
++    for (int count = 0; count < 10; ++count)
+     {
+         Reset();
+         total += elapsed;
+diff --git a/src/startup_renderer_colour.cpp b/src/startup_renderer_colour.cpp
+index c0f0a492c3c2bb0cd022cca95870cb4e05631baf..727b96d7ce2e83917da4a3b788d58c2004b7780f 100644
+--- a/src/startup_renderer_colour.cpp
++++ b/src/startup_renderer_colour.cpp
+@@ -5,7 +5,7 @@ unsigned int ScreenRequestRenderer::ConvertColour(int red, int green, int blue)
+ {
+     if (format_44 == 0)
+     {
+-        unsigned int packed = static_cast<unsigned int>(red) & 0xfff8u;
++        unsigned int packed = static_cast<unsigned short>(red) & 0xfff8u;
+         packed <<= 5;
+         packed |= static_cast<unsigned char>(green) & 0xfcu;
+         packed <<= 3;
+diff --git a/src/startup_transition_controllers.cpp b/src/startup_transition_controllers.cpp
+index 831d217b902bb0fee825238eba658833bf6400a8..50509d379e67118f4358b34540d75c3dd622be5e 100644
+--- a/src/startup_transition_controllers.cpp
++++ b/src/startup_transition_controllers.cpp
+@@ -16,8 +16,9 @@
+ // Scalar deleting wrapper: 0x004e8250.
+ ExitGameController::~ExitGameController()
+ {
++    // Retail inlines the controller exit (active = 0) here.
+     if (active)
+-        ControllerState::Exit();
++        active = 0;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004e8290
+@@ -60,8 +61,9 @@ const char* ExitGameController::ScriptPath()
+ // Scalar deleting wrapper: 0x004e8d40.
+ LoadGameController::~LoadGameController()
+ {
++    // Retail inlines the controller exit (active = 0) here.
+     if (active)
+-        ControllerState::Exit();
++        active = 0;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004e8d80
+@@ -93,8 +95,9 @@ const char* LoadGameController::ScriptPath()
+ // Scalar deleting wrapper: 0x004e8fd0.
+ ResetGameController::~ResetGameController()
+ {
++    // Retail inlines the controller exit (active = 0) here.
+     if (active)
+-        ControllerState::Exit();
++        active = 0;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004e9010
+diff --git a/src/startup_world_object_script_dispatch.cpp b/src/startup_world_object_script_dispatch.cpp
+index 4485440ee9ca9770e86bc783644e7f638a475f4a..dea3d74cf27a5db957390549b356ee1e414187a1 100644
+--- a/src/startup_world_object_script_dispatch.cpp
++++ b/src/startup_world_object_script_dispatch.cpp
+@@ -93,6 +93,6 @@ void WorldSubsystemScript::UpdateState(VariableEntity* entity, unsigned int stat
+         {
+             if (rules_00[index].third_178)
+                 rules_00[index].third_178->Update(entity);
+-            break;
++            index = count_5910;
+         }
+ }
+diff --git a/src/startup_world_service_access.cpp b/src/startup_world_service_access.cpp
+index 3af5c4ce05326eaa23fe184ac91d70d28e46188b..0fa39264e7e3c56abfea5b0d9758581f72e5d9d2 100644
+--- a/src/startup_world_service_access.cpp
++++ b/src/startup_world_service_access.cpp
+@@ -5,20 +5,25 @@
+ // FUNCTION: BEACHLIFE 0x00460380
+ bool VariableEntity::FlagAt00460380()
+ {
++    bool result = false;
+     WorldBuildingEntity* building = AsBuilding();
+-    if (!building->closed_365 && !building->byte_364)
+-        return false;
+-    float time = window_deactivation_state->render_value_160;
+-    unsigned int hours = building->building_60->hours_1e8;
+-    float start = variable_catalog->OpeningHour(hours);
+-    float end = variable_catalog->ClosingHour(hours);
+-    if (end > start)
+-        return variable_catalog->OpeningHour(hours) <= time && variable_catalog->ClosingHour(hours) >= time;
+-    start = variable_catalog->OpeningHour(hours);
+-    end = variable_catalog->ClosingHour(hours);
+-    if (end < start)
+-        return variable_catalog->ClosingHour(hours) >= time || variable_catalog->OpeningHour(hours) <= time;
+-    return true;
++    if (building->closed_365 || building->byte_364)
++    {
++        float time = window_deactivation_state->render_value_160;
++        if (variable_catalog->OpeningHour(building->building_60->hours_1e8) < variable_catalog->ClosingHour(building->building_60->hours_1e8))
++        {
++            if (variable_catalog->OpeningHour(building->building_60->hours_1e8) <= time && variable_catalog->ClosingHour(building->building_60->hours_1e8) >= time)
++                result = true;
++        }
++        else if (variable_catalog->OpeningHour(building->building_60->hours_1e8) > variable_catalog->ClosingHour(building->building_60->hours_1e8))
++        {
++            if (variable_catalog->ClosingHour(building->building_60->hours_1e8) >= time || variable_catalog->OpeningHour(building->building_60->hours_1e8) <= time)
++                result = true;
++        }
++        else
++            result = true;
++    }
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0041eab0
