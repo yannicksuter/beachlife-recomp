@@ -1,0 +1,121 @@
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index 925c74c..517a11b 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -3,6 +3,7 @@
+ 
+ #include "startup_render_rectangle.h"
+ #include "startup_screen_text_key.h"
++#include "sound_capacity.h"
+ 
+ struct ScreenFontData;
+ typedef const unsigned short ScreenTextCharacter;
+@@ -18,8 +19,17 @@ struct ScreenTextBucket
+     ScreenTextValue* value;
+     unsigned char unavailable;
+ 
++    // Actual 0x004d24e0 (folded with WindowSoundBucket's) sets only key.
++    ScreenTextBucket();
+     // Actual empty 0x00437d10 cleanup; no pointed-to value ownership.
+     ~ScreenTextBucket();
++    ScreenTextBucket& operator=(const ScreenTextBucket& other)
++    {
++        key = other.key;
++        value = other.value;
++        unavailable = other.unavailable;
++        return *this;
++    }
+ };
+ struct ScreenTextIterator
+ {
+@@ -56,7 +66,9 @@ struct ScreenTextTable : ScreenTextStorageBase, ScreenTextBucketArray
+     unsigned int used_14;
+     explicit ScreenTextTable(unsigned int requested);
+     ~ScreenTextTable();
+-    void ReserveBuckets(int count);
++    void ReserveBuckets(int count); // 0x0049f590.
++    void Clear();
++    void Insert(const char* key, ScreenTextValue* value);
+ };
+ 
+ struct ScreenTextLookupRegistration
+@@ -128,6 +140,59 @@ struct ScreenFontRenderer
+     void DrawText(int x, int y, const unsigned short* text);
+ };
+ 
++// Retail expands the registration, bucket array and table constructors and
++// the table's Clear and Insert into the lookup constructor (/Ob1).
++inline ScreenTextLookupRegistration::ScreenTextLookupRegistration(ScreenTextLookup* owner)
++{
++    screen_text_lookup = owner;
++}
++
++inline ScreenTextBucketArray::ScreenTextBucketArray()
++    : end_index(0)
++    , capacity_04(0)
++    , buckets(0)
++{
++}
++
++inline void ScreenTextTable::Clear()
++{
++    ScreenTextBucket* bucket = buckets;
++    for (int count = end_index; count > 0; --count)
++    {
++        bucket->unavailable = 1;
++        ++bucket;
++    }
++    used_14 = 0;
++}
++
++inline ScreenTextTable::ScreenTextTable(unsigned int requested)
++{
++    used_14 = 0;
++    bucket_count = SelectHashTableCapacity(requested);
++    ReserveBuckets(bucket_count);
++    Clear();
++}
++
++inline void ScreenTextTable::Insert(const char* key, ScreenTextValue* value)
++{
++    unsigned int hash = 0;
++    for (const char* character = key; *character; ++character)
++        hash = hash * 5 + *character;
++    unsigned int first = hash % bucket_count;
++    unsigned int slot = first;
++    while (buckets[slot].unavailable == 0)
++    {
++        if (static_cast<int>(++slot) >= bucket_count)
++            slot = 0;
++        if (slot == first)
++            return;
++    }
++    buckets[slot].key = key;
++    buckets[slot].value = value;
++    buckets[slot].unavailable = 0;
++    ++used_14;
++}
++
+ // Expanded by /Ob1 owners; unwinding and /Ob0 callers use the shared
+ // out-of-line copy emitted by match_0049f4e0.cpp.
+ // FUNCTION: BEACHLIFE 0x0049f4e0
+diff --git a/src/startup_screen_text_storage.cpp b/src/startup_screen_text_storage.cpp
+index 8fd1e34..f65055d 100644
+--- a/src/startup_screen_text_storage.cpp
++++ b/src/startup_screen_text_storage.cpp
+@@ -6,3 +6,15 @@
+ ScreenTextBucket::~ScreenTextBucket()
+ {
+ }
++
++// FUNCTION: BEACHLIFE 0x004d24e0 FOLDED
++ScreenTextBucket::ScreenTextBucket()
++    : key(0)
++{
++}
++
++// Empty base constructor, folded into the shared `mov eax, ecx; ret`.
++// FUNCTION: BEACHLIFE 0x004d38b0 FOLDED
++ScreenTextStorageBase::ScreenTextStorageBase()
++{
++}
