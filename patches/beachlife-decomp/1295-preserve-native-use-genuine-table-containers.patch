@@ -1,0 +1,248 @@
+diff --git a/src/startup_screen_table.h b/src/startup_screen_table.h
+index cc91623..310fa10 100644
+--- a/src/startup_screen_table.h
++++ b/src/startup_screen_table.h
+@@ -7,50 +7,65 @@
+ #include "startup_screen_table_storage.h"
+ 
+ #include "startup_screen_request_context.h"
+-#include "startup_world_list.h"
+-#ifdef _STLPORT_VERSION
+-#include <vector>
+-#endif
+ 
+ // The observed child prefix is the real table column type.
+ typedef ScreenTableColumn ScreenTableChildPrefix;
+ 
+-// The rows are an STLport 4.5.3 std::vector<ScreenRequestContext*> and the
+-// children an std::list of the attached columns (insert 0x004b95c0, node
+-// constructor 0x004b9620). Units compiled without STLport see a layout
+-// stand-in whose special members are private, so any use there fails.
+-#ifdef _STLPORT_VERSION
+-typedef std::vector<ScreenRequestContext*> ScreenTableRowList;
+-#else
+-struct ScreenTableRowList
++// Distinct circular child list of the table: its insert 0x004b95c0 and node
++// creation 0x004b9620 are separate instances from ScreenChildRing's. The
++// node payload at +8 is the borrowed child, typed as the child prefix: the
++// original converts the attached item before inserting it.
++struct ScreenTableNode
+ {
+-private:
+-    ScreenTableRowList();
+-    ScreenTableRowList(const ScreenTableRowList&);
+-    ~ScreenTableRowList();
+-    ScreenTableRowList& operator=(const ScreenTableRowList&);
+-    void* words_[3];
++    ScreenTableNode* next;
++    ScreenTableNode* previous;
++    ScreenTableChildPrefix* item;
++};
++
++static const unsigned int screen_table_node_slot_bytes = (sizeof(ScreenTableNode) + 7u) & ~7u;
++
++struct ScreenTableIterator
++{
++    ScreenTableNode* node;
++
++    ScreenTableIterator() { }
++    ScreenTableIterator(const ScreenTableIterator& other)
++        : node(other.node)
++    {
++    }
++};
++
++struct ScreenTableChildRing
++{
++    ScreenTableNode* head;
++
++    ScreenTableChildRing();
++    ~ScreenTableChildRing();
++    void Clear();
++
++    ScreenTableIterator End() const; // Shared library body 0x00437a40.
++    // Actual 0x004b95c0, hidden iterator result, RET12; body separate.
++    ScreenTableIterator Insert(ScreenTableIterator position, ScreenTableChildPrefix* const& item);
++    ScreenTableNode* CreateNode(ScreenTableChildPrefix* const& item); // Actual 0x004b9620.
+ };
+-#endif
+-typedef WorldList<ScreenTableChildPrefix*>::Type ScreenTableChildList;
+ 
+ // Genuine table: x86 allocation 0xa8, vtable 0x004f4800.
+ struct ScreenTable : ScreenItem
+ {
+-    int word_44;                      // +44: row height, published into columns.
+-    unsigned int first_row_48;        // +48
+-    int source_kind_4c;               // +4c
+-    int individual_rows_50;           // +50
+-    unsigned int row_count_54;        // +54
+-    ScreenItem* scrollbar_58;         // +58
+-    unsigned int maximum_rows_5c;     // +5c
+-    unsigned char unknown_60[4];      // +60: constructor leaves untouched.
+-    ScreenTableRowList rows_64;       // +64..6f
+-    ScreenTableChildList children_70; // +70
+-    ScreenRectangle content_74;       // +74
+-    ScreenRectangle saved_content_84; // +84
+-    unsigned int visible_rows_94;     // +94
+-    unsigned char state_98;           // +98
++    int word_44;                                       // +44: row height, published into columns.
++    unsigned int first_row_48;                         // +48
++    int source_kind_4c;                                // +4c
++    int individual_rows_50;                            // +50
++    unsigned int row_count_54;                         // +54
++    ScreenItem* scrollbar_58;                          // +58
++    unsigned int maximum_rows_5c;                      // +5c
++    unsigned char unknown_60[4];                       // +60: constructor leaves untouched.
++    ScreenTableStorage<ScreenRequestContext*> rows_64; // +64..6f
++    ScreenTableChildRing children_70;                  // +70
++    ScreenRectangle content_74;                        // +74
++    ScreenRectangle saved_content_84;                  // +84
++    unsigned int visible_rows_94;                      // +94
++    unsigned char state_98;                            // +98
+     unsigned char unknown_99[3];
+     float elapsed_9c;   // +9c
+     bool selectable_a0; // +a0
+diff --git a/src/startup_screen_table_attach.cpp b/src/startup_screen_table_attach.cpp
+index a613130..e7033a6 100644
+--- a/src/startup_screen_table_attach.cpp
++++ b/src/startup_screen_table_attach.cpp
+@@ -4,6 +4,6 @@
+ void ScreenTablePrefix::Unresolved10(ScreenItem* item)
+ {
+     ScreenTableChildPrefix* child = static_cast<ScreenTableChildPrefix*>(item);
+-    children_70.insert(children_70.end(), child);
++    children_70.Insert(children_70.End(), child);
+     child->table_word_48 = word_44;
+ }
+diff --git a/src/startup_screen_table_child_end.cpp b/src/startup_screen_table_child_end.cpp
+index d56b12a..b65bc06 100644
+--- a/src/startup_screen_table_child_end.cpp
++++ b/src/startup_screen_table_child_end.cpp
+@@ -1,3 +1,15 @@
+-// The table child list's end() is the vendor instantiation; the image folds
+-// it with the shared list sentinel body 0x00437a40, so no separate copy is
+-// retained here.
++#include "pool_allocate.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++#include "startup_screen_table.h"
++#include <new>
++
++// FUNCTION: BEACHLIFE 0x00437a40 FOLDED
++ScreenTableIterator ScreenTableChildRing::End() const
++{
++    ScreenTableIterator result;
++    result.node = head;
++    return result;
++}
+diff --git a/src/startup_screen_table_child_insert.cpp b/src/startup_screen_table_child_insert.cpp
+index 5b51763..c427f9e 100644
+--- a/src/startup_screen_table_child_insert.cpp
++++ b/src/startup_screen_table_child_insert.cpp
+@@ -1,12 +1,22 @@
+-// LIBRARY: BEACHLIFE 0x004b95c0 SYMBOL
+-// ?insert@?$list@PAUScreenTableColumn@@V?$allocator@PAUScreenTableColumn@@@_STL@@@_STL@@QAE?AU?$_List_iterator@PAUScreenTableColumn@@U?$_Nonconst_traits@PAUScreenTableColumn@@@_STL@@@2@U32@ABQAUScreenTableColumn@@@Z
+-#include "startup_screen_table_child_list.h"
++#include "pool_allocate.h"
++#include "pool_chunk_acquire.h"
++#include "pool_lock_acquire.h"
++#include "pool_lock_guard.h"
++#include "pool_return.h"
++#include "startup_screen_table.h"
++#include <new>
+ 
+-// The retention call itself is not expanded; the default depth is restored
+-// for the vendor insert instantiated at the end of the unit.
+-#pragma inline_depth(0)
+-void ScreenTableChildListRetention::Insert(ScreenTableChildListRetention* self, ScreenTableChildPrefix* const& item)
++// FUNCTION: BEACHLIFE 0x004b95c0
++ScreenTableIterator ScreenTableChildRing::Insert(
++    ScreenTableIterator position, ScreenTableChildPrefix* const& item)
+ {
+-    self->insert(self->begin(), item);
++    ScreenTableNode* node = CreateNode(item);
++    ScreenTableNode* previous = position.node->previous;
++    node->next = position.node;
++    node->previous = previous;
++    previous->next = node;
++    position.node->previous = node;
++    ScreenTableIterator result;
++    result.node = node;
++    return result;
+ }
+-#pragma inline_depth()
+diff --git a/src/startup_screen_table_child_list.h b/src/startup_screen_table_child_list.h
+deleted file mode 100644
+index 2d4163a..0000000
+--- a/src/startup_screen_table_child_list.h
++++ /dev/null
+@@ -1,14 +0,0 @@
+-#ifndef STARTUP_SCREEN_TABLE_CHILD_LIST_H
+-#define STARTUP_SCREEN_TABLE_CHILD_LIST_H
+-
+-#include "startup_screen_table.h"
+-
+-// Matching retention of the table child list's out-of-line vendor members:
+-// insert 0x004b95c0 and the protected node constructor 0x004b9620.
+-struct ScreenTableChildListRetention : ScreenTableChildList
+-{
+-    static void Insert(ScreenTableChildListRetention* self, ScreenTableChildPrefix* const& item);
+-    static void CreateNode(ScreenTableChildListRetention* self, ScreenTableChildPrefix* const& item);
+-};
+-
+-#endif
+diff --git a/src/startup_screen_table_child_node.cpp b/src/startup_screen_table_child_node.cpp
+index f2dd5e6..4c054a8 100644
+--- a/src/startup_screen_table_child_node.cpp
++++ b/src/startup_screen_table_child_node.cpp
+@@ -1,12 +1,20 @@
+-// LIBRARY: BEACHLIFE 0x004b9620 SYMBOL
+-// ?_M_create_node@?$list@PAUScreenTableColumn@@V?$allocator@PAUScreenTableColumn@@@_STL@@@_STL@@IAEPAU?$_List_node@PAUScreenTableColumn@@@2@ABQAUScreenTableColumn@@@Z
+-#include "startup_screen_table_child_list.h"
++#include "node_storage.h"
++#include "startup_screen_table.h"
++#include <new>
+ 
+-// The retention call itself is not expanded; the default depth is restored
+-// for the vendor node constructor instantiated at the end of the unit.
+-#pragma inline_depth(0)
+-void ScreenTableChildListRetention::CreateNode(ScreenTableChildListRetention* self, ScreenTableChildPrefix* const& item)
++// FUNCTION: BEACHLIFE 0x004b9620
++ScreenTableNode* ScreenTableChildRing::CreateNode(ScreenTableChildPrefix* const& item)
+ {
+-    self->_M_create_node(item);
++    void* block = NodeAllocator::allocate(sizeof(ScreenTableNode));
++    ScreenTableNode* result = static_cast<ScreenTableNode*>(block);
++    try
++    {
++        new (&result->item) ScreenTableChildPrefix*(item);
++    }
++    catch (...)
++    {
++        NodeAllocator::deallocate(result, sizeof(ScreenTableNode));
++        throw;
++    }
++    return result;
+ }
+-#pragma inline_depth()
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index d5aa92a..658f7f0 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2903,14 +2903,12 @@
+       "/Ob1"
+     ],
+     "startup_screen_table_attach.cpp": [
+-      "/GX",
+       "/Ob1"
+     ],
+     "startup_screen_table_child_end.cpp": [
+       "/Ob1"
+     ],
+     "startup_screen_table_child_insert.cpp": [
+-      "/GX",
+       "/Ob1"
+     ],
+     "startup_screen_table_child_node.cpp": [

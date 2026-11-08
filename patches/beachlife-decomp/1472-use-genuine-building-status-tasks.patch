@@ -1,0 +1,126 @@
+diff --git a/src/startup_building_status.h b/src/startup_building_status.h
+index 161d956..344897b 100644
+--- a/src/startup_building_status.h
++++ b/src/startup_building_status.h
+@@ -2,6 +2,7 @@
+ #define STARTUP_BUILDING_STATUS_H
+ 
+ #include "startup_list.h"
++#include "startup_world_list.h"
+ 
+ struct ScreenWorldPosition;
+ struct ScreenPoint;
+@@ -30,10 +31,11 @@ struct BuildingStatusEntry
+     explicit BuildingStatusEntry(unsigned int id); // 0x00420e20.
+ };
+ 
+-struct BuildingStatusNode : CircularListNode
+-{
+-    BuildingStatusEntry* entry;
+-};
++// The task list is an STLport 4.5.3 std::list<BuildingStatusEntry*> (insert
++// 0x00424540, node constructor 0x00424570). Units compiled without STLport see
++// a layout stand-in.
++typedef WorldList<BuildingStatusEntry*>::Type BuildingStatusList;
++typedef WorldList<BuildingStatusEntry*>::Node BuildingStatusNode;
+ 
+ struct BuildingStatusWorker
+ {
+@@ -47,9 +49,6 @@ struct BuildingStatusWorker
+ 
+ struct VariableBuildingStatus
+ {
+-    CircularListIterator Begin() const;                                               // Folded traversal, 0x00437af0.
+-    CircularListIterator End() const;                                                 // Folded sentinel, 0x00437a40.
+-    CircularListIterator Erase(CircularListIterator position);                        // Folded unlink, 0x004209d0.
+     int DirectBuilder(unsigned int builder, unsigned int building);                   // 0x00421410.
+     ScreenWorldPosition BuilderPosition(unsigned int building, unsigned int builder); // 0x00422940.
+     float ConstructionProgress(unsigned int id);                                      // 0x00422330.
+@@ -85,8 +84,7 @@ struct VariableBuildingStatus
+     void SetFootprint(
+         int x, int y, unsigned char enabled, unsigned int stage, unsigned int id); // 0x00422c50.
+     void RestoreFootprint(unsigned int id);                                        // 0x00423c20.
+-    BuildingStatusNode* CreateNode(BuildingStatusEntry* const& entry);             // 0x00424570.
+-    CircularListNode* head_00;
++    BuildingStatusList tasks_00;
+     int word_04;
+     BuildingStatusWorker workers_08[50];
+     unsigned int worker_count_3f0;
+@@ -96,8 +94,6 @@ struct VariableBuildingStatus
+     void SaveState(GameFileReader* file);   // 0x00423e90.
+     float ValueAt004224a0(unsigned int id); // 0x004224a0.
+     float ValueAt00422430(unsigned int id); // 0x00422430.
+-    CircularListIterator Insert(
+-        CircularListIterator position, BuildingStatusEntry* const& entry); // 0x00424540.
+ };
+ 
+ extern const char* building_status_class_name;
+diff --git a/src/startup_building_status_list.h b/src/startup_building_status_list.h
+new file mode 100644
+index 0000000..8a225dd
+--- /dev/null
++++ b/src/startup_building_status_list.h
+@@ -0,0 +1,20 @@
++#ifndef STARTUP_BUILDING_STATUS_LIST_H
++#define STARTUP_BUILDING_STATUS_LIST_H
++
++#include "startup_building_status.h"
++
++// Matching retention of the task list's out-of-line vendor members: insert
++// 0x00424540 and its node constructor 0x00424570.
++struct BuildingStatusListRetention : BuildingStatusList
++{
++    static void Insert(BuildingStatusListRetention* self, BuildingStatusEntry* const& entry);
++};
++
++// The task search as retail's /Ob1 methods make it: begin(), end() and the
++// search stay out of line and the found node is read from the result.
++inline std::_List_node_base* FindBuildingStatusNode(BuildingStatusList& tasks, unsigned int id)
++{
++    return FindListRecord(tasks.begin(), tasks.end(), ListRecordIdEquals<BuildingStatusEntry>(id))._M_node;
++}
++
++#endif
+diff --git a/src/startup_building_status_values.cpp b/src/startup_building_status_values.cpp
+deleted file mode 100644
+index 0c398cb..0000000
+--- a/src/startup_building_status_values.cpp
++++ /dev/null
+@@ -1,37 +0,0 @@
+-#include "startup_building_status.h"
+-#include "startup_variable_state.h"
+-
+-static BuildingStatusEntry* FindBuildingStatus(VariableBuildingStatus* status, unsigned int id)
+-{
+-    for (CircularListNode* node = status->head_00->next; node != status->head_00; node = node->next)
+-    {
+-        BuildingStatusEntry* entry = static_cast<BuildingStatusNode*>(node)->entry;
+-        if (entry->id_00 == id)
+-            return entry;
+-    }
+-    return 0;
+-}
+-
+-// FUNCTION: BEACHLIFE 0x00422430
+-float VariableBuildingStatus::ValueAt00422430(unsigned int id)
+-{
+-    if (variable_world->FindObject(id))
+-    {
+-        BuildingStatusEntry* entry = FindBuildingStatus(this, id);
+-        if (entry)
+-            return entry->byte_29;
+-    }
+-    return 0.0f;
+-}
+-
+-// Original 0x004224a0 sibling body; unretained and not credited here.
+-float VariableBuildingStatus::ValueAt004224a0(unsigned int id)
+-{
+-    if (variable_world->FindObject(id))
+-    {
+-        BuildingStatusEntry* entry = FindBuildingStatus(this, id);
+-        if (entry)
+-            return entry->byte_28;
+-    }
+-    return 0.0f;
+-}

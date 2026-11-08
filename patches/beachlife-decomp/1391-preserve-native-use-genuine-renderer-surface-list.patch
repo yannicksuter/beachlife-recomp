@@ -1,0 +1,206 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index b9cc5a5..8a5546a 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -602,6 +602,7 @@ extern "C" void fixture_surface_pitch_call()
+     fixture_pitch_surfaces[1].pitch = 0xfedcba98u;
+     fixture_pitch_entries[0] = &fixture_pitch_surfaces[0];
+     fixture_pitch_entries[1] = &fixture_pitch_surfaces[1];
++    fixture_pitch_renderer->surfaces = fixture_pitch_entries;
+     fixture_pitch_renderer->current_surface = 1;
+     fixture_pitch_result = fixture_pitch_renderer->SurfacePitch();
+ }
+@@ -631,6 +632,7 @@ extern "C" void fixture_surface_position_call()
+     fixture_position_surfaces[1].position.y = 305419896;
+     fixture_position_entries[0] = &fixture_position_surfaces[0];
+     fixture_position_entries[1] = &fixture_position_surfaces[1];
++    fixture_position_renderer->surfaces = fixture_position_entries;
+     fixture_position_renderer->current_surface = 1;
+     ScreenPoint position = fixture_position_renderer->SurfacePosition();
+     fixture_position_x = position.x;
+@@ -779,7 +781,9 @@ extern "C" void fixture_entry()
+     ScreenRequestRenderer* fixture_screen_renderer = screen_request_renderer;
+     ScreenSurfacePosition fixture_screen_surface;
+     memset(&fixture_screen_surface, 0, sizeof(fixture_screen_surface));
++    ScreenSurfacePosition* fixture_screen_surfaces[1] = { &fixture_screen_surface };
+     ScreenPoint fixture_screen_position(2, 3);
++    fixture_screen_renderer->surfaces = fixture_screen_surfaces;
+     fixture_screen_renderer->software_mode = 1;
+     fixture_surface_pixels = fixture_screen_renderer->AccessPixels();
+     fixture_screen_renderer->PositionSurface(0, fixture_screen_position);
+@@ -1355,6 +1359,7 @@ typedef char SelectSurfaceOpaque5e[(offsetof(ScreenRequestRenderer, unknown_5e)
+ typedef char SelectSurfaceWord60[(offsetof(ScreenRequestRenderer, word_60) == 0x60) ? 1 : -1];
+ typedef char SelectSurfaceOpaque64[(offsetof(ScreenRequestRenderer, unknown_64) == 0x64) ? 1 : -1];
+ typedef char SelectSurfaceTable[(offsetof(ScreenRequestRenderer, surfaces) == 0x68) ? 1 : -1];
++typedef char SelectSurfaceOpaque6c[(offsetof(ScreenRequestRenderer, unknown_6c) == 0x6c) ? 1 : -1];
+ typedef char SelectSurfaceIndex[(offsetof(ScreenRequestRenderer, current_surface) == 0x74) ? 1 : -1];
+ typedef char SelectSurfaceLock[(offsetof(ScreenRequestRenderer, pixels_locked) == 0x78) ? 1 : -1];
+ 
+@@ -1362,6 +1367,8 @@ ScreenRequestRenderer* volatile fixture_select_surface_receiver;
+ volatile int fixture_select_surface_input;
+ volatile int fixture_select_surface_before;
+ volatile int fixture_select_surface_after;
++ScreenSurfacePosition** volatile fixture_select_surface_table_before;
++ScreenSurfacePosition** volatile fixture_select_surface_table_after;
+ volatile unsigned char fixture_select_surface_lock_before;
+ volatile unsigned char fixture_select_surface_lock_after;
+ volatile unsigned int fixture_select_surface_completed;
+@@ -1375,9 +1382,11 @@ extern "C" __declspec(dllexport) void FixtureSelectSurface(
+     fixture_select_surface_receiver = renderer;
+     fixture_select_surface_input = surface;
+     fixture_select_surface_before = renderer->current_surface;
++    fixture_select_surface_table_before = renderer->surfaces;
+     fixture_select_surface_lock_before = renderer->pixels_locked;
+     renderer->SelectSurface(surface);
+     fixture_select_surface_after = renderer->current_surface;
++    fixture_select_surface_table_after = renderer->surfaces;
+     fixture_select_surface_lock_after = renderer->pixels_locked;
+     fixture_select_surface_completed = 1;
+ }
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index fb48b79..8cd5f76 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -6,10 +6,6 @@
+ #include "startup_render_rectangle.h"
+ #include "startup_screen_item.h"
+ #include "startup_renderer_rectangle_queue.h"
+-#include <new>
+-#ifdef _STLPORT_VERSION
+-#include <vector>
+-#endif
+ 
+ struct TgaImage;
+ struct ScreenRectangle;
+@@ -34,23 +30,6 @@ struct ScreenSurfacePosition
+     void Cleanup();
+ };
+ 
+-// The surface list is an STLport 4.5.3 std::vector<ScreenSurfacePosition*>.
+-// Units compiled without STLport see a 12-byte layout stand-in whose special
+-// members are private, so any use there fails to compile.
+-#ifdef _STLPORT_VERSION
+-typedef std::vector<ScreenSurfacePosition*> ScreenSurfaceList;
+-#else
+-struct ScreenSurfaceList
+-{
+-private:
+-    ScreenSurfaceList();
+-    ScreenSurfaceList(const ScreenSurfaceList&);
+-    ~ScreenSurfaceList();
+-    ScreenSurfaceList& operator=(const ScreenSurfaceList&);
+-    void* words_[3];
+-};
+-#endif
+-
+ struct RendererWindowRectangle
+ {
+     int left;
+@@ -70,7 +49,6 @@ struct ScreenRendererRegistration
+ struct ScreenRequestRenderer : ScreenRendererRegistration
+ {
+     ScreenRequestRenderer(void* window, unsigned int width, unsigned int height, unsigned char mode); // 0x0040bab0.
+-    ~ScreenRequestRenderer();                                                                         // 0x0040bd40.
+ 
+     void UpdateSeaTime(float time);                                                                    // 0x0040bf30.
+     bool LoadWaterAnimation(const char* path);                                                         // 0x0040bf50.
+@@ -123,7 +101,16 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+         unsigned char unknown_64[4];
+         void* device_context_64;
+     };
+-    ScreenSurfaceList surfaces;
++    ScreenSurfacePosition** surfaces;
++    union
++    {
++        unsigned char unknown_6c[8];
++        struct
++        {
++            ScreenSurfacePosition** surfaces_end;
++            ScreenSurfacePosition** surfaces_capacity;
++        };
++    };
+     int current_surface;
+     unsigned char pixels_locked;
+     unsigned char unknown_79;
+@@ -185,7 +172,6 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+     void PositionSurface(int surface, ScreenPoint position);
+     void PositionSurface(int surface, int x, int y);
+     void UnlockPixels();
+-    void SaveSurfaceAsJpeg(int surface, const char* path); // 0x00411200, RET8.
+     unsigned char SurfaceLost(int surface);
+     void RestoreSurface(int surface);
+     void RecreateSurface(int index);
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 0727460..65df483 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -3165,39 +3165,6 @@
+     ],
+     "startup_surface_position_xyz.cpp": [
+       "/Ob1"
+-    ],
+-    "startup_renderer_restore_surface_native.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_renderer_surface_lost_native.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_renderer_tga_draw.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_renderer_surface_pitch.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_renderer_surface_unlock.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_renderer_surface_position.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_surface_indexed_cleanup.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_surface_resize.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_surface_position.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_surface_recreate.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_surface_pixel_access.cpp": [
+-      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -3258,8 +3225,7 @@
+         "SetRect": 20,
+         "DestroyWindow": 4,
+         "DefWindowProcA": 16,
+-        "SetCursorPos": 8,
+-        "ReleaseDC": 8
++        "SetCursorPos": 8
+       }
+     },
+     "KERNEL32.dll": {
+@@ -4635,18 +4601,6 @@
+     "startup_screen_dialog_word4c.cpp",
+     "startup_screen_linear_attach.cpp",
+     "startup_screen_tab_virtuals.cpp",
+-    "startup_screen_manager_owner190_render.cpp",
+-    "startup_renderer_restore_surface_native.cpp",
+-    "startup_renderer_surface_lost_native.cpp",
+-    "startup_renderer_tga_draw.cpp",
+-    "startup_renderer_surface_pitch.cpp",
+-    "startup_renderer_surface_unlock.cpp",
+-    "startup_renderer_surface_position.cpp",
+-    "startup_surface_position_xyz.cpp",
+-    "startup_surface_indexed_cleanup.cpp",
+-    "startup_surface_resize.cpp",
+-    "startup_surface_position.cpp",
+-    "startup_surface_recreate.cpp",
+-    "startup_surface_pixel_access.cpp"
++    "startup_screen_manager_owner190_render.cpp"
+   ]
+ }

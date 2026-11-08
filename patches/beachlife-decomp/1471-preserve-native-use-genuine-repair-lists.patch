@@ -1,0 +1,168 @@
+diff --git a/src/startup_pointer_list_inlines.h b/src/startup_pointer_list_inlines.h
+index 9743b74..d504539 100644
+--- a/src/startup_pointer_list_inlines.h
++++ b/src/startup_pointer_list_inlines.h
+@@ -81,4 +81,37 @@ Callback VisitPointerList(Iterator first, Iterator last, Callback callback)
+     return callback;
+ }
+ 
++inline CircularListIterator WorldRepairList::Begin() const
++{
++    CircularListIterator result;
++    result.node = head->next;
++    return result;
++}
++inline CircularListIterator WorldRepairList::End() const
++{
++    CircularListIterator result;
++    result.node = head;
++    return result;
++}
++inline CircularListIterator WorldRepairList::Erase(CircularListIterator position)
++{
++    return ErasePointerListNode<WorldRepairNode<WorldRepairEntry> >(position);
++}
++inline CircularListIterator WorldRepairAssignmentList::Begin() const
++{
++    CircularListIterator result;
++    result.node = head->next;
++    return result;
++}
++inline CircularListIterator WorldRepairAssignmentList::End() const
++{
++    CircularListIterator result;
++    result.node = head;
++    return result;
++}
++inline CircularListIterator WorldRepairAssignmentList::Erase(CircularListIterator position)
++{
++    return ErasePointerListNode<WorldRepairNode<WorldRepairAssignment> >(position);
++}
++
+ #endif
+diff --git a/src/startup_world_list.h b/src/startup_world_list.h
+index 0636b7c..b225ccf 100644
+--- a/src/startup_world_list.h
++++ b/src/startup_world_list.h
+@@ -13,32 +13,6 @@ struct WorldList
+     typedef typename std::list<T>::iterator Iterator;
+     typedef std::_List_node<T> Node;
+ };
+-
+-// Retail's captured-ID record predicate over the pointer lists.
+-template <class Record>
+-struct ListRecordIdEquals
+-{
+-    unsigned int id;
+-    explicit ListRecordIdEquals(unsigned int value)
+-        : id(value)
+-    {
+-    }
+-    bool operator()(const Record* record) const
+-    {
+-        return id == static_cast<unsigned int>(record->id_00);
+-    }
+-};
+-
+-// Retail's record searches over the lists are this plain loop (its instances
+-// fold into 0x00437eb0): an STLport find_if instance keeps its __find_if call
+-// out of line under VC6.
+-template <class Iterator, class Predicate>
+-Iterator FindListRecord(Iterator first, Iterator last, Predicate predicate)
+-{
+-    while (first != last && !predicate(*first))
+-        ++first;
+-    return first;
+-}
+ #else
+ struct WorldListLayout
+ {
+diff --git a/src/startup_world_repair_lists.h b/src/startup_world_repair_lists.h
+deleted file mode 100644
+index 53eb6ee..0000000
+--- a/src/startup_world_repair_lists.h
++++ /dev/null
+@@ -1,38 +0,0 @@
+-#ifndef STARTUP_WORLD_REPAIR_LISTS_H
+-#define STARTUP_WORLD_REPAIR_LISTS_H
+-
+-#include "startup_world_repairs.h"
+-
+-// Matching retention of the repair lists' out-of-line vendor members: insert
+-// 0x00437b00/0x00437ce0, their node constructors 0x00437d20/0x00437df0 and
+-// the folded record search 0x00437eb0.
+-struct WorldRepairListRetention : WorldRepairList
+-{
+-    static void Insert(WorldRepairListRetention* self, WorldRepairEntry* const& entry);
+-};
+-
+-struct WorldRepairAssignmentListRetention : WorldRepairAssignmentList
+-{
+-    static void Insert(WorldRepairAssignmentListRetention* self, WorldRepairAssignment* const& assignment);
+-};
+-
+-typedef WorldList<WorldRepairEntry*>::Node WorldRepairEntryNode;
+-typedef WorldList<WorldRepairAssignment*>::Node WorldRepairAssignmentNode;
+-
+-// The record searches as retail's /Ob1 methods make them: begin(), end() and
+-// the search stay out of line and the found node is read from the result.
+-inline std::_List_node_base* FindRepairNode(WorldRepairList& list, unsigned int id)
+-{
+-    return FindListRecord(list.begin(), list.end(), ListRecordIdEquals<WorldRepairEntry>(id))._M_node;
+-}
+-inline std::_List_node_base* FindRepairNode(WorldRepairAssignmentList& list, unsigned int id)
+-{
+-    return FindListRecord(list.begin(), list.end(), ListRecordIdEquals<WorldRepairAssignment>(id))._M_node;
+-}
+-
+-struct WorldRepairSearchRetention
+-{
+-    static WorldRepairList::iterator Find(WorldRepairList* list, unsigned int id);
+-};
+-
+-#endif
+diff --git a/src/startup_world_repairs.h b/src/startup_world_repairs.h
+index cd32dc9..ad4b204 100644
+--- a/src/startup_world_repairs.h
++++ b/src/startup_world_repairs.h
+@@ -2,7 +2,6 @@
+ #define STARTUP_WORLD_REPAIRS_H
+ 
+ #include "startup_list.h"
+-#include "startup_world_list.h"
+ 
+ struct GameFileReader;
+ struct ScreenWorldPosition;
+@@ -32,11 +31,27 @@ struct WorldRepairNode : CircularListNode
+     Entry* entry;
+ };
+ 
+-// The repair lists are STLport 4.5.3 std::list<WorldRepairEntry*> and
+-// std::list<WorldRepairAssignment*> (destructor instances 0x004379a0 and
+-// 0x00437a50). Units compiled without STLport see a layout stand-in.
+-typedef WorldList<WorldRepairEntry*>::Type WorldRepairList;
+-typedef WorldList<WorldRepairAssignment*>::Type WorldRepairAssignmentList;
++struct WorldRepairList
++{
++    CircularListIterator Begin() const;                        // Folded traversal, 0x00437af0.
++    CircularListIterator End() const;                          // Folded sentinel, 0x00437a40.
++    CircularListIterator Erase(CircularListIterator position); // Folded unlink, 0x004209d0.
++    CircularListNode* head;
++    WorldRepairNode<WorldRepairEntry>* CreateNode(WorldRepairEntry* const& entry); // 0x00437d20.
++    CircularListIterator Insert(
++        CircularListIterator position, WorldRepairEntry* const& entry); // 0x00437b00.
++};
++struct WorldRepairAssignmentList
++{
++    CircularListIterator Begin() const;                        // Folded traversal, 0x00437af0.
++    CircularListIterator End() const;                          // Folded sentinel, 0x00437a40.
++    CircularListIterator Erase(CircularListIterator position); // Folded unlink, 0x004209d0.
++    CircularListNode* head;
++    WorldRepairNode<WorldRepairAssignment>* CreateNode(
++        WorldRepairAssignment* const& entry); // 0x00437df0.
++    CircularListIterator Insert(
++        CircularListIterator position, WorldRepairAssignment* const& entry); // 0x00437ce0.
++};
+ 
+ struct WorldRepairSelection
+ {

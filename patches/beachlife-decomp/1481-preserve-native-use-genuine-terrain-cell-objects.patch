@@ -1,0 +1,157 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 0af41b9..0113a4d 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -3966,7 +3966,7 @@ extern "C" __declspec(dllexport) const char* FixtureMatch6_14(WorldSceneryEntity
+ 
+ #include "startup_screen_mode_world.h"
+ // Borrowed typed receiver; compile/link retention only, never executed.
+-extern "C" __declspec(dllexport) TerrainEntityList* FixtureMatch6_15(ScreenTerrainCell* item)
++extern "C" __declspec(dllexport) CircularList* FixtureMatch6_15(ScreenTerrainCell* item)
+ {
+     return item->ScreenTerrainCell::Objects();
+ }
+diff --git a/metadata.csv b/metadata.csv
+index 2cf0f4d..381d967 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -480,7 +480,7 @@ address,type,size,symbol
+ 0x0048e880,function,3,?AcceptWorldStateExit@@YA_NXZ
+ 0x004e8de0,function,3,?ScriptPath@LoadGameController@@UAEPBDXZ
+ 0x0041c830,function,4,?EntityName@WorldSceneryEntity@@QAEPBDXZ
+-0x004452d0,function,4,?Objects@ScreenTerrainCell@@QAEPAV?$list@PAUVariableEntity@@V?$allocator@PAUVariableEntity@@@_STL@@@_STL@@XZ
++0x004452d0,function,4,?Objects@ScreenTerrainCell@@QAEPAUCircularList@@XZ
+ 0x004456c0,function,4,?Bounds@ScreenTerrainRouteNode@@QAEPAUScreenPoint@@XZ
+ 0x004456d0,function,4,?Next@ScreenTerrainRouteNode@@QAEPAU1@XZ
+ 0x00453760,function,4,?EntityName@VariableEntity@@UAEPBDXZ
+diff --git a/src/startup_match_004452d0.cpp b/src/startup_match_004452d0.cpp
+index 07c0f55..464d251 100644
+--- a/src/startup_match_004452d0.cpp
++++ b/src/startup_match_004452d0.cpp
+@@ -1,7 +1,7 @@
+ #include "startup_screen_mode_world.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004452d0
+-TerrainEntityList* ScreenTerrainCell::Objects()
++CircularList* ScreenTerrainCell::Objects()
+ {
+     return &objects_4c;
+ }
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 1fb180f..387048f 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -50,7 +50,7 @@ typedef ScreenTerrainCell* ScreenTerrainCellPointer;
+ struct ScreenTerrainCell
+ {
+     ScreenTerrainCell();                         // 0x00445110.
+-    TerrainEntityList* Objects();                // 0x004452d0.
++    CircularList* Objects();                     // 0x004452d0.
+     bool AddEntity(VariableEntity* entity);      // 0x004452e0.
+     void RemoveEntity(VariableEntity* entity);   // 0x00445310.
+     bool ContainsEntity(VariableEntity* entity); // 0x00445350.
+@@ -69,7 +69,7 @@ struct ScreenTerrainCell
+     int x_40;
+     int y_44;
+     unsigned int flags_48;
+-    TerrainEntityList objects_4c;
++    TerrainEntityListBase objects_4c;
+     unsigned short depth_50;
+     unsigned char unknown_52[2];
+ 
+@@ -161,7 +161,7 @@ struct ScreenTerrainGrid : TerrainRegistration
+         ScreenWorldPosition* position, int* heading, ScreenPoint* tile); // 0x00447880.
+     void DeparturePosition(
+         ScreenWorldPosition* position, int* heading, ScreenPoint* tile); // 0x004478d0.
+-    TerrainEntityList* ObjectsAt(int x, int y);                          // 0x00446130.
++    CircularList* ObjectsAt(int x, int y);                               // 0x00446130.
+     void Neighbours(ScreenPoint neighbour, ScreenTerrainCell** output);  // 0x00445e40.
+     unsigned int TileIndex(int x, int y);                                // 0x0041f850.
+     ScreenPoint WorldToTile(ScreenWorldPosition position);               // 0x00446170.
+diff --git a/src/startup_terrain_entity_list.h b/src/startup_terrain_entity_list.h
+index 5bd1a4a..e000fdf 100644
+--- a/src/startup_terrain_entity_list.h
++++ b/src/startup_terrain_entity_list.h
+@@ -2,14 +2,40 @@
+ #define STARTUP_TERRAIN_ENTITY_LIST_H
+ 
+ #include "startup_list.h"
+-#include "startup_world_list.h"
+ 
+ struct VariableEntity;
++struct ScreenTerrainEntityNode : CircularListNode
++{
++    VariableEntity* entity;
++};
++struct TerrainListAllocator
++{
++};
++struct TerrainListIteratorTag
++{
++};
+ 
+-// A terrain cell's objects are an STLport 4.5.3 std::list<VariableEntity*>
+-// (insert 0x0041f760, node constructor 0x0041f790, find 0x00447930 with
+-// __find 0x00447970). Units compiled without STLport see a layout stand-in.
+-typedef WorldList<VariableEntity*>::Type TerrainEntityList;
+-typedef WorldList<VariableEntity*>::Node ScreenTerrainEntityNode;
++struct TerrainEntityListBase : CircularList
++{
++    TerrainEntityListBase();
++    ~TerrainEntityListBase();
++    TerrainListAllocator GetAllocator() const;
++    ScreenTerrainEntityNode* CreateNode(VariableEntity* const& entity);
++    CircularListIterator Insert(CircularListIterator position, VariableEntity* const& entity);
++    void InsertRange(CircularListIterator position, CircularListIterator first, CircularListIterator last);
++    void InsertRange(CircularListIterator position, CircularListIterator first, CircularListIterator last,
++        const TerrainListIteratorTag&);
++};
++
++struct TerrainEntityList : TerrainEntityListBase
++{
++    explicit TerrainEntityList(const TerrainListAllocator&);
++    ~TerrainEntityList();
++};
++
++CircularListIterator FindTerrainEntity(CircularListIterator first, CircularListIterator last,
++    VariableEntity* const& entity);
++CircularListIterator FindTerrainEntity(CircularListIterator first, CircularListIterator last,
++    VariableEntity* const& entity, const TerrainListIteratorTag&);
+ 
+ #endif
+diff --git a/src/startup_terrain_entity_list_retention.h b/src/startup_terrain_entity_list_retention.h
+deleted file mode 100644
+index c5d6349..0000000
+--- a/src/startup_terrain_entity_list_retention.h
++++ /dev/null
+@@ -1,18 +0,0 @@
+-#ifndef STARTUP_TERRAIN_ENTITY_LIST_RETENTION_H
+-#define STARTUP_TERRAIN_ENTITY_LIST_RETENTION_H
+-
+-#include "startup_terrain_entity_list.h"
+-
+-#include <algorithm>
+-
+-// Matching retention of the cell object list's out-of-line vendor members:
+-// insert 0x0041f760, the node constructor 0x0041f790 and find 0x00447930
+-// with its __find 0x00447970.
+-struct TerrainEntityListRetention : TerrainEntityList
+-{
+-    static void Insert(TerrainEntityListRetention* self, VariableEntity* const& entity);
+-    static void CreateNode(TerrainEntityListRetention* self, VariableEntity* const& entity);
+-    static TerrainEntityList::iterator Find(TerrainEntityList* list, VariableEntity* const& entity);
+-};
+-
+-#endif
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index c391d3c..57e8285 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -4316,7 +4316,6 @@
+     }
+   ],
+   "stlport_sources": [
+-    "startup_match_004452d0.cpp",
+     "fixture_00409060.cpp",
+     "fixture_0041b6c0.cpp",
+     "fixture_0041ed30.cpp",
