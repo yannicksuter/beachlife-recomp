@@ -12,47 +12,37 @@ over a pinned baseline in this repository. New launcher, data, runtime and nativ
 
 ## Disclaimer
 
-This project is AI-assisted. English is not my native language, and most of the
-documentation has been rewritten by LLMs.
+This project is developed with AI assistance. English is not my native
+language, and much of the documentation has been edited with the help of large
+language models (LLMs).
 
-I am a software engineer and have been working on software projects for more
-than 30 years: from the demoscene, to freelancing in the games industry, to
-failed startup dreams, to big and heavy projects in the commercial market.
+I am a software engineer with more than 30 years of experience, from the
+demoscene and freelance work in the games industry to startups and large
+commercial projects.
 
-This project is a labor of love for a game I remember enjoying, and for many
-hours of happy memories playing it with my girlfriend, now my wife, more than
-20 years ago.
+Beach Life is a game I remember fondly: I spent many happy hours playing it with
+my girlfriend, now my wife, more than 20 years ago. This project is a personal
+labor of love.
 
-The decompilation and recompilation are crafted by hand, and most of the code is
-handwritten. LLMs helped me analyze the crash reports of the many bugs that
-crashed the game. And hey, you will enjoy many more bugs with this project,
-because neither I nor any LLM is perfect.
+AI agents do much of the decompilation and byte-matching work under my
+direction: I set the goals and the rules, review the results and integrate
+them. LLMs also helped analyze the crash reports behind many of the bugs found
+so far. Bugs remain, and more will surface; neither I nor any tool is perfect.
 
-I am also bad at UI and design, worse than any AI, so LLMs help me there too. I
-value the time I invest in hard problems more than time spent on something that
-just makes me depressed. Do you want to step in here with your talent? Yes,
-please reach out to me by
-[opening an issue](https://github.com/yannicksuter/beachlife-recomp/issues).
+User interface and visual design are not my strengths, so LLMs help there as
+well. I would welcome help from people with that talent; if you would like to
+contribute, please
+[open an issue](https://github.com/yannicksuter/beachlife-recomp/issues).
 
-This project shares a lot of code with
+The project shares a lot of code with
 [Recharged](https://github.com/previouslevelgames/recharged), a port of a
-Nintendo Wii game into which I have already sunk thousands of hours.
+Nintendo Wii game I have worked on for thousands of hours.
 
-I know that AI creates anxiety. In the hands of professionals, AI is an amazing
-tool, and the results speak for themselves. Society is learning to use these
-tools, just as we had to learn to use a chainsaw: dangerous tools, but
-incredible efficiency multipliers when used the right way.
-
-If you have a personal problem with AI, please ignore this project. I do it for
-me, not at all to please you. If you enjoy the result, or if you want to share
-your excitement with me or contribute great ideas, you will make my day even
-nicer. Otherwise, I am happy to ignore you completely :) I don't challenge your
-dislike of AI, but then please be consistent and delete your operating system,
-your browser and your phone: more or less everything you use now and will use
-in the future.
-
-We are all on a learning journey: we have to live through this change and find
-our place in this digital world on steroids.
+I understand that AI raises concerns. Used with care by professionals, it is a
+powerful tool, and like any powerful tool it has to be learned and handled
+responsibly. If AI-assisted work is not something you want to engage with, this
+project may not be for you, and that is fine. If you enjoy the result, want to
+share feedback or have ideas to contribute, I would be glad to hear from you.
 
 ## Current status
 
