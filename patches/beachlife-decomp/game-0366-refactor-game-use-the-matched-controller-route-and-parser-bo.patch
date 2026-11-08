@@ -1,0 +1,227 @@
+diff --git a/src/startup_config_get_bool.cpp b/src/startup_config_get_bool.cpp
+index 8633078c424de8e5370f261a770b8e94ef5b535e..fa1607c08cb2fc92a37b998fc5768e6334977ab8 100644
+--- a/src/startup_config_get_bool.cpp
++++ b/src/startup_config_get_bool.cpp
+@@ -13,9 +13,10 @@ bool StartupConfig::FindNode(StartupConfigNode** result, const char* name)
+             *result = node;
+             return true;
+         }
+-        if (!node->next)
++        StartupConfigNode* next = node->next;
++        if (!next)
+             return false;
+-        node = node->next;
++        node = next;
+     }
+ }
+ 
+diff --git a/src/startup_gui_parse_define.cpp b/src/startup_gui_parse_define.cpp
+index 9b00c9204615335e4c1143c69b0401981a01104e..7af138a5229de7bbed29d3108fbb8dd0235070d6 100644
+--- a/src/startup_gui_parse_define.cpp
++++ b/src/startup_gui_parse_define.cpp
+@@ -7,39 +7,32 @@ void StartupFatal(const char* format, ...);
+ // FUNCTION: BEACHLIFE 0x004ac360
+ void GuiParserState::ParseDefine()
+ {
+-    const char* data = buffer;
+-    while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    char name[64];
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
+     {
+-        ++cursor;
++        cursor++;
+     }
+-
+-    char name[64];
+     ReadText(name);
+     GuiDefinedItem* item = new GuiDefinedItem(name);
+-
+-    data = buffer;
+-    while (data[cursor] == ' ' || data[cursor] == '\r' || data[cursor] == '\n' || data[cursor] == '\t')
++    while (buffer[cursor] == ' ' || buffer[cursor] == '\r' || buffer[cursor] == '\n' || buffer[cursor] == '\t')
+     {
+-        ++cursor;
++        cursor++;
+     }
+-    if (data[cursor] == '{')
++    if (buffer[cursor] == '{')
+     {
+-        ++cursor;
++        cursor++;
+     }
+     else
+     {
+         StartupFatal("GUIManager::process_define - Script Error \r\nNo open bracket found at file offset - %u", cursor);
+     }
+-
+     RegisterItem(item, 0);
+     PushContext(item);
+-
+-    ScreenChildLink* tail = defined_items;
+-    if (tail)
++    if (defined_items != 0)
+     {
+-        while (tail->next)
++        ScreenChildLink* tail;
++        for (tail = defined_items; tail->next != 0; tail = tail->next)
+         {
+-            tail = tail->next;
+         }
+         tail->next = new ScreenChildLink(item);
+     }
+diff --git a/src/startup_transition_controllers.cpp b/src/startup_transition_controllers.cpp
+index 50509d379e67118f4358b34540d75c3dd622be5e..eb2d62732c40d7893ec5055d1cea1785759a99bf 100644
+--- a/src/startup_transition_controllers.cpp
++++ b/src/startup_transition_controllers.cpp
+@@ -21,6 +21,9 @@ ExitGameController::~ExitGameController()
+         active = 0;
+ }
+ 
++// GLOBAL: BEACHLIFE 0x004f4d50
++extern const float exit_game_seconds = 15.0f;
++
+ // FUNCTION: BEACHLIFE 0x004e8290
+ int ExitGameController::Update()
+ {
+@@ -28,10 +31,10 @@ int ExitGameController::Update()
+     if (delta > 0.1f)
+         delta = 0.1f;
+     elapsed += delta;
+-    if (elapsed > 15.0f)
++    if (elapsed > exit_game_seconds)
+         screen_request_game->controller_selection.SelectPendingController(2);
+     if (startup_input_state->ReadFirstButtonTransition() == 1)
+-        elapsed = 15.0f;
++        elapsed = exit_game_seconds;
+     return 0;
+ }
+ 
+@@ -103,7 +106,14 @@ ResetGameController::~ResetGameController()
+ // FUNCTION: BEACHLIFE 0x004e9010
+ int ResetGameController::Update()
+ {
+-    screen_manager->RequestScreen(std::rand() % 2 ? "LoadingScreen1" : "LoadingScreen2", 0, 0);
++    if (std::rand() % 2)
++    {
++        screen_manager->RequestScreen("LoadingScreen1", 0, 0);
++    }
++    else
++    {
++        screen_manager->RequestScreen("LoadingScreen2", 0, 0);
++    }
+     screen_request_game->controller_selection.SelectPendingController(5);
+     return 0;
+ }
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index b87535d6f0244d5303d2891dfe465931e12f869c..dbe5fc32490023668d32ad2471bad735bb020e1e 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -59,6 +59,7 @@ static_assert(sizeof(void*) != 4 || sizeof(WorldStaticEntity) == 0x60);
+ 
+ struct WorldMovingEntity : VariableEntity
+ {
++    void SetMoving(unsigned char moving);                                                                   // Folded 0x00483590.
+     void SteerTowardTarget();                                                                               // 0x00482940.
+     void SteerArriving();                                                                                   // 0x00482ab0.
+     void SteerFollowing();                                                                                  // 0x00482c30.
+diff --git a/src/startup_world_route_lifetime.cpp b/src/startup_world_route_lifetime.cpp
+index 2eb338f99c48aba38d687ccad6cec9ed29da5aed..7ecedaf3290df494a0870c4c2ebf1c62782cfee0 100644
+--- a/src/startup_world_route_lifetime.cpp
++++ b/src/startup_world_route_lifetime.cpp
+@@ -43,7 +43,7 @@ WorldRouteData::~WorldRouteData()
+ void WorldSubsystem18::ReleaseRoute(void* route)
+ {
+     WorldRouteReference* reference = static_cast<WorldRouteReference*>(route);
+-    if (--reference->data_00->references_04 == 0)
++    if (reference->data_00->Release() == 0)
+         delete reference->data_00;
+     if (reference)
+     {
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 24c48416effa08b107c75dc58671a6d8e7a28e3b..9cd90db8d7090731de43428fd919015f2a52c79b 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -62,6 +62,8 @@ inline void CopyRoutePoint(ScreenPoint& target, const ScreenPoint& source)
+ 
+ struct WorldRouteData
+ {
++    // Inline reference drop; retail keeps the count in a register.
++    unsigned int Release() { return --references_04; }
+     WorldRouteData();                     // 0x004303b0.
+     void SaveState(GameFileReader* file); // 0x004303f0.
+     void LoadState(GameFileReader* file); // 0x004304d0.
+diff --git a/src/startup_world_vehicle_enter.cpp b/src/startup_world_vehicle_enter.cpp
+index 87f73f42929c0d3b569cc2b00a54c874bc9cf93d..8c1f89cdd5da0ae40554aa71eee2550da34d683d 100644
+--- a/src/startup_world_vehicle_enter.cpp
++++ b/src/startup_world_vehicle_enter.cpp
+@@ -181,7 +181,7 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+                 screen_mode_commands->QueueCommand(&command);
+                 if (!route_b8)
+                 {
+-                    StoreSharedByte5c(flag_5c, 0);
++                    SetMoving(0);
+                     queue_state(0x43);
+                 }
+                 if (vehicle_type_f8 == 4)
+diff --git a/src/startup_world_vehicle_roaming.cpp b/src/startup_world_vehicle_roaming.cpp
+index 3493ed94ab6cf94958804c7e7e7f8db94e126c90..89686598347b8b88b3e118f726f64a38ac0bc254 100644
+--- a/src/startup_world_vehicle_roaming.cpp
++++ b/src/startup_world_vehicle_roaming.cpp
+@@ -66,7 +66,7 @@ void WorldVehicleEntity::Roam()
+         screen_mode_commands->QueueCommand(&command);
+         return;
+     }
+-    StoreSharedByte5c(flag_5c, 0);
++    SetMoving(0);
+     StoreVehicleRoamPoint(this, screen_terrain_grid->TilePosition(best.x, best.y, 4));
+     int facing = (best_direction + 1) % 8;
+     if (facing == keyline_state_44->word_18)
+@@ -139,7 +139,7 @@ bool WorldVehicleEntity::FindFishingPoint()
+     }
+     if (count <= 4)
+         return false;
+-    StoreSharedByte5c(flag_5c, 0);
++    SetMoving(0);
+     StoreVehicleRoamPoint(this, screen_terrain_grid->TilePosition(last.x, last.y, 4));
+     if (facing % 8 == keyline_state_44->word_18)
+         MoveVehicleToRoamPoint(this);
+diff --git a/src/startup_world_vehicle_turn.cpp b/src/startup_world_vehicle_turn.cpp
+index a0fb06f536ddd6d724762a3da3cc809e2ed611c6..f187b14a4c56d57054c804d3f76642e2db1cf4c7 100644
+--- a/src/startup_world_vehicle_turn.cpp
++++ b/src/startup_world_vehicle_turn.cpp
+@@ -15,6 +15,12 @@ void WorldVehicleEntity::FacePoint(ScreenMapPosition point)
+     FaceVehicle(WorldDirection(direction, 8));
+ }
+ 
++// Folded with the other byte setters at +0x5c (m_bMoving), 0x00483590.
++void WorldMovingEntity::SetMoving(unsigned char moving)
++{
++    flag_5c = moving;
++}
++
+ // FUNCTION: BEACHLIFE 0x0049a3c0
+ void WorldVehicleEntity::FaceVehicle(int direction)
+ {
+@@ -23,18 +29,19 @@ void WorldVehicleEntity::FaceVehicle(int direction)
+     {
+         flag_900 = 1;
+         words_904[0] = 0;
+-        AnimateVehicle(window_deactivation_state->clock_158);
++        float clock = window_deactivation_state->clock_158;
++        AnimateVehicle(clock);
+         return;
+     }
+-    StoreSharedByte5c(flag_5c, 0);
++    SetMoving(0);
+     flag_900 = 1;
+     if (current < direction)
+     {
+         words_904[0] = direction - current;
+         if (static_cast<int>(words_904[0]) > 4)
+         {
+-            words_904[0] = 8 - words_904[0];
+             flag_901 = 0;
++            words_904[0] = 8 - words_904[0];
+         }
+         else
+             flag_901 = 1;

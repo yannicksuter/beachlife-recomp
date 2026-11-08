@@ -1,0 +1,405 @@
+diff --git a/src/startup_building_guest_queue_clear.cpp b/src/startup_building_guest_queue_clear.cpp
+index 624b23662943f1c26461025319ebdca75fbaadda..6dc4ff97541060bd16c94dc60849969a156ada9b 100644
+--- a/src/startup_building_guest_queue_clear.cpp
++++ b/src/startup_building_guest_queue_clear.cpp
+@@ -1,5 +1,6 @@
+ #include "startup_variable_state.h"
+ #include "startup_screen_mode_world.h"
++#include <bit>
+ 
+ // FUNCTION: BEACHLIFE 0x00433a20
+ void BuildingGuestQueue::Clear()
+@@ -34,6 +35,6 @@ void BuildingGuestQueue::Clear()
+             DeallocateImageListPointerSlots(deque.end.first, 32);
+         deque.end = deque.begin;
+     }
+-    word_58 = word_60;
+-    word_5c = word_64;
++    current_58.x = std::bit_cast<float>(word_60);
++    current_58.y = std::bit_cast<float>(word_64);
+ }
+diff --git a/src/startup_building_guest_queue_methods.cpp b/src/startup_building_guest_queue_methods.cpp
+index 1ba642f0ca8016d6bd7d97848165855e2f6b55b3..827d3b1e7eb112c8f09fbf1977877e87606a8e93 100644
+--- a/src/startup_building_guest_queue_methods.cpp
++++ b/src/startup_building_guest_queue_methods.cpp
+@@ -5,13 +5,12 @@
+ 
+ static ScreenMapPosition QueueCurrentPosition(BuildingGuestQueue* queue)
+ {
+-    return { std::bit_cast<float>(queue->word_58), std::bit_cast<float>(queue->word_5c) };
++    return queue->current_58;
+ }
+ 
+ static void QueueStorePosition(BuildingGuestQueue* queue, ScreenMapPosition position)
+ {
+-    queue->word_58 = std::bit_cast<unsigned int>(position.x);
+-    queue->word_5c = std::bit_cast<unsigned int>(position.y);
++    queue->current_58 = position;
+ }
+ 
+ static void QueueMoveGuest(BuildingGuestQueue* queue, unsigned int id, bool delayed)
+@@ -20,8 +19,8 @@ static void QueueMoveGuest(BuildingGuestQueue* queue, unsigned int id, bool dela
+     command.words[0] = queue->owner_00;
+     command.words[1] = id;
+     command.words[2] = 0x1f;
+-    command.words[3] = static_cast<int>(std::bit_cast<float>(queue->word_58));
+-    command.words[4] = static_cast<int>(std::bit_cast<float>(queue->word_5c));
++    command.words[3] = static_cast<int>(queue->current_58.x);
++    command.words[4] = static_cast<int>(queue->current_58.y);
+     if (delayed)
+         screen_mode_commands->QueueDelayed(&command, 3.0f);
+     else
+@@ -72,8 +71,7 @@ bool BuildingGuestQueue::AddGuest(unsigned int id, unsigned int feature, unsigne
+                 QueueStorePosition(this, FindQueuePosition());
+             else
+             {
+-                word_58 = std::bit_cast<unsigned int>(positions_70[static_cast<unsigned int>(guests_08.end.Distance(guests_08.begin))].x);
+-                word_5c = std::bit_cast<unsigned int>(positions_70[static_cast<unsigned int>(guests_08.end.Distance(guests_08.begin))].y);
++                current_58 = positions_70[static_cast<unsigned int>(guests_08.end.Distance(guests_08.begin))];
+             }
+             ScreenModeCommand command;
+             command.words[0] = owner_00;
+@@ -169,6 +167,6 @@ void BuildingGuestQueue::SendGuests(unsigned int id)
+             DeallocateImageListPointerSlots(deque.end.first, 32);
+         deque.end = deque.begin;
+     }
+-    word_58 = word_60;
+-    word_5c = word_64;
++    current_58.x = std::bit_cast<float>(word_60);
++    current_58.y = std::bit_cast<float>(word_64);
+ }
+diff --git a/src/startup_building_guest_queue_positions.cpp b/src/startup_building_guest_queue_positions.cpp
+index 9455912f60d685b2ed9d446abc18d6c65627f48e..c9be18b7dd0e2269cd399dbe6b01ee864fdfb9e1 100644
+--- a/src/startup_building_guest_queue_positions.cpp
++++ b/src/startup_building_guest_queue_positions.cpp
+@@ -56,7 +56,7 @@ static bool QueueSameDirection(ScreenMapPosition first, ScreenMapPosition second
+ ScreenMapPosition BuildingGuestQueue::Position(unsigned int index)
+ {
+     if (word_04 > 10)
+-        return { std::bit_cast<float>(word_58), std::bit_cast<float>(word_5c) };
++        return current_58;
+     ScreenMapPosition direction;
+     if (index <= 1)
+         direction = { std::bit_cast<float>(word_68), std::bit_cast<float>(word_6c) };
+@@ -150,25 +150,22 @@ ScreenMapPosition BuildingGuestQueue::EntrancePosition()
+ {
+     if (word_04 > 0 && word_04 <= 10)
+     {
+-        word_58 = std::bit_cast<unsigned int>(positions_70[word_04].x);
+-        word_5c = std::bit_cast<unsigned int>(positions_70[word_04].y);
+-        ScreenMapPosition current = { std::bit_cast<float>(word_58), std::bit_cast<float>(word_5c) };
+-        if (!(QueueTileFlags(current) & 0x10000082)
+-            || (QueueTileFlags(current) & 0x12) == 0x12
+-            || (QueueTileFlags(current) & 0x8000))
++        current_58 = positions_70[word_04];
++        if (!(QueueTileFlags(current_58) & 0x10000082)
++            || (QueueTileFlags(current_58) & 0x12) == 0x12
++            || (QueueTileFlags(current_58) & 0x8000))
+         {
+             Position(0);
+-            word_58 = std::bit_cast<unsigned int>(positions_70[word_04].x);
+-            word_5c = std::bit_cast<unsigned int>(positions_70[word_04].y);
++            current_58 = positions_70[word_04];
+         }
+     }
+-    return { std::bit_cast<float>(word_58), std::bit_cast<float>(word_5c) };
++    return current_58;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00434e00
+ ScreenMapPosition BuildingGuestQueue::FindQueuePosition()
+ {
+-    ScreenMapPosition base = { std::bit_cast<float>(word_58), std::bit_cast<float>(word_5c) };
++    ScreenMapPosition base = current_58;
+     ScreenMapPosition direction = { std::bit_cast<float>(word_68), std::bit_cast<float>(word_6c) };
+     ScreenMapPosition candidate = QueueOffset(base, direction);
+     if (((QueueTileFlags(candidate) & 0x10000080) && !(QueueTileFlags(candidate) & 0x8000))
+diff --git a/src/startup_building_guest_queue_state.cpp b/src/startup_building_guest_queue_state.cpp
+index ecd3300490f2a32b5481b132fc0fa2501d031016..c7fec27b1af9aa32b8cd550186e14ccce4685f95 100644
+--- a/src/startup_building_guest_queue_state.cpp
++++ b/src/startup_building_guest_queue_state.cpp
+@@ -5,6 +5,7 @@
+ #include "startup_game_file.h"
+ #include <cstring>
+ #include <new>
++#include <bit>
+ 
+ // GLOBAL: BEACHLIFE 0x005ab158
+ ScreenMapPosition building_queue_offsets[8];
+@@ -46,8 +47,8 @@ BuildingGuestQueue::BuildingGuestQueue(unsigned int capacity, ScreenMapPosition
+         else
+         {
+             positions_70 = 0;
+-            word_58 = word_60;
+-            word_5c = word_64;
++            current_58.x = std::bit_cast<float>(word_60);
++            current_58.y = std::bit_cast<float>(word_64);
+         }
+     }
+     catch (...)
+@@ -89,8 +90,8 @@ void BuildingGuestQueue::Evacuate()
+             DeallocateImageListPointerSlots(deque.end.first, 32);
+         deque.end = deque.begin;
+     }
+-    word_58 = word_60;
+-    word_5c = word_64;
++    current_58.x = std::bit_cast<float>(word_60);
++    current_58.y = std::bit_cast<float>(word_64);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00435980
+diff --git a/src/startup_game_add_point_sound.cpp b/src/startup_game_add_point_sound.cpp
+index 8ed9faef338d3589d1fb41336a2ec092eede6165..05f2960569dacc8547cf186d7cef37737497d667 100644
+--- a/src/startup_game_add_point_sound.cpp
++++ b/src/startup_game_add_point_sound.cpp
+@@ -4,18 +4,17 @@
+ // FUNCTION: BEACHLIFE 0x004d2780
+ void GameUpdatePair::AddPointSound(const char* name, const WindowAudioVector* position, float volume, int limit, int voice)
+ {
+-    if (!enabled_00)
+-        return;
+-    GamePointSound* sound = new (std::nothrow) GamePointSound;
+-    if (sound)
+-        sound->retrying_38 = 0;
+-    strcpy(sound->name_00, name);
+-    sound->position_20 = *position;
+-    sound->volume_2c = volume;
+-    sound->limit_30 = limit;
+-    sound->voice_34 = voice;
+-    GameSoundIterator end;
+-    end.node = point_sounds_04.head;
+-    point_sounds_04.Insert(end, sound);
+-    ClearFlaggedPointSounds();
++    if (enabled_00)
++    {
++        GamePointSound* sound = new (std::nothrow) GamePointSound;
++        strcpy(sound->name_00, name);
++        sound->position_20 = *position;
++        sound->volume_2c = volume;
++        sound->limit_30 = limit;
++        sound->voice_34 = voice;
++        GameSoundIterator end;
++        end.node = point_sounds_04.head;
++        point_sounds_04.Insert(end, sound);
++        ClearFlaggedPointSounds();
++    }
+ }
+diff --git a/src/startup_game_object_sound_control.cpp b/src/startup_game_object_sound_control.cpp
+index 7ec2adc4f130151d3b6af7c1714d2f542ca51c15..d507eb63cfebb85157f77d541a530fa207d5b55f 100644
+--- a/src/startup_game_object_sound_control.cpp
++++ b/src/startup_game_object_sound_control.cpp
+@@ -5,7 +5,7 @@
+ #include <cstring>
+ 
+ // FUNCTION: BEACHLIFE 0x004d2840
+-void GameUpdatePair::AddObjectSound(const char* name, unsigned int id, float volume, unsigned int limit)
++void GameUpdatePair::AddObjectSound(const char* name, unsigned int id, float volume, unsigned char limit)
+ {
+     if (!enabled_00)
+         return;
+@@ -24,7 +24,7 @@ void GameUpdatePair::AddObjectSound(const char* name, unsigned int id, float vol
+     sound->volume_04 = volume;
+     sound->object_id = id;
+     sound->playing_28 = 0;
+-    sound->ignores_music_29 = static_cast<unsigned char>(limit);
++    sound->ignores_music_29 = limit;
+     std::strcpy(sound->name_08, name);
+     GameSoundIterator end;
+     end.node = object_sounds_08.head;
+diff --git a/src/startup_game_update_pair.h b/src/startup_game_update_pair.h
+index 93ec138bf8047be31f95d0e7fea41bc19190463e..8d5e62edf31d0e7cb6abd069f597e11536592ee3 100644
+--- a/src/startup_game_update_pair.h
++++ b/src/startup_game_update_pair.h
+@@ -24,6 +24,10 @@ struct GameObjectSound
+ // Observed point-sound record (list at scheduler +4).
+ struct GamePointSound
+ {
++    GamePointSound()
++        : retrying_38(0)
++    {
++    }
+     char name_00[0x20];
+     WindowAudioVector position_20;
+     float volume_2c;
+@@ -189,8 +193,8 @@ struct GameUpdatePairRegistration
+ // Actual 12-byte x86 positional-sound scheduler at Game+0x50.
+ struct GameUpdatePair : GameUpdatePairRegistration
+ {
+-    void AddObjectSound(const char* name, unsigned int id, float volume, unsigned int limit); // 0x004d2840.
+-    void RemoveObjectSound(unsigned int id);                                                  // 0x004d2910.
++    void AddObjectSound(const char* name, unsigned int id, float volume, unsigned char limit); // 0x004d2840.
++    void RemoveObjectSound(unsigned int id);                                                   // 0x004d2910.
+     unsigned char enabled_00;
+     unsigned char unknown_01[3];
+     GamePointSoundList point_sounds_04;
+diff --git a/src/startup_renderer_line_direct_x.cpp b/src/startup_renderer_line_direct_x.cpp
+index 80f51d43b1f5f9b9fe90008d6eb2ddf2fc60213d..0938a19190957f8affc37ddc1c3d0d7f36a82b6f 100644
+--- a/src/startup_renderer_line_direct_x.cpp
++++ b/src/startup_renderer_line_direct_x.cpp
+@@ -4,7 +4,7 @@
+ 
+ // FUNCTION: BEACHLIFE 0x00411560
+ void RasterLineDirectX(int x, int y, int delta_x, int delta_y, int direction,
+-    unsigned int colour, unsigned short* pixels, unsigned int stride)
++    unsigned short colour, unsigned short* pixels, unsigned int stride)
+ {
+     int twice_y = delta_y + delta_y;
+     int diagonal = twice_y - (delta_x + delta_x);
+diff --git a/src/startup_renderer_line_direct_y.cpp b/src/startup_renderer_line_direct_y.cpp
+index 37ca71fb0bf3bfaabd0ed8178e41d8d1b6af08cb..f458cce137c71d5757876aa7c9e0950ae0397367 100644
+--- a/src/startup_renderer_line_direct_y.cpp
++++ b/src/startup_renderer_line_direct_y.cpp
+@@ -4,7 +4,7 @@
+ 
+ // FUNCTION: BEACHLIFE 0x00411640
+ void RasterLineDirectY(int x, int y, int delta_x, int delta_y, int direction,
+-    unsigned int colour, unsigned short* pixels, unsigned int stride)
++    unsigned short colour, unsigned short* pixels, unsigned int stride)
+ {
+     int twice_x = delta_x + delta_x;
+     int diagonal = twice_x - (delta_y + delta_y);
+diff --git a/src/startup_renderer_line_packed_x.cpp b/src/startup_renderer_line_packed_x.cpp
+index f38071761528ad56462fbec3aaa276518a2cfd85..374e1382f2e21b923e4155552faa3db2477e6baa 100644
+--- a/src/startup_renderer_line_packed_x.cpp
++++ b/src/startup_renderer_line_packed_x.cpp
+@@ -3,7 +3,7 @@
+ 
+ // FUNCTION: BEACHLIFE 0x00411710
+ void RasterLinePackedX(int x, int y, int delta_x, int delta_y, int direction,
+-    unsigned int colour, unsigned short* pixels, unsigned int stride)
++    unsigned short colour, unsigned short* pixels, unsigned int stride)
+ {
+     int twice_y = delta_y + delta_y;
+     int diagonal = twice_y - (delta_x + delta_x);
+diff --git a/src/startup_renderer_line_packed_y.cpp b/src/startup_renderer_line_packed_y.cpp
+index 4ad872869dc39d3b141752c6f2c92dab9066ad95..5cfc8a7ee64c98d509150eb390e9383a17557795 100644
+--- a/src/startup_renderer_line_packed_y.cpp
++++ b/src/startup_renderer_line_packed_y.cpp
+@@ -3,7 +3,7 @@
+ 
+ // FUNCTION: BEACHLIFE 0x004117e0
+ void RasterLinePackedY(int x, int y, int delta_x, int delta_y, int direction,
+-    unsigned int colour, unsigned short* pixels, unsigned int stride)
++    unsigned short colour, unsigned short* pixels, unsigned int stride)
+ {
+     int twice_x = delta_x + delta_x;
+     int diagonal = twice_x - (delta_y + delta_y);
+diff --git a/src/startup_renderer_line_raster.h b/src/startup_renderer_line_raster.h
+index 5204718df4d27485be30a0790729381fa549a8b3..f999d49997e7d19ff2b2386196089766a7149e41 100644
+--- a/src/startup_renderer_line_raster.h
++++ b/src/startup_renderer_line_raster.h
+@@ -6,12 +6,12 @@
+ // Direct storage uses four-byte slots; packed storage uses two-byte slots.
+ // Only declarations are supplied here; each actual implementation is required.
+ void RasterLineDirectX(int x, int y, int delta_x, int delta_y, int direction,
+-    unsigned int colour, unsigned short* pixels, unsigned int stride); // 0x00411560
++    unsigned short colour, unsigned short* pixels, unsigned int stride); // 0x00411560
+ void RasterLineDirectY(int x, int y, int delta_x, int delta_y, int direction,
+-    unsigned int colour, unsigned short* pixels, unsigned int stride); // 0x00411640
++    unsigned short colour, unsigned short* pixels, unsigned int stride); // 0x00411640
+ void RasterLinePackedX(int x, int y, int delta_x, int delta_y, int direction,
+-    unsigned int colour, unsigned short* pixels, unsigned int stride); // 0x00411710
++    unsigned short colour, unsigned short* pixels, unsigned int stride); // 0x00411710
+ void RasterLinePackedY(int x, int y, int delta_x, int delta_y, int direction,
+-    unsigned int colour, unsigned short* pixels, unsigned int stride); // 0x004117e0
++    unsigned short colour, unsigned short* pixels, unsigned int stride); // 0x004117e0
+ 
+ #endif
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 3cc985b0a08bb480d951fd3239c41f350fe47594..edd001bf9d66c778380125c6a9de8078e00719c2 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -456,6 +456,8 @@ struct ScreenManager
+     void StartCredits();
+     void PrepareNamedScreen(const char* name, unsigned char prepare);
+     void ScreenSelect();
++    // Retail inlines this member helper into ScreenSelect; defined there.
++    void SetScreenValue(const char* name, int value);
+     void ActivateScreens();
+     void PrepareActiveScreens(unsigned char prepare_surface);
+     void SetTickerRectangle(ScreenRectangle rectangle);
+diff --git a/src/startup_screen_manager_select.cpp b/src/startup_screen_manager_select.cpp
+index 863863dccb9e6f91dd2150d0c2d8a7bbc2206707..d3392880c016eabf30d5873b0ae3888606d5d56b 100644
+--- a/src/startup_screen_manager_select.cpp
++++ b/src/startup_screen_manager_select.cpp
+@@ -3,16 +3,21 @@
+ #include "startup_screen_manager.h"
+ #include "startup_screen_name_search.h"
+ 
+-// FUNCTION: BEACHLIFE 0x004af940
+-void ScreenManager::ScreenSelect()
++// The retail body calls one inline member helper with the screen name and value.
++inline void ScreenManager::SetScreenValue(const char* name, int value)
+ {
+-    screen_manager->RequestScreen("InGameOptions", 0, 0);
+-    CircularList& screens = screen_manager->active;
+     CircularListIterator found;
+-    CircularListValueNode* node = static_cast<CircularListValueNode*>(
+-        FindScreenByName(&found, screens.Begin(), screens.End(), "InGameOptions")->node);
+-    if (node != screens.head)
++    CircularListNode* node = FindScreenByName(&found, active.Begin(), active.End(), name)->node;
++    if (node != active.head)
+     {
+-        node->entry->item->Unresolved4c(1);
++        ScreenDialog* item = static_cast<CircularListValueNode*>(node)->entry->item;
++        item->Unresolved4c(value);
+     }
+ }
++
++// FUNCTION: BEACHLIFE 0x004af940
++void ScreenManager::ScreenSelect()
++{
++    screen_manager->RequestScreen("InGameOptions", 0, 0);
++    screen_manager->SetScreenValue("InGameOptions", 1);
++}
+diff --git a/src/startup_screen_mode_save_capture.cpp b/src/startup_screen_mode_save_capture.cpp
+index 8e1b04e95da0dc3d6609dce1a67f0a21fb41dba7..90a9cdea57f9449ba2f46efb29ee6b59b44a5d8c 100644
+--- a/src/startup_screen_mode_save_capture.cpp
++++ b/src/startup_screen_mode_save_capture.cpp
+@@ -12,18 +12,19 @@ const char* screen_capture_directory = "photos\\";
+ // FUNCTION: BEACHLIFE 0x004a6c20
+ void ScreenMode2Controller::SaveCapture(int surface)
+ {
+-    char search[128];
+-    char path[76];
++    char search[0x80];
++    char path[0x50];
+     _finddata_t information;
++    intptr_t handle;
+     int highest = -1;
+     sprintf(search, "%sBeachLife_Snapshot_????.jpg", screen_capture_directory);
+-    intptr_t handle = _findfirst(search, &information);
++    handle = _findfirst(search, &information);
+     if (handle != -1)
+     {
+         if (strcmp(information.name, ".") != 0 && strcmp(information.name, "..") != 0)
+         {
+             int number = atoi(information.name + strlen(information.name) - 8);
+-            if (number > -1)
++            if (number > highest)
+                 highest = number;
+         }
+         while (_findnext(handle, &information) != -1)
+@@ -34,7 +35,6 @@ void ScreenMode2Controller::SaveCapture(int surface)
+         }
+     }
+     _findclose(handle);
+-    ++highest;
+-    sprintf(path, "%sBeachLife_Snapshot_%04d.jpg", screen_capture_directory, highest);
++    sprintf(path, "%sBeachLife_Snapshot_%04d.jpg", screen_capture_directory, highest + 1);
+     screen_request_renderer->SaveSurfaceAsJpeg(surface, path);
+ }
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index a753f3c60d1554c1cb2a72eb0db6cf83e86f2cdf..12c0c0b4a03cf00968135382a6ac3fbfaab2f2d4 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -361,8 +361,7 @@ struct BuildingGuestQueue
+     unsigned int word_04;
+     WorldDequeStorage<int> guests_08;
+     WorldDequeStorage<int> pending_30;
+-    unsigned int word_58;
+-    unsigned int word_5c;
++    ScreenMapPosition current_58;
+     unsigned int word_60;
+     unsigned int word_64;
+     unsigned int word_68;
