@@ -2146,6 +2146,10 @@ original operand uses that shared rebuilt identity, regardless of which original
 reccmp retained. Unmatched groups select the lowest original address first.
 The LINK map and retained PDB public must prove the fold; indirect operands,
 interior addresses and identities already matched elsewhere are not redirected.
+An original address that several bodies annotate keeps its CSV identity when
+LINK left that identity alone at its own address: the comparator binds it before
+reccmp reads the annotations. Otherwise the line records of whichever folded copy
+LINK kept would decide the pairing, and that copy changes as objects are added.
 
 
 The matching profile reconstructs the complete 593-byte scenery-list population

@@ -582,6 +582,16 @@ class MatchingInputTests(unittest.TestCase):
                  'sources': ['list.cpp', 'owner.cpp']}])
             self.assertEqual(matching.unfolded_annotations(paths, rows, {}, publics), [])
 
+    def test_unfolded_identities_bind_their_own_rebuilt_address(self):
+        records = [{'address': '0x004d3890', 'symbol': '?Ignore@@YAXH@Z', 'recomp': '0x00457810',
+                    'sources': ['folded.cpp', 'sink.cpp']}]
+        self.assertEqual(matching.unfolded_identity_pairs(records), [(0x004d3890, 0x00457810)])
+        # A folded copy that claimed the address through its annotation line is a failure.
+        bound = matching.unfolded_identity_results(records, {0x004d3890: 0x00457810}.get)
+        claimed = matching.unfolded_identity_results(records, {0x004d3890: 0x0044fbc0}.get)
+        self.assertEqual([item['bound'] for item in bound + claimed], [True, False])
+        self.assertEqual(matching.unfolded_identity_results(records, {}.get)[0]['bound'], False)
+
     def test_map_public_names_keep_every_name_at_an_address(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'generated.map'
