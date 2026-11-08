@@ -1,0 +1,149 @@
+diff --git a/fixtures/game.d/fixture_00410960.cpp b/fixtures/game.d/fixture_00410960.cpp
+new file mode 100644
+index 0000000..11365bc
+--- /dev/null
++++ b/fixtures/game.d/fixture_00410960.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00410960(ScreenRequestRenderer* renderer, int width, int height)
++{
++    renderer->SetScreenSize(width, height);
++}
+diff --git a/metadata.d/00410960.csv b/metadata.d/00410960.csv
+new file mode 100644
+index 0000000..99a499f
+--- /dev/null
++++ b/metadata.d/00410960.csv
+@@ -0,0 +1,6 @@
++address,type,size,symbol
++0x00410960,function,723,?SetScreenSize@ScreenRequestRenderer@@QAEEHH@Z
++0x004fc3f4,string,22,
++0x004fc3dc,string,21,
++0x004fc30c,string,26,
++0x004f5618,global,16,__TI2PAD
+diff --git a/src/match_00410960.cpp b/src/match_00410960.cpp
+new file mode 100644
+index 0000000..80530d3
+--- /dev/null
++++ b/src/match_00410960.cpp
+@@ -0,0 +1,93 @@
++#include "startup_screen_renderer.h"
++#include <string.h>
++
++extern "C" __declspec(dllimport) int __stdcall SetRect(RendererWindowRectangle* rectangle, int left, int top,
++    int right, int bottom);
++extern "C" __declspec(dllimport) long __stdcall GetWindowLongA(void* window, int index);
++extern "C" __declspec(dllimport) void* __stdcall GetMenu(void* window);
++extern "C" __declspec(dllimport) int __stdcall AdjustWindowRectEx(RendererWindowRectangle* rectangle, unsigned long style,
++    int menu, unsigned long extended_style);
++extern "C" __declspec(dllimport) int __stdcall SetWindowPos(void* window, void* after, int x, int y, int cx, int cy,
++    unsigned int flags);
++
++struct RendererBitmapInfoHeader
++{
++    unsigned int size;
++    int width;
++    int height;
++};
++
++// FUNCTION: BEACHLIFE 0x00410960
++unsigned char ScreenRequestRenderer::SetScreenSize(int requested_width, int requested_height)
++{
++    unsigned char successful = 1;
++    // One stack slot holds the window rectangle and the back-buffer caps.
++    union
++    {
++        RendererWindowRectangle rectangle;
++        SurfaceCapabilities capabilities;
++    };
++    width = requested_width;
++    height = requested_height;
++    if (software_mode)
++    {
++        SetRect(&rectangle, 0, 0, requested_width, requested_height);
++        AdjustWindowRectEx(&rectangle, GetWindowLongA(window_34, -16), GetMenu(window_34) != 0, GetWindowLongA(window_34, -20));
++        SetWindowPos(window_34, 0, 0, 0, rectangle.right - rectangle.left, rectangle.bottom - rectangle.top, 0x16);
++        SetWindowPos(window_34, reinterpret_cast<void*>(-2), 0, 0, 0, 0, 0x15);
++        ResizeSurface(0, width, height);
++        static_cast<RendererBitmapInfoHeader*>(bitmap_info)->width = requested_width;
++        static_cast<RendererBitmapInfoHeader*>(bitmap_info)->height = -requested_height;
++    }
++    else
++    {
++        try
++        {
++            if (back_surface)
++                back_surface->vtable->Release(back_surface);
++            if (primary_surface)
++                primary_surface->vtable->Release(primary_surface);
++            if (draw->vtable->SetDisplayMode(draw, requested_width, requested_height, 16, 0, 0) < 0)
++                throw "SetDisplayMode failed";
++            SurfaceDescription description;
++            memset(&description, 0, sizeof(description));
++            description.size = sizeof(description);
++            description.flags = 0x21;
++            description.caps = 0x218;
++            description.back_buffer_count = 1;
++            if (draw->vtable->CreateSurface(draw, &description, &primary_surface, 0) < 0)
++                throw "CreateSurface failed";
++            memset(&capabilities, 0, sizeof(capabilities));
++            capabilities.caps = 4;
++            if (primary_surface->vtable->GetAttachedSurface(primary_surface, &capabilities, &back_surface) < 0)
++                throw "GetAttachedSurface failed";
++            back_surface->vtable->AddRef(back_surface);
++            ScreenSurfacePosition* entry = surfaces[0];
++            entry->surface = back_surface;
++            entry->width = width;
++            entry->height = height;
++            SurfaceDescription attached;
++            memset(&attached, 0, sizeof(attached));
++            attached.size = sizeof(attached);
++            back_surface->vtable->GetSurfaceDesc(back_surface, &attached);
++            entry->pitch = attached.pitch;
++        }
++        catch (char* message) // Named: retail reserves the catch object slot.
++        {
++            successful = 0;
++        }
++    }
++    RenderRectangle clip = { 0, 0, width, height };
++    clip_rectangle = clip;
++    ::operator delete(pixels_1c);
++    pixels_1c = static_cast<unsigned short*>(::operator new(width * height * 4));
++    if (buffer_130)
++    {
++        ::operator delete(buffer_130);
++        buffer_130 = static_cast<unsigned char*>(::operator new(width * height));
++        memset(buffer_130, 0, width * height);
++    }
++    rectangle_suppressed_4d = 1;
++    word_50 = 0;
++    return successful;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00410960.json b/targets/beachlife-uk-1.1.d/00410960.json
+new file mode 100644
+index 0000000..6c2a1f0
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00410960.json
+@@ -0,0 +1,19 @@
++{
++  "functions": [
++    {
++      "address": "0x00410960",
++      "size": 723,
++      "name": "ScreenRequestRenderer::SetScreenSize",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00410960.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_00410960.cpp"
++  ]
++}
