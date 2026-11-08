@@ -63,13 +63,21 @@ in SDL's user configuration directory (BeachLife/BeachLife/launcher.cfg).
 `--config file` overrides that location. The ISO is never modified.
 Closing with unsaved changes offers save, discard and cancel.
 
-The prepared game's language appears after content inspection. Currently the
-English disc layout is supported; installer language lists do not establish
-game translations. This launcher's interface is English.
+Supported discs are the UK English disc, the European disc (French,
+Italian, German, Spanish and Polish), the US *Virtual Resort: Spring Break*
+disc and the 2006 PLAY magazine cover disc (UK English data in a Wise installer). For a European disc choose the language
+under **Game files → Game language**; each language is prepared once and then
+reused. Options, saves and photos are kept per language (folders `BeachLife-pl`,
+`BeachLife-de` and so on next to `BeachLife`; `BeachLife-us` for the US disc). This
+launcher's interface is English.
 
 After setup, the local files work with the ISO disconnected. **Verify and repair**
 on Game files needs the original ISO and restores missing or damaged files in
 the same loading screen, then returns to the launcher.
+A 1.0 disc can be updated to the 1.1 game data while it is prepared: choose
+the official patch (`UKBeachLifePatch.exe`, `EuroBeachLifePatch.exe` or
+`BeachLifePolishPatch.exe`) under **Game files → Official 1.1 patch**. The patch
+is read, never run, and a patch for another edition is rejected.
 An image changed in place requires setup again. Settings and saves live
 outside the game-data cache. See [DATA](DATA.md) for cache locations and checks.
 

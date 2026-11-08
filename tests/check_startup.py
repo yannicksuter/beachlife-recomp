@@ -57,7 +57,7 @@ def check(executable, fixture=None, resources=None, *, boot=False):
             if run('--source', str(image), first=True) is None:
                 return SKIP
             settings = config.read_bytes()
-            assert settings.startswith(b'beachlife-launcher 4\n') and b'content.identity ""' not in settings
+            assert settings.startswith(b'beachlife-launcher 6\n') and b'content.identity ""' not in settings
             prepared, = [path for path in cache.iterdir() if path.is_dir()]
             manifest = json.loads((prepared/'manifest.json').read_text())
             assert len(manifest['files']) == len(expected)

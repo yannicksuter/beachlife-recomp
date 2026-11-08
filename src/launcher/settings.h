@@ -92,6 +92,12 @@ struct ContentBinding
 struct Settings
 {
     std::string source; // the game's ISO disc image
+    // A European disc's game language ("de", "pl", ...); empty selects the
+    // disc's first language. The UK disc always plays in English.
+    std::string language;
+    // An official 1.1 patch executable applied to the disc's data during
+    // preparation; empty prepares the disc as it is.
+    std::string patch;
     int scale = 100;
     DisplaySettings display;
     DiagnosticsSettings diagnostics;

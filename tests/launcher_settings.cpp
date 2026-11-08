@@ -110,8 +110,23 @@ int main()
             "Overlay settings need format 4");
         check(rejects("beachlife-launcher 4\ndisplay.fps_overlay_corner middle\n"),
             "Unknown overlay corners must be rejected");
-        check(rejects("beachlife-launcher 5\n") && rejects("beachlife-launcher 40\n"),
+        check(rejects("beachlife-launcher 7\n") && rejects("beachlife-launcher 40\n"),
             "Newer formats must be rejected");
+        check(rejects("beachlife-launcher 4\ncontent.language \"pl\"\n"),
+            "The game language needs format 5");
+        check(rejects("beachlife-launcher 5\ncontent.language \"../pl\"\n"),
+            "Game language codes are plain lowercase letters");
+        check(rejects("beachlife-launcher 5\ncontent.patch \"patch.exe\"\n"),
+            "The 1.1 patch needs format 6");
+        write("beachlife-launcher 5\ncontent.language \"pl\"\n");
+        auto polish = Settings{};
+        polish.language = "pl";
+        check(load_settings(file) == polish, "The game language must load from format 5");
+        save_settings(file, polish);
+        check(load_settings(file) == polish, "The game language must survive saving");
+        polish.patch = "patches/BeachLifePolishPatch.exe";
+        save_settings(file, polish);
+        check(load_settings(file) == polish, "The 1.1 patch must survive saving");
         write(
             "beachlife-launcher 4\ndisplay.fps_overlay on\ndisplay.fps_overlay_corner top-left\n");
         auto overlay = Settings{};

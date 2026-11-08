@@ -1,4 +1,5 @@
 #include "runtime/content_startup.h"
+#include "data/content_manifest.h"
 #include "data/game_path.h"
 #include "launcher/content_service.h"
 
@@ -223,6 +224,23 @@ void read_startup_files(const data::FileSource& content, StartupProgress& progre
     if (progress.cancelled())
     {
         return;
+    }
+    // The PLAY 2006 cover disc installs no BeachLife.ini; the game then reads
+    // its defaults (and writes its own INI to the player's folder).
+    if (const auto* prepared = dynamic_cast<const data::PreparedSource*>(&content))
+    {
+        const auto& files = prepared->manifest().files;
+        if (std::none_of(files.begin(),
+                files.end(),
+                [](const data::PreparedEntry& file)
+                {
+                    return data::normalize_game_path(file.path).key == "beachlife.ini";
+                }))
+        {
+            std::printf(
+                "Game data: this disc installs no BeachLife.ini; the game uses its defaults.\n");
+            return;
+        }
     }
     auto ini = content.open("BeachLife.ini");
     const auto size = ini->size();

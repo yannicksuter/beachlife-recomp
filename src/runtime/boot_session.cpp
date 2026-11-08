@@ -33,6 +33,23 @@ int run_boot_game(GameHost& host)
     }
     std::vector<data::SourceEntry> entries(
         prepared->manifest().files.begin(), prepared->manifest().files.end());
+    // Each edition/language keeps its own options, saves and photos. The UK
+    // English profile keeps the original folder.
+    const auto& manifest = prepared->manifest();
+    // The Wise-installed PLAY disc carries the same UK 1.1 game files.
+    const bool uk = (manifest.profile == "uk-english-v1" || manifest.profile == "uk-wise-v1") &&
+                    manifest.language == "en";
+    const bool us = manifest.profile == "us-english-v1";
+    struct UserFolder
+    {
+        std::string previous;
+        ~UserFolder()
+        {
+            compat::kernel::set_user_folder(previous);
+        }
+    } user_folder{compat::kernel::set_user_folder(uk   ? std::string("BeachLife")
+                                                  : us ? std::string("BeachLife-us")
+                                                       : "BeachLife-" + manifest.language)};
     retail_files::Session files(host.source);
     resource_files::Session resources(host.source);
     compat::DirectorySession directories(entries);

@@ -114,7 +114,7 @@ class Generated
 std::vector<unsigned char> generated_image()
 {
     // A synthetic PE data fixture: no retail image, instructions, rows or names.
-    std::vector<unsigned char> bytes(runtime::CreditsData::supported_file_bytes, 0);
+    std::vector<unsigned char> bytes(1617920, 0);
     put16(bytes, 0, 0x5a4d);
     put32(bytes, 0x3c, 0x80);
     put32(bytes, 0x80, 0x00004550);
@@ -168,7 +168,43 @@ void run(const fs::path& root)
     expect(!runtime::CreditsData::read_if_available(executable),
         "an unsupported credits revision rejected unrelated startup");
     rejects(RequireCreditsData);
-    const auto input = runtime::CreditsDataTestAccess::read(executable, digest(bytes));
+    // The reader checks the table itself (205 records and the format, 4,116 bytes).
+    const auto table = [](std::span<const unsigned char> image)
+    {
+        return digest(image.subspan(0x570, 205 * 20 + 16));
+    };
+    const auto input = runtime::CreditsDataTestAccess::read(executable, table(bytes));
+
+    // The 1.0 builds keep the same table 0x1140 bytes lower; another address is rejected.
+    for (const std::uint32_t section_rva : {0x17eec0u, 0x17f000u})
+    {
+        auto moved = bytes;
+        put32(moved, 0x178 + 12, section_rva);
+        write(root / "BeachLife.exe", moved);
+        const data::FolderSource moved_source(root, {{"BeachLife.exe", moved.size()}});
+        if (section_rva == 0x17eec0u)
+        {
+            expect(runtime::CreditsDataTestAccess::read(moved_source, table(moved)).format() ==
+                       input.format(),
+                "the 1.0 table address was not accepted");
+        }
+        else
+        {
+            rejects(
+                [&]
+                {
+                    runtime::CreditsDataTestAccess::read(moved_source, table(moved));
+                });
+        }
+    }
+    auto changed = bytes;
+    changed[0x570 + 4] ^= 1;
+    write(root / "BeachLife.exe", changed);
+    rejects(
+        [&]
+        {
+            runtime::CreditsDataTestAccess::read(executable, table(bytes));
+        });
 
     // Same decoder, with independently hashed malformed generated layouts.
     auto malformed = bytes;
@@ -177,7 +213,7 @@ void run(const fs::path& root)
     rejects(
         [&]
         {
-            runtime::CreditsDataTestAccess::read(executable, digest(malformed));
+            runtime::CreditsDataTestAccess::read(executable, table(bytes));
         });
     malformed = bytes;
     malformed[0x570 + 4100 + 15] = 1;
@@ -185,7 +221,7 @@ void run(const fs::path& root)
     rejects(
         [&]
         {
-            runtime::CreditsDataTestAccess::read(executable, digest(malformed));
+            runtime::CreditsDataTestAccess::read(executable, table(malformed));
         });
     write(root / "BeachLife.exe", bytes);
 

@@ -31,7 +31,7 @@ def check(executable, expected):
     with tempfile.TemporaryDirectory(prefix='beachlife-cli-') as temporary:
         root = Path(temporary)
         config, image = root/'launcher.cfg', root/'source.iso'
-        newer = b'beachlife-launcher 5\nfuture.setting on\n'
+        newer = b'beachlife-launcher 7\nfuture.setting on\n'
         config.write_bytes(newer)
         image.write_bytes(b'generated source; settings must be rejected before reading it')
         environment = dict(os.environ, SDL_VIDEODRIVER='invalid-cli-test-driver')

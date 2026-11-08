@@ -40,6 +40,19 @@ int main()
     auto other = input;
     other.source_sha256[0] = 'b';
     expect(other.identity() != input.identity());
+    // Unpatched sets keep the identity they had before patches were supported.
+    expect(input.identity() == "4a0b1c5eac68ec08d318703b39fb056689294eba33bddd40858568b0494f0c20");
+    other = input;
+    other.patch_sha256 = std::string(64, 'e');
+    const auto patched = parse_content_manifest(content_manifest_json(other));
+    expect(patched.patch_sha256 == other.patch_sha256 && patched.identity() == other.identity() &&
+           other.identity() != input.identity());
+    other.patch_sha256 = "e";
+    rejects(
+        [&]
+        {
+            content_manifest_json(other);
+        });
     other = input;
     other.files[1].path = "Data/../bad";
     rejects(

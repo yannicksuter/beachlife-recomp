@@ -79,17 +79,24 @@ template <typename T, size_t N> T value_of(const Name<T> (&names)[N], const std:
 
 void validate_source(const Settings& settings)
 {
-    if (settings.source.size() > 32768 ||
-        settings.source.find_first_of("\r\n\0", 0, 3) != std::string::npos)
+    for (const auto* path : {&settings.source, &settings.patch})
     {
-        throw std::runtime_error(
-            "The source path contains an unsupported character or is too long.");
+        if (path->size() > 32768 || path->find_first_of("\r\n\0", 0, 3) != std::string::npos)
+        {
+            throw std::runtime_error(
+                "The source path contains an unsupported character or is too long.");
+        }
     }
 }
 
 void validate(const Settings& settings)
 {
     validate_source(settings);
+    if (settings.language.size() > 8 ||
+        settings.language.find_first_not_of("abcdefghijklmnopqrstuvwxyz") != std::string::npos)
+    {
+        throw std::runtime_error("The game language setting is invalid.");
+    }
     const auto& content = settings.content;
     if ((!content.identity.empty() &&
             (content.identity.size() != 64 ||
@@ -124,11 +131,13 @@ void validate(const Settings& settings)
     name_of(channels, settings.updates.channel);
 }
 
-// Versions 2-4: one "key value" line per setting; every key at most once, none unknown.
-// Version 3 added the content keys, version 4 the performance overlay.
+// Versions 2-5: one "key value" line per setting; every key at most once, none unknown.
+// Version 3 added the content keys, version 4 the performance overlay, version 5
+// the game language of a European disc, version 6 the 1.1 patch.
 void read_keyed(std::istream& file, Settings& result, int version)
 {
-    const bool content_fields = version >= 3, overlay_fields = version >= 4;
+    const bool content_fields = version >= 3, overlay_fields = version >= 4,
+               language_fields = version >= 5, patch_fields = version >= 6;
     const std::runtime_error invalid("The launcher settings format is invalid.");
     std::set<std::string> seen;
     std::string line;
@@ -152,6 +161,14 @@ void read_keyed(std::istream& file, Settings& result, int version)
         else if (content_fields && key == "content.source")
         {
             in >> std::quoted(result.content.source);
+        }
+        else if (language_fields && key == "content.language")
+        {
+            in >> std::quoted(result.language);
+        }
+        else if (patch_fields && key == "content.patch")
+        {
+            in >> std::quoted(result.patch);
         }
         else if (content_fields && key == "content.size")
         {
@@ -264,7 +281,7 @@ Settings load_settings(const fs::path& path)
         std::getline(file, magic) && magic.size() == prefix.size() + 1 && magic.starts_with(prefix)
             ? magic.back() - '0'
             : 0;
-    if (version < 1 || version > 4)
+    if (version < 1 || version > 6)
     {
         throw std::runtime_error(
             "Cannot read launcher settings. The existing file has been preserved.");
@@ -306,8 +323,10 @@ void save_settings(const fs::path& path, const Settings& settings)
     {
         std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
         const auto& display = settings.display;
-        file << "beachlife-launcher 4\n"
+        file << "beachlife-launcher 6\n"
              << "source.path " << std::quoted(settings.source) << '\n'
+             << "content.language " << std::quoted(settings.language) << '\n'
+             << "content.patch " << std::quoted(settings.patch) << '\n'
              << "content.identity " << std::quoted(settings.content.identity) << '\n'
              << "content.source " << std::quoted(settings.content.source) << '\n'
              << "content.size " << settings.content.size << '\n'

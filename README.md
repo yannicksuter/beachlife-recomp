@@ -66,9 +66,10 @@ and **Mouse wheel zoom** controls the camera. Both are off by default. Display,
 interface and update settings remain available in the launcher. The independent
 [data tool](docs/DATA.md) can inspect and prepare the same local content.
 
-This is an early playable reconstruction with known limits. English retail data
-is supported; broader language support and complete gameplay parity remain work
-in progress. Linux and Windows have local headless scenario, sandbox and input
+This is an early playable reconstruction with known limits. The UK English disc,
+the European disc (French, Italian, German, Spanish, Polish), the US *Virtual
+Resort: Spring Break* disc and the 2006 PLAY magazine cover disc are supported,
+all played by the reconstructed UK 1.1 code; complete gameplay parity remains work in progress. Linux and Windows have local headless scenario, sandbox and input
 stress checks. macOS validation is limited to CI's headless generated-data checks;
 Metal presentation and gameplay with retail data still need testing on a Mac.
 Steam Deck's package checks its runtime ABI; on-device gameplay is not qualified.

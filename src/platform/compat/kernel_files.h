@@ -14,6 +14,12 @@ namespace beachlife::compat::kernel
 // Only relative retail paths and absolute paths inside the user root are
 // accepted. No operation changes the process working directory.
 std::filesystem::path user_root();
+// The per-user folder of the prepared edition, below the "BeachLife"
+// organization folder. Defaults to "BeachLife" (the UK English profile).
+// Other editions and languages get their own folder so their options (such
+// as Language), saves and photos never mix. Set before the game starts;
+// returns the previous name.
+std::string set_user_folder(std::string name);
 std::string logical_path(const char* path);
 std::filesystem::path user_path(const char* path);
 std::optional<std::vector<unsigned char>> read_file(const char* path);

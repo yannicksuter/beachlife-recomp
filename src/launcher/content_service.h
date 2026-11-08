@@ -34,6 +34,9 @@ class ContentService
         data::PrepareProgress progress;
         ContentBinding binding;
         std::string language, error;
+        // The game languages the selected disc offers, from its installer
+        // metadata; empty until the disc has been inspected.
+        std::vector<std::string> languages;
         std::size_t files = 0;
         std::uint64_t bytes = 0;
         bool busy() const

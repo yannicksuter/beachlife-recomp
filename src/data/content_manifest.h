@@ -18,6 +18,8 @@ struct PreparedEntry : SourceEntry
 struct ContentManifest
 {
     std::string source_sha256, profile, language;
+    // The official 1.1 patch applied during preparation; empty for none.
+    std::string patch_sha256;
     std::vector<PreparedEntry> files;
     std::uint64_t total_bytes = 0;
     std::string identity() const;
