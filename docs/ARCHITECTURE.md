@@ -74,7 +74,11 @@ Prepared matching targets can opt into `stdcall_imports`, a DLL mapping with
 names to x86 stack-byte counts. The build generates import metadata and verifies
 the requested names against both original and rebuilt PE import tables. It does
 not copy DLL code or execute the comparison image. Native service adaptations
-remain separate from this original-ABI link support.
+remain separate from this original-ABI link support. A DLL that the original
+imports only by ordinal uses `export_names` `ordinal` with an `ordinals` mapping
+from each source name to its distinct ordinal; the generated `NONAME` import
+metadata is verified as LIB.EXE wrote it, and both PE import tables are checked
+by ordinal.
 
 The separate `runtime_stdcall_imports` policy currently accepts only
 `{"_CxxThrowException": 8}` from `MSVCRT.dll`. It verifies the original export

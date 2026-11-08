@@ -561,7 +561,8 @@ def game_metadata_rows(metadata):
 def merge_target_fragments(metadata, target):
     lists = ('functions', 'library_functions', 'unclassified_functions', 'comparison_anchors',
              'comparison_lifetime_anchors', 'comparison_global_operands',
-             'comparison_equivalent_copies', 'stlport_sources', 'runtime_cdecl_imports')
+             'comparison_equivalent_copies', 'comparison_literal_copies', 'stlport_sources',
+             'runtime_cdecl_imports')
     mappings = ('source_compile_options', 'stdcall_imports', 'runtime_stdcall_imports')
     # An empty option list in the base target pins nothing: one registration
     # crediting a body of that shared source may set its options once.
@@ -729,14 +730,20 @@ def game_stdcall_imports(target):
     result = {}
     names = {'msvcrt.dll'}
     for dll, policy in configured.items():
-        if not isinstance(policy, dict) or set(policy) != {'export_names', 'symbols'}:
-            raise ValueError('Each stdcall DLL requires export_names and symbols only.')
-        validate_stdcall_imports(dll, policy['symbols'], policy['export_names'])
+        # Ordinal imports (export_names "ordinal") also map each symbol to its ordinal.
+        keys = {'export_names', 'symbols'} | ({'ordinals'} if isinstance(policy, dict) and
+                                              policy.get('export_names') == 'ordinal' else set())
+        if not isinstance(policy, dict) or set(policy) != keys:
+            raise ValueError('Each stdcall DLL requires export_names and symbols only '
+                             '(and ordinals for ordinal imports).')
+        validate_stdcall_imports(dll, policy['symbols'], policy['export_names'], policy.get('ordinals'))
         if dll.lower() in names:
             raise ValueError('Duplicate or reserved stdcall DLL basename.')
         names.add(dll.lower())
         result[dll] = {'export_names': policy['export_names'],
                        'symbols': dict(sorted(policy['symbols'].items()))}
+        if 'ordinals' in policy:
+            result[dll]['ordinals'] = dict(sorted(policy['ordinals'].items()))
     return dict(sorted(result.items()))
 
 
@@ -747,7 +754,7 @@ def verify_stdcall_pe_imports(binary, configured, exact):
     imports = pe_imports(binary)
     verified = {}
     for dll, policy in configured.items():
-        expected = stdcall_export_names(policy['symbols'], policy['export_names'])
+        expected = stdcall_export_names(policy['symbols'], policy['export_names'], policy.get('ordinals'))
         actual = imports.get(dll, {})
         if not expected <= set(actual) or (exact and set(actual) != expected):
             raise ValueError(f'Stdcall PE import identity mismatch for {dll}.')
@@ -1352,6 +1359,53 @@ def equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linke
         result.append({'address': f'0x{address:08x}', 'symbol': item['symbol'], 'identity_symbol': identity,
                        'recomp': f'0x{copy:08x}', 'identity_recomp': f'0x{recomp:08x}',
                        **({'function': f'0x{scope:08x}'} if scope is not None else {})})
+    return result
+
+
+# A compiler float literal: __real@4@ (single) or __real@8@ (double), then
+# the 80-bit extended value in hex.
+FLOAT_LITERAL = re.compile(r'__real@([48])@[0-9a-f]{20}')
+
+
+def literal_copy_specs(target, publics, read):
+    """Named read-only constants compared, in one function, as a float literal.
+
+    VC6 widens a float literal in a double expression to a double literal, so a
+    source can load retail's single-precision literal only through a named
+    constant. Within the listed registered function, the operand naming that
+    constant is compared as the linked compiler literal "literal": both must
+    be distinct linked data of the literal's width with identical bytes. Every
+    other operand keeps its ordinary name. publics maps rebuilt addresses to
+    LINK map names; read(address, size) returns rebuilt image bytes."""
+    configured = target.get('comparison_literal_copies', [])
+    if not isinstance(configured, list):
+        raise ValueError('comparison_literal_copies must be a list.')
+    registered = {int(item['address'], 16) for item in target.get('functions', [])
+                  if isinstance(item, dict) and isinstance(item.get('address'), str)}
+    addresses = {}
+    for address, names in publics.items():
+        for name in names:
+            addresses.setdefault(name, set()).add(address)
+    result, seen = [], set()
+    for item in configured:
+        if (not isinstance(item, dict) or set(item) != {'function', 'symbol', 'literal'} or
+                not all(isinstance(value, str) and value for value in item.values()) or
+                (item['function'], item['symbol']) in seen):
+            raise ValueError(f'Invalid comparison literal copy: {item}')
+        seen.add((item['function'], item['symbol']))
+        function = int(item['function'], 16)
+        literal = FLOAT_LITERAL.fullmatch(item['literal'])
+        if function not in registered or literal is None or FLOAT_LITERAL.fullmatch(item['symbol']):
+            raise ValueError(f"Literal copy {item['symbol']} needs a registered function and a float literal.")
+        copy, identity = addresses.get(item['symbol'], set()), addresses.get(item['literal'], set())
+        if len(copy) != 1 or len(identity) != 1 or copy == identity:
+            raise ValueError(f"Literal copy {item['symbol']} is not a separate linked constant.")
+        copy, identity, size = copy.pop(), identity.pop(), int(literal[1])
+        if read(copy, size) != read(identity, size):
+            raise ValueError(f"Literal copy {item['symbol']} differs from {item['literal']}.")
+        result.append({'function': f'0x{function:08x}', 'symbol': item['symbol'],
+                       'identity_symbol': item['literal'], 'recomp': f'0x{copy:08x}',
+                       'identity_recomp': f'0x{identity:08x}', 'size': size})
     return result
 
 
@@ -2084,11 +2138,12 @@ def game(tool, args):
     for dll, policy in stdcall_imports.items():
         library_path, adjustments = stdcall_import_library(
             tool, folder / 'imports' / dll[:-4].lower(), dll,
-            policy['symbols'], policy['export_names'])
+            policy['symbols'], policy['export_names'], *([policy['ordinals']] if 'ordinals' in policy else []))
         link_flags.append(tool.native(library_path))
         import_libraries.append({
             'dll': dll, 'export_names': policy['export_names'],
             'symbols': policy['symbols'],
+            **({'ordinals': policy['ordinals']} if 'ordinals' in policy else {}),
             'library': str(library_path.relative_to(ROOT) if library_path.is_relative_to(ROOT) else library_path),
             'sha256': digest(library_path), 'name_mode_adjustments': adjustments})
     runtime_libraries = []
@@ -2192,10 +2247,12 @@ def game(tool, args):
     unfolded = unfolded_annotations([*sources, *support_sources], metadata_rows, rebuilt, folding['publics'])
     static_specs = static_identity_specs(metadata_rows, map_static_symbols(map_path))
     copy_specs = equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linked)
+    literal_specs = literal_copy_specs(target, folding['publics'],
+                                       lambda address, size: read_va(binary, address, size))
     command, operand_validation, folded_validation = global_operand_command(
         tool, metadata, target, source, sources, folder,
         [tool.reccmp, '--target', 'BEACHLIFE', '--json', str(reports / 'comparison.json'), '--no-color'],
-        folded_specs, static_specs, copy_specs, unfolded)
+        folded_specs, static_specs, [*copy_specs, *literal_specs], unfolded)
     output = tool.run(command, folder)
     (reports / 'comparison.log').write_text(output)
     if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
@@ -2299,6 +2356,8 @@ def game(tool, args):
         result['comparison_static_identities'] = static_records
     if copy_specs:
         result['comparison_equivalent_copies'] = copy_specs
+    if literal_specs:
+        result['comparison_literal_copies'] = literal_specs
     if unfolded:
         # Diagnostic only: such a copy shows up as a mismatching call operand.
         result['comparison_unfolded_annotations'] = unfolded

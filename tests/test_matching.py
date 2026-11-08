@@ -527,6 +527,29 @@ class MatchingInputTests(unittest.TestCase):
         scoped['current'] = {}
         self.assertEqual(lookup(0x432000), 'Item::Empty')
 
+    def test_literal_copy_is_a_separate_constant_with_the_literal_bytes(self):
+        literal = '__real@4@00000000000000000000'
+        target = {'functions': [{'address': '0x00416710'}],
+                  'comparison_literal_copies': [{'function': '0x00416710', 'symbol': '?zero@@3MB',
+                                                 'literal': literal}]}
+        image = {0x4773b4: b'\0\0\0\0', 0x4773b8: b'\0\0\0\0', 0x4773bc: b'\0\0\x80?'}
+        read = lambda address, size: image[address][:size]
+        publics = {0x4773b4: {literal}, 0x4773b8: {'?zero@@3MB'}, 0x4773bc: {'?one@@3MB'}}
+        self.assertEqual(matching.literal_copy_specs(target, publics, read), [
+            {'function': '0x00416710', 'symbol': '?zero@@3MB', 'identity_symbol': literal,
+             'recomp': '0x004773b8', 'identity_recomp': '0x004773b4', 'size': 4}])
+        self.assertEqual(matching.literal_copy_specs({}, publics, read), [])
+        item = target['comparison_literal_copies'][0]
+        for bad in ({**item, 'symbol': '?one@@3MB'}, {**item, 'symbol': '?missing@@3MB'},
+                    {**item, 'function': '0x00416711'}, {**item, 'literal': '?zero@@3MB'},
+                    {**item, 'symbol': literal}, {**item, 'extra': 'x'}):
+            with self.subTest(item=bad), self.assertRaises(ValueError):
+                matching.literal_copy_specs(target | {'comparison_literal_copies': [bad]}, publics, read)
+        with self.assertRaises(ValueError):
+            matching.literal_copy_specs(target | {'comparison_literal_copies': [item, item]}, publics, read)
+        with self.assertRaises(ValueError):
+            matching.literal_copy_specs(target, publics | {0x4773c0: {'?zero@@3MB'}}, read)
+
     def test_equivalent_copy_operands_name_the_identity_function(self):
         calls = []
         def rebuilt_lookup(address, exact=False, indirect=False):
