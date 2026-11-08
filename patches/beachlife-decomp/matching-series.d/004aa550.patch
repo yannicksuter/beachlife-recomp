@@ -1,0 +1,210 @@
+diff --git a/fixtures/game.d/fixture_004aa550.cpp b/fixtures/game.d/fixture_004aa550.cpp
+new file mode 100644
+index 0000000..6d550cc
+--- /dev/null
++++ b/fixtures/game.d/fixture_004aa550.cpp
+@@ -0,0 +1,7 @@
++#include "startup_gui_parser.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004aa550(GuiParserState* item, const char* value0, unsigned int value1)
++{
++    item->GuiParserState::Parse(value0, value1);
++}
+diff --git a/metadata.d/004aa550.csv b/metadata.d/004aa550.csv
+new file mode 100644
+index 0000000..e3e275c
+--- /dev/null
++++ b/metadata.d/004aa550.csv
+@@ -0,0 +1,8 @@
++address,type,size,symbol
++0x004aa550,function,827,?Parse@GuiParserState@@QAEXPBDI@Z
++0x0057f020,string,71,
++0x0057f068,string,59,
++0x0057f0a4,string,48,
++0x0057f0d4,string,4,
++0x0057f0d8,string,68,
++0x0057f11c,string,4,
+diff --git a/src/match_004aa550.cpp b/src/match_004aa550.cpp
+new file mode 100644
+index 0000000..cae14ab
+--- /dev/null
++++ b/src/match_004aa550.cpp
+@@ -0,0 +1,142 @@
++#include "startup_application.h"
++#include "startup_gui_defined_item.h"
++#include "startup_gui_parser.h"
++#include "startup_screen_child_link.h"
++#include "startup_screen_item.h"
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x004aa550
++void GuiParserState::Parse(const char* script, unsigned int size)
++{
++    current_context = 0;
++    alternate_context_10 = 0;
++    alternate_context_14 = 0;
++    context_head = 0;
++    previous_context = 0;
++    last_registered_item = 0;
++    defined_items = 0;
++    registry_head = 0;
++    items_head = 0;
++    items_tail = 0;
++    registry_tail = 0;
++    word_38 = 0;
++    word_3c = 0;
++    char done = 0;
++    cursor = 0;
++    buffer = script;
++    while (size > cursor)
++    {
++        if (done)
++            break;
++        while (buffer[cursor] == ' ' || buffer[cursor] == 13 || buffer[cursor] == 10 || buffer[cursor] == 9)
++        {
++            cursor++;
++        }
++        if (size > cursor)
++        {
++            // Retail bug: a 32-character word writes its terminator one byte past the array.
++            char word[0x20];
++            unsigned int i;
++            if (buffer[cursor] == '<')
++            {
++                cursor++;
++                while (buffer[cursor] == ' ' || buffer[cursor] == 13 || buffer[cursor] == 10 || buffer[cursor] == 9)
++                {
++                    cursor++;
++                }
++                i = 0;
++                while (buffer[cursor] != ' ')
++                {
++                    char c = buffer[cursor];
++                    if (c == '(' || c == 13 || c == 10 || i >= 0x20)
++                        break;
++                    word[i++] = c;
++                    cursor++;
++                }
++                word[i] = 0;
++                if (strncmp("TAB", word, 3) == 0)
++                {
++                    if (alternate_context_10 != 0)
++                        StartupFatal("GUI_Parse - Only one tab can be defined at a time, file offset - %u", cursor);
++                    else
++                        ParseTabContext();
++                }
++                else if (strncmp("COL", word, 3) == 0)
++                    ParseColumnContext();
++                else
++                    StartupFatal("GUI_Parse - Invalid command at file offset - %u", cursor);
++            }
++            else if (buffer[cursor] == '}')
++            {
++                if (alternate_context_14 != 0)
++                    alternate_context_14 = 0;
++                else if (alternate_context_10 != 0)
++                    alternate_context_10 = 0;
++                else
++                    PopContext();
++                cursor++;
++            }
++            else if (buffer[cursor] == '/')
++            {
++                cursor++;
++                while (buffer[cursor] != 10)
++                {
++                    cursor++;
++                }
++            }
++            else if (buffer[cursor] == ' ' || buffer[cursor] == '(' || buffer[cursor] == 13 || buffer[cursor] == 10)
++                cursor++;
++            else
++            {
++                i = 0;
++                while (buffer[cursor] != ' ' && buffer[cursor] != '(' && buffer[cursor] != 13 && i < 0x20)
++                {
++                    word[i] = buffer[cursor];
++                    cursor++;
++                    i++;
++                }
++                word[i] = 0;
++                bool missing = true;
++                for (unsigned int k = 0; k < 25 && missing; k++)
++                {
++                    if (strcmp(word, gui_command_names[k].name) == 0)
++                    {
++                        missing = false;
++                        done = DispatchToken(gui_command_names[k].token);
++                    }
++                }
++                if (missing)
++                {
++                    if (current_context != 0)
++                    {
++                        ScreenChildLink* link = defined_items;
++                        while (link != 0)
++                        {
++                            if (strcmp(static_cast<GuiDefinedItem*>(link->item)->identifier, word) == 0)
++                            {
++                                current_context->Unresolved10(link->item);
++                                missing = false;
++                                break;
++                            }
++                            link = link->next;
++                            if (link == 0)
++                                break;
++                        }
++                    }
++                    else
++                        StartupFatal("GUI_Parse - No parent for defined item at file offset - %u", cursor);
++                    if (missing)
++                        StartupFatal(
++                            "GUI_Parse - Invalid Command/Defined item at file offset - %u string %s", cursor, word);
++                }
++            }
++        }
++    }
++    while (defined_items != 0)
++    {
++        ScreenChildLink* link = defined_items;
++        defined_items = link->next;
++        link->item = 0;
++        delete link;
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/004aa550.json b/targets/beachlife-uk-1.1.d/004aa550.json
+new file mode 100644
+index 0000000..325c67e
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004aa550.json
+@@ -0,0 +1,29 @@
++{
++  "functions": [
++    {
++      "address": "0x004aa550",
++      "size": 827,
++      "name": "GuiParserState::Parse",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004aa550.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004aa550.cpp",
++    "fixture_004aa550.cpp"
++  ],
++  "comparison_global_operands": [
++    {
++      "function": "0x004aa550",
++      "instruction_offset": 606,
++      "global": "0x0057ee58",
++      "source": "match_004aa550.cpp",
++      "member_offset": 4,
++      "element_size": 8
++    }
++  ]
++}
