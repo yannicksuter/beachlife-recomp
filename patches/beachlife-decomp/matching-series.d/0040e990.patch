@@ -1,0 +1,118 @@
+diff --git a/fixtures/game.d/fixture_0040e990.cpp b/fixtures/game.d/fixture_0040e990.cpp
+new file mode 100644
+index 0000000..7d1b2b2
+--- /dev/null
++++ b/fixtures/game.d/fixture_0040e990.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_0040e990(ScreenRequestRenderer* renderer, const ScreenRectangle* destination, const ScreenRectangle* source, int surface)
++{
++    renderer->ScreenRequestRenderer::BlitSurfaceRegion(*destination, *source, surface);
++}
+diff --git a/metadata.d/0040e990.csv b/metadata.d/0040e990.csv
+new file mode 100644
+index 0000000..1abea12
+--- /dev/null
++++ b/metadata.d/0040e990.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x0040e990,function,363,?BlitSurfaceRegion@ScreenRequestRenderer@@QAEXABUScreenRectangle@@0H@Z
+diff --git a/src/match_0040e990.cpp b/src/match_0040e990.cpp
+new file mode 100644
+index 0000000..e711643
+--- /dev/null
++++ b/src/match_0040e990.cpp
+@@ -0,0 +1,67 @@
++#include "startup_directdraw_surface.h"
++#include "startup_screen_item.h"
++#include "startup_screen_renderer.h"
++#include "surface_error_sink.h"
++
++// FUNCTION: BEACHLIFE 0x0040e990
++void ScreenRequestRenderer::BlitSurfaceRegion(const ScreenRectangle& destination, const ScreenRectangle& source, int surface)
++{
++    if (software_mode)
++    {
++        unsigned int key = fill_color;
++        if (source.left > source.right || source.right < 0 || source.top > source.bottom)
++        {
++            return;
++        }
++
++        ScreenSurfacePosition* image = surfaces[surface];
++        unsigned int source_pitch = image->pitch >> 1;
++        unsigned short* from = image->pixels + source.top * source_pitch;
++        unsigned int rows = source.bottom - source.top;
++        unsigned int columns = source.right - source.left;
++        current_surface = 0;
++        unsigned short* pixels = AccessPixels();
++        if (!pixels)
++        {
++            return;
++        }
++
++        unsigned int pitch = surfaces[current_surface]->pitch >> 1;
++        unsigned short* row = pixels + destination.top * pitch + destination.left;
++        for (unsigned int line = 0; line < rows; ++line)
++        {
++            unsigned short* out = row;
++            const unsigned short* in = from + source.left;
++            for (unsigned int column = 0; column < columns; ++column)
++            {
++                unsigned short value = *in++;
++                if (value != key)
++                {
++                    *out = value;
++                }
++                ++out;
++            }
++            row += pitch;
++            from += source_pitch;
++        }
++
++        if (!software_mode)
++        {
++            DirectDrawSurface7Prefix* locked = surfaces[current_surface]->surface;
++            locked->vtable->Unlock(locked, 0);
++        }
++        pixels_locked = 0;
++        return;
++    }
++
++    int result = back_surface->vtable->Blt(back_surface,
++        reinterpret_cast<SurfaceApiRectangle*>(const_cast<ScreenRectangle*>(&destination)),
++        surfaces[surface]->surface,
++        reinterpret_cast<SurfaceApiRectangle*>(const_cast<ScreenRectangle*>(&source)),
++        0x01008000,
++        0);
++    if (result < 0)
++    {
++        IgnoreSurfaceError(result);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/0040e990.json b/targets/beachlife-uk-1.1.d/0040e990.json
+new file mode 100644
+index 0000000..4362b23
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0040e990.json
+@@ -0,0 +1,18 @@
++{
++  "functions": [
++    {
++      "address": "0x0040e990",
++      "size": 363,
++      "name": "ScreenRequestRenderer::BlitSurfaceRegion",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_0040e990.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_0040e990.cpp"
++  ]
++}
