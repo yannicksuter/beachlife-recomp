@@ -1,0 +1,329 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 1a2041e..8b3ba24 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1630,7 +1630,7 @@ extern "C" __declspec(dllexport) unsigned int __cdecl stack_probe_compile_fixtur
+ typedef char SceneryBaseSize[sizeof(ScreenItem) == 68 ? 1 : -1];
+ typedef char SceneryReceiverSize[sizeof(ScreenImageList) == 132 ? 1 : -1];
+ typedef char SceneryFrameSize[sizeof(ScreenImageListFrame) == 152 ? 1 : -1];
+-typedef char SceneryRangeSize[sizeof(ScreenImageListVector60) == 12 ? 1 : -1];
++typedef char SceneryRangeSize[sizeof(std::vector<ScreenImageListFrame*>) == 12 ? 1 : -1];
+ typedef char SceneryFlagOffset[offsetof(ScreenImageList, flag_5c) == 0x5c ? 1 : -1];
+ typedef char SceneryRangeOffset[offsetof(ScreenImageList, vector_60) == 0x60 ? 1 : -1];
+ typedef char SceneryFrameThumbnail[offsetof(ScreenImageListFrame, thumbnail_00) == 0 ? 1 : -1];
+@@ -1729,7 +1729,7 @@ extern "C" __declspec(dllexport) void FixturePanel13cAddEntry(ScreenLoadPanel13c
+ typedef char BuildingsBaseSize[sizeof(ScreenItem) == 68 ? 1 : -1];
+ typedef char BuildingsReceiverSize[sizeof(ScreenImageList) == 132 ? 1 : -1];
+ typedef char BuildingsFrameSize[sizeof(ScreenImageListFrame) == 152 ? 1 : -1];
+-typedef char BuildingsRangeSize[sizeof(ScreenImageListVector60) == 12 ? 1 : -1];
++typedef char BuildingsRangeSize[sizeof(std::vector<ScreenImageListFrame*>) == 12 ? 1 : -1];
+ typedef char BuildingsRangeOffset[offsetof(ScreenImageList, vector_60) == 0x60 ? 1 : -1];
+ typedef char BuildingsCountOffset[offsetof(VariableCatalog, building_count_0c) == 12 ? 1 : -1];
+ typedef char BuildingsNameOffset[offsetof(VariableBuilding, name_04) == 4 ? 1 : -1];
+diff --git a/metadata.csv b/metadata.csv
+index 2cf0f4d..454a7f3 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -115,7 +115,7 @@ address,type,size,symbol
+ 0x0043cad0,function,345,?CanBuild@WindowDeactivationState@@QAE_NI@Z
+ 0x0043cdf0,function,166,?CountReadyBuildings@WindowDeactivationState@@QAEII@Z
+ 0x0043cea0,function,126,?CountBuildings@WindowDeactivationState@@QAEII@Z
+-0x004c3a30,library,265,?InsertOverflow@ScreenImageListVector60@@QAEXPAPAUScreenImageListFrame@@ABQAU2@ABUScreenImageListTrueType@@I_N@Z
++0x004c3a30,library,265,?_M_insert_overflow@?$vector@PAUScreenImageListFrame@@V?$allocator@PAUScreenImageListFrame@@@_STL@@@_STL@@IAEXPAPAUScreenImageListFrame@@ABQAU3@ABU__true_type@2@I_N@Z
+ 0x00412240,library,418,?_M_allocate@?$__node_alloc@$00$0A@@_STL@@CAPAXI@Z
+ 0x00411d50,library,40,?deallocate@?$__node_alloc@$00$0A@@_STL@@SAXPAXI@Z
+ 0x0043cc30,function,385,?IsBuildingGreyed@WindowDeactivationState@@QAE_NI@Z
+@@ -746,6 +746,7 @@ address,type,size,symbol
+ 0x0057ebe8,global,4,?camera_photo_eidos@@3PBDB
+ 0x005ab158,global,64,?building_queue_offsets@@3PAUScreenMapPosition@@A
+ 0x00572ac8,global,4,?building_status_class_name@@3PBDB
++0x0057fd08,global,40,?image_list_categories@@3PAPBDA
+ 0x0057fd30,global,40,?image_list_thumbnails@@3PAPBDA
+ 0x004f46a8,global,4,?image_list_refresh_interval@@3MB
+ 0x004f4274,global,112,?hash_table_primes@@3QBIB
+diff --git a/src/startup_screen_image_list.h b/src/startup_screen_image_list.h
+index 8c6bd24..b54523b 100644
+--- a/src/startup_screen_image_list.h
++++ b/src/startup_screen_image_list.h
+@@ -54,11 +54,6 @@ struct ScreenImageListMarker
+     ~ScreenImageListMarker() { }
+ };
+ 
+-// Empty plain-data tag passed by reference to the growth insertion.
+-struct ScreenImageListTrueType
+-{
+-};
+-
+ // Library delete functor used with std::for_each.
+ template <class T>
+ struct ScreenImageListDelete
+@@ -70,117 +65,11 @@ struct ScreenImageListDelete
+ // BUILD_HOTEL_SMALL ... BUILD_BILLBOARD_SMALL.
+ extern const char* image_list_categories[10];
+ 
+-// Empty default-argument allocator of the vectors; its (empty) destructor is
+-// the folded 0x00437d10 named by the constructor's unwind map.
+-struct ScreenImageListAllocator
+-{
+-    ScreenImageListAllocator() { }
+-    ~ScreenImageListAllocator() { }
+-};
+-
+-// The frame vector at +0x60 is STLport 4.5.3's vector<ScreenImageListFrame*>
+-// (start +0, finish +4, capacity proxy +8). PopulateBuildings keeps one growth
+-// path out of line (0x004c3a30) and expands the other; this wrapper exposes
+-// that out-of-line instance and the vector's members to the list. The
+-// out-of-line vector destructor 0x004b4d90 serves the unwind funclets.
+-struct ScreenImageListVector60 : std::vector<ScreenImageListFrame*>
+-{
+-    friend struct ScreenImageList;
+-
+-    // Out-of-line 0x004c3a30, RET 0x14: the growth insertion of count copies.
+-    void InsertOverflow(ScreenImageListFrame** position, ScreenImageListFrame* const& value,
+-        const ScreenImageListTrueType& plain, unsigned int count, bool at_end);
+-    // push_back with the growth path left out of line.
+-    void PushBack(ScreenImageListFrame* const& value)
+-    {
+-        if (_M_finish != _M_end_of_storage._M_data)
+-        {
+-            std::_Construct(_M_finish, value);
+-            ++_M_finish;
+-        }
+-        else
+-        {
+-            InsertOverflow(_M_finish, value, ScreenImageListTrueType(), 1, true);
+-        }
+-    }
+-};
+-
+-// Pointer-vector member at +0x6c; element type not yet proved. Its capacity
+-// proxy is built by the folded out-of-line constructor 0x00437de0.
+-struct ScreenImageListCapacity6c
+-{
+-    ScreenItem** data;
+-
+-    ScreenImageListCapacity6c(const ScreenImageListAllocator& allocator, ScreenItem** value);
+-    ~ScreenImageListCapacity6c() { }
+-    // Folded out-of-line 0x004b4eb0, RET8: frees count slots (pooled up to 128
+-    // bytes); body separate.
+-    void Deallocate(ScreenItem** storage, unsigned int count);
+-};
+-
+-struct ScreenImageListVector6c
+-{
+-    ScreenItem** begin;
+-    ScreenItem** end;
+-    ScreenImageListCapacity6c capacity;
+-
+-    explicit ScreenImageListVector6c(const ScreenImageListAllocator& allocator = ScreenImageListAllocator())
+-        : begin(0)
+-        , end(0)
+-        , capacity(allocator, 0)
+-    {
+-    }
+-    // Inline: frees the storage only. Out-of-line copy 0x004b4d00 serves the
+-    // unwind funclets.
+-    ~ScreenImageListVector6c()
+-    {
+-        if (begin)
+-            capacity.Deallocate(begin, static_cast<unsigned int>(capacity.data - begin));
+-    }
+-    // Folded out-of-line 0x004e80d0, RET8: erase(first, last); body separate.
+-    ScreenItem** Erase(ScreenItem** first, ScreenItem** last);
+-    // Library clear(): erase(begin, end) keeps the storage.
+-    void Clear() { end = static_cast<ScreenItem**>(CopyTrivial(end, end, begin)); }
+-};
+-
+-// Pointer-vector member at +0x78 with an inline empty construction.
+-struct ScreenImageListCapacity78
+-{
+-    ScreenImageListMarker** data;
+-
+-    ScreenImageListCapacity78(ScreenImageListMarker** value)
+-        : data(value)
+-    {
+-    }
+-    ~ScreenImageListCapacity78() { }
+-    // Folded out-of-line 0x004b4eb0, RET8; body separate.
+-    void Deallocate(ScreenImageListMarker** storage, unsigned int count);
+-};
+-
+-struct ScreenImageListRange78
+-{
+-    ScreenImageListMarker** begin;
+-    ScreenImageListMarker** end;
+-    ScreenImageListCapacity78 capacity;
+-
+-    ScreenImageListRange78()
+-        : begin(0)
+-        , end(0)
+-        , capacity(0)
+-    {
+-    }
+-    // Inline: frees the storage only. Out-of-line copy 0x004b4e20 serves the
+-    // unwind funclets.
+-    ~ScreenImageListRange78()
+-    {
+-        if (begin)
+-            capacity.Deallocate(begin, static_cast<unsigned int>(capacity.data - begin));
+-    }
+-    // Folded out-of-line 0x004e80d0, RET8; body separate.
+-    ScreenImageListMarker** Erase(ScreenImageListMarker** first, ScreenImageListMarker** last);
+-    // Library clear(): erase(begin, end) keeps the storage.
+-    void Clear() { end = static_cast<ScreenImageListMarker**>(CopyTrivial(end, end, begin)); }
+-};
++// The frame vector at +0x60, the item vector at +0x6c and the text-marker
++// vector at +0x78 are STLport 4.5.3 vectors. PopulateBuildings keeps one
++// growth path out of line (_M_insert_overflow 0x004c3a30) and expands the
++// other; the out-of-line destructors 0x004b4d90, 0x004b4d00 and 0x004b4e20
++// serve the unwind funclets.
+ 
+ // Accessed ImageList projection; full native class remains separate. Original original allocation 0x84, kind 17 and table
+ // 0x004f46ac (21 slots). Descriptive names only. The ordinary destructor and
+@@ -195,9 +84,9 @@ struct ScreenImageList : ScreenItem
+     float timer_58;  // Refresh timer while flag_5c is set.
+     unsigned char flag_5c;
+     unsigned char unknown_5d[3];
+-    ScreenImageListVector60 vector_60;
+-    ScreenImageListVector6c vector_6c;
+-    ScreenImageListRange78 range_78;
++    std::vector<ScreenImageListFrame*> vector_60;
++    std::vector<ScreenItem*> vector_6c;
++    std::vector<ScreenImageListMarker*> range_78;
+ 
+     // Actual 0x004b3120, RET 0x20.
+     ScreenImageList(ScreenRectangle initial,
+diff --git a/src/startup_screen_image_list_buildings.cpp b/src/startup_screen_image_list_buildings.cpp
+index 78aae83..75ee4fe 100644
+--- a/src/startup_screen_image_list_buildings.cpp
++++ b/src/startup_screen_image_list_buildings.cpp
+@@ -5,6 +5,11 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
++static inline WindowDeactivationState* DeactivationState()
++{
++    return window_deactivation_state;
++}
++
+ // FUNCTION: BEACHLIFE 0x004b3ec0
+ void ScreenImageList::PopulateBuildings(int kind, const char* thumbnail, const char* grey_thumbnail)
+ {
+@@ -25,7 +30,7 @@ void ScreenImageList::PopulateBuildings(int kind, const char* thumbnail, const c
+             frame->feature_0c = index;
+             frame->text_08 = new char[strlen(text) + 1];
+             strcpy(frame->text_08, text);
+-            vector_60.PushBack(frame);
++            vector_60.push_back(frame);
+         }
+         else if (window_deactivation_state->CanBuild(index))
+         {
+@@ -39,8 +44,8 @@ void ScreenImageList::PopulateBuildings(int kind, const char* thumbnail, const c
+             // The count of this building: red when none, black when all are
+             // ready, orange otherwise.
+             frame->counted_94 = 1;
+-            unsigned int ready = window_deactivation_state->CountReadyBuildings(index);
+-            unsigned int total = window_deactivation_state->CountBuildings(index);
++            unsigned int ready = DeactivationState()->CountReadyBuildings(index);
++            unsigned int total = DeactivationState()->CountBuildings(index);
+             swprintf(frame->count_10, L"%d", total);
+             if (total)
+             {
+diff --git a/src/startup_screen_image_list_globals.cpp b/src/startup_screen_image_list_globals.cpp
+index 486c89b..102e4d7 100644
+--- a/src/startup_screen_image_list_globals.cpp
++++ b/src/startup_screen_image_list_globals.cpp
+@@ -1,5 +1,19 @@
+ #include "startup_screen_image_list.h"
+ 
++// GLOBAL: BEACHLIFE 0x0057fd08
++const char* image_list_categories[10] = {
++    "BUILD_HOTEL_SMALL",
++    "BUILD_FOOD_SMALL",
++    "BUILD_LEISURE_SMALL",
++    "BUILD_FURN_SMALL",
++    "BUILD_PATHS_SMALL",
++    "BUILD_PLANTS_SMALL",
++    "BUILD_ORNAMENTS_SMALL",
++    "BUILD_TREES_SMALL",
++    "BUILD_SHRUBS_SMALL",
++    "BUILD_BILLBOARD_SMALL",
++};
++
+ // GLOBAL: BEACHLIFE 0x0057fd30
+ const char* image_list_thumbnails[10] = {
+     "UI3_bp_thumb",
+diff --git a/src/startup_screen_image_list_insert_overflow.cpp b/src/startup_screen_image_list_insert_overflow.cpp
+deleted file mode 100644
+index c2d17cf..0000000
+--- a/src/startup_screen_image_list_insert_overflow.cpp
++++ /dev/null
+@@ -1,45 +0,0 @@
+-#include "copy_trivial.h"
+-#include "node_storage.h"
+-#include "startup_screen_image_list.h"
+-
+-// FUNCTION: BEACHLIFE 0x004c3a30
+-void ScreenImageListVector60::InsertOverflow(ScreenImageListFrame** position,
+-    ScreenImageListFrame* const& value, const ScreenImageListTrueType& plain,
+-    unsigned int count, bool at_end)
+-{
+-    unsigned int size = static_cast<unsigned int>(_M_finish - _M_start);
+-    unsigned int length = size + MaxUnsigned(size, count);
+-    ScreenImageListFrame** storage;
+-    if (length != 0)
+-    {
+-        unsigned int bytes = length * sizeof(ScreenImageListFrame*);
+-        storage = static_cast<ScreenImageListFrame**>(NodeAllocator::allocate(bytes));
+-    }
+-    else
+-    {
+-        storage = 0;
+-    }
+-
+-    ScreenImageListFrame** next
+-        = static_cast<ScreenImageListFrame**>(CopyTrivial(_M_start, position, storage));
+-    for (unsigned int remaining = count; remaining != 0; --remaining)
+-    {
+-        // The reference is read on every iteration, including an aliased value.
+-        ::new (next) ScreenImageListFrame*(value);
+-        ++next;
+-    }
+-    if (!at_end)
+-        next = static_cast<ScreenImageListFrame**>(CopyTrivial(position, _M_finish, next));
+-
+-    ScreenImageListFrame** old_begin = _M_start;
+-    if (old_begin)
+-    {
+-        unsigned int bytes = static_cast<unsigned int>(_M_end_of_storage._M_data - old_begin)
+-                           * sizeof(ScreenImageListFrame*);
+-        NodeAllocator::deallocate(old_begin, bytes);
+-    }
+-
+-    _M_finish = next;
+-    _M_start = storage;
+-    _M_end_of_storage._M_data = storage + length;
+-}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 54c1e02..4d256df 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2831,10 +2831,6 @@
+       "/GX",
+       "/Ob1"
+     ],
+-    "startup_screen_image_list_insert_overflow.cpp": [
+-      "/GX",
+-      "/Ob1"
+-    ],
+     "startup_controller_shared_slots.cpp": [
+       "/Ob1"
+     ],
+@@ -4605,7 +4601,6 @@
+     "startup_screen_credits_owner_constructor.cpp",
+     "startup_screen_image_list_buildings.cpp",
+     "startup_screen_image_list_globals.cpp",
+-    "startup_screen_image_list_insert_overflow.cpp",
+     "startup_screen_image_list_interval_globals.cpp",
+     "startup_screen_image_list_scenery.cpp",
+     "startup_screen_manager_owner190_destructor.cpp",
