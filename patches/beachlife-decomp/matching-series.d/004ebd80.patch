@@ -1,0 +1,181 @@
+diff --git a/fixtures/game.d/fixture_004ebd80.cpp b/fixtures/game.d/fixture_004ebd80.cpp
+new file mode 100644
+index 0000000..c2014f4
+--- /dev/null
++++ b/fixtures/game.d/fixture_004ebd80.cpp
+@@ -0,0 +1,9 @@
++#include "tga_image.h"
++
++TgaImage* LoadTiffFile(const char* filename);
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004ebd80(const char* filename)
++{
++    LoadTiffFile(filename);
++}
+diff --git a/metadata.d/004ebd80.csv b/metadata.d/004ebd80.csv
+new file mode 100644
+index 0000000..b3f68d9
+--- /dev/null
++++ b/metadata.d/004ebd80.csv
+@@ -0,0 +1,7 @@
++address,type,size,symbol
++0x004ebd80,function,535,?LoadTiffFile@@YAPAUTgaImage@@PBD@Z
++0x004eb510,function,256,?TiffDecodeTiles@@YAXPAUTgaImage@@PAUTiffReadContext@@@Z
++0x004eb610,function,371,?TiffDecodePackBits@@YAXPAUTgaImage@@PAUTiffReadContext@@@Z
++0x004eb790,function,165,?TiffConvertFourSamples@@YAPAUTgaImage@@PAU1@@Z
++0x004eb840,function,212,?TiffExpandFourBits@@YAPAUTgaImage@@PAU1@@Z
++0x004eb920,function,972,?TiffReadDirectory@@YAHIPAUTiffReadContext@@@Z
+diff --git a/src/match_004ebd80.cpp b/src/match_004ebd80.cpp
+new file mode 100644
+index 0000000..b49bb8f
+--- /dev/null
++++ b/src/match_004ebd80.cpp
+@@ -0,0 +1,73 @@
++#include "tga_image.h"
++#include "tiff_read_context.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++// The eight-byte little-endian TIFF file header.
++struct TiffLoaderHeader
++{
++    unsigned short byte_order;
++    unsigned short magic;
++    unsigned int directory_offset;
++};
++
++TgaImage* LoadTiffFile(const char* filename);
++
++// FUNCTION: BEACHLIFE 0x004ebd80
++TgaImage* LoadTiffFile(const char* filename)
++{
++    TiffReadContext* context = static_cast<TiffReadContext*>(malloc(sizeof(TiffReadContext)));
++    memset(context, 0, sizeof(TiffReadContext));
++    if (!context)
++        return 0;
++    context->file = fopen(filename, "rb");
++    if (!context->file)
++    {
++        free(context);
++        return 0;
++    }
++    TiffLoaderHeader header;
++    fread(&header, 8, 1, context->file);
++    if (header.byte_order != 0x4949)
++        return 0;
++    if (header.magic != 42)
++        return 0;
++    TiffReadDirectory(header.directory_offset, context);
++    TgaImage* image = new TgaImage(context->width, context->height, context->samples_per_pixel << 3, context->palette_offset != 0);
++    if (!context->tile_offsets_position)
++    {
++        switch (context->compression)
++        {
++        case 1:
++            TiffDecodeStrips(image, context);
++            break;
++        case 0x8005:
++            TiffDecodePackBits(image, context);
++            break;
++        }
++    }
++    else
++        TiffDecodeTiles(image, context);
++    if (context->palette_offset)
++        TiffReadPalette(context, image->palette);
++    fclose(context->file);
++    if (context->samples_per_pixel == 4)
++    {
++        TgaImage* converted = TiffConvertFourSamples(image);
++        delete image;
++        image = converted;
++    }
++    if (context->bits_per_sample == 4)
++    {
++        TgaImage* converted = TiffExpandFourBits(image);
++        delete image;
++        image = converted;
++    }
++    ::operator delete(context->strip_byte_counts);
++    ::operator delete(context->strip_offsets);
++    ::operator delete(context->tile_offsets);
++    ::operator delete(context->tile_byte_counts);
++    free(context);
++    return image;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004ebd80.json b/targets/beachlife-uk-1.1.d/004ebd80.json
+new file mode 100644
+index 0000000..6de003f
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004ebd80.json
+@@ -0,0 +1,68 @@
++{
++  "functions": [
++    {
++      "address": "0x004ebd80",
++      "size": 535,
++      "name": "LoadTiffFile",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004ebd80.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "comparison_anchors": [
++    {
++      "address": "0x004eb510",
++      "size": 256,
++      "name": "TiffDecodeTiles",
++      "symbol": "?TiffDecodeTiles@@YAXPAUTgaImage@@PAUTiffReadContext@@@Z",
++      "header": "tiff_read_context.h",
++      "kind": "void-function",
++      "return_type": "void",
++      "parameters": [
++        "TgaImage*",
++        "TiffReadContext*"
++      ]
++    },
++    {
++      "address": "0x004eb610",
++      "size": 371,
++      "name": "TiffDecodePackBits",
++      "symbol": "?TiffDecodePackBits@@YAXPAUTgaImage@@PAUTiffReadContext@@@Z",
++      "header": "tiff_read_context.h",
++      "kind": "void-function",
++      "return_type": "void",
++      "parameters": [
++        "TgaImage*",
++        "TiffReadContext*"
++      ]
++    },
++    {
++      "address": "0x004eb790",
++      "size": 165,
++      "name": "TiffConvertFourSamples",
++      "symbol": "?TiffConvertFourSamples@@YAPAUTgaImage@@PAU1@@Z",
++      "header": "tiff_read_context.h",
++      "kind": "null-pointer-function",
++      "return_type": "TgaImage*",
++      "parameters": [
++        "TgaImage*"
++      ]
++    },
++    {
++      "address": "0x004eb840",
++      "size": 212,
++      "name": "TiffExpandFourBits",
++      "symbol": "?TiffExpandFourBits@@YAPAUTgaImage@@PAU1@@Z",
++      "header": "tiff_read_context.h",
++      "kind": "null-pointer-function",
++      "return_type": "TgaImage*",
++      "parameters": [
++        "TgaImage*"
++      ]
++    }
++  ]
++}

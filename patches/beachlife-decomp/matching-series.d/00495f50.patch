@@ -1,0 +1,161 @@
+diff --git a/fixtures/game.d/fixture_00495f50.cpp b/fixtures/game.d/fixture_00495f50.cpp
+new file mode 100644
+index 0000000..1b10a38
+--- /dev/null
++++ b/fixtures/game.d/fixture_00495f50.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00495f50(WorldVehicleEntity* vehicle)
++{
++    vehicle->StartCircuit();
++}
+diff --git a/metadata.d/00495f50.csv b/metadata.d/00495f50.csv
+new file mode 100644
+index 0000000..3dfba48
+--- /dev/null
++++ b/metadata.d/00495f50.csv
+@@ -0,0 +1,4 @@
++address,type,size,symbol
++0x00495f50,function,511,?StartCircuit@WorldVehicleEntity@@QAEXXZ
++0x00446260,function,222,?TilePosition@ScreenTerrainGrid@@QAE?AUScreenWorldPosition@@UScreenPoint@@H@Z
++0x00430630,function,435,?IsStraight@WorldRouteReference@@QAE_NXZ
+diff --git a/src/match_00495f50.cpp b/src/match_00495f50.cpp
+new file mode 100644
+index 0000000..8017786
+--- /dev/null
++++ b/src/match_00495f50.cpp
+@@ -0,0 +1,82 @@
++#include "startup_world_entities.h"
++#include "startup_screen_mode_world.h"
++#include "startup_world_subsystems.h"
++#include "startup_world_vehicle_helpers.h"
++
++// Retail stores the raw words here; the operator= calls would use up the
++// /Ob1 inline budget and leave the command construction out of line.
++static inline ScreenModeCommand VehicleCommand(int id, int kind, int first, int second)
++{
++    ScreenModeCommand command;
++    command.words[0].data = id;
++    command.words[1].data = id;
++    command.words[2].data = kind;
++    command.words[3].data = first;
++    command.words[4].data = second;
++    return command;
++}
++
++static inline ScreenPoint* Circuit(WorldVehicleEntity* vehicle)
++{
++    return static_cast<ScreenPoint*>(vehicle->circuit_920);
++}
++
++// Retail stores the three coordinates straight into the member.
++static inline void CopyWorldPosition(ScreenWorldPosition& destination, const ScreenWorldPosition& source)
++{
++    destination.x = source.x;
++    destination.y = source.y;
++    destination.z = source.z;
++}
++
++// FUNCTION: BEACHLIFE 0x00495f50
++void WorldVehicleEntity::StartCircuit()
++{
++    ScreenModeCommand command;
++    command.words[0] = 0;
++    command.words[1] = 0;
++    command.words[2] = 0;
++    command.words[3] = 0;
++    command.words[4] = 0;
++    words_904[6] = (static_cast<int>(words_904[6]) + 1) % static_cast<int>(words_904[3]);
++    if (words_904[6] == words_904[4])
++    {
++        command = VehicleCommand(id_28, 3, 0, 0x42);
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else
++    {
++        bool found = false;
++        while (words_904[6] != words_904[4])
++        {
++            ScreenTerrainGrid* grid = screen_terrain_grid;
++            ScreenPoint tile = Circuit(this)[words_904[6]];
++            if (!(grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48 & 0x10))
++            {
++                found = true;
++                break;
++            }
++            words_904[6] = (static_cast<int>(words_904[6]) + 1) % static_cast<int>(words_904[3]);
++        }
++        if (!found)
++        {
++            command = VehicleCommand(id_28, 3, 0, 0x42);
++            screen_mode_commands->QueueCommand(&command);
++        }
++        else
++        {
++            ScreenMapPosition point = screen_terrain_grid->TileWorldPosition(Circuit(this)[words_904[6]]);
++            command = VehicleCommand(id_28, 11, static_cast<int>(point.x), static_cast<int>(point.y));
++            screen_mode_commands->QueueCommand(&command);
++            if (route_b8 && vehicle_type_f8 != 1)
++            {
++                if (!static_cast<WorldRouteReference*>(route_b8)->IsStraight())
++                    speed_80 = 100.0f;
++                else
++                    speed_80 = 200.0f;
++            }
++        }
++    }
++    ScreenPoint tile = Circuit(this)[words_904[6]];
++    CopyWorldPosition(roam_point_8e8, screen_terrain_grid->TilePosition(tile, 4));
++}
+diff --git a/targets/beachlife-uk-1.1.d/00495f50.json b/targets/beachlife-uk-1.1.d/00495f50.json
+new file mode 100644
+index 0000000..70f1f8d
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00495f50.json
+@@ -0,0 +1,44 @@
++{
++  "functions": [
++    {
++      "address": "0x00495f50",
++      "size": 511,
++      "name": "WorldVehicleEntity::StartCircuit",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x00446260",
++      "size": 222,
++      "name": "ScreenTerrainGrid::TilePosition",
++      "symbol": "?TilePosition@ScreenTerrainGrid@@QAE?AUScreenWorldPosition@@UScreenPoint@@H@Z",
++      "header": "startup_screen_mode_world.h",
++      "kind": "aggregate-member",
++      "return_type": "ScreenWorldPosition",
++      "parameters": [
++        "ScreenPoint",
++        "int"
++      ]
++    },
++    {
++      "address": "0x00430630",
++      "size": 435,
++      "name": "WorldRouteReference::IsStraight",
++      "symbol": "?IsStraight@WorldRouteReference@@QAE_NXZ",
++      "header": "startup_world_subsystems.h",
++      "kind": "false-member",
++      "return_type": "bool",
++      "parameters": []
++    }
++  ],
++  "source_compile_options": {
++    "match_00495f50.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_00495f50.cpp",
++    "fixture_00495f50.cpp"
++  ]
++}
