@@ -1,0 +1,104 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 66b3692..5c6b909 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4765,3 +4765,12 @@ extern "C" __declspec(dllexport) void FixtureDistinctActionPayloads(void* grass_
+     script->~WorldActionLoadScriptData();
+     menu->~WorldActionShowMenuData();
+ }
++
++// Ferry offsets are floating map coordinates, with unchanged object layout.
++typedef char FerryMapPositionSize[sizeof(ScreenMapPosition) == 8 ? 1 : -1];
++typedef char FerryTerrainGridSize[sizeof(ScreenTerrainGrid) == 0x154 ? 1 : -1];
++typedef char FerryVehicleSize[sizeof(WorldVehicleEntity) == 0x96c ? 1 : -1];
++typedef char FerryTerrainArrivalOffset[offsetof(ScreenTerrainGrid, arrival_tile_13c) == 0x13c ? 1 : -1];
++typedef char FerryTerrainDepartureOffset[offsetof(ScreenTerrainGrid, departure_tile_144) == 0x144 ? 1 : -1];
++typedef char FerryVehicleArrivalOffset[offsetof(WorldVehicleEntity, arrival_tile_948) == 0x948 ? 1 : -1];
++typedef char FerryVehicleDepartureOffset[offsetof(WorldVehicleEntity, departure_tile_950) == 0x950 ? 1 : -1];
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 0a0974d..2e677c5 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -146,8 +146,8 @@ struct ScreenTerrainGrid : TerrainRegistration
+     int word_120;
+     ScreenWorldPosition arrival_position_124;
+     ScreenWorldPosition departure_position_130;
+-    ScreenPoint arrival_tile_13c;
+-    ScreenPoint departure_tile_144;
++    ScreenMapPosition arrival_tile_13c;
++    ScreenMapPosition departure_tile_144;
+     int arrival_heading_14c;
+     int departure_heading_150;
+ 
+@@ -161,18 +161,18 @@ struct ScreenTerrainGrid : TerrainRegistration
+     bool CanPlaceBuilding(int x, int y, VariableBuilding* building);         // 0x004466d0.
+     ScreenWorldPosition* ArrivalRoute(unsigned int* count);                  // 0x00446880.
+     void ArrivalPosition(
+-        ScreenWorldPosition* position, int* heading, ScreenPoint* tile); // 0x00447880.
++        ScreenWorldPosition* position, int* heading, ScreenMapPosition* tile); // 0x00447880.
+     void DeparturePosition(
+-        ScreenWorldPosition* position, int* heading, ScreenPoint* tile); // 0x004478d0.
+-    TerrainEntityList* ObjectsAt(int x, int y);                          // 0x00446130.
+-    void Neighbours(ScreenPoint neighbour, ScreenTerrainCell** output);  // 0x00445e40.
+-    unsigned int TileIndex(int x, int y);                                // 0x0041f850.
+-    ScreenPoint WorldToTile(ScreenWorldPosition position);               // 0x00446170.
+-    int CountWaterTiles(int left, int top, int right, int bottom);       // 0x004468a0.
+-    void Step(ScreenPoint tile, int direction, ScreenPoint* result);     // 0x00446080, RET16.
+-    ScreenWorldPosition TileOrigin(ScreenPoint tile);                    // 0x00446200.
+-    ScreenWorldPosition TileCenter(ScreenPoint tile);                    // 0x00446350.
+-    ScreenWorldPosition TilePosition(ScreenPoint tile, int direction);   // 0x00446260.
++        ScreenWorldPosition* position, int* heading, ScreenMapPosition* tile); // 0x004478d0.
++    TerrainEntityList* ObjectsAt(int x, int y);                                // 0x00446130.
++    void Neighbours(ScreenPoint neighbour, ScreenTerrainCell** output);        // 0x00445e40.
++    unsigned int TileIndex(int x, int y);                                      // 0x0041f850.
++    ScreenPoint WorldToTile(ScreenWorldPosition position);                     // 0x00446170.
++    int CountWaterTiles(int left, int top, int right, int bottom);             // 0x004468a0.
++    void Step(ScreenPoint tile, int direction, ScreenPoint* result);           // 0x00446080, RET16.
++    ScreenWorldPosition TileOrigin(ScreenPoint tile);                          // 0x00446200.
++    ScreenWorldPosition TileCenter(ScreenPoint tile);                          // 0x00446350.
++    ScreenWorldPosition TilePosition(ScreenPoint tile, int direction);         // 0x00446260.
+     ScreenMapPosition BuildingOffset(ScreenPoint tile,
+         unsigned int width,
+         unsigned int height,
+@@ -185,9 +185,9 @@ struct ScreenTerrainGrid : TerrainRegistration
+     void AppendSecondRoute(ScreenTerrainRouteNode* route);                      // 0x004467f0.
+     void AddArrivalRoutePoint(ScreenWorldPosition position, unsigned int kind); // 0x00446820.
+     void SetArrivalPosition(
+-        ScreenWorldPosition position, int heading, ScreenPoint tile); // 0x00447800.
++        ScreenWorldPosition position, int heading, ScreenMapPosition tile); // 0x00447800.
+     void SetDeparturePosition(
+-        ScreenWorldPosition position, int heading, ScreenPoint tile); // 0x00447840.
++        ScreenWorldPosition position, int heading, ScreenMapPosition tile); // 0x00447840.
+     void BuildingBounds(ScreenPoint& point,
+         unsigned int width,
+         unsigned int height,
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 04cdb40..c26a31b 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -525,8 +525,8 @@ struct VariableEntity
+     bool AddRoutePoint(ScreenWorldPosition point);            // 0x004621b0.
+     void SetArrivalPosition(ScreenWorldPosition point);       // 0x0049a490.
+     void SetDeparturePosition(ScreenWorldPosition point);     // 0x0049a4c0.
+-    void SetArrivalTile(ScreenPoint point);                   // 0x0049a4f0.
+-    void SetDepartureTile(ScreenPoint point);                 // 0x0049a510.
++    void SetArrivalTile(ScreenMapPosition point);             // 0x0049a4f0.
++    void SetDepartureTile(ScreenMapPosition point);           // 0x0049a510.
+     void SetArrivalHeading(int heading);                      // 0x0049a530.
+     void SetDepartureHeading(int heading);                    // 0x0049a550.
+     void SetVehicleVariant(unsigned int variant);             // 0x00494da0.
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index ea8db28..b5d5dc8 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -692,8 +692,8 @@ struct WorldVehicleEntity : WorldMovingEntity
+     unsigned char unknown_92d[3];
+     ScreenWorldPosition arrival_position_930;
+     ScreenWorldPosition departure_position_93c;
+-    ScreenPoint arrival_tile_948;
+-    ScreenPoint departure_tile_950;
++    ScreenMapPosition arrival_tile_948;
++    ScreenMapPosition departure_tile_950;
+     int arrival_heading_958;
+     int departure_heading_95c;
+     unsigned char flag_960;
