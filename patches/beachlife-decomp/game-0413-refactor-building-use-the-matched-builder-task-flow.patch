@@ -1,0 +1,137 @@
+diff --git a/src/startup_building_builder_tasks.cpp b/src/startup_building_builder_tasks.cpp
+index 3bb146197068f0912675b1c390cadb8c37393e54..393cb082941bc5ff6499958c02237d63df87cfa7 100644
+--- a/src/startup_building_builder_tasks.cpp
++++ b/src/startup_building_builder_tasks.cpp
+@@ -88,47 +88,10 @@ void VariableBuildingStatus::CancelBuilderTask(unsigned int id)
+ // FUNCTION: BEACHLIFE 0x00421130
+ void VariableBuildingStatus::RemoveBuilder(unsigned int id)
+ {
+-    unsigned int index = FindBuilderIndex(this, id);
+-    {
+-        unsigned int cancelled_id = workers_08[index].id_00;
+-        WorldBuilderEntity* builder = variable_world->FindObject(cancelled_id)->AsBuilder();
+-        for (unsigned int index = 0; index < worker_count_3f0; ++index)
+-        {
+-            if (workers_08[index].id_00 != cancelled_id)
+-                continue;
+-            CircularListIterator first;
+-            first.node = head_00->next;
+-            CircularListIterator last;
+-            last.node = head_00;
+-            unsigned int search_id = workers_08[index].word_0c;
+-            CircularListIterator found = FindPointerListRecord(first, last, [search_id](CircularListNode* node)
+-                { return static_cast<BuildingStatusNode*>(node)->entry->id_00 == search_id; });
+-            BuildingStatusEntry* entry = found.node == head_00 ? 0 : static_cast<BuildingStatusNode*>(found.node)->entry;
+-            if (entry)
+-            {
+-                --entry->word_04;
+-                for (int slot = 0; slot < 10; ++slot)
+-                {
+-                    if (entry->indices_54[slot] == builder->builder_index_7f0)
+-                    {
+-                        entry->indices_54[slot] = -1;
+-                        break;
+-                    }
+-                }
+-            }
+-            {
+-                variable_world->FindObject(cancelled_id);
+-                for (unsigned int index = 0; index < worker_count_3f0; ++index)
+-                {
+-                    if (workers_08[index].id_00 == cancelled_id)
+-                    {
+-                        workers_08[index].word_0c = -1;
+-                        workers_08[index].flag_10 = 0;
+-                    }
+-                }
+-            }
+-        }
+-    }
++    unsigned int index = 0;
++    while (workers_08[index].id_00 != static_cast<int>(id) && index < worker_count_3f0)
++        ++index;
++    CancelBuilderTask(workers_08[index].id_00);
+     for (unsigned int next = index; next < worker_count_3f0 - 1; ++next)
+         workers_08[next] = workers_08[next + 1];
+     --worker_count_3f0;
+diff --git a/src/startup_building_construction_tasks.cpp b/src/startup_building_construction_tasks.cpp
+index 3923959ec65db3a683fff0b0c044f89b6167106c..cc4389b693d2485af9a123c8c6e37f32c78ec2b0 100644
+--- a/src/startup_building_construction_tasks.cpp
++++ b/src/startup_building_construction_tasks.cpp
+@@ -91,7 +91,7 @@ void VariableBuildingStatus::UpdateBuildingTask(unsigned int id)
+     VariableEntity* entity = variable_world->FindObject(id);
+     if (!entity)
+         return;
+-    VariableBuilding* building = entity->AsBuilding()->building_60;
++    VariableBuilding* building = static_cast<WorldBuildingEntity*>(entity)->building_60;
+     CircularListIterator first;
+     first.node = head_00->next;
+     CircularListIterator last;
+@@ -102,17 +102,30 @@ void VariableBuildingStatus::UpdateBuildingTask(unsigned int id)
+     BuildingStatusEntry* entry = found.node == head_00 ? 0 : static_cast<BuildingStatusNode*>(found.node)->entry;
+     if (!entry || !entry->byte_2a)
+         return;
+-    unsigned int index = entry->byte_28 ? 2 : 3;
+-    unsigned int duration = entry->byte_28 ? building->cost_1e0 : building->cost_1e4;
+-    double remaining = entry->values_10[index] - static_cast<double>(window_deactivation_state->value_16c) * 0.01f;
+-    entry->values_10[index] = static_cast<float>(remaining);
+-    entry->values_10[index + 2] = static_cast<float>(1.0 - remaining / duration);
+-    if (entry->byte_2b || entry->values_10[index] > 0.0f)
++    float* progress;
++    float* remaining;
++    unsigned int* duration;
++    if (entry->byte_28)
++    {
++        progress = &entry->values_10[4];
++        remaining = &entry->values_10[2];
++        duration = &building->cost_1e0;
++    }
++    else
++    {
++        progress = &entry->values_10[5];
++        remaining = &entry->values_10[3];
++        duration = &building->cost_1e4;
++    }
++    double updated = *remaining - static_cast<double>(window_deactivation_state->value_16c) * 0.01f;
++    *remaining = static_cast<float>(updated);
++    *progress = static_cast<float>(1.0 - updated / *duration);
++    if (entry->byte_2b || *remaining > 0.0f)
+         return;
+     entry->byte_2b = 1;
+     for (unsigned int worker = 0; worker < worker_count_3f0; ++worker)
+     {
+-        if (workers_08[worker].word_0c == id)
++        if (id == workers_08[worker].word_0c)
+         {
+             ScreenModeCommand command;
+             command.words[0] = workers_08[worker].id_00;
+@@ -123,17 +136,22 @@ void VariableBuildingStatus::UpdateBuildingTask(unsigned int id)
+             screen_mode_commands->QueueCommand(&command);
+         }
+     }
+-    --word_04;
++    float delay = 0.0f;
+     ScreenModeCommand command;
+-    command.words[0] = id;
+-    command.words[1] = id;
+-    command.words[2] = 0x62;
+-    command.words[3] = 0;
+-    command.words[4] = entry->byte_28 ? 0x28 : 0x2e;
+     if (entry->byte_28)
++    {
++        --word_04;
++        command = ScreenModeCommand(id, id, 0x62, 0, 0x28);
+         screen_mode_commands->QueueCommand(&command);
++    }
+     else
+-        screen_mode_commands->QueueDelayed(&command, (building->terrain_flags_31c & 0xc) ? 11.0f : 0.0f);
++    {
++        --word_04;
++        if (building->terrain_flags_31c & 0xc)
++            delay = 11.0f;
++        command = ScreenModeCommand(id, id, 0x62, 0, 0x2e);
++        screen_mode_commands->QueueDelayed(&command, delay);
++    }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004222d0

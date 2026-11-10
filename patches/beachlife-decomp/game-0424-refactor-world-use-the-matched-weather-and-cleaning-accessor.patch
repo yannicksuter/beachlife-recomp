@@ -1,0 +1,98 @@
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 3655a4c9918ebc4d206a040c46df39b5317766f0..938db4333cac2e70278d5ceb358fae22d4fbdafc 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -760,7 +760,8 @@ inline WeatherRegistration::~WeatherRegistration()
+ 
+ struct VariableWeather : WeatherRegistration
+ {
+-    unsigned int* GuestChanges(); // 0x0043a040.
++    unsigned short* ColourTable(); // Folded 0x004d38b0.
++    unsigned int* GuestChanges();  // 0x0043a040.
+     struct LightKey
+     {
+         LightKey(); // 0x0043b4e0.
+diff --git a/src/startup_weather_haze_globals.cpp b/src/startup_weather_haze_globals.cpp
+index d2bee412c32832e9d22441430f60ad1f07d29004..d2e96f0af339e216729385dfefbcf99092dc022b 100644
+--- a/src/startup_weather_haze_globals.cpp
++++ b/src/startup_weather_haze_globals.cpp
+@@ -5,3 +5,9 @@ int weather_haze_jitter = 0;
+ 
+ // GLOBAL: BEACHLIFE 0x004f3494
+ extern const float weather_rain_level = 0.8f;
++
++// Folded with the shared identity accessor at 0x004d38b0.
++unsigned short* VariableWeather::ColourTable()
++{
++    return colour_table_00;
++}
+diff --git a/src/startup_world_building_update.cpp b/src/startup_world_building_update.cpp
+index 83655f902ba8763755aa40277a0d355ddeab9b33..b3974f2b7031d5dfa008eb310ea184c4c9045fd4 100644
+--- a/src/startup_world_building_update.cpp
++++ b/src/startup_world_building_update.cpp
+@@ -99,7 +99,7 @@ bool WorldBuildingEntity::Unknown0c()
+                     command.words[4] = 0;
+                     Unknown20(command);
+                     window_deactivation_state->cleaning_2c->AddCleaningRequest(id_28);
+-                    StoreSharedByte5c(flags_5a[2], 1);
++                    SetCleaningAssigned(1);
+                 }
+             }
+         }
+diff --git a/src/startup_world_cleaner_actions.cpp b/src/startup_world_cleaner_actions.cpp
+index 746788a89eb7ca4d822057e37dbbd446e6514588..d19eccf328929b5662f2bc19664a6b38dcdccdf0 100644
+--- a/src/startup_world_cleaner_actions.cpp
++++ b/src/startup_world_cleaner_actions.cpp
+@@ -56,7 +56,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         {
+             ScreenModeCommand command(entity->id_28, entity->id_28, 3, 0, 3);
+             screen_mode_commands->QueueCommand(&command);
+-            StoreSharedByte5c(entity->AsStatic()->flags_5a[2], 0);
++            entity->AsStatic()->SetCleaningAssigned(0);
+             entity->SetCleaningRequested(0);
+             entity->inactive_04 = 1;
+         }
+@@ -74,7 +74,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+     {
+         VariableEntity* entity = variable_world->FindObject(word_98);
+         entity->SetFlag5a(0);
+-        StoreSharedByte5c(entity->AsStatic()->flags_5a[2], 0);
++        entity->AsStatic()->SetCleaningAssigned(0);
+         entity->SetCleaningRequested(0);
+         entity->SetSceneryContents(0);
+         AddThought(8);
+@@ -95,7 +95,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+             feedback_status_79c &= ~2u;
+         }
+         entity->SetFlag5a(0);
+-        StoreSharedByte5c(entity->flags_5a[2], 0);
++        entity->SetCleaningAssigned(0);
+         entity->SetCleaningRequested(0);
+         AddThought(0x10);
+         window_deactivation_state->cleaning_2c->RemoveRequest(word_98);
+diff --git a/src/startup_world_cleaning_assigned.cpp b/src/startup_world_cleaning_assigned.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..4508faf378f237c9e5d8ee23956838aedf9aaaf8
+--- /dev/null
++++ b/src/startup_world_cleaning_assigned.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Folded with the shared byte setter at 0x00483590.
++void WorldStaticEntity::SetCleaningAssigned(unsigned char assigned)
++{
++    flags_5a[2] = assigned;
++}
+diff --git a/src/startup_world_scenery_update.cpp b/src/startup_world_scenery_update.cpp
+index cfcbb057d10015ff368a67e226e5bc4288e2365e..6e962066d01b48ebfe0b482cb0a4d0d85be5e1ac 100644
+--- a/src/startup_world_scenery_update.cpp
++++ b/src/startup_world_scenery_update.cpp
+@@ -28,7 +28,7 @@ bool WorldSceneryEntity::Unknown0c()
+             && !byte_a0 && !NeedsCleaning() && !flags_5a[2] && !cleaning_requested_5e)
+         {
+             window_deactivation_state->cleaning_2c->AddCleaningRequest(id_28);
+-            StoreSharedByte5c(flags_5a[2], 1);
++            SetCleaningAssigned(1);
+         }
+     }
+     for (unsigned int i = 0; i < count_98; ++i)

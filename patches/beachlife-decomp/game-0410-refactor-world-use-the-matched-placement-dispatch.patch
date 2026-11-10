@@ -1,0 +1,122 @@
+diff --git a/src/startup_world_dispatch_placement.cpp b/src/startup_world_dispatch_placement.cpp
+index b7ecf41a4a379a4978ceec4747bd322fad6cb131..d4366f1ba96b1e78343a0749401e201d335f7397 100644
+--- a/src/startup_world_dispatch_placement.cpp
++++ b/src/startup_world_dispatch_placement.cpp
+@@ -5,9 +5,13 @@
+ // FUNCTION: BEACHLIFE 0x0043d830
+ bool WindowDeactivationState::DispatchPlacement(ScreenModeCommand* command, const void* placement)
+ {
+-    bool paused = deactivation_requested != 0;
+-    if (paused)
++    ScreenModeCommand response(0, 0, 0, 0, 0);
++    bool paused = false;
++    if (deactivation_requested)
++    {
++        paused = true;
+         deactivation_requested = 0;
++    }
+     VariableEntity* entity;
+     switch (command->words[4])
+     {
+@@ -23,9 +27,6 @@ bool WindowDeactivationState::DispatchPlacement(ScreenModeCommand* command, cons
+     case 4:
+         entity = PlaceEntity4(placement);
+         break;
+-    case 5:
+-        entity = PlaceEntity5(placement);
+-        break;
+     case 6:
+         entity = PlaceEntity6(placement);
+         break;
+@@ -35,9 +36,6 @@ bool WindowDeactivationState::DispatchPlacement(ScreenModeCommand* command, cons
+     case 8:
+         entity = PlaceEntity8(placement);
+         break;
+-    case 9:
+-        entity = PlaceEntity9(placement);
+-        break;
+     case 10:
+         entity = PlaceEntity10(placement);
+         break;
+@@ -47,17 +45,23 @@ bool WindowDeactivationState::DispatchPlacement(ScreenModeCommand* command, cons
+     case 12:
+         entity = PlaceEntity12(placement);
+         break;
++    case 9:
++        entity = PlaceEntity9(placement);
++        break;
++    case 5:
++        entity = PlaceEntity5(placement);
++        break;
+     case 13:
+         entity = PlaceEntity13(placement);
+         break;
+-    case 14:
+-        entity = PlaceEntity14(placement);
++    case 16:
++        entity = PlaceEntity16(placement);
+         break;
+     case 15:
+         entity = PlaceEntity15(placement);
+         break;
+-    case 16:
+-        entity = PlaceEntity16(placement);
++    case 14:
++        entity = PlaceEntity14(placement);
+         break;
+     case 17:
+         entity = PlaceEntity17(placement);
+@@ -68,11 +72,12 @@ bool WindowDeactivationState::DispatchPlacement(ScreenModeCommand* command, cons
+     case 19:
+     {
+         const ScreenEntityPlacement* data = static_cast<const ScreenEntityPlacement*>(placement);
+-        entity = world_10->CreateEntity(data->name, 19);
+-        entity->SetKind(19);
+-        entity->SetMovementMode(0);
+-        entity->SetPosition(data->position);
+-        entity->SetHeading(data->heading);
++        VariableEntity* created = world_10->CreateEntity(data->name, 19);
++        created->SetKind(19);
++        created->SetMovementMode(0);
++        static_cast<WorldMovingEntity*>(created)->SetMovementPosition(data->position);
++        created->SetHeading(data->heading);
++        entity = created;
+         break;
+     }
+     case 20:
+@@ -85,12 +90,7 @@ bool WindowDeactivationState::DispatchPlacement(ScreenModeCommand* command, cons
+         deactivation_requested = 1;
+     if (!entity)
+         return false;
+-    ScreenModeCommand response;
+-    response.words[0] = -2;
+-    response.words[1] = command->words[0];
+-    response.words[2] = 1;
+-    response.words[3] = 0;
+-    response.words[4] = entity->id_28;
++    response = ScreenModeCommand(-2, command->words[0], 1, 0, entity->id_28);
+     screen_mode_commands->QueueCommand(&response);
+     return true;
+ }
+diff --git a/src/startup_world_place_guest_vehicle.cpp b/src/startup_world_place_guest_vehicle.cpp
+index 8077c29eee7a3d4ba9f1fd785d23c122a8c7165f..831d1be9bdc5ccaf60ceb95e265d6e060383a21d 100644
+--- a/src/startup_world_place_guest_vehicle.cpp
++++ b/src/startup_world_place_guest_vehicle.cpp
+@@ -38,6 +38,7 @@ VariableEntity* WindowDeactivationState::PlaceEntity4(const void* data)
+ {
+     const ScreenStaffPlacement* placement = static_cast<const ScreenStaffPlacement*>(data);
+     VariableVehicleDefinition* definition = variable_catalog->Vehicle(variable_catalog->FindVehicle(placement->name));
++    ScreenModeCommand command(0, 0, 0, 0, 0);
+     WorldVehicleEntity* entity = static_cast<WorldVehicleEntity*>(world_10->CreateEntity(placement->name, 4));
+     entity->word_5c8 = placement->building_id;
+     entity->SetKind(4);
+@@ -46,7 +47,8 @@ VariableEntity* WindowDeactivationState::PlaceEntity4(const void* data)
+     entity->keyline_state_44 = screen_dialog_resources->Find(definition->resource_c4);
+     entity->keyline_state_44->SelectVariant(placement->index);
+     entity->heading_5d0 = placement->index;
+-    QueuePlacedEntity(commands_0c, entity, 1);
++    command = ScreenModeCommand(-2, entity->id_28, 3, 0, 1);
++    commands_0c->QueueCommand(&command);
+     return entity;
+ }
+ 

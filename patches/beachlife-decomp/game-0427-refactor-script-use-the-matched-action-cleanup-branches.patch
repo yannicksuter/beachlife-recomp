@@ -1,0 +1,197 @@
+diff --git a/src/startup_world_script_action_destructor.cpp b/src/startup_world_script_action_destructor.cpp
+index bb5a6a20240dbbb92044a80a9a3b29bdf0b0933a..d93d6ba26c583576f11053e1c1b8745355ca0d67 100644
+--- a/src/startup_world_script_action_destructor.cpp
++++ b/src/startup_world_script_action_destructor.cpp
+@@ -12,22 +12,26 @@ WorldSubsystem20::Action::~Action() noexcept(false)
+     case 0:
+     case 20:
+     case 23:
+-        ::operator delete(data_08);
++    {
++        void* data = data_08;
++        if (data)
++            ::operator delete(data);
+         break;
++    }
+     case 1:
+         delete static_cast<WorldActionCommandData*>(data_08);
+         break;
+     case 2:
+-        ReleaseOwnedAllocation(static_cast<WorldActionStateData*>(data_08)->name_00);
+-        ::operator delete(data_08);
+-        break;
+-    case 11:
+-        ReleaseOwnedAllocation(static_cast<WorldActionSoundData*>(data_08)->name_00);
+-        ::operator delete(data_08);
++    {
++        WorldActionStateData* data = static_cast<WorldActionStateData*>(data_08);
++        if (data)
++        {
++            ReleaseOwnedAllocation(data->name_00);
++            ::operator delete(data);
++        }
+         break;
++    }
+     case 3:
+-    case 15:
+-    case 25:
+         delete static_cast<WorldActionNamedData*>(data_08);
+         break;
+     case 4:
+@@ -40,25 +44,51 @@ WorldSubsystem20::Action::~Action() noexcept(false)
+     case 10:
+         delete static_cast<WorldActionArithmeticData*>(data_08);
+         break;
++    case 11:
++        delete static_cast<WorldActionSoundData*>(data_08);
++        break;
+     case 12:
+         delete static_cast<WorldActionCreateData*>(data_08);
+         break;
+     case 13:
++        delete static_cast<WorldActionStripData*>(data_08);
++        break;
+     case 14:
+-    case 17:
+-    case 18:
+-    case 19:
+-    case 21:
+-    case 24:
+-        IgnoreScreenAction();
+-        ::operator delete(data_08);
++        delete static_cast<WorldActionGrassData*>(data_08);
++        break;
++    case 15:
++        delete static_cast<WorldActionLoadScriptData*>(data_08);
+         break;
+     case 16:
+         delete static_cast<WorldActionRouteData*>(data_08);
+         break;
++    case 17:
++        delete static_cast<WorldActionBoatPointData*>(data_08);
++        break;
++    case 21:
++        delete static_cast<WorldActionEntryData*>(data_08);
++        break;
++    case 18:
++        delete static_cast<WorldActionEndpointData*>(data_08);
++        break;
++    case 19:
++        delete static_cast<WorldActionEndpointData*>(data_08);
++        break;
+     case 22:
+-        ReleaseOwnedAllocation(static_cast<WorldEventRecord*>(data_08)->data_34);
+-        ::operator delete(data_08);
++    {
++        WorldEventRecord* data = static_cast<WorldEventRecord*>(data_08);
++        if (data)
++        {
++            ReleaseOwnedAllocation(data->data_34);
++            ::operator delete(data);
++        }
++        break;
++    }
++    case 24:
++        delete static_cast<WorldActionPositionData*>(data_08);
++        break;
++    case 25:
++        delete static_cast<WorldActionShowMenuData*>(data_08);
+         break;
+     }
+ }
+diff --git a/src/startup_world_script_actions.cpp b/src/startup_world_script_actions.cpp
+index 3e2a978966a0f00592e96c45dbfe58f29287fa73..be9e69c71d8538d2946bf4776e23def131803430 100644
+--- a/src/startup_world_script_actions.cpp
++++ b/src/startup_world_script_actions.cpp
+@@ -245,22 +245,37 @@ void WorldSubsystem20::Action::Update()
+     {
+         if (window_deactivation_state->loading_438)
+             break;
+-        WorldActionStripData* data = static_cast<WorldActionStripData*>(data_08);
+-        ScreenPoint point = data->point_00;
+-        for (int i = 0; i < data->count_0c; ++i)
++        ScreenPoint point;
++        int count;
++        int direction;
++        if (kind_04 == 13)
++        {
++            WorldActionStripData* data = static_cast<WorldActionStripData*>(data_08);
++            point = data->point_00;
++            count = data->count_0c;
++            direction = data->direction_08;
++        }
++        else
++        {
++            WorldActionGrassData* data = static_cast<WorldActionGrassData*>(data_08);
++            point = data->point_00;
++            count = data->count_0c;
++            direction = data->direction_08;
++        }
++        for (int i = 0; i < count; ++i)
+         {
+             ScreenTerrainGrid* terrain = screen_terrain_grid;
+             unsigned int index = (static_cast<unsigned int>(point.y) % terrain->height_08) * terrain->width_04
+                                + static_cast<unsigned int>(point.x) % terrain->width_04;
+             terrain->cells_0c[index].flags_48 |= kind_04 == 13 ? 0x10000080 : 0x7000;
+             world_cursor_names->UpdateTile(point.x, point.y, 0);
+-            screen_terrain_grid->Step(point, data->direction_08, &point);
++            screen_terrain_grid->Step(point, direction, &point);
+         }
+         break;
+     }
+     case 15:
+     {
+-        WorldActionNamedData* data = static_cast<WorldActionNamedData*>(data_08);
++        WorldActionLoadScriptData* data = static_cast<WorldActionLoadScriptData*>(data_08);
+         world_subsystem_3c->AddScript(data->name_00, data->text_04);
+         break;
+     }
+@@ -339,7 +354,7 @@ void WorldSubsystem20::Action::Update()
+     }
+     case 25:
+     {
+-        WorldActionNamedData* data = static_cast<WorldActionNamedData*>(data_08);
++        WorldActionShowMenuData* data = static_cast<WorldActionShowMenuData*>(data_08);
+         screen_manager->RequestNamedScreen(data->name_00, data->text_04, 0, 1);
+         break;
+     }
+diff --git a/src/startup_world_script_parse_interface.cpp b/src/startup_world_script_parse_interface.cpp
+index fff4be6ec9267884ed9266c80534dc2545661992..a9bd6133b096e3888c3c9a421ddae0ab1971848b 100644
+--- a/src/startup_world_script_parse_interface.cpp
++++ b/src/startup_world_script_parse_interface.cpp
+@@ -37,8 +37,8 @@ int WorldSubsystem20::ParseMoveCameraAction()
+ // FUNCTION: BEACHLIFE 0x004e1ba0
+ int WorldSubsystem20::ParseShowMenuAction()
+ {
+-    WorldActionNamedData* data = new (std::nothrow) WorldActionNamedData;
+     char token[128];
++    WorldActionShowMenuData* data = new (std::nothrow) WorldActionShowMenuData;
+     int count = ReadToken(token);
+     char* name = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
+     data->name_00 = name;
+diff --git a/src/startup_world_script_parse_load_script.cpp b/src/startup_world_script_parse_load_script.cpp
+index 29ddf7f1e62c92ede1c8a5d33c128e5523110656..000edb60a9ffb35022d30274954e50965330ba6c 100644
+--- a/src/startup_world_script_parse_load_script.cpp
++++ b/src/startup_world_script_parse_load_script.cpp
+@@ -5,7 +5,7 @@
+ // FUNCTION: BEACHLIFE 0x004dfbd0
+ int WorldSubsystem20::ParseLoadScriptAction()
+ {
+-    WorldActionNamedData* data = new (std::nothrow) WorldActionNamedData;
++    WorldActionLoadScriptData* data = new (std::nothrow) WorldActionLoadScriptData;
+     char token[52];
+     int count = ReadToken(token);
+     char* name = static_cast<char*>(::operator new(std::strlen(token) + 1, std::nothrow));
+diff --git a/src/startup_world_script_parse_terrain.cpp b/src/startup_world_script_parse_terrain.cpp
+index c8f4c9f9e3c13291f9249e614b99ad4cd4134da6..13f7c404556ac0feae430b4da3e8dc2ad3294419 100644
+--- a/src/startup_world_script_parse_terrain.cpp
++++ b/src/startup_world_script_parse_terrain.cpp
+@@ -43,7 +43,7 @@ int WorldSubsystem20::ParsePathAction()
+ // FUNCTION: BEACHLIFE 0x004df9d0
+ int WorldSubsystem20::ParseGrassAction()
+ {
+-    WorldActionStripData* data = new (std::nothrow) WorldActionStripData;
++    WorldActionGrassData* data = new (std::nothrow) WorldActionGrassData;
+     data->count_0c = 1;
+     char token[52];
+     int count = ReadToken(token);

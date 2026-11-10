@@ -1,0 +1,285 @@
+diff --git a/src/startup_screen_appeal_stars.cpp b/src/startup_screen_appeal_stars.cpp
+index 6613c368caf22659ad5b37b891528e72c3aeb4ca..6d858f8d8069d591a4a43598a5ebec04da110d22 100644
+--- a/src/startup_screen_appeal_stars.cpp
++++ b/src/startup_screen_appeal_stars.cpp
+@@ -6,16 +6,20 @@ void DrawAppealStars(const char* resource, ScreenRectangle bounds, int count)
+ {
+     ScreenDialogResource* image = screen_dialog_resources->Find(resource);
+     int width = image->SelectedFrame()->width_0e;
++    unsigned int threshold = 0;
++    unsigned int half = 10;
+     int x = bounds.left;
+-    for (unsigned int threshold = 0; threshold < 100; threshold += 20)
++    for (int remaining = 5; remaining != 0; --remaining)
+     {
+         image->SelectVariant(0);
+         if (static_cast<unsigned int>(count) > threshold)
+             image->SelectVariant(1);
+-        if (static_cast<unsigned int>(count) > threshold + 10)
++        if (static_cast<unsigned int>(count) > half)
+             image->SelectVariant(2);
+         image->Draw(x, bounds.top, 0, 999999.0f);
+         x += width;
++        threshold += 20;
++        half = threshold + 10;
+     }
+     screen_dialog_resources->Release(image);
+ }
+diff --git a/src/startup_screen_combo_box_methods.cpp b/src/startup_screen_combo_box_methods.cpp
+index bbd1c7e3bee3e9bba4447f9e778169ccecdc0dbf..9dda820497e2fc611d6d57a9d7f0f48f7d06184b 100644
+--- a/src/startup_screen_combo_box_methods.cpp
++++ b/src/startup_screen_combo_box_methods.cpp
+@@ -280,39 +280,50 @@ void ScreenComboBox::Unresolved1c()
+ {
+     if (list_64)
+     {
+-        ScreenFontRenderer* font = screen_manager->fonts_2c[font_50];
++        unsigned int index;
+         ScreenRequestRenderer* renderer = screen_request_renderer;
++        ScreenFontRenderer* font = screen_manager->fonts_2c[font_50];
+         int offset = 0;
+         font->SetWord18(0);
+-        ScreenRectangle bounds = list_64->GetRectangle();
++        ScreenRectangle bounds;
++        ScreenRectangle highlight;
++        bounds = list_64->GetRectangle();
+         list_64->MarkPrepared();
+         list_64->Unresolved0c();
+-        for (unsigned int index = 0; index < static_cast<unsigned int>(range_78.end - range_78.begin); ++index)
++        for (index = 0; index < static_cast<unsigned int>(range_78.end - range_78.begin); ++index)
+         {
+             ScreenComboBoxEntry* entry = range_78.begin[index];
+-            if (index < word_6c || index >= word_6c + value_c_74)
+-                continue;
+-            if (entry->value != -1)
++            if (index >= word_6c && index < word_6c + value_c_74)
+             {
+                 if (index == word_5c)
+                 {
+-                    ScreenRectangle highlight;
+-                    highlight.top = bounds.top + offset;
+-                    highlight.left = field_68->GetRectangle().left + 2;
+-                    highlight.right = field_68->GetRectangle().right - 2;
+-                    highlight.bottom = bounds.top + row_height_70 + offset;
+-                    unsigned int colour = renderer->ConvertColour(0x4a, 0x61, 0xc9);
+-                    renderer->FillRectangle(highlight, colour);
+-                    font->SetWord10(~value_a_54);
++                    if (entry->value != -1)
++                    {
++                        highlight.top = bounds.top + offset;
++                        highlight.left = field_68->GetRectangle().left + 2;
++                        highlight.right = field_68->GetRectangle().right - 2;
++                        highlight.bottom = row_height_70 + bounds.top + offset;
++                        renderer->FillRectangle(highlight, renderer->ConvertColour(0x4a, 0x61, 0xc9));
++                        font->SetWord10(~value_a_54);
++                        font->SetRectangle(field_68->GetRectangle().left, bounds.top + offset, bounds.right - bounds.left, row_height_70);
++                        font->DrawText(4, 1, entry->text);
++                    }
++                    else
++                        DrawSeparator(bounds.top + offset);
+                 }
+                 else
+-                    font->SetWord10(value_a_54);
+-                font->SetRectangle(field_68->GetRectangle().left, bounds.top + offset, bounds.right - bounds.left, row_height_70);
+-                font->DrawText(4, 1, entry->text);
++                {
++                    if (entry->value != -1)
++                    {
++                        font->SetWord10(value_a_54);
++                        font->SetRectangle(field_68->GetRectangle().left, bounds.top + offset, bounds.right - bounds.left, row_height_70);
++                        font->DrawText(4, 1, entry->text);
++                    }
++                    else
++                        DrawSeparator(bounds.top + offset);
++                }
++                offset += row_height_70;
+             }
+-            else
+-                DrawSeparator(bounds.top + offset);
+-            offset += row_height_70;
+         }
+     }
+     if (list_60)
+diff --git a/src/startup_screen_mode_pointer_entities.cpp b/src/startup_screen_mode_pointer_entities.cpp
+index f6956cbe8694c02f7dda37e2c4f6f4b1390e91e8..b153c67f6d6544f539db5f91af55ae517f048032 100644
+--- a/src/startup_screen_mode_pointer_entities.cpp
++++ b/src/startup_screen_mode_pointer_entities.cpp
+@@ -50,16 +50,34 @@ unsigned char ScreenMode4Controller::SelectBuildingAtPointer(unsigned char flag,
+ // FUNCTION: BEACHLIFE 0x004a8ca0
+ unsigned char ScreenMode4Controller::SelectGuestAtPointer(unsigned char flag, ScreenPoint* point, int previous)
+ {
+-    ScreenPoint scrolled = { point->x + overlay_map->scroll_x_c4, point->y + overlay_map->scroll_y_c8 };
+-    ScreenWorldPosition position = CurrentOverlayMap()->ScreenToWorld(scrolled);
+-    ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(position);
+     unsigned char selected = 0;
++    ScreenPoint scrolled = *point;
++    scrolled.x += overlay_map->scroll_x_c4;
++    scrolled.y += overlay_map->scroll_y_c8;
++    ScreenPoint tile;
++    tile = CurrentScreenTerrain()->WorldToTile(CurrentOverlayMap()->ScreenToWorld(scrolled));
+     CircularList* objects = screen_terrain_grid->ObjectsAt(tile.x, tile.y);
+-    for (CircularListNode* node = objects->head->next; node != objects->head && !selected; node = node->next)
++    for (CircularListNode* it = objects->head->next; it != objects->head && !selected; it = it->next)
+     {
+-        VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
+-        if (entity->kind_2c >= 7 && entity->kind_2c <= 12 && MatchesSelectionState(entity, flag, previous))
+-            selected = entity->SelectStaffPointer(point);
++        VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(it)->entity;
++        if (entity->kind_2c >= 7 && entity->kind_2c <= 12)
++        {
++            if (flag)
++            {
++                if (entity->selection_state_54 == 1 || entity->selection_state_54 == 2)
++                    selected = entity->SelectStaffPointer(point);
++            }
++            else if (entity->selection_state_54 == 0)
++            {
++                if (previous != -1)
++                {
++                    if (entity->MatchesPointerGroup(previous))
++                        selected = entity->SelectStaffPointer(point);
++                }
++                else
++                    selected = entity->SelectStaffPointer(point);
++            }
++        }
+     }
+     if (selected)
+         return selected;
+@@ -68,11 +86,27 @@ unsigned char ScreenMode4Controller::SelectGuestAtPointer(unsigned char flag, Sc
+     for (int index = 0; index < 8 && !selected; ++index)
+     {
+         objects = neighbours[index]->Objects();
+-        for (CircularListNode* node = objects->head->next; node != objects->head && !selected; node = node->next)
++        for (CircularListNode* it2 = objects->head->next; it2 != objects->head && !selected; it2 = it2->next)
+         {
+-            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
+-            if (entity->kind_2c >= 7 && entity->kind_2c <= 12 && MatchesSelectionState(entity, flag, previous))
+-                selected = entity->SelectStaffPointer(point);
++            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(it2)->entity;
++            if (entity->kind_2c >= 7 && entity->kind_2c <= 12)
++            {
++                if (flag)
++                {
++                    if (entity->selection_state_54 == 1 || entity->selection_state_54 == 2)
++                        selected = entity->SelectStaffPointer(point);
++                }
++                else if (entity->selection_state_54 == 0)
++                {
++                    if (previous != -1)
++                    {
++                        if (entity->MatchesPointerGroup(previous))
++                            selected = entity->SelectStaffPointer(point);
++                    }
++                    else
++                        selected = entity->SelectStaffPointer(point);
++                }
++            }
+         }
+     }
+     return selected;
+diff --git a/src/startup_screen_variable_image_render.cpp b/src/startup_screen_variable_image_render.cpp
+index 88eafdd9f7196d9d2ef73d5aa1df59512a8b564d..6e420b8654dae217b885175ce507571c2bc95d5e 100644
+--- a/src/startup_screen_variable_image_render.cpp
++++ b/src/startup_screen_variable_image_render.cpp
+@@ -48,9 +48,9 @@ void ScreenVariableImage::Unresolved0c()
+     else if (strcmp(name_44, "BUILD_THUMB") == 0)
+     {
+         resource_64 = screen_dialog_resources->Lookup(variable_image_resources[1]);
+-        VariableEntity* entity = screen_manager->CurrentContext();
++        VariableBuilding* building = screen_manager->CurrentContext()->AsBuilding()->building_60;
+         resource_64->word_08 = 3;
+-        resource_64->word_14 = entity->AsBuilding()->building_60->preview_frame_1c4;
++        resource_64->word_14 = building->preview_frame_1c4;
+         resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
+         screen_dialog_resources->Release(resource_64);
+     }
+@@ -143,11 +143,11 @@ void ScreenVariableImage::Unresolved0c()
+         resource_64 = 0;
+         switch (staff->kind_2c)
+         {
+-        case 7:
+-            if (staff->AsStaff()->staff_104->female_c4 == 0)
+-                resource_64 = screen_dialog_resources->Lookup(variable_image_resources[15]);
+-            else
+-                resource_64 = screen_dialog_resources->Lookup(variable_image_resources[16]);
++        case 11:
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[9]);
++            break;
++        case 10:
++            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[10]);
+             break;
+         case 8:
+             resource_64 = screen_dialog_resources->Lookup(variable_image_resources[11]);
+@@ -158,11 +158,11 @@ void ScreenVariableImage::Unresolved0c()
+             else
+                 resource_64 = screen_dialog_resources->Lookup(variable_image_resources[14]);
+             break;
+-        case 10:
+-            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[10]);
+-            break;
+-        case 11:
+-            resource_64 = screen_dialog_resources->Lookup(variable_image_resources[9]);
++        case 7:
++            if (staff->AsStaff()->staff_104->female_c4 == 0)
++                resource_64 = screen_dialog_resources->Lookup(variable_image_resources[15]);
++            else
++                resource_64 = screen_dialog_resources->Lookup(variable_image_resources[16]);
+             break;
+         case 12:
+             resource_64 = screen_dialog_resources->Lookup(variable_image_resources[12]);
+@@ -185,14 +185,13 @@ void ScreenVariableImage::Unresolved0c()
+         resource_64 = screen_dialog_resources->Find("ui3_gp_guests");
+         resource_64->word_08 = 3;
+         resource_64->word_14 = 0;
+-        const char* model = guest->keyline_state_44->model_name_00;
+-        if (_stricmp(model, "fat_bloke") == 0)
++        if (_stricmp(guest->keyline_state_44->model_name_00, "fat_bloke") == 0)
+             resource_64->word_14 = 0;
+-        else if (_stricmp(model, "fit_bloke") == 0)
++        else if (_stricmp(guest->keyline_state_44->model_name_00, "fit_bloke") == 0)
+             resource_64->word_14 = 1;
+-        else if (_stricmp(model, "gail") == 0)
++        else if (_stricmp(guest->keyline_state_44->model_name_00, "gail") == 0)
+             resource_64->word_14 = 2;
+-        else if (_stricmp(model, "shaz") == 0)
++        else if (_stricmp(guest->keyline_state_44->model_name_00, "shaz") == 0)
+             resource_64->word_14 = 3;
+         resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
+         screen_dialog_resources->Release(resource_64);
+@@ -201,29 +200,27 @@ void ScreenVariableImage::Unresolved0c()
+     {
+         if (screen_request_game->byte_a4)
+         {
+-            const char* label;
+             switch (screen_request_game->placement->menu_script_variant_3c)
+             {
+             case 1:
+-                label = "ui3_fe_sandboxlabel_f";
++                resource_64 = screen_dialog_resources->Find("ui3_fe_sandboxlabel_f");
+                 break;
+             case 2:
+-                label = "ui3_fe_sandboxlabel_i";
++                resource_64 = screen_dialog_resources->Find("ui3_fe_sandboxlabel_i");
+                 break;
+             case 3:
+-                label = "ui3_fe_sandboxlabel_g";
++                resource_64 = screen_dialog_resources->Find("ui3_fe_sandboxlabel_g");
+                 break;
+             case 4:
+-                label = "ui3_fe_sandboxlabel_s";
++                resource_64 = screen_dialog_resources->Find("ui3_fe_sandboxlabel_s");
+                 break;
+             case 5:
+-                label = "ui3_fe_sandboxlabel_p";
++                resource_64 = screen_dialog_resources->Find("ui3_fe_sandboxlabel_p");
+                 break;
+             default:
+-                label = "ui3_fe_sandboxlabel";
++                resource_64 = screen_dialog_resources->Find("ui3_fe_sandboxlabel");
+                 break;
+             }
+-            resource_64 = screen_dialog_resources->Find(label);
+             resource_64->Draw(rectangle.left, rectangle.top, 0xffff, 999999.0f);
+             screen_dialog_resources->Release(resource_64);
+         }

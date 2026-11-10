@@ -1,0 +1,187 @@
+diff --git a/src/startup_directdraw_surface.h b/src/startup_directdraw_surface.h
+index 7adff7d711b74e65b9adf7c3caa2c3f41d1502e2..2491554a1d3c7d8feb0f4bcbf84b42a7a88b4359 100644
+--- a/src/startup_directdraw_surface.h
++++ b/src/startup_directdraw_surface.h
+@@ -75,6 +75,8 @@ typedef SurfaceResult(SURFACE_STDCALL* SurfaceBltMethod)(DirectDrawSurface7Prefi
+     unsigned int,
+     void*);
+ 
++typedef SurfaceResult(SURFACE_STDCALL* SurfaceBltFastMethod)(DirectDrawSurface7Prefix*, unsigned int, unsigned int, DirectDrawSurface7Prefix*, SurfaceApiRectangle*, unsigned int);
++
+ struct DirectDrawSurface7VtablePrefix
+ {
+     void* unused_00;
+@@ -82,7 +84,9 @@ struct DirectDrawSurface7VtablePrefix
+     SurfaceReleaseMethod Release;
+     void* unused_0c[2];
+     SurfaceBltMethod Blt; // Original slot5 (+0x14); all later observed slots stay fixed.
+-    void* unused_18[6];
++    void* unused_18;
++    SurfaceBltFastMethod BltFast; // Original slot7 (+0x1c).
++    void* unused_20[4];
+     SurfaceAttachedMethod GetAttachedSurface; // Original slot12 (+0x30).
+     void* unused_34[9];
+     SurfaceDescriptionMethod GetSurfaceDesc;
+diff --git a/src/startup_renderer_resize_entries.cpp b/src/startup_renderer_resize_entries.cpp
+index 686a25ef4fd0570c1cdbac73737d2dda7dce3bbb..1c7d781205a1b7a28d3d0bd3488835a882a790c8 100644
+--- a/src/startup_renderer_resize_entries.cpp
++++ b/src/startup_renderer_resize_entries.cpp
+@@ -15,35 +15,36 @@ void ScreenRequestRenderer::ResizeSurfaceImageEntries(
+         ResizeImages(&from, &to);
+         from.pixels = 0;
+         to.pixels = 0;
+-        return;
+     }
+-
+-    SurfaceDescription from_description = { };
+-    SurfaceDescription to_description = { };
+-    from_description.size = 0x7c;
+-    to_description.size = 0x7c;
+-    if (source->native_surface)
+-        from_description.pixels = source->native_surface->lock().data();
+-    else if (source->surface->vtable->Lock(source->surface, 0, &from_description, 0, 0) < 0)
+-        return;
+-    if (destination->native_surface)
+-        to_description.pixels = destination->native_surface->lock().data();
+-    else if (destination->surface->vtable->Lock(destination->surface, 0, &to_description, 0, 0) < 0)
+-        return;
+-
+-    TgaImage from(source->pitch >> 1, source->height);
+-    TgaImage to(destination->pitch >> 1, destination->height);
+-    from.pixels = static_cast<unsigned char*>(from_description.pixels);
+-    to.pixels = static_cast<unsigned char*>(to_description.pixels);
+-    ResizeImages(&from, &to);
+-    if (source->native_surface)
+-        source->native_surface->unlock();
+-    else
+-        source->surface->vtable->Unlock(source->surface, 0);
+-    if (destination->native_surface)
+-        destination->native_surface->unlock();
+     else
+-        destination->surface->vtable->Unlock(destination->surface, 0);
+-    from.pixels = 0;
+-    to.pixels = 0;
++    {
++        SurfaceDescription from_description = { };
++        SurfaceDescription to_description = { };
++        from_description.size = 0x7c;
++        to_description.size = 0x7c;
++        if (source->native_surface)
++            from_description.pixels = source->native_surface->lock().data();
++        else if (source->surface->vtable->Lock(source->surface, 0, &from_description, 0, 0) < 0)
++            return;
++        if (destination->native_surface)
++            to_description.pixels = destination->native_surface->lock().data();
++        else if (destination->surface->vtable->Lock(destination->surface, 0, &to_description, 0, 0) < 0)
++            return;
++
++        TgaImage from(source->pitch >> 1, source->height);
++        TgaImage to(destination->pitch >> 1, destination->height);
++        from.pixels = static_cast<unsigned char*>(from_description.pixels);
++        to.pixels = static_cast<unsigned char*>(to_description.pixels);
++        ResizeImages(&from, &to);
++        if (source->native_surface)
++            source->native_surface->unlock();
++        else
++            source->surface->vtable->Unlock(source->surface, 0);
++        if (destination->native_surface)
++            destination->native_surface->unlock();
++        else
++            destination->surface->vtable->Unlock(destination->surface, 0);
++        from.pixels = 0;
++        to.pixels = 0;
++    }
+ }
+diff --git a/src/startup_screen_dialog_resource_dispatch.cpp b/src/startup_screen_dialog_resource_dispatch.cpp
+index 5a500edc4c74402bb292b2a6430f0164cb669a75..9fd36cdc63b67ecb3c7c496c42f891ac55847397 100644
+--- a/src/startup_screen_dialog_resource_dispatch.cpp
++++ b/src/startup_screen_dialog_resource_dispatch.cpp
+@@ -7,8 +7,11 @@
+ void ScreenDialogResource::DrawClipped(int x, int y, int left, int top, int right, int bottom,
+     unsigned short depth)
+ {
++    // Only the low depth word reaches the raster comparisons.
++    unsigned int flags = depth;
+     unsigned short* pixels = screen_request_renderer->pixels_1c;
+-    const unsigned char* data = record->frames[word_10]->SelectData(word_14, word_18);
++    ScreenDialogResourceFrame* data_frame = record->frames[word_10];
++    const unsigned char* data = data_frame->SelectData(word_14, word_18);
+     ScreenDialogResourceRecord* selected_record = record;
+     const unsigned short* palette = selected_record->palettes[word_1c];
+     unsigned int stride = screen_request_renderer->width;
+@@ -40,51 +43,51 @@ void ScreenDialogResource::DrawClipped(int x, int y, int left, int top, int righ
+         }
+         break;
+ 
+-    case 2:
+-        ResourceRaster2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom);
+-        break;
+-
+-    case 3:
+-        ResourceRaster3(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, depth, frame->word_14, flag_28, flag_34, flag_29);
+-        break;
+-
+-    case 4:
+-        ResourceRasterFlagged(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, depth);
+-        break;
+-
+     case 5:
+-        if (word_10 < 2 || _stricmp(frame->name, "lightmap") == 0)
+-        {
+-            ResourceRaster1Direct(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom);
+-        }
+-        else
++        if (static_cast<int>(word_10) >= 2 && _stricmp(frame->name, "lightmap") != 0)
+         {
+             int mode = screen_request_renderer->clip_mode_54;
+-            if (mode == 0 || mode == 1)
++            if (mode != 1 && mode != 0)
+             {
+-                ResourceRasterFlagged(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, depth);
++                if (mode == 2)
++                    ResourceRaster5Mode2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags);
+             }
+-            else if (mode == 2)
++            else
+             {
+-                ResourceRaster5Mode2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, depth);
++                ResourceRasterFlagged(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags);
+             }
+         }
++        else
++        {
++            ResourceRaster1Direct(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom);
++        }
+         break;
+ 
+     case 6:
+         ResourceRaster6(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom);
+         break;
+ 
++    case 2:
++        ResourceRaster2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom);
++        break;
++
++    case 4:
++        ResourceRasterFlagged(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags);
++        break;
++
++    case 3:
++        ResourceRaster3(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags, frame->word_14, flag_28, flag_34, flag_29);
++        break;
++
+     case 12:
+     {
+-        unsigned int adjusted_flags = depth + 0x102;
+         if (screen_request_renderer->clip_mode_54 == 2)
+         {
+-            ResourceRaster12Mode2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, adjusted_flags);
++            ResourceRaster12Mode2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags + 0x102);
+         }
+         else
+         {
+-            ResourceRaster12(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, adjusted_flags, frame->word_14);
++            ResourceRaster12(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags + 0x102, frame->word_14);
+         }
+         break;
+     }

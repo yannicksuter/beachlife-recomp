@@ -1,0 +1,235 @@
+diff --git a/src/startup_screen_load.cpp b/src/startup_screen_load.cpp
+index f028605e8c3367437d1846abda40c2ffe7eaa5b0..81cab43b140bc4b27a2643cf75f07062b1c3b8d9 100644
+--- a/src/startup_screen_load.cpp
++++ b/src/startup_screen_load.cpp
+@@ -58,17 +58,13 @@ void ScreenManager::LoadScreen(const char* path)
+     }
+     for (unsigned int index = 0; index < 10; ++index)
+     {
+-        ScreenFontData* data = fonts_04[index];
+-        if (data)
++        if (fonts_04[index])
+         {
++            ScreenFontData* data = fonts_04[index];
+             data->~ScreenFontData();
+             ::operator delete(data);
+             ScreenFontRenderer* font = fonts_2c[index];
+-            if (font)
+-            {
+-                font->~ScreenFontRenderer();
+-                ::operator delete(font);
+-            }
++            delete font;
+             fonts_04[index] = 0;
+             fonts_2c[index] = 0;
+         }
+@@ -102,11 +98,7 @@ void ScreenManager::LoadScreen(const char* path)
+     parser->Parse(buffer, size);
+     registry = parser->ReadRegistryHead();
+     items_head = parser->ReadItemsHead();
+-    if (parser)
+-    {
+-        parser->~GuiParserState();
+-        ::operator delete(parser);
+-    }
++    delete parser;
+     ::operator delete(buffer);
+ 
+     if (item_90)
+@@ -130,38 +122,51 @@ void ScreenManager::LoadScreen(const char* path)
+         SetFeatureAvailability(10, count != 0);
+         if (window_deactivation_state)
+         {
+-            const char* resource;
+             if (variable_world->HasNamed("WHARF") == 0)
+             {
+                 if (screen_request_renderer->width >= 800)
+                 {
+-                    resource = "UI3_bar_blob_coach";
++                    ScreenChildLink* node = items_head;
++                    while (node)
++                    {
++                        if (node->item->kind_28 == 0)
++                            static_cast<ScreenButtonPrefix*>(node->item)->ReplaceNamedResource("FerryPanel", "UI3_bar_blob_coach");
++                        node = node->next;
++                    }
+                 }
+                 else
+                 {
+-                    resource = "UI2_bar_blob_coach";
++                    ScreenChildLink* node = items_head;
++                    while (node)
++                    {
++                        if (node->item->kind_28 == 0)
++                            static_cast<ScreenButtonPrefix*>(node->item)->ReplaceNamedResource("FerryPanel", "UI2_bar_blob_coach");
++                        node = node->next;
++                    }
+                 }
+             }
+             else
+             {
+                 if (screen_request_renderer->width >= 800)
+                 {
+-                    resource = "UI3_bar_blob_ship";
++                    ScreenChildLink* node = items_head;
++                    while (node)
++                    {
++                        if (node->item->kind_28 == 0)
++                            static_cast<ScreenButtonPrefix*>(node->item)->ReplaceNamedResource("FerryPanel", "UI3_bar_blob_ship");
++                        node = node->next;
++                    }
+                 }
+                 else
+                 {
+-                    resource = "UI2_bar_blob_ship";
+-                }
+-            }
+-            ScreenChildLink* node = items_head;
+-            while (node)
+-            {
+-                if (node->item->kind_28 == 0)
+-                {
+-                    static_cast<ScreenButtonPrefix*>(node->item)
+-                        ->ReplaceNamedResource("FerryPanel", resource);
++                    ScreenChildLink* node = items_head;
++                    while (node)
++                    {
++                        if (node->item->kind_28 == 0)
++                            static_cast<ScreenButtonPrefix*>(node->item)->ReplaceNamedResource("FerryPanel", "UI2_bar_blob_ship");
++                        node = node->next;
++                    }
+                 }
+-                node = node->next;
+             }
+         }
+     }
+diff --git a/src/startup_screen_manager_features.cpp b/src/startup_screen_manager_features.cpp
+index ab5e8009e8ccd4ef4d2d29140580d52b7a8e2500..5694c4cbb5b1727f582d01db71300807ce22f3e7 100644
+--- a/src/startup_screen_manager_features.cpp
++++ b/src/startup_screen_manager_features.cpp
+@@ -78,79 +78,93 @@ void ScreenManager::SetFeatureAvailability(unsigned char key, bool enabled)
+     const char* building;
+     switch (key)
+     {
+-    case 7:
+-        icon = "LifeguardIcon";
+-        browser = "LifeguardBrowser";
+-        building = "BAYWATCH";
+-        break;
+-    case 8:
+-        icon = "MechanicIcon";
+-        browser = "MechanicBrowser";
+-        building = "HANDYMAN";
++    case 11:
++        icon = "CleanerIcon";
++        browser = "CleanerBrowser";
++        building = "CLEANERSHACK";
+         break;
+     case 9:
+         icon = "RepIcon";
+         browser = "RepBrowser";
+         building = "REP";
+         break;
++    case 7:
++        icon = "LifeguardIcon";
++        browser = "LifeguardBrowser";
++        building = "BAYWATCH";
++        break;
+     case 10:
+         icon = "BuilderIcon";
+         browser = "BuilderBrowser";
+         building = "BUILDERYARD";
+         break;
+-    case 11:
+-        icon = "CleanerIcon";
+-        browser = "CleanerBrowser";
+-        building = "CLEANERSHACK";
+-        break;
+     case 12:
+         icon = "SecurityIcon";
+         browser = "SecurityBrowser";
+         building = "SECURITY_POST";
+         break;
++    case 8:
++        icon = "MechanicIcon";
++        browser = "MechanicBrowser";
++        building = "HANDYMAN";
++        break;
+     default:
+         // The original reuses the enabled argument as all three pointers.
+         icon = browser = building = reinterpret_cast<const char*>(static_cast<uintptr_t>(enabled));
+         break;
+     }
++
+     if (enabled)
+     {
+-        for (ScreenChildLink* link = items_head; link; link = link->next)
+         {
+-            if (link->item->kind_28 == 0)
+-                static_cast<ScreenButtonPrefix*>(link->item)->SetNamedActive(icon, 1);
++            for (ScreenChildLink* link = items_head; link; link = link->next)
++            {
++                if (link->item->kind_28 == 0)
++                    static_cast<ScreenButtonPrefix*>(link->item)->SetNamedActive(icon, 1);
++            }
+         }
+-        for (ScreenChildLink* link = items_head; link; link = link->next)
+         {
+-            if (link->item->kind_28 == 0)
+-                static_cast<ScreenButtonPrefix*>(link->item)->SetNamedActive(browser, 0);
++            for (ScreenChildLink* link = items_head; link; link = link->next)
++            {
++                if (link->item->kind_28 == 0)
++                    static_cast<ScreenButtonPrefix*>(link->item)->SetNamedActive(browser, 0);
++            }
+         }
+     }
+     else
+     {
+-        for (ScreenChildLink* link = items_head; link; link = link->next)
+         {
+-            if (link->item->kind_28 == 0)
+-                static_cast<ScreenButtonPrefix*>(link->item)->SetNamedActive(browser, 1);
++            for (ScreenChildLink* link = items_head; link; link = link->next)
++            {
++                if (link->item->kind_28 == 0)
++                    static_cast<ScreenButtonPrefix*>(link->item)->SetNamedActive(browser, 1);
++            }
+         }
+-        for (ScreenChildLink* link = items_head; link; link = link->next)
+         {
+-            if (link->item->kind_28 == 0)
+-                static_cast<ScreenButtonPrefix*>(link->item)->SetNamedActive(icon, 0);
++            for (ScreenChildLink* link = items_head; link; link = link->next)
++            {
++                if (link->item->kind_28 == 0)
++                    static_cast<ScreenButtonPrefix*>(link->item)->SetNamedActive(icon, 0);
++            }
+         }
+     }
++
+     unsigned int index = variable_catalog->FindBuilding(building);
+     if (!window_deactivation_state->IsBuildingListed(index))
+     {
+-        for (ScreenChildLink* link = items_head; link; link = link->next)
+         {
+-            if (link->item->kind_28 == 0)
+-                static_cast<ScreenButtonPrefix*>(link->item)->DisableNamed(icon);
++            for (ScreenChildLink* link = items_head; link; link = link->next)
++            {
++                if (link->item->kind_28 == 0)
++                    static_cast<ScreenButtonPrefix*>(link->item)->DisableNamed(icon);
++            }
+         }
+-        for (ScreenChildLink* link = items_head; link; link = link->next)
+         {
+-            if (link->item->kind_28 == 0)
+-                static_cast<ScreenButtonPrefix*>(link->item)->DisableNamed(browser);
++            for (ScreenChildLink* link = items_head; link; link = link->next)
++            {
++                if (link->item->kind_28 == 0)
++                    static_cast<ScreenButtonPrefix*>(link->item)->DisableNamed(browser);
++            }
+         }
+     }
+ }
