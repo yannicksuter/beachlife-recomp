@@ -1,0 +1,51 @@
+diff --git a/src/startup_animation_sound_load.cpp b/src/startup_animation_sound_load.cpp
+index f8cc514..a941537 100644
+--- a/src/startup_animation_sound_load.cpp
++++ b/src/startup_animation_sound_load.cpp
+@@ -17,6 +17,9 @@ void AnimationSoundLookup::Load(const char* filename)
+     path[length - 1] = 'e';
+     int size = GetFileSize(path);
+     char* data = LoadBleFile(path);
++    // The BLE loader reserves one extra byte but retail fills it with a dot.
++    if (data)
++        data[size] = 0;
+     ::operator delete(path);
+     int offset = 0;
+     char token[52];
+diff --git a/src/startup_animation_sound_tokens.cpp b/src/startup_animation_sound_tokens.cpp
+index 9d422ea..30d795b 100644
+--- a/src/startup_animation_sound_tokens.cpp
++++ b/src/startup_animation_sound_tokens.cpp
+@@ -1,4 +1,5 @@
+ #include "startup_animation_sound.h"
++#include "startup_game_file.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004d0c20
+ int AnimationSoundLookup::SkipWhitespace(const char* data)
+@@ -16,7 +17,7 @@ int AnimationSoundLookup::SkipComments(const char* data)
+     if (data[offset] == '/')
+     {
+         ++offset;
+-        while (data[offset] != '\n')
++        while (data[offset] && data[offset] != '\n')
+             ++offset;
+         offset += SkipWhitespace(data + offset);
+         offset += SkipComments(data + offset);
+@@ -30,6 +31,8 @@ int AnimationSoundLookup::ReadToken(char* token, const char* data)
+ {
+     int offset = SkipWhitespace(data);
+     offset += SkipComments(data + offset);
++    if (!data[offset])
++        StartupFatal("Unexpected end of scripted sound data");
+     if (data[offset] == ';')
+     {
+         token[0] = ';';
+@@ -38,7 +41,7 @@ int AnimationSoundLookup::ReadToken(char* token, const char* data)
+     }
+     else
+     {
+-        while (data[offset] != ';')
++        while (data[offset] && data[offset] != ';')
+         {
+             char c = data[offset];
+             if (c == ' ' || c == '\n' || c == '\t' || c == '\r')

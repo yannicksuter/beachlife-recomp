@@ -1,0 +1,62 @@
+diff --git a/src/startup_renderer_rectangle_surface.cpp b/src/startup_renderer_rectangle_surface.cpp
+index 583f383..2c4d0d1 100644
+--- a/src/startup_renderer_rectangle_surface.cpp
++++ b/src/startup_renderer_rectangle_surface.cpp
+@@ -42,18 +42,34 @@ int ScreenRequestRenderer::CreateRectangleSurface(const ScreenRectangle& bounds)
+         return surface;
+     }
+ 
+-    // The screen is unlocked again at once; its pointer is still used below.
+     current_surface = 0;
+     unsigned short* screen = AccessPixels();
+-    if (!software_mode)
+-    {
+-        DirectDrawSurface7Prefix* locked = surface_storage[current_surface]->surface;
+-        locked->vtable->Unlock(locked, 0);
+-    }
+     pixels_locked = 0;
+-
+     current_surface = surface;
+-    unsigned short* row = AccessPixels();
++    if (!screen)
++        return surface;
++    // Keep the source pixel pointer valid until the final copy has completed.
++    auto unlock_source = [this]()
++    {
++        if (!software_mode)
++        {
++            auto* entry = surface_storage[0];
++            if (entry->native_surface)
++                entry->native_surface->unlock();
++            else
++                entry->surface->vtable->Unlock(entry->surface, 0);
++        }
++    };
++    unsigned short* row;
++    try
++    {
++        row = AccessPixels();
++    }
++    catch (...)
++    {
++        unlock_source();
++        throw;
++    }
+     if (row)
+     {
+         for (int y = bounds.top; y < bounds.top + rows; ++y)
+@@ -65,11 +81,8 @@ int ScreenRequestRenderer::CreateRectangleSurface(const ScreenRectangle& bounds)
+         }
+     }
+ 
+-    if (!software_mode)
+-    {
+-        DirectDrawSurface7Prefix* locked = surface_storage[current_surface]->surface;
+-        locked->vtable->Unlock(locked, 0);
+-    }
+-    pixels_locked = 0;
++    if (row)
++        UnlockPixels();
++    unlock_source();
+     return surface;
+ }

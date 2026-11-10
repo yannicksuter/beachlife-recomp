@@ -1,0 +1,52 @@
+diff --git a/src/startup_renderer_capture_native.cpp b/src/startup_renderer_capture_native.cpp
+index 3161b6e..4005d66 100644
+--- a/src/startup_renderer_capture_native.cpp
++++ b/src/startup_renderer_capture_native.cpp
+@@ -7,6 +7,7 @@
+ #include "runtime/renderer_word_surface.h"
+ #include "runtime/renderer_fullscreen_display.h"
+ 
++#include <memory>
+ #include <string.h>
+ #include <stdexcept>
+ 
+@@ -15,19 +16,17 @@ void ScreenRequestRenderer::CaptureFrame(const ScreenRectangle& bounds)
+ {
+     int capture_width = bounds.right - bounds.left;
+     int capture_height = bounds.bottom - bounds.top;
+-    // The image is used even when its allocation fails (original).
+-    TgaImage* image = new TgaImage(capture_width, capture_height, 24, 0);
++    std::unique_ptr<TgaImage> image(new TgaImage(capture_width, capture_height, 24, 0));
+     unsigned char* row = image->pixels;
+     current_surface = 0;
+     if (format_44 == 0)
+     {
+         // A real system-memory 5:6:5 copy, at the original temporary-surface
+-        // creation point. Raw ownership keeps host failure rollback separate
+-        // from the original unchecked HRESULT paths; only success is qualified.
++        // creation point. Owned buffers unwind if creation or copying fails.
+         using namespace beachlife::runtime::renderer_display;
+-        WordSurface16* copy = new WordSurface16(static_cast<int>(width),
++        std::unique_ptr<WordSurface16> copy(new WordSurface16(static_cast<int>(width),
+             static_cast<int>(height),
+-            WordFormat::Rgb565);
++            WordFormat::Rgb565));
+         WordSurface16* source = surface_storage[0]->native_surface;
+         if (software_mode || !native_chain || !source
+             || source != native_back || source != &native_chain->back_surface())
+@@ -69,7 +68,7 @@ void ScreenRequestRenderer::CaptureFrame(const ScreenRectangle& bounds)
+             }
+         }
+         // Released while still locked (original).
+-        delete copy;
++        copy.reset();
+     }
+     else
+     {
+@@ -109,6 +108,5 @@ void ScreenRequestRenderer::CaptureFrame(const ScreenRectangle& bounds)
+     // capacity or truncation repair is inferred for this native read view.
+     const char* capture_path = reinterpret_cast<const char*>(unknown_ad);
+     ExportJpegImage(&area, image->pixels, capture_path, 100);
+-    delete image;
+     capture_pending_ac = 0;
+ }

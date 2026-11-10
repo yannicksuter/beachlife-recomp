@@ -14,8 +14,13 @@ namespace
 static_assert(CHAR_BIT == 8 && sizeof(unsigned short) == 2 && sizeof(unsigned int) == 4);
 static_assert(USHRT_MAX == 0xffffU && UINT_MAX == 0xffffffffU);
 static_assert(std::endian::native == std::endian::little);
+#if defined(BEACHLIFE_NATIVE_GAME_EFFECT)
+static_assert(std::is_same_v<decltype(&ApplyPresentEffect),
+    void (*)(unsigned short*, int, int, unsigned char)>);
+#else
 static_assert(std::is_same_v<decltype(&ApplyPresentEffect),
     void (*)(unsigned short*, unsigned int, unsigned int, unsigned int)>);
+#endif
 static_assert(std::is_same_v<decltype(render_half_mask), unsigned short>);
 
 const char* current_case = "start";
@@ -23,6 +28,18 @@ unsigned checks = 0;
 unsigned calls = 0;
 unsigned setup_calls = 0;
 unsigned buffer_words_checked = 0;
+
+void apply_effect(unsigned short* pixels, unsigned width, unsigned height, unsigned mode)
+{
+#if defined(BEACHLIFE_NATIVE_GAME_EFFECT)
+    ApplyPresentEffect(pixels,
+        static_cast<int>(width),
+        static_cast<int>(height),
+        static_cast<unsigned char>(mode));
+#else
+    ApplyPresentEffect(pixels, width, height, mode);
+#endif
+}
 
 void require(bool condition, const char* reason)
 {
@@ -104,7 +121,7 @@ void pixels(const char* name,
         expected_storage[i + 2] = expected[i];
     }
     const auto before = globals();
-    ApplyPresentEffect(storage.data() + 2, width, height, mode);
+    apply_effect(storage.data() + 2, width, height, mode);
     ++calls;
     for (std::size_t i = 0; i < storage.size(); ++i)
     {
@@ -162,7 +179,11 @@ void mode_group()
 void count_group()
 {
     constexpr std::array<unsigned short, 6> input{0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666};
+#if defined(BEACHLIFE_NATIVE_GAME_EFFECT)
+    constexpr auto carried = input;
+#else
     constexpr std::array<unsigned short, 6> carried{3, 3, 3, 3, 3, 3};
+#endif
     pixels("default5", 2, 3, 5, input, carried);
     pixels("default105", 2, 3, 0x105U, input, carried);
     pixels("default-ff", 2, 3, 0xffffffffU, input, carried);
@@ -183,7 +204,7 @@ void count_group()
     {
         current_case = gate.name;
         const auto before = globals();
-        ApplyPresentEffect(nullptr, gate.width, gate.height, 1);
+        apply_effect(nullptr, gate.width, gate.height, 1);
         ++calls;
         require(globals() == before, "no-access-global-state");
     }
@@ -201,7 +222,7 @@ void alias_group()
     current_case = "actual-half-mask-alias";
     auto expected = globals();
     expected.half = 0x8000;
-    ApplyPresentEffect(&render_half_mask, 1, 1, 2);
+    apply_effect(&render_half_mask, 1, 1, 2);
     ++calls;
     require(globals() == expected, "aliased-global-state");
     pixels<1>("later-global-read", 1, 1, 2, {0xffff}, {0x4001});
