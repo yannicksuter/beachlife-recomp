@@ -17,6 +17,127 @@ matching = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(matching)
 
 
+class VendorIdentityTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.folder = Path(temporary.name)
+        self.left = '?erase@?$deque@PAUA@@@_STL@@QAEXXZ'
+        self.right = '?erase@?$deque@PAUB@@@_STL@@QAEXXZ'
+        self.copy_left = '?copy@_STL@@YAXPAUA@@@Z'
+        self.copy_right = '?copy@_STL@@YAXPAUB@@@Z'
+        self.names = {self.left: 0x410000, self.right: 0x420000,
+                      self.copy_left: 0x430000, self.copy_right: 0x440000, '_sink': 0x450000}
+        self.objects, self.images = {}, {}
+        self.code = b'\x6a\x01\xe8\0\0\0\0\xc3'
+        self.rows = [{'address': '0x401000', 'type': 'library', 'size': '8', 'symbol': self.left}]
+        self.item = {'function': '0x402000', 'address': '0x401000', 'symbol': self.right}
+        self.target = {'functions': [{'address': '0x402000'}],
+                       'library_functions': [{'address': '0x401000'}],
+                       'comparison_vendor_identities': [self.item]}
+        self.write(self.left, self.copy_left)
+        self.write(self.right, self.copy_right)
+        self.write(self.copy_left, '_sink')
+        self.write(self.copy_right, '_sink')
+
+    def write(self, symbol, callee, code=None, kind=0x14, addend=0):
+        code = bytearray(self.code if code is None else code)
+        struct.pack_into('<I', code, 3, addend)
+        name = self.objects.setdefault(symbol, f'body{len(self.objects)}.obj')
+        (self.folder / name).write_bytes(MatchingInputTests.call_coff(symbol, callee, bytes(code), kind))
+        value = self.names[callee] + addend
+        if kind == 0x14:
+            value -= self.names[symbol] + 7
+        struct.pack_into('<I', code, 3, value & 0xffffffff)
+        self.images[self.names[symbol]] = bytes(code)
+
+    def specs(self, target=None, rows=None):
+        publics = {}
+        for name, address in self.names.items():
+            publics.setdefault(address, set()).add(name)
+        linked = [f'"{name}"' for name in self.objects.values()]
+        return matching.vendor_identity_specs(
+            self.target if target is None else target, self.rows if rows is None else rows,
+            publics, self.objects, self.folder, linked,
+            lambda address, size: self.images[address][:size])
+
+    def test_recursive_callees_and_folded_layouts_have_one_scoped_identity(self):
+        spec, = self.specs()
+        self.assertFalse(spec['folded'])
+        self.assertEqual(spec['function'], '0x00402000')
+        self.assertEqual(len(spec['proof']), 2)
+        self.assertTrue(all(item['bytes'] == 8 for item in spec['proof']))
+        # The nested function can fold independently of its caller.
+        self.names[self.copy_right] = self.names[self.copy_left]
+        self.write(self.right, self.copy_right)
+        spec, = self.specs()
+        self.assertEqual(sum(item['folded'] for item in spec['proof']), 1)
+        # The registration describes an identity, never a fictitious extra copy.
+        self.names[self.right] = self.names[self.left]
+        spec, = self.specs()
+        self.assertTrue(spec['folded'])
+        self.assertEqual(spec['recomp'], spec['identity_recomp'])
+        self.assertEqual(len(spec['proof']), 1)
+
+    def test_changed_nested_code_relocations_and_linked_image_are_rejected(self):
+        for reason in ('code', 'kind', 'addend', 'image', 'unlinked'):
+            with self.subTest(reason=reason):
+                self.write(self.copy_right, '_sink')
+                if reason == 'code':
+                    self.write(self.copy_right, '_sink', b'\x6a\x02' + self.code[2:])
+                elif reason == 'kind':
+                    self.write(self.copy_right, '_sink', kind=6)
+                elif reason == 'addend':
+                    self.write(self.copy_right, '_sink', addend=4)
+                elif reason == 'image':
+                    self.images[self.names[self.copy_right]] = b'\x90' + self.code[1:]
+                else:
+                    (self.folder / self.objects[self.copy_right]).unlink()
+                with self.assertRaises(ValueError):
+                    self.specs()
+
+    def test_distinct_data_is_not_recursive_code_identity(self):
+        self.write(self.left, self.copy_left, kind=6)
+        self.write(self.right, self.copy_right, kind=6)
+        with self.assertRaisesRegex(ValueError, 'distinct data targets'):
+            self.specs()
+        # Even REL32 cannot turn a data-only definition into a code identity.
+        self.write(self.left, self.copy_left)
+        self.write(self.right, self.copy_right)
+        path = self.folder / self.objects[self.copy_right]
+        data = bytearray(path.read_bytes())
+        struct.pack_into('<I', data, 56, 0xc0000040)
+        path.write_bytes(data)
+        with self.assertRaisesRegex(ValueError, 'no linked COFF function'):
+            self.specs()
+
+    def test_recursive_cycles_are_checked_before_accepting_the_graph(self):
+        self.write(self.copy_left, self.left)
+        self.write(self.copy_right, self.right)
+        spec, = self.specs()
+        self.assertEqual(len(spec['proof']), 2)
+        self.write(self.copy_right, self.right, b'\x6a\x02' + self.code[2:])
+        with self.assertRaises(ValueError):
+            self.specs()
+
+    def test_identity_requires_registered_library_scope_and_unique_names(self):
+        for item in (self.item | {'function': '0x403000'}, self.item | {'symbol': self.left},
+                     self.item | {'extra': 'ignored'}, self.item | {'function': ''}):
+            with self.subTest(item=item), self.assertRaises(ValueError):
+                self.specs(self.target | {'comparison_vendor_identities': [item]})
+        with self.assertRaises(ValueError):
+            self.specs(self.target | {'comparison_vendor_identities': [self.item, self.item]})
+        with self.assertRaises(ValueError):
+            self.specs(rows=[self.rows[0] | {'type': 'function'}])
+        # A library callee identity need not claim a separately credited body.
+        self.assertEqual(self.specs(self.target | {'library_functions': []}), self.specs())
+        publics = {address: {name} for name, address in self.names.items()}
+        publics[0x460000] = {self.right}
+        with self.assertRaisesRegex(ValueError, 'not uniquely linked'):
+            matching.vendor_identity_specs(self.target, self.rows, publics, self.objects,
+                                            self.folder, [], lambda address, size: b'')
+
+
 class FixtureGroupTests(unittest.TestCase):
     def write(self, folder, address, text='// retention fixture\n'):
         path = folder / f'fixture_{address:08x}.cpp'
