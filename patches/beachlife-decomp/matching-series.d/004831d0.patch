@@ -1,0 +1,199 @@
+diff --git a/fixtures/game.d/fixture_004831d0.cpp b/fixtures/game.d/fixture_004831d0.cpp
+new file mode 100644
+index 0000000..4aa973c
+--- /dev/null
++++ b/fixtures/game.d/fixture_004831d0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004831d0(WorldMovingEntity* entity)
++{
++    entity->UpdateSteeringTarget();
++}
+diff --git a/metadata.d/004831d0.csv b/metadata.d/004831d0.csv
+new file mode 100644
+index 0000000..4411190
+--- /dev/null
++++ b/metadata.d/004831d0.csv
+@@ -0,0 +1,3 @@
++address,type,size,symbol
++0x004831d0,function,960,?UpdateSteeringTarget@WorldMovingEntity@@QAEXXZ
++0x0045c790,function,113,?ContentPosition@WorldBuildingEntity@@QAE?AUScreenMapPosition@@I@Z
+diff --git a/src/match_004831d0.cpp b/src/match_004831d0.cpp
+new file mode 100644
+index 0000000..5add09e
+--- /dev/null
++++ b/src/match_004831d0.cpp
+@@ -0,0 +1,132 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_world_cursor_names.h"
++#include "startup_world_subsystems.h"
++#include "startup_input_motion.h"
++#include "startup_world_entities.h"
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++#include "startup_world_repairs.h"
++#include "startup_pointer_list_operations.h"
++#include "startup_building_status.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_text.h"
++#include "startup_screen_renderer.h"
++#include "startup_game_file.h"
++#include "startup_world_script_values.h"
++#include "startup_world_script_actions.h"
++#include "startup_animation_sound.h"
++#include "startup_variable_catalog_fields.h"
++#include "startup_square_root_table.h"
++#include "startup_screen_overlay_layout.h"
++#include "window_activation.h"
++#include <stdlib.h>
++#include <stdio.h>
++#include <string.h>
++#include <math.h>
++#include <float.h>
++#include <wchar.h>
++#include <windows.h>
++#include <new>
++#include "startup_world_motion_inlines.h"
++#include "startup_screen_map_position_add.h"
++
++// Retail reads the route data through an inline accessor (its result is
++// copied to EAX for the flag store).
++static inline WorldRouteData* RouteData(WorldMovingEntity* entity)
++{
++    return static_cast<WorldRoutePosition*>(entity->route_b8)->data_00;
++}
++
++// FUNCTION: BEACHLIFE 0x004831d0
++void WorldMovingEntity::UpdateSteeringTarget()
++{
++    if (route_b8)
++    {
++        WorldRoutePosition* route = static_cast<WorldRoutePosition*>(route_b8);
++        ScreenPoint current = route->data_00->points_0c[route->index_08];
++        switch (*reinterpret_cast<int*>(&values_d8[0]))
++        {
++        case 0:
++        {
++            SetSteeringTarget(CurrentScreenTerrain()->TileWorldPosition(route->Position()));
++            break;
++        }
++        case 1:
++        {
++            SetSteeringTarget(CurrentScreenTerrain()->TileWorldPosition(route->Position()) + motion_positive_offset);
++            break;
++        }
++        case 2:
++            SetSteeringTarget(CurrentScreenTerrain()->TileWorldPosition(route->Position()) + motion_negative_offset);
++            break;
++        default:
++            SetSteeringTarget(CurrentScreenTerrain()->TileWorldPosition(route->Position()) + motion_negative_offset);
++            break;
++        }
++        ScreenTerrainGrid* grid = screen_terrain_grid;
++        unsigned int flags = grid->cells_0c[grid->TileIndex(current.x, current.y)].flags_48;
++        unsigned int blocked = flags & 0x10;
++        if ((blocked && !(flags & 0x80000000)) || (flags & 0x8000)
++            || !static_cast<WorldRoutePosition*>(route_b8)->data_00->flag_24)
++        {
++            ScreenPoint tile;
++            tile = CurrentScreenTerrain()->WorldToTile(position_30);
++            grid = screen_terrain_grid;
++            if (((grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48 & 0x80000000)
++                    || !static_cast<WorldRoutePosition*>(route_b8)->data_00->flag_24)
++                && !flag_d4)
++            {
++                unsigned int kind = RouteData(this)->kind_20;
++                if (kind != 4)
++                {
++                    RouteData(this)->flag_24 = 0;
++                    world_subsystem_18->ReleaseRoute(route_b8);
++                    route_b8 = 0;
++                    ScreenModeCommand command;
++                    command.words[2] = 0;
++                    command.words[0] = id_28;
++                    command.words[1] = id_28;
++                    command.words[3] = static_cast<int>(value_8c);
++                    command.words[4] = static_cast<int>(value_90);
++                    switch (kind)
++                    {
++                    case 3:
++                        command.words[2] = 11;
++                        break;
++                    case 2:
++                        command.words[2] = 10;
++                        break;
++                    case 1:
++                        command.words[2] = 5;
++                        break;
++                    case 0:
++                        command.words[2] = 8;
++                        break;
++                    }
++                    screen_mode_commands->QueueCommand(&command);
++                }
++            }
++        }
++        if (flag_d4 && blocked)
++        {
++            world_subsystem_18->ReleaseRoute(route_b8);
++            route_b8 = 0;
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[3] = static_cast<int>(value_8c);
++            command.words[4] = static_cast<int>(value_90);
++            command.words[2] = 10;
++            screen_mode_commands->QueueDelayed(&command, 3.0f);
++        }
++        return;
++    }
++    if (flag_bc)
++    {
++        value_8c = static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_c0))->ContentPosition(word_cc).x;
++        value_90 = static_cast<WorldBuildingEntity*>(variable_world->FindObject(word_c0))->ContentPosition(word_cc).y;
++    }
++    else if (word_a0 == 4)
++        StoreMotionDestination(this, variable_world->FindObject(word_ac)->position_30);
++    SetSteeringTarget(ScreenMapPosition(value_8c, value_90));
++}
+diff --git a/targets/beachlife-uk-1.1.d/004831d0.json b/targets/beachlife-uk-1.1.d/004831d0.json
+new file mode 100644
+index 0000000..3f23e24
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004831d0.json
+@@ -0,0 +1,33 @@
++{
++  "functions": [
++    {
++      "address": "0x004831d0",
++      "size": 944,
++      "name": "WorldMovingEntity::UpdateSteeringTarget",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x0045c790",
++      "size": 113,
++      "name": "WorldBuildingEntity::ContentPosition",
++      "symbol": "?ContentPosition@WorldBuildingEntity@@QAE?AUScreenMapPosition@@I@Z",
++      "header": "startup_world_entities.h",
++      "kind": "aggregate-member",
++      "return_type": "ScreenMapPosition",
++      "parameters": [
++        "unsigned int"
++      ]
++    }
++  ],
++  "source_compile_options": {
++    "match_004831d0.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004831d0.cpp",
++    "fixture_004831d0.cpp"
++  ]
++}

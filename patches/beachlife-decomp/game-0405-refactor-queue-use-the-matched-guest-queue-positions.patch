@@ -1,0 +1,446 @@
+diff --git a/src/startup_building_guest_queue_clear.cpp b/src/startup_building_guest_queue_clear.cpp
+index 6dc4ff97541060bd16c94dc60849969a156ada9b..6a0b24f9a936554f9a204b935c59272b32677897 100644
+--- a/src/startup_building_guest_queue_clear.cpp
++++ b/src/startup_building_guest_queue_clear.cpp
+@@ -1,40 +1,16 @@
+ #include "startup_variable_state.h"
+ #include "startup_screen_mode_world.h"
+-#include <bit>
+ 
+ // FUNCTION: BEACHLIFE 0x00433a20
+ void BuildingGuestQueue::Clear()
+ {
+-    for (unsigned int i = 0; i < static_cast<unsigned int>(
+-                                 32 * (guests_08.end.node - guests_08.begin.node - 1)
+-                                 + (guests_08.end.current - guests_08.end.first)
+-                                 + (guests_08.begin.last - guests_08.begin.current));
+-        ++i)
++    unsigned int index;
++    for (index = 0; index < static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin)); ++index)
+     {
+-        ScreenModeCommand command;
+-        command.words[0] = owner_00;
+-        command.words[1] = guests_08.At(i);
+-        command.words[2] = 0x49;
+-        command.words[3] = 0;
+-        command.words[4] = 6;
++        ScreenModeCommand command(owner_00, guests_08.At(index), 0x49, 0, 6);
+         screen_mode_commands->QueueCommand(&command);
+     }
+-    {
+-        auto& deque = pending_30;
+-        for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-            DeallocateImageListPointerSlots(*node, 32);
+-        if (deque.begin.node != deque.end.node)
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-        deque.end = deque.begin;
+-    }
+-    {
+-        auto& deque = guests_08;
+-        for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-            DeallocateImageListPointerSlots(*node, 32);
+-        if (deque.begin.node != deque.end.node)
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-        deque.end = deque.begin;
+-    }
+-    current_58.x = std::bit_cast<float>(word_60);
+-    current_58.y = std::bit_cast<float>(word_64);
++    pending_30.Clear();
++    guests_08.Clear();
++    current_58 = entrance_60;
+ }
+diff --git a/src/startup_building_guest_queue_methods.cpp b/src/startup_building_guest_queue_methods.cpp
+index 827d3b1e7eb112c8f09fbf1977877e87606a8e93..97a96b71cecfd735def92629cce7c93727b43c98 100644
+--- a/src/startup_building_guest_queue_methods.cpp
++++ b/src/startup_building_guest_queue_methods.cpp
+@@ -1,7 +1,6 @@
+ #include "startup_variable_state.h"
+ #include "startup_screen_mode_world.h"
+ #include "startup_world_deque_operations.h"
+-#include <bit>
+ 
+ static ScreenMapPosition QueueCurrentPosition(BuildingGuestQueue* queue)
+ {
+@@ -122,7 +121,7 @@ bool BuildingGuestQueue::PopGuest(unsigned int* id, unsigned int* feature)
+         if (positions_70)
+             QueueStorePosition(this, positions_70[i + 1]);
+         else
+-            QueueStorePosition(this, { static_cast<float>(static_cast<long double>(i) * std::bit_cast<float>(word_68) + std::bit_cast<float>(word_60)), static_cast<float>(static_cast<long double>(i) * std::bit_cast<float>(word_6c) + std::bit_cast<float>(word_64)) });
++            QueueStorePosition(this, { static_cast<float>(static_cast<long double>(i) * offset_68.x + entrance_60.x), static_cast<float>(static_cast<long double>(i) * offset_68.y + entrance_60.y) });
+         if (CurrentScreenTerrain()->CellAt(QueueCurrentPosition(this))->flags_48 & 0x10000082)
+             CurrentScreenTerrain()->CellAt(QueueCurrentPosition(this));
+         QueueStorePosition(this, Position(i));
+@@ -134,39 +133,14 @@ bool BuildingGuestQueue::PopGuest(unsigned int* id, unsigned int* feature)
+ // FUNCTION: BEACHLIFE 0x00433bc0
+ void BuildingGuestQueue::SendGuests(unsigned int id)
+ {
+-    ScreenModeCommand command;
+-    command.words[0] = owner_00;
+-    command.words[1] = id;
+-    command.words[2] = 0x24;
+-    command.words[3] = 0;
+-    command.words[4] = static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin));
++    ScreenModeCommand command(owner_00, id, 0x24, 0, static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin)));
+     screen_mode_commands->QueueCommand(&command);
+     for (unsigned int i = 0; i < static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin)); ++i)
+     {
+-        ScreenModeCommand guest_command;
+-        guest_command.words[0] = owner_00;
+-        guest_command.words[1] = guests_08.At(i);
+-        guest_command.words[2] = 0x4e;
+-        guest_command.words[3] = 0;
+-        guest_command.words[4] = id;
++        ScreenModeCommand guest_command(owner_00, guests_08.At(i), 0x4e, 0, id);
+         screen_mode_commands->QueueDelayed(&guest_command, static_cast<float>(static_cast<long double>(i) * 0.5f));
+     }
+-    {
+-        auto& deque = guests_08;
+-        for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-            DeallocateImageListPointerSlots(*node, 32);
+-        if (deque.begin.node != deque.end.node)
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-        deque.end = deque.begin;
+-    }
+-    {
+-        auto& deque = pending_30;
+-        for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-            DeallocateImageListPointerSlots(*node, 32);
+-        if (deque.begin.node != deque.end.node)
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-        deque.end = deque.begin;
+-    }
+-    current_58.x = std::bit_cast<float>(word_60);
+-    current_58.y = std::bit_cast<float>(word_64);
++    guests_08.Clear();
++    pending_30.Clear();
++    current_58 = entrance_60;
+ }
+diff --git a/src/startup_building_guest_queue_positions.cpp b/src/startup_building_guest_queue_positions.cpp
+index c9be18b7dd0e2269cd399dbe6b01ee864fdfb9e1..244edc35abaf49f97d174240b2d883e8d74eb5c7 100644
+--- a/src/startup_building_guest_queue_positions.cpp
++++ b/src/startup_building_guest_queue_positions.cpp
+@@ -1,7 +1,6 @@
+ #include "startup_variable_state.h"
+ #include "startup_screen_mode_world.h"
+ #include "startup_building_queue_offsets.h"
+-#include <bit>
+ #include <cstdlib>
+ 
+ static unsigned int QueueTileFlags(ScreenMapPosition position)
+@@ -59,14 +58,14 @@ ScreenMapPosition BuildingGuestQueue::Position(unsigned int index)
+         return current_58;
+     ScreenMapPosition direction;
+     if (index <= 1)
+-        direction = { std::bit_cast<float>(word_68), std::bit_cast<float>(word_6c) };
++        direction = { offset_68.x, offset_68.y };
+     else
+         direction = { positions_70[index - 1].x - positions_70[index - 2].x,
+             positions_70[index - 1].y - positions_70[index - 2].y };
+     for (unsigned int i = index; i < word_04 + 1; ++i)
+     {
+         ScreenMapPosition base = i ? positions_70[i - 1]
+-                                   : ScreenMapPosition { std::bit_cast<float>(word_60), std::bit_cast<float>(word_64) };
++                                   : ScreenMapPosition { entrance_60.x, entrance_60.y };
+         ScreenMapPosition candidate = QueueOffset(base, direction);
+         if (!QueuePointAllowed(candidate, 0x10000000))
+         {
+@@ -166,7 +165,7 @@ ScreenMapPosition BuildingGuestQueue::EntrancePosition()
+ ScreenMapPosition BuildingGuestQueue::FindQueuePosition()
+ {
+     ScreenMapPosition base = current_58;
+-    ScreenMapPosition direction = { std::bit_cast<float>(word_68), std::bit_cast<float>(word_6c) };
++    ScreenMapPosition direction = { offset_68.x, offset_68.y };
+     ScreenMapPosition candidate = QueueOffset(base, direction);
+     if (((QueueTileFlags(candidate) & 0x10000080) && !(QueueTileFlags(candidate) & 0x8000))
+         || ((QueueTileFlags(candidate) & 2)
+@@ -182,12 +181,12 @@ ScreenMapPosition BuildingGuestQueue::FindQueuePosition()
+         {
+             if (std::rand() % 2)
+             {
+-                word_68 = std::bit_cast<unsigned int>(building_queue_offsets[0].x);
+-                word_6c = std::bit_cast<unsigned int>(building_queue_offsets[0].y);
++                offset_68.x = building_queue_offsets[0].x;
++                offset_68.y = building_queue_offsets[0].y;
+                 return first;
+             }
+-            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[6].x);
+-            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[6].y);
++            offset_68.x = building_queue_offsets[6].x;
++            offset_68.y = building_queue_offsets[6].y;
+             return second;
+         }
+         if (((QueueTileFlags(first) & 0x10000080)
+@@ -196,14 +195,14 @@ ScreenMapPosition BuildingGuestQueue::FindQueuePosition()
+             || ((QueueTileFlags(first) & 2)
+                 && (!(QueueTileFlags(first) & 0x10) || (QueueTileFlags(first) & 0x8000))))
+         {
+-            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[0].x);
+-            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[0].y);
++            offset_68.x = building_queue_offsets[0].x;
++            offset_68.y = building_queue_offsets[0].y;
+             return first;
+         }
+         if (QueuePointAllowed(second, 0x10000080))
+         {
+-            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[6].x);
+-            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[6].y);
++            offset_68.x = building_queue_offsets[6].x;
++            offset_68.y = building_queue_offsets[6].y;
+             return second;
+         }
+     }
+@@ -215,24 +214,24 @@ ScreenMapPosition BuildingGuestQueue::FindQueuePosition()
+         {
+             if (std::rand() % 2)
+             {
+-                word_68 = std::bit_cast<unsigned int>(building_queue_offsets[2].x);
+-                word_6c = std::bit_cast<unsigned int>(building_queue_offsets[2].y);
++                offset_68.x = building_queue_offsets[2].x;
++                offset_68.y = building_queue_offsets[2].y;
+                 return first;
+             }
+-            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[5].x);
+-            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[5].y);
++            offset_68.x = building_queue_offsets[5].x;
++            offset_68.y = building_queue_offsets[5].y;
+             return second;
+         }
+         if (QueuePointAllowed(second, 0x10000080))
+         {
+-            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[5].x);
+-            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[5].y);
++            offset_68.x = building_queue_offsets[5].x;
++            offset_68.y = building_queue_offsets[5].y;
+             return second;
+         }
+         if (QueuePointAllowed(first, 0x10000080))
+         {
+-            word_68 = std::bit_cast<unsigned int>(building_queue_offsets[2].x);
+-            word_6c = std::bit_cast<unsigned int>(building_queue_offsets[2].y);
++            offset_68.x = building_queue_offsets[2].x;
++            offset_68.y = building_queue_offsets[2].y;
+             return first;
+         }
+     }
+@@ -245,8 +244,8 @@ ScreenMapPosition BuildingGuestQueue::FindQueuePosition()
+             && !(QueueTileFlags(backward) & 0x10)
+             && !(QueueTileFlags(backward) & 0x8000)))
+     {
+-        word_68 = std::bit_cast<unsigned int>(-direction.x);
+-        word_6c = std::bit_cast<unsigned int>(-direction.y);
++        offset_68.x = -direction.x;
++        offset_68.y = -direction.y;
+         return backward;
+     }
+     return candidate;
+diff --git a/src/startup_building_guest_queue_state.cpp b/src/startup_building_guest_queue_state.cpp
+index c7fec27b1af9aa32b8cd550186e14ccce4685f95..a4b9857e9f76863a669f7dd80b918976374b1717 100644
+--- a/src/startup_building_guest_queue_state.cpp
++++ b/src/startup_building_guest_queue_state.cpp
+@@ -3,7 +3,6 @@
+ #include "startup_building_queue_offsets.h"
+ #include "startup_world_deque_operations.h"
+ #include "startup_game_file.h"
+-#include <cstring>
+ #include <new>
+ #include <bit>
+ 
+@@ -26,10 +25,8 @@ BuildingGuestQueue::BuildingGuestQueue(unsigned int capacity, ScreenMapPosition
+     try
+     {
+         word_04 = capacity;
+-        std::memcpy(&word_60, &entrance.x, sizeof(word_60));
+-        std::memcpy(&word_64, &entrance.y, sizeof(word_64));
+-        std::memcpy(&word_68, &offset.x, sizeof(word_68));
+-        std::memcpy(&word_6c, &offset.y, sizeof(word_6c));
++        entrance_60 = entrance;
++        offset_68 = offset;
+         owner_00 = id;
+         building_queue_offsets[0] = { -16.0f, -16.0f };
+         building_queue_offsets[6] = { 16.0f, 16.0f };
+@@ -47,8 +44,8 @@ BuildingGuestQueue::BuildingGuestQueue(unsigned int capacity, ScreenMapPosition
+         else
+         {
+             positions_70 = 0;
+-            current_58.x = std::bit_cast<float>(word_60);
+-            current_58.y = std::bit_cast<float>(word_64);
++            current_58.x = entrance_60.x;
++            current_58.y = entrance_60.y;
+         }
+     }
+     catch (...)
+@@ -62,68 +59,33 @@ BuildingGuestQueue::BuildingGuestQueue(unsigned int capacity, ScreenMapPosition
+ // FUNCTION: BEACHLIFE 0x00433880
+ void BuildingGuestQueue::Evacuate()
+ {
+-    for (unsigned int i = 0; i < static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin)); ++i)
++    unsigned int index;
++    for (index = 0; index < static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin)); ++index)
+     {
+-        ScreenModeCommand command;
+-        command.words[0] = owner_00;
+-        auto position_1 = guests_08.begin;
+-        position_1.Advance(i);
+-        command.words[1] = (*position_1.current);
+-        command.words[2] = 73;
+-        command.words[3] = 0;
+-        command.words[4] = 7;
++        ScreenModeCommand command(owner_00, guests_08.At(index), 0x49, 0, 7);
+         screen_mode_commands->QueueCommand(&command);
+     }
+-    {
+-        auto& deque = pending_30;
+-        for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-            DeallocateImageListPointerSlots(*node, 32);
+-        if (deque.begin.node != deque.end.node)
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-        deque.end = deque.begin;
+-    }
+-    {
+-        auto& deque = guests_08;
+-        for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-            DeallocateImageListPointerSlots(*node, 32);
+-        if (deque.begin.node != deque.end.node)
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-        deque.end = deque.begin;
+-    }
+-    current_58.x = std::bit_cast<float>(word_60);
+-    current_58.y = std::bit_cast<float>(word_64);
++    pending_30.Clear();
++    guests_08.Clear();
++    current_58 = entrance_60;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00435980
+ void BuildingGuestQueue::SaveState(GameFileReader* file)
+ {
++    unsigned int index;
+     file->Unknown28("m_dwOwner", owner_00);
+     file->Unknown28("m_dwMaxLength", word_04);
+-    file->Unknown30("m_ServePoint.x", word_60);
+-    file->Unknown30("m_ServePoint.y", word_64);
+-    file->Unknown30("m_QueueDirection.x", word_68);
+-    file->Unknown30("m_QueueDirection.y", word_6c);
+-    file->Unknown24("m_qlQueue.size()", WorldDequeDistance(guests_08.end, guests_08.begin));
+-    for (unsigned int i = 0; i < static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin)); ++i)
+-    {
+-        auto position_2 = guests_08.begin;
+-        position_2.Advance(i);
+-        file->Unknown28("m_qlQueue", (*position_2.current));
+-    }
+-    file->Unknown24("m_qlCommmod.size()", WorldDequeDistance(pending_30.end, pending_30.begin));
+-    for (unsigned int i = 0; i < static_cast<unsigned int>(WorldDequeDistance(pending_30.end, pending_30.begin)); ++i)
+-    {
+-        auto position_3 = pending_30.begin;
+-        position_3.Advance(i);
+-        file->Unknown28("m_qlCommmod", (*position_3.current));
+-    }
+-}
+-
+-static void ReadQueueCoordinate(GameFileReader* file, unsigned int& word)
+-{
+-    float coordinate;
+-    file->ReadFloat(&coordinate);
+-    std::memcpy(&word, &coordinate, sizeof(word));
++    file->Unknown30("m_ServePoint.x", std::bit_cast<unsigned int>(entrance_60.x));
++    file->Unknown30("m_ServePoint.y", std::bit_cast<unsigned int>(entrance_60.y));
++    file->Unknown30("m_QueueDirection.x", std::bit_cast<unsigned int>(offset_68.x));
++    file->Unknown30("m_QueueDirection.y", std::bit_cast<unsigned int>(offset_68.y));
++    file->Unknown24("m_qlQueue.size()", static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin)));
++    for (index = 0; index < static_cast<unsigned int>(WorldDequeDistance(guests_08.end, guests_08.begin)); ++index)
++        file->Unknown28("m_qlQueue", guests_08.At(index));
++    file->Unknown24("m_qlCommmod.size()", static_cast<unsigned int>(WorldDequeDistance(pending_30.end, pending_30.begin)));
++    for (index = 0; index < static_cast<unsigned int>(WorldDequeDistance(pending_30.end, pending_30.begin)); ++index)
++        file->Unknown28("m_qlCommmod", pending_30.At(index));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00435bd0
+@@ -131,54 +93,25 @@ void BuildingGuestQueue::LoadState(GameFileReader* file)
+ {
+     file->ReadInt(reinterpret_cast<int*>(&owner_00));
+     file->ReadInt(reinterpret_cast<int*>(&word_04));
+-    ReadQueueCoordinate(file, word_60);
+-    ReadQueueCoordinate(file, word_64);
+-    ReadQueueCoordinate(file, word_68);
+-    ReadQueueCoordinate(file, word_6c);
++    file->ReadFloat(&entrance_60.x);
++    file->ReadFloat(&entrance_60.y);
++    file->ReadFloat(&offset_68.x);
++    file->ReadFloat(&offset_68.y);
++    int count;
++    int index;
++    int value;
++    guests_08.Clear();
++    file->Unknown68(reinterpret_cast<unsigned int*>(&count));
++    for (index = 0; index < count; ++index)
+     {
+-        auto& deque = guests_08;
+-        for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-            DeallocateImageListPointerSlots(*node, 32);
+-        if (deque.begin.node != deque.end.node)
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-        deque.end = deque.begin;
+-        int count;
+-        file->Unknown68(reinterpret_cast<unsigned int*>(&count));
+-        for (int i = 0; i < count; ++i)
+-        {
+-            int id;
+-            file->ReadInt(&id);
+-            if (deque.end.current == deque.end.last - 1)
+-                deque.AppendBlock(id);
+-            else
+-            {
+-                if (deque.end.current)
+-                    *deque.end.current = id;
+-                ++deque.end.current;
+-            }
+-        }
++        file->ReadInt(&value);
++        WorldDequePushBack(guests_08, value);
+     }
++    pending_30.Clear();
++    file->Unknown68(reinterpret_cast<unsigned int*>(&count));
++    for (index = 0; index < count; ++index)
+     {
+-        auto& deque = pending_30;
+-        for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-            DeallocateImageListPointerSlots(*node, 32);
+-        if (deque.begin.node != deque.end.node)
+-            DeallocateImageListPointerSlots(deque.end.first, 32);
+-        deque.end = deque.begin;
+-        int count;
+-        file->Unknown68(reinterpret_cast<unsigned int*>(&count));
+-        for (int i = 0; i < count; ++i)
+-        {
+-            int id;
+-            file->ReadInt(&id);
+-            if (deque.end.current == deque.end.last - 1)
+-                deque.AppendBlock(id);
+-            else
+-            {
+-                if (deque.end.current)
+-                    *deque.end.current = id;
+-                ++deque.end.current;
+-            }
+-        }
++        file->ReadInt(&value);
++        WorldDequePushBack(pending_30, value);
+     }
+ }
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 12c0c0b4a03cf00968135382a6ac3fbfaab2f2d4..beb766dc2528904648c77fe0054939508c6a6100 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -362,10 +362,8 @@ struct BuildingGuestQueue
+     WorldDequeStorage<int> guests_08;
+     WorldDequeStorage<int> pending_30;
+     ScreenMapPosition current_58;
+-    unsigned int word_60;
+-    unsigned int word_64;
+-    unsigned int word_68;
+-    unsigned int word_6c;
++    ScreenMapPosition entrance_60;
++    ScreenMapPosition offset_68;
+     ScreenMapPosition* positions_70;
+     void Clear(); // 0x00433a20.
+ };

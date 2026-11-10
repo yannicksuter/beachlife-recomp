@@ -1,0 +1,273 @@
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+index ef36ada75252ed267f72fdb152417c10db2e789b..90174fb47e4e991a2fe1274df48778703d4aaea3 100644
+--- a/src/window_sound_bank.h
++++ b/src/window_sound_bank.h
+@@ -49,20 +49,32 @@ struct WindowSoundIterator
+     }
+     // Inline step to the next available bucket.
+     WindowSoundIterator& operator++();
++    bool operator!=(const WindowSoundIterator& other) const { return bucket != other.bucket; }
+ 
+     // The actual 0x00437d10 RET0 cleanup, shared with the text iterator/key.
+     ~WindowSoundIterator() { }
+ };
+ 
+-// Actual 32-byte x86 bank allocation. Destruction/loading remain real dependencies.
+-struct WindowSoundBank
++// The sound and text tables share the storage-base lifetime.
++struct WindowSoundBucketArray
+ {
+     int end_index;
+     int capacity_04;
+     WindowSoundBucket* buckets;
++    ~WindowSoundBucketArray(); // 0x0049f560.
++};
++
++struct WindowSoundTable : ScreenTextStorageBase, WindowSoundBucketArray
++{
+     unsigned char unknown_0c[4];
+     int bucket_count;
+     unsigned int word_14;
++    ~WindowSoundTable(); // 0x004d22a0.
++};
++
++// Actual 32-byte x86 bank allocation.
++struct WindowSoundBank : WindowSoundTable
++{
+     FILE* stream_18;
+     unsigned int cached_bytes_1c;
+ 
+@@ -79,8 +91,6 @@ struct WindowSoundBank
+     // declarations do not infer the original container template or add bodies.
+     WindowSoundBank* InitializeStorageBase(); // 0x004d38b0, real return-this.
+     void DestroyStorageBase();                // 0x004d3890, real empty cleanup.
+-    void ReleaseBucketStorage();              // 0x0049f560, actual array cleanup.
+-    void ReleaseIndexStorage();               // 0x004d22a0, array then base cleanup.
+     void ResetBuckets();                      // 0x004d23d0, unavailable bytes/word14.
+ 
+     // These are the same physical 0x004d2310/0x004d2450 bodies already supplied
+diff --git a/src/window_sound_bank_constructor.cpp b/src/window_sound_bank_constructor.cpp
+index b96481295c33fb81e55924d8fe43430e9fd99a0a..6adb1293a739ea5647e29ca120770fa0f68695ec 100644
+--- a/src/window_sound_bank_constructor.cpp
++++ b/src/window_sound_bank_constructor.cpp
+@@ -6,78 +6,52 @@
+ // FUNCTION: BEACHLIFE 0x004d1bc0
+ WindowSoundBank::WindowSoundBank(const char* header_path, const char* bank_path)
+ {
+-    InitializeStorageBase();
+-    try
++    end_index = 0;
++    capacity_04 = 0;
++    buckets = 0;
++    word_14 = 0;
++    int count = static_cast<int>(SelectHashTableCapacity(256));
++    bucket_count = count;
++    if (count > capacity_04)
+     {
+-        end_index = 0;
+-        capacity_04 = 0;
+-        buckets = 0;
+-        try
++        if (capacity_04 == 0)
++            capacity_04 = 1;
++        int capacity = capacity_04;
++        do
+         {
+-            word_14 = 0;
+-            int count = static_cast<int>(SelectHashTableCapacity(256));
+-            bucket_count = count;
+-            if (count > capacity_04)
++            capacity <<= 1;
++        } while (capacity <= count);
++        capacity_04 = capacity;
++        if (capacity > 0)
++        {
++            WindowSoundBucket* replacement = new WindowSoundBucket[capacity];
++            if (buckets != 0)
+             {
+-                if (capacity_04 == 0)
+-                    capacity_04 = 1;
+-                int capacity = capacity_04;
+-                do
+-                {
+-                    capacity <<= 1;
+-                } while (capacity <= count);
+-                capacity_04 = capacity;
+-                if (capacity > 0)
+-                {
+-                    WindowSoundBucket* replacement = new WindowSoundBucket[capacity];
+-                    if (buckets != 0)
+-                    {
+-                        for (int index = 0; index < end_index; ++index)
+-                            replacement[index] = buckets[index];
+-                        if (buckets != 0)
+-                            delete[] buckets;
+-                    }
+-                    buckets = replacement;
+-                }
+-                else
+-                {
+-                    if (buckets != 0)
+-                        delete[] buckets;
+-                    buckets = 0;
+-                }
++                for (int index = 0; index < end_index; ++index)
++                    replacement[index] = buckets[index];
++                if (buckets != 0)
++                    delete[] buckets;
+             }
+-            end_index = count;
+-            ResetBuckets();
+-        }
+-        catch (...)
+-        {
+-            ReleaseBucketStorage();
+-            throw;
++            buckets = replacement;
+         }
+-    }
+-    catch (...)
+-    {
+-        DestroyStorageBase();
+-        throw;
+-    }
+-
+-    try
+-    {
+-        int count = end_index;
+-        WindowSoundBucket* entry = buckets;
+-        cached_bytes_1c = 0;
+-        while (count > 0)
++        else
+         {
+-            entry->unavailable = 1;
+-            ++entry;
+-            --count;
++            if (buckets != 0)
++                delete[] buckets;
++            buckets = 0;
+         }
+-        word_14 = 0;
+-        LoadIndex(header_path, bank_path);
+     }
+-    catch (...)
++    end_index = count;
++    ResetBuckets();
++    int remaining = end_index;
++    WindowSoundBucket* entry = buckets;
++    cached_bytes_1c = 0;
++    while (remaining > 0)
+     {
+-        ReleaseIndexStorage();
+-        throw;
++        entry->unavailable = 1;
++        ++entry;
++        --remaining;
+     }
++    word_14 = 0;
++    LoadIndex(header_path, bank_path);
+ }
+diff --git a/src/window_sound_bank_destructor.cpp b/src/window_sound_bank_destructor.cpp
+index b2cff9ce70703aed55e1941c6460a48db955c170..65bb852a50dbd9a9054c13b6526b06e8599368bd 100644
+--- a/src/window_sound_bank_destructor.cpp
++++ b/src/window_sound_bank_destructor.cpp
+@@ -5,48 +5,25 @@
+ // FUNCTION: BEACHLIFE 0x004d1d30
+ WindowSoundBank::~WindowSoundBank()
+ {
+-    try
++    WindowSoundIterator current;
++    for (current = BeginSound(); current != EndSound(); ++current)
+     {
+-        WindowSoundIterator current;
+-        for (current = BeginSound(); current.bucket != EndSound().bucket; ++current)
++        WindowSoundRecord* record = current.bucket->value;
++        if (record)
+         {
+-            WindowSoundRecord* record = current.bucket->value;
+-            if (record != 0)
+-            {
+-                void* cached = record->cached_28;
+-                if (cached != 0)
+-                    ::operator delete(cached);
+-                ::operator delete(record);
+-            }
++            if (record->cached_28)
++                ::operator delete(record->cached_28);
++            ::operator delete(record);
+         }
+-
+-        int count = end_index;
+-        WindowSoundBucket* entry = buckets;
+-        while (count > 0)
+-        {
+-            entry->unavailable = 1;
+-            ++entry;
+-            --count;
+-        }
+-        FILE* stream = stream_18;
+-        word_14 = 0;
+-        fclose(stream);
+-    }
+-    catch (...)
+-    {
+-        ReleaseIndexStorage();
+-        throw;
+-    }
+-
+-    try
+-    {
+-        if (buckets != 0)
+-            delete[] buckets;
+     }
+-    catch (...)
++    int count = end_index;
++    WindowSoundBucket* entry = buckets;
++    while (count > 0)
+     {
+-        DestroyStorageBase();
+-        throw;
++        entry->unavailable = 1;
++        ++entry;
++        --count;
+     }
+-    DestroyStorageBase();
++    word_14 = 0;
++    fclose(stream_18);
+ }
+diff --git a/src/window_sound_index_release.cpp b/src/window_sound_index_release.cpp
+index c9310d56b35e2bfc67e86e260ab4243842d381e8..c729be45ddb89e9037f175ece9fd1f079b3c792c 100644
+--- a/src/window_sound_index_release.cpp
++++ b/src/window_sound_index_release.cpp
+@@ -1,17 +1,6 @@
+ #include "window_sound_bank.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004d22a0
+-void WindowSoundBank::ReleaseIndexStorage()
++WindowSoundTable::~WindowSoundTable()
+ {
+-    try
+-    {
+-        if (buckets != 0)
+-            delete[] buckets;
+-    }
+-    catch (...)
+-    {
+-        DestroyStorageBase();
+-        throw;
+-    }
+-    DestroyStorageBase();
+ }
+diff --git a/src/window_sound_storage_helpers.cpp b/src/window_sound_storage_helpers.cpp
+index 3a38072aff3fa23e3e8051f915c60d159f2fc2a1..6ece2ec570302cb90ff6e8ca9a5e7174de712e46 100644
+--- a/src/window_sound_storage_helpers.cpp
++++ b/src/window_sound_storage_helpers.cpp
+@@ -13,7 +13,7 @@ void WindowSoundBank::DestroyStorageBase()
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0049f560
+-void WindowSoundBank::ReleaseBucketStorage()
++WindowSoundBucketArray::~WindowSoundBucketArray()
+ {
+     WindowSoundBucket* storage = buckets;
+     if (storage != 0)

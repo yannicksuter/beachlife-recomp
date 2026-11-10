@@ -6,8 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from matching_imports import (coff_import_symbols, rewrite_stdcall_import_archive,
-                              stdcall_import_library, undecorate_import_archive,
-                              vc6_exception_abi_object)
+                              stdcall_export_names, stdcall_import_library,
+                              undecorate_import_archive, vc6_exception_abi_object)
 
 
 def archive_member(body):
@@ -15,9 +15,9 @@ def archive_member(body):
     return header + body + (b'\n' if len(body) % 2 else b'')
 
 
-def short_import(name='_FixtureCall@8', dll='fixture.dll', mode=2):
+def short_import(name='_FixtureCall@8', dll='fixture.dll', mode=2, hint=0):
     strings = name.encode('ascii') + b'\0' + dll.encode('ascii') + b'\0'
-    return struct.pack('<HHHHIIHH', 0, 0xffff, 0, 0x14c, 0, len(strings), 0, mode << 2) + strings
+    return struct.pack('<HHHHIIHH', 0, 0xffff, 0, 0x14c, 0, len(strings), hint, mode << 2) + strings
 
 
 class ImportMetadataTests(unittest.TestCase):
@@ -100,6 +100,35 @@ class ImportMetadataTests(unittest.TestCase):
         # IMPORT_NAME_UNDECORATE removes exactly the COFF decoration prefix
         # and suffix; the underscore belonging to the export name survives.
         self.assertEqual(changes[0]['symbol'][1:].split('@', 1)[0], '_CxxThrowException')
+
+    def test_ordinal_imports_keep_lib_ordinal_objects_unchanged(self):
+        # LIB /def "name@N @ordinal NONAME" writes name type ORDINAL (0) and
+        # the ordinal in the hint field; only that exact object is accepted.
+        symbols, ordinals = {'FixtureCall': 8, 'FixtureFree': 4}, {'FixtureCall': 5, 'FixtureFree': 3}
+        before = (b'!<arch>\n' + archive_member(short_import(mode=0, hint=5)) +
+                  archive_member(short_import('_FixtureFree@4', mode=0, hint=3)))
+        self.path.write_bytes(before)
+        self.assertEqual(rewrite_stdcall_import_archive(self.path, 'fixture.dll', symbols, 'ordinal', ordinals), [])
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(stdcall_export_names(symbols, 'ordinal', ordinals), {'ordinal:5', 'ordinal:3'})
+        controls = [b'!<arch>\n' + archive_member(short_import(mode=0, hint=4)) +
+                    archive_member(short_import('_FixtureFree@4', mode=0, hint=3)),
+                    b'!<arch>\n' + archive_member(short_import(mode=2, hint=5)) +
+                    archive_member(short_import('_FixtureFree@4', mode=0, hint=3)),
+                    b'!<arch>\n' + archive_member(short_import(mode=0, hint=5))]
+        for body in controls:
+            self.path.write_bytes(body)
+            with self.assertRaises(ValueError):
+                rewrite_stdcall_import_archive(self.path, 'fixture.dll', symbols, 'ordinal', ordinals)
+            self.assertEqual(self.path.read_bytes(), body)
+        folder = self.path.parent / 'not-created'
+        for bad in ({'FixtureCall': 5}, {'FixtureCall': 5, 'FixtureFree': 5},
+                    {'FixtureCall': 0, 'FixtureFree': 3}, {'FixtureCall': True, 'FixtureFree': 3}, None):
+            with self.subTest(ordinals=bad), self.assertRaises(ValueError):
+                stdcall_import_library(None, folder, 'fixture.dll', symbols, 'ordinal', bad)
+        with self.assertRaises(ValueError):
+            stdcall_import_library(None, folder, 'fixture.dll', symbols, 'decorated', ordinals)
+        self.assertFalse(folder.exists())
 
     def test_import_policy_fails_before_files_or_librarian_calls(self):
         folder = self.path.parent / 'not-created'

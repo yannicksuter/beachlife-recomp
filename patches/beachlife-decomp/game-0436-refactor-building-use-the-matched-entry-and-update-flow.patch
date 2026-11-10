@@ -1,0 +1,252 @@
+diff --git a/src/startup_world_building_enter.cpp b/src/startup_world_building_enter.cpp
+index b0cd66e3fb3ff623eff4bf34d5f960298f86c7d9..4d8dc995575d83513bc1d8ccb088adab6cc1f142 100644
+--- a/src/startup_world_building_enter.cpp
++++ b/src/startup_world_building_enter.cpp
+@@ -52,27 +52,37 @@ bool WorldBuildingEntity::Unknown08(unsigned int state)
+             for (int count = 0; count < 10; ++count)
+             {
+                 ScreenPoint tile = RandomLoungerTile(this);
+-                ScreenPoint neighbours[8];
+-                for (int direction = 0; direction < 8; ++direction)
+-                    screen_terrain_grid->Step(tile, direction, &neighbours[direction]);
++                ScreenPoint n0, n1, n2, n3, n4, n5, n6, n7;
++                screen_terrain_grid->Step(tile, 0, &n0);
++                screen_terrain_grid->Step(tile, 1, &n1);
++                screen_terrain_grid->Step(tile, 2, &n2);
++                screen_terrain_grid->Step(tile, 3, &n3);
++                screen_terrain_grid->Step(tile, 4, &n4);
++                screen_terrain_grid->Step(tile, 5, &n5);
++                screen_terrain_grid->Step(tile, 6, &n6);
++                screen_terrain_grid->Step(tile, 7, &n7);
+                 int attempts = 0;
+-                for (;;)
++                while (!(LoungerTileAvailable(tile) && LoungerTileAvailable(n0) && LoungerTileAvailable(n2)
++                           && LoungerTileAvailable(n4) && LoungerTileAvailable(n6) && LoungerTileAvailable(n1)
++                           && LoungerTileAvailable(n3) && LoungerTileAvailable(n5) && LoungerTileAvailable(n7))
++                       && attempts < 100)
+                 {
+-                    bool available = LoungerTileAvailable(tile);
+-                    static const int order[] = { 0, 2, 4, 6, 1, 3, 5, 7 };
+-                    for (int i = 0; i < 8 && available; ++i)
+-                        available = LoungerTileAvailable(neighbours[order[i]]);
+-                    if (available || attempts >= 100)
+-                        break;
+                     tile = RandomLoungerTile(this);
+-                    for (int direction = 0; direction < 8; ++direction)
+-                        screen_terrain_grid->Step(tile, direction, &neighbours[direction]);
++                    screen_terrain_grid->Step(tile, 0, &n0);
++                    screen_terrain_grid->Step(tile, 1, &n1);
++                    screen_terrain_grid->Step(tile, 2, &n2);
++                    screen_terrain_grid->Step(tile, 3, &n3);
++                    screen_terrain_grid->Step(tile, 4, &n4);
++                    screen_terrain_grid->Step(tile, 5, &n5);
++                    screen_terrain_grid->Step(tile, 6, &n6);
++                    screen_terrain_grid->Step(tile, 7, &n7);
+                     ++attempts;
+                 }
+                 if (attempts != 100)
+                 {
+                     ScreenSceneryPlacement placement;
+-                    placement.tile = tile;
++                    placement.tile.x = tile.x;
++                    placement.tile.y = tile.y;
+                     placement.enabled = 0;
+                     placement.word_4c = id_28;
+                     strcpy(placement.name, "Lounger");
+@@ -89,11 +99,14 @@ bool WorldBuildingEntity::Unknown08(unsigned int state)
+         }
+         else if (strcmp(name_06, "MAINPOOL") == 0)
+         {
+-            unsigned int rotation = keyline_state_44->word_18;
++            ScreenDialogResource* keyline = keyline_state_44;
+             VariableBuilding* building = building_60;
+-            ScreenMapPosition offset = { -208.0f, -496.0f };
+-            ScreenPoint tile = TilePosition();
+-            ScreenMapPosition position = CurrentScreenTerrain()->BuildingOffset(tile, building->footprint_x_1d4, building->footprint_y_1d8, offset, rotation);
++            ScreenMapPosition offset;
++            offset.x = -208.0f;
++            offset.y = -496.0f;
++            int rotation = keyline->word_18;
++            ScreenMapPosition position = CurrentScreenTerrain()->BuildingOffset(
++                TilePosition(), building->footprint_x_1d4, building->footprint_y_1d8, offset, rotation);
+             pool_position_18c.x = position.x;
+             pool_position_18c.y = position.y;
+             pool_position_18c.z = 0.0f;
+@@ -102,33 +115,31 @@ bool WorldBuildingEntity::Unknown08(unsigned int state)
+         flag_420 = 1;
+         break;
+     case 1:
++    {
+         shadow_frame_414 = BuildingFrameIndex(keyline_state_44, "shadow");
+         pick_frame_418 = BuildingFrameIndex(keyline_state_44, "pick");
+         light_frame_41c = BuildingFrameIndex(keyline_state_44, "lightmap");
+         for (unsigned int i = 0; i < building_60->resource_count_380; ++i)
+         {
+-            ScreenDialogResource* resource = resources_140[i];
+-            int variant = static_cast<int>(keyline_state_44->word_18) % resource->record->frames[0]->plane_count_0c;
+-            resource->SelectVariant(variant);
++            resources_140[i]->SelectVariant(static_cast<int>(keyline_state_44->word_18) % resources_140[i]->record->frames[0]->plane_count_0c);
+         }
+         if (window_deactivation_state->flag_17c)
+             ActivateBuilding();
+         else if (window_deactivation_state->building_status_48->AvailableBuilders() == 0)
+         {
++            unsigned int id = id_28;
+             char key[52];
+             unsigned short message[256];
+             strcpy(key, "BUILDING_NAME_");
+             strcat(key, building_60->name_04);
+-            unsigned int id = id_28;
+             ScreenTextLookup* text = screen_text_lookup;
+-            const unsigned short* name = text->LookupText(key);
+-            const unsigned short* format = text->LookupText("FEEDBACK_NO_BUILDERS");
+-            swprintf(message, format, name);
++            swprintf(message, text->LookupText("FEEDBACK_NO_BUILDERS"), screen_text_lookup->LookupText(key));
+             window_deactivation_state->ticker_30->AddMessage(message, id, 4);
+         }
+         construction_time_454 = window_deactivation_state->clock_158;
+         window_deactivation_state->building_status_48->StartConstruction(id_28);
+         break;
++    }
+     case 2:
+         flag_368 = 0;
+         window_deactivation_state->building_status_48->StartDemolition(id_28);
+@@ -138,8 +149,8 @@ bool WorldBuildingEntity::Unknown08(unsigned int state)
+         if (word_450 != -1)
+         {
+             unsigned int count;
+-            VariableEntity** buildings = variable_world->FindNamed("BAYWATCH", &count);
+             unsigned int matching = 0;
++            VariableEntity** buildings = variable_world->FindNamed("BAYWATCH", &count);
+             for (unsigned int i = 0; i < count; ++i)
+                 if (buildings[i]->AsBuilding()->word_450 == word_450)
+                     ++matching;
+diff --git a/src/startup_world_building_update.cpp b/src/startup_world_building_update.cpp
+index b3974f2b7031d5dfa008eb310ea184c4c9045fd4..ad5daab1dca267fcf6200db993724d23454c2f2f 100644
+--- a/src/startup_world_building_update.cpp
++++ b/src/startup_world_building_update.cpp
+@@ -26,12 +26,12 @@ bool WorldBuildingEntity::Unknown0c()
+         building_values_214[2] = static_cast<float>(static_cast<long double>(building_values_214[0]) - building_values_214[1]);
+         if (building_60->breakdown_chance_cfc && window_deactivation_state->flag_384)
+         {
+-            unsigned int now = window_deactivation_state->day_15c * 24 + static_cast<int>(window_deactivation_state->render_value_160);
+-            unsigned int interval = word_338;
+-            if (interval && !flag_366 && now - static_cast<unsigned int>(hour_344) >= interval)
++            unsigned int now = window_deactivation_state->day_15c * 24 + (int)window_deactivation_state->render_value_160;
++            int interval = word_338;
++            if (interval && !flag_366 && now - hour_344 >= interval)
+             {
+-                unsigned int elapsed = now - word_34c * 24 - static_cast<int>(value_348);
+-                if (static_cast<int>(elapsed) >= static_cast<int>(interval))
++                int elapsed = now - word_34c * 24 - (int)value_348;
++                if (elapsed >= interval)
+                 {
+                     word_338 = word_334;
+                     window_deactivation_state->repairs_28->AddInspection(id_28, 0);
+@@ -45,7 +45,7 @@ bool WorldBuildingEntity::Unknown0c()
+                 unsigned int chance = building_60->breakdown_growth_d00 * word_224 + building_60->breakdown_chance_cfc;
+                 if (chance > 90)
+                     chance = 90;
+-                if (rand() % 100 < static_cast<int>(chance))
++                if (rand() % 100 < (int)chance)
+                 {
+                     if (power_state_33c == 0)
+                         power_state_33c = 1;
+@@ -61,15 +61,13 @@ bool WorldBuildingEntity::Unknown0c()
+                         value_328 = window_deactivation_state->render_value_160;
+                         word_32c = window_deactivation_state->day_15c;
+                         ++building_value_330;
+-                        unsigned int id = id_28;
++                        int id = id_28;
+                         char key[52];
+                         unsigned short message[256];
+                         strcpy(key, "BUILDING_NAME_");
+                         strcat(key, building_60->name_04);
+                         ScreenTextLookup* text = screen_text_lookup;
+-                        const unsigned short* name = text->LookupText(key);
+-                        const unsigned short* format = text->LookupText("FEEDBACK_BUILDING_BROKEN");
+-                        swprintf(message, format, name);
++                        swprintf(message, text->LookupText("FEEDBACK_BUILDING_BROKEN"), screen_text_lookup->LookupText(key));
+                         window_deactivation_state->ticker_30->AddMessage(message, id, 4);
+                         if (!flag_367)
+                         {
+@@ -89,7 +87,8 @@ bool WorldBuildingEntity::Unknown0c()
+             if (!(construction < 0.0f || construction > 0.0f))
+             {
+                 float demolition = window_deactivation_state->building_status_48->ValueAt00422430(id_28);
+-                if (!(demolition < 0.0f || demolition > 0.0f) && !NeedsCleaning() && strcmp(name_06, "LOO") == 0)
++                if (!(demolition < 0.0f || demolition > 0.0f) && !NeedsCleaning()
++                    && strcmp(name_06, "LOO") == 0)
+                 {
+                     ScreenModeCommand command;
+                     command.words[0] = id_28;
+@@ -142,50 +141,53 @@ bool WorldBuildingEntity::Unknown0c()
+             for (unsigned int i = 0; i < word_11c; ++i)
+                 if (flags_138[i] == 1)
+                     ready = false;
+-            for (int i = 0; i < contents_count_36c; ++i)
+-                if (!static_cast<WorldObjectEntity*>(variable_world->FindObject(contents_370[i]))->IsEmpty())
++            for (int j = 0; j < contents_count_36c; ++j)
++                if (!static_cast<WorldObjectEntity*>(variable_world->FindObject(contents_370[j]))->IsEmpty())
+                     ready = false;
+-            for (int i = 0; i < child_count_398; ++i)
+-                if (variable_world->FindObject(child_ids_39c[i])->state_3c != 0)
++            for (int k = 0; k < child_count_398; ++k)
++            {
++                VariableEntity* child = variable_world->FindObject(child_ids_39c[k]);
++                if (child->state_3c != 0)
+                     ready = false;
+-            if (static_cast<int>(word_118) <= 0 && word_1a0 == 0 && ready)
++            }
++            if (static_cast<int>(word_118) <= 0 && word_1a0 <= 0 && ready)
+             {
+                 int count = word_11c;
+-                for (int i = 0; i < count; ++i)
++                for (int m = 0; m < count; ++m)
+                 {
+-                    variable_world->FindObject(vehicle_ids_120[i])->inactive_04 = 1;
++                    variable_world->FindObject(vehicle_ids_120[m])->inactive_04 = 1;
+                     --word_11c;
+                 }
+                 count = contents_count_36c;
+-                for (int i = 0; i < count; ++i)
++                for (int m = 0; m < count; ++m)
+                 {
+-                    variable_world->FindObject(contents_370[i])->inactive_04 = 1;
++                    variable_world->FindObject(contents_370[m])->inactive_04 = 1;
+                     --contents_count_36c;
+                 }
+                 count = child_count_398;
+-                for (int i = 0; i < count; ++i)
++                for (int m = 0; m < count; ++m)
+                 {
+                     ScreenModeCommand command;
+                     command.words[0] = id_28;
+-                    command.words[1] = child_ids_39c[i];
++                    command.words[1] = child_ids_39c[m];
+                     command.words[2] = 3;
+                     command.words[3] = 0;
+                     command.words[4] = 3;
+                     screen_mode_commands->QueueCommand(&command);
+-                    variable_world->FindObject(child_ids_39c[i])->inactive_04 = 1;
++                    variable_world->FindObject(child_ids_39c[m])->inactive_04 = 1;
+                 }
+                 child_count_398 = 0;
+                 count = staff_count_8c + pending_staff_90;
+-                for (int i = 0; i < count; ++i)
++                for (int m = 0; m < count; ++m)
+                 {
+-                    VariableEntity* entity = variable_world->FindObject(staff_ids_64[i]);
++                    VariableEntity* entity = variable_world->FindObject(staff_ids_64[m]);
+                     if (entity && entity->kind_2c == 6)
+                         entity->inactive_04 = 1;
+                 }
+                 count = additional_staff_count_bc;
+-                for (int i = 0; i < count; ++i)
++                for (int m = 0; m < count; ++m)
+                 {
+-                    VariableEntity* entity = variable_world->FindObject(additional_staff_94[i]);
++                    VariableEntity* entity = variable_world->FindObject(additional_staff_94[m]);
+                     if (entity && entity->kind_2c == 6)
+                         entity->inactive_04 = 1;
+                 }

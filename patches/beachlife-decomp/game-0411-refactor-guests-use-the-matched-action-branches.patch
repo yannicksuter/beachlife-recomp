@@ -1,0 +1,210 @@
+diff --git a/src/startup_world_guest_scenery_actions.cpp b/src/startup_world_guest_scenery_actions.cpp
+index bed1b2be952516b23024c08eecd352ecc8f62ef5..6b213388868fa224e978af37c95a7a62be77c2c9 100644
+--- a/src/startup_world_guest_scenery_actions.cpp
++++ b/src/startup_world_guest_scenery_actions.cpp
+@@ -49,22 +49,27 @@ void WorldGuestEntity::PerformAction26()
+ // FUNCTION: BEACHLIFE 0x0047acd0
+ void WorldGuestEntity::PerformAction46()
+ {
++    float nearest = 5.0f;
+     if (flag_3c0)
+         return;
+     unsigned int count;
+     VariableEntity** benches = variable_world->FindNamed("BENCH", &count);
+-    float nearest = 5.0f;
++    if (count == 0)
++        return;
+     unsigned int selected = count;
+     for (unsigned int i = 0; i < count; ++i)
+     {
+-        WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(benches[i]);
+-        if (bench->byte_a0 || !bench->AvailableSeats() || (bench->state_3c == 4 && !bench->AvailableSeats()))
++        if (static_cast<WorldSceneryEntity*>(benches[i])->byte_a0)
+             continue;
+-        long double distance = GuestSceneryDistance(this, bench);
+-        if (!(distance > nearest))
++        if (static_cast<WorldSceneryEntity*>(benches[i])->AvailableSeats()
++            && (benches[i]->state_3c != 4 || static_cast<WorldSceneryEntity*>(benches[i])->AvailableSeats()))
+         {
+-            nearest = static_cast<float>(distance);
+-            selected = i;
++            long double distance = GuestSceneryDistance(this, benches[i]);
++            if (!(distance > nearest))
++            {
++                nearest = static_cast<float>(distance);
++                selected = i;
++            }
+         }
+     }
+     if (selected < count)
+@@ -72,14 +77,14 @@ void WorldGuestEntity::PerformAction46()
+         WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(benches[selected]);
+         if (bench->scenery_f4->capacity_2dc > bench->word_90)
+         {
+-            ScreenModeCommand command = MakeGuestCommand(id_28, bench->id_28, 3, 0, 4);
++            ScreenModeCommand command = ScreenModeCommand(id_28, bench->id_28, 3, 0, 4);
+             screen_mode_commands->QueueCommand(&command);
+             word_32c = word_98;
+             word_328 = bench->id_28;
+-            command = MakeGuestCommand(id_28, id_28, 3, 0, 53);
+-            screen_mode_commands->QueueCommand(&command);
+-            command = MakeGuestCommand(id_28, id_28, 9, 0, bench->id_28);
+-            screen_mode_commands->QueueCommand(&command);
++            ScreenModeCommand command2(id_28, id_28, 3, 0, 53);
++            screen_mode_commands->QueueCommand(&command2);
++            ScreenModeCommand command3(id_28, id_28, 9, 0, bench->id_28);
++            screen_mode_commands->QueueCommand(&command3);
+             flag_3c0 = 1;
+         }
+     }
+diff --git a/src/startup_world_guest_social_actions.cpp b/src/startup_world_guest_social_actions.cpp
+index 004e58600c233b7ddcd7322bbcd9c500df634a54..46aea0c3dbbe73a6a11e52be7d21dc848b8da71d 100644
+--- a/src/startup_world_guest_social_actions.cpp
++++ b/src/startup_world_guest_social_actions.cpp
+@@ -73,30 +73,36 @@ void WorldGuestEntity::PerformAction15()
+ void WorldGuestEntity::PerformAction16()
+ {
+     unsigned int count;
+-    ScreenPoint tile = TilePosition();
+-    VariableEntity** nearby = variable_world->Nearby(tile, 2, &count);
++    VariableEntity** nearby = variable_world->Nearby(TilePosition(), 2, &count);
++    if (!count)
++        return;
+     for (unsigned int i = 0; i < count; ++i)
+     {
+         if (nearby[i]->id_28 == id_28 || nearby[i]->kind_2c != 3)
+             continue;
+-        WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(nearby[i]);
+-        if (guest->guest_f4->word_1c4 != guest_f4->word_1c4 || (guest->state_3c != 13 && guest->state_3c != 31))
++        if (static_cast<WorldGuestEntity*>(nearby[i])->guest_f4->word_1c4 != guest_f4->word_1c4 || (static_cast<WorldGuestEntity*>(nearby[i])->state_3c != 13 && static_cast<WorldGuestEntity*>(nearby[i])->state_3c != 31))
+             continue;
+-        ScreenWorldPosition position = guest->Position();
++        ScreenWorldPosition position = static_cast<WorldGuestEntity*>(nearby[i])->position_30;
+         position.x -= 20.0f;
+         ScreenPoint target = overlay_map->WorldToTile(&position);
+         unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(target.x, target.y)].flags_48;
+         if (!GuestLandFlags(flags))
+             continue;
+         lightning_state_318 = 1;
+-        word_328 = guest->id_28;
+-        ScreenModeCommand command = MakeGuestCommand(id_28, word_328, 21);
++        word_328 = static_cast<WorldGuestEntity*>(nearby[i])->id_28;
++        ScreenModeCommand command(id_28, word_328, 21, 0, 0);
+         screen_mode_commands->QueueCommand(&command);
+-        command = MakeGuestCommand(id_28, word_328, 3, 0, 32);
++        command = ScreenModeCommand(id_28, word_328, 3, 0, 32);
+         screen_mode_commands->QueueCommand(&command);
+-        guest->KeylineState()->FacePositions(guest->Position(), { position_30.x, position_30.y, position_30.z });
+-        SendGuestWalk(id_28, 5, position);
+-        break;
++        static_cast<WorldGuestEntity*>(nearby[i])->KeylineState()->FacePositions(static_cast<WorldGuestEntity*>(nearby[i])->Position(), position_30);
++        ScreenModeCommand walk;
++        walk.words[0] = id_28;
++        walk.words[1] = id_28;
++        walk.words[2] = 5;
++        walk.words[3] = static_cast<int>(position.x);
++        walk.words[4] = static_cast<int>(position.y);
++        screen_mode_commands->QueueCommand(&walk);
++        i = count;
+     }
+ }
+ 
+diff --git a/src/startup_world_guest_water_actions.cpp b/src/startup_world_guest_water_actions.cpp
+index a3e6f28edb0283f979b4a0d8836b67791fda94e5..895130f84120119759a25f093b94f17cc08f06a4 100644
+--- a/src/startup_world_guest_water_actions.cpp
++++ b/src/startup_world_guest_water_actions.cpp
+@@ -34,11 +34,14 @@ void WorldGuestEntity::PerformAction65()
+     screen_terrain_grid->Step(point, direction, &point);
+     while (distance < 5)
+     {
+-        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(point.x, point.y)].flags_48;
+-        if (!(flags & 4) || (flags & 0x10))
++        ScreenTerrainGrid* grid = screen_terrain_grid;
++        if (!(grid->cells_0c[grid->TileIndex(point.x, point.y)].flags_48 & 4))
++            break;
++        grid = screen_terrain_grid;
++        if (grid->cells_0c[grid->TileIndex(point.x, point.y)].flags_48 & 0x10)
+             break;
+-        screen_terrain_grid->Step(point, direction, &point);
+         ++distance;
++        screen_terrain_grid->Step(point, direction, &point);
+     }
+     if (distance)
+     {
+@@ -46,40 +49,59 @@ void WorldGuestEntity::PerformAction65()
+         point = TilePosition();
+         for (int i = 0; i < steps; ++i)
+             screen_terrain_grid->Step(point, direction, &point);
+-        SendGuestWalk(id_28, 11, screen_terrain_grid->TileCenter(point));
++        ScreenWorldPosition center = screen_terrain_grid->TileCenter(point);
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 11;
++        command.words[3] = static_cast<int>(center.x);
++        command.words[4] = static_cast<int>(center.y);
++        screen_mode_commands->QueueCommand(&command);
+         return;
+     }
+-    ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 67, 1, lightning_state_318);
+-    screen_mode_commands->QueueCommand(&command);
+-    lightning_state_318 = 5;
+-    float delay = Unknown28("D_WINDSURF_TURNL", 0, -1, 0, 0);
+-    command = MakeGuestCommand(id_28, id_28, 57);
+-    command.words[5] = 61;
+-    command.words[6] = 0;
+-    screen_mode_commands->QueueDelayed(&command, delay);
+-    word_310->word_08 = 2;
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    word_310->SetAnimation("WINDSURF_TURNL", window_deactivation_state->time_158, &position);
++    else
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 67;
++        command.words[3] = 1;
++        command.words[4] = lightning_state_318;
++
++        screen_mode_commands->QueueCommand(&command);
++        lightning_state_318 = 5;
++        float delay = Unknown28("D_WINDSURF_TURNL", 0, -1, 0, 0);
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 57;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        command.words[6] = 0;
++        command.words[5] = 61;
++        screen_mode_commands->QueueDelayed(&command, delay);
++        word_310->word_08 = 2;
++        word_310->SetAnimation("WINDSURF_TURNL", window_deactivation_state->time_158, &position_30);
++    }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00478e40
+ void WorldGuestEntity::PerformAction71()
+ {
+     unsigned int count;
+-    ScreenPoint point = TilePosition();
+-    VariableEntity** nearby = variable_world->Nearby(point, 5, &count);
++    VariableWorldPrefix* world = variable_world;
++    VariableEntity** nearby = world->Nearby(TilePosition(), 5, &count);
+     const unsigned short* text;
+-    ScreenModeCommand command;
++    ScreenModeCommand command(0, 0, 0, 0, 0);
+     if (state_3c == 54)
+     {
+         text = screen_text_lookup->LookupText("GUEST_EATEN");
+-        command = MakeGuestCommand(id_28, id_28, 73, 0, 8);
++        command = ScreenModeCommand(id_28, id_28, 73, 0, 8);
+         ++window_deactivation_state->eaten_dd8;
+     }
+     else
+     {
+         text = screen_text_lookup->LookupText("GUEST_DROWNED");
+-        command = MakeGuestCommand(id_28, id_28, 73, 0, 10);
++        command = ScreenModeCommand(id_28, id_28, 73, 0, 10);
+         ++window_deactivation_state->drowned_dd4;
+     }
+     window_deactivation_state->ticker_30->AddMessage(text, id_28, 5);

@@ -1,0 +1,115 @@
+diff --git a/fixtures/game.d/fixture_00416710.cpp b/fixtures/game.d/fixture_00416710.cpp
+new file mode 100644
+index 0000000..6807a14
+--- /dev/null
++++ b/fixtures/game.d/fixture_00416710.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_point.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00416710(ScreenDialogResource* item, ScreenWorldPosition* first, ScreenWorldPosition* second)
++{
++    item->ScreenDialogResource::FacePositions(*first, *second);
++}
+diff --git a/metadata.d/00416710.csv b/metadata.d/00416710.csv
+new file mode 100644
+index 0000000..e7c615e
+--- /dev/null
++++ b/metadata.d/00416710.csv
+@@ -0,0 +1,3 @@
++address,type,size,symbol
++0x00416710,function,167,?FacePositions@ScreenDialogResource@@QAEXUScreenWorldPosition@@0@Z
++0x004167c0,function,288,?FaceDirection@ScreenDialogResource@@QAEXUScreenMapPosition@@@Z
+diff --git a/src/match_00416710.cpp b/src/match_00416710.cpp
+new file mode 100644
+index 0000000..676158a
+--- /dev/null
++++ b/src/match_00416710.cpp
+@@ -0,0 +1,44 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_position_inlines.h"
++#include "startup_square_root_table.h"
++
++extern float fast_reciprocal_two;
++// Retail loads the zero result as the single-precision 0.0f literal; VC6
++// widens a float literal returned as double, so the source names it (compared
++// as that literal, comparison_literal_copies).
++extern const float fast_square_root_zero = 0.0f;
++
++// Table square root (fastmath fastsqrt); the double result stays on the FPU.
++static inline double FastSquareRoot(float value)
++{
++    unsigned int& bits = *reinterpret_cast<unsigned int*>(&value);
++    if (bits == 0)
++        return fast_square_root_zero;
++    bits = square_root_mantissas[(bits >> 8) & 0xffff] | ((((bits - 0x3f800000) >> 1) + 0x3f800000) & 0x7f800000);
++    return value;
++}
++
++// FUNCTION: BEACHLIFE 0x00416710
++void ScreenDialogResource::FacePositions(ScreenWorldPosition first, ScreenWorldPosition second)
++{
++    ScreenMapPosition direction;
++    direction.x = first.x - second.x;
++    direction.y = first.y - second.y;
++    float root = static_cast<float>(FastSquareRoot(direction.y * direction.y + direction.x * direction.x));
++    float inverse;
++    // Fastmath reciprocal estimate refined by one Newton step.
++    __asm
++        {
++        mov eax, 0x7f000000
++        sub eax, dword ptr [root]
++        mov dword ptr [inverse], eax
++        fld dword ptr [root]
++        fmul dword ptr [inverse]
++        fsubr dword ptr [fast_reciprocal_two]
++        fmul dword ptr [inverse]
++        fstp dword ptr [inverse]
++        }
++    direction.x *= inverse;
++    direction.y *= inverse;
++    FaceDirection(direction);
++}
+diff --git a/targets/beachlife-uk-1.1.d/00416710.json b/targets/beachlife-uk-1.1.d/00416710.json
+new file mode 100644
+index 0000000..90dc077
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00416710.json
+@@ -0,0 +1,36 @@
++{
++  "functions": [
++    {
++      "address": "0x00416710",
++      "size": 167,
++      "name": "ScreenDialogResource::FacePositions",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00416710.cpp": [
++      "/Ob1"
++    ]
++  },
++  "comparison_anchors": [
++    {
++      "address": "0x004167c0",
++      "size": 288,
++      "name": "ScreenDialogResource::FaceDirection",
++      "symbol": "?FaceDirection@ScreenDialogResource@@QAEXUScreenMapPosition@@@Z",
++      "header": "startup_variable_state.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "ScreenMapPosition"
++      ]
++    }
++  ],
++  "comparison_literal_copies": [
++    {
++      "function": "0x00416710",
++      "symbol": "?fast_square_root_zero@@3MB",
++      "literal": "__real@4@00000000000000000000"
++    }
++  ]
++}

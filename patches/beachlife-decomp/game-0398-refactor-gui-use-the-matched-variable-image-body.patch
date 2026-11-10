@@ -1,0 +1,235 @@
+diff --git a/src/startup_screen_variable_image_status.cpp b/src/startup_screen_variable_image_status.cpp
+index ee853c6deb194d8f58e934acbc0cd8833529794f..cd36af0207afc4fb6c89ea9b4e06a5c95fbb81f3 100644
+--- a/src/startup_screen_variable_image_status.cpp
++++ b/src/startup_screen_variable_image_status.cpp
+@@ -10,14 +10,18 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++extern const float overload_period;
++
++// GLOBAL: BEACHLIFE 0x005baef0
++static bool overload_blinking;
++// GLOBAL: BEACHLIFE 0x005baeec
++static float overload_next_toggle;
++// GLOBAL: BEACHLIFE 0x005820c8
++static bool overload_visible = true;
++
+ // FUNCTION: BEACHLIFE 0x004cc450
+ void ScreenVariableImage::Unresolved1c()
+ {
+-    // Blink state of the POWER_USE overload bar, shared by every image.
+-    static bool overload_blinking;
+-    static float overload_next_toggle;
+-    static bool overload_visible = true;
+-
+     if (strcmp(name_44, "STAR_RATING_UI3") == 0)
+     {
+         DrawRatingStars("UI3_BAR_STARS", rectangle, window_deactivation_state->AverageGuestHappiness());
+@@ -44,15 +48,15 @@ void ScreenVariableImage::Unresolved1c()
+     }
+     else if (strcmp(name_44, "POWERBAR") == 0)
+     {
+-        resource_64 = screen_dialog_resources->Find("UI2_POWERBAR");
+-        resource_64->SelectVariant(0);
++        ScreenDialogResource* resource = resource_64 = screen_dialog_resources->Find("UI2_POWERBAR");
++        resource->SelectVariant(0);
+         resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
+         screen_dialog_resources->Release(resource_64);
+     }
+     else if (strcmp(name_44, "POWERBAR3") == 0)
+     {
+-        resource_64 = screen_dialog_resources->Find("UI3_POWERBAR");
+-        resource_64->SelectVariant(0);
++        ScreenDialogResource* resource = resource_64 = screen_dialog_resources->Find("UI3_POWERBAR");
++        resource->SelectVariant(0);
+         resource_64->Draw(rectangle.left, rectangle.top, 0, 999999.0f);
+         screen_dialog_resources->Release(resource_64);
+     }
+@@ -61,15 +65,17 @@ void ScreenVariableImage::Unresolved1c()
+         float capacity = window_deactivation_state->power_capacity_3a4;
+         if (capacity > 0.0f)
+         {
+-            float ratio = window_deactivation_state->power_output_3a8 / capacity;
++            float output = window_deactivation_state->power_output_3a8;
++            float ratio = output / capacity;
+             if (screen_request_renderer->width >= 800)
+                 resource_64 = screen_dialog_resources->Find("UI3_POWERBAR");
+             else
+                 resource_64 = screen_dialog_resources->Find("UI2_POWERBAR");
+-            float fill = resource_64->SelectedFrame()->width_0e * ratio;
++            float scale = ratio;
++            float length = resource_64->SelectedFrame()->width_0e * scale;
+             int height = resource_64->SelectedFrame()->height_10;
+             resource_64->SelectVariant(2);
+-            resource_64->DrawClipped(rectangle.left, rectangle.top, 0, 0, static_cast<int>(fill), height, 0);
++            resource_64->DrawClipped(rectangle.left, rectangle.top, 0, 0, static_cast<int>(length), height, 0);
+             screen_dialog_resources->Release(resource_64);
+         }
+     }
+@@ -85,22 +91,21 @@ void ScreenVariableImage::Unresolved1c()
+             int width = resource_64->SelectedFrame()->width_0e;
+             int height = resource_64->SelectedFrame()->height_10;
+             float output = window_deactivation_state->power_output_3a8;
+-            float full = static_cast<float>(width);
+-            float output_fill = output / capacity * full;
+-            float use_fill = window_deactivation_state->power_use_3a0 / output * output_fill;
+-            if (use_fill > output_fill)
++            float available = output / capacity * width;
++            float used = window_deactivation_state->power_use_3a0 / output * available;
++            if (used > available)
+             {
+                 // Use above output: the use bar blinks every 0.75 time units.
+                 float now = window_deactivation_state->clock_158;
+                 if (!overload_blinking)
+                 {
+                     overload_blinking = true;
+-                    overload_next_toggle = 0.75f + now;
+                     overload_visible = false;
++                    overload_next_toggle = now + overload_period;
+                 }
+                 else if (now > overload_next_toggle)
+                 {
+-                    overload_next_toggle = 0.75f + now;
++                    overload_next_toggle = now + overload_period;
+                     overload_visible = !overload_visible;
+                 }
+             }
+@@ -112,18 +117,16 @@ void ScreenVariableImage::Unresolved1c()
+             resource_64->SelectVariant(1);
+             if (overload_visible)
+             {
+-                if (use_fill > full)
+-                    use_fill = full;
+-                resource_64->DrawClipped(rectangle.left, rectangle.top, 0, 0, static_cast<int>(use_fill), height, 0);
++                if (used > width)
++                    used = width;
++                resource_64->DrawClipped(rectangle.left, rectangle.top, 0, 0, static_cast<int>(used), height, 0);
+             }
+             screen_dialog_resources->Release(resource_64);
+         }
+     }
+     else if (strcmp(name_44, "GUEST_SMILEY") == 0)
+     {
+-        VariableEntity* entity = context_68;
+-        if (!entity)
+-            entity = screen_manager->CurrentContext();
++        VariableEntity* entity = context_68 ? context_68 : screen_manager->CurrentContext();
+         float level = entity->AsGuest()->happiness_264;
+         resource_64 = screen_dialog_resources->Find("UI3_gp_smile");
+         resource_64->word_08 = 3;
+@@ -136,9 +139,7 @@ void ScreenVariableImage::Unresolved1c()
+     }
+     else if (strcmp(name_44, "STAFF_SMILEY") == 0)
+     {
+-        VariableEntity* entity = context_68;
+-        if (!entity)
+-            entity = screen_manager->CurrentContext();
++        VariableEntity* entity = context_68 ? context_68 : screen_manager->CurrentContext();
+         float level = entity->AsStaff()->morale_10c;
+         resource_64 = screen_dialog_resources->Find("UI3_gp_smile");
+         resource_64->word_08 = 3;
+@@ -151,9 +152,7 @@ void ScreenVariableImage::Unresolved1c()
+     }
+     else if (strcmp(name_44, "BROWSER_SMILEY") == 0)
+     {
+-        VariableEntity* entity = context_68;
+-        if (!entity)
+-            entity = screen_manager->CurrentContext();
++        VariableEntity* entity = context_68 ? context_68 : screen_manager->CurrentContext();
+         float level = entity->AsGuest()->happiness_264;
+         resource_64 = screen_dialog_resources->Find("UI3_ob_listsmiles");
+         resource_64->word_08 = 3;
+@@ -166,9 +165,7 @@ void ScreenVariableImage::Unresolved1c()
+     }
+     else if (strcmp(name_44, "STAFF_BROWSER_SMILEY") == 0)
+     {
+-        VariableEntity* entity = context_68;
+-        if (!entity)
+-            entity = screen_manager->CurrentContext();
++        VariableEntity* entity = context_68 ? context_68 : screen_manager->CurrentContext();
+         float level = entity->AsStaff()->morale_10c;
+         resource_64 = screen_dialog_resources->Find("UI3_ob_listsmiles");
+         resource_64->word_08 = 3;
+@@ -182,9 +179,7 @@ void ScreenVariableImage::Unresolved1c()
+     else if (strcmp(name_44, "POWERGEN_STATUS") == 0)
+     {
+         int frame;
+-        VariableEntity* generator = context_68;
+-        if (!generator)
+-            generator = screen_manager->CurrentContext();
++        VariableEntity* generator = context_68 ? context_68 : screen_manager->CurrentContext();
+         resource_64 = screen_dialog_resources->Lookup(variable_image_resources[7]);
+         resource_64->word_08 = 3;
+         frame = 1;
+@@ -210,13 +205,13 @@ void ScreenVariableImage::Unresolved1c()
+             lit = static_cast<int>(ceil(volume * 100.0f)) / 10;
+         int unlit = 10 - lit;
+         resource_64->word_14 = 1;
+-        for (int i = 0; i < lit; i++)
++        for (int i = lit; i > 0; i--)
+         {
+             resource_64->Draw(rectangle.left, y, 0, 999999.0f);
+             y -= 12;
+         }
+         resource_64->word_14 = 0;
+-        for (int j = 0; j < unlit; j++)
++        for (int j = unlit; j > 0; j--)
+         {
+             resource_64->Draw(rectangle.left, y, 0, 999999.0f);
+             y -= 12;
+@@ -226,12 +221,12 @@ void ScreenVariableImage::Unresolved1c()
+     else if (strcmp(name_44, "ISLAND_MALE_INTENSITY") == 0)
+     {
+         float total = 0.0f;
+-        VariableWorldPrefix* world = variable_world;
++        unsigned int count = variable_world->buildings_04;
++        VariableEntity** buildings = variable_world->buildings_12120;
+         unsigned int counted = 0;
+-        unsigned int count = world->buildings_04;
+         for (unsigned int i = 0; i < count; i++)
+         {
+-            float appeal = world->buildings_12120[i]->MaleAppeal() * 100.0f;
++            float appeal = buildings[i]->MaleAppeal() * 100.0f;
+             if (appeal > 0.0f)
+             {
+                 total += appeal;
+@@ -239,18 +234,18 @@ void ScreenVariableImage::Unresolved1c()
+             }
+         }
+         if (counted)
+-            total /= counted;
++            total = total / counted;
+         DrawRatingStars("UI3_STARS", rectangle, static_cast<int>(total));
+     }
+     else if (strcmp(name_44, "ISLAND_FEMALE_INTENSITY") == 0)
+     {
+         float total = 0.0f;
+-        VariableWorldPrefix* world = variable_world;
++        unsigned int count = variable_world->buildings_04;
++        VariableEntity** buildings = variable_world->buildings_12120;
+         unsigned int counted = 0;
+-        unsigned int count = world->buildings_04;
+         for (unsigned int i = 0; i < count; i++)
+         {
+-            float appeal = world->buildings_12120[i]->FemaleAppeal() * 100.0f;
++            float appeal = buildings[i]->FemaleAppeal() * 100.0f;
+             if (appeal > 0.0f)
+             {
+                 total += appeal;
+@@ -258,7 +253,7 @@ void ScreenVariableImage::Unresolved1c()
+             }
+         }
+         if (counted)
+-            total /= counted;
++            total = total / counted;
+         DrawRatingStars("UI3_STARS", rectangle, static_cast<int>(total));
+     }
+     else if (strcmp(name_44, "BI_MALE_APPEAL_STARS") == 0)
+@@ -360,3 +355,6 @@ void ScreenVariableImage::Unresolved1c()
+         DrawAppealStars("UI3_STARS", rectangle, static_cast<int>(entity->AsBuilding()->events_170->FemaleAppeal(event) * 100.0f));
+     }
+ }
++
++// GLOBAL: BEACHLIFE 0x004f4cb0
++const float overload_period = 0.75f;

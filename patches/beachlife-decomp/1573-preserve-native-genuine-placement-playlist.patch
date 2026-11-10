@@ -1,0 +1,159 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index cd036c7..0af41b9 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -1824,7 +1824,9 @@ extern "C" __declspec(dllexport) void FixtureSetClipMode(
+ 
+ typedef char MusicOwnerSize[(sizeof(ScreenPlacementStore) == 0x40) ? 1 : -1];
+ typedef char MusicEntrySize[(sizeof(ScreenPlacementMusicEntry) == 0x10) ? 1 : -1];
+-typedef char Musicmusic_18[(offsetof(ScreenPlacementStore, music_18) == 24) ? 1 : -1];
++typedef char Musicmusic_begin_18[(offsetof(ScreenPlacementStore, music_begin_18) == 24) ? 1 : -1];
++typedef char Musicmusic_end_1c[(offsetof(ScreenPlacementStore, music_end_1c) == 28) ? 1 : -1];
++typedef char Musicmusic_limit_20[(offsetof(ScreenPlacementStore, music_limit_20) == 32) ? 1 : -1];
+ typedef char Musicsaved[(offsetof(ScreenPlacementStore, saved) == 40) ? 1 : -1];
+ typedef char MusicEntryname_00[(offsetof(ScreenPlacementMusicEntry, name_00) == 0) ? 1 : -1];
+ typedef char MusicEntrydirectory_04[(offsetof(ScreenPlacementMusicEntry, directory_04) == 4) ? 1 : -1];
+diff --git a/src/startup_screen_placement.h b/src/startup_screen_placement.h
+index a0d9ddb..e16950f 100644
+--- a/src/startup_screen_placement.h
++++ b/src/startup_screen_placement.h
+@@ -5,26 +5,6 @@
+ 
+ struct ScreenPlacementMusicEntry;
+ 
+-#include <new>
+-
+-// The playlist is an STLport 4.5.3 std::vector<ScreenPlacementMusicEntry*>.
+-// Units compiled without STLport see a layout stand-in whose special members
+-// are private, so any use there fails.
+-#ifdef _STLPORT_VERSION
+-#include <vector>
+-typedef std::vector<ScreenPlacementMusicEntry*> ScreenPlacementMusicList;
+-#else
+-struct ScreenPlacementMusicList
+-{
+-private:
+-    ScreenPlacementMusicList();
+-    ScreenPlacementMusicList(const ScreenPlacementMusicList&);
+-    ~ScreenPlacementMusicList();
+-    ScreenPlacementMusicList& operator=(const ScreenPlacementMusicList&);
+-    void* words_[3];
+-};
+-#endif
+-
+ struct SavedScreenPlacement
+ {
+     int x;
+@@ -41,7 +21,6 @@ struct SavedScreenPlacementNode : CircularListNode
+ struct ScreenPlacementStore
+ {
+     ScreenPlacementStore();          // 0x004e6330.
+-    ~ScreenPlacementStore();         // 0x004e6540.
+     unsigned char LoadPreferences(); // 0x004e6d10.
+     void LoadSoundPreferences();
+     void LoadSavedPlacementPreferences(); // 0x004e6fe0.
+@@ -57,7 +36,9 @@ struct ScreenPlacementStore
+     char* provider_name_10;
+     unsigned char flag_14;
+     unsigned char unknown_15[3];
+-    ScreenPlacementMusicList music_18;
++    ScreenPlacementMusicEntry** music_begin_18;
++    ScreenPlacementMusicEntry** music_end_1c;
++    ScreenPlacementMusicEntry** music_limit_20;
+     unsigned char music_enabled_24;
+     unsigned char unknown_25[3];
+     CircularList saved;
+diff --git a/src/startup_screen_placement_clear_music.cpp b/src/startup_screen_placement_clear_music.cpp
+index 4525a2d..eda4ec6 100644
+--- a/src/startup_screen_placement_clear_music.cpp
++++ b/src/startup_screen_placement_clear_music.cpp
+@@ -1,13 +1,16 @@
++#include "copy_trivial.h"
+ #include "startup_screen_placement.h"
+ #include "startup_screen_placement_music_entry.h"
+ 
+ #include <new>
++#include <stddef.h>
++#include <string.h>
+ 
+ // FUNCTION: BEACHLIFE 0x004e6980
+ void ScreenPlacementStore::ClearMusicEntries()
+ {
+-    ScreenPlacementMusicList::iterator last = music_18.end();
+-    ScreenPlacementMusicList::iterator position = music_18.begin();
++    ScreenPlacementMusicEntry** last = music_end_1c;
++    ScreenPlacementMusicEntry** position = music_begin_18;
+     while (position != last)
+     {
+         ScreenPlacementMusicEntry* entry = *position;
+@@ -25,5 +28,6 @@ void ScreenPlacementStore::ClearMusicEntries()
+         }
+         ++position;
+     }
+-    music_18.clear();
++
++    music_end_1c = static_cast<ScreenPlacementMusicEntry**>(CopyTrivial(music_end_1c, music_end_1c, music_begin_18));
+ }
+diff --git a/src/startup_screen_placement_music_access.cpp b/src/startup_screen_placement_music_access.cpp
+index 47e8921..17b9bbe 100644
+--- a/src/startup_screen_placement_music_access.cpp
++++ b/src/startup_screen_placement_music_access.cpp
+@@ -4,29 +4,29 @@
+ // FUNCTION: BEACHLIFE 0x004e6bf0
+ const char* ScreenPlacementStore::ReadMusicName(int index)
+ {
+-    return music_18[index]->name_00;
++    return music_begin_18[index]->name_00;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004e6c00
+ const char* ScreenPlacementStore::ReadMusicDirectory(int index)
+ {
+-    return music_18[index]->directory_04;
++    return music_begin_18[index]->directory_04;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004e6c10
+ unsigned int ScreenPlacementStore::ReadMusicWord08(int index)
+ {
+-    return music_18[index]->word_08;
++    return music_begin_18[index]->word_08;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004e6c20
+ unsigned int ScreenPlacementStore::ReadMusicWord0c(int index)
+ {
+-    return music_18[index]->word_0c;
++    return music_begin_18[index]->word_0c;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004e6c30
+ int ScreenPlacementStore::MusicCount()
+ {
+-    return music_18.size();
++    return music_end_1c - music_begin_18;
+ }
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index b5b23f3..d71728b 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2981,9 +2981,6 @@
+     "window_audio_controls.cpp": [
+       "/Ob1"
+     ],
+-    "startup_screen_placement_music_access.cpp": [
+-      "/Ob1"
+-    ],
+     "startup_screen_placement_clear_music.cpp": [
+       "/Ob1"
+     ],
+@@ -4664,8 +4661,6 @@
+     "startup_surface_resize.cpp",
+     "startup_surface_position.cpp",
+     "startup_surface_recreate.cpp",
+-    "startup_surface_pixel_access.cpp",
+-    "startup_screen_placement_music_access.cpp",
+-    "startup_screen_placement_clear_music.cpp"
++    "startup_surface_pixel_access.cpp"
+   ]
+ }

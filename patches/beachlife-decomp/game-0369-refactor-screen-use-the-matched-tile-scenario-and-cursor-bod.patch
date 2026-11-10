@@ -1,0 +1,148 @@
+diff --git a/src/startup_game_scenario_progress.cpp b/src/startup_game_scenario_progress.cpp
+index 6aefe1efbd036a508c4fc7d278e638ef4564da7d..249b7108fede029baf7df17f9c5df1a2a688ca5e 100644
+--- a/src/startup_game_scenario_progress.cpp
++++ b/src/startup_game_scenario_progress.cpp
+@@ -75,11 +75,13 @@ void ScreenRequestGamePrefix::LoadScenarioProgress()
+ // FUNCTION: BEACHLIFE 0x004e4140
+ void ScreenRequestGamePrefix::UnlockNextScenario()
+ {
+-    unsigned int current = scenario_a0;
+-    words_70[current] |= 8;
+-    unsigned int next = current + 1;
+-    if (next < 12 && (words_70[next] & 0xc) == 0)
+-        words_70[next] = 2;
++    unsigned int index = scenario_a0;
++    words_70[index] |= 8;
++    index++;
++    if (index < 12 && !(words_70[index] & 0xc))
++    {
++        words_70[index] = 2;
++    }
+     FILE* file = fopen(startup_game_state_path, "wb");
+     if (file)
+     {
+diff --git a/src/startup_screen_mode7_virtuals.cpp b/src/startup_screen_mode7_virtuals.cpp
+index 0df52f47dad31abf661796d23ad0e9345bf6beb9..cf728faa59e917bde056a844979e1dc3e1dc9b84 100644
+--- a/src/startup_screen_mode7_virtuals.cpp
++++ b/src/startup_screen_mode7_virtuals.cpp
+@@ -41,9 +41,9 @@ void ScreenMode7Controller::Enter()
+     scenery_index_08 = manager->word_68;
+     scenery_0c = variable_catalog->Scenery(scenery_index_08);
+     ScreenDialogResourceLookup* resources = screen_dialog_resources;
+-    preview_10 = resources->Find(screen_scenery_placement->PathPreviewName());
++    preview_10 = resources->Find(world_cursor_names->FirstName());
+     preview_10->word_08 = 3;
+-    preview_10->word_14 = screen_scenery_placement->PathPreviewFrame();
++    preview_10->word_14 = world_cursor_names->CursorValue();
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004a9000
+diff --git a/src/startup_screen_mode8_virtuals.cpp b/src/startup_screen_mode8_virtuals.cpp
+index 9ddb546a8e820a48f58d02597f2a13697336a9cc..9a5adfa340e18a852b0b748cbe976656a11a1340 100644
+--- a/src/startup_screen_mode8_virtuals.cpp
++++ b/src/startup_screen_mode8_virtuals.cpp
+@@ -41,10 +41,14 @@ void ScreenMode8Controller::Enter()
+     scenery_index_10 = manager->word_68;
+     scenery_08 = variable_catalog->Scenery(scenery_index_10);
+     ScreenDialogResourceLookup* resources = screen_dialog_resources;
+-    word_0c = resources->Find(screen_scenery_placement->PreviewName());
++    word_0c = resources->Find(world_cursor_names->SecondName());
+     word_0c->record->format_18 = 12;
+     if (scenery_08->animation_1c4[0])
++    {
+         word_0c->SetAnimation(scenery_08->animation_1c4, 0, 0);
++        word_0c->word_08 = 3;
++        return;
++    }
+     word_0c->word_08 = 3;
+ }
+ 
+diff --git a/src/startup_screen_terrain.cpp b/src/startup_screen_terrain.cpp
+index afbd236dc5f74a04d5141c16893d1b0c6464bca0..2a461f17ab00d1efe51211ed477a1dea94968c71 100644
+--- a/src/startup_screen_terrain.cpp
++++ b/src/startup_screen_terrain.cpp
+@@ -18,8 +18,8 @@ ScreenPoint ScreenTerrainGrid::WorldToTile(ScreenWorldPosition position)
+ {
+     unsigned int half = static_cast<unsigned int>(tile_size_00) >> 1;
+     unsigned int world_x = static_cast<int>(position.x);
+-    unsigned int world_y = static_cast<int>(position.y);
+     unsigned int x = world_x / half;
++    unsigned int world_y = static_cast<int>(position.y);
+     unsigned int y = world_y / half;
+     unsigned int remainder_x = world_x % half;
+     unsigned int remainder_y = world_y % half;
+@@ -29,26 +29,32 @@ ScreenPoint ScreenTerrainGrid::WorldToTile(ScreenWorldPosition position)
+         {
+             if (remainder_x > half - remainder_y)
+             {
+-                ++x;
+-                ++y;
++                x++;
++                y++;
+             }
+         }
+-        else if (remainder_x > remainder_y)
+-            ++x;
+         else
+-            ++y;
++        {
++            if (remainder_x > remainder_y)
++                x++;
++            else
++                y++;
++        }
+     }
+-    else if (x & 1)
++    else
+     {
+-        if (remainder_x > remainder_y)
+-            ++x;
++        if (x & 1)
++        {
++            if (remainder_x > remainder_y)
++                x++;
++        }
++        else
++        {
++            if (remainder_x > half - remainder_y)
++                x++;
++        }
+     }
+-    else if (remainder_x > half - remainder_y)
+-        ++x;
+-    ScreenPoint result;
+-    result.y = (y >> 1) % height_08;
+-    result.x = x % width_04;
+-    return result;
++    return ScreenPoint(x % width_04, (y >> 1) % height_08);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00446260
+diff --git a/src/startup_world_subsystem_queries.cpp b/src/startup_world_subsystem_queries.cpp
+index c068985b6f10eecbfb31e7e4098066555780699f..17f8cf3f4afbdfd67536517dc7c1d75de1321008 100644
+--- a/src/startup_world_subsystem_queries.cpp
++++ b/src/startup_world_subsystem_queries.cpp
+@@ -15,15 +15,14 @@ WorldSubsystemScript* WorldSubsystem3c::FindScript(const char* name)
+ // FUNCTION: BEACHLIFE 0x00424f10
+ bool WorldSubsystem4c::FeatureUnavailable(unsigned int id, unsigned int feature)
+ {
+-    WorldBuildingEntity* building = variable_world->FindObject(id)->AsBuilding();
+-    const char* key = variable_catalog->FeatureKey(building->building_60->features_1fc[feature]);
+-    if (std::strcmp(key, "LILOS") == 0 || std::strcmp(key, "SURFHIRE") == 0
+-        || std::strcmp(key, "SURFBOARD") == 0 || std::strcmp(key, "BOATHIRE") == 0
+-        || std::strcmp(key, "SNORKEL") == 0 || std::strcmp(key, "PEDHIRE") == 0)
++    bool result = true;
++    WorldBuildingEntity* building = static_cast<WorldBuildingEntity*>(variable_world->FindObject(id));
++    VariableBuilding* definition = building->building_60;
++    const char* key = variable_catalog->FeatureKey(definition->features_1fc[feature]);
++    if (strcmp(key, "LILOS") == 0 || strcmp(key, "SURFHIRE") == 0 || strcmp(key, "SURFBOARD") == 0
++        || strcmp(key, "BOATHIRE") == 0 || strcmp(key, "SNORKEL") == 0 || strcmp(key, "PEDHIRE") == 0)
+     {
+-        ScreenWorldPosition position = { building->position_30.x, building->position_30.y, building->position_30.z };
+-        unsigned int index = CurrentScreenTerrain()->NearestRouteIndex(position);
+-        return screen_terrain_grid->RouteEnabled(1, index);
++        result = screen_terrain_grid->RouteEnabled(1, CurrentScreenTerrain()->NearestRouteIndex(building->position_30));
+     }
+-    return true;
++    return result;
+ }

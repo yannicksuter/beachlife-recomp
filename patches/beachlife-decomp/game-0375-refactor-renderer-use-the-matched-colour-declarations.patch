@@ -1,0 +1,277 @@
+diff --git a/src/startup_font_glyph_direct.cpp b/src/startup_font_glyph_direct.cpp
+index 6d6253d5f77d8fbcce111b92d5310b0b11f1b061..0109d60b468f57e3a5e3cf75a9c00c66f3e1cc43 100644
+--- a/src/startup_font_glyph_direct.cpp
++++ b/src/startup_font_glyph_direct.cpp
+@@ -10,7 +10,7 @@ void ScreenFontRenderer::DrawGlyphDirect(const unsigned char* source, int source
+     const unsigned char* input = source + (source_y + height - 1) * source_stride + source_x;
+     unsigned short* output = destination + ((destination_y + height - 1) * destination_stride + destination_x) * 2;
+     unsigned int value = word_10;
+-    unsigned int colour = screen_request_renderer->ConvertColour(
++    unsigned short colour = screen_request_renderer->ConvertColour(
+         (value >> 16) & 255, (value >> 8) & 255, value & 255);
+ 
+     if (state_14 != 0)
+@@ -73,7 +73,7 @@ void ScreenFontRenderer::DrawGlyphDirect(const unsigned char* source, int source
+             {
+                 if ((*input & 1) != 0)
+                 {
+-                    *output = static_cast<unsigned short>(colour);
++                    *output = colour;
+                 }
+                 output += 2;
+                 ++input;
+diff --git a/src/startup_font_glyph_surface.cpp b/src/startup_font_glyph_surface.cpp
+index f2a81b5f0b2b8389e3addb26e57404373404216d..252e599a07db0ba31d297336a9a8bc227c698304 100644
+--- a/src/startup_font_glyph_surface.cpp
++++ b/src/startup_font_glyph_surface.cpp
+@@ -7,51 +7,52 @@ void ScreenFontRenderer::DrawGlyphSurface(const unsigned char* source,
+     int source_x, int source_y, int destination_x, int destination_y,
+     int width, int height, const unsigned short* palette)
+ {
+-    source += (source_y + height - 1) * source_stride + source_x;
+-    destination += (destination_y + height - 1) * destination_stride + destination_x;
+-
+-    unsigned int value = word_10;
+-    unsigned short colour = static_cast<unsigned short>(
+-        screen_request_renderer->ConvertColour((value >> 16) & 0xff,
+-            (value >> 8) & 0xff,
+-            value & 0xff));
+-
++    const unsigned char* from = source + (source_y + height - 1) * source_stride + source_x;
++    unsigned short* to = destination + (destination_y + height - 1) * destination_stride + destination_x;
++    int value = word_10;
++    unsigned short colour = screen_request_renderer->ConvertColour((value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff);
+     if (state_14)
+     {
+-        while (height != 0)
++        while (height)
+         {
+-            int remaining = width;
+-            while (remaining != 0)
++            int remaining;
++            if (width)
+             {
+-                if (*source & 1)
+-                    *destination = 0xffff;
+-                if (*source & 2)
+-                    *destination = 0;
+-                ++destination;
+-                ++source;
+-                --remaining;
++                remaining = width;
++                do
++                {
++                    if (*from & 1)
++                        *to = 0xffff;
++                    if (*from & 2)
++                        *to = 0;
++                    to++;
++                    from++;
++                } while (--remaining);
+             }
+-            source -= source_stride + width;
+-            destination -= destination_stride + width;
+-            --height;
++            to -= destination_stride + width;
++            from -= source_stride + width;
++            height--;
+         }
+     }
+     else
+     {
+-        while (height != 0)
++        while (height)
+         {
+-            int remaining = width;
+-            while (remaining != 0)
++            int remaining;
++            if (width)
+             {
+-                if (*source & 1)
+-                    *destination = colour;
+-                ++destination;
+-                ++source;
+-                --remaining;
++                remaining = width;
++                do
++                {
++                    if (*from & 1)
++                        *to = colour;
++                    to++;
++                    from++;
++                } while (--remaining);
+             }
+-            destination -= destination_stride + width;
+-            source -= source_stride + width;
+-            --height;
++            to -= destination_stride + width;
++            from -= source_stride + width;
++            height--;
+         }
+     }
+ }
+diff --git a/src/startup_overlay_draw_tile.cpp b/src/startup_overlay_draw_tile.cpp
+index 960cc8747c050582449075ec52251d554c822a25..af58c8cd0d43da129aba3ff2c2ca32fa273e76e0 100644
+--- a/src/startup_overlay_draw_tile.cpp
++++ b/src/startup_overlay_draw_tile.cpp
+@@ -41,7 +41,7 @@ static ScreenPoint TileCorner(int x, int y)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00418fe0
+-bool OverlayMapPrefix::DrawTile(int x, int y, unsigned int colour)
++bool OverlayMapPrefix::DrawTile(int x, int y, unsigned short colour)
+ {
+     int scroll_y = scroll_y_c8;
+     int scroll_x = scroll_x_c4;
+diff --git a/src/startup_renderer_colour.cpp b/src/startup_renderer_colour.cpp
+index 727b96d7ce2e83917da4a3b788d58c2004b7780f..15701d5f51808522b588620d3664ac880bc981a4 100644
+--- a/src/startup_renderer_colour.cpp
++++ b/src/startup_renderer_colour.cpp
+@@ -1,7 +1,7 @@
+ #include "startup_screen_renderer.h"
+ 
+ // FUNCTION: BEACHLIFE 0x00411a60
+-unsigned int ScreenRequestRenderer::ConvertColour(int red, int green, int blue)
++unsigned short ScreenRequestRenderer::ConvertColour(int red, int green, int blue)
+ {
+     if (format_44 == 0)
+     {
+diff --git a/src/startup_renderer_rectangle_fill.cpp b/src/startup_renderer_rectangle_fill.cpp
+index c9023f5adf9690edfc14f226d98c748008fa3a74..3d72e77265927c7cf40df3e8b8dc7683e9a9f4c4 100644
+--- a/src/startup_renderer_rectangle_fill.cpp
++++ b/src/startup_renderer_rectangle_fill.cpp
+@@ -4,7 +4,7 @@
+ #include <string.h>
+ 
+ // FUNCTION: BEACHLIFE 0x0040c0f0
+-void ScreenRequestRenderer::FillRectangle(const ScreenRectangle& bounds, unsigned int colour)
++void ScreenRequestRenderer::FillRectangle(const ScreenRectangle& bounds, unsigned short colour)
+ {
+     int left = bounds.left;
+     int top = bounds.top;
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index edd001bf9d66c778380125c6a9de8078e00719c2..58b0a69dcbd3477895f94cb511364e912b918cb9 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -395,7 +395,7 @@ struct ScreenManager
+     unsigned char HasActiveScreen();                                           // 0x004b1950.
+     unsigned char SelectionInputEnabled();                                     // 0x004b2190.
+     unsigned char IsPointerOverCurrentScreen();                                // 0x004b21a0.
+-    void DrawPlacementTile(int x, int y, unsigned short colour);               // 0x004b2ae0.
++    void DrawPlacementTile(ScreenPoint tile, unsigned short colour);           // 0x004b2ae0.
+     void UpdateModeScreens(float elapsed);                                     // 0x004af4a0.
+     unsigned char IsPointerOverScreen(unsigned char flag);                     // 0x004b21c0.
+     void SetFeatureState(const char* name, unsigned char enabled);             // 0x004b1e90.
+diff --git a/src/startup_screen_manager_map.cpp b/src/startup_screen_manager_map.cpp
+index 7629f4e4f37acd43bf1ec3ae1ae2f4d84a2ac6df..8699d02de2d48de10ed49b9aaf2145052cda7baf 100644
+--- a/src/startup_screen_manager_map.cpp
++++ b/src/startup_screen_manager_map.cpp
+@@ -51,7 +51,7 @@ void ScreenManager::UpdateTrackedEntity()
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004b2ae0
+-void ScreenManager::DrawPlacementTile(int x, int y, unsigned short colour)
++void ScreenManager::DrawPlacementTile(ScreenPoint tile, unsigned short colour)
+ {
+     OverlayMapPrefix* map = overlay_map;
+     int scroll_x = map->scroll_x_c4;
+@@ -59,33 +59,30 @@ void ScreenManager::DrawPlacementTile(int x, int y, unsigned short colour)
+     ScreenPoint first;
+     ScreenPoint second;
+     ScreenPoint opposite;
+-    screen_terrain_grid->Step(x, y, 4, &first);
+-    screen_terrain_grid->Step(x, y, 2, &second);
+-    screen_terrain_grid->Step(x, y, 3, &opposite);
+-    if (opposite.y < y || first.x > x)
++    screen_terrain_grid->Step(tile.x, tile.y, 4, &first);
++    screen_terrain_grid->Step(tile.x, tile.y, 2, &second);
++    screen_terrain_grid->Step(tile.x, tile.y, 3, &opposite);
++    if (opposite.y < tile.y || first.x > tile.x)
+         return;
+-    ScreenPoint tile = { x, y };
+     ScreenPoint origin = map->TileToScreen(tile);
+-    first = map->TileToScreen(first);
+-    second = map->TileToScreen(second);
+-    opposite = map->TileToScreen(opposite);
++    ScreenPoint a = map->TileToScreen(first);
++    ScreenPoint b = map->TileToScreen(second);
++    ScreenPoint c = map->TileToScreen(opposite);
+     renderer->SetUnscaledClip(0);
+     int mode = renderer->clip_mode_54;
+-    if (mode == 0 || mode == 1 || mode == 2)
++    if (mode == 1 || mode == 0)
+     {
+-        int divisor = mode == 2 ? 2 : 1;
+-        origin.x = (origin.x - scroll_x) / divisor;
+-        origin.y = (origin.y - scroll_y) / divisor;
+-        first.x = (first.x - scroll_x) / divisor;
+-        first.y = (first.y - scroll_y) / divisor;
+-        second.x = (second.x - scroll_x) / divisor;
+-        second.y = (second.y - scroll_y) / divisor;
+-        opposite.x = (opposite.x - scroll_x) / divisor;
+-        opposite.y = (opposite.y - scroll_y) / divisor;
+-        renderer->DrawLine(origin.x, origin.y, first.x, first.y, colour);
+-        renderer->DrawLine(origin.x, origin.y, second.x, second.y, colour);
+-        renderer->DrawLine(opposite.x, opposite.y, first.x, first.y, colour);
+-        renderer->DrawLine(opposite.x, opposite.y, second.x, second.y, colour);
++        renderer->DrawLine(origin.x - scroll_x, origin.y - scroll_y, a.x - scroll_x, a.y - scroll_y, colour);
++        renderer->DrawLine(origin.x - scroll_x, origin.y - scroll_y, b.x - scroll_x, b.y - scroll_y, colour);
++        renderer->DrawLine(c.x - scroll_x, c.y - scroll_y, a.x - scroll_x, a.y - scroll_y, colour);
++        renderer->DrawLine(c.x - scroll_x, c.y - scroll_y, b.x - scroll_x, b.y - scroll_y, colour);
++    }
++    else if (mode == 2)
++    {
++        renderer->DrawLine((origin.x - scroll_x) / 2, (origin.y - scroll_y) / 2, (a.x - scroll_x) / 2, (a.y - scroll_y) / 2, colour);
++        renderer->DrawLine((origin.x - scroll_x) / 2, (origin.y - scroll_y) / 2, (b.x - scroll_x) / 2, (b.y - scroll_y) / 2, colour);
++        renderer->DrawLine((c.x - scroll_x) / 2, (c.y - scroll_y) / 2, (a.x - scroll_x) / 2, (a.y - scroll_y) / 2, colour);
++        renderer->DrawLine((c.x - scroll_x) / 2, (c.y - scroll_y) / 2, (b.x - scroll_x) / 2, (b.y - scroll_y) / 2, colour);
+     }
+     renderer->SetUnscaledClip(1);
+ }
+diff --git a/src/startup_screen_mode1_virtuals.cpp b/src/startup_screen_mode1_virtuals.cpp
+index a180293b17ba4405db4290f06f6b9420f41f5838..8eff88a4c238bf6a7458c7e6e6b4991676c21e83 100644
+--- a/src/startup_screen_mode1_virtuals.cpp
++++ b/src/startup_screen_mode1_virtuals.cpp
+@@ -109,7 +109,7 @@ void ScreenMode1Controller::RenderScreens()
+     {
+         for (int column = 0; column < height; ++column)
+         {
+-            manager->DrawPlacementTile(current.x, current.y, colour);
++            manager->DrawPlacementTile(current, colour);
+             grid->Step(current.x, current.y, 0, &current);
+         }
+         grid->Step(tile.x, tile.y, 6, &tile);
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index 142a67101c7b783868da699c82c9d006c881bf14..085a16dc3030d895edfad6f1c0b93a7a7134fc84 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -174,7 +174,7 @@ struct OverlayMapPrefix : OverlayMapRegistration
+     float HeightAt(int x, int y);                                                   // 0x00418d80.
+     ScreenWorldPosition ScreenToWorld(const ScreenPoint& point);                    // 0x0041b360.
+     ScreenPoint WorldToScreen(const ScreenWorldPosition& point);                    // 0x00418960.
+-    bool DrawTile(int x, int y, unsigned int colour);                               // 0x00418fe0.
++    bool DrawTile(int x, int y, unsigned short colour);                             // 0x00418fe0.
+     bool ContainsEntity(VariableEntity* entity);                                    // 0x004193f0.
+     void ProjectWorldPosition(const ScreenWorldPosition* position, int* x, int* y); // 0x00418f70.
+     void UpdateView();                                                              // 0x0041ab10.
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 8dc66941f8fac68f55cf38aa12ca0c01a9dc013e..c1f868da05375514dfd6a4cfacfbeb05f1c00c7d 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -187,14 +187,14 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+     unsigned short BlendColour(unsigned short first, unsigned short second, float factor); // 0x0040bf90.
+ 
+     // Actual 0x00411a60; full 32-bit result retains the observed format-zero mask.
+-    unsigned int ConvertColour(int red, int green, int blue);
++    unsigned short ConvertColour(int red, int green, int blue);
+ 
+     // Actual 0x004118a0; five observed stack words and RET20.
+     void DrawLine(int x1, int y1, int x2, int y2, unsigned short colour);
+     void DrawPixel(int x, int y, unsigned short colour); // 0x00410c40.
+ 
+     // Actual 0x0040c0f0; complete fill implementation remains a dependency.
+-    void FillRectangle(const ScreenRectangle& bounds, unsigned int colour);
++    void FillRectangle(const ScreenRectangle& bounds, unsigned short colour);
+ 
+     // Actual 0x0040dee0; descriptive setter of the observed word at x86+60.
+     void SetWord60(unsigned int value);

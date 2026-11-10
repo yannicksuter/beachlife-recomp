@@ -1,0 +1,298 @@
+diff --git a/fixtures/game.d/fixture_004e91e0.cpp b/fixtures/game.d/fixture_004e91e0.cpp
+new file mode 100644
+index 0000000..a4cb85e
+--- /dev/null
++++ b/fixtures/game.d/fixture_004e91e0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_test.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) int Fixture_004e91e0(WorldTestController* self)
++{
++    return self->WorldTestController::Update();
++}
+diff --git a/metadata.d/004e91e0.csv b/metadata.d/004e91e0.csv
+new file mode 100644
+index 0000000..e8cb119
+--- /dev/null
++++ b/metadata.d/004e91e0.csv
+@@ -0,0 +1,15 @@
++address,type,size,symbol
++0x004e91e0,function,1762,?Update@WorldTestController@@UAEHXZ
++0x004cfb90,function,227,?FadeSoundLevel@WindowAudioState@@QAEXHMM@Z
++0x004e9d40,function,280,?UpdateCrowdSound@WorldTestController@@QAEXM@Z
++0x0042cc20,function,1223,?TakeArrival@VariableTransport@@QAEEPAUWorldTransportArrival@@@Z
++0x00494da0,function,120,?SetVehicleVariant@VariableEntity@@QAEXI@Z
++0x004f4e58,float,4,
++0x004f4e60,global,4,?world_test_wave_level_max@@3MB
++0x004f4e5c,global,4,?world_test_wave_level_min@@3MB
++0x004f4e64,global,4,?world_test_wave_fade_time@@3MB
++0x0057caec,string,5,
++0x0057cae8,string,4,
++0x004f4ea0,float,4,
++0x00587e24,string,21,
++0x00587e0c,string,23,
+diff --git a/src/match_004e91e0.cpp b/src/match_004e91e0.cpp
+new file mode 100644
+index 0000000..1ea8071
+--- /dev/null
++++ b/src/match_004e91e0.cpp
+@@ -0,0 +1,184 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_command_inlines.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_position_inlines.h"
++#include "startup_screen_text.h"
++#include "startup_variable_state.h"
++#include "startup_world_entities.h"
++#include "startup_world_test.h"
++#include "window_activation.h"
++#include "window_audio.h"
++#include <stdlib.h>
++#include <string.h>
++#include <wchar.h>
++
++// The world clock is read through an inline float accessor.
++static inline float WorldClock(WindowDeactivationState* state)
++{
++    return state->clock_158;
++}
++
++static inline VariableTransport* WorldTransport(WindowDeactivationState* state)
++{
++    return state->transport_24;
++}
++
++static inline void AddArrivedGuest(WindowDeactivationState* state, int kind)
++{
++    ++state->arrived_740[kind];
++    ++state->arrived_750[kind];
++}
++
++static inline unsigned int GuestCount(VariableCatalog* catalog)
++{
++    return catalog->guest_count_18;
++}
++
++static inline void SetResourceFrames(ScreenDialogResource* resource, int frames)
++{
++    if (resource->word_10 != frames)
++    {
++        resource->word_10 = frames;
++        resource->word_14 = 0;
++    }
++}
++
++// GLOBAL: BEACHLIFE 0x004f4e5c
++extern const float world_test_wave_level_min = 0.05f;
++
++// GLOBAL: BEACHLIFE 0x004f4e60
++extern const float world_test_wave_level_max = 0.8f;
++
++// GLOBAL: BEACHLIFE 0x004f4e64
++extern const float world_test_wave_fade_time = 0.3f;
++
++// FUNCTION: BEACHLIFE 0x004e91e0
++int WorldTestController::Update()
++{
++    screen_dialog_resources->Update(WorldClock(window_deactivation_state));
++    if (byte_8c)
++        return 0;
++    object_88->Start();
++    if (!object_88->deactivation_requested)
++    {
++        float level = overlay_map->WaterCoverage();
++        float quiet = 1.0f - level;
++        float volume = level * 0.95f;
++        if (volume > world_test_wave_level_max)
++            volume = world_test_wave_level_max;
++        if (volume < world_test_wave_level_min)
++            volume = world_test_wave_level_min;
++        window_audio_state->FadeSoundLevel(waves_90, volume, world_test_wave_fade_time);
++        UpdateCrowdSound(volume);
++        UpdateWildlifeSounds(quiet);
++    }
++    WorldTransportArrival arrival;
++    if (WorldTransport(window_deactivation_state)->TakeArrival(&arrival))
++    {
++        ScreenModeCommand command(0, 0, 0, 0, 0);
++        unsigned int count;
++        variable_world->FindNamed("WHARF", &count);
++        VariableCatalog* catalog = variable_catalog;
++        VariableVehicleDefinition* definition;
++        VariableEntity* vehicle;
++        if (count)
++        {
++            definition = catalog->Vehicle(variable_catalog->FindVehicle("BOAT"));
++            vehicle = variable_world->CreateEntity("BOAT", 4);
++        }
++        else
++        {
++            definition = catalog->Vehicle(variable_catalog->FindVehicle("BUS"));
++            vehicle = variable_world->CreateEntity("BUS", 4);
++        }
++        vehicle->AsVehicle()->word_5c8 = -2;
++        vehicle->SetKind(4);
++        vehicle->SetMovementMode(1);
++        vehicle->keyline_state_44 = screen_dialog_resources->Find(definition->resource_c4);
++        static_cast<WorldMovingEntity*>(vehicle)->SetMovementPosition(ScreenWorldPosition(10.0f, 10.0f, 0.0f));
++        command = ScreenModeCommand(-2, vehicle->id_28, 3, 0, 1);
++        screen_mode_commands->QueueCommand(&command);
++        unsigned int route_count;
++        ScreenWorldPosition* route = screen_terrain_grid->ArrivalRoute(&route_count);
++        for (unsigned int i = 0; i < route_count; ++i)
++            vehicle->AddRoutePoint(route[i]);
++        static_cast<WorldMovingEntity*>(vehicle)->SetMovementPosition(route[0]);
++        ScreenWorldPosition start;
++        ScreenWorldPosition end;
++        int start_heading;
++        int end_heading;
++        ScreenMapPosition start_tile;
++        ScreenMapPosition end_tile;
++        vehicle->AsVehicle()->byte_5cc = 0;
++        screen_terrain_grid->ArrivalPosition(&start, &start_heading, &start_tile);
++        screen_terrain_grid->DeparturePosition(&end, &end_heading, &end_tile);
++        vehicle->AsVehicle()->heading_5d0 = start_heading;
++        vehicle->SetArrivalPosition(start);
++        vehicle->SetArrivalHeading(start_heading);
++        vehicle->SetArrivalTile(start_tile);
++        vehicle->SetDeparturePosition(end);
++        vehicle->SetDepartureHeading(end_heading);
++        vehicle->SetDepartureTile(end_tile);
++        vehicle->SetVehicleVariant(screen_terrain_grid->vehicle_variant_11c);
++        for (unsigned int j = 0; j < arrival.count; ++j)
++        {
++            unsigned int kind;
++            for (;;)
++            {
++                kind = rand() % GuestCount(variable_catalog);
++                if (arrival.guests[kind])
++                    break;
++            }
++            --arrival.guests[kind];
++            VariableGuestState* guest_definition = variable_catalog->Guest(kind);
++            AddArrivedGuest(object_88, guest_definition->word_1c4);
++            VariableEntity* guest = variable_world->CreateEntity(guest_definition->name_04, 3);
++            guest->SetKind(3);
++            guest->SetMovementMode(0);
++            static_cast<WorldMovingEntity*>(guest)->SetMovementPosition(route[0]);
++            ScreenDialogResource* resource = guest->keyline_state_44 = screen_dialog_resources->Find(guest_definition->resource_c4);
++            SetResourceFrames(resource, guest_definition->preview_1dc);
++            guest->keyline_state_44->flag_29 = variable_world->keylines_34404;
++            guest->visible_40 = 0;
++            guest->SetTransport(vehicle->id_28);
++            if (arrival.set_happiness)
++            {
++                float happiness = window_deactivation_state->AverageGuestHappiness() * 0.01f;
++                if (happiness < 0.22f)
++                    happiness = 0.22f;
++                guest->SetHappiness(happiness);
++            }
++            ++window_deactivation_state->guests_43c;
++            ScreenModeCommand arrive(-2, guest->id_28, 3, 0, 0);
++            screen_mode_commands->QueueCommand(&arrive);
++            arrive = ScreenModeCommand(-2, guest->id_28, 63, 0, 0);
++            ScreenModeCommandQueue* queue = screen_mode_commands;
++            queue->QueueDelayed(&arrive, 2.0f * (rand() * (1.0f / 32767)));
++            vehicle->AsVehicle()->passengers_10c[vehicle->AsVehicle()->passenger_count_5bc] = guest->id_28;
++            ++vehicle->AsVehicle()->passenger_count_5bc;
++        }
++        command = ScreenModeCommand(-2, vehicle->id_28, 3, 0, 71);
++        screen_mode_commands->QueueCommand(&command);
++        unsigned int target = -2;
++        const unsigned short* message;
++        if (!strcmp("BUS", vehicle->name_06))
++        {
++            message = screen_text_lookup->LookupText("FEEDBACK_BUS_ARRIVAL");
++            VariableEntity** stops = variable_world->FindNamed("BUSSTOP", &count);
++            if (count == 1)
++                target = stops[0]->id_28;
++        }
++        else
++        {
++            message = screen_text_lookup->LookupText("FEEDBACK_FERRY_ARRIVAL");
++            VariableEntity** stops = variable_world->FindNamed("WHARF", &count);
++            if (count == 1)
++                target = stops[0]->id_28;
++        }
++        unsigned short text[128];
++        swprintf(text, message, arrival.count);
++        window_deactivation_state->ticker_30->AddMessage(text, target, 1);
++    }
++    return 0;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004e91e0.json b/targets/beachlife-uk-1.1.d/004e91e0.json
+new file mode 100644
+index 0000000..83f1c85
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004e91e0.json
+@@ -0,0 +1,68 @@
++{
++  "functions": [
++    {
++      "address": "0x004e91e0",
++      "size": 1762,
++      "name": "WorldTestController::Update",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004e91e0.cpp": [
++      "/Ob1",
++      "/GX"
++    ]
++  },
++  "comparison_anchors": [
++    {
++      "address": "0x004cfb90",
++      "size": 227,
++      "name": "WindowAudioState::FadeSoundLevel",
++      "symbol": "?FadeSoundLevel@WindowAudioState@@QAEXHMM@Z",
++      "header": "window_audio.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "int",
++        "float",
++        "float"
++      ]
++    },
++    {
++      "address": "0x004e9d40",
++      "size": 280,
++      "name": "WorldTestController::UpdateCrowdSound",
++      "symbol": "?UpdateCrowdSound@WorldTestController@@QAEXM@Z",
++      "header": "startup_world_test.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "float"
++      ]
++    },
++    {
++      "address": "0x0042cc20",
++      "size": 1223,
++      "name": "VariableTransport::TakeArrival",
++      "symbol": "?TakeArrival@VariableTransport@@QAEEPAUWorldTransportArrival@@@Z",
++      "header": "startup_variable_state.h",
++      "kind": "false-member",
++      "return_type": "unsigned char",
++      "parameters": [
++        "WorldTransportArrival*"
++      ]
++    },
++    {
++      "address": "0x00494da0",
++      "size": 120,
++      "name": "VariableEntity::SetVehicleVariant",
++      "symbol": "?SetVehicleVariant@VariableEntity@@QAEXI@Z",
++      "header": "startup_variable_state.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": [
++        "unsigned int"
++      ]
++    }
++  ]
++}

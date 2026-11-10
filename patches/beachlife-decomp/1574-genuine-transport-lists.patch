@@ -1,0 +1,136 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index cd036c7..1a2041e 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4642,7 +4642,6 @@ typedef char Decl5SwitchCaseSize[(sizeof(WorldExpressionSwitchData::Case) == 0x1
+ 
+ typedef char Decl5TransportSize[(sizeof(VariableTransport) == 0x6c) ? 1 : -1];
+ typedef char Decl5TransportRecordSize[(sizeof(WorldTransportRecord) == 0x5b4) ? 1 : -1];
+-typedef char Decl5TransportNodeSize[(sizeof(WorldTransportNode) == 0x0c) ? 1 : -1];
+ typedef char Decl5GuestRecordSize[(sizeof(VariableGuestState) == 0x3ac) ? 1 : -1];
+ typedef char Decl5TransportWeights[(offsetof(VariableTransport, weights_0c) == 0x0c) ? 1 : -1];
+ typedef char Decl5TransportCounts[(offsetof(VariableTransport, male_5c) == 0x5c) ? 1 : -1];
+diff --git a/src/startup_list.h b/src/startup_list.h
+index cfd148d..e86f565 100644
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -4,14 +4,11 @@
+ #include "startup_active_screen.h"
+ 
+ struct WorldTransportRecord;
+-struct WorldTransportNode;
+ struct WorldCleaningRequest;
+ struct WorldCleaningAssignment;
+ struct SavedScreenPlacement;
+ struct SavedScreenPlacementNode;
+ 
+-typedef WorldTransportRecord* const& WorldTransportRecordReference;
+-
+ // Observed node prefix only; the original value type is unknown.
+ struct CircularListNode
+ {
+@@ -51,8 +48,6 @@ struct CircularList
+     CircularListIterator Begin() const;
+     CircularListIterator Insert(CircularListIterator position, ActiveScreenEntry* const& entry);
+     CircularListIterator Insert(CircularListIterator position, SavedScreenPlacement* const& placement);
+-    CircularListIterator Insert(CircularListIterator position, WorldTransportRecord* const& record);
+-    WorldTransportNode* CreateNode(WorldTransportRecord* const& record);
+     CircularListValueNode* CreateNode(ActiveScreenEntry* const& entry);
+     SavedScreenPlacementNode* CreateNode(SavedScreenPlacement* const& placement);
+ };
+diff --git a/src/startup_match_0042d100.cpp b/src/startup_match_0042d100.cpp
+index 5c8c4fb..b64dd98 100644
+--- a/src/startup_match_0042d100.cpp
++++ b/src/startup_match_0042d100.cpp
+@@ -3,5 +3,5 @@
+ // FUNCTION: BEACHLIFE 0x0042d100
+ void VariableTransport::StartDay()
+ {
+-    cursor_04 = scheduled_00.head->next;
++    cursor_04 = scheduled_00.begin();
+ }
+diff --git a/src/startup_transport_lists.h b/src/startup_transport_lists.h
+new file mode 100644
+index 0000000..68a526e
+--- /dev/null
++++ b/src/startup_transport_lists.h
+@@ -0,0 +1,21 @@
++#ifndef STARTUP_TRANSPORT_LISTS_H
++#define STARTUP_TRANSPORT_LISTS_H
++
++#include "startup_variable_state.h"
++
++// Matching retention of the transport lists' out-of-line vendor members:
++// insert 0x0042d940 with its node constructor 0x0042da20.
++struct WorldTransportListRetention : WorldTransportList
++{
++    typedef WorldTransportList::iterator (WorldTransportList::*InsertMember)(
++        WorldTransportList::iterator, WorldTransportRecord* const&);
++    typedef WorldTransportList::_Node* (WorldTransportList::*CreateNodeMember)(WorldTransportRecord* const&);
++
++    // The node constructor is protected in the vendor list.
++    static CreateNodeMember CreateNode()
++    {
++        return &WorldTransportListRetention::_M_create_node;
++    }
++};
++
++#endif
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 96c7fa7..6ab0792 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -7,6 +7,7 @@
+ #include "startup_screen_point.h"
+ #include "startup_ticker_storage.h"
+ #include "startup_world_deque.h"
++#include "startup_world_list.h"
+ #include "startup_world_script_values.h"
+ 
+ struct ScreenModeCommand;
+@@ -107,17 +108,15 @@ struct WorldTransportRecord
+     int repeat_5b0;
+ };
+ 
+-struct WorldTransportNode : CircularListNode
+-{
+-    WorldTransportRecord* record;
+-};
++// The schedule and pending lists are STLport std::list<WorldTransportRecord*>.
++typedef WorldList<WorldTransportRecord*>::Type WorldTransportList;
+ 
+ struct VariableTransport
+ {
+     VariableTransport(); // 0x0042c8e0.
+-    CircularList scheduled_00;
+-    CircularListNode* cursor_04;
+-    CircularList pending_08;
++    WorldTransportList scheduled_00;
++    WorldList<WorldTransportRecord*>::Iterator cursor_04;
++    WorldTransportList pending_08;
+     float weights_0c[20];
+     unsigned int male_5c;
+     unsigned int female_60;
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index b5b23f3..54c1e02 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2981,6 +2981,9 @@
+     "window_audio_controls.cpp": [
+       "/Ob1"
+     ],
++    "startup_match_0042d100.cpp": [
++      "/Ob1"
++    ],
+     "startup_screen_placement_music_access.cpp": [
+       "/Ob1"
+     ],
+@@ -4666,6 +4669,7 @@
+     "startup_surface_recreate.cpp",
+     "startup_surface_pixel_access.cpp",
+     "startup_screen_placement_music_access.cpp",
+-    "startup_screen_placement_clear_music.cpp"
++    "startup_screen_placement_clear_music.cpp",
++    "startup_match_0042d100.cpp"
+   ]
+ }

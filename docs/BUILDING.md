@@ -163,6 +163,22 @@ entry must identify one audited original method and its exact CSV symbol and
 extent. Constructors, destructors and other return types are unsupported;
 an anchor does not qualify a dependency as reconstructed or native-tested.
 
+`comparison_vendor_identities` entries (`function`, `address`, `symbol`) bind
+an STLport instantiation to an existing library CSV identity within one
+registered caller. This remains valid whether LINK folds the two symbols or
+keeps separate bodies. Separate bodies require identical complete COFF bytes,
+relocation positions, kinds and addends, plus matching linked bytes. Different
+relative-call targets must share a LINK address or pass the same proof through
+the entire reachable call graph. Distinct data targets are rejected. Results
+record the proof and the actual fold status; no extra library credit is added.
+
+`comparison_literal_copies` entries (`function`, `symbol`, `literal`) cover a
+source that names a read-only constant only because VC6 would otherwise widen a
+float literal, for example a single-precision zero returned as `double`. Inside
+that registered function only, operands naming the constant are compared as the
+linked compiler literal (`__real@4@...` or `__real@8@...`); both must be separate
+linked data with identical bytes of the literal's width. Results list the pairs.
+
 ## Reconstructed configuration libraries
 
 Build the prepared configuration and VFS file libraries without test executables:

@@ -1,0 +1,190 @@
+diff --git a/src/startup_building_footprint.cpp b/src/startup_building_footprint.cpp
+index 564adfd44b92e691c8b642f050e7a0a17f41bc29..4b84a3402f2e7623b043576415350fe17c429103 100644
+--- a/src/startup_building_footprint.cpp
++++ b/src/startup_building_footprint.cpp
+@@ -260,5 +260,5 @@ void VariableBuildingStatus::PrepareConstruction(unsigned int id)
+         screen_terrain_grid->Step(tile.x, tile.y, 0, &tile);
+     for (unsigned char i = 0; i < static_cast<int>(entity->footprint_x_58) - 1; ++i)
+         screen_terrain_grid->Step(tile.x, tile.y, 6, &tile);
+-    entity->SetMarkerPosition(CurrentScreenTerrain()->TilePosition(tile.x, tile.y, 0));
++    entity->SetMarkerPosition(CurrentScreenTerrain()->TilePosition(tile, 0));
+ }
+diff --git a/src/startup_building_footprint_restore.cpp b/src/startup_building_footprint_restore.cpp
+index 5f05229be013f50ed5895d184aa1a748d4e4d4f1..9af3914d649bec0254cf08ccbb94df939bc1c259 100644
+--- a/src/startup_building_footprint_restore.cpp
++++ b/src/startup_building_footprint_restore.cpp
+@@ -40,7 +40,7 @@ void VariableBuildingStatus::PrepareBuilderLocations(unsigned int id)
+             unsigned int flags = building->footprint_e14[0x9cc / 4 + index];
+             if (flags != 0x80000000 && flags != 0 && !(flags & 0x40000800))
+             {
+-                ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile.x, tile.y, 4);
++                ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile, 4);
+                 task->details_2c[count]->word_00 = static_cast<int>(position.x);
+                 task->details_2c[count]->word_04 = static_cast<int>(position.y);
+                 unsigned int direction = building->footprint_e14[0x9cc / 4 + index];
+diff --git a/src/startup_overlay_render.cpp b/src/startup_overlay_render.cpp
+index 57fabd04ee8b7457f57195912b1df202554fecdb..2981a94fbc6eab4d3ef1cb5e74d7db8437ad9be1 100644
+--- a/src/startup_overlay_render.cpp
++++ b/src/startup_overlay_render.cpp
+@@ -166,10 +166,10 @@ float OverlayMapPrefix::WaterCoverage()
+     scale = screen_request_renderer->value_58;
+     int width = static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.right)) / scale);
+     int height = static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.bottom)) / scale);
+-    ScreenPoint low = CurrentScreenTerrain()->WorldToTile({ static_cast<float>(scroll_x_c4), static_cast<float>(static_cast<long double>(scroll_y_c8) * 2), 0.0f });
++    ScreenPoint low = CurrentScreenTerrain()->WorldToTile(ScreenWorldPosition(static_cast<float>(scroll_x_c4), static_cast<float>(static_cast<long double>(scroll_y_c8) * 2)));
+     int last_x = static_cast<int>(static_cast<unsigned int>(width) - 1u);
+     int last_y = static_cast<int>(static_cast<unsigned int>(scroll_y_c8) + static_cast<unsigned int>(height) - 1u);
+-    ScreenPoint high = CurrentScreenTerrain()->WorldToTile({ static_cast<float>(static_cast<long double>(last_x) + scroll_x_c4), static_cast<float>(static_cast<long double>(last_y) * 2), 0.0f });
++    ScreenPoint high = CurrentScreenTerrain()->WorldToTile(ScreenWorldPosition(static_cast<float>(static_cast<long double>(last_x) + scroll_x_c4), static_cast<float>(static_cast<long double>(last_y) * 2)));
+     if (high.x == 0)
+         high.x = 128;
+     if (high.y == 0)
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 0aa8df4594663b773d73bc1f058b7e4940b6c078..bb83cdf96bd80fa95556f5b70340011ea31c79a2 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -138,10 +138,7 @@ struct ScreenTerrainGrid : TerrainRegistration
+     ScreenWorldPosition TileOrigin(ScreenPoint tile);                                       // 0x00446200.
+     ScreenWorldPosition TileCenter(ScreenPoint tile);                                       // 0x00446350.
+     ScreenWorldPosition TilePosition(ScreenPoint tile, int direction);
+-    ScreenWorldPosition TilePosition(int x, int y, int direction)
+-    {
+-        return TilePosition(ScreenPoint(x, y), direction);
+-    } // 0x00446260.
++    // 0x00446260.
+     ScreenMapPosition BuildingOffset(ScreenPoint tile, unsigned int width, unsigned int height,
+         ScreenMapPosition offset, unsigned int rotation);                                   // 0x00446940.
+     void EnableRoute(unsigned int kind, unsigned int index);                                // 0x00447520.
+diff --git a/src/startup_screen_point.h b/src/startup_screen_point.h
+index 359cafddb8434c45d1354e3ab20f00ccdbdfca29..5c6b36814822500880bc2a0f402ced0bebd5df57 100644
+--- a/src/startup_screen_point.h
++++ b/src/startup_screen_point.h
+@@ -38,9 +38,13 @@ struct ScreenMapPosition
+     constexpr ScreenMapPosition(const ScreenMapPosition&) = default;
+     ScreenMapPosition& operator=(const ScreenMapPosition&) = default;
+ 
+-    ScreenMapPosition operator+(const ScreenMapPosition& other) const; // 0x00486a60.
+-    ScreenMapPosition operator*(float scale) const;                    // 0x00486a80.
+-    ScreenMapPosition operator/(float divisor) const;                  // 0x00486aa0.
++    // FUNCTION: BEACHLIFE 0x00486a60
++    ScreenMapPosition operator+(const ScreenMapPosition& other) const
++    {
++        return ScreenMapPosition(other.x + x, other.y + y);
++    }
++    ScreenMapPosition operator*(float scale) const;   // 0x00486a80.
++    ScreenMapPosition operator/(float divisor) const; // 0x00486aa0.
+ };
+ 
+ struct ScreenWorldPosition
+@@ -50,6 +54,12 @@ struct ScreenWorldPosition
+     float z;
+ 
+     ScreenWorldPosition() = default;
++    ScreenWorldPosition(float first, float second)
++    {
++        z = 0.0f;
++        x = first;
++        y = second;
++    }
+     // FUNCTION: BEACHLIFE 0x004479a0
+     constexpr ScreenWorldPosition(float first, float second, float third)
+         : x(first)
+diff --git a/src/startup_terrain_building_offset.cpp b/src/startup_terrain_building_offset.cpp
+index 13e0f7374fbd3fd5d70663652c7ec9a5349b37ed..b15e48d846f500357d9797624381906f87948210 100644
+--- a/src/startup_terrain_building_offset.cpp
++++ b/src/startup_terrain_building_offset.cpp
+@@ -29,14 +29,14 @@ ScreenMapPosition ScreenTerrainGrid::BuildingOffset(ScreenPoint tile, unsigned i
+             screen_terrain_grid->Step(tile.x, tile.y, 0, &tile);
+         for (int remaining = static_cast<int>(width - 1); remaining > 0; --remaining)
+             screen_terrain_grid->Step(tile.x, tile.y, 6, &tile);
+-        position = screen_terrain_grid->TilePosition(tile.x, tile.y, 0);
++        position = screen_terrain_grid->TilePosition(tile, 0);
+         position.x -= offset.x;
+         position.y -= offset.y;
+         break;
+     case 3:
+         for (int remaining = static_cast<int>(height - 1); remaining > 0; --remaining)
+             screen_terrain_grid->Step(tile.x, tile.y, 6, &tile);
+-        position = screen_terrain_grid->TilePosition(tile.x, tile.y, 2);
++        position = screen_terrain_grid->TilePosition(tile, 2);
+         position.x -= offset.y;
+         position.y += offset.x;
+         break;
+diff --git a/src/startup_world_cursor_terrain.cpp b/src/startup_world_cursor_terrain.cpp
+index 27961f7253e93801bcc33f892797d45a7b1627c9..578744698d218d9981f1498cae33415eccdcf69a 100644
+--- a/src/startup_world_cursor_terrain.cpp
++++ b/src/startup_world_cursor_terrain.cpp
+@@ -21,7 +21,7 @@ void WorldCursorNames::UpdateTile(int x, int y, unsigned char remove)
+     if (x > 128 || y < 1 || x > 127 || y > 127)
+         return;
+     const unsigned char* data = names_00->record->frames[0]->SelectData(67, 0);
+-    ScreenWorldPosition position = screen_terrain_grid->TilePosition(x, y, 1);
++    ScreenWorldPosition position = screen_terrain_grid->TilePosition(ScreenPoint(x, y), 1);
+     ScreenPoint point = overlay_map->WorldToScreen(position);
+     int left = overlay_map->scroll_x_c4 + point.x - 31;
+     int top = overlay_map->scroll_y_c8 + point.y - 32;
+@@ -30,7 +30,7 @@ void WorldCursorNames::UpdateTile(int x, int y, unsigned char remove)
+     overlay_map->DrawTerrainMask(left, top, data);
+     if (flags & 0x7000)
+     {
+-        position = screen_terrain_grid->TilePosition(x, y, 1);
++        position = screen_terrain_grid->TilePosition(ScreenPoint(x, y), 1);
+         names_04->word_14 = 0;
+         names_04->DrawTerrain(&position, 1, 1);
+     }
+@@ -38,14 +38,14 @@ void WorldCursorNames::UpdateTile(int x, int y, unsigned char remove)
+     {
+         grid = screen_terrain_grid;
+         unsigned int current = grid->cells_0c[grid->TileIndex(x, y)].flags_48;
+-        position = screen_terrain_grid->TilePosition(x, y, 1);
++        position = screen_terrain_grid->TilePosition(ScreenPoint(x, y), 1);
+         selected_134 = ((current >> 24) & 15) - 1;
+         variants_08[selected_134]->word_14 = 0;
+         variants_08[selected_134]->DrawTerrain(&position, 1, 1);
+     }
+     if (flags & 0x10000000)
+     {
+-        position = screen_terrain_grid->TilePosition(x, y, 1);
++        position = screen_terrain_grid->TilePosition(ScreenPoint(x, y), 1);
+         names_00->word_14 = 67;
+         names_00->DrawTerrain(&position, 1, 1);
+         UpdateAt00432b50(x, y);
+@@ -57,7 +57,7 @@ void WorldCursorNames::UpdateTile(int x, int y, unsigned char remove)
+         {
+             ScreenDialogResource* resource = flags & 2 ? alternate_30 : names_00;
+             resource->word_14 = frame;
+-            position = screen_terrain_grid->TilePosition(x, y, 1);
++            position = screen_terrain_grid->TilePosition(ScreenPoint(x, y), 1);
+             resource->DrawTerrain(&position, 1, 1);
+         }
+     }
+diff --git a/src/startup_world_cursor_updates.cpp b/src/startup_world_cursor_updates.cpp
+index 63ee6d0d01c20fbfb4e97daa7e71209d27f83a2f..3bf6ef5384fb60b90d733db27437f861f91d0bb0 100644
+--- a/src/startup_world_cursor_updates.cpp
++++ b/src/startup_world_cursor_updates.cpp
+@@ -7,7 +7,7 @@
+ // FUNCTION: BEACHLIFE 0x00432900
+ void WorldCursorNames::UpdateAt00432900(int x, int y)
+ {
+-    ScreenWorldPosition position = screen_terrain_grid->TilePosition(x, y, 1);
++    ScreenWorldPosition position = screen_terrain_grid->TilePosition(ScreenPoint(x, y), 1);
+     ScreenPoint point = overlay_map->WorldToScreen(position);
+     ScreenRectangle bounds;
+     bounds.left = point.x + overlay_map->scroll_x_c4 + names_00->CurrentFrameValue();
+diff --git a/src/startup_world_motion_vectors.cpp b/src/startup_world_motion_vectors.cpp
+index 84ef03fa381b80609970e8f83ffc8051eccbc078..9a9d3b33e51fd5814d8dc11a8d40628e356fa209 100644
+--- a/src/startup_world_motion_vectors.cpp
++++ b/src/startup_world_motion_vectors.cpp
+@@ -1,12 +1,5 @@
+ #include "startup_world_motion_helpers.h"
+ 
+-// FUNCTION: BEACHLIFE 0x00486a60
+-ScreenMapPosition ScreenMapPosition::operator+(const ScreenMapPosition& other) const
+-{
+-    long double sum_y = static_cast<long double>(other.y) + y;
+-    return { static_cast<float>(static_cast<long double>(other.x) + x), static_cast<float>(sum_y) };
+-}
+-
+ // FUNCTION: BEACHLIFE 0x00486a80
+ ScreenMapPosition ScreenMapPosition::operator*(float scale) const
+ {

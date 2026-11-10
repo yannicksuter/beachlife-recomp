@@ -213,7 +213,9 @@ class Toolchain:
             command = [str(self.compiler / 'CL.EXE'), '@compile.rsp']
             logs.append(self.run(command if os.name == 'nt' else ['wine', *command], folder))
             if source in (anchor_symbols or {}):
-                verify_comparison_anchor_object(folder / obj, anchor_symbols[source])
+                expected = anchor_symbols[source]
+                for symbol in ([expected] if isinstance(expected, str) else expected):
+                    verify_comparison_anchor_object(folder / obj, symbol)
         flags = ['/nologo', '/out:' + name + '.exe', '/pdb:' + name + '.pdb', '/debug',
                  '/pdbtype:sept', '/incremental:no', '/opt:ref', '/opt:icf',
                  '/entry:fixture_entry', '/subsystem:console', '/machine:I386',
@@ -560,8 +562,9 @@ def game_metadata_rows(metadata):
 
 def merge_target_fragments(metadata, target):
     lists = ('functions', 'library_functions', 'unclassified_functions', 'comparison_anchors',
-             'comparison_lifetime_anchors', 'comparison_global_operands',
-             'comparison_equivalent_copies', 'stlport_sources', 'runtime_cdecl_imports')
+             'comparison_lifetime_anchors', 'comparison_data_anchors', 'comparison_global_operands',
+             'comparison_equivalent_copies', 'comparison_vendor_identities', 'comparison_literal_copies', 'stlport_sources',
+             'runtime_cdecl_imports')
     mappings = ('source_compile_options', 'stdcall_imports', 'runtime_stdcall_imports')
     # An empty option list in the base target pins nothing: one registration
     # crediting a body of that shared source may set its options once.
@@ -576,8 +579,8 @@ def merge_target_fragments(metadata, target):
                 if not isinstance(value, list) or not isinstance(target.get(key, []), list):
                     raise ValueError(f'{key} must be a list in matching target fragment: {path}')
                 existing = target.setdefault(key, [])
-                if key in ('comparison_anchors', 'comparison_lifetime_anchors', 'comparison_equivalent_copies',
-                           'runtime_cdecl_imports'):
+                if key in ('comparison_anchors', 'comparison_lifetime_anchors', 'comparison_data_anchors', 'comparison_equivalent_copies',
+                           'comparison_vendor_identities', 'runtime_cdecl_imports'):
                     # A callee anchor or CRT import shared by parallel registrations
                     # is kept once; a different anchor at its address still fails later.
                     value = [item for index, item in enumerate(value)
@@ -729,14 +732,20 @@ def game_stdcall_imports(target):
     result = {}
     names = {'msvcrt.dll'}
     for dll, policy in configured.items():
-        if not isinstance(policy, dict) or set(policy) != {'export_names', 'symbols'}:
-            raise ValueError('Each stdcall DLL requires export_names and symbols only.')
-        validate_stdcall_imports(dll, policy['symbols'], policy['export_names'])
+        # Ordinal imports (export_names "ordinal") also map each symbol to its ordinal.
+        keys = {'export_names', 'symbols'} | ({'ordinals'} if isinstance(policy, dict) and
+                                              policy.get('export_names') == 'ordinal' else set())
+        if not isinstance(policy, dict) or set(policy) != keys:
+            raise ValueError('Each stdcall DLL requires export_names and symbols only '
+                             '(and ordinals for ordinal imports).')
+        validate_stdcall_imports(dll, policy['symbols'], policy['export_names'], policy.get('ordinals'))
         if dll.lower() in names:
             raise ValueError('Duplicate or reserved stdcall DLL basename.')
         names.add(dll.lower())
         result[dll] = {'export_names': policy['export_names'],
                        'symbols': dict(sorted(policy['symbols'].items()))}
+        if 'ordinals' in policy:
+            result[dll]['ordinals'] = dict(sorted(policy['ordinals'].items()))
     return dict(sorted(result.items()))
 
 
@@ -747,7 +756,7 @@ def verify_stdcall_pe_imports(binary, configured, exact):
     imports = pe_imports(binary)
     verified = {}
     for dll, policy in configured.items():
-        expected = stdcall_export_names(policy['symbols'], policy['export_names'])
+        expected = stdcall_export_names(policy['symbols'], policy['export_names'], policy.get('ordinals'))
         actual = imports.get(dll, {})
         if not expected <= set(actual) or (exact and set(actual) != expected):
             raise ValueError(f'Stdcall PE import identity mismatch for {dll}.')
@@ -880,7 +889,7 @@ def anchor_declaration(item):
     required = {'address', 'size', 'name', 'symbol', 'header', 'kind', 'return_type', 'parameters'}
     # stlport: true compiles the anchor like an stlport_sources translation
     # unit, for a header whose closure reaches the STLport allocator.
-    optional = {'calling_convention', 'qualifier', 'stlport'}
+    optional = {'calling_convention', 'qualifier', 'stlport', 'aliases'}
     if (not isinstance(item, dict) or not required <= set(item) or set(item) - required - optional or
             item.get('stlport', True) is not True or not isinstance(item['kind'], str) or
             not anchor_named_type(item['name']) or not isinstance(item['return_type'], str)):
@@ -898,6 +907,15 @@ def anchor_declaration(item):
           item.get('calling_convention', '__cdecl') not in ('__cdecl', '__stdcall', '__fastcall')):
         # Free anchors keep their header's convention; VC6 game callbacks
         # such as the scenery light updates are __fastcall.
+        return False
+    aliases = item.get('aliases', [])
+    if (not isinstance(aliases, list) or ('aliases' in item and not aliases) or
+            (aliases and owner != 'function') or
+            any(not isinstance(alias, dict) or set(alias) != {'name', 'symbol'} or
+                not anchor_named_type(alias['name']) or '::' in alias['name'] or
+                not isinstance(alias['symbol'], str) or
+                not re.fullmatch(r'(?:\?[^,\s]+|_[A-Za-z_][A-Za-z_0-9]*(?:@[0-9]+)?)', alias['symbol'])
+                for alias in aliases)):
         return False
     result = item['return_type']
     parsed = anchor_type(result)
@@ -1006,6 +1024,14 @@ def comparison_anchor_specs(metadata, target):
         ranges.append((start, end))
         signatures.add(signature)
         symbols.add(item['symbol'])
+        for alias in item.get('aliases', []):
+            alias_signature = (alias['name'], signature[1], signature[2])
+            if (alias['name'] in names or alias['symbol'] in symbols or
+                    alias_signature in signatures or
+                    any(row['symbol'] == alias['symbol'] for row in rows)):
+                raise ValueError('Comparison anchor aliases must have distinct unregistered identities.')
+            signatures.add(alias_signature)
+            symbols.add(alias['symbol'])
     return specs
 
 
@@ -1355,6 +1381,178 @@ def equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linke
     return result
 
 
+def vendor_code_identity(identity, alias, rebuilt, objects, folder, linked, read):
+    """Prove a vendor call graph identical without erasing relocation targets.
+
+    Distinct bodies must have equal complete COFF bytes, relocation positions,
+    kinds and addends. Different REL32 targets must either share their actual
+    LINK address or satisfy the same proof recursively. Distinct data targets
+    are never interchangeable. Every examined COFF definition must also agree
+    with the linked bytes after applying its own relocations. A worklist closes
+    recursive call graphs only after all reachable pairs have been checked.
+    """
+    pending, seen, records, cache = [(identity, alias)], set(), [], {}
+
+    def address(symbol):
+        value = rebuilt.get(symbol)
+        if value is None:
+            raise ValueError(f'Vendor identity target is not uniquely linked: {symbol}')
+        return value
+
+    def bodies(symbol):
+        if symbol not in cache:
+            owners = folded_alias_objects(folder, linked, objects.get(symbol, ''), symbol)
+            if not owners:
+                raise ValueError(f'Vendor identity has no linked COFF function: {symbol}')
+            result = []
+            for owner in owners:
+                code, relocations = comparison_operand_coff(folder / owner, symbol)
+                expected, start = bytearray(code), address(symbol)
+                previous = 0
+                for offset, kind, target, addend in sorted(relocations):
+                    if kind not in (6, 0x14) or offset < previous:
+                        raise ValueError(f'Unsupported vendor identity relocation: {symbol}')
+                    value = address(target) + addend
+                    if kind == 0x14:
+                        value -= start + offset + 4
+                    struct.pack_into('<I', expected, offset, value & 0xffffffff)
+                    previous = offset + 4
+                if read(start, len(code)) != expected:
+                    raise ValueError(f'Vendor COFF function differs from linked bytes: {symbol} ({owner})')
+                result.append((owner, code, tuple(sorted(relocations))))
+            cache[symbol] = result
+        return cache[symbol]
+
+    while pending:
+        left, right = pending.pop()
+        pair = tuple(sorted((left, right)))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        first, second = address(left), address(right)
+        record = {'identity_symbol': left, 'symbol': right,
+                  'identity_recomp': f'0x{first:08x}', 'recomp': f'0x{second:08x}'}
+        if first == second:
+            records.append(dict(record, folded=True))
+            continue
+        definitions = [*bodies(left), *bodies(right)]
+        _, code, relocations = definitions[0]
+        for _, other_code, other_relocations in definitions[1:]:
+            if (code != other_code or len(relocations) != len(other_relocations) or
+                    any((a[0], a[1], a[3]) != (b[0], b[1], b[3])
+                        for a, b in zip(relocations, other_relocations))):
+                raise ValueError(f'Vendor identity bodies differ: {left} / {right}')
+            for (_, kind, target, _), (_, _, other_target, _) in zip(relocations, other_relocations):
+                if target == other_target:
+                    continue
+                if address(target) == address(other_target):
+                    pending.append((target, other_target))
+                elif kind == 0x14:
+                    pending.append((target, other_target))
+                else:
+                    raise ValueError(f'Vendor identity has distinct data targets: {target} / {other_target}')
+        records.append(dict(record, folded=False, bytes=len(code),
+                            coff_sha256=hashlib.sha256(code).hexdigest(),
+                            identity_objects=[item[0] for item in bodies(left)],
+                            objects=[item[0] for item in bodies(right)]))
+    return records
+
+
+def vendor_identity_specs(target, metadata_rows, publics, objects, folder, linked, read):
+    """Caller-scoped identities for vendor instantiations retail folded.
+
+    Unlike an equivalent-copy registration, this identity remains valid when
+    LINK folds the symbols together. It grants no additional library credit.
+    An unfolded body is accepted only with a complete code/callee graph proof;
+    no symbol spelling, pointer type or instruction similarity is sufficient.
+    """
+    configured = target.get('comparison_vendor_identities', [])
+    if not isinstance(configured, list):
+        raise ValueError('comparison_vendor_identities must be a list.')
+    if not configured:
+        return []
+    functions = {int(item['address'], 16)
+                 for key in ('functions', 'library_functions', 'unclassified_functions')
+                 for item in target.get(key, [])}
+    symbols = {int(row['address'], 16): row['symbol'] for row in metadata_rows
+               if row.get('type') == 'library' and row.get('symbol')}
+    addresses = {}
+    for address, names in publics.items():
+        for name in names:
+            addresses.setdefault(name, set()).add(address)
+    rebuilt = {name: next(iter(values)) for name, values in addresses.items() if len(values) == 1}
+    result, seen, bindings = [], set(), {}
+    for item in configured:
+        if (not isinstance(item, dict) or set(item) != {'function', 'address', 'symbol'} or
+                not all(isinstance(value, str) and value for value in item.values())):
+            raise ValueError(f'Invalid comparison vendor identity: {item}')
+        scope, address = int(item['function'], 16), int(item['address'], 16)
+        identity, alias = symbols.get(address), item['symbol']
+        if (scope not in functions or identity is None or identity == alias or
+                '@_STL@@' not in identity or '@_STL@@' not in alias or
+                (scope, alias) in seen):
+            raise ValueError(f'Vendor identity needs a unique scope and another registered STLport library: {item}')
+        seen.add((scope, alias))
+        proof = vendor_code_identity(identity, alias, rebuilt, objects, folder, linked, read)
+        first, second = rebuilt[identity], rebuilt[alias]
+        key = scope, second
+        if key in bindings and bindings[key] != first:
+            raise ValueError(f'Vendor identity gives one scoped address different identities: {item}')
+        bindings[key] = first
+        result.append({'function': f'0x{scope:08x}', 'address': f'0x{address:08x}',
+                       'symbol': alias, 'identity_symbol': identity,
+                       'recomp': f'0x{second:08x}', 'identity_recomp': f'0x{first:08x}',
+                       'folded': first == second, 'proof': proof})
+    return result
+
+
+# A compiler float literal: __real@4@ (single) or __real@8@ (double), then
+# the 80-bit extended value in hex.
+FLOAT_LITERAL = re.compile(r'__real@([48])@[0-9a-f]{20}')
+
+
+def literal_copy_specs(target, publics, read):
+    """Named read-only constants compared, in one function, as a float literal.
+
+    VC6 widens a float literal in a double expression to a double literal, so a
+    source can load retail's single-precision literal only through a named
+    constant. Within the listed registered function, the operand naming that
+    constant is compared as the linked compiler literal "literal": both must
+    be distinct linked data of the literal's width with identical bytes. Every
+    other operand keeps its ordinary name. publics maps rebuilt addresses to
+    LINK map names; read(address, size) returns rebuilt image bytes."""
+    configured = target.get('comparison_literal_copies', [])
+    if not isinstance(configured, list):
+        raise ValueError('comparison_literal_copies must be a list.')
+    registered = {int(item['address'], 16) for item in target.get('functions', [])
+                  if isinstance(item, dict) and isinstance(item.get('address'), str)}
+    addresses = {}
+    for address, names in publics.items():
+        for name in names:
+            addresses.setdefault(name, set()).add(address)
+    result, seen = [], set()
+    for item in configured:
+        if (not isinstance(item, dict) or set(item) != {'function', 'symbol', 'literal'} or
+                not all(isinstance(value, str) and value for value in item.values()) or
+                (item['function'], item['symbol']) in seen):
+            raise ValueError(f'Invalid comparison literal copy: {item}')
+        seen.add((item['function'], item['symbol']))
+        function = int(item['function'], 16)
+        literal = FLOAT_LITERAL.fullmatch(item['literal'])
+        if function not in registered or literal is None or FLOAT_LITERAL.fullmatch(item['symbol']):
+            raise ValueError(f"Literal copy {item['symbol']} needs a registered function and a float literal.")
+        copy, identity = addresses.get(item['symbol'], set()), addresses.get(item['literal'], set())
+        if len(copy) != 1 or len(identity) != 1 or copy == identity:
+            raise ValueError(f"Literal copy {item['symbol']} is not a separate linked constant.")
+        copy, identity, size = copy.pop(), identity.pop(), int(literal[1])
+        if read(copy, size) != read(identity, size):
+            raise ValueError(f"Literal copy {item['symbol']} differs from {item['literal']}.")
+        result.append({'function': f'0x{function:08x}', 'symbol': item['symbol'],
+                       'identity_symbol': item['literal'], 'recomp': f'0x{copy:08x}',
+                       'identity_recomp': f'0x{identity:08x}', 'size': size})
+    return result
+
+
 def equivalent_copy_lookup(rebuilt_lookup, copies, scoped=None):
     """Name a rebuilt copy's address as the identity function it duplicates.
 
@@ -1660,6 +1858,22 @@ def unfolded_identity_results(records, original_match):
             for item in records]
 
 
+def verify_comparison_anchor_alias_links(records, publics):
+    """An alternate anchor name must be the same linked code, never a lookup rewrite."""
+    addresses = {}
+    for address, names in publics.items():
+        for name in names:
+            addresses.setdefault(name, set()).add(address)
+    for record in records:
+        if not record.get('aliases'):
+            continue
+        primary = addresses.get(record['symbol'], set())
+        if len(primary) != 1 or any(addresses.get(alias['symbol'], set()) != primary
+                                    for alias in record['aliases']):
+            raise ValueError('Comparison anchor aliases must fold to their primary LINK address.')
+        record['alias_recomp'] = f'0x{next(iter(primary)):08x}'
+
+
 def generate_comparison_anchors(metadata, source, folder, specs):
     """Generate ignored matching-only definitions; never add them to an export."""
     if not specs:
@@ -1724,12 +1938,33 @@ def generate_comparison_anchors(metadata, source, folder, specs):
                 f'{item["return_type"]} {convention}{item["name"]}({parameters}){qualifier}\n'
                 '{\n'
                 f'    comparison_anchor_marker = {item["address"]};\n' + statement + '}\n')
+        for index, alias in enumerate(item.get('aliases', []), 1):
+            body += ('\n// Alternate name of the same unqualified dependency; LINK must fold it.\n'
+                     f'static comparison_anchor_signature const comparison_anchor_alias_{index} = '
+                     f'&{alias["name"]};\n\n'
+                     f'{item["return_type"]} {convention}{alias["name"]}({parameters}){qualifier}\n'
+                     '{\n'
+                     f'    comparison_anchor_marker = {item["address"]};\n' + statement + '}\n')
+        if item.get('aliases'):
+            # VC6 ICF does not fold relocations to a file-local data symbol,
+            # even within one object. Give this anchor's shared marker one
+            # address-specific external identity; other anchors stay distinct.
+            body = body.replace('static volatile unsigned int comparison_anchor_marker;',
+                                'volatile unsigned int comparison_anchor_marker;')
+            body = body.replace('comparison_anchor_marker',
+                                'comparison_anchor_marker_' + item['address'][2:].lower())
+            # LINK retains lines for only one folded definition. The explicit
+            # CSV identity and checked LINK address bind this dependency;
+            # a line annotation on the discarded definition would be invalid.
+            body = body.replace(f'// FUNCTION: BEACHLIFE {item["address"]}\n',
+                                '// Folded dependency bound by its CSV identity and LINK address.\n')
         if path.exists() and path.read_text() != body:
             raise ValueError('Comparison-only source changed; use a fresh build directory.')
         if not path.exists():
             path.write_text(body)
         records.append({'address': item['address'], 'original_bytes': item['size'],
                         'name': item['name'], 'symbol': item['symbol'],
+                        **({'aliases': item['aliases']} if item.get('aliases') else {}),
                         'source': str(path.relative_to(ROOT)), 'sha256': digest(path),
                         **({'stlport': True} if item.get('stlport') else {}),
                         'qualified': False, 'image_execution_permitted': False})
@@ -1748,6 +1983,148 @@ VECTOR_ITERATORS = {"`eh vector constructor iterator'": '??_L@YGXPAXIHP6EX0@Z1@Z
 # 64-bit division of `total / 10`. The retail image links the runtime body; the
 # comparison link has no static runtime library, so a caller needs an identity.
 RUNTIME_HELPERS = {'_alldiv': '__alldiv'}
+
+
+def comparison_data_specs(metadata, target):
+    """Typed, initialized retail data for the ignored comparison link only."""
+    specs = target.get('comparison_data_anchors', [])
+    if not isinstance(specs, list):
+        raise ValueError('comparison_data_anchors must be a list.')
+    rows = game_metadata_rows(metadata)
+    ranges = [(int(item['address'], 16), int(item['address'], 16) + item['size'])
+              for key in ('functions', 'library_functions', 'unclassified_functions')
+              for item in target.get(key, [])]
+    names, symbols = set(), set()
+    required = {'address', 'size', 'name', 'symbol', 'header', 'type', 'count'}
+    for item in specs:
+        if (not isinstance(item, dict) or set(item) != required or
+                not isinstance(item['address'], str) or
+                not re.fullmatch(r'0x[0-9a-fA-F]{1,8}', item['address']) or
+                type(item['size']) is not int or item['size'] <= 0 or
+                type(item['count']) is not int or item['count'] <= 0 or
+                item['size'] % item['count'] or
+                not anchor_named_type(item['name']) or
+                not isinstance(item['symbol'], str) or
+                not re.fullmatch(r'(?:\?[^,\s]+|_[A-Za-z_][A-Za-z_0-9]*)', item['symbol']) or
+                not isinstance(item['header'], str) or
+                not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*\.h', item['header']) or
+                not isinstance(item['type'], str) or
+                not (item['type'] in ANCHOR_SCALARS or anchor_named_type(item['type']))):
+            raise ValueError('Unsupported comparison-only data declaration.')
+        start, end = int(item['address'], 16), int(item['address'], 16) + item['size']
+        identity = [row for row in rows if int(row['address'], 16) == start]
+        if (len(identity) != 1 or identity[0]['type'] != 'global' or
+                identity[0]['size'] != str(item['size']) or identity[0]['symbol'] != item['symbol']):
+            raise ValueError('Comparison data must match one explicit global CSV identity.')
+        if (end > 0x100000000 or item['name'] in names or item['symbol'] in symbols or
+                any(start < right and left < end for left, right in ranges)):
+            raise ValueError('Comparison data must be distinct from code and other data providers.')
+        names.add(item['name'])
+        symbols.add(item['symbol'])
+        ranges.append((start, end))
+    return specs
+
+
+def read_initialized_data(path, address, size):
+    """Read one initialized, non-executable PE data section; never original code."""
+    data = path.read_bytes()
+    payload = read_va(path, address, size)  # Validates the PE32/x86 header and file bounds.
+    pe = struct.unpack_from('<I', data, 0x3c)[0]
+    base = struct.unpack_from('<I', data, pe + 52)[0]
+    headers = pe + 24 + struct.unpack_from('<H', data, pe + 20)[0]
+    for index in range(struct.unpack_from('<H', data, pe + 6)[0]):
+        entry = headers + index * 40
+        rva, length = struct.unpack_from('<II', data, entry + 12)
+        flags = struct.unpack_from('<I', data, entry + 36)[0]
+        if base + rva <= address and address + size <= base + rva + length:
+            if not flags & 0x40 or flags & (0x20 | 0x20000000):
+                raise ValueError('Comparison data cannot copy code or an executable section.')
+            return payload
+    raise ValueError('Comparison data must fit within one initialized data section.')
+
+
+def comparison_data_object(symbol, payload):
+    """One writable data symbol and its bytes; no code, relocations or helpers."""
+    name = symbol.encode('ascii') + b'\0'
+    table = 60 + len(payload)
+    header = struct.pack('<HHIIIHH', 0x14c, 1, 0, table, 1, 0, 0)
+    section = struct.pack('<8sIIIIIIHHI', b'.data', 0, 0, len(payload), 60,
+                          0, 0, 0, 0, 0xc0300040)
+    entry = struct.pack('<IIIhHBB', 0, 4, 0, 1, 0, 2, 0)
+    return header + section + payload + entry + struct.pack('<I', 4 + len(name)) + name
+
+
+def generate_comparison_data(metadata, source, folder, original, specs):
+    """Materialize pinned original data outside exports and all tracked sources."""
+    if not specs:
+        return [], [], []
+    destination = (folder / 'comparison-data').resolve()
+    if (not destination.is_relative_to(ROOT.resolve()) or
+            destination.is_relative_to(metadata.resolve()) or
+            destination.is_relative_to(source.resolve())):
+        raise ValueError('Comparison data requires output outside reconstructed source.')
+    ignored = subprocess.run(['git', 'check-ignore', '--quiet', str(destination)], cwd=ROOT,
+                             capture_output=True, text=True, check=False)
+    if ignored.returncode != 0:
+        raise ValueError('Comparison data requires ignored output inside this repository.')
+    sources, objects, records = [], [], []
+    destination.mkdir(parents=True, exist_ok=True)
+    for item in specs:
+        header = (source / item['header']).resolve()
+        if not header.is_relative_to(source.resolve()) or not header.is_file():
+            raise ValueError('Comparison data header is not an actual source input.')
+        address = item['address'][2:].lower()
+        declaration = destination / ('data_declaration_' + address + '.cpp')
+        obj = destination / ('data_' + address + '.obj')
+        payload = read_initialized_data(original, int(item['address'], 16), item['size'])
+        body = (f'#include "{item["header"]}"\n\n'
+                '// GENERATED COMPARISON-ONLY DATA REFERENCE. Never execute this image.\n'
+                '// The original bytes stay in ignored build output, never the source export.\n'
+                f'typedef {item["type"]} comparison_data_array[{item["count"]}];\n'
+                f'typedef char comparison_data_size[sizeof(comparison_data_array) == {item["size"]} ? 1 : -1];\n'
+                f'extern "C" __declspec(dllexport) comparison_data_array* comparison_data_reference_{address}'
+                f' = &{item["name"]};\n')
+        encoded = comparison_data_object(item['symbol'], payload)
+        for path, contents in ((declaration, body.encode()), (obj, encoded)):
+            if path.exists() and path.read_bytes() != contents:
+                raise ValueError('Comparison-only data input changed; use a fresh build directory.')
+            if not path.exists():
+                path.write_bytes(contents)
+        sources.append(declaration)
+        objects.append(obj)
+        records.append({'address': item['address'], 'original_bytes': item['size'],
+                        'name': item['name'], 'symbol': item['symbol'],
+                        'source': str(declaration.relative_to(ROOT)), 'source_sha256': digest(declaration),
+                        'object': str(obj.relative_to(ROOT)), 'sha256': digest(obj),
+                        'data_sha256': hashlib.sha256(payload).hexdigest(), 'code_bytes': 0,
+                        'qualified': False, 'image_execution_permitted': False})
+    if any(path not in sources + objects for path in destination.iterdir()):
+        raise ValueError('Unexpected files in comparison-data output; use a fresh build directory.')
+    return sources, objects, records
+
+
+def verify_comparison_data_links(folder, records, binary):
+    """Require the typed header reference, sole provider, and exact linked data bytes."""
+    if not records:
+        return
+    publics = map_public_names(binary.with_suffix('.map'))
+    for record in records:
+        declaration = ROOT / record['source']
+        provider = ROOT / record['object']
+        defined, undefined = coff_external_symbols(folder / (declaration.stem + '.obj'))
+        if record['symbol'] not in undefined or record['symbol'] in defined:
+            raise ValueError('Comparison data must resolve the exact typed header reference.')
+        if (digest(provider) != record['sha256'] or digest(declaration) != record['source_sha256'] or
+                coff_external_symbols(provider) != ({record['symbol']}, set())):
+            raise ValueError('Comparison data provider changed during the build.')
+        addresses = [address for address, names in publics.items() if record['symbol'] in names]
+        if len(addresses) != 1:
+            raise ValueError('Comparison data must have one LINK address.')
+        payload = read_initialized_data(binary, addresses[0], record['original_bytes'])
+        if hashlib.sha256(payload).hexdigest() != record['data_sha256']:
+            raise ValueError('Linked comparison data differs from the pinned original bytes.')
+        record['recomp'] = f'0x{addresses[0]:08x}'
+
 
 
 def lifetime_identity_kind(name, symbol):
@@ -1991,6 +2368,7 @@ def game_target(metadata):
             seen.add(start)
     comparison_anchor_specs(metadata, target)
     comparison_lifetime_specs(metadata, target)
+    comparison_data_specs(metadata, target)
     comparison_global_operand_specs(metadata, target)
     game_runtime_cdecl_imports(target)
     return path, target
@@ -2060,7 +2438,10 @@ def game(tool, args):
     stlport_units.extend(stlport_fixture_units)
     lifetime_objects, lifetime_records = generate_lifetime_identities(
         metadata, source, folder, comparison_lifetime_specs(metadata, target))
-    inputs = set([target_path, *sources, *anchors, *lifetime_objects, *fixture_units, *source.rglob('*.h'),
+    data_sources, data_objects, data_records = generate_comparison_data(
+        metadata, source, folder, original, comparison_data_specs(metadata, target))
+    inputs = set([target_path, *sources, *anchors, *lifetime_objects, *fixture_units,
+                  *data_sources, *data_objects, *source.rglob('*.h'),
                   *(path for path in metadata.rglob('*') if path.is_file()),
                   ROOT / 'tools/matching_imports.py', ROOT / 'tools/prepare_sources.py',
                   STLPORT_PIN, *stlport_headers,
@@ -2079,16 +2460,17 @@ def game(tool, args):
     fingerprints = input_hashes()
     folder.mkdir(parents=True, exist_ok=True)
     library = tool.runtime_library(folder, cdecl_imports) if cdecl_imports else tool.runtime_library(folder)
-    link_flags = ['/fixed:no', library, *(tool.native(path) for path in lifetime_objects)]
+    link_flags = ['/fixed:no', library, *(tool.native(path) for path in [*lifetime_objects, *data_objects])]
     import_libraries = []
     for dll, policy in stdcall_imports.items():
         library_path, adjustments = stdcall_import_library(
             tool, folder / 'imports' / dll[:-4].lower(), dll,
-            policy['symbols'], policy['export_names'])
+            policy['symbols'], policy['export_names'], *([policy['ordinals']] if 'ordinals' in policy else []))
         link_flags.append(tool.native(library_path))
         import_libraries.append({
             'dll': dll, 'export_names': policy['export_names'],
             'symbols': policy['symbols'],
+            **({'ordinals': policy['ordinals']} if 'ordinals' in policy else {}),
             'library': str(library_path.relative_to(ROOT) if library_path.is_relative_to(ROOT) else library_path),
             'sha256': digest(library_path), 'name_mode_adjustments': adjustments})
     runtime_libraries = []
@@ -2118,13 +2500,15 @@ def game(tool, args):
     source_includes = {path: [stlport_include] for path in stlport_units}
     for unit in fixture_units:
         source_includes.setdefault(unit, []).append(metadata / 'fixtures/game.d')
-    binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, entry, *standalone_fixtures,
+    binary, pdb = tool.build(folder, [*sources, *support_sources, *anchors, *data_sources, entry, *standalone_fixtures,
                                       *fixture_units], 'BeachLife', link_flags,
                             ['/MD', '/G6', '/I' + tool.native(tool.compiler.parent / 'Include'),
                              '/I' + tool.native(source)],
                             source_flags=source_flags,
                             **({'source_includes': source_includes} if source_includes else {}),
-                            **({'anchor_symbols': {path: record['symbol'] for path, record in
+                            **({'anchor_symbols': {path: ([record['symbol'], *(alias['symbol'] for alias in record['aliases'])]
+                                                          if record.get('aliases') else record['symbol'])
+                                                  for path, record in
                                                    zip(anchors, anchor_records)}} if anchors else {}))
     if verify_sdk_headers(metadata, tool.compiler.parent / 'Include') != sdk_headers:
         raise ValueError('SDK header pins changed during the build.')
@@ -2145,6 +2529,7 @@ def game(tool, args):
                                              if name in linked_imports},
                                   'omitted': [name for name in cdecl_imports if name not in linked_imports]}
     verify_lifetime_identity_links(folder, lifetime_records, binary.with_suffix('.map'))
+    verify_comparison_data_links(folder, data_records, binary)
     if any(digest(ROOT / record['object']) != record['sha256'] for record in lifetime_records):
         raise ValueError('Generated lifetime identity object changed during the build.')
     # The report ignore list works by name. reccmp names a credited overload
@@ -2153,7 +2538,9 @@ def game(tool, args):
     credited_names = {item['name'].split('(')[0] for key in ('functions', 'library_functions',
                                                               'unclassified_functions')
                       for item in target.get(key, [])}
-    ignored = ['fixture_entry', *(item['name'] for item in anchor_records if item['name'] not in credited_names),
+    anchor_names = [name for item in anchor_records
+                    for name in [item['name'], *(alias['name'] for alias in item.get('aliases', []))]]
+    ignored = ['fixture_entry', *(name for name in anchor_names if name not in credited_names),
                *(item['symbol'] for item in lifetime_records)]
     # CSV metadata supplies the known float in the original, whose relocations
     # were stripped. Relocations in our comparison build identify its literal.
@@ -2188,14 +2575,20 @@ def game(tool, args):
     symbol_at = {int(row['address'], 16): row['symbol'] for row in metadata_rows
                  if row.get('type') in FOLDED_ALIAS_TYPES and row.get('symbol')}
     folding = {'publics': map_public_names(map_path)}
+    verify_comparison_anchor_alias_links(anchor_records, folding['publics'])
     folded_specs = folded_identity_specs(metadata_rows, rebuilt, folding['publics'])
     unfolded = unfolded_annotations([*sources, *support_sources], metadata_rows, rebuilt, folding['publics'])
     static_specs = static_identity_specs(metadata_rows, map_static_symbols(map_path))
     copy_specs = equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linked)
+    vendor_specs = vendor_identity_specs(target, metadata_rows, folding['publics'], objects, folder, linked,
+                                         lambda address, size: read_va(binary, address, size))
+    literal_specs = literal_copy_specs(target, folding['publics'],
+                                       lambda address, size: read_va(binary, address, size))
     command, operand_validation, folded_validation = global_operand_command(
         tool, metadata, target, source, sources, folder,
         [tool.reccmp, '--target', 'BEACHLIFE', '--json', str(reports / 'comparison.json'), '--no-color'],
-        folded_specs, static_specs, copy_specs, unfolded)
+        folded_specs, static_specs, [*copy_specs, *literal_specs,
+                                    *(item for item in vendor_specs if not item['folded'])], unfolded)
     output = tool.run(command, folder)
     (reports / 'comparison.log').write_text(output)
     if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
@@ -2285,6 +2678,9 @@ def game(tool, args):
     if lifetime_records:
         result['comparison_lifetime_anchors'] = lifetime_records
         result['image_execution_permitted'] = False
+    if data_records:
+        result['comparison_data_anchors'] = data_records
+        result['image_execution_permitted'] = False
     if cdecl_imports:
         result['runtime_cdecl_imports'] = {'original': original_cdecl_imports,
                                            'compiled': compiled_cdecl_imports}
@@ -2299,6 +2695,10 @@ def game(tool, args):
         result['comparison_static_identities'] = static_records
     if copy_specs:
         result['comparison_equivalent_copies'] = copy_specs
+    if vendor_specs:
+        result['comparison_vendor_identities'] = vendor_specs
+    if literal_specs:
+        result['comparison_literal_copies'] = literal_specs
     if unfolded:
         # Diagnostic only: such a copy shows up as a mismatching call operand.
         result['comparison_unfolded_annotations'] = unfolded

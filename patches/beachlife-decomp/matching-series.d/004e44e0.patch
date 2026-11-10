@@ -1,0 +1,146 @@
+diff --git a/fixtures/game.d/fixture_004e44e0.cpp b/fixtures/game.d/fixture_004e44e0.cpp
+new file mode 100644
+index 0000000..5fe3428
+--- /dev/null
++++ b/fixtures/game.d/fixture_004e44e0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004e44e0(ScreenRequestGamePrefix* self)
++{
++    self->ProcessWordB4();
++}
+diff --git a/metadata.d/004e44e0.csv b/metadata.d/004e44e0.csv
+new file mode 100644
+index 0000000..58130e2
+--- /dev/null
++++ b/metadata.d/004e44e0.csv
+@@ -0,0 +1,4 @@
++address,type,size,symbol
++0x004e44e0,function,600,?ProcessWordB4@ScreenRequestGamePrefix@@QAEXXZ
++0x00586790,string,33,
++0x00586768,string,39,
+diff --git a/src/match_004e44e0.cpp b/src/match_004e44e0.cpp
+new file mode 100644
+index 0000000..2d868e1
+--- /dev/null
++++ b/src/match_004e44e0.cpp
+@@ -0,0 +1,91 @@
++#include "startup_application.h"
++#include "startup_controller.h"
++#include "startup_controller_selection.h"
++#include "startup_game_file.h"
++#include "startup_game_save_record.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "window_activation.h"
++
++#include <math.h>
++#include <stdio.h>
++#include <string.h>
++
++static inline ScreenManager* Screens()
++{
++    return screen_manager;
++}
++static inline ScreenRequestRenderer* Renderer()
++{
++    return screen_request_renderer;
++}
++static inline WindowDeactivationState* WorldState()
++{
++    return window_deactivation_state;
++}
++static inline ControllerState* Active(ControllerSelectionState& state)
++{
++    return state.active;
++}
++static inline FirstControllerSelectionPrefix* First(ControllerSelectionState& state)
++{
++    return state.first_controller;
++}
++
++static inline void ReleaseSaves(ScreenRequestGamePrefix* game)
++{
++    for (GameSaveRecord** record = game->saves.begin(); record != game->saves.end(); ++record)
++    {
++        if (*record)
++            delete *record;
++    }
++    game->saves.clear();
++}
++
++// FUNCTION: BEACHLIFE 0x004e44e0
++void ScreenRequestGamePrefix::ProcessWordB4()
++{
++    unsigned int number = saves[word_b4]->word_00;
++    ReleaseSaves(this);
++    save_info_enabled = 0;
++    word_b4 = -1;
++
++    char path[128];
++    sprintf(path, "%s/save%d.dat", startup_save_directory, number);
++    GameFileReader* file = new GameFileReader(0, path);
++    char text[128];
++    file->ReadString(text, 128);
++    if (strcmp(text, startup_save_signature) != 0)
++        StartupFatal("Attempted to load incorrect file");
++    float version;
++    file->ReadFloat(&version);
++    if (fabs(version - startup_save_version) > 1.1920929e-07f)
++        StartupFatal("Save file has incorrect version number");
++    int header;
++    file->ReadInt(&header);
++    Active(controller_selection)->Exit();
++    int scenario;
++    int value;
++    float time;
++    file->ReadInt(&scenario);
++    file->ReadInt(&value);
++    file->ReadFloat(&time);
++    file->ReadFloat(&time);
++    file->ReadInt(&value);
++    file->ReadText(text, 64);
++    unsigned char flag;
++    file->ReadByte(&flag);
++    byte_a4 = flag;
++    LoadScenarioProgress();
++    controller_selection.active = controller_selection.first_controller;
++    scenario_a0 = scenario;
++    controller_selection.pending = controller_selection.first_controller;
++    First(controller_selection)->unknown_9c = 1;
++    Active(controller_selection)->Enter();
++    Renderer()->SetWord60(0);
++    WorldState()->LoadState(file);
++    Active(controller_selection)->ControllerSlot24();
++    Screens()->ApplyScreenLayout();
++    Screens()->ApplyLoadedScenario();
++    delete file;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004e44e0.json b/targets/beachlife-uk-1.1.d/004e44e0.json
+new file mode 100644
+index 0000000..df5155f
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004e44e0.json
+@@ -0,0 +1,20 @@
++{
++  "functions": [
++    {
++      "address": "0x004e44e0",
++      "size": 600,
++      "name": "ScreenRequestGamePrefix::ProcessWordB4",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004e44e0.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004e44e0.cpp",
++    "fixture_004e44e0.cpp"
++  ]
++}

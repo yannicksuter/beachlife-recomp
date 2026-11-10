@@ -1,0 +1,92 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index d4fe88c..07dd5d6 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4654,3 +4654,7 @@ typedef char SharedStaffTitleComparatorInlineSize[(sizeof(StaffTitleOrder) == 1)
+ typedef char SharedGuestQueuePointSize[(sizeof(BuildingGuestQueue) == 0x74) ? 1 : -1];
+ typedef char SharedGuestQueueEntrance[(offsetof(BuildingGuestQueue, entrance_60) == 0x60) ? 1 : -1];
+ typedef char SharedGuestQueueOffset[(offsetof(BuildingGuestQueue, offset_68) == 0x68) ? 1 : -1];
++
++typedef char SharedScenarioNameRangeSize[(sizeof(GameScenarioNameRange) == 12) ? 1 : -1];
++typedef char SharedScenarioNameOffset[(offsetof(ScreenRequestGamePrefix, scenario_names) == 0x64) ? 1 : -1];
++typedef char SharedScenarioGameSize[(sizeof(ScreenRequestGamePrefix) == 0xc8) ? 1 : -1];
+diff --git a/src/startup_match_004e3d40.cpp b/src/startup_match_004e3d40.cpp
+index 34a1e08..1bf832f 100644
+--- a/src/startup_match_004e3d40.cpp
++++ b/src/startup_match_004e3d40.cpp
+@@ -3,5 +3,5 @@
+ // FUNCTION: BEACHLIFE 0x004e3d40
+ unsigned int ScreenRequestGamePrefix::ScenarioNameCount()
+ {
+-    return static_cast<unsigned int>(scenario_names.end - scenario_names.begin);
++    return static_cast<unsigned int>(scenario_names.size());
+ }
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 25b2139..9f5e8c6 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -51,30 +51,22 @@ struct ScreenGameRegistration
+     ~ScreenGameRegistration();
+ };
+ 
+-// Actual three-pointer storage at Game+64. LoadScenarioNames allocates 256-byte
+-// UTF-16 strings and publishes their pointers. This member's destructor frees
+-// backing slots only; pointee cleanup belongs to the real enclosing methods.
+-// End-of-storage slot of the scenario name range: the capacity pointer plus an
+-// empty allocator part whose (empty) destructor 0x00437d10 the range
+-// destructor's unwind map names for this member (+0x08).
+-struct GameScenarioNameCapacity
+-{
+-    unsigned short** data;
+-
+-    GameScenarioNameCapacity(unsigned short** value);
+-    ~GameScenarioNameCapacity();
+-};
+-
++// Scenario names are STLport 4.5.3 std::vector<unsigned short*> at Game+0x64.
++// The vector owns its backing slots; enclosing game methods own the strings.
++// Non-STLport units see a layout stand-in whose special members are private.
++#ifdef _STLPORT_VERSION
++typedef std::vector<unsigned short*> GameScenarioNameRange;
++#else
+ struct GameScenarioNameRange
+ {
+-    unsigned short** begin;
+-    unsigned short** end;
+-    GameScenarioNameCapacity capacity;
+-
++private:
+     GameScenarioNameRange();
+-    // Actual 0x004e5490, 142B library body: frees the pointer storage only.
++    GameScenarioNameRange(const GameScenarioNameRange&);
+     ~GameScenarioNameRange();
++    GameScenarioNameRange& operator=(const GameScenarioNameRange&);
++    void* words_[3];
+ };
++#endif
+ 
+ // The save list is an STLport 4.5.3 std::vector<GameSaveRecord*>; its
+ // destructor is the library body 0x004e5400. Units compiled without STLport
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index 1161298..c26318a 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -3203,6 +3203,9 @@
+     ],
+     "startup_staff_title_order_retention.cpp": [
+       "/Ob1"
++    ],
++    "startup_match_004e3d40.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -4670,6 +4673,7 @@
+     "startup_screen_placement_music_access.cpp",
+     "startup_screen_placement_clear_music.cpp",
+     "startup_match_0042d100.cpp",
+-    "startup_staff_title_order_retention.cpp"
++    "startup_staff_title_order_retention.cpp",
++    "startup_match_004e3d40.cpp"
+   ]
+ }

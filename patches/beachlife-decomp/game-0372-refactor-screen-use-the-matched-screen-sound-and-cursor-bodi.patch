@@ -1,0 +1,273 @@
+diff --git a/src/startup_animation_sound_buildings.cpp b/src/startup_animation_sound_buildings.cpp
+index 946ec7f52baf62a1ca9f8d1623e500797957d2ff..c11a0b8d06de1a3452f8c55482d27e111d98d141 100644
+--- a/src/startup_animation_sound_buildings.cpp
++++ b/src/startup_animation_sound_buildings.cpp
+@@ -40,14 +40,18 @@ int AnimationSoundLookup::ParseBuildingSounds(const char* data)
+ void AnimationSoundLookup::PlayObject(unsigned int id)
+ {
+     VariableEntity* object = variable_world->FindObject(id);
+-    if (object)
+-        for (int index = 0; index < object_count_414; ++index)
+-            if (!_stricmp(object->name_06, objects_2d4[index].name_00))
+-            {
+-                AnimationObjectSound& entry = objects_2d4[index];
+-                game_update_pair->AddObjectSound(entry.sound_04, id, entry.volume_08, entry.flags_0c);
+-                return;
+-            }
++    if (!object)
++    {
++        return;
++    }
++    for (int index = 0; index < object_count_414; index++)
++    {
++        if (_stricmp(object->name_06, objects_2d4[index].name_00) == 0)
++        {
++            game_update_pair->AddObjectSound(objects_2d4[index].sound_04, id, objects_2d4[index].volume_08, objects_2d4[index].flags_0c);
++            return;
++        }
++    }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004d1b00
+diff --git a/src/startup_animation_sound_tokens.cpp b/src/startup_animation_sound_tokens.cpp
+index 1c6383109c6c1db9db553bbaf3305074d148bdac..9d422ea71c4d528b7fa210461ff1d06b03665767 100644
+--- a/src/startup_animation_sound_tokens.cpp
++++ b/src/startup_animation_sound_tokens.cpp
+@@ -33,12 +33,20 @@ int AnimationSoundLookup::ReadToken(char* token, const char* data)
+     if (data[offset] == ';')
+     {
+         token[0] = ';';
++        offset++;
+         token[1] = 0;
+-        return offset + 1;
+     }
+-    while (data[offset] != ' ' && data[offset] != '\n' && data[offset] != '\t'
+-           && data[offset] != '\r' && data[offset] != ';')
+-        *token++ = data[offset++];
+-    *token = 0;
++    else
++    {
++        while (data[offset] != ';')
++        {
++            char c = data[offset];
++            if (c == ' ' || c == '\n' || c == '\t' || c == '\r')
++                break;
++            offset++;
++            *token++ = c;
++        }
++        *token = 0;
++    }
+     return offset;
+ }
+diff --git a/src/startup_game_variables.cpp b/src/startup_game_variables.cpp
+index 785064e4d74abe2a3e491ef1a5559c5e8daf341c..97b7da770ad7a3edb35379cc90daea888fce2cd2 100644
+--- a/src/startup_game_variables.cpp
++++ b/src/startup_game_variables.cpp
+@@ -161,40 +161,58 @@ void ScreenRequestGamePrefix::WriteInteger(const char* key, int* value)
+ {
+     if (strcmp(key, "GAME_NUDGE") == 0)
+     {
+-        unsigned char enabled = *value != 0;
+-        placement->flag_34 = enabled;
++        if (*value)
++            placement->flag_34 = 1;
++        else
++            placement->flag_34 = 0;
+     }
+     else if (strcmp(key, "GAME_SEA") == 0)
+     {
+-        unsigned char enabled = *value != 0;
+-        placement->flag_35 = enabled;
+-        screen_request_renderer->SetSeaEnabled(enabled);
++        if (*value)
++        {
++            placement->flag_35 = 1;
++            screen_request_renderer->SetSeaEnabled(1);
++        }
++        else
++        {
++            placement->flag_35 = 0;
++            screen_request_renderer->SetSeaEnabled(0);
++        }
+     }
+     else if (strcmp(key, "GAME_LIGHTS") == 0)
+     {
+-        unsigned char enabled = *value != 0;
+-        placement->flag_36 = enabled;
++        if (*value)
++            placement->flag_36 = 1;
++        else
++            placement->flag_36 = 0;
+     }
+     else if (strcmp(key, "GAME_KEYLINES") == 0)
+     {
+-        unsigned char enabled = *value != 0;
+-        placement->flag_37 = enabled;
+-        variable_world->SetKeylines(enabled);
++        if (*value)
++        {
++            placement->flag_37 = 1;
++            variable_world->SetKeylines(1);
++        }
++        else
++        {
++            placement->flag_37 = 0;
++            variable_world->SetKeylines(0);
++        }
+     }
+     else if (strcmp(key, "GAME_SCENARIO_SELECT") == 0)
+     {
+-        scenario_a0 = static_cast<unsigned int>(*value);
++        scenario_a0 = *value;
+     }
+     else if (strcmp(key, "GAME_GAME_SPEED") == 0)
+     {
+-        unsigned int index = static_cast<unsigned int>(*value);
+-        WindowDeactivationState* state = window_deactivation_state;
+-        state->SetGameSpeed(index);
++        window_deactivation_state->SetGameSpeed(*value);
+     }
+     else if (strcmp(key, "PLAYLIST_MODE") == 0)
+     {
+-        unsigned int action = (*value == 0) ? 9 : 8;
+-        screen_manager->panel_13c->HandleAction(action);
++        if (*value == 0)
++            screen_manager->panel_13c->HandleAction(9);
++        else
++            screen_manager->panel_13c->HandleAction(8);
+     }
+     else
+     {
+diff --git a/src/startup_screen_button_timed_event.cpp b/src/startup_screen_button_timed_event.cpp
+index ba5c421d4d8484da9aeab29008ac3ce41674697c..de450b8f5642de6797b57cb911b0d0e4c595e891 100644
+--- a/src/startup_screen_button_timed_event.cpp
++++ b/src/startup_screen_button_timed_event.cpp
+@@ -1,23 +1,30 @@
+ #include "startup_frame_clock.h"
+ #include "startup_input_motion.h"
+ #include "startup_screen_button.h"
++#include "startup_screen_button_constants.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004a1940
+ bool ScreenButtonPrefix::HandleTimedEvent(int x, int y, int value)
+ {
+-    if (state_30 == 0)
++    bool result = false;
++    if (state_30)
+     {
+-        return false;
++        ScreenItem::HandleTimedEvent(x, y, value);
++        if (value == 1)
++        {
++            if (ReadState40())
++            {
++                if (word_44 == 2)
++                {
++                    word_44 = 4;
++                    float time = startup_frame_clock->seconds;
++                    time_58 = time;
++                    value_6c = screen_button_default_scale;
++                    result = true;
++                    flag_7d = result;
++                }
++            }
++        }
+     }
+-
+-    ScreenItem::HandleTimedEvent(x, y, value);
+-    if (value == 1 && ReadState40() != 0 && word_44 == 2)
+-    {
+-        word_44 = 4;
+-        time_58 = startup_frame_clock->seconds;
+-        value_6c = 0.75f;
+-        flag_7d = 1;
+-        return true;
+-    }
+-    return false;
++    return result;
+ }
+diff --git a/src/startup_screen_linear_attach.cpp b/src/startup_screen_linear_attach.cpp
+index 76f032f303e2b5cb71b5c8194123c9291ba15b89..c934d0adad0b9f7008d4d06d30c30cd697990f86 100644
+--- a/src/startup_screen_linear_attach.cpp
++++ b/src/startup_screen_linear_attach.cpp
+@@ -15,16 +15,15 @@ void ScreenLinearContainer::Unresolved10(ScreenItem* item)
+         value = item;
+     }
+ 
+-    ScreenChildLink* child = children;
+-    if (child)
++    ScreenChildLink* root = children;
++    if (root)
+     {
+-        ScreenChildLink* next = child->next;
+-        while (next)
++        ScreenChildLink* last = root;
++        while (last->next)
+         {
+-            child = next;
+-            next = child->next;
++            last = last->next;
+         }
+-        child->next = new ScreenChildLink(value);
++        last->next = new ScreenChildLink(value);
+     }
+     else
+     {
+diff --git a/src/startup_screen_mode1_virtuals.cpp b/src/startup_screen_mode1_virtuals.cpp
+index 32784fd9edc1c102a745c137dba1d8b969a30958..a180293b17ba4405db4290f06f6b9420f41f5838 100644
+--- a/src/startup_screen_mode1_virtuals.cpp
++++ b/src/startup_screen_mode1_virtuals.cpp
+@@ -47,15 +47,21 @@ void ScreenMode1Controller::Exit()
+ void ScreenMode1Controller::Update(float elapsed)
+ {
+     manager->UpdateModeScreens(elapsed);
+-    if (manager->word_68 != scenery_index_10)
++    int index = manager->word_68;
++    if (index == scenery_index_10)
+     {
+-        scenery_index_10 = manager->word_68;
+-        scenery_08 = variable_catalog->Scenery(scenery_index_10);
+-        if (word_0c)
+-            screen_dialog_resources->Release(word_0c);
+-        word_0c = screen_dialog_resources->Find(scenery_08->resource_c4);
+-        if (scenery_08->animation_1c4[0])
+-            word_0c->SetAnimation(scenery_08->animation_1c4, 0, 0);
++        return;
++    }
++    scenery_index_10 = index;
++    scenery_08 = variable_catalog->Scenery(scenery_index_10);
++    if (word_0c)
++    {
++        screen_dialog_resources->Release(word_0c);
++    }
++    word_0c = screen_dialog_resources->Find(scenery_08->resource_c4);
++    if (scenery_08->animation_1c4[0])
++    {
++        word_0c->SetAnimation(scenery_08->animation_1c4, 0, 0);
+     }
+ }
+ 
+diff --git a/src/startup_world_cursor_constructor.cpp b/src/startup_world_cursor_constructor.cpp
+index 64e89b4a1d701b4c6a024f0897494f6197d9b5b4..fa121ae98c4ad9622aa2e4e613d8967e6d7f5190 100644
+--- a/src/startup_world_cursor_constructor.cpp
++++ b/src/startup_world_cursor_constructor.cpp
+@@ -7,11 +7,17 @@ WorldCursorNames::WorldCursorNames(const char* path_tiles, const char* pavement_
+     : WorldCursorRegistration(this)
+ {
+     ScreenDialogResourceLookup* resources = screen_dialog_resources;
+-    names_00 = resources->Find(pavement_tiles ? pavement_tiles : "PathTile_10");
++    if (!pavement_tiles)
++        names_00 = resources->Find("PathTile_10");
++    else
++        names_00 = resources->Find(pavement_tiles);
+     names_00->word_08 = 3;
+     names_04 = resources->Find("Grass08");
+     names_04->word_08 = 3;
+-    alternate_30 = resources->Find(beach_tiles ? beach_tiles : "PathTile_10b");
++    if (!beach_tiles)
++        alternate_30 = resources->Find("PathTile_10b");
++    else
++        alternate_30 = resources->Find(beach_tiles);
+     alternate_30->word_08 = 3;
+     memset(frames_34, 0, sizeof(frames_34));
+     LoadFrames(path_tiles);

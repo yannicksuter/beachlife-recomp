@@ -1,0 +1,165 @@
+diff --git a/src/startup_entity_base_lifetime.cpp b/src/startup_entity_base_lifetime.cpp
+index 5927c9c2aa6f18fd1da716673c7d66cb8d99b58a..f286ea01a9c7d514cfbc5808a2ad115a720206e7 100644
+--- a/src/startup_entity_base_lifetime.cpp
++++ b/src/startup_entity_base_lifetime.cpp
+@@ -11,8 +11,7 @@ VariableEntity::~VariableEntity() noexcept(false)
+ {
+     if (keyline_state_44)
+         screen_dialog_resources->Release(keyline_state_44);
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    CurrentScreenTerrain()->CellAt(position)->RemoveEntity(this);
++    CurrentScreenTerrain()->CellAt(position_30)->RemoveEntity(this);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00454200
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index d938c3f6e8cfa49538b9cbcb3e10fb5fb20568d8..a0ca25117aab745398d4bb62de818682fd1a7886 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -31,6 +31,13 @@ struct ScreenTextBucket
+     // Empty user destructor: delete[] of the bucket array runs the vector
+     // destructor iterator with its folded out-of-line copy 0x00437d10.
+     ~ScreenTextBucket() { }
++    ScreenTextBucket& operator=(const ScreenTextBucket& other)
++    {
++        key = other.key;
++        value = other.value;
++        unavailable = other.unavailable;
++        return *this;
++    }
+ };
+ 
+ // Real out-of-line shared constructor 0x004d38b0 and empty destructor
+@@ -78,6 +85,14 @@ struct ScreenTextTable : ScreenTextStorageBase, ScreenTextBucketArray
+         used_14 = 0;
+         bucket_count = static_cast<int>(SelectHashTableCapacity(requested));
+         ReserveBuckets(bucket_count);
++        Clear();
++    }
++    ~ScreenTextTable();
++    // Actual 0x0049f590, RET4; grows the bucket storage.
++    void ReserveBuckets(int count);
++    // Retail expands Clear and Insert into the lookup constructor.
++    void Clear()
++    {
+         ScreenTextBucket* bucket = buckets;
+         for (int count = end_index; count > 0; --count)
+         {
+@@ -86,9 +101,26 @@ struct ScreenTextTable : ScreenTextStorageBase, ScreenTextBucketArray
+         }
+         used_14 = 0;
+     }
+-    ~ScreenTextTable();
+-    // Actual 0x0049f590, RET4; grows the bucket storage.
+-    void ReserveBuckets(int count);
++    // Linear probing from hash % bucket_count; a full table drops the entry.
++    void Insert(const char* key, ScreenTextValue* value)
++    {
++        unsigned int hash = 0;
++        for (const char* character = key; *character; ++character)
++            hash = hash * 5 + *character;
++        unsigned int first = hash % bucket_count;
++        unsigned int slot = first;
++        while (buckets[slot].unavailable == 0)
++        {
++            if (static_cast<int>(++slot) >= bucket_count)
++                slot = 0;
++            if (slot == first)
++                return;
++        }
++        buckets[slot].key = key;
++        buckets[slot].value = value;
++        buckets[slot].unavailable = 0;
++        ++used_14;
++    }
+ };
+ 
+ struct ScreenTextKey
+diff --git a/src/startup_screen_text_lookup_constructor.cpp b/src/startup_screen_text_lookup_constructor.cpp
+index 62a0be19adcdbcd2a00d7fafef4088ea3b3fcc15..698254e49dd37d7728f1f692b083d37568b1fe2a 100644
+--- a/src/startup_screen_text_lookup_constructor.cpp
++++ b/src/startup_screen_text_lookup_constructor.cpp
+@@ -66,13 +66,7 @@ ScreenTextLookup::ScreenTextLookup(const char* name)
+     file_18 = 0;
+     index_1c = 0;
+     memset(values, 0, sizeof(values));
+-    ScreenTextBucket* bucket = table.buckets;
+-    for (int count = table.end_index; count > 0; --count)
+-    {
+-        bucket->unavailable = 1;
+-        ++bucket;
+-    }
+-    table.used_14 = 0;
++    table.Clear();
+ 
+     // The original trivial allocations are scalar-freed. Use real scalar host
+     // storage for those arrays of implicit-lifetime character/code-unit values.
+@@ -133,28 +127,7 @@ ScreenTextLookup::ScreenTextLookup(const char* name)
+                 text[index] = ReadUnit(start + index * 2);
+ 
+             ScreenTextValue* entry = &values[index_1c];
+-            const char* key = entry->key;
+-            unsigned int hash = 0;
+-            for (const char* character = key; *character; ++character)
+-                hash = hash * 5 + *character;
+-            unsigned int first = hash % table.bucket_count;
+-            unsigned int slot = first;
+-            bool found = table.buckets[slot].unavailable != 0;
+-            while (!found)
+-            {
+-                if (static_cast<int>(++slot) >= table.bucket_count)
+-                    slot = 0;
+-                if (slot == first)
+-                    break;
+-                found = table.buckets[slot].unavailable != 0;
+-            }
+-            if (found)
+-            {
+-                table.buckets[slot].key = key;
+-                table.buckets[slot].value = entry;
+-                table.buckets[slot].unavailable = 0;
+-                ++table.used_14;
+-            }
++            table.Insert(entry->key, entry);
+             ++index_1c;
+         }
+     }
+diff --git a/src/startup_screen_text_table_reserve.cpp b/src/startup_screen_text_table_reserve.cpp
+index 6d75acfca8bf875d56d4f2128ca3c098b6101a4a..b0c1723542b0d075ae6ec217ecf2e43c9dd87385 100644
+--- a/src/startup_screen_text_table_reserve.cpp
++++ b/src/startup_screen_text_table_reserve.cpp
+@@ -5,24 +5,28 @@ void ScreenTextTable::ReserveBuckets(int count)
+ {
+     if (count > capacity_04)
+     {
+-        ScreenTextBucket* fresh = 0;
+         if (capacity_04 == 0)
+             capacity_04 = 1;
+         do
+             capacity_04 *= 2;
+         while (capacity_04 <= count);
+-
+         if (capacity_04 > 0)
+         {
+-            fresh = new ScreenTextBucket[capacity_04];
+-            if (buckets)
++            ScreenTextBucket* fresh = new ScreenTextBucket[capacity_04];
++            if (buckets != 0)
+             {
+                 for (int index = 0; index < end_index; ++index)
+                     fresh[index] = buckets[index];
++                delete[] buckets;
+             }
++            buckets = fresh;
++        }
++        else
++        {
++            if (buckets != 0)
++                delete[] buckets;
++            buckets = 0;
+         }
+-        delete[] buckets;
+-        buckets = fresh;
+     }
+     end_index = count;
+ }

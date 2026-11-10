@@ -1,0 +1,138 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 461cc25..568a082 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -4707,5 +4707,3 @@ typedef char OverlayWaterSignature[(sizeof(static_cast<OverlayWaterRenderer>(
+ 
+ typedef char PositionFromMapSize[(sizeof(ScreenWorldPosition) == 12) ? 1 : -1];
+ typedef char PositionFromMapHeightOffset[(offsetof(ScreenWorldPosition, z) == 8) ? 1 : -1];
+-
+-typedef char SharedBuildingRowOrderSize[(sizeof(ScreenTableBuildingOrder) == 8) ? 1 : -1];
+diff --git a/src/startup_screen_table_building_order.h b/src/startup_screen_table_building_order.h
+deleted file mode 100644
+index 8e0a264..0000000
+--- a/src/startup_screen_table_building_order.h
++++ /dev/null
+@@ -1,56 +0,0 @@
+-#ifndef STARTUP_SCREEN_TABLE_BUILDING_ORDER_H
+-#define STARTUP_SCREEN_TABLE_BUILDING_ORDER_H
+-
+-#include "startup_screen_table_sort.h"
+-#include <utility>
+-#include "startup_world_entities.h"
+-#include "startup_variable_state.h"
+-#include <wchar.h>
+-
+-static inline float BuildingValue(ScreenRequestContext* context, unsigned int index)
+-{
+-    return context->AsBuilding()->building_values_214[index];
+-}
+-inline bool ScreenTableBuildingOrder::operator()(ScreenRequestContext* a, ScreenRequestContext* b)
+-{
+-    unsigned short first_name[256], second_name[256];
+-    ScreenRequestContext* left;
+-    ScreenRequestContext* right;
+-    if (reversed)
+-    {
+-        left = a;
+-        right = b;
+-    }
+-    else
+-    {
+-        left = b;
+-        right = a;
+-    }
+-    switch (kind)
+-    {
+-    case 23:
+-        return left->AsBuilding()->building_60->power_cf4 > right->AsBuilding()->building_60->power_cf4;
+-    case 18:
+-        return left->AsBuilding()->power_state_33c > right->AsBuilding()->power_state_33c;
+-    case 28:
+-        return left->AsBuilding()->building_value_330 > right->AsBuilding()->building_value_330;
+-    case 19:
+-        return !(BuildingValue(left, 0) <= BuildingValue(right, 0));
+-    case 20:
+-        return !(BuildingValue(left, 1) <= BuildingValue(right, 1));
+-    case 21:
+-        return !(BuildingValue(left, 2) <= BuildingValue(right, 2));
+-    case 22:
+-        return !(BuildingValue(left, 3) <= BuildingValue(right, 3));
+-    case 26:
+-        return left->AsBuilding()->word_224 > right->AsBuilding()->word_224;
+-    case 27:
+-        return left->AsBuilding()->building_value_350 > right->AsBuilding()->building_value_350;
+-    default:
+-        left->ReadText("BUILDING_NAME", second_name);
+-        right->ReadText("BUILDING_NAME", first_name);
+-        return wcscmp(second_name, first_name) < 0;
+-    }
+-}
+-
+-#endif
+diff --git a/src/startup_screen_table_sort.h b/src/startup_screen_table_sort.h
+index 070e2e8..5a4f32f 100644
+--- a/src/startup_screen_table_sort.h
++++ b/src/startup_screen_table_sort.h
+@@ -10,12 +10,13 @@ struct ScreenTableOrder
+     unsigned int kind;
+     unsigned char reversed;
+ 
+-    bool GuestBefore(ScreenRequestContext* left, ScreenRequestContext* right); // 0x004ba1f0.
++    bool GuestBefore(ScreenRequestContext* left, ScreenRequestContext* right);    // 0x004ba1f0.
++    bool BuildingBefore(ScreenRequestContext* left, ScreenRequestContext* right); // 0x004baba0.
+ };
+ 
+ // The guest and building row orders are STLport std::stable_sort comparators
+-// (__stable_sort_aux 0x004b96e0 and 0x004b9960). The building comparator
+-// is also expanded in the vendor merge and bound helpers.
++// (__stable_sort_aux 0x004b96e0 and 0x004b9960); each comparison is the
++// order's out-of-line member.
+ struct ScreenTableGuestOrder : ScreenTableOrder
+ {
+     ScreenTableGuestOrder(unsigned int order_kind, unsigned char order_reversed)
+@@ -36,7 +37,10 @@ struct ScreenTableBuildingOrder : ScreenTableOrder
+         kind = order_kind;
+         reversed = order_reversed;
+     }
+-    inline bool operator()(ScreenRequestContext* left, ScreenRequestContext* right);
++    bool operator()(ScreenRequestContext* left, ScreenRequestContext* right)
++    {
++        return BuildingBefore(left, right);
++    }
+ };
+ 
+ struct ScreenTableStaffOrder
+diff --git a/src/startup_table_building_order_retention.cpp b/src/startup_table_building_order_retention.cpp
+deleted file mode 100644
+index 8373f56..0000000
+--- a/src/startup_table_building_order_retention.cpp
++++ /dev/null
+@@ -1,4 +0,0 @@
+-#include "startup_screen_table_building_order.h"
+-
+-// Keep the inline comparator available to vendor callers outside this unit.
+-bool (ScreenTableBuildingOrder::*RetainTableBuildingOrder)(ScreenRequestContext*, ScreenRequestContext*) = &ScreenTableBuildingOrder::operator();
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index f531bfd..55f6d96 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -3209,9 +3209,6 @@
+     ],
+     "window_audio_playback.cpp": [
+       "/Ob1"
+-    ],
+-    "startup_table_building_order_retention.cpp": [
+-      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -4680,7 +4677,6 @@
+     "startup_screen_placement_clear_music.cpp",
+     "startup_match_0042d100.cpp",
+     "startup_staff_title_order_retention.cpp",
+-    "startup_match_004e3d40.cpp",
+-    "startup_table_building_order_retention.cpp"
++    "startup_match_004e3d40.cpp"
+   ]
+ }

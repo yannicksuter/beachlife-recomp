@@ -1,0 +1,267 @@
+diff --git a/src/startup_overlay_render.cpp b/src/startup_overlay_render.cpp
+index 2981a94fbc6eab4d3ef1cb5e74d7db8437ad9be1..c9ec113fe45f52585510a2dfdfe0e87ae6e2a2f4 100644
+--- a/src/startup_overlay_render.cpp
++++ b/src/startup_overlay_render.cpp
+@@ -16,7 +16,7 @@
+ // The retail CRT initializer table invokes construction at 0x004fc010.
+ // The global definition also registers TgaImage::~TgaImage for process exit.
+ // GLOBAL: BEACHLIFE 0x005a8938
+-static TgaImage overlay_water_image(128, 128);
++TgaImage overlay_water_image(128, 128);
+ 
+ // FUNCTION: BEACHLIFE 0x00418fa0
+ void OverlayMapPrefix::RenderTerrain()
+@@ -133,7 +133,7 @@ void OverlayMapPrefix::RenderGrid()
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0041b1b0
+-void OverlayMapPrefix::RenderWater()
++bool OverlayMapPrefix::RenderWater()
+ {
+     float scale;
+     scale = screen_request_renderer->value_58;
+@@ -157,6 +157,7 @@ void OverlayMapPrefix::RenderWater()
+     {
+     }
+     overlay_water_image.pixels = 0;
++    return true;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0041b4b0
+diff --git a/src/startup_screen_manager_owner190_add_entry.cpp b/src/startup_screen_manager_owner190_add_entry.cpp
+index eb7d94bc4ccc170afd5bd7e80115f26398e94e25..c50b98492ad44c649b5077c53ab8c6c4a9743039 100644
+--- a/src/startup_screen_manager_owner190_add_entry.cpp
++++ b/src/startup_screen_manager_owner190_add_entry.cpp
+@@ -11,46 +11,25 @@ void ScreenManagerOwner190::AddNextEntry()
+ {
+     unsigned int index = index_00;
+     if (index >= 205)
+-    {
+         return;
+-    }
+-
+     RequireCreditsData();
+     ScreenManagerOwner190Row* row = screen_manager_owner190_rows + index;
++    ScreenRectangle rectangle;
++    rectangle.left = 0;
++    rectangle.right = 800;
++    rectangle.top = 610;
++    rectangle.bottom = 625;
+     char key[128];
+     sprintf(key, screen_manager_owner190_key_format, row->key_number);
+-
+     ScreenManagerOwner190Entry* entry = new ScreenManagerOwner190Entry;
+-    if (entry != 0)
+-    {
+-        entry->item = 0;
+-    }
+-
+-    void* pending = ::operator new(sizeof(ScreenTextItem));
+-    unsigned char flag;
+-    try
+-    {
+-        ScreenTextItem* item = 0;
+-        if (pending != 0)
+-        {
+-            int value_50 = row->word_08;
+-            int font = row->font_index;
+-            ScreenRectangle rectangle = { 0, 610, 800, 625 };
+-            item = ::new (pending) ScreenTextItem(rectangle, key, font, value_50, 4);
+-        }
+-        item->state_58 = 0;
+-        entry->item = item;
+-        entry->word_04 = row->word_10;
+-        flag = row->flag_0c;
+-    }
+-    catch (...)
+-    {
+-        ::operator delete(pending);
+-        throw;
+-    }
+-
+-    word_08 = flag != 0 ? 30 : 15;
+-    ScreenManagerOwner190Iterator last = entries.End();
+-    entries.Insert(last, entry);
++    ScreenTextItem* item = new ScreenTextItem(rectangle, key, row->font_index, row->word_08, 4);
++    item->state_58 = 0;
++    entry->item = item;
++    entry->word_04 = row->word_10;
++    if (row->flag_0c)
++        word_08 = 30;
++    else
++        word_08 = 15;
++    entries.Insert(entries.End(), entry);
+     ++index_00;
+ }
+diff --git a/src/startup_screen_manager_owner190_entry.h b/src/startup_screen_manager_owner190_entry.h
+index ee9082963e3b71bee27181e496baf4d8b0776ee3..98b36dfb950ec3f9f6d9652383fb5be942646a87 100644
+--- a/src/startup_screen_manager_owner190_entry.h
++++ b/src/startup_screen_manager_owner190_entry.h
+@@ -9,6 +9,10 @@ struct ScreenItem;
+ // This record is distinct from ActiveScreenEntry. Native sizeof is separate.
+ struct ScreenManagerOwner190Entry
+ {
++    ScreenManagerOwner190Entry()
++        : item(0)
++    {
++    }
+     ScreenItem* item;
+     unsigned int word_04;
+ };
+diff --git a/src/startup_screen_overlay_layout.h b/src/startup_screen_overlay_layout.h
+index 085a16dc3030d895edfad6f1c0b93a7a7134fc84..099fb78e7bd01896d16f9cac0e8fdd5db52e67ed 100644
+--- a/src/startup_screen_overlay_layout.h
++++ b/src/startup_screen_overlay_layout.h
+@@ -9,6 +9,9 @@
+ struct VariableEntity;
+ struct ScreenRequestRenderer;
+ struct DebugFont;
++struct TgaImage;
++
++extern TgaImage overlay_water_image; // 0x005a8938.
+ 
+ struct OverlayMappedFile
+ {
+@@ -160,7 +163,7 @@ struct OverlayMapPrefix : OverlayMapRegistration
+     ScreenPoint WorldToTile(const ScreenWorldPosition* position);                           // 0x00418cc0.
+     float WaterCoverage();                                                                  // 0x0041b4b0.
+     void RenderTerrain();                                                                   // 0x00418fa0.
+-    void RenderWater();                                                                     // 0x0041b1b0.
++    bool RenderWater();                                                                     // 0x0041b1b0.
+     void RenderEntities(VariableEntity** entities, unsigned int count, unsigned char flag); // 0x004194e0.
+     void RenderEntityOverlays(VariableEntity** entities, unsigned int count);               // 0x00419660.
+     void RenderGrid();                                                                      // 0x0041b0c0.
+diff --git a/src/startup_screen_point.h b/src/startup_screen_point.h
+index 5c6b36814822500880bc2a0f402ced0bebd5df57..feaf85c400e513f0afdbe7d3caf586fe807ac89c 100644
+--- a/src/startup_screen_point.h
++++ b/src/startup_screen_point.h
+@@ -60,6 +60,12 @@ struct ScreenWorldPosition
+         x = first;
+         y = second;
+     }
++    ScreenWorldPosition(const ScreenMapPosition& point, float height)
++        : x(point.x)
++        , y(point.y)
++        , z(height)
++    {
++    }
+     // FUNCTION: BEACHLIFE 0x004479a0
+     constexpr ScreenWorldPosition(float first, float second, float third)
+         : x(first)
+diff --git a/src/startup_variable_entity_vehicle.cpp b/src/startup_variable_entity_vehicle.cpp
+index 17398f0f449dc312ba55437f172e2369d5b96da3..5328b14815c54aae71a91f1450cf3df1c9dd7829 100644
+--- a/src/startup_variable_entity_vehicle.cpp
++++ b/src/startup_variable_entity_vehicle.cpp
+@@ -56,7 +56,7 @@ void VariableEntity::SetDepartureHeading(int heading)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00494da0
+-void VariableEntity::SetVehicleVariant(unsigned char variant)
++void VariableEntity::SetVehicleVariant(unsigned int variant)
+ {
+     AsVehicle()->vehicle_variant_5cd = variant;
+     ScreenDialogResource* resource = keyline_state_44;
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index beb766dc2528904648c77fe0054939508c6a6100..3655a4c9918ebc4d206a040c46df39b5317766f0 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -374,6 +374,10 @@ using VariableKeylineState = ScreenDialogResource;
+ 
+ struct VariableThought
+ {
++    VariableThought()
++        : data_00(0)
++    {
++    }
+     void* data_00;
+     unsigned int target_04;
+ };
+@@ -525,7 +529,7 @@ struct VariableEntity
+     void SetDepartureTile(ScreenPoint point);                 // 0x0049a510.
+     void SetArrivalHeading(int heading);                      // 0x0049a530.
+     void SetDepartureHeading(int heading);                    // 0x0049a550.
+-    void SetVehicleVariant(unsigned char variant);            // 0x00494da0.
++    void SetVehicleVariant(unsigned int variant);             // 0x00494da0.
+     void SetTransport(unsigned int id);                       // 0x00478560.
+     void SetHappiness(float value);                           // 0x0046b180.
+     void OpenContainedEntity();                               // 0x00494330.
+diff --git a/src/startup_world_building_add_thought.cpp b/src/startup_world_building_add_thought.cpp
+index 0167b2da62a55e32d02de489cd0cfe29f0ab25c5..b8f81cb96fa8fae9c3b1c6405b616fc07acd460f 100644
+--- a/src/startup_world_building_add_thought.cpp
++++ b/src/startup_world_building_add_thought.cpp
+@@ -29,8 +29,6 @@ void WorldBuildingEntity::AddThought(const unsigned short* text, unsigned int gu
+     }
+ 
+     VariableThought* thought = new (std::nothrow) VariableThought;
+-    if (thought)
+-        thought->data_00 = 0;
+     thought->target_04 = guest;
+     thought->data_00 = ::operator new((wcslen(text) + 1) * sizeof(unsigned short), std::nothrow);
+     wcscpy(static_cast<unsigned short*>(thought->data_00), text);
+diff --git a/src/startup_world_building_state.cpp b/src/startup_world_building_state.cpp
+index 5d7aaf6467ff471ee486d007e070f52d0cf5c1bd..ecd638d4a63b52f1dfe7c3729f150fd70f74383f 100644
+--- a/src/startup_world_building_state.cpp
++++ b/src/startup_world_building_state.cpp
+@@ -261,8 +261,6 @@ void WorldBuildingEntity::Unknown4c(GameFileReader* file)
+     for (int i = 0; i < static_cast<int>(thought_count); ++i)
+     {
+         VariableThought* thought = new (std::nothrow) VariableThought;
+-        if (thought)
+-            thought->data_00 = 0;
+         file->ReadInt(reinterpret_cast<int*>(&thought->target_04));
+         unsigned int length;
+         file->Unknown68(&length);
+diff --git a/src/startup_world_entities.h b/src/startup_world_entities.h
+index 9f62c5ebdd08f945564bcb8b87c32f56760c1b87..719107cf2a261e92ca423548d8e3d688beb4a66a 100644
+--- a/src/startup_world_entities.h
++++ b/src/startup_world_entities.h
+@@ -37,6 +37,7 @@ static_assert(sizeof(void*) != 4 || sizeof(VariableEntity) == 0x58);
+ struct WorldStaticEntity : VariableEntity
+ {
+     void SetRepairAssigned(unsigned char assigned);      // 0x004910c0.
++    void SetCleaningAssigned(unsigned char assigned);    // Folded 0x00483590.
+     bool NeedsCleaning();                                // 0x004910f0.
+     bool NeedsRepair();                                  // 0x004910d0.
+     void SetRepairActive(unsigned char value);           // 0x00491110.
+diff --git a/src/window_audio_playback.cpp b/src/window_audio_playback.cpp
+index b0565d4640a31fece3e26243e9bf3d871d2aa5c5..78cc88cbd5b47bcbab184c49876bb7c0a39c7461 100644
+--- a/src/window_audio_playback.cpp
++++ b/src/window_audio_playback.cpp
+@@ -38,16 +38,6 @@ int WindowAudioState::PlaySoundWithParameters(
+             if (data)
+             {
+                 WindowSoundVoice* voice = new WindowSoundVoice;
+-                if (voice)
+-                {
+-                    voice->name = 0;
+-                    voice->data_04 = 0;
+-                    voice->word_08 = 0;
+-                    voice->bytes_0c = 0;
+-                    voice->word_10 = 0;
+-                    voice->byte_2c = 0;
+-                    voice->word_30 = -1;
+-                }
+                 voices_74[index] = voice;
+                 voice->data_04 = data;
+                 voice->bytes_0c = bytes;
+diff --git a/src/window_sound_voice.h b/src/window_sound_voice.h
+index 972811262c5a60997a1ea227f0764f32bd5114a5..db13c56e3a2583070112539158df3e8c4290b1ed 100644
+--- a/src/window_sound_voice.h
++++ b/src/window_sound_voice.h
+@@ -5,6 +5,16 @@
+ // are invented; the bank data and external sample have separate lifetimes.
+ struct WindowSoundVoice
+ {
++    WindowSoundVoice()
++        : name(0)
++        , data_04(0)
++        , word_08(0)
++        , bytes_0c(0)
++        , word_10(0)
++        , byte_2c(0)
++        , word_30(-1)
++    {
++    }
+     char* name;
+     void* data_04;
+     unsigned int word_08;
