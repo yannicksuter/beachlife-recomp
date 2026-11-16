@@ -1,0 +1,183 @@
+diff --git a/src/startup_screen_table_constructor.cpp b/src/startup_screen_table_constructor.cpp
+index 688fe8c0d24417c8a26b87b440d24a3b6da5f644..65ac1614fd350a2e394cc211dc547107731f8e86 100644
+--- a/src/startup_screen_table_constructor.cpp
++++ b/src/startup_screen_table_constructor.cpp
+@@ -107,27 +107,7 @@ ScreenTable::ScreenTable(ScreenRectangle initial,
+ // FUNCTION: BEACHLIFE 0x004b7e30
+ ScreenTable::~ScreenTable()
+ {
+-    {
+-        ScreenTableNode* node = children_70.head->next;
+-        while (node != children_70.head)
+-        {
+-            ScreenTableNode* released = node;
+-            node = node->next;
+-            if (released)
+-            {
+-                {
+-                    unsigned int pool_bytes = sizeof(ScreenTableNode);
+-                    PoolChunkLink* volatile* bucket = pool_chunk_buckets + (pool_bytes - 1) / 8;
+-                    AcquirePoolLock(&pool_lock_word);
+-                    PoolChunkLink* returned = ::new (static_cast<void*>(released)) PoolChunkLink;
+-                    returned->next = *bucket;
+-                    *bucket = returned;
+-                    pool_lock_word = 0;
+-                }
+-            }
+-        }
+-        children_70.head->next = children_70.head;
+-        children_70.head->previous = children_70.head;
+-    }
+-    delete scrollbar_58;
++    children_70.Clear();
++    if (scrollbar_58)
++        delete scrollbar_58;
+ }
+diff --git a/src/startup_screen_table_update.cpp b/src/startup_screen_table_update.cpp
+index f4a8af159cf7e6dba7c648afc18a9e99acdf5892..7e9a6be1936272b3968072445abeec29e7097991 100644
+--- a/src/startup_screen_table_update.cpp
++++ b/src/startup_screen_table_update.cpp
+@@ -4,44 +4,47 @@
+ #include "startup_screen_scroll_bar.h"
+ #include "startup_trivial_range_overflow.h"
+ 
+-// FUNCTION: BEACHLIFE 0x004b8130
+-void ScreenTable::Unresolved08()
++// Source dispatch shared by the update and prepare methods; both inline it.
++void ScreenTable::RefreshRows(float elapsed)
+ {
++    switch (source_kind_4c)
+     {
+-        float elapsed = 8.0f;
+-        switch (source_kind_4c)
+-        {
+-        case 0:
+-            UpdateSource0(elapsed);
+-            break;
+-        case 1:
+-            UpdateSource1(elapsed);
+-            break;
+-        case 2:
+-            UpdateSource2(elapsed);
+-            break;
+-        case 3:
+-        {
+-            ClearPointerRange(rows_64.begin, rows_64.end);
+-            ScreenRequestContext* context = screen_manager->CurrentContext();
+-            rows_64.PushBack(context);
+-            row_count_54 = context->AsBuilding()->thoughts_428.end.Distance(context->AsBuilding()->thoughts_428.begin);
+-            break;
+-        }
+-        case 4:
+-            UpdateSource4(elapsed);
+-            break;
+-        case 5:
+-            UpdateSource5(elapsed);
+-            break;
+-        case 6:
+-            UpdateSource6(elapsed);
+-            break;
+-        }
+-        visible_rows_94 = row_count_54;
+-        if (visible_rows_94 > maximum_rows_5c)
+-            visible_rows_94 = maximum_rows_5c;
++    case 0:
++        UpdateSource0(elapsed);
++        break;
++    case 1:
++        UpdateSource1(elapsed);
++        break;
++    case 3:
++    {
++        ClearPointerRange(rows_64.begin, rows_64.end);
++        ScreenRequestContext* context = screen_manager->CurrentContext();
++        rows_64.PushBack(context);
++        row_count_54 = context->AsBuilding()->thoughts_428.end.Distance(context->AsBuilding()->thoughts_428.begin);
++        break;
++    }
++    case 4:
++        UpdateSource4(elapsed);
++        break;
++    case 5:
++        UpdateSource5(elapsed);
++        break;
++    case 2:
++        UpdateSource2(elapsed);
++        break;
++    case 6:
++        UpdateSource6(elapsed);
++        break;
+     }
++    visible_rows_94 = row_count_54;
++    if (visible_rows_94 > maximum_rows_5c)
++        visible_rows_94 = maximum_rows_5c;
++}
++
++// FUNCTION: BEACHLIFE 0x004b8130
++void ScreenTable::Unresolved08()
++{
++    RefreshRows(8.0f);
+     for (ScreenTableNode* node = children_70.head->next; node != children_70.head; node = node->next)
+         node->item->SetRowCount(visible_rows_94);
+     MarkPrepared();
+@@ -50,40 +53,7 @@ void ScreenTable::Unresolved08()
+ // FUNCTION: BEACHLIFE 0x004b8250
+ void ScreenTable::Unresolved04(float elapsed)
+ {
+-    {
+-        switch (source_kind_4c)
+-        {
+-        case 0:
+-            UpdateSource0(elapsed);
+-            break;
+-        case 1:
+-            UpdateSource1(elapsed);
+-            break;
+-        case 2:
+-            UpdateSource2(elapsed);
+-            break;
+-        case 3:
+-        {
+-            ClearPointerRange(rows_64.begin, rows_64.end);
+-            ScreenRequestContext* context = screen_manager->CurrentContext();
+-            rows_64.PushBack(context);
+-            row_count_54 = context->AsBuilding()->thoughts_428.end.Distance(context->AsBuilding()->thoughts_428.begin);
+-            break;
+-        }
+-        case 4:
+-            UpdateSource4(elapsed);
+-            break;
+-        case 5:
+-            UpdateSource5(elapsed);
+-            break;
+-        case 6:
+-            UpdateSource6(elapsed);
+-            break;
+-        }
+-        visible_rows_94 = row_count_54;
+-        if (visible_rows_94 > maximum_rows_5c)
+-            visible_rows_94 = maximum_rows_5c;
+-    }
++    RefreshRows(elapsed);
+     if (scrollbar_58)
+     {
+         scrollbar_58->Unresolved04(elapsed);
+@@ -97,10 +67,15 @@ void ScreenTable::Unresolved04(float elapsed)
+         column->row_position_54 = 0;
+         for (unsigned int row = first_row_48; row < first_row_48 + visible_rows_94; ++row)
+         {
+-            if (individual_rows_50 == 1)
+-                column->UpdateRow(elapsed, rows_64.begin[row]);
+-            else if (individual_rows_50 == 0)
++            switch (individual_rows_50)
++            {
++            case 0:
+                 column->UpdateIndexedRow(elapsed, rows_64.begin[0], row);
++                break;
++            case 1:
++                column->UpdateRow(elapsed, rows_64.begin[row]);
++                break;
++            }
+         }
+     }
+ }

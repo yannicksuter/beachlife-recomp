@@ -1,0 +1,120 @@
+diff --git a/src/startup_world_staff_job_helpers.cpp b/src/startup_world_staff_job_helpers.cpp
+index ffa7e800ada8c240cb309c34297d5fdfc154f260..36aa7f21d7d0b98134ff4862cadb2834c2a92dde 100644
+--- a/src/startup_world_staff_job_helpers.cpp
++++ b/src/startup_world_staff_job_helpers.cpp
+@@ -36,14 +36,34 @@ void WorldMechanicEntity::DirectTo(unsigned int id)
+ // FUNCTION: BEACHLIFE 0x00482630
+ void CancelMechanicJob(WorldMechanicEntity* entity, unsigned char found)
+ {
+-    bool requeue = entity->state_3c == 88 || entity->state_3c == 93
+-                || (entity->state_3c == 91 && found)
+-                || (entity->state_3c == 131 && !entity->flag_766 && found);
+-    if (requeue)
++    switch (entity->state_3c)
+     {
+-        unsigned int type = window_deactivation_state->repairs_28->AssignmentType(entity->word_98);
+-        if (type <= 3)
+-            window_deactivation_state->repairs_28->RequeueAssignment(entity->word_98, type);
++    case 131:
++        if (entity->flag_766)
++            break;
++        [[fallthrough]];
++    case 91:
++        if (!found)
++            break;
++        [[fallthrough]];
++    case 88:
++    case 93:
++        switch (window_deactivation_state->repairs_28->AssignmentType(entity->word_98))
++        {
++        case 0:
++            window_deactivation_state->repairs_28->RequeueAssignment(entity->word_98, 0);
++            break;
++        case 2:
++            window_deactivation_state->repairs_28->RequeueAssignment(entity->word_98, 2);
++            break;
++        case 1:
++            window_deactivation_state->repairs_28->RequeueAssignment(entity->word_98, 1);
++            break;
++        case 3:
++            window_deactivation_state->repairs_28->RequeueAssignment(entity->word_98, 3);
++            break;
++        }
++        break;
+     }
+     entity->SetMovementMode(76);
+     entity->Unknown08(76);
+diff --git a/src/startup_world_staff_messages.cpp b/src/startup_world_staff_messages.cpp
+index f5ba4a6dbf1b4feff735d174ba29772903c08d45..db31ac31d0fbb445113d3f3d3d18fc044687236d 100644
+--- a/src/startup_world_staff_messages.cpp
++++ b/src/startup_world_staff_messages.cpp
+@@ -57,6 +57,7 @@ bool WorldRepresentativeEntity::Unknown14(ScreenModeCommand* command)
+ // FUNCTION: BEACHLIFE 0x00480940
+ bool WorldMechanicEntity::Unknown14(ScreenModeCommand* command)
+ {
++    ScreenModeCommand message;
+     switch (command->words[2])
+     {
+     case 0x26:
+@@ -91,7 +92,14 @@ bool WorldMechanicEntity::Unknown14(ScreenModeCommand* command)
+                 {
+                     VariableEntity* target = variable_world->FindObject(word_98);
+                     if (target && target->AsStatic()->NeedsRepair())
+-                        QueueStaffMessage(this, 0x6b, 0);
++                    {
++                        message.words[0] = id_28;
++                        message.words[1] = id_28;
++                        message.words[2] = 0x6b;
++                        message.words[3] = 0;
++                        message.words[4] = 0;
++                        screen_mode_commands->QueueCommand(&message);
++                    }
+                 }
+                 break;
+             case 91:
+@@ -115,9 +123,27 @@ bool WorldMechanicEntity::Unknown14(ScreenModeCommand* command)
+         if (state_3c == 93)
+         {
+             unsigned int type = window_deactivation_state->repairs_28->AssignmentType(word_98);
+-            if (type <= 3)
+-                window_deactivation_state->repairs_28->RequeueAssignment(word_98, type);
+-            QueueStaffMessage(this, 0x15, 0);
++            switch (type)
++            {
++            case 0:
++                window_deactivation_state->repairs_28->RequeueAssignment(word_98, 0);
++                break;
++            case 2:
++                window_deactivation_state->repairs_28->RequeueAssignment(word_98, 2);
++                break;
++            case 1:
++                window_deactivation_state->repairs_28->RequeueAssignment(word_98, 1);
++                break;
++            case 3:
++                window_deactivation_state->repairs_28->RequeueAssignment(word_98, 3);
++                break;
++            }
++            message.words[0] = id_28;
++            message.words[1] = id_28;
++            message.words[2] = 0x15;
++            message.words[3] = 0;
++            message.words[4] = 0;
++            screen_mode_commands->QueueCommand(&message);
+             ScreenDialogResource* resource = keyline_state_44;
+             unsigned int variant = 4;
+             if (resource->record->frames[resource->word_10]->plane_count_0c <= 4)
+@@ -127,7 +153,13 @@ bool WorldMechanicEntity::Unknown14(ScreenModeCommand* command)
+                 sprintf(name, "%s %d", resource->name, variant);
+             }
+             resource->word_18 = variant;
+-            QueueStaffMessage(this, 3, 91);
++            ScreenModeCommand resume;
++            resume.words[0] = id_28;
++            resume.words[1] = id_28;
++            resume.words[2] = 3;
++            resume.words[3] = 0;
++            resume.words[4] = 91;
++            screen_mode_commands->QueueCommand(&resume);
+         }
+         break;
+     }
