@@ -1,0 +1,497 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 369d3ec..541cedf 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -13,7 +13,6 @@
+ #include "startup_list.h"
+ #include "startup_list_adaptor.h"
+ CircularListNode* volatile fixture_list_node;
+-CircularListValueNode* volatile fixture_value_node;
+ SavedScreenPlacementNode* volatile fixture_saved_node;
+ SavedScreenPlacement* volatile fixture_saved_payload;
+ SavedScreenPlacement fixture_saved = { 2, 3, 7 };
+@@ -255,7 +254,7 @@ extern "C"
+ 
+ // Generated typed prefixes have static zero initialization. They describe
+ // only fields consumed by this comparison; no retail owner lifetime is implied.
+-ScreenManager fixture_save_manager = { 0 };
++ScreenManager* volatile fixture_save_manager;
+ ScreenRequestGamePrefix* fixture_save_game;
+ ScreenRectangle fixture_save_rectangle = { -17, 29, 41, 67 };
+ volatile int fixture_manager_saved_x;
+@@ -278,7 +277,7 @@ extern "C" void fixture_save_placement(ScreenPlacementStore* store, SavedScreenP
+ {
+     fixture_save_game->placement = store;
+     screen_request_game = fixture_save_game;
+-    fixture_save_manager.SavePlacement(fixture_save_rectangle, 5);
++    fixture_save_manager->SavePlacement(fixture_save_rectangle, 5);
+     fixture_manager_saved_x = placement->x;
+     fixture_manager_saved_y = placement->y;
+     fixture_manager_saved_group = placement->group;
+@@ -663,17 +662,19 @@ extern "C" __declspec(dllexport) void FixturePaletteCleanup(
+ }
+ 
+ // Comparison-only genuine typed prefixes. This image is never executed.
+-ScreenManager fixture_registration_receiver = { 0 };
+-ScreenManager fixture_registration_other = { 0 };
+-ScreenManager* volatile fixture_registration_receiver_seen;
++ScreenManagerRegistration* volatile fixture_registration_receiver;
++ScreenManager* volatile fixture_registration_other;
++ScreenManagerRegistration* volatile fixture_registration_receiver_seen;
+ ScreenManager* volatile fixture_registration_after[2];
+ 
++void EmitScreenManagerRegistrationDestructor(ScreenManagerRegistration* registration);
++
+ extern "C" __declspec(dllexport) void FixtureClearRegistration(
+-    ScreenManager* receiver, ScreenManager* published, unsigned int index)
++    ScreenManagerRegistration* receiver, ScreenManager* published, unsigned int index)
+ {
+     fixture_registration_receiver_seen = receiver;
+     screen_manager = published;
+-    receiver->ClearRegistration();
++    EmitScreenManagerRegistrationDestructor(receiver);
+     fixture_registration_after[index] = screen_manager;
+ }
+ 
+@@ -697,8 +698,8 @@ InputMotionState* volatile fixture_input_motion_receiver;
+ extern "C" void fixture_entry()
+ {
+     FixtureTiffPaletteByte(0x7fff);
+-    FixtureClearRegistration(&fixture_registration_receiver, 0, 0);
+-    FixtureClearRegistration(&fixture_registration_receiver, &fixture_registration_other, 1);
++    FixtureClearRegistration(fixture_registration_receiver, 0, 0);
++    FixtureClearRegistration(fixture_registration_receiver, fixture_registration_other, 1);
+     fixture_surface_position_call();
+     fixture_surface_pitch_call();
+     fixture_resource_lookup_call();
+@@ -817,15 +818,9 @@ extern "C" void fixture_entry()
+     fixture_list_node = fixture_list.Begin().node;
+     CircularListIteratorAdaptor fixture_adaptor(fixture_list.End());
+     fixture_list_node = fixture_adaptor.current.node;
+-    ActiveScreenEntry* fixture_active_entry = 0;
+-    fixture_value_node = fixture_list.CreateNode(fixture_active_entry);
+     fixture_saved_node = fixture_list.CreateNode(fixture_saved_pointer);
+     fixture_saved_payload = fixture_saved_node->placement;
+     fixture_placement_inserted = fixture_placement_list.Insert(fixture_placement_list.End(), fixture_saved_pointer).node;
+-    fixture_list_node = fixture_list.Insert(fixture_list.Begin(), fixture_active_entry).node;
+-    CircularListIterator fixture_search_result;
+-    fixture_search_result.node = 0;
+-    fixture_list_node = FindScreenByName(&fixture_search_result, fixture_list.Begin(), fixture_list.End(), "generated")->node;
+     RenderRectangleState fixture_render_state = { 0 };
+     RenderRectangle fixture_render_rectangle = { 0 };
+     fixture_render_state.SetRectangle(fixture_render_rectangle);
+diff --git a/metadata.csv b/metadata.csv
+index f7b92f8..a10483a 100644
+--- a/metadata.csv
++++ b/metadata.csv
+@@ -31,8 +31,8 @@ address,type,size,symbol
+ 0x004123f0,function,289,?_M_deallocate@?$__node_alloc@$00$0A@@_STL@@CAXPAXI@Z
+ 0x004d3890,function,1,?IgnoreSurfaceError@@YAXH@Z
+ 0x0040e240,function,131,?AccessPixels@ScreenRequestRenderer@@QAEPAGXZ
+-0x004b2ff0,function,189,?CreateNode@CircularList@@QAEPAUCircularListValueNode@@ABQAUActiveScreenEntry@@@Z
+-0x004b2fb0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUActiveScreenEntry@@@Z
++0x004b2ff0,library,189,?_M_create_node@?$list@PAUActiveScreenEntry@@V?$allocator@PAUActiveScreenEntry@@@_STL@@@_STL@@IAEPAU?$_List_node@PAUActiveScreenEntry@@@2@ABQAUActiveScreenEntry@@@Z
++0x004b2fb0,library,38,?insert@?$list@PAUActiveScreenEntry@@V?$allocator@PAUActiveScreenEntry@@@_STL@@@_STL@@QAE?AU?$_List_iterator@PAUActiveScreenEntry@@U?$_Nonconst_traits@PAUActiveScreenEntry@@@_STL@@@2@U32@ABQAUActiveScreenEntry@@@Z
+ 0x004adce0,function,5,?MarkPrepared@ScreenItem@@UAEXXZ
+ 0x004add40,function,28,?MoveRectangle@ScreenItem@@UAEXHH@Z
+ 0x004ada70,function,75,?ApplyPosition@ScreenItem@@UAEXHH@Z
+@@ -66,7 +66,7 @@ address,type,size,symbol
+ 0x004e3c90,function,18,?LoadControllerScreen@ScreenRequestGamePrefix@@QAE_NPBD@Z
+ 0x004aedf0,function,1067,?LoadScreen@ScreenManager@@QAEXPBD@Z
+ 0x0040dee0,function,10,?SetWord60@ScreenRequestRenderer@@QAEXI@Z
+-0x004b30b0,function,11,?ClearRegistration@ScreenManager@@QAEXXZ
++0x004b30b0,function,11,??1ScreenManagerRegistration@@QAE@XZ
+ 0x005baed8,global,4,?screen_manager@@3PAUScreenManager@@A
+ 0x004eb480,function,34,?TiffPaletteByte@@YAEG@Z
+ 0x004f4eb0,float,8,
+diff --git a/src/startup_list.h b/src/startup_list.h
+index e86f565..cf62635 100644
+--- a/src/startup_list.h
++++ b/src/startup_list.h
+@@ -40,15 +40,10 @@ struct CircularList
+     CircularListNode* head;
+ 
+     void Clear();
+-    void ReleaseStorage(); // 0x004b2f10.
+-    bool Empty() const;
+-    ActiveScreenEntry* Front() const;
+     CircularListIterator Erase(CircularListIterator position); // 0x004209d0; hidden result, RET8.
+     CircularListIterator End() const;
+     CircularListIterator Begin() const;
+-    CircularListIterator Insert(CircularListIterator position, ActiveScreenEntry* const& entry);
+     CircularListIterator Insert(CircularListIterator position, SavedScreenPlacement* const& placement);
+-    CircularListValueNode* CreateNode(ActiveScreenEntry* const& entry);
+     SavedScreenPlacementNode* CreateNode(SavedScreenPlacement* const& placement);
+ };
+ 
+diff --git a/src/startup_list_insert.cpp b/src/startup_list_insert.cpp
+deleted file mode 100644
+index 106356e..0000000
+--- a/src/startup_list_insert.cpp
++++ /dev/null
+@@ -1,16 +0,0 @@
+-#include "startup_list.h"
+-
+-// LIBRARY: BEACHLIFE 0x004b2fb0
+-// ?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUActiveScreenEntry@@@Z
+-CircularListIterator CircularList::Insert(CircularListIterator position, ActiveScreenEntry* const& entry)
+-{
+-    CircularListValueNode* node = CreateNode(entry);
+-    CircularListNode* previous = position.node->previous;
+-    node->next = position.node;
+-    node->previous = previous;
+-    previous->next = node;
+-    position.node->previous = node;
+-    CircularListIterator result;
+-    result.node = node;
+-    return result;
+-}
+diff --git a/src/startup_list_node.cpp b/src/startup_list_node.cpp
+deleted file mode 100644
+index 752d864..0000000
+--- a/src/startup_list_node.cpp
++++ /dev/null
+@@ -1,22 +0,0 @@
+-#include "startup_list.h"
+-#include "node_storage.h"
+-
+-#include <new>
+-
+-// LIBRARY: BEACHLIFE 0x004b2ff0
+-// ?CreateNode@CircularList@@QAEPAUCircularListValueNode@@ABQAUActiveScreenEntry@@@Z
+-CircularListValueNode* CircularList::CreateNode(ActiveScreenEntry* const& entry)
+-{
+-    void* block = NodeAllocator::allocate(sizeof(CircularListValueNode));
+-    CircularListValueNode* result = static_cast<CircularListValueNode*>(block);
+-    try
+-    {
+-        new (&result->entry) ActiveScreenEntry*(entry);
+-    }
+-    catch (...)
+-    {
+-        NodeAllocator::deallocate(result, sizeof(CircularListValueNode));
+-        throw;
+-    }
+-    return result;
+-}
+diff --git a/src/startup_screen_activate.cpp b/src/startup_screen_activate.cpp
+index f0a3840..3c0500c 100644
+--- a/src/startup_screen_activate.cpp
++++ b/src/startup_screen_activate.cpp
+@@ -1,17 +1,23 @@
+ #include "startup_screen_manager.h"
+ #include "startup_screen_name_search.h"
+ 
++// IsScreenOpen (0x004b19d0), expanded here.
++static inline bool IsScreenOpen_004ae8f0(ScreenManager* self, const char* name)
++{
++    bool result = false;
++    WorldList<ActiveScreenEntry*>::Iterator found;
++    found = FindScreenByName(self->active.begin(), self->active.end(), name);
++    if (found != self->active.end())
++        result = true;
++    return result;
++}
++
+ // FUNCTION: BEACHLIFE 0x004ae8f0
+ void ScreenManager::ActivateScreens()
+ {
+-    CircularList& screens = active;
+-    CircularListIterator found;
+-    CircularListNode* node = FindScreenByName(&found, screens.Begin(), screens.End(), "ScenarioWon")->node;
+-    if (node != screens.head)
++    if (IsScreenOpen_004ae8f0(this, "ScenarioWon"))
+         return;
+-
+-    node = FindScreenByName(&found, screens.Begin(), screens.End(), "ScenarioLost")->node;
+-    if (node != screens.head)
++    if (IsScreenOpen_004ae8f0(this, "ScenarioLost"))
+         return;
+ 
+     RequestScreen("PauseBox", 0, 1);
+diff --git a/src/startup_screen_manager.h b/src/startup_screen_manager.h
+index 9f5e8c6..9582ad0 100644
+--- a/src/startup_screen_manager.h
++++ b/src/startup_screen_manager.h
+@@ -2,6 +2,7 @@
+ #define STARTUP_SCREEN_MANAGER_H
+ 
+ #include "startup_list.h"
++#include "startup_world_list.h"
+ #include "startup_screen_item.h"
+ #include "startup_controller_selection.h"
+ #include <stddef.h>
+@@ -178,10 +179,18 @@ struct ScreenRequestGamePrefix : ScreenGameRegistration
+     void WriteInteger(const char* key, int* value);
+ };
+ 
++// Retail publishes the manager in screen_manager; this empty base clears it
++// after the members, including the active screen list, are destroyed.
++struct ScreenManagerRegistration
++{
++    ~ScreenManagerRegistration();
++};
++
+ // Observed manager prefix only. Complete construction, destruction and field
+ // meanings remain unqualified; mode values are retained as descriptive words.
+-struct ScreenManager
++struct ScreenManager : ScreenManagerRegistration
+ {
++    ~ScreenManager();                                             // 0x004ae090.
+     unsigned char CanShowTickerMessage();                         // 0x004af490.
+     void ShowTickerMessage(const unsigned short* text, int mode); // 0x004af380.
+     void ShowTickerMessage(const char* key, int mode);            // 0x004af350.
+@@ -221,7 +230,7 @@ struct ScreenManager
+     int surface_b0;
+     int surface_b4;
+     int surface_b8;
+-    CircularList active;
++    WorldList<ActiveScreenEntry*>::Type active;
+     unsigned char byte_c0;
+     unsigned char unknown_c1[3];
+     const char* word_c4;
+@@ -313,9 +322,6 @@ struct ScreenManager
+     void InitializeOverlay();
+     void ConfigureRadar(int x, int y, const char* image); // 0x004afc90.
+     void SetProgressDialog(const char* name);             // 0x004b0e10.
+-    // Actual 0x004b30b0, receiver ignored. Descriptive spelling of the
+-    // observed registration cleanup; no original base class is inferred.
+-    void ClearRegistration();
+ 
+     // Actual loader 0x004aedf0; complete source retained in its separate proposal.
+     void LoadScreen(const char* path);
+@@ -429,6 +435,14 @@ extern const float screen_item_other_threshold;
+ 
+ extern const unsigned short* scenario_directory_wide; // 0x00586328.
+ 
++// Expanded by /Ob1 owners; unwinding and /Ob0 callers use the shared
++// out-of-line copy emitted by startup_screen_registration_clear.cpp.
++// FUNCTION: BEACHLIFE 0x004b30b0
++inline ScreenManagerRegistration::~ScreenManagerRegistration()
++{
++    screen_manager = 0;
++}
++
+ // Expanded by /Ob1 owners; unwinding and /Ob0 callers use the shared
+ // out-of-line copy emitted by startup_game_registration_destructor.cpp.
+ // FUNCTION: BEACHLIFE 0x004e5520
+diff --git a/src/startup_screen_manager_prepare_active.cpp b/src/startup_screen_manager_prepare_active.cpp
+index f60ca25..967c9ed 100644
+--- a/src/startup_screen_manager_prepare_active.cpp
++++ b/src/startup_screen_manager_prepare_active.cpp
+@@ -5,21 +5,15 @@
+ // FUNCTION: BEACHLIFE 0x004b1260
+ void ScreenManager::PrepareActiveScreens(unsigned char prepare_surface)
+ {
+-    CircularListNode* head = active.head;
+-    CircularListNode* node = head->next;
+-    if (node != head)
++    for (WorldList<ActiveScreenEntry*>::Iterator it = active.begin(); it != active.end(); ++it)
+     {
+-        do
++        ActiveScreenEntry* entry = *it;
++        if (prepare_surface)
+         {
+-            ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
+-            if (prepare_surface)
+-            {
+-                int surface = entry->surface;
+-                ScreenRequestRenderer* current_renderer = renderer;
+-                current_renderer->PrepareSurface(surface);
+-            }
+-            entry->item->MarkPrepared();
+-            node = node->next;
+-        } while (node != active.head);
++            int surface = entry->surface;
++            ScreenRequestRenderer* current_renderer = renderer;
++            current_renderer->PrepareSurface(surface);
++        }
++        entry->item->MarkPrepared();
+     }
+ }
+diff --git a/src/startup_screen_manager_prepare_named.cpp b/src/startup_screen_manager_prepare_named.cpp
+index 1541d60..326fb2d 100644
+--- a/src/startup_screen_manager_prepare_named.cpp
++++ b/src/startup_screen_manager_prepare_named.cpp
+@@ -5,16 +5,15 @@
+ // FUNCTION: BEACHLIFE 0x004b12b0
+ void ScreenManager::PrepareNamedScreen(const char* name, unsigned char prepare)
+ {
+-    CircularListIterator found;
+-    CircularListNode* selected = FindScreenByName(&found, active.Begin(), active.End(), name)->node;
+-    if (selected != active.head)
++    WorldList<ActiveScreenEntry*>::Iterator found;
++    found = FindScreenByName(active.begin(), active.end(), name);
++    if (found != active.end())
+     {
+-        CircularListValueNode* node = static_cast<CircularListValueNode*>(selected);
+-        if (node->entry->state == 1)
++        if ((*found)->state == 1)
+         {
+             if (prepare)
+-                renderer->PrepareSurface(node->entry->surface);
+-            node->entry->item->MarkPrepared();
++                renderer->PrepareSurface((*found)->surface);
++            (*found)->item->MarkPrepared();
+         }
+     }
+ }
+diff --git a/src/startup_screen_name_search.cpp b/src/startup_screen_name_search.cpp
+index a01137f..170500d 100644
+--- a/src/startup_screen_name_search.cpp
++++ b/src/startup_screen_name_search.cpp
+@@ -2,20 +2,18 @@
+ #include <string.h>
+ 
+ // LIBRARY: BEACHLIFE 0x004b30c0
+-// ?FindScreenByName@@YAPAUCircularListIterator@@PAU1@U1@1PBD@Z
+-CircularListIterator* FindScreenByName(CircularListIterator* result,
+-    CircularListIterator first, CircularListIterator last, const char* name)
++// ?FindScreenByName@@YA?AU?$_List_iterator@PAUActiveScreenEntry@@U?$_Nonconst_traits@PAUActiveScreenEntry@@@_STL@@@_STL@@U12@0PBD@Z
++WorldList<ActiveScreenEntry*>::Iterator FindScreenByName(WorldList<ActiveScreenEntry*>::Iterator first,
++    WorldList<ActiveScreenEntry*>::Iterator last, const char* name)
+ {
+-    CircularListIterator current = first;
+-    while (current.node != last.node)
++    WorldList<ActiveScreenEntry*>::Iterator current = first;
++    while (current != last)
+     {
+-        CircularListValueNode* node = static_cast<CircularListValueNode*>(current.node);
+-        if (strcmp(node->entry->item->name, name) == 0)
++        if (strcmp((*current)->item->name, name) == 0)
+         {
+             break;
+         }
+-        current.node = current.node->next;
++        ++current;
+     }
+-    *result = current;
+-    return result;
++    return current;
+ }
+diff --git a/src/startup_screen_name_search.h b/src/startup_screen_name_search.h
+index cfcb140..9311444 100644
+--- a/src/startup_screen_name_search.h
++++ b/src/startup_screen_name_search.h
+@@ -4,10 +4,13 @@
+ #include "startup_list.h"
+ #include "startup_screen_dialog.h"
+ 
+-// Search uses the actual active-screen payload and CircularListValueNode.
+-// Explicit representation of the observed cdecl result-pointer ABI.
+-// The original iterator type and C++ return declaration remain unknown.
+-CircularListIterator* FindScreenByName(CircularListIterator* result,
+-    CircularListIterator first, CircularListIterator last, const char* name);
++#ifdef _STLPORT_VERSION
++#include "startup_world_list.h"
++
++// cdecl search over the active screen list; the iterator comes back through
++// the hidden result pointer. The original function name remains unknown.
++WorldList<ActiveScreenEntry*>::Iterator FindScreenByName(WorldList<ActiveScreenEntry*>::Iterator first,
++    WorldList<ActiveScreenEntry*>::Iterator last, const char* name);
++#endif
+ 
+ #endif
+diff --git a/src/startup_screen_registration_clear.cpp b/src/startup_screen_registration_clear.cpp
+index 77a9aca..1e67d76 100644
+--- a/src/startup_screen_registration_clear.cpp
++++ b/src/startup_screen_registration_clear.cpp
+@@ -1,7 +1,8 @@
+ #include "startup_screen_manager.h"
+ 
+-// FUNCTION: BEACHLIFE 0x004b30b0
+-void ScreenManager::ClearRegistration()
++// The registration destructor is inline; this /Ob0 source emits its shared
++// out-of-line copy.
++void EmitScreenManagerRegistrationDestructor(ScreenManagerRegistration* registration)
+ {
+-    screen_manager = 0;
++    registration->~ScreenManagerRegistration();
+ }
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index cdc129d..6bd2dce 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -56,8 +56,8 @@
+     {
+       "address": "0x004b30b0",
+       "size": 11,
+-      "name": "ScreenManager::ClearRegistration",
+-      "name_status": "descriptive unconditional registration pointer clear; original code origin unclassified; full owner lifetime remains separate"
++      "name": "ScreenManagerRegistration::~ScreenManagerRegistration",
++      "name_status": "Descriptive empty registration base of ScreenManager; the inline destructor clears screen_manager after the members, out-of-line copy for unwinding and /Ob0 callers."
+     },
+     {
+       "address": "0x004eb480",
+@@ -2703,7 +2703,7 @@
+       "address": "0x004b30c0",
+       "size": 94,
+       "name": "FindScreenByName",
+-      "name_status": "unclassified mixed generic/application provenance; original symbol and exact declaration unknown"
++      "name_status": "cdecl name search over the genuine STLport active screen list; original function name unknown."
+     },
+     {
+       "address": "0x00412550",
+@@ -2738,14 +2738,14 @@
+     {
+       "address": "0x004b2ff0",
+       "size": 189,
+-      "name": "CircularList::CreateNode",
+-      "name_status": "descriptive observed node builder; original class, exact declarations and library provenance unknown"
++      "name": "_STL::list<ActiveScreenEntry*,_STL::allocator<ActiveScreenEntry*>>::_M_create_node",
++      "name_status": "STLport 4.5.3 symbol (ScreenManager active screen list); emitted by match_004b2240.cpp with /GX /Ob1; audited complete original code extent."
+     },
+     {
+       "address": "0x004b2fb0",
+       "size": 38,
+-      "name": "CircularList::Insert",
+-      "name_status": "descriptive observed list insertion; original class, exact declarations and library provenance unknown"
++      "name": "_STL::list<ActiveScreenEntry*,_STL::allocator<ActiveScreenEntry*>>::insert",
++      "name_status": "STLport 4.5.3 symbol (ScreenManager active screen list); emitted by match_004b2240.cpp with /GX /Ob1; audited complete original code extent."
+     },
+     {
+       "address": "0x004e8110",
+@@ -2796,13 +2796,6 @@
+     "startup_list_adaptor.cpp": [
+       "/Ob1"
+     ],
+-    "startup_list_node.cpp": [
+-      "/GX",
+-      "/Ob1"
+-    ],
+-    "startup_list_insert.cpp": [
+-      "/Ob1"
+-    ],
+     "startup_placement_node.cpp": [
+       "/GX",
+       "/Ob1"
+@@ -3222,6 +3215,9 @@
+     ],
+     "startup_table_building_order_retention.cpp": [
+       "/Ob1"
++    ],
++    "startup_screen_manager_prepare_active.cpp": [
++      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -4613,7 +4609,6 @@
+     "match_004e86a0.cpp",
+     "match_004e8a50.cpp",
+     "match_004e8a80.cpp",
+-    "startup_list_node.cpp",
+     "startup_match_004c2470.cpp",
+     "startup_match_004c2480.cpp",
+     "startup_match_004cdb50.cpp",
+@@ -4695,6 +4690,10 @@
+     "startup_screen_list_box_clear.cpp",
+     "startup_screen_list_box_mark_prepared.cpp",
+     "startup_screen_list_box_move.cpp",
+-    "startup_screen_list_box_unresolved24.cpp"
++    "startup_screen_list_box_unresolved24.cpp",
++    "startup_screen_activate.cpp",
++    "startup_screen_manager_prepare_active.cpp",
++    "startup_screen_manager_prepare_named.cpp",
++    "startup_screen_name_search.cpp"
+   ]
+ }

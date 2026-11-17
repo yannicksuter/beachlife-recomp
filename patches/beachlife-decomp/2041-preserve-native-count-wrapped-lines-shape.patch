@@ -1,0 +1,89 @@
+diff --git b/src/startup_font_count_wrapped_lines.cpp a/src/startup_font_count_wrapped_lines.cpp
+index c768dbe..0ee9bb3 100644
+--- b/src/startup_font_count_wrapped_lines.cpp
++++ a/src/startup_font_count_wrapped_lines.cpp
+@@ -2,46 +2,51 @@
+ #include "startup_screen_font_data.h"
+ 
+ // FUNCTION: BEACHLIFE 0x0049faa0
+-unsigned int ScreenFontRenderer::CountWrappedLines(const unsigned short* text, unsigned int width, unsigned int spacing)
++unsigned int ScreenFontRenderer::CountWrappedLines(const unsigned short* text,
++    unsigned int width, unsigned int spacing)
+ {
+     ScreenFontData* data = data_1c;
+-    signed char* kerning = data->kerning;
+-    unsigned int line_characters = 0;
+-    unsigned int word_characters = 0;
+     const unsigned short* cursor = text;
+     const unsigned short* word_start = text;
++    unsigned int line_characters = 0;
++    unsigned int word_characters = 0;
+     unsigned int line_width = spacing;
+-    unsigned int lines = 0;
++    unsigned int breaks = 0;
+ 
+-    if (*text != 0)
++    while (*cursor != 0)
+     {
+-        do
++        unsigned int current = *cursor;
++        unsigned short advance = static_cast<unsigned short>(
++            data->glyphs[current][2] - data->glyphs[current][0]);
++        unsigned int next = cursor[1];
++        if (next != 0)
++        {
++            advance = static_cast<unsigned short>(
++                advance + data->kerning[current * 255 + next]);
++        }
++        line_width += advance;
++
++        if (cursor != text && current != ' ' && cursor[-1] == ' ')
++        {
++            word_start = cursor;
++            word_characters = 0;
++        }
++        if (current != ' ')
++            ++word_characters;
++
++        if (line_width > width && line_characters > word_characters)
++        {
++            ++breaks;
++            cursor = word_start;
++            line_characters = 0;
++            word_characters = 0;
++            line_width = spacing;
++        }
++        else
+         {
+-            unsigned short advance = data->glyphs[cursor[0]][2] - data->glyphs[cursor[0]][0];
+-            if (cursor[1] != 0)
+-                advance += kerning[cursor[0] * 255 + cursor[1]];
+-            line_width += advance;
+-            if (cursor != text && cursor[0] != ' ' && cursor[-1] == ' ')
+-            {
+-                word_start = cursor;
+-                word_characters = 0;
+-            }
+-            if (cursor[0] != ' ')
+-                word_characters++;
+-            if (line_width > width && line_characters > word_characters)
+-            {
+-                lines++;
+-                cursor = word_start;
+-                line_characters = 0;
+-                word_characters = 0;
+-                line_width = spacing;
+-            }
+-            else
+-            {
+-                cursor++;
+-                line_characters++;
+-            }
+-        } while (*cursor != 0);
++            ++cursor;
++            ++line_characters;
++        }
+     }
+-    return lines + 1;
++    return breaks + 1;
+ }

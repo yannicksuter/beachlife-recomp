@@ -1,0 +1,49 @@
+diff --git a/src/startup_screen_dialog_resource_lookup.cpp b/src/startup_screen_dialog_resource_lookup.cpp
+index 951dc88..589737c 100644
+--- a/src/startup_screen_dialog_resource_lookup.cpp
++++ b/src/startup_screen_dialog_resource_lookup.cpp
+@@ -1,7 +1,44 @@
+ #include "startup_screen_dialog_resource.h"
++#include <string.h>
++
++static inline int RecordCount(const ScreenDialogResourceLookup* lookup)
++{
++    return lookup->record_count;
++}
++
++static inline const char* RecordName(const ScreenDialogResourceLookup* lookup, int index)
++{
++    return lookup->records[index]->name;
++}
++
++static inline ScreenDialogResourceRecord** Records(const ScreenDialogResourceLookup* lookup)
++{
++    return lookup->records;
++}
+ 
+ // FUNCTION: BEACHLIFE 0x00417c20
+ ScreenDialogResource* ScreenDialogResourceLookup::Lookup(const char* name)
+ {
+     return Find(name);
+ }
++
++// Retail defines the search after the wrapper in this unit; VC6 then shares
++// one exception epilogue between both returns.
++// FUNCTION: BEACHLIFE 0x00417c30
++ScreenDialogResource* ScreenDialogResourceLookup::Find(const char* name)
++{
++    for (int index = 0; index < RecordCount(this); ++index)
++    {
++        if (_stricmp(RecordName(this, index), name) == 0)
++        {
++            ScreenDialogResource* resource = new ScreenDialogResource;
++            resource->record = Records(this)[index];
++            ++resource->record->reference_count;
++            resource->name = static_cast<char*>(::operator new(strlen(name) + 1));
++            strcpy(resource->name, name);
++            return resource;
++        }
++    }
++    ScreenDialogResource* result = Find(screen_dialog_fallback_name);
++    return result;
++}

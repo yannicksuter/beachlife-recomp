@@ -1,0 +1,75 @@
+diff --git b/src/window_audio_playback.cpp a/src/window_audio_playback.cpp
+index 4656e4f..1a0c729 100644
+--- b/src/window_audio_playback.cpp
++++ a/src/window_audio_playback.cpp
+@@ -6,31 +6,24 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
+-// Claims the first free 2D voice; the sample is reset before the voice index is reported.
+-static inline bool FindFreeVoice(WindowAudioState* audio, int& result, void*& sample)
+-{
+-    for (int index = 0; index < 16; ++index)
+-    {
+-        if (!audio->voices_74[index])
+-        {
+-            sample = audio->samples_14[index];
+-            AIL_init_sample(sample);
+-            result = index;
+-            return true;
+-        }
+-    }
+-    return false;
+-}
+-
+ // FUNCTION: BEACHLIFE 0x004d0040
+ int WindowAudioState::PlaySoundWithParameters(const char* name, int volume, unsigned int flags, float fade, float scale)
+ {
+     int result = -1;
+-    if (!enabled)
+-        return result;
+-    void* sample;
+-    if (FindFreeVoice(this, result, sample))
++    if (enabled)
+     {
++        int index;
++        for (index = 0; index < 16; ++index)
++        {
++            if (voices_74[index] == 0)
++                break;
++        }
++        if (index == 16)
++            return result;
++
++        void* sample = samples_14[index];
++        AIL_init_sample(sample);
++        result = index;
+         if (sample)
+         {
+             char filename[64];
+@@ -40,17 +33,19 @@ int WindowAudioState::PlaySoundWithParameters(const char* name, int volume, unsi
+             if (data)
+             {
+                 WindowSoundVoice* voice = new WindowSoundVoice;
+-                voices_74[result] = voice;
++                voices_74[index] = voice;
+                 voice->data_04 = data;
+                 voice->bytes_0c = bytes;
+                 voice->name = static_cast<char*>(::operator new(strlen(filename) + 1));
+                 strcpy(voice->name, filename);
+ 
+-                // A nonzero format word hands the data to Miles as .mp3, otherwise as .wav.
+-                if (!voice->word_08)
+-                    AIL_set_named_sample_file(sample, window_sound_wave_extension, voice->data_04, voice->bytes_0c, 0);
+-                else
+-                    AIL_set_named_sample_file(sample, window_sound_mp3_extension, voice->data_04, voice->bytes_0c, 0);
++                unsigned int format = voice->word_08;
++                unsigned int sample_bytes = voice->bytes_0c;
++                void* sample_data = voice->data_04;
++                const char* extension = window_sound_wave_extension;
++                if (format)
++                    extension = window_sound_mp3_extension;
++                AIL_set_named_sample_file(sample, extension, sample_data, sample_bytes, 0);
+ 
+                 float target_volume = static_cast<float>(volume);
+                 voice->scale_14 = scale;

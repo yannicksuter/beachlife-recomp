@@ -1,0 +1,290 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 281f9da..e0c63a7 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -12,10 +12,14 @@
+ #include "startup_render_rectangle.h"
+ #include "startup_list.h"
+ #include "startup_list_adaptor.h"
+-#include "startup_screen_placement_visit.h"
+ CircularListNode* volatile fixture_list_node;
++SavedScreenPlacementNode* volatile fixture_saved_node;
++SavedScreenPlacement* volatile fixture_saved_payload;
+ SavedScreenPlacement fixture_saved = { 2, 3, 7 };
+ SavedScreenPlacement* fixture_saved_pointer = &fixture_saved;
++CircularListNode fixture_placement_head = { &fixture_placement_head, &fixture_placement_head };
++CircularList fixture_placement_list = { &fixture_placement_head };
++CircularListNode* volatile fixture_placement_inserted;
+ SavedScreenPlacement* volatile fixture_written_placement;
+ volatile int fixture_written_x;
+ volatile int fixture_written_y;
+@@ -759,9 +763,13 @@ extern "C" void fixture_entry()
+     fixture_config_offset = fixture_input->ReadKeyboardState();
+     fixture_input->ReadFirstButtonTransition();
+     ScreenPlacementStore& fixture_placement = *screen_request_game->placement;
++    CircularListNode fixture_placement_end = { 0 };
++    fixture_placement_end.next = &fixture_placement_end;
++    fixture_placement_end.previous = &fixture_placement_end;
++    fixture_placement.saved.head = &fixture_placement_end;
+     fixture_placement.FindPlacement(0, 0, 0);
+     fixture_placement.WritePlacement(17, -9, 5);
+-    SavedScreenPlacement* fixture_written = fixture_saved_pointer;
++    SavedScreenPlacement* fixture_written = static_cast<SavedScreenPlacementNode*>(fixture_placement.saved.head->next)->placement;
+     fixture_written_placement = fixture_written;
+     fixture_written_x = fixture_written->x;
+     fixture_written_y = fixture_written->y;
+@@ -809,7 +817,9 @@ extern "C" void fixture_entry()
+     fixture_list_node = fixture_list.Begin().node;
+     CircularListIteratorAdaptor fixture_adaptor(fixture_list.End());
+     fixture_list_node = fixture_adaptor.current.node;
+-    VisitSavedPlacements(fixture_list.Begin(), fixture_list.End(), DeleteSavedPlacement);
++    fixture_saved_node = fixture_list.CreateNode(fixture_saved_pointer);
++    fixture_saved_payload = fixture_saved_node->placement;
++    fixture_placement_inserted = fixture_placement_list.Insert(fixture_placement_list.End(), fixture_saved_pointer).node;
+     RenderRectangleState fixture_render_state = { 0 };
+     RenderRectangle fixture_render_rectangle = { 0 };
+     fixture_render_state.SetRectangle(fixture_render_rectangle);
+diff --git b/metadata.csv a/metadata.csv
+index 8058c2e..7fd9f7a 100644
+--- b/metadata.csv
++++ a/metadata.csv
+@@ -42,8 +42,8 @@ address,type,size,symbol
+ 0x004a5ec0,function,36,?MarkPrepared@ScreenDialog@@UAEXXZ
+ 0x004adda0,function,18,??0ScreenChildLink@@QAE@PAUScreenItem@@@Z
+ 0x004a5c70,function,54,?ApplyPosition@ScreenDialog@@UAEXHH@Z
+-0x004e8110,library,189,?_M_create_node@?$list@PAUSavedScreenPlacement@@V?$allocator@PAUSavedScreenPlacement@@@_STL@@@_STL@@IAEPAU?$_List_node@PAUSavedScreenPlacement@@@2@ABQAUSavedScreenPlacement@@@Z
+-0x004e80a0,library,38,?insert@?$list@PAUSavedScreenPlacement@@V?$allocator@PAUSavedScreenPlacement@@@_STL@@@_STL@@QAE?AU?$_List_iterator@PAUSavedScreenPlacement@@U?$_Nonconst_traits@PAUSavedScreenPlacement@@@_STL@@@2@U32@ABQAUSavedScreenPlacement@@@Z
++0x004e8110,function,189,?CreateNode@CircularList@@QAEPAUSavedScreenPlacementNode@@ABQAUSavedScreenPlacement@@@Z
++0x004e80a0,function,38,?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUSavedScreenPlacement@@@Z
+ 0x004e6830,function,126,?WritePlacement@ScreenPlacementStore@@QAEXHHH@Z
+ 0x004b2e40,function,55,?SavePlacement@ScreenManager@@QAEXABUScreenRectangle@@H@Z
+ 0x005bb02c,global,4,?screen_request_game@@3PAUScreenRequestGamePrefix@@A
+diff --git b/src/startup_list.h a/src/startup_list.h
+index d5de187..cf62635 100644
+--- b/src/startup_list.h
++++ a/src/startup_list.h
+@@ -43,6 +43,8 @@ struct CircularList
+     CircularListIterator Erase(CircularListIterator position); // 0x004209d0; hidden result, RET8.
+     CircularListIterator End() const;
+     CircularListIterator Begin() const;
++    CircularListIterator Insert(CircularListIterator position, SavedScreenPlacement* const& placement);
++    SavedScreenPlacementNode* CreateNode(SavedScreenPlacement* const& placement);
+ };
+ 
+ #endif
+diff --git b/src/startup_placement_insert.cpp a/src/startup_placement_insert.cpp
+new file mode 100644
+index 0000000..1167255
+--- /dev/null
++++ a/src/startup_placement_insert.cpp
+@@ -0,0 +1,16 @@
++#include "startup_screen_placement.h"
++
++// LIBRARY: BEACHLIFE 0x004e80a0
++// ?Insert@CircularList@@QAE?AUCircularListIterator@@U2@ABQAUSavedScreenPlacement@@@Z
++CircularListIterator CircularList::Insert(CircularListIterator position, SavedScreenPlacement* const& placement)
++{
++    SavedScreenPlacementNode* node = CreateNode(placement);
++    CircularListNode* previous = position.node->previous;
++    node->next = position.node;
++    node->previous = previous;
++    previous->next = node;
++    position.node->previous = node;
++    CircularListIterator result;
++    result.node = node;
++    return result;
++}
+diff --git b/src/startup_placement_node.cpp a/src/startup_placement_node.cpp
+new file mode 100644
+index 0000000..b8156c5
+--- /dev/null
++++ a/src/startup_placement_node.cpp
+@@ -0,0 +1,22 @@
++#include "startup_screen_placement.h"
++#include "node_storage.h"
++
++#include <new>
++
++// LIBRARY: BEACHLIFE 0x004e8110
++// ?CreateNode@CircularList@@QAEPAUSavedScreenPlacementNode@@ABQAUSavedScreenPlacement@@@Z
++SavedScreenPlacementNode* CircularList::CreateNode(SavedScreenPlacement* const& placement)
++{
++    void* block = NodeAllocator::allocate(sizeof(SavedScreenPlacementNode));
++    SavedScreenPlacementNode* result = static_cast<SavedScreenPlacementNode*>(block);
++    try
++    {
++        new (&result->placement) SavedScreenPlacement*(placement);
++    }
++    catch (...)
++    {
++        NodeAllocator::deallocate(result, sizeof(SavedScreenPlacementNode));
++        throw;
++    }
++    return result;
++}
+diff --git b/src/startup_placement_write.cpp a/src/startup_placement_write.cpp
+index b3dcd98..77aed4b 100644
+--- b/src/startup_placement_write.cpp
++++ a/src/startup_placement_write.cpp
+@@ -1,16 +1,12 @@
+-// LIBRARY: BEACHLIFE 0x004e80a0 SYMBOL
+-// ?insert@?$list@PAUSavedScreenPlacement@@V?$allocator@PAUSavedScreenPlacement@@@_STL@@@_STL@@QAE?AU?$_List_iterator@PAUSavedScreenPlacement@@U?$_Nonconst_traits@PAUSavedScreenPlacement@@@_STL@@@2@U32@ABQAUSavedScreenPlacement@@@Z
+-// LIBRARY: BEACHLIFE 0x004e8110 SYMBOL
+-// ?_M_create_node@?$list@PAUSavedScreenPlacement@@V?$allocator@PAUSavedScreenPlacement@@@_STL@@@_STL@@IAEPAU?$_List_node@PAUSavedScreenPlacement@@@2@ABQAUSavedScreenPlacement@@@Z
+ #include "startup_screen_placement.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004e6830
+ void ScreenPlacementStore::WritePlacement(int x, int y, int group)
+ {
+     SavedScreenPlacement* placement;
+-    for (WorldList<SavedScreenPlacement*>::Iterator current = saved.begin(); current != saved.end(); ++current)
++    for (CircularListNode* current = saved.head->next; current != saved.head; current = current->next)
+     {
+-        placement = *current;
++        placement = static_cast<SavedScreenPlacementNode*>(current)->placement;
+         if (placement->group == group)
+         {
+             placement->x = x;
+@@ -22,5 +18,5 @@ void ScreenPlacementStore::WritePlacement(int x, int y, int group)
+     placement->group = group;
+     placement->x = x;
+     placement->y = y;
+-    saved.push_back(placement);
++    saved.Insert(saved.End(), placement);
+ }
+diff --git b/src/startup_screen_placement.cpp a/src/startup_screen_placement.cpp
+index 2fd55d0..d099593 100644
+--- b/src/startup_screen_placement.cpp
++++ a/src/startup_screen_placement.cpp
+@@ -4,9 +4,9 @@
+ bool ScreenPlacementStore::FindPlacement(int group, int* x, int* y)
+ {
+     bool found = false;
+-    for (WorldList<SavedScreenPlacement*>::Iterator current = saved.begin(); current != saved.end(); ++current)
++    for (CircularListNode* current = saved.head->next; current != saved.head; current = current->next)
+     {
+-        SavedScreenPlacement* placement = *current;
++        SavedScreenPlacement* placement = static_cast<SavedScreenPlacementNode*>(current)->placement;
+         if (placement->group == group)
+         {
+             *x = placement->x;
+diff --git b/src/startup_screen_placement.h a/src/startup_screen_placement.h
+index aa16c1b..fdf214c 100644
+--- b/src/startup_screen_placement.h
++++ a/src/startup_screen_placement.h
+@@ -2,7 +2,6 @@
+ #define STARTUP_SCREEN_PLACEMENT_H
+ 
+ #include "startup_list.h"
+-#include "startup_world_list.h"
+ 
+ struct ScreenPlacementMusicEntry;
+ 
+@@ -79,7 +78,7 @@ struct ScreenPlacementStore
+     ScreenPlacementMusicList music_18;
+     unsigned char music_enabled_24;
+     unsigned char unknown_25[3];
+-    WorldList<SavedScreenPlacement*>::Type saved; // STLport 4.5.3 list.
++    CircularList saved;
+     int width_2c;
+     int height_30;
+     unsigned char flag_34;
+diff --git b/src/startup_screen_placement_clear.cpp a/src/startup_screen_placement_clear.cpp
+index 64bb9a8..495aa0e 100644
+--- b/src/startup_screen_placement_clear.cpp
++++ a/src/startup_screen_placement_clear.cpp
+@@ -1,10 +1,22 @@
++#include "node_storage.h"
+ #include "startup_screen_placement.h"
+ #include "startup_screen_placement_visit.h"
+-#include <algorithm>
+ 
+ // FUNCTION: BEACHLIFE 0x004e68f0
+ void ScreenPlacementStore::ClearPlacements()
+ {
+-    std::for_each(saved.begin(), saved.end(), DeleteSavedPlacement);
+-    saved.clear();
++    // Free every saved placement, then release the nodes but keep the sentinel.
++    VisitSavedPlacements(saved.Begin(), saved.End(), DeleteSavedPlacement);
++    CircularListNode* node = saved.head->next;
++    while (node != saved.head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released != 0)
++        {
++            NodeAllocator::deallocate(released, sizeof(SavedScreenPlacementNode));
++        }
++    }
++    saved.head->next = saved.head;
++    saved.head->previous = saved.head;
+ }
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 555afec..6208cfc 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -2750,14 +2750,14 @@
+     {
+       "address": "0x004e8110",
+       "size": 189,
+-      "name": "_STL::list<SavedScreenPlacement*,_STL::allocator<SavedScreenPlacement*>>::_M_create_node",
+-      "name_status": "STLport 4.5.3 symbol (ScreenPlacementStore saved placement list); emitted by startup_placement_write.cpp with /GX /Ob1; audited complete original code extent."
++      "name": "CircularList::CreateNode(SavedScreenPlacement*)",
++      "name_status": "descriptive typed saved-placement node overload; original generic type, spelling and provenance unknown"
+     },
+     {
+       "address": "0x004e80a0",
+       "size": 38,
+-      "name": "_STL::list<SavedScreenPlacement*,_STL::allocator<SavedScreenPlacement*>>::insert",
+-      "name_status": "STLport 4.5.3 symbol (ScreenPlacementStore saved placement list); emitted by startup_placement_write.cpp with /GX /Ob1; audited complete original code extent."
++      "name": "CircularList::Insert(SavedScreenPlacement* const&)",
++      "name_status": "descriptive typed pointer specialization; original generic declaration and code origin unclassified"
+     }
+   ],
+   "source_compile_options": {
+@@ -2796,10 +2796,16 @@
+     "startup_list_adaptor.cpp": [
+       "/Ob1"
+     ],
+-    "startup_placement_write.cpp": [
++    "startup_placement_node.cpp": [
+       "/GX",
+       "/Ob1"
+     ],
++    "startup_placement_insert.cpp": [
++      "/Ob1"
++    ],
++    "startup_placement_write.cpp": [
++      "/Ob1"
++    ],
+     "startup_gui_register.cpp": [
+       "/GX"
+     ],
+@@ -3213,9 +3219,6 @@
+     ],
+     "startup_screen_manager_prepare_active.cpp": [
+       "/Ob1"
+-    ],
+-    "startup_screen_placement.cpp": [
+-      "/Ob1"
+     ]
+   },
+   "stdcall_imports": {
+@@ -4613,6 +4616,7 @@
+     "startup_match_004c2480.cpp",
+     "startup_match_004cdb50.cpp",
+     "startup_match_004ce560.cpp",
++    "startup_placement_node.cpp",
+     "startup_saved_placement_helpers.cpp",
+     "startup_screen_child_node.cpp",
+     "startup_screen_credits_owner_constructor.cpp",
+@@ -4693,8 +4697,6 @@
+     "startup_screen_activate.cpp",
+     "startup_screen_manager_prepare_active.cpp",
+     "startup_screen_manager_prepare_named.cpp",
+-    "startup_screen_name_search.cpp",
+-    "startup_placement_write.cpp",
+-    "startup_screen_placement.cpp"
++    "startup_screen_name_search.cpp"
+   ]
+ }

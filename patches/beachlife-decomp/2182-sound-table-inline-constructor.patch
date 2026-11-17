@@ -1,0 +1,101 @@
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+index cfb39f8..d622503 100644
+--- a/src/window_sound_bank.h
++++ b/src/window_sound_bank.h
+@@ -62,6 +62,7 @@ struct WindowSoundBucketArray
+     int end_index;
+     int capacity_04;
+     WindowSoundBucket* buckets;
++    WindowSoundBucketArray();
+     ~WindowSoundBucketArray();
+ };
+ 
+@@ -70,7 +71,10 @@ struct WindowSoundTable : ScreenTextStorageBase, WindowSoundBucketArray
+     unsigned char unknown_0c[4];
+     int bucket_count;
+     unsigned int word_14;
++    explicit WindowSoundTable(unsigned int requested);
+     ~WindowSoundTable(); // Actual 0x004d22a0: array then base cleanup.
++    void ReserveBuckets(int count);
++    void Clear(); // Out-of-line copy 0x004d23d0.
+ };
+ 
+ // Actual 32-byte x86 bank allocation. Destruction/loading remain real dependencies.
+@@ -93,7 +97,6 @@ struct WindowSoundBank : WindowSoundTable
+     WindowSoundBank* InitializeStorageBase(); // 0x004d38b0, real return-this.
+     void DestroyStorageBase();                // 0x004d3890, real empty cleanup.
+     void ReleaseBucketStorage();              // 0x0049f560, actual array cleanup.
+-    void ResetBuckets();                      // 0x004d23d0, unavailable bytes/word14.
+ 
+     // These are the same physical 0x004d2310/0x004d2450 bodies already supplied
+     // for text lookup. A coherent typed composition is required before linking;
+@@ -117,6 +120,69 @@ inline WindowSoundIterator& WindowSoundIterator::operator++()
+     return *this;
+ }
+ 
++// Retail expands the bucket array and table constructors, the bucket
++// reservation and the bank's own Clear into the bank constructor (/Ob1). The
++// /Ob1 budget keeps the table constructor's Clear and the reservation's
++// delete[] (the vector deleting destructor 0x004d2480) out of line.
++inline WindowSoundBucketArray::WindowSoundBucketArray()
++    : end_index(0)
++    , capacity_04(0)
++    , buckets(0)
++{
++}
++
++inline void WindowSoundTable::ReserveBuckets(int count)
++{
++    if (count > capacity_04)
++    {
++        if (capacity_04 == 0)
++            capacity_04 = 1;
++        do
++            capacity_04 *= 2;
++        while (capacity_04 <= count);
++        if (capacity_04 > 0)
++        {
++            WindowSoundBucket* fresh = new WindowSoundBucket[capacity_04];
++            if (buckets != 0)
++            {
++                for (int index = 0; index < end_index; ++index)
++                    fresh[index] = buckets[index];
++                delete[] buckets;
++            }
++            buckets = fresh;
++        }
++        else
++        {
++            if (buckets != 0)
++                delete[] buckets;
++            buckets = 0;
++        }
++    }
++    end_index = count;
++}
++
++// The bank constructor's /Ob1 unit emits this out-of-line copy for the table
++// constructor's call.
++// FUNCTION: BEACHLIFE 0x004d23d0
++inline void WindowSoundTable::Clear()
++{
++    WindowSoundBucket* bucket = buckets;
++    for (int count = end_index; count > 0; --count)
++    {
++        bucket->unavailable = 1;
++        ++bucket;
++    }
++    word_14 = 0;
++}
++
++inline WindowSoundTable::WindowSoundTable(unsigned int requested)
++{
++    word_14 = 0;
++    bucket_count = SelectHashTableCapacity(requested);
++    ReserveBuckets(bucket_count);
++    Clear();
++}
++
+ // Expanded by /Ob1 owners; the delete[] runs the folded empty element
+ // destructor through the vector destructor iterator.
+ inline WindowSoundBucketArray::~WindowSoundBucketArray()
