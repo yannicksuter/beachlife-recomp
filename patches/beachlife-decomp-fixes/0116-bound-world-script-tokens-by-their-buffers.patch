@@ -1,0 +1,155 @@
+diff --git a/src/startup_world_script_load.cpp b/src/startup_world_script_load.cpp
+index 4e23923..7ec407a 100644
+--- a/src/startup_world_script_load.cpp
++++ b/src/startup_world_script_load.cpp
+@@ -67,7 +67,7 @@ int WorldSubsystem20::SkipComments()
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004e1d10
+-int WorldSubsystem20::ReadToken(char* token)
++int WorldSubsystem20::ReadToken(char* token, unsigned int size)
+ {
+     int count = SkipWorldScriptWhitespace(cursor_00);
+     count += SkipComments();
+@@ -80,8 +80,12 @@ int WorldSubsystem20::ReadToken(char* token)
+         token[1] = 0;
+         return count + 1;
+     }
++    char* last = token + size - 1;
+     while (*cursor_00 && *cursor_00 != ' ' && *cursor_00 != '\n' && *cursor_00 != '\t' && *cursor_00 != '\r')
+     {
++        // Retail copies without a bound; a damaged script overflowed the caller's buffer.
++        if (token == last)
++            StartupFatal("World script token too long");
+         *token++ = *cursor_00++;
+         ++count;
+         if (*cursor_00 == ';')
+diff --git a/src/startup_world_script_parse_if.cpp b/src/startup_world_script_parse_if.cpp
+index 6de3eca..9869f3f 100644
+--- a/src/startup_world_script_parse_if.cpp
++++ b/src/startup_world_script_parse_if.cpp
+@@ -20,6 +20,9 @@ int WorldSubsystem20::ParseIfAction()
+     {
+         if (!*cursor_00)
+             StartupFatal("Unexpected end of world script data");
++        // Retail copies without a bound; keep room for the ')' and the terminator.
++        if (destination == condition + sizeof(condition) - 2)
++            StartupFatal("World script condition too long");
+         *destination++ = *cursor_00++;
+         ++count;
+     }
+@@ -42,7 +45,11 @@ int WorldSubsystem20::ParseIfAction()
+         char left[40];
+         unsigned int length = 0;
+         while (condition[index] != ' ' && condition[index] != ')')
++        {
++            if (length == sizeof(left) - 1 || !condition[index])
++                StartupFatal("World script condition too long");
+             left[length++] = condition[index++];
++        }
+         left[length] = 0;
+         data->left_08 = ParseOperand(left);
+         while (condition[index] == ' ')
+@@ -56,7 +63,11 @@ int WorldSubsystem20::ParseIfAction()
+             char operation[12];
+             length = 0;
+             while (condition[index] != ' ')
++            {
++                if (length == sizeof(operation) - 1 || !condition[index])
++                    StartupFatal("World script condition too long");
+                 operation[length++] = condition[index++];
++            }
+             operation[length] = 0;
+             if (std::strcmp(operation, "&&") == 0)
+                 data->comparison_18 = 0;
+@@ -85,7 +96,11 @@ int WorldSubsystem20::ParseIfAction()
+             char right[40];
+             length = 0;
+             while (condition[index] != ' ' && condition[index] != ')')
++            {
++                if (length == sizeof(right) - 1 || !condition[index])
++                    StartupFatal("World script condition too long");
+                 right[length++] = condition[index++];
++            }
+             right[length] = 0;
+             if (right[0] == '"')
+             {
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 8b8dac0..e6e4778 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -174,37 +174,43 @@ struct WorldSubsystem18 : WorldRouteRegistration
+ };
+ struct WorldSubsystem20
+ {
+-    int ParseStateName();                     // 0x004dd660.
+-    int ParseStateActions(unsigned int kind); // 0x004dd740.
+-    int ParseFunctionAction();                // 0x004dea00.
+-    int ParseMessageAction();                 // 0x004deba0.
+-    int ParseCreateAction();                  // 0x004dee60.
+-    int ParsePathAction();                    // 0x004df7d0.
+-    int ParseGrassAction();                   // 0x004df9d0.
+-    int ParseLoadScriptAction();              // 0x004dfbd0.
+-    int ParseAreaAction();                    // 0x004dfd10.
+-    int ParseBoatPointAction();               // 0x004dff10.
+-    int ParseBoatEntryAction();               // 0x004e01d0.
+-    int ParseBoatExitAction();                // 0x004e0310.
+-    int ParseBoatEventAction();               // 0x004e0450.
+-    int ParseCircuitPointAction();            // 0x004e00b0.
+-    int ParseDisasterAction();                // 0x004e0930.
+-    int ParseWeatherAction();                 // 0x004e1010.
+-    int ParseIfAction();                      // 0x004de490.
+-    int ParseAddAction();                     // 0x004dde60.
+-    int ParseMinusAction();                   // 0x004ddf50.
+-    int ParseDivideAction();                  // 0x004de040.
+-    int ParseMultiplyAction();                // 0x004de130.
+-    int ParseSetAction();                     // 0x004de220.
+-    int ParsePlaySoundAction();               // 0x004e19b0.
+-    int ParseMoveCameraAction();              // 0x004e1aa0.
+-    int ParseShowMenuAction();                // 0x004e1ba0.
+-    int ParseChangeStateAction();             // 0x004de310.
+-    int ParseStateMessage();                  // 0x004dd3f0.
+-    WorldSubsystem20();                       // 0x004dca90.
+-    int LoadScript(const char* path);         // 0x004dce70.
+-    int SkipComments();                       // 0x004dd0c0.
+-    int ReadToken(char* token);               // 0x004e1d10.
++    int ParseStateName();                          // 0x004dd660.
++    int ParseStateActions(unsigned int kind);      // 0x004dd740.
++    int ParseFunctionAction();                     // 0x004dea00.
++    int ParseMessageAction();                      // 0x004deba0.
++    int ParseCreateAction();                       // 0x004dee60.
++    int ParsePathAction();                         // 0x004df7d0.
++    int ParseGrassAction();                        // 0x004df9d0.
++    int ParseLoadScriptAction();                   // 0x004dfbd0.
++    int ParseAreaAction();                         // 0x004dfd10.
++    int ParseBoatPointAction();                    // 0x004dff10.
++    int ParseBoatEntryAction();                    // 0x004e01d0.
++    int ParseBoatExitAction();                     // 0x004e0310.
++    int ParseBoatEventAction();                    // 0x004e0450.
++    int ParseCircuitPointAction();                 // 0x004e00b0.
++    int ParseDisasterAction();                     // 0x004e0930.
++    int ParseWeatherAction();                      // 0x004e1010.
++    int ParseIfAction();                           // 0x004de490.
++    int ParseAddAction();                          // 0x004dde60.
++    int ParseMinusAction();                        // 0x004ddf50.
++    int ParseDivideAction();                       // 0x004de040.
++    int ParseMultiplyAction();                     // 0x004de130.
++    int ParseSetAction();                          // 0x004de220.
++    int ParsePlaySoundAction();                    // 0x004e19b0.
++    int ParseMoveCameraAction();                   // 0x004e1aa0.
++    int ParseShowMenuAction();                     // 0x004e1ba0.
++    int ParseChangeStateAction();                  // 0x004de310.
++    int ParseStateMessage();                       // 0x004dd3f0.
++    WorldSubsystem20();                            // 0x004dca90.
++    int LoadScript(const char* path);              // 0x004dce70.
++    int SkipComments();                            // 0x004dd0c0.
++    int ReadToken(char* token, unsigned int size); // 0x004e1d10, bounded by the caller's buffer.
++    // Every retail caller reads into a local array; its size bounds the copy.
++    template <unsigned int Size>
++    int ReadToken(char (&token)[Size])
++    {
++        return ReadToken(token, Size);
++    }
+     int ParseState();                         // 0x004dd140.
+     unsigned int FindState(const char* name); // 0x004dcdf0.
+     void PrepareLoad();                       // 0x004dcbc0.
