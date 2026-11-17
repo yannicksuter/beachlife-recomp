@@ -656,6 +656,45 @@ class ComparisonGlobalOperandTests(unittest.TestCase):
                 (self.folder / 'metadata.csv').write_text(changed)
                 matching.comparison_global_operand_specs(self.folder, self.target)
 
+    def test_switch_identity_may_cover_its_inline_tables(self):
+        # A switch row keeps its code-only extent; the CSV identity adds the tables.
+        (self.folder / 'metadata.csv').write_text(self.csv.replace('function,12', 'function,20'))
+        record, = matching.comparison_global_operand_specs(self.folder, self.target)
+        self.assertEqual((record['function_size'], record['code_size']), (20, 12))
+        (self.folder / 'metadata.csv').write_text(self.csv.replace('function,12', 'function,11'))
+        with self.assertRaisesRegex(ValueError, 'extent disagrees'):
+            matching.comparison_global_operand_specs(self.folder, self.target)
+        (self.folder / 'metadata.csv').write_text(self.csv.replace('function,12', 'function,20'))
+        with self.assertRaisesRegex(ValueError, 'unique instruction'):
+            matching.comparison_global_operand_specs(self.folder, dict(
+                self.target, comparison_global_operands=[dict(self.item, instruction_offset=8)]))
+
+    def test_inline_table_tail_holds_only_tables_and_alignment(self):
+        start = 0x401000
+        code = [(start, 5), (start + 5, 2), (start + 7, 1)]
+        raw = bytes(8) + bytes([0x90] * 4) + (start + 2).to_bytes(4, 'little') + \
+            (start + 7).to_bytes(4, 'little') + bytes([0, 1])
+        sections = [('code', code + [(start + 8, 1), (start + 9, 1), (start + 10, 1), (start + 11, 1)]),
+                    ('address', [(start + 12, 4), (start + 16, 4)]), ('data', [(start + 20, 1), (start + 21, 1)])]
+        entries = matching.inline_table_tail(sections, raw, start, 8, 22)
+        self.assertEqual([item[0] for item in entries], ['address', 'address', 'data', 'data'])
+        self.assertEqual(matching.inline_table_tail([('code', code)], raw[:8], start, 8, 8), [])
+        bad_tail = raw[:8] + b'\x55' + raw[9:]
+        with self.assertRaisesRegex(ValueError, 'code after'):
+            matching.inline_table_tail(sections, bad_tail, start, 8, 22)
+        with self.assertRaisesRegex(ValueError, 'no table entry'):
+            matching.inline_table_tail(sections[:2], raw, start, 8, 22)
+        with self.assertRaisesRegex(ValueError, 'no address table'):
+            matching.inline_table_tail([sections[0], ('data', [(start + 12 + i, 1) for i in range(10)])],
+                                       raw, start, 8, 22)
+        escaped = raw[:12] + (start + 8).to_bytes(4, 'little') + raw[16:]
+        with self.assertRaisesRegex(ValueError, 'leaves the registered code'):
+            matching.inline_table_tail(sections, escaped, start, 8, 22)
+        with self.assertRaisesRegex(ValueError, 'inside an instruction'):
+            matching.inline_table_tail([('code', [(start, 5), (start + 5, 4)])] + sections[1:], raw, start, 8, 22)
+        with self.assertRaisesRegex(ValueError, 'outside the CSV tail'):
+            matching.inline_table_tail(sections[:1] + [('address', [(start + 20, 4)])], raw, start, 8, 22)
+
     def test_member_of_the_element_past_the_end_is_bounded_by_the_element(self):
         # A loop over &array[i].member ends at array + extent + member offset.
         record, = matching.comparison_global_operand_specs(self.folder, dict(

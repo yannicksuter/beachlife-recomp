@@ -5,7 +5,7 @@ import csv
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import shutil
 import struct
@@ -139,7 +139,7 @@ class Toolchain:
         self.prefix = args.prefix.resolve()
         if os.name != 'nt':
             self.environment.update(WINEPREFIX=str(self.prefix), WINEDEBUG='-all',
-                                    WINEDLLOVERRIDES='mscoree,mshtml=')
+                                    WINEDLLOVERRIDES='mscoree,mshtml=;winedbg.exe=d')
         pins = json.loads((self.decomp_root / 'msvc6-sp4.json').read_text())
         for component in pins['components']:
             if digest(self.compiler / component['file']) != component['sha256']:
@@ -1081,16 +1081,64 @@ def comparison_global_operand_specs(metadata, target):
                     start + int(selected[0]['size']) >= 0x100000000):
                 raise ValueError('Global operand needs exact explicit function and global CSV identities.')
             identities.append(selected[0])
-        if int(identities[0]['size']) != functions[function]['size']:
+        # A switch body's CSV identity covers its inline jump tables after the
+        # registered code (at least one address entry); the comparator audits
+        # that tail as tables and alignment only.
+        tail = int(identities[0]['size']) - functions[function]['size']
+        if tail < 0 or 0 < tail < 4:
             raise ValueError('Global operand function extent disagrees with its CSV identity.')
         size, member = int(identities[1]['size']), item.get('member_offset', 0)
         element = item.get('element_size', size)
         if not (0 < element <= size and size % element == 0 and 0 <= member < element):
             raise ValueError('Global operand member offset must lie inside one real element.')
         result.append(dict(item, function_symbol=identities[0]['symbol'],
-                           function_size=int(identities[0]['size']),
+                           function_size=int(identities[0]['size']), code_size=functions[function]['size'],
                            global_symbol=identities[1]['symbol'], size=size, addend=size + member))
     return result
+
+
+INLINE_TABLE_PADDING = (0x90, 0xcc)
+
+
+def inline_table_tail(sections, raw, start, code_size, size):
+    """Audit the bytes a CSV identity adds after the registered code extent.
+
+    sections lists ('code', [(address, length), ...]) and ('address', ...) or
+    ('data', ...) table entries as the disassembler split the full extent. The
+    code must end inside the registered extent; the tail may hold only table
+    entries and nop/int3 alignment, at least one address table, and every
+    address entry must point into the registered code.
+    """
+    code_end, end = start + code_size, start + size
+    if size == code_size:
+        return []
+    covered, entries = set(), []
+    for kind, contents in sections:
+        for address, length in contents:
+            span = range(address, address + length)
+            if kind == 'code':
+                if address < code_end:
+                    if address + length > code_end:
+                        raise ValueError('Inline table tail starts inside an instruction.')
+                    continue
+                if any(raw[offset - start] not in INLINE_TABLE_PADDING for offset in span):
+                    raise ValueError('Inline table tail holds code after the registered extent.')
+                continue
+            if address < code_end or address + length > end:
+                raise ValueError('Inline table entry lies outside the CSV tail.')
+            covered.update(span)
+            entries.append((kind, address, length))
+    for offset in range(code_end, end):
+        if offset not in covered and raw[offset - start] not in INLINE_TABLE_PADDING:
+            raise ValueError('Inline table tail holds bytes that are no table entry.')
+    addresses = [item for item in entries if item[0] == 'address']
+    if not addresses:
+        raise ValueError('Inline table tail has no address table.')
+    for _, address, length in addresses:
+        value = int.from_bytes(raw[address - start:address - start + length], 'little')
+        if length != 4 or not start <= value < code_end:
+            raise ValueError('Inline jump table entry leaves the registered code.')
+    return entries
 
 
 def comparison_operand_coff(path, expected):
@@ -1323,6 +1371,122 @@ def bind_static_identities(specs, original_match, rebuilt_match):
     return records, pairs
 
 
+# A data identity of a translation-unit static, such as the guard byte of a
+# function-local static (_?$S1@...), written OBJECT:NAME with the static's COFF
+# name. LINK lists no data statics in its map: the comparator finds the rebuilt
+# address in the PDB instead (static_data_identity_addresses).
+STATIC_DATA_TYPES = ('global',)
+IMAGE_SCN_CNT_CODE = 0x20
+IMAGE_SCN_CNT_DATA = 0x40 | 0x80
+
+
+def coff_static_data_symbols(path):
+    """Static (storage class 3) symbols of an x86 COFF object's data sections.
+
+    Returns {name: [(offset in its section, section size)]}; section and other
+    auxiliary-record symbols are not statics of the source."""
+    data = Path(path).read_bytes()
+    if len(data) < 20 or struct.unpack_from('<H', data)[0] != 0x14c:
+        raise ValueError(f'Expected an x86 COFF object: {path}')
+    count_sections, = struct.unpack_from('<H', data, 2)
+    offset, count = struct.unpack_from('<II', data, 8)
+    strings = offset + count * 18
+    if offset < 20 + count_sections * 40 or strings + 4 > len(data):
+        raise ValueError(f'Truncated COFF symbol table: {path}')
+    string_size, = struct.unpack_from('<I', data, strings)
+    if string_size < 4 or strings + string_size > len(data):
+        raise ValueError(f'Truncated COFF string table: {path}')
+    found, index = {}, 0
+    while index < count:
+        entry = offset + index * 18
+        value, section, _, storage, auxiliary = struct.unpack_from('<IhHBB', data, entry + 8)
+        if index + 1 + auxiliary > count:
+            raise ValueError(f'Truncated COFF auxiliary records: {path}')
+        if storage == 3 and auxiliary == 0 and 0 < section <= count_sections:
+            size, = struct.unpack_from('<I', data, 20 + (section - 1) * 40 + 16)
+            flags, = struct.unpack_from('<I', data, 20 + (section - 1) * 40 + 36)
+            if flags & IMAGE_SCN_CNT_DATA and not flags & IMAGE_SCN_CNT_CODE and value < size:
+                name = data[entry:entry + 8]
+                if name[:4] == b'\0' * 4:
+                    start, = struct.unpack_from('<I', name, 4)
+                    end = data.find(b'\0', strings + start, strings + string_size)
+                    if not 4 <= start < string_size or end == -1:
+                        raise ValueError(f'Invalid COFF symbol name: {path}')
+                    name = data[strings + start:end]
+                else:
+                    name = name.rstrip(b'\0')
+                found.setdefault(name.decode('ascii', 'replace'), []).append((value, size))
+        index += 1 + auxiliary
+    return found
+
+
+def static_data_identity_specs(metadata_rows, folder, linked):
+    """Data rows whose symbol names one data static of one linked object.
+
+    The object must be linked once and define exactly one static of that COFF
+    name in a data section, with the row's extent inside that section. Its
+    offset and the section size identify the static in the PDB."""
+    result = []
+    for row in metadata_rows:
+        match = STATIC_IDENTITY.fullmatch(row.get('symbol') or '')
+        if row.get('type') not in STATIC_DATA_TYPES or not match:
+            continue
+        if linked.count(f'"{match[1]}"') != 1 or not (Path(folder) / match[1]).is_file():
+            raise ValueError(f"Static data identity {row['symbol']} does not name one linked object.")
+        found = coff_static_data_symbols(Path(folder) / match[1]).get(match[2], [])
+        if len(found) != 1:
+            raise ValueError(f"Static data identity {row['symbol']} does not name exactly one data static.")
+        offset, size = found[0]
+        if not 0 < int(row['size']) <= size - offset:
+            raise ValueError(f"Static data identity {row['symbol']} extends past its section.")
+        result.append({'address': f"0x{int(row['address'], 16):08x}", 'symbol': row['symbol'],
+                       'object': match[1], 'name': match[2], 'offset': offset, 'section_size': size})
+    return result
+
+
+PDB_MODULE_LINE = re.compile(r'\*\* Module: "([^"]+)"')
+PDB_LOCAL_DATA_LINE = re.compile(r'S_LDATA32: \[([0-9A-Fa-f]{4}):([0-9A-Fa-f]{8})\], Type:\s*\S+, (.+)$')
+
+
+def static_data_identity_addresses(specs, module_statics, contributions, absolute):
+    """Rebuilt addresses of OBJECT:NAME data identities, from the PDB.
+
+    module_statics lists the module-level S_LDATA32 records as (module, section,
+    offset, name); contributions are the PDB section contributions as (section,
+    start, size). VC6 names a static in the PDB without the leading underscore
+    of its COFF name. A record counts only in the named object's module, under
+    that name, at the static's COFF offset of a contribution as large as the
+    static's COFF section. Returns {symbol: sorted rebuilt addresses}."""
+    result = {}
+    for item in specs:
+        names = {item['name'], *([item['name'][1:]] if item['name'].startswith('_') else [])}
+        found = set()
+        for module, section, offset, name in module_statics:
+            if PureWindowsPath(module).name.lower() != item['object'].lower() or name not in names:
+                continue
+            if any(start_section == section and offset - start == item['offset'] and
+                   size == item['section_size'] for start_section, start, size in contributions):
+                found.add(absolute(section, offset))
+        result[item['symbol']] = sorted(found)
+    return result
+
+
+def bind_static_data_identities(specs, addresses, original_match, rebuilt_match):
+    """Bind each data identity at its one PDB address, as bind_static_identities.
+
+    An identity without exactly one rebuilt address is recorded unbound."""
+    resolved, records = [], []
+    for item in specs:
+        found = addresses.get(item['symbol'], [])
+        if len(found) == 1:
+            resolved.append(dict(item, recomp=f'0x{found[0]:08x}'))
+        else:
+            records.append(dict(item, recomp=None, bound=False))
+    bound, pairs = bind_static_identities(resolved, original_match, rebuilt_match)
+    records += [dict(record, bound='pdb' if record['bound'] == 'map' else record['bound']) for record in bound]
+    return sorted(records, key=lambda record: int(record['address'], 16)), pairs
+
+
 def equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linked=()):
     """Unfolded linked copies of a registered code identity, proven identical.
 
@@ -1544,7 +1708,8 @@ def literal_copy_specs(target, publics, read):
         copy, identity = addresses.get(item['symbol'], set()), addresses.get(item['literal'], set())
         if len(copy) != 1 or len(identity) != 1 or copy == identity:
             raise ValueError(f"Literal copy {item['symbol']} is not a separate linked constant.")
-        copy, identity, size = copy.pop(), identity.pop(), int(literal[1])
+        # The address sets are shared by every item naming the same constant: read, never pop.
+        copy, identity, size = next(iter(copy)), next(iter(identity)), int(literal[1])
         if read(copy, size) != read(identity, size):
             raise ValueError(f"Literal copy {item['symbol']} differs from {item['literal']}.")
         result.append({'function': f'0x{function:08x}', 'symbol': item['symbol'],
@@ -1567,24 +1732,107 @@ def equivalent_copy_lookup(rebuilt_lookup, copies, scoped=None):
     return lookup
 
 
+# x86 encodes a 32-bit immediate in an instruction's last four bytes.
+PLAIN_IMMEDIATE = re.compile(r'(?:^|, )(0x[0-9a-f]+)$')
+PLAIN_IMMEDIATE_TOKEN = '<PLAIN>'
+
+
+def plain_immediate(instruction, operand, relocations):
+    """The text of a decoded instruction's trailing 32-bit immediate when the
+    image does not relocate it, else None.
+
+    instruction is reccmp's (address, size, mnemonic, operands) tuple and
+    operand its last four bytes. Relative call and branch targets and narrower
+    immediates never qualify."""
+    address, size, mnemonic, operands = instruction
+    if mnemonic == 'call' or mnemonic.startswith(('j', 'loop')) or size < 5 or len(operand) != 4:
+        return None
+    found = PLAIN_IMMEDIATE.search(operands)
+    if found is None or int(found.group(1), 16) != struct.unpack('<I', operand)[0]:
+        return None
+    return None if address + size - 4 in relocations else found.group(1)
+
+
+def plain_immediate_rules(original_relocations, rebuilt_relocations, original_read, rebuilt_read,
+                          rebuilt_instructions, original_name):
+    """Per-image predicates naming the trailing immediates of one compared
+    function that stay numbers instead of address names or placeholders.
+
+    reccmp names an immediate whenever its value falls inside a known image
+    range, so a constant that collides with an address on one side only differs.
+    The rebuilt image relocates every address operand (LINK /fixed:no), so an
+    immediate it does not relocate is a constant; an original with relocations
+    is judged the same way. A relocation-free original (retail) keeps an
+    immediate a number only when the rebuilt function has the same unrelocated
+    constant and no original identity starts at that value (original_name is an
+    exact lookup), so an identity's address or a changed constant still
+    compares as before."""
+    if not rebuilt_relocations:
+        raise ValueError('Plain immediates need the base relocations of the rebuilt image.')
+    def rebuilt(instruction):
+        return plain_immediate(instruction, rebuilt_read(instruction[0] + instruction[1] - 4),
+                               rebuilt_relocations)
+    constants = {text for text in map(rebuilt, rebuilt_instructions) if text is not None}
+    def original(instruction):
+        text = plain_immediate(instruction, original_read(instruction[0] + instruction[1] - 4),
+                               original_relocations)
+        if text is None or original_relocations:
+            return text
+        return text if text in constants and original_name(int(text, 16)) is None else None
+    return original, rebuilt
+
+
+def keep_plain_immediates(sanitize, plain):
+    """reccmp's sanitizer, except that the trailing immediate plain(instruction)
+    returns stays that number."""
+    def sanitized(instruction):
+        text = plain(instruction)
+        if text is None:
+            return sanitize(instruction)
+        address, size, mnemonic, operands = instruction
+        mnemonic, operands = sanitize((address, size, mnemonic,
+                                       operands[:-len(text)] + PLAIN_IMMEDIATE_TOKEN))
+        return mnemonic, operands.replace(PLAIN_IMMEDIATE_TOKEN, text)
+    return sanitized
+
+
 def compare_global_operands(configuration, arguments):
     """Run pinned reccmp with instruction-scoped operand names, folded code
-    identities bound at their LINK map address and operands naming a folded
-    identity whose address another original holds; images stay unchanged."""
+    identities bound at their LINK map address, operands naming a folded
+    identity whose address another original holds and unrelocated immediates
+    kept as numbers (plain_immediate_rules); images stay unchanged."""
     import reccmp
     import reccmp.compare.core as reccmp_core
     from reccmp.compare.functions import FunctionComparator
     from reccmp.compare.asm.instgen import InstructGen, SectionType
     from reccmp.types import EntityType, ImageId
     from reccmp.tools.asmcmp import main as compare_main
+    from reccmp.cvdump.symbols import CvdumpSymbolsParser
     if reccmp.VERSION != '0.1.7':
         raise ValueError('Global operand comparison requires reccmp 0.1.7.')
     config = json.loads(Path(configuration).read_text())
     original_compare = FunctionComparator.compare_function
     original_load_cvdump, original_match_lines = reccmp_core.load_cvdump, reccmp_core.match_lines
     original_load_markers = reccmp_core.load_markers
+    original_read_line = CvdumpSymbolsParser.read_line
     applied = {}
-    folded = {'publics': {}, 'records': None, 'aliases': {}, 'statics': None, 'unfolded': None}
+    folded = {'publics': {}, 'records': None, 'aliases': {}, 'statics': None, 'unfolded': None,
+              'static_data': None, 'data_addresses': {}}
+    data_specs = config.get('static_data_identities', [])
+    module_statics, module = [], {'name': None}
+
+    def read_line(self, line):
+        # reccmp keeps only S_LDATA32 records inside functions; a module-level
+        # record is the PDB entry of a translation-unit data static.
+        text = line.rstrip('\r\n')
+        found = PDB_MODULE_LINE.match(text)
+        if found:
+            module['name'] = found[1]
+        elif module['name'] is not None and self.current_function is None:
+            found = PDB_LOCAL_DATA_LINE.search(text)
+            if found:
+                module_statics.append((module['name'], int(found[1], 16), int(found[2], 16), found[3]))
+        return original_read_line(self, line)
     copies = {int(item['recomp'], 16): int(item['identity_recomp'], 16)
               for item in config.get('equivalent_copies', []) if 'function' not in item}
     scoped = {'current': {}, 'functions': {}}
@@ -1598,6 +1846,11 @@ def compare_global_operands(configuration, arguments):
             if recomp_bin.is_valid_section(public.section):
                 folded['publics'].setdefault(recomp_bin.get_abs_addr(public.section, public.offset),
                                              set()).add(public.name)
+        if data_specs:
+            folded['data_addresses'] = static_data_identity_addresses(
+                data_specs, [item for item in module_statics if recomp_bin.is_valid_section(item[1])],
+                [(item.section, item.offset, item.size) for item in analysis.parser.sizerefs],
+                recomp_bin.get_abs_addr)
         return original_load_cvdump(analysis, db, recomp_bin)
 
     def load_markers(code_files, lines_db, orig_bin, target_id, db, *args, **kwargs):
@@ -1629,6 +1882,13 @@ def compare_global_operands(configuration, arguments):
             with db.batch() as batch:
                 for original, recomp in static_pairs:
                     batch.match(original, recomp)
+        folded['static_data'], data_pairs = bind_static_data_identities(
+            data_specs, folded['data_addresses'],
+            lambda address: matched(ImageId.ORIG, address), lambda address: matched(ImageId.RECOMP, address))
+        if data_pairs:
+            with db.batch() as batch:
+                for original, recomp in data_pairs:
+                    batch.match(original, recomp)
         folded['records'], pairs = bind_folded_identities(
             config.get('folded_identities', []), folded['publics'],
             lambda address: matched(ImageId.ORIG, address), lambda address: matched(ImageId.RECOMP, address))
@@ -1658,10 +1918,23 @@ def compare_global_operands(configuration, arguments):
                 self.recomp_sanitize.name_lookup, copies, scoped)
             self.equivalent_copy_lookup = True
         scoped['current'] = scoped['functions'].get(match.orig_addr, {})
+        rules = plain_immediate_rules(
+            self.orig_bin.relocations, self.recomp_bin.relocations,
+            lambda address: self.orig_bin.read(address, 4), lambda address: self.recomp_bin.read(address, 4),
+            [inst for section in InstructGen(self.recomp_bin.read(match.recomp_addr, match.size(ImageId.RECOMP)),
+                                             match.recomp_addr, True).sections
+             if section.type == SectionType.CODE for inst in section.contents],
+            lambda value: self.orig_sanitize.lookup(value, exact=True))
+        sanitizers = (self.orig_sanitize, self.recomp_sanitize)
+        previous = [sanitizer.sanitize for sanitizer in sanitizers]
+        for sanitizer, rule, default in zip(sanitizers, rules, previous):
+            sanitizer.sanitize = keep_plain_immediates(default, rule)
         try:
             return compare_scoped(self, match)
         finally:
             scoped['current'] = {}
+            for sanitizer, default in zip(sanitizers, previous):
+                sanitizer.sanitize = default
 
     def compare_scoped(self, match):
         rules = sorted((item for item in config['operands'] if int(item['function'], 16) == match.orig_addr),
@@ -1669,6 +1942,17 @@ def compare_global_operands(configuration, arguments):
         if not rules:
             return original_compare(self, match)
         replacements = ({}, {})
+        if rules[0]['function_size'] != rules[0]['code_size']:
+            raw = self.orig_bin.read(match.orig_addr, rules[0]['function_size'])
+            sections = []
+            for section in InstructGen(raw, match.orig_addr, True).sections:
+                if section.type == SectionType.CODE:
+                    sections.append(('code', [(inst[0], inst[1]) for inst in section.contents]))
+                else:
+                    width = 4 if section.type == SectionType.ADDR_TAB else 1
+                    sections.append(('address' if width == 4 else 'data',
+                                     [(address, width) for address, _ in section.contents]))
+            inline_table_tail(sections, raw, match.orig_addr, rules[0]['code_size'], rules[0]['function_size'])
         original_code = dict(instructions(self.orig_bin, match.orig_addr, rules[0]['function_size']))
         rebuilt_code = instructions(self.recomp_bin, match.recomp_addr, match.size(ImageId.RECOMP))
         for global_symbol, addend in sorted({(item['global_symbol'], item['addend']) for item in rules}):
@@ -1730,6 +2014,8 @@ def compare_global_operands(configuration, arguments):
     FunctionComparator.compare_function = compare
     reccmp_core.load_cvdump, reccmp_core.match_lines = load_cvdump, match_lines
     reccmp_core.load_markers = load_markers
+    if data_specs:
+        CvdumpSymbolsParser.read_line = read_line
     previous_arguments = sys.argv
     try:
         sys.argv = ['reccmp-reccmp', *arguments]
@@ -1749,21 +2035,26 @@ def compare_global_operands(configuration, arguments):
             if folded['statics'] is None:
                 raise ValueError('Comparator did not reach the static identity binding.')
             save(config['static_validation'], folded['statics'])
+        if 'static_data_validation' in config:
+            if folded['static_data'] is None:
+                raise ValueError('Comparator did not reach the static data identity binding.')
+            save(config['static_data_validation'], folded['static_data'])
         return result
     finally:
         FunctionComparator.compare_function = original_compare
         reccmp_core.load_cvdump, reccmp_core.match_lines = original_load_cvdump, original_match_lines
         reccmp_core.load_markers = original_load_markers
+        CvdumpSymbolsParser.read_line = original_read_line
         sys.argv = previous_arguments
 
 
 def global_operand_command(tool, metadata, target, source, sources, folder, command, folded=(),
-                           statics=(), copies=(), unfolded=()):
+                           statics=(), copies=(), unfolded=(), static_data=()):
     """Without configured operands, folded or static identities or equivalent
     copies, return the ordinary reccmp command unchanged. Otherwise also return
     the validation paths."""
     specs = comparison_global_operand_specs(metadata, target)
-    if not specs and not folded and not statics and not copies and not unfolded:
+    if not specs and not folded and not statics and not copies and not unfolded and not static_data:
         return command, None, None
     linked = (folder / 'link.rsp').read_text().splitlines() if specs else []
     for item in specs:
@@ -1775,16 +2066,20 @@ def global_operand_command(tool, metadata, target, source, sources, folder, comm
     config, validation = folder / 'global-operands.json', folder / 'global-operands-validated.json'
     folded_validation = folder / 'folded-identities-validated.json'
     static_validation = folder / 'static-identities-validated.json'
+    static_data_validation = folder / 'static-data-identities-validated.json'
     unfolded_validation = folder / 'unfolded-identities-validated.json'
     unfolded_validation.unlink(missing_ok=True)
     validation.unlink(missing_ok=True)
     folded_validation.unlink(missing_ok=True)
     static_validation.unlink(missing_ok=True)
+    static_data_validation.unlink(missing_ok=True)
     save(config, {'operands': specs, 'validation': str(validation),
                   **({'folded_identities': list(folded), 'folded_validation': str(folded_validation)}
                      if folded else {}),
                   **({'static_identities': list(statics), 'static_validation': str(static_validation)}
                      if statics else {}),
+                  **({'static_data_identities': list(static_data),
+                      'static_data_validation': str(static_data_validation)} if static_data else {}),
                   **({'equivalent_copies': list(copies)} if copies else {}),
                   **({'unfolded_identities': list(unfolded), 'unfolded_validation': str(unfolded_validation)}
                      if unfolded else {})})
@@ -1836,6 +2131,44 @@ def unfolded_annotations(paths, metadata_rows, rebuilt, publics):
             continue
         result.append({'address': f'0x{address:08x}', 'symbol': symbol, 'recomp': f'0x{recomp:08x}',
                        'sources': sorted(name for name, _ in found)})
+    return result
+
+
+FUNCTION_FOLDED_ANNOTATION = re.compile(r'^[ \t]*//[ \t]*FUNCTION:[ \t]*BEACHLIFE[ \t]+'
+                                        r'0x([0-9a-fA-F]{1,8})\b([^\n]*)$', re.M)
+
+
+def unmarked_folded_annotations(paths, functions, metadata_rows, rebuilt, publics):
+    """Credited rows that LINK folds with other code under plain annotations only.
+
+    ICF keeps the PDB lines of one copy of a folded group, and which copy it
+    keeps can change whenever a new body joins the group. A row whose
+    annotations are all plain then loses its lines and reccmp no longer finds
+    it; a FOLDED annotation makes the comparator bind it at its map address.
+    Diagnostic only: each record names the row, its rebuilt address, the
+    other map names there and the annotating sources.
+    """
+    plain, marked = {}, set()
+    for path in paths:
+        for match in FUNCTION_FOLDED_ANNOTATION.finditer(path.read_text(errors='replace')):
+            address = int(match[1], 16)
+            if 'FOLDED' in match[2].split():
+                marked.add(address)
+            else:
+                plain.setdefault(address, set()).add(path.name)
+    symbols = {int(row['address'], 16): row['symbol'] for row in metadata_rows
+               if row.get('type') in FOLDED_ALIAS_TYPES and row.get('symbol')}
+    result = []
+    for item in functions:
+        address = int(item['address'], 16)
+        symbol = symbols.get(address)
+        recomp = rebuilt.get(symbol) if symbol else None
+        if address not in plain or address in marked or recomp is None:
+            continue
+        others = sorted(publics.get(recomp, set()) - {symbol})
+        if others:
+            result.append({'address': f'0x{address:08x}', 'symbol': symbol, 'recomp': f'0x{recomp:08x}',
+                           'other_names': others, 'sources': sorted(plain[address])})
     return result
 
 
@@ -2578,7 +2911,10 @@ def game(tool, args):
     verify_comparison_anchor_alias_links(anchor_records, folding['publics'])
     folded_specs = folded_identity_specs(metadata_rows, rebuilt, folding['publics'])
     unfolded = unfolded_annotations([*sources, *support_sources], metadata_rows, rebuilt, folding['publics'])
+    unmarked = unmarked_folded_annotations([*sources, *support_sources], target['functions'], metadata_rows,
+                                           rebuilt, folding['publics'])
     static_specs = static_identity_specs(metadata_rows, map_static_symbols(map_path))
+    static_data_specs = static_data_identity_specs(metadata_rows, folder, linked)
     copy_specs = equivalent_copy_specs(target, metadata_rows, rebuilt, objects, folder, linked)
     vendor_specs = vendor_identity_specs(target, metadata_rows, folding['publics'], objects, folder, linked,
                                          lambda address, size: read_va(binary, address, size))
@@ -2588,7 +2924,8 @@ def game(tool, args):
         tool, metadata, target, source, sources, folder,
         [tool.reccmp, '--target', 'BEACHLIFE', '--json', str(reports / 'comparison.json'), '--no-color'],
         folded_specs, static_specs, [*copy_specs, *literal_specs,
-                                    *(item for item in vendor_specs if not item['folded'])], unfolded)
+                                    *(item for item in vendor_specs if not item['folded'])], unfolded,
+        static_data_specs)
     output = tool.run(command, folder)
     (reports / 'comparison.log').write_text(output)
     if any(re.match(r'^\s*\[(?:ERROR|CRITICAL)\]', line) for line in output.splitlines()):
@@ -2601,6 +2938,15 @@ def game(tool, args):
         static_records = json.loads(static_validation.read_text())
         if any(record['bound'] not in ('map', 'reccmp') for record in static_records):
             raise ValueError('A static identity was not bound at its own map address.')
+    static_data_records = []
+    if static_data_specs:
+        static_data_validation = folder / 'static-data-identities-validated.json'
+        if not static_data_validation.is_file():
+            raise ValueError('Comparator did not validate the static data identities.')
+        static_data_records = json.loads(static_data_validation.read_text())
+        if (len(static_data_records) != len(static_data_specs) or
+                any(record['bound'] not in ('pdb', 'reccmp') for record in static_data_records)):
+            raise ValueError('A static data identity was not bound at its own PDB address.')
     report = json.loads((reports / 'comparison.json').read_text())
     def folded_function(item):
         start, size = int(item['address'], 16), item['size']
@@ -2693,6 +3039,8 @@ def game(tool, args):
         result['comparison_folded_identities'] = json.loads(folded_validation.read_text())
     if static_records:
         result['comparison_static_identities'] = static_records
+    if static_data_records:
+        result['comparison_static_data_identities'] = static_data_records
     if copy_specs:
         result['comparison_equivalent_copies'] = copy_specs
     if vendor_specs:
@@ -2702,6 +3050,11 @@ def game(tool, args):
     if unfolded:
         # Diagnostic only: such a copy shows up as a mismatching call operand.
         result['comparison_unfolded_annotations'] = unfolded
+    if unmarked:
+        # Diagnostic only: an ICF representative flip would hide these rows.
+        result['comparison_unmarked_folds'] = unmarked
+        print(f'Folded rows without a FOLDED annotation: {len(unmarked)} (comparison_unmarked_folds).',
+              file=sys.stderr)
     save(reports / 'result.json', result)
     print(json.dumps(result, indent=2))
     if any(item['normalized_match'] != 1 for item in functions):
