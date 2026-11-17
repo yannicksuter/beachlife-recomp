@@ -1,0 +1,155 @@
+diff --git a/fixtures/game.d/fixture_00414c10.cpp b/fixtures/game.d/fixture_00414c10.cpp
+new file mode 100644
+index 0000000..4f00b21
+--- /dev/null
++++ b/fixtures/game.d/fixture_00414c10.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_dialog_resource.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00414c10(ScreenDialogResource* item, const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, unsigned short depth, int x, int y)
++{
++    item->UpdateTerrainIntersectionTiles(rectangle, tile_x, tile_y, offset_x, offset_y, depth, x, y);
++}
+diff --git a/metadata.d/00414c10.csv b/metadata.d/00414c10.csv
+new file mode 100644
+index 0000000..87b0105
+--- /dev/null
++++ b/metadata.d/00414c10.csv
+@@ -0,0 +1,3 @@
++address,type,size,symbol
++0x00414c10,function,1149,?UpdateTerrainIntersectionTiles@ScreenDialogResource@@QAEXPBUScreenRectangle@@HHHHGHH@Z
++0x004fc410,global,2048,?terrain_intersection_mask@@3PAEA
+diff --git a/src/match_00414c10.cpp b/src/match_00414c10.cpp
+new file mode 100644
+index 0000000..7a70d9e
+--- /dev/null
++++ b/src/match_00414c10.cpp
+@@ -0,0 +1,106 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_dialog_resource_inlines.h"
++#include "render_mask_setup.h"
++
++// FUNCTION: BEACHLIFE 0x00414c10
++void ScreenDialogResource::UpdateTerrainIntersectionTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y,
++    int offset_x, int offset_y, unsigned short depth, int x, int y)
++{
++    const unsigned char* pixels = SelectedFrame()->SelectData(word_14, word_18);
++    OverlayMapPrefix* map = overlay_map;
++    unsigned short* palette = *record->palettes;
++    int width = SelectedFrame()->width_0e;
++    int size = map->tile_size_dc;
++    unsigned short result = 0;
++    unsigned short half = RenderHalfMask();
++    unsigned short quarter = RenderQuarterMask();
++    int frame_y = SelectedFrame()->word_14;
++    unsigned int row_depth = (depth - frame_y * 8) << 16;
++    int column;
++    int row;
++    signed char c;
++
++    for (row = 0; row < rectangle->top; row++)
++    {
++        column = 0;
++        if (frame_y++ < 0)
++            row_depth -= 0x80000;
++        else
++            row_depth += 0x100000;
++        while (column < width)
++        {
++            c = *pixels++;
++            if (c > 0)
++            {
++                column += c;
++                pixels += c;
++            }
++            else
++            {
++                column -= c;
++            }
++        }
++    }
++
++    for (row = rectangle->top; row < rectangle->bottom; row++)
++    {
++        if (frame_y++ < 0)
++            row_depth -= 0x80000;
++        else
++            row_depth += 0x100000;
++        column = 0;
++        while (column < width)
++        {
++            c = *pixels++;
++            for (; c > 0; c--)
++            {
++                if (column >= rectangle->left && column < rectangle->right)
++                {
++                    int px = column + offset_x;
++                    int py = row + offset_y;
++                    int gx = px / size + tile_x;
++                    int gy = py / size + tile_y;
++                    if (!map->cached_tiles_e0[map->cache_height_d8 * gy + gx].ready)
++                        map->MapCachedTile(gx, gy);
++                    if (!map->cached_tiles_e0[map->cache_width_d4 * gy + gx].ready)
++                        map->MapCachedTile(gx, gy);
++                    unsigned int* view = static_cast<unsigned int*>(map->cached_tiles_e0[map->cache_width_d4 * gy + gx].view);
++                    int index = (py % 128) * 128 + px % 128;
++                    unsigned int old_depth = view[index] & 0xFFFF0000;
++                    if (old_depth <= row_depth)
++                    {
++                        unsigned char mode = *pixels & 0xC0;
++                        unsigned short colour = palette[*pixels - mode];
++                        unsigned short old_colour = view[index];
++                        unsigned int new_depth;
++                        switch (mode)
++                        {
++                        case 0x00:
++                            result = colour;
++                            new_depth = row_depth;
++                            break;
++                        case 0x40:
++                            result = ((colour >> 1) & (half >> 1)) + ((old_colour >> 2) & (quarter >> 2)) + ((colour >> 2) & (quarter >> 2));
++                            new_depth = old_depth;
++                            break;
++                        case 0x80:
++                            result = ((old_colour >> 1) & (half >> 1)) + ((colour >> 1) & (half >> 1));
++                            new_depth = old_depth;
++                            break;
++                        case 0xC0:
++                            result = ((old_colour >> 1) & (half >> 1)) + ((old_colour >> 2) & (quarter >> 2)) + ((colour >> 2) & (quarter >> 2));
++                            new_depth = old_depth;
++                            break;
++                        }
++                        if (terrain_intersection_mask[(row - rectangle->top + y) * 62 - rectangle->left + column + x])
++                            view[index] = new_depth + result;
++                    }
++                }
++                pixels++;
++                column++;
++            }
++            column -= c;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00414c10.json b/targets/beachlife-uk-1.1.d/00414c10.json
+new file mode 100644
+index 0000000..d5e9e43
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00414c10.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00414c10",
++      "size": 935,
++      "name": "ScreenDialogResource::UpdateTerrainIntersectionTiles",
++      "name_status": "Descriptive; 935 code bytes followed by a 5-entry jump table and a 193-entry byte index table."
++    }
++  ],
++  "source_compile_options": {
++    "match_00414c10.cpp": [
++      "/Ob1"
++    ]
++  }
++}

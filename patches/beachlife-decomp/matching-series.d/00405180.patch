@@ -1,0 +1,340 @@
+diff --git a/fixtures/game.d/fixture_00405180.cpp b/fixtures/game.d/fixture_00405180.cpp
+new file mode 100644
+index 0000000..29d1566
+--- /dev/null
++++ b/fixtures/game.d/fixture_00405180.cpp
+@@ -0,0 +1,7 @@
++#include "startup_resource_rasters.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00405180(unsigned short* destination, const unsigned char* source, const unsigned short* palette, int value)
++{
++    ResourceRasterAt00405180(destination, source, palette, 640, value, value, value, value, value, value, value, value, 0, value);
++}
+diff --git a/metadata.d/00405180.csv b/metadata.d/00405180.csv
+new file mode 100644
+index 0000000..1ec6d91
+--- /dev/null
++++ b/metadata.d/00405180.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00405180,function,2460,?ResourceRasterAt00405180@@YAXPAGPBEPBGIHHHHHHHHIH@Z
+diff --git a/src/match_00405180.cpp b/src/match_00405180.cpp
+new file mode 100644
+index 0000000..f7eec3e
+--- /dev/null
++++ b/src/match_00405180.cpp
+@@ -0,0 +1,292 @@
++#include "startup_resource_rasters.h"
++#include "render_mask_setup.h"
++#include "startup_screen_renderer.h"
++
++// The 16-bit blend of a sprite pixel over the old one: the source byte's top
++// two bits select opaque (0x00), three quarters (0x40), half (0x80) or one
++// quarter (0xc0) colour over the destination; the 0x100 case can never be
++// selected, retail still tests it.
++static inline unsigned short BlendPixel(unsigned char mode, int value, const unsigned int* output,
++    const unsigned short* palette)
++{
++    unsigned short result;
++    unsigned short pixel = *output;
++    unsigned short color = palette[(unsigned char)value - mode];
++    switch (mode)
++    {
++    case 0x00:
++        result = color;
++        break;
++    case 0x40:
++        result = ((render_half_mask >> 1) & (color >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++        break;
++    case 0x80:
++        result = ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
++        break;
++    case 0xc0:
++        result = ((render_half_mask >> 1) & (pixel >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++        break;
++    case 0x100:
++        result = pixel;
++        break;
++    }
++    return result;
++}
++
++// Highlighted sprite raster: the RLE sprite is drawn onto a four-byte surface
++// whose high word holds a depth, and each drawn pixel also marks the
++// renderer's marker buffer, with 4 for the first and last pixel of a run and
++// 2 for the others (2 for every pixel of a clipped sprite). Occluded pixels
++// draw nothing. The depth starts from the low word of flags and moves 8 down
++// per negative frame_word row and 16 up per other row.
++// FUNCTION: BEACHLIFE 0x00405180
++void ResourceRasterAt00405180(unsigned short* destination, const unsigned char* source, const unsigned short* palette,
++    unsigned int stride, int x, int y, int width, int height, int left, int top, int right, int bottom,
++    unsigned int flags, int frame_word)
++{
++    int row;
++    int column;
++    int value;
++    unsigned char mode;
++    unsigned short pixel;
++    unsigned short color;
++    signed char packet;
++    unsigned char* marker;
++    unsigned int* output;
++    unsigned int marker_stride = screen_request_renderer->width;
++    unsigned char* marker_base = screen_request_renderer->buffer_130 + marker_stride * y + x;
++    unsigned int* base = reinterpret_cast<unsigned int*>(destination) + (stride * y + x);
++    unsigned int depth = ((unsigned short)flags + frame_word * 0xfff8) << 16;
++
++    // Nothing is clipped.
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (row = 0; row < height; row++)
++        {
++            output = base + row * stride;
++            marker = marker_base + row * marker_stride;
++            column = 0;
++            if (frame_word++ < 0)
++                depth -= 0x80000;
++            else
++                depth += 0x100000;
++            while (column < width)
++            {
++                packet = *source++;
++                if (packet >= 0)
++                {
++                    if ((*output & 0xffff0000) <= depth)
++                    {
++                        mode = *source & 0xc0;
++                        *output = BlendPixel(mode, *source, output, palette) + depth;
++                        *marker = 4;
++                    }
++                    output++;
++                    marker++;
++                    source++;
++                    column++;
++                    packet--;
++                    while (packet > 1)
++                    {
++                        if ((*output & 0xffff0000) <= depth)
++                        {
++                            mode = *source & 0xc0;
++                            *output = BlendPixel(mode, *source, output, palette) + depth;
++                            *marker = 2;
++                        }
++                        output++;
++                        marker++;
++                        source++;
++                        column++;
++                        packet--;
++                    }
++                    if (packet == 1)
++                    {
++                        if ((*output & 0xffff0000) <= depth)
++                        {
++                            mode = *source & 0xc0;
++                            *output = BlendPixel(mode, *source, output, palette) + depth;
++                            *marker = 4;
++                        }
++                        output++;
++                        marker++;
++                        source++;
++                        column++;
++                    }
++                }
++                else
++                {
++                    output -= packet;
++                    marker -= packet;
++                    column -= packet;
++                }
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped.
++    if (left > 0)
++    {
++        for (int skip = top; skip > 0; skip--)
++        {
++            column = 0;
++            if (frame_word++ < 0)
++                depth -= 0x80000;
++            else
++                depth += 0x100000;
++            while (column < width)
++            {
++                packet = *source++;
++                if (packet >= 0)
++                {
++                    column += packet;
++                    source += packet;
++                }
++                else
++                {
++                    column -= packet;
++                }
++            }
++        }
++
++        for (row = 0; row < bottom - top; row++)
++        {
++            output = base + row * stride;
++            marker = marker_base + row * marker_stride;
++            column = 0;
++            int remaining_left = left;
++            if (frame_word++ < 0)
++                depth -= 0x80000;
++            else
++                depth += 0x100000;
++            while (column < width)
++            {
++                packet = *source++;
++                if (packet >= 0)
++                {
++                    while (packet--)
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else
++                        {
++                            if ((*output & 0xffff0000) <= depth)
++                            {
++                                unsigned short result;
++                                value = *source;
++                                mode = value & 0xc0;
++                                pixel = *output;
++                                color = palette[(unsigned char)value - mode];
++                                switch (mode)
++                                {
++                                case 0x00:
++                                    result = color;
++                                    break;
++                                case 0x40:
++                                    result = ((render_half_mask >> 1) & (color >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                                    break;
++                                case 0x80:
++                                    result = ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
++                                    break;
++                                case 0xc0:
++                                    result = ((render_half_mask >> 1) & (pixel >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                                    break;
++                                case 0x100:
++                                    result = pixel;
++                                    break;
++                                }
++                                *output = result + depth;
++                                *marker = 2;
++                            }
++                            output++;
++                            marker++;
++                        }
++                        source++;
++                        column++;
++                    }
++                }
++                else
++                {
++                    packet = -packet;
++                    while (remaining_left != 0 && packet != 0)
++                    {
++                        remaining_left--;
++                        column++;
++                        packet--;
++                    }
++                    marker += packet;
++                    output += packet;
++                    column += packet;
++                }
++            }
++        }
++        return;
++    }
++
++    // Top, right or bottom edge clipped.
++    for (int skip = top; skip > 0; skip--)
++    {
++        column = 0;
++        if (frame_word++ < 0)
++            depth -= 0x80000;
++        else
++            depth += 0x100000;
++        while (column < width)
++        {
++            packet = *source++;
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
++            else
++            {
++                column -= packet;
++            }
++        }
++    }
++
++    for (row = 0; row < bottom - top; row++)
++    {
++        output = base + row * stride;
++        marker = marker_base + row * marker_stride;
++        column = 0;
++        if (frame_word++ < 0)
++            depth -= 0x80000;
++        else
++            depth += 0x100000;
++        while (column < width)
++        {
++            packet = *source++;
++            if (packet >= 0)
++            {
++                while (packet--)
++                {
++                    if (column < right)
++                    {
++                        if ((*output & 0xffff0000) <= depth)
++                        {
++                            mode = *source & 0xc0;
++                            *output = BlendPixel(mode, *source, output, palette) + depth;
++                            *marker = 2;
++                        }
++                        output++;
++                        marker++;
++                    }
++                    source++;
++                    column++;
++                }
++            }
++            else
++            {
++                if (column < right)
++                {
++                    output -= packet;
++                    marker -= packet;
++                }
++                column -= packet;
++            }
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00405180.json b/targets/beachlife-uk-1.1.d/00405180.json
+new file mode 100644
+index 0000000..7935bb1
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00405180.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00405180",
++      "size": 2460,
++      "name": "ResourceRasterAt00405180",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00405180.cpp": [
++      "/Ob1"
++    ]
++  }
++}

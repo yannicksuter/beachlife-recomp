@@ -1,0 +1,211 @@
+diff --git a/fixtures/game.d/fixture_00406c00.cpp b/fixtures/game.d/fixture_00406c00.cpp
+new file mode 100644
+index 0000000..224c837
+--- /dev/null
++++ b/fixtures/game.d/fixture_00406c00.cpp
+@@ -0,0 +1,7 @@
++#include "startup_resource_rasters.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00406c00(unsigned short* destination, const unsigned char* pixels, const unsigned char* depths, const unsigned short* palette, unsigned int stride, int x, int y, int width, int height, int left, int top, int right, int bottom, int depth, float depth_step)
++{
++    ResourceBuildingRasterAt00406c00(destination, pixels, depths, palette, stride, x, y, width, height, left, top, right, bottom, depth, depth_step);
++}
+diff --git a/metadata.d/00406c00.csv b/metadata.d/00406c00.csv
+new file mode 100644
+index 0000000..3c07f84
+--- /dev/null
++++ b/metadata.d/00406c00.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00406c00,function,1182,?ResourceBuildingRasterAt00406c00@@YAXPAGPBE1PBGIHHHHHHHHHM@Z
+diff --git a/src/match_00406c00.cpp b/src/match_00406c00.cpp
+new file mode 100644
+index 0000000..0812ebf
+--- /dev/null
++++ b/src/match_00406c00.cpp
+@@ -0,0 +1,168 @@
++#include "startup_resource_rasters.h"
++#include "render_mask_setup.h"
++
++// Translucent twin of ResourceBuildingRasterAt004067d0: the same depth-tested packet decoder, but a visible pixel
++// stores the depth word plus half the palette colour and half the existing colour (both masked with
++// render_half_mask >> 1), a 50% blend over the destination.
++// FUNCTION: BEACHLIFE 0x00406c00
++void ResourceBuildingRasterAt00406c00(unsigned short* destination, const unsigned char* pixels,
++    const unsigned char* depths, const unsigned short* palette, unsigned int stride, int x, int y,
++    int width, int height, int left, int top, int right, int bottom, int depth, float depth_step)
++{
++    int column;
++    unsigned int* base = reinterpret_cast<unsigned int*>(destination) + (y * stride + x);
++
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (int row = 0; row < height; ++row)
++        {
++            unsigned int* output = base + row * stride;
++            column = 0;
++            while (column < width)
++            {
++                signed char c = (signed char)*pixels++;
++                ++depths;
++                if (c >= 0)
++                {
++                    while (c--)
++                    {
++                        unsigned int value = ((depth & 0xFFFFu) + (unsigned short)(int)(*depths * depth_step)) << 16;
++                        if (value >= (*output & 0xFFFF0000u))
++                            *output = value + ((palette[*pixels] >> 1) & (render_half_mask >> 1)) + ((*reinterpret_cast<unsigned short*>(output) >> 1) & (render_half_mask >> 1));
++                        ++pixels;
++                        ++depths;
++                        ++output;
++                        ++column;
++                    }
++                }
++                else
++                {
++                    output -= c;
++                    column -= c;
++                }
++            }
++        }
++        return;
++    }
++
++    if (left > 0)
++    {
++        for (int skipped = 0; skipped < top; ++skipped)
++        {
++            column = 0;
++            while (column < width)
++            {
++                signed char c = (signed char)*pixels++;
++                ++depths;
++                if (c >= 0)
++                {
++                    column += c;
++                    pixels += c;
++                    depths += c;
++                }
++                else
++                {
++                    column -= c;
++                }
++            }
++        }
++
++        for (int row = 0; row < bottom - top; ++row)
++        {
++            unsigned int* output = base + row * stride;
++            column = 0;
++            int remaining_left = left;
++            while (column < width)
++            {
++                signed char c = (signed char)*pixels++;
++                ++depths;
++                if (c >= 0)
++                {
++                    while (c--)
++                    {
++                        if (remaining_left != 0)
++                        {
++                            --remaining_left;
++                        }
++                        else if (column < right)
++                        {
++                            unsigned int value = ((depth & 0xFFFFu) + (unsigned short)(int)((*depths + 1.0f) * depth_step)) << 16;
++                            if (value >= (*output & 0xFFFF0000u))
++                                *output = value + ((palette[*pixels] >> 1) & (render_half_mask >> 1)) + ((*reinterpret_cast<unsigned short*>(output) >> 1) & (render_half_mask >> 1));
++                            ++output;
++                        }
++                        ++depths;
++                        ++pixels;
++                        ++column;
++                    }
++                }
++                else
++                {
++                    c = (signed char)-c;
++                    while (remaining_left != 0 && c != 0)
++                    {
++                        --remaining_left;
++                        ++column;
++                        --c;
++                    }
++                    output += c;
++                    column += c;
++                }
++            }
++        }
++        return;
++    }
++
++    for (int skipped = 0; skipped < top; ++skipped)
++    {
++        column = 0;
++        while (column < width)
++        {
++            signed char c = (signed char)*pixels++;
++            ++depths;
++            if (c >= 0)
++            {
++                column += c;
++                pixels += c;
++                depths += c;
++            }
++            else
++            {
++                column -= c;
++            }
++        }
++    }
++
++    for (int row = 0; row < bottom - top; ++row)
++    {
++        unsigned int* output = base + row * stride;
++        column = 0;
++        while (column < width)
++        {
++            signed char c = (signed char)*pixels++;
++            ++depths;
++            if (c >= 0)
++            {
++                while (c--)
++                {
++                    if (column < right)
++                    {
++                        unsigned int value = ((depth & 0xFFFFu) + (unsigned short)(int)((*depths + 1.0f) * depth_step)) << 16;
++                        if (value >= (*output & 0xFFFF0000u))
++                            *output = value + ((palette[*pixels] >> 1) & (render_half_mask >> 1)) + ((*reinterpret_cast<unsigned short*>(output) >> 1) & (render_half_mask >> 1));
++                        ++output;
++                    }
++                    ++depths;
++                    ++pixels;
++                    ++column;
++                }
++            }
++            else
++            {
++                if (column < right)
++                    output -= c;
++                column -= c;
++            }
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00406c00.json b/targets/beachlife-uk-1.1.d/00406c00.json
+new file mode 100644
+index 0000000..bb9f30d
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00406c00.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x00406c00",
++      "size": 1182,
++      "name": "ResourceBuildingRasterAt00406c00",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

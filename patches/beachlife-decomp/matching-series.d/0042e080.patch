@@ -1,0 +1,133 @@
+diff --git a/fixtures/game.d/fixture_0042e080.cpp b/fixtures/game.d/fixture_0042e080.cpp
+new file mode 100644
+index 0000000..8182796
+--- /dev/null
++++ b/fixtures/game.d/fixture_0042e080.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_mode_world.h"
++
++// Compile/link retention only; never execute this image.
++extern "C" __declspec(dllexport) unsigned char Fixture_0042e080(
++    ScreenModeCommandQueue* self, VariableEntity* entity, ScreenModeCommand* command, const void* placement)
++{
++    return self->Append(entity, command, placement);
++}
+diff --git a/metadata.d/0042e080.csv b/metadata.d/0042e080.csv
+new file mode 100644
+index 0000000..ee11752
+--- /dev/null
++++ b/metadata.d/0042e080.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x0042e080,function,479,?Append@ScreenModeCommandQueue@@QAEEPAUVariableEntity@@PAUScreenModeCommand@@PBX@Z
+diff --git a/src/match_0042e080.cpp b/src/match_0042e080.cpp
+new file mode 100644
+index 0000000..44587d9
+--- /dev/null
++++ b/src/match_0042e080.cpp
+@@ -0,0 +1,80 @@
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++static inline ScreenModeCommandQueue* CommandQueue()
++{
++    return screen_mode_commands;
++}
++
++// Retail expands the queue's QueueCommand and QueueDelayed (out-of-line copies
++// 0x0042de60 and 0x0042dee0) in all three broadcast copies here and keeps
++// list::push_back 0x0042e4c0 out of line.
++inline bool ScreenModeCommandQueue::QueueDelayed(ScreenModeCommand* command, float delay)
++{
++    float time = window_deactivation_state->clock_158;
++    command->words[7].number = time + delay;
++    commands_00.push_back(*command);
++    return true;
++}
++
++inline bool ScreenModeCommandQueue::QueueCommand(ScreenModeCommand* command)
++{
++    if (window_deactivation_state->deactivation_requested && command->words[0] != -3)
++        return screen_mode_commands->QueueDelayed(command, 0.0001f);
++    float clock = window_deactivation_state->clock_158;
++    command->words[7].number = clock;
++    Append(variable_world->FindObject(command->words[1]), command, 0);
++    return true;
++}
++
++static inline bool DispatchBroadcast(ScreenModeCommand* command)
++{
++    ScreenModeCommandQueue* queue = CommandQueue();
++    return queue->QueueCommand(command);
++}
++
++static inline unsigned char DispatchWorld(ScreenModeCommand* command, const void* placement)
++{
++    return window_deactivation_state->DispatchCommand(command, placement);
++}
++
++static inline unsigned char DispatchObject(VariableEntity* object, ScreenModeCommand* command)
++{
++    return object->Unknown14(command);
++}
++
++// FUNCTION: BEACHLIFE 0x0042e080
++unsigned char ScreenModeCommandQueue::Append(VariableEntity* object, ScreenModeCommand* command, const void* placement)
++{
++    unsigned int count;
++    VariableEntity* found;
++    if (command->words[1] == -2)
++    {
++        if (command->words[2] == 0x53)
++        {
++            ScreenModeCommand copy = *command;
++            found = *variable_world->FindNamed("WHARF", &count);
++            copy.words[1].data = found->id_28;
++            if (count != 0)
++            {
++                DispatchBroadcast(&copy);
++            }
++            else
++            {
++                found = *variable_world->FindNamed("BUSSTOP", &count);
++                copy.words[1].data = found->id_28;
++                DispatchBroadcast(&copy);
++            }
++            found = *variable_world->FindNamed("COMPLAINTHUT", &count);
++            copy.words[1].data = found->id_28;
++            if (count != 0)
++                DispatchBroadcast(&copy);
++        }
++        else
++            return DispatchWorld(command, placement);
++    }
++    else if (object != 0)
++        return DispatchObject(object, command);
++    return count;
++}
+diff --git a/targets/beachlife-uk-1.1.d/0042e080.json b/targets/beachlife-uk-1.1.d/0042e080.json
+new file mode 100644
+index 0000000..3ad0072
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0042e080.json
+@@ -0,0 +1,19 @@
++{
++  "functions": [
++    {
++      "address": "0x0042e080",
++      "size": 479,
++      "name": "ScreenModeCommandQueue::Append",
++      "name_status": "Descriptive; complete audited original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_0042e080.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_0042e080.cpp",
++    "fixture_0042e080.cpp"
++  ]
++}

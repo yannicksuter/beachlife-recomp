@@ -1,0 +1,108 @@
+diff --git a/fixtures/game.d/fixture_004eb610.cpp b/fixtures/game.d/fixture_004eb610.cpp
+new file mode 100644
+index 0000000..c4da7cc
+--- /dev/null
++++ b/fixtures/game.d/fixture_004eb610.cpp
+@@ -0,0 +1,7 @@
++#include "tiff_read_context.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004eb610(TgaImage* image, TiffReadContext* context)
++{
++    TiffDecodePackBits(image, context);
++}
+diff --git a/metadata.d/004eb610.csv b/metadata.d/004eb610.csv
+new file mode 100644
+index 0000000..9062717
+--- /dev/null
++++ b/metadata.d/004eb610.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004eb610,function,371,?TiffDecodePackBits@@YAXPAUTgaImage@@PAUTiffReadContext@@@Z
+diff --git a/src/match_004eb610.cpp b/src/match_004eb610.cpp
+new file mode 100644
+index 0000000..be26e34
+--- /dev/null
++++ b/src/match_004eb610.cpp
+@@ -0,0 +1,65 @@
++#include "tga_image.h"
++#include "tiff_read_context.h"
++#include <stdio.h>
++#include <stdlib.h>
++
++// Decodes every PackBits strip into the image pixels through one buffer of the largest strip size.
++// FUNCTION: BEACHLIFE 0x004eb610
++void TiffDecodePackBits(TgaImage* image, TiffReadContext* context)
++{
++    int height = image->height;
++    unsigned int last_rows = height % context->rows_per_strip;
++    if (last_rows == 0)
++        last_rows = context->rows_per_strip;
++    int row_bytes = image->bytes_per_pixel * image->width;
++
++    unsigned int compressed_size = 0;
++    int strip_count = static_cast<int>(context->strip_count);
++    for (int scan = 0; scan < strip_count; ++scan)
++    {
++        unsigned int count = context->strip_byte_counts[scan];
++        if (count > compressed_size)
++            compressed_size = count;
++    }
++    unsigned char* buffer = static_cast<unsigned char*>(malloc(compressed_size));
++    for (int strip = 0; strip < static_cast<int>(context->strip_count); ++strip)
++    {
++        fseek(context->file, context->strip_offsets[strip], SEEK_SET);
++        fread(buffer, context->strip_byte_counts[strip], 1, context->file);
++        int strip_rows;
++        if (static_cast<unsigned int>(strip) == context->strip_count - 1u)
++            strip_rows = static_cast<int>(last_rows);
++        else
++            strip_rows = static_cast<int>(context->rows_per_strip);
++
++        unsigned char* source = buffer;
++        for (int row = 0; row < strip_rows; ++row)
++        {
++            int produced = 0;
++            unsigned char* destination = image->pixels + (context->rows_per_strip * strip + row) * row_bytes;
++            while (produced < row_bytes)
++            {
++                signed char control = static_cast<signed char>(*source++);
++                if (control >= 0 && control <= 0x7F)
++                {
++                    while (control-- + 1 != 0)
++                    {
++                        *destination++ = *source++;
++                        ++produced;
++                    }
++                }
++                else if (control != -128)
++                {
++                    unsigned char count = static_cast<unsigned char>(1 - control);
++                    while (count-- != 0)
++                    {
++                        *destination++ = *source;
++                        ++produced;
++                    }
++                    ++source;
++                }
++            }
++        }
++    }
++    free(buffer);
++}
+diff --git a/targets/beachlife-uk-1.1.d/004eb610.json b/targets/beachlife-uk-1.1.d/004eb610.json
+new file mode 100644
+index 0000000..3133dfe
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004eb610.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x004eb610",
++      "size": 371,
++      "name": "TiffDecodePackBits",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

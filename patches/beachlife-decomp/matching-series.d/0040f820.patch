@@ -1,0 +1,295 @@
+diff --git a/fixtures/game.d/fixture_0040f820.cpp b/fixtures/game.d/fixture_0040f820.cpp
+new file mode 100644
+index 0000000..59d3551
+--- /dev/null
++++ b/fixtures/game.d/fixture_0040f820.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_0040f820(ScreenRequestRenderer* renderer, float value)
++{
++    renderer->ScreenRequestRenderer::RenderNightDay(value);
++}
+diff --git a/metadata.d/0040f820.csv b/metadata.d/0040f820.csv
+new file mode 100644
+index 0000000..2dc672b
+--- /dev/null
++++ b/metadata.d/0040f820.csv
+@@ -0,0 +1,6 @@
++address,type,size,symbol
++0x0040f820,function,821,?RenderNightDay@ScreenRequestRenderer@@QAEXM@Z
++0x005a8894,global,4,?renderer_shading_start_low@@3IA
++0x005a889c,global,4,?renderer_shading_start_high@@3IA
++0x005a8850,global,4,?renderer_shading_end_low@@3IA
++0x005a8860,global,4,?renderer_shading_end_high@@3IA
+diff --git a/src/match_0040f820.cpp b/src/match_0040f820.cpp
+new file mode 100644
+index 0000000..9f2b223
+--- /dev/null
++++ b/src/match_0040f820.cpp
+@@ -0,0 +1,239 @@
++#include "startup_screen_renderer_inlines.h"
++#include "startup_variable_state.h"
++#include "startup_renderer_shaded_data.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_placement.h"
++
++// Night/day frame shading. Without lighting, or while the placement view is up, it dispatches to the unlit or lit
++// renderers; otherwise the half-resolution path shades each source pixel pair through the weather colour table
++// (two MMX loops for RGB555 and RGB565, timed with rdtsc) and the full-resolution path uses RenderColourFull. The
++// float argument is unused.
++// FUNCTION: BEACHLIFE 0x0040f820
++void ScreenRequestRenderer::RenderNightDay(float value)
++{
++    VariableWeather* weather = variable_weather;
++    if (!weather->lighting_2c38)
++    {
++        if (clip_mode_54 == 0)
++            RenderUnlitHalf();
++        else
++            RenderUnlitFull();
++        return;
++    }
++    if (screen_request_game->placement->flag_36)
++    {
++        if (clip_mode_54 == 0)
++            RenderLitHalf();
++        else
++            RenderLitFull();
++        return;
++    }
++    if (clip_mode_54 == 0)
++    {
++        unsigned int columns = width >> 1;
++        unsigned int rows = (height - word_60) >> 1;
++        const unsigned short* table = weather->ColourTable();
++        const unsigned short* source = pixels_1c;
++        current_surface = 0;
++        unsigned short* pixels = AccessPixels();
++        if (pixels == 0)
++            return;
++        int row_pitch = surfaces[current_surface]->pitch;
++
++        __asm {
++            rdtsc
++            mov renderer_shading_start_low, eax
++            mov renderer_shading_start_high, edx
++        }
++
++        if (format_44 == 1)
++        {
++            __asm {
++                movd mm7, row_pitch
++                mov esi, source
++                mov ebx, rows
++                xor eax, eax
++                mov edi, pixels
++                mov ecx, columns
++                lea edi, [edi+ecx*4]
++            row1:
++                push ebx
++                mov ecx, columns
++                push ebp
++                mov ebp, table
++                lea esi, [esi+ecx*4]
++                neg ecx
++            inner1:
++                movd mm2, edi
++                movd mm3, edx
++                xor edi, edi
++                xor eax, eax
++                mov ax, word ptr [esi+ecx*4]
++                mov di, word ptr [esi+ecx*4-4]
++                movd mm0, esi
++                movd mm1, ecx
++                mov edx, eax
++                mov esi, eax
++                shr ax, 0Ah
++                shr dx, 5
++                and si, 1Fh
++                and dx, 1Fh
++                mov ax, word ptr [ebp+eax*2]
++                mov si, word ptr [ebp+esi*2+80h]
++                mov dx, word ptr [ebp+edx*2+40h]
++                movd mm4, esi
++                movd mm5, edx
++                mov bx, ax
++                add bx, si
++                add bx, dx
++                mov esi, edi
++                mov edx, edi
++                shr di, 0Ah
++                shl ebx, 10h
++                shr dx, 5
++                mov bx, ax
++                add bx, word ptr [ebp+edi*2]
++                shr bx, 1
++                and bx, 7C00h
++                and si, 1Fh
++                and dx, 1Fh
++                movd eax, mm4
++                add ax, word ptr [ebp+esi*2+80h]
++                shr ax, 1
++                and ax, 1Fh
++                add bx, ax
++                movd eax, mm5
++                add ax, word ptr [ebp+edx*2+40h]
++                shr ax, 1
++                and ax, 3E0h
++                add bx, ax
++                movd ecx, mm1
++                movd edi, mm2
++                movd edx, mm7
++                mov dword ptr [edi+ecx*4], ebx
++                add edi, edx
++                mov dword ptr [edi+ecx*4], ebx
++                sub edi, edx
++                movd esi, mm0
++                movd edx, mm3
++                inc ecx
++                jne inner1
++                shr ebx, 10h
++                mov word ptr [edi-2], bx
++                pop ebp
++                mov ecx, columns
++                shl ecx, 2
++                add esi, ecx
++                mov ecx, row_pitch
++                add edi, ecx
++                add edi, ecx
++                pop ebx
++                dec ebx
++                jne row1
++                emms
++            }
++        }
++        else
++        {
++            __asm {
++                movd mm7, row_pitch
++                mov esi, source
++                mov ebx, rows
++                xor eax, eax
++                mov edi, pixels
++                mov ecx, columns
++                lea edi, [edi+ecx*4]
++            row2:
++                push ebx
++                mov ecx, columns
++                push ebp
++                mov ebp, table
++                lea esi, [esi+ecx*4]
++                neg ecx
++            inner2:
++                movd mm2, edi
++                movd mm3, edx
++                xor edi, edi
++                xor eax, eax
++                xor ebx, ebx
++                mov ax, word ptr [esi+ecx*4]
++                mov di, word ptr [esi+ecx*4-4]
++                movd mm0, esi
++                movd mm1, ecx
++                mov edx, eax
++                mov esi, eax
++                shr ax, 0Bh
++                shr dx, 5
++                and si, 1Fh
++                and dx, 3Fh
++                mov ax, word ptr [ebp+eax*2]
++                mov si, word ptr [ebp+esi*2+0C0h]
++                mov dx, word ptr [ebp+edx*2+40h]
++                movd mm4, esi
++                movd mm5, edx
++                mov bx, ax
++                add bx, si
++                add bx, dx
++                mov esi, edi
++                mov edx, edi
++                shr di, 0Bh
++                shl ebx, 10h
++                shr dx, 5
++                mov bx, ax
++                shr bx, 1
++                mov ax, word ptr [ebp+edi*2]
++                shr ax, 1
++                add bx, ax
++                and bx, 0F800h
++                and si, 1Fh
++                and dx, 3Fh
++                movd eax, mm4
++                add ax, word ptr [ebp+esi*2+0C0h]
++                shr ax, 1
++                and ax, 1Fh
++                add bx, ax
++                movd eax, mm5
++                add ax, word ptr [ebp+edx*2+40h]
++                shr ax, 1
++                and ax, 7E0h
++                add bx, ax
++                movd ecx, mm1
++                movd edi, mm2
++                movd edx, mm7
++                mov dword ptr [edi+ecx*4], ebx
++                add edi, edx
++                mov dword ptr [edi+ecx*4], ebx
++                sub edi, edx
++                movd esi, mm0
++                movd edx, mm3
++                inc ecx
++                jne inner2
++                shr ebx, 10h
++                mov word ptr [edi-2], bx
++                pop ebp
++                mov ecx, columns
++                shl ecx, 2
++                add esi, ecx
++                mov ecx, row_pitch
++                add edi, ecx
++                add edi, ecx
++                pop ebx
++                dec ebx
++                jne row2
++                emms
++            }
++        }
++
++        __asm {
++            rdtsc
++            mov renderer_shading_end_low, eax
++            mov renderer_shading_end_high, edx
++        }
++
++        UnlockPixels();
++    }
++    else
++    {
++        RenderColourFull();
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/0040f820.json b/targets/beachlife-uk-1.1.d/0040f820.json
+new file mode 100644
+index 0000000..bb0ec16
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0040f820.json
+@@ -0,0 +1,19 @@
++{
++  "functions": [
++    {
++      "address": "0x0040f820",
++      "size": 821,
++      "name": "ScreenRequestRenderer::RenderNightDay",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_0040f820.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_0040f820.cpp",
++    "fixture_0040f820.cpp"
++  ]
++}
