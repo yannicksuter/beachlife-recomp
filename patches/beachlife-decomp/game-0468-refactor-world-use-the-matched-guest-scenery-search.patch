@@ -1,0 +1,321 @@
+diff --git a/src/startup_world_guest_scenery_actions.cpp b/src/startup_world_guest_scenery_actions.cpp
+index 6b213388868fa224e978af37c95a7a62be77c2c9..f7f1b223990222d5ef5280895de3e4435b580c77 100644
+--- a/src/startup_world_guest_scenery_actions.cpp
++++ b/src/startup_world_guest_scenery_actions.cpp
+@@ -90,65 +90,277 @@ void WorldGuestEntity::PerformAction46()
+     }
+ }
+ 
++// Wrapping product of a tile difference (retail imul).
++static int Squared(int value)
++{
++    return static_cast<int>(static_cast<unsigned int>(value) * static_cast<unsigned int>(value));
++}
++
+ // FUNCTION: BEACHLIFE 0x0047a130
+ void WorldGuestEntity::PerformAction42()
+ {
+     float nearest = 10.0f;
+     WorldSceneryEntity* selected = 0;
+     unsigned int kind = 4;
+-    static const char* const names[] = { "Bin", "Bench", "STREET_LAMP" };
+-    for (unsigned int type = 0; type < 3; ++type)
++    unsigned int count;
+     {
+-        unsigned int count;
+-        VariableEntity** objects = variable_world->FindNamed(names[type], &count);
+-        for (unsigned int i = 0; i < count; ++i)
++        VariableEntity** objects = variable_world->FindNamed("Bin", &count);
++        if (count)
+         {
+-            WorldSceneryEntity* object = static_cast<WorldSceneryEntity*>(objects[i]);
+-            ScreenPoint tile = TilePosition();
+-            int x = std::abs(tile.x - object->TilePosition().x);
+-            int y = std::abs(tile.y - object->TilePosition().y);
+-            int squared_x = static_cast<int>(static_cast<unsigned int>(x) * x);
+-            int distance = static_cast<int>(std::sqrt(static_cast<long double>(squared_x)));
+-            distance = static_cast<int>(static_cast<unsigned int>(distance) + static_cast<unsigned int>(y) * y);
+-            if (!(static_cast<long double>(distance) > nearest) && object->state_3c != 4
+-                && !object->byte_a0 && !object->NeedsCleaning() && !object->NeedsRepair())
++            for (unsigned int i = 0; i < count; ++i)
+             {
+-                nearest = static_cast<float>(distance);
+-                selected = object;
+-                kind = type;
++                ScreenPoint tile = TilePosition();
++                tile.x -= objects[i]->TilePosition().x;
++                tile.y -= objects[i]->TilePosition().y;
++                int x = std::abs(tile.x);
++                int y = std::abs(tile.y);
++                // Retail adds y * y to the root of x * x only.
++                float distance = static_cast<float>(static_cast<int>(std::sqrt(static_cast<long double>(Squared(x)))) + Squared(y));
++                if (!(distance > nearest) && static_cast<WorldSceneryEntity*>(objects[i])->state_3c != 4
++                    && !static_cast<WorldSceneryEntity*>(objects[i])->byte_a0 && !static_cast<WorldSceneryEntity*>(objects[i])->NeedsCleaning() && !static_cast<WorldSceneryEntity*>(objects[i])->NeedsRepair())
++                {
++                    nearest = distance;
++                    selected = static_cast<WorldSceneryEntity*>(objects[i]);
++                    kind = 0;
++                }
+             }
+         }
+     }
+-    if (kind == 4)
+     {
++        VariableEntity** objects = variable_world->FindNamed("Bench", &count);
++        if (count)
++        {
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                ScreenPoint tile = TilePosition();
++                tile.x -= objects[i]->TilePosition().x;
++                tile.y -= objects[i]->TilePosition().y;
++                int x = std::abs(tile.x);
++                int y = std::abs(tile.y);
++                // Retail adds y * y to the root of x * x only.
++                float distance = static_cast<float>(static_cast<int>(std::sqrt(static_cast<long double>(Squared(x)))) + Squared(y));
++                if (!(distance > nearest) && static_cast<WorldSceneryEntity*>(objects[i])->state_3c != 4
++                    && !static_cast<WorldSceneryEntity*>(objects[i])->byte_a0 && !static_cast<WorldSceneryEntity*>(objects[i])->NeedsCleaning() && !static_cast<WorldSceneryEntity*>(objects[i])->NeedsRepair())
++                {
++                    nearest = distance;
++                    selected = static_cast<WorldSceneryEntity*>(objects[i]);
++                    kind = 1;
++                }
++            }
++        }
++    }
++    {
++        VariableEntity** objects = variable_world->FindNamed("STREET_LAMP", &count);
++        if (count)
++        {
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                ScreenPoint tile = TilePosition();
++                tile.x -= objects[i]->TilePosition().x;
++                tile.y -= objects[i]->TilePosition().y;
++                int x = std::abs(tile.x);
++                int y = std::abs(tile.y);
++                // Retail adds y * y to the root of x * x only.
++                float distance = static_cast<float>(static_cast<int>(std::sqrt(static_cast<long double>(Squared(x)))) + Squared(y));
++                if (!(distance > nearest) && static_cast<WorldSceneryEntity*>(objects[i])->state_3c != 4
++                    && !static_cast<WorldSceneryEntity*>(objects[i])->byte_a0 && !static_cast<WorldSceneryEntity*>(objects[i])->NeedsCleaning() && !static_cast<WorldSceneryEntity*>(objects[i])->NeedsRepair())
++                {
++                    nearest = distance;
++                    selected = static_cast<WorldSceneryEntity*>(objects[i]);
++                    kind = 2;
++                }
++            }
++        }
++    }
++    ScreenMapPosition offset;
++    switch (kind)
++    {
++    case 0:
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = selected->id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 4;
++        screen_mode_commands->QueueCommand(&command);
++        switch (selected->keyline_state_44->word_18)
++        {
++        case 0:
++            offset.x = 0.0f;
++            offset.y = 20.0f;
++            break;
++        case 1:
++            offset.x = -15.0f;
++            offset.y = 15.0f;
++            break;
++        case 2:
++            offset.x = -30.0f;
++            offset.y = 0.0f;
++            break;
++        case 3:
++            offset.x = -15.0f;
++            offset.y = -15.0f;
++            break;
++        case 4:
++            offset.x = 0.0f;
++            offset.y = -20.0f;
++            break;
++        case 5:
++            offset.x = 15.0f;
++            offset.y = -15.0f;
++            break;
++        case 6:
++            offset.x = 30.0f;
++            offset.y = 0.0f;
++            break;
++        case 7:
++            offset.x = 15.0f;
++            offset.y = 15.0f;
++            break;
++        }
++        ScreenMapPosition target;
++        target.y = selected->position_30.y;
++        target.x = selected->position_30.x;
++        ScreenModeCommand walk;
++        walk.words[0] = id_28;
++        walk.words[1] = id_28;
++        walk.words[2] = 5;
++        walk.words[3] = static_cast<int>(static_cast<long double>(target.x) + offset.x);
++        walk.words[4] = static_cast<int>(static_cast<long double>(target.y) + offset.y);
++        screen_mode_commands->QueueCommand(&walk);
++        word_32c = selected->id_28;
++        if (selected->word_90 == selected->scenery_f4->capacity_2dc)
++            lightning_state_318 = 2;
++        else
++            lightning_state_318 = 3;
++        break;
++    }
++    case 1:
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = selected->id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 4;
++        screen_mode_commands->QueueCommand(&command);
++        switch (selected->keyline_state_44->word_18)
++        {
++        case 0:
++            offset.x = 0.0f;
++            offset.y = 20.0f;
++            break;
++        case 1:
++            offset.x = -15.0f;
++            offset.y = 15.0f;
++            break;
++        case 2:
++            offset.x = -20.0f;
++            offset.y = 0.0f;
++            break;
++        case 3:
++            offset.x = -15.0f;
++            offset.y = -15.0f;
++            break;
++        case 4:
++            offset.x = 0.0f;
++            offset.y = -20.0f;
++            break;
++        case 5:
++            offset.x = 15.0f;
++            offset.y = -15.0f;
++            break;
++        case 6:
++            offset.x = 20.0f;
++            offset.y = 0.0f;
++            break;
++        case 7:
++            offset.x = 15.0f;
++            offset.y = 15.0f;
++            break;
++        }
++        ScreenMapPosition target;
++        target.y = selected->position_30.y;
++        target.x = selected->position_30.x;
++        ScreenModeCommand walk;
++        walk.words[0] = id_28;
++        walk.words[1] = id_28;
++        walk.words[2] = 5;
++        walk.words[3] = static_cast<int>(static_cast<long double>(target.x) + offset.x);
++        walk.words[4] = static_cast<int>(static_cast<long double>(target.y) + offset.y);
++        screen_mode_commands->QueueCommand(&walk);
++        word_32c = selected->id_28;
++        lightning_state_318 = 4;
++        break;
++    }
++    case 2:
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = selected->id_28;
++        command.words[2] = 3;
++        command.words[3] = 0;
++        command.words[4] = 4;
++        screen_mode_commands->QueueCommand(&command);
++        switch (selected->keyline_state_44->word_18)
++        {
++        case 0:
++            offset.x = 0.0f;
++            offset.y = 20.0f;
++            break;
++        case 1:
++            offset.x = -15.0f;
++            offset.y = 15.0f;
++            break;
++        case 2:
++            offset.x = -20.0f;
++            offset.y = 0.0f;
++            break;
++        case 3:
++            offset.x = -15.0f;
++            offset.y = -15.0f;
++            break;
++        case 4:
++            offset.x = 0.0f;
++            offset.y = -20.0f;
++            break;
++        case 5:
++            offset.x = 15.0f;
++            offset.y = -15.0f;
++            break;
++        case 6:
++            offset.x = 20.0f;
++            offset.y = 0.0f;
++            break;
++        case 7:
++            offset.x = 15.0f;
++            offset.y = 15.0f;
++            break;
++        }
++        ScreenMapPosition target;
++        target.y = selected->position_30.y;
++        target.x = selected->position_30.x;
++        ScreenModeCommand walk;
++        walk.words[0] = id_28;
++        walk.words[1] = id_28;
++        walk.words[2] = 5;
++        walk.words[3] = static_cast<int>(static_cast<long double>(target.x) + offset.x);
++        walk.words[4] = static_cast<int>(static_cast<long double>(target.y) + offset.y);
++        screen_mode_commands->QueueCommand(&walk);
++        word_32c = selected->id_28;
++        lightning_state_318 = 5;
++        break;
++    }
++    case 4:
+         weather_values_16c[19] += weather_values_16c[18];
+         weather_values_16c[18] = 0.0f;
+         if (weather_values_16c[19] > 1.0f)
+             weather_values_16c[19] = 1.0f;
+         lightning_state_318 = 1;
+         word_32c = -1;
+-        return;
++        break;
+     }
+-    ScreenModeCommand command = MakeGuestCommand(id_28, selected->id_28, 3, 0, 4);
+-    screen_mode_commands->QueueCommand(&command);
+-    static const ScreenMapPosition offsets[] = {
+-        { 0.0f, 20.0f }, { -15.0f, 15.0f }, { -20.0f, 0.0f }, { -15.0f, -15.0f }, { 0.0f, -20.0f }, { 15.0f, -15.0f }, { 20.0f, 0.0f }, { 15.0f, 15.0f }
+-    };
+-    ScreenMapPosition offset;
+-    unsigned int direction = selected->keyline_state_44->word_18;
+-    if (direction < 8)
+-    {
+-        offset = offsets[direction];
+-        if (kind == 0 && (direction == 2 || direction == 6))
+-            offset.x = direction == 2 ? -30.0f : 30.0f;
+-    }
+-    command = MakeGuestCommand(id_28, id_28, 5, static_cast<int>(static_cast<long double>(selected->position_30.x) + offset.x), static_cast<int>(static_cast<long double>(selected->position_30.y) + offset.y));
+-    screen_mode_commands->QueueCommand(&command);
+-    word_32c = selected->id_28;
+-    if (kind == 0)
+-        lightning_state_318 = selected->word_90 == selected->scenery_f4->capacity_2dc ? 2 : 3;
+-    else
+-        lightning_state_318 = kind == 1 ? 4 : 5;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0047a8f0

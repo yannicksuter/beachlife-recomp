@@ -1,0 +1,196 @@
+diff --git a/src/window_audio_controls.cpp b/src/window_audio_controls.cpp
+index 31b83ae60ba318242f2d15ba8da3e80671b9e9a1..2bf1d2ea2de91940e14c0e7ec74cc182a3050efe 100644
+--- a/src/window_audio_controls.cpp
++++ b/src/window_audio_controls.cpp
+@@ -30,33 +30,40 @@ int WindowAudioState::PlaySoundAtLevel(const char* name, float level, unsigned i
+ int WindowAudioState::PlaySoundAtPosition(const char* name,
+     const WindowAudioVector* position, unsigned int flags, int voice)
+ {
+-    if (enabled_3d)
+-        return Play3DSoundWithParameters(name, volume_d4, position, flags, voice);
+-
+-    float far_distance = value_f0;
+-    long double level = scale_d8;
+-    float near_distance = value_ec;
+-    long double dx = static_cast<long double>(position_e0.x) - position->x;
+-    long double dy = static_cast<long double>(position_e0.y) - position->y;
+-    long double distance = sqrtl(dx * dx + dy * dy);
+-    float stored_distance = static_cast<float>(distance);
+-    long double attenuation;
+-    bool audible = true;
+-    if (distance > far_distance)
++    int result = -1;
++    if (!enabled_3d)
+     {
+-        attenuation = 0.0L;
+-        audible = false;
++        float far_distance = value_f0;
++        long double level = scale_d8;
++        float near_distance = value_ec;
++        long double dx = static_cast<long double>(position_e0.x) - position->x;
++        long double dy = static_cast<long double>(position_e0.y) - position->y;
++        long double distance = sqrtl(dx * dx + dy * dy);
++        float stored_distance = static_cast<float>(distance);
++        long double attenuation;
++        bool audible = true;
++        if (distance > far_distance)
++        {
++            attenuation = 0.0L;
++            audible = false;
++        }
++        else if (!(stored_distance >= near_distance))
++            attenuation = 1.0L;
++        else
++            attenuation = 1.0L - (static_cast<long double>(stored_distance) - near_distance) / (static_cast<long double>(far_distance) - near_distance);
++
++        float attenuated = static_cast<float>(attenuation * level);
++        if (audible)
++        {
++            int volume = SoundVolume(attenuated);
++            result = PlaySoundWithParameters(name, volume, flags, 0.0f, attenuated);
++        }
+     }
+-    else if (!(stored_distance >= near_distance))
+-        attenuation = 1.0L;
+     else
+-        attenuation = 1.0L - (static_cast<long double>(stored_distance) - near_distance) / (static_cast<long double>(far_distance) - near_distance);
+-
+-    float attenuated = static_cast<float>(attenuation * level);
+-    if (!audible)
+-        return -1;
+-    int volume = SoundVolume(attenuated);
+-    return PlaySoundWithParameters(name, volume, flags, 0.0f, attenuated);
++    {
++        result = Play3DSoundWithParameters(name, volume_d4, position, flags, voice);
++    }
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004cf8f0
+@@ -65,32 +72,39 @@ int WindowAudioState::PlaySoundAtPosition(const char* name, float level,
+ {
+     long double adjusted = static_cast<long double>(level) * scale_d8;
+     int volume = SoundVolume(adjusted);
+-    if (enabled_3d)
+-        return Play3DSoundWithParameters(name, volume, position, flags, voice);
+-
+-    float far_distance = value_f0;
+-    float near_distance = value_ec;
+-    long double dx = static_cast<long double>(position_e0.x) - position->x;
+-    long double dy = static_cast<long double>(position_e0.y) - position->y;
+-    long double distance = sqrtl(dx * dx + dy * dy);
+-    float stored_distance = static_cast<float>(distance);
+-    long double attenuation;
+-    bool audible = true;
+-    if (distance > far_distance)
++    int result = -1;
++    if (!enabled_3d)
+     {
+-        attenuation = 0.0L;
+-        audible = false;
++        float far_distance = value_f0;
++        float near_distance = value_ec;
++        long double dx = static_cast<long double>(position_e0.x) - position->x;
++        long double dy = static_cast<long double>(position_e0.y) - position->y;
++        long double distance = sqrtl(dx * dx + dy * dy);
++        float stored_distance = static_cast<float>(distance);
++        long double attenuation;
++        bool audible = true;
++        if (distance > far_distance)
++        {
++            attenuation = 0.0L;
++            audible = false;
++        }
++        else if (!(stored_distance >= near_distance))
++            attenuation = 1.0L;
++        else
++            attenuation = 1.0L - (static_cast<long double>(stored_distance) - near_distance) / (static_cast<long double>(far_distance) - near_distance);
++
++        float attenuated = static_cast<float>(attenuation * adjusted);
++        if (audible)
++        {
++            volume = SoundVolume(attenuated);
++            result = PlaySoundWithParameters(name, volume, flags, 0.0f, attenuated);
++        }
+     }
+-    else if (!(stored_distance >= near_distance))
+-        attenuation = 1.0L;
+     else
+-        attenuation = 1.0L - (static_cast<long double>(stored_distance) - near_distance) / (static_cast<long double>(far_distance) - near_distance);
+-
+-    float attenuated = static_cast<float>(attenuation * adjusted);
+-    if (!audible)
+-        return -1;
+-    volume = SoundVolume(attenuated);
+-    return PlaySoundWithParameters(name, volume, flags, 0.0f, attenuated);
++    {
++        result = Play3DSoundWithParameters(name, volume, position, flags, voice);
++    }
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004cfac0
+diff --git a/src/window_audio_play_3d.cpp b/src/window_audio_play_3d.cpp
+index e047ffad4d01ac99ffe21268fee8a25cfa1c4b0f..07ce711b2c22c6643bc56b07b6f6ebd295321bf5 100644
+--- a/src/window_audio_play_3d.cpp
++++ b/src/window_audio_play_3d.cpp
+@@ -7,22 +7,29 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
++static inline bool FindFreeVoice(WindowAudioState* audio, int& result, void*& sample)
++{
++    for (int index = 16; index < 24; ++index)
++    {
++        if (!audio->voices_b4[index - 16])
++        {
++            sample = audio->samples_54[index - 16];
++            result = index;
++            return true;
++        }
++    }
++    return false;
++}
++
+ // FUNCTION: BEACHLIFE 0x004d01e0
+ int WindowAudioState::Play3DSoundWithParameters(const char* name, int volume,
+     const WindowAudioVector* position, unsigned int flags, int voice_id)
+ {
++    int result = -1;
+     if (!enabled)
+-        return -1;
+-
+-    int index = 0;
+-    while (index < 8 && voices_b4[index])
+-        ++index;
+-    if (index == 8)
+-        return -1;
+-
+-    int result = index + 16;
+-    void* sample = samples_54[index];
+-    if (sample)
++        return result;
++    void* sample;
++    if (FindFreeVoice(this, result, sample) && sample)
+     {
+         char filename[64];
+         sprintf(filename, "%s%s", name, window_sound_wave_extension);
+@@ -31,17 +38,7 @@ int WindowAudioState::Play3DSoundWithParameters(const char* name, int volume,
+         if (data)
+         {
+             WindowSoundVoice* voice = new WindowSoundVoice;
+-            if (voice)
+-            {
+-                voice->name = 0;
+-                voice->data_04 = 0;
+-                voice->word_08 = 0;
+-                voice->bytes_0c = 0;
+-                voice->word_10 = 0;
+-                voice->byte_2c = 0;
+-                voice->word_30 = -1;
+-            }
+-            voices_b4[index] = voice;
++            voices_b4[result - 16] = voice;
+             voice->data_04 = data;
+             voice->word_30 = voice_id;
+             voice->bytes_0c = bytes;

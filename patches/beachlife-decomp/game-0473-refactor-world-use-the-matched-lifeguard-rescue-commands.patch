@@ -1,0 +1,287 @@
+diff --git a/src/startup_world_lifeguard_actions.cpp b/src/startup_world_lifeguard_actions.cpp
+index 1d48267271b520020165ae13714d496d5adc99aa..c593cdbe27ec68d525a06d6550b6cf1a09ae2538 100644
+--- a/src/startup_world_lifeguard_actions.cpp
++++ b/src/startup_world_lifeguard_actions.cpp
+@@ -5,23 +5,67 @@
+ 
+ extern const char* world_lifeguard_dialog_name;
+ 
++static inline void OffsetRescuePositions(
++    ScreenWorldPosition& position, ScreenWorldPosition& guest_position, unsigned int direction)
++{
++    switch (direction)
++    {
++    case 0:
++        position.x -= 9.0f;
++        position.y -= 80.0f;
++        guest_position.x += 6.0f;
++        guest_position.y -= 66.0f;
++        break;
++    case 1:
++        position.x += 49.0f;
++        position.y -= 68.0f;
++        guest_position.x += 52.0f;
++        guest_position.y -= 44.0f;
++        break;
++    case 2:
++        position.x += 77.0f;
++        position.y -= 12.0f;
++        guest_position.x += 67.0f;
++        guest_position.y += 4.0f;
++        break;
++    case 3:
++        position.x += 61.0f;
++        position.y += 48.0f;
++        guest_position.x += 43.0f;
++        guest_position.y += 52.0f;
++        break;
++    case 4:
++        position.x += 9.0f;
++        position.y += 80.0f;
++        guest_position.x -= 6.0f;
++        guest_position.y += 66.0f;
++        break;
++    case 5:
++        position.x -= 49.0f;
++        position.y += 68.0f;
++        guest_position.x -= 52.0f;
++        guest_position.y += 44.0f;
++        break;
++    case 6:
++        position.x -= 77.0f;
++        position.y += 12.0f;
++        guest_position.x -= 67.0f;
++        guest_position.y -= 4.0f;
++        break;
++    case 7:
++        position.x -= 61.0f;
++        position.y -= 48.0f;
++        guest_position.x -= 43.0f;
++        guest_position.y -= 52.0f;
++        break;
++    }
++}
++
+ // FUNCTION: BEACHLIFE 0x0047d430
+ void WorldLifeguardEntity::Unknown34(unsigned int value)
+ {
+     switch (value)
+     {
+-    case 0x0b:
+-        visible_40 = 0;
+-        return;
+-    case 0x0c:
+-        visible_40 = 1;
+-        return;
+-    case 0x2f:
+-        FindRescueTarget();
+-        return;
+-    case 0x7b:
+-        AddThought(0x20000000);
+-        return;
+     case 0x88:
+     {
+         unsigned int count;
+@@ -34,23 +78,24 @@ void WorldLifeguardEntity::Unknown34(unsigned int value)
+     case 0x89:
+         GoToTower();
+         return;
+-    case 0x8a:
+-        PatrolBeach();
+-        return;
+     case 0x8b:
+         FindExitPoint();
+         return;
+-    case 0x8c:
++    case 0x8a:
++        PatrolBeach();
+         return;
+     case 0x8d:
+     {
+         VariableEntity* guest = variable_world->FindObject(saving_id_77c);
+-        guest->AsMoving()->SetMovementPosition({ position_30.x, position_30.y, position_30.z });
++        guest->AsMoving()->SetMovementPosition(position_30);
+         guest->keyline_state_44->SelectVariant(keyline_state_44->word_18);
+         return;
+     }
+     case 0x8e:
+-        keyline_state_44->SelectVariant(7 - variable_world->FindObject(home_id_100)->keyline_state_44->word_18 * 2);
++    {
++        ScreenDialogResource* home = variable_world->FindObject(home_id_100)->keyline_state_44;
++        keyline_state_44->SelectVariant(7 - home->word_18 * 2);
++    }
+         return;
+     case 0x8f:
+         EnterTower();
+@@ -61,10 +106,46 @@ void WorldLifeguardEntity::Unknown34(unsigned int value)
+     case 0x91:
+         FindBeachArea();
+         return;
++    case 0xae:
++        inactive_04 = 1;
++        return;
++    case 0x0b:
++        visible_40 = 0;
++        return;
++    case 0x0c:
++        visible_40 = 1;
++        return;
++    case 0x2f:
++        FindRescueTarget();
++        return;
++    case 0xaf:
++        screen_manager->SetNamedItemFlag("LifeguardIcon", 1);
++        return;
++    case 0xb0:
++        feedback_7fc[2] = feedback_7fc[1];
++        feedback_7fc[1] = 0;
++        Unknown50(1, 1);
++        screen_manager->ApplyScreenWord(world_lifeguard_dialog_name, 2);
++        AddThought(feedback_7fc[2]);
++        screen_manager->SetNamedItemFlag("LifeguardIcon", 0);
++        return;
++    case 0xb1:
++    {
++        feedback_7fc[2] = feedback_7fc[1];
++        feedback_7fc[1] = 0;
++        const char* text = Notification(feedback_7fc[2]);
++        if (text)
++        {
++            window_deactivation_state->ticker_30->AddMessage(text, id_28, 8);
++        }
++        AddThought(feedback_7fc[2]);
++        screen_manager->SetNamedItemFlag("LifeguardIcon", 0);
++        return;
++    }
+     case 0x92:
++        flag_818 = 1;
+         ++word_814;
+         ++word_81c;
+-        flag_818 = 1;
+         feedback_7fc[1] = 0;
+         feedback_7fc[0] &= ~2u;
+         return;
+@@ -75,67 +156,23 @@ void WorldLifeguardEntity::Unknown34(unsigned int value)
+         return;
+     case 0x94:
+     {
+-        VariableEntity* guest = variable_world->FindObject(saving_id_77c);
+-        flags_828[0] = CurrentScreenTerrain()->InfluenceAreaAt({ guest->position_30.x, guest->position_30.y, guest->position_30.z }) == influence_area_824;
++        if (CurrentScreenTerrain()->InfluenceAreaAt(variable_world->FindObject(saving_id_77c)->position_30) == influence_area_824)
++        {
++            flags_828[0] = 1;
++        }
++        else
++        {
++            flags_828[0] = 0;
++        }
+         return;
+     }
+     case 0x95:
+     {
+         ScreenDialogResource* resource = keyline_state_44;
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        ScreenWorldPosition guest_position = position;
++        ScreenWorldPosition position(position_30);
++        ScreenWorldPosition guest_position(position_30);
+         unsigned int direction = resource->word_18;
+-        switch (direction)
+-        {
+-        case 0:
+-            position.x -= 9.0f;
+-            position.y -= 80.0f;
+-            guest_position.x += 6.0f;
+-            guest_position.y -= 66.0f;
+-            break;
+-        case 1:
+-            position.x += 49.0f;
+-            position.y -= 68.0f;
+-            guest_position.x += 52.0f;
+-            guest_position.y -= 44.0f;
+-            break;
+-        case 2:
+-            position.x += 77.0f;
+-            position.y -= 12.0f;
+-            guest_position.x += 67.0f;
+-            guest_position.y += 4.0f;
+-            break;
+-        case 3:
+-            position.x += 61.0f;
+-            position.y += 48.0f;
+-            guest_position.x += 43.0f;
+-            guest_position.y += 52.0f;
+-            break;
+-        case 4:
+-            position.x += 9.0f;
+-            position.y += 80.0f;
+-            guest_position.x -= 6.0f;
+-            guest_position.y += 66.0f;
+-            break;
+-        case 5:
+-            position.x -= 49.0f;
+-            position.y += 68.0f;
+-            guest_position.x -= 52.0f;
+-            guest_position.y += 44.0f;
+-            break;
+-        case 6:
+-            position.x -= 77.0f;
+-            position.y += 12.0f;
+-            guest_position.x -= 67.0f;
+-            guest_position.y -= 4.0f;
+-            break;
+-        case 7:
+-            position.x -= 61.0f;
+-            position.y -= 48.0f;
+-            guest_position.x -= 43.0f;
+-            guest_position.y -= 52.0f;
+-            break;
+-        }
++        OffsetRescuePositions(position, guest_position, direction);
+         resource->SelectVariant(static_cast<int>(direction + 2) % 8);
+         SetMovementPosition(position);
+         WorldMovingEntity* guest = variable_world->FindObject(saving_id_77c)->AsMoving();
+@@ -153,34 +190,20 @@ void WorldLifeguardEntity::Unknown34(unsigned int value)
+         variable_world->FindObject(saving_id_77c);
+         return;
+     case 0xad:
+-        feedback_7fc[0] &= ~4u;
++    {
++        unsigned int flags = feedback_7fc[0] & ~4u;
+         feedback_7fc[1] = 0;
+-        break;
+-    case 0xae:
+-        inactive_04 = 1;
++        feedback_7fc[0] = flags;
++    }
++        WorldStaffEntity::Unknown34(value);
+         return;
+-    case 0xaf:
+-        screen_manager->SetNamedItemFlag("LifeguardIcon", 1);
++    default:
++        WorldStaffEntity::Unknown34(value);
+         return;
+-    case 0xb0:
+-        feedback_7fc[2] = feedback_7fc[1];
+-        feedback_7fc[1] = 0;
+-        Unknown50(1, 1);
+-        screen_manager->ApplyScreenWord(world_lifeguard_dialog_name, 2);
+-        AddThought(feedback_7fc[2]);
+-        screen_manager->SetNamedItemFlag("LifeguardIcon", 0);
++    case 0x8c:
+         return;
+-    case 0xb1:
+-    {
+-        feedback_7fc[2] = feedback_7fc[1];
+-        feedback_7fc[1] = 0;
+-        const char* text = Notification(feedback_7fc[2]);
+-        if (text)
+-            window_deactivation_state->ticker_30->AddMessage(text, id_28, 8);
+-        AddThought(feedback_7fc[2]);
+-        screen_manager->SetNamedItemFlag("LifeguardIcon", 0);
++    case 0x7b:
++        AddThought(0x20000000);
+         return;
+     }
+-    }
+-    WorldStaffEntity::Unknown34(value);
+ }

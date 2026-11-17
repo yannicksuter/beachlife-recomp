@@ -1,0 +1,259 @@
+diff --git a/src/startup_catalog_constructor.cpp b/src/startup_catalog_constructor.cpp
+index f27a9cb94f4f3c27216ee636d343954ff44da2ed..0becffc6fa145de105378f0ab1b83bec2876e45a 100644
+--- a/src/startup_catalog_constructor.cpp
++++ b/src/startup_catalog_constructor.cpp
+@@ -29,21 +29,31 @@ VariableCatalog::VariableCatalog(const char* buildings, const char* guests)
+     male_name_count_4e5dc = 0;
+     female_name_count_4e5e0 = 0;
+     surname_count_4e5e4 = 0;
+-    const char* paths[2] = { buildings, guests };
+-    for (int index = 0; index < 2; ++index)
+-    {
+-        unsigned int length = strlen(paths[index]);
+-        char* path = static_cast<char*>(::operator new(length + 1));
+-        strcpy(path, paths[index]);
+-        path[length - 4] = '.';
+-        path[length - 3] = 'b';
+-        path[length - 2] = 'l';
+-        path[length - 1] = 'e';
+-        int size = GetFileSize(path);
+-        char* data = LoadBleFile(path);
+-        ::operator delete(path);
+-        ParseData(data, size);
+-        ::operator delete(data);
+-    }
++
++    unsigned int length = strlen(buildings);
++    char* path = static_cast<char*>(::operator new(length + 1));
++    strcpy(path, buildings);
++    path[length - 4] = '.';
++    path[length - 3] = 'b';
++    path[length - 2] = 'l';
++    path[length - 1] = 'e';
++    int size = GetFileSize(path);
++    char* data = LoadBleFile(path);
++    ::operator delete(path);
++    ParseData(data, size);
++    ::operator delete(data);
++
++    length = strlen(guests);
++    path = static_cast<char*>(::operator new(length + 1));
++    strcpy(path, guests);
++    path[length - 4] = '.';
++    path[length - 3] = 'b';
++    path[length - 2] = 'l';
++    path[length - 1] = 'e';
++    size = GetFileSize(path);
++    data = LoadBleFile(path);
++    ::operator delete(path);
++    ParseData(data, size);
++    ::operator delete(data);
+     PrepareBuildingFootprints();
+ }
+diff --git a/src/startup_variable_catalog_parse_objects.cpp b/src/startup_variable_catalog_parse_objects.cpp
+index 7400989d3e3b572e1df33b651e60f66fb6be700b..967ba7e895cb20975dad8e040a75ac6c0e159655 100644
+--- a/src/startup_variable_catalog_parse_objects.cpp
++++ b/src/startup_variable_catalog_parse_objects.cpp
+@@ -54,13 +54,23 @@ void VariableCatalog::ParseObject(unsigned int id, const char* key, const char*
+     }
+     else if (strcmp(key, "CHAIR_DIRECTION") == 0)
+     {
+-        static const char* const directions[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+-        unsigned int direction = 0;
+-        while (direction < 8 && strcmp(value, directions[direction]) != 0)
+-            ++direction;
+         unsigned int& count = CatalogField<unsigned int>(object->unknown_3ec, 0);
+-        if (direction < 8)
+-            static_cast<unsigned int*>(object->data_3f0)[count] = direction;
++        if (strcmp(value, "N") == 0)
++            static_cast<unsigned int*>(object->data_3f0)[count] = 0;
++        else if (strcmp(value, "NE") == 0)
++            static_cast<unsigned int*>(object->data_3f0)[count] = 1;
++        else if (strcmp(value, "E") == 0)
++            static_cast<unsigned int*>(object->data_3f0)[count] = 2;
++        else if (strcmp(value, "SE") == 0)
++            static_cast<unsigned int*>(object->data_3f0)[count] = 3;
++        else if (strcmp(value, "S") == 0)
++            static_cast<unsigned int*>(object->data_3f0)[count] = 4;
++        else if (strcmp(value, "SW") == 0)
++            static_cast<unsigned int*>(object->data_3f0)[count] = 5;
++        else if (strcmp(value, "W") == 0)
++            static_cast<unsigned int*>(object->data_3f0)[count] = 6;
++        else if (strcmp(value, "NW") == 0)
++            static_cast<unsigned int*>(object->data_3f0)[count] = 7;
+         else
+             StartupFatal("Invalid direction in table - %s", value);
+         ++count;
+@@ -96,13 +106,23 @@ void VariableCatalog::ParseObject(unsigned int id, const char* key, const char*
+     else if (strcmp(key, "GET_UP_ANIM") == 0)
+         strcpy(reinterpret_cast<char*>(object->unknown_348), value);
+     else if (strcmp(key, "SERVE_TABLE") == 0)
+-        object->flag_424 = atoi(value) != 0;
++    {
++        if (atoi(value) != 0)
++            object->flag_424 = 1;
++        else
++            object->flag_424 = 0;
++    }
+     else if (strcmp(key, "XOFFSET_TABLE") == 0)
+         object->draw_offset_x_41c = atoi(value);
+     else if (strcmp(key, "YOFFSET_TABLE") == 0)
+         object->draw_offset_y_420 = atoi(value);
+     else if (strcmp(key, "HAS_WAITER") == 0)
+-        object->flag_3f8 = atoi(value) != 0;
++    {
++        if (atoi(value) != 0)
++            object->flag_3f8 = 1;
++        else
++            object->flag_3f8 = 0;
++    }
+     else if (strcmp(key, "WAITER_SPRITE") == 0)
+         object->data_40c = CopyCatalogText(value);
+     else if (strcmp(key, "WAITER_WALK_ANIM") == 0)
+diff --git a/src/startup_variable_catalog_parse_scenery.cpp b/src/startup_variable_catalog_parse_scenery.cpp
+index fa67c2bca316720411484cabd4663cd830644bac..a6e67930863987ef4fb5521287fb2a41a3186480 100644
+--- a/src/startup_variable_catalog_parse_scenery.cpp
++++ b/src/startup_variable_catalog_parse_scenery.cpp
+@@ -7,75 +7,110 @@
+ // FUNCTION: BEACHLIFE 0x0044b2d0
+ void VariableCatalog::ParseScenery(unsigned int id, const char* key, const char* value)
+ {
+-    unsigned char* record = CatalogRecordAddress(this, 0x5409c, 0x314, id);
++    VariableScenery* record = reinterpret_cast<VariableScenery*>(CatalogRecordAddress(this, 0x5409c, 0x314, id));
+     if (strcmp(key, "NAME") == 0)
+-        strcpy(reinterpret_cast<char*>(record + 0x44), value);
++        strcpy(record->model_44, value);
+     else if (strcmp(key, "SPRITE") == 0)
+-        strcpy(reinterpret_cast<char*>(record + 0xc4), value);
++        strcpy(record->resource_c4, value);
+     else if (strcmp(key, "ANIM") == 0)
+-        strcpy(reinterpret_cast<char*>(record + 0x1c4), value);
++        strcpy(record->animation_1c4, value);
+     else if (strcmp(key, "GRIDWIDTH") == 0)
+-        CatalogField<int>(record, 0x2c8) = atoi(value);
++        record->footprint_x_2c8 = atoi(value);
+     else if (strcmp(key, "GRIDHEIGHT") == 0)
+-        CatalogField<int>(record, 0x2cc) = atoi(value);
++        record->footprint_y_2cc = atoi(value);
+     else if (strcmp(key, "COST2BUILD") == 0)
+-        CatalogField<int>(record, 0x2d0) = atoi(value);
++        record->cost_2d0 = atoi(value);
+     else if (strcmp(key, "BUILDON") == 0)
+     {
+         if (strcmp(value, "SHALLOW_WATER") == 0)
+-            CatalogField<unsigned int>(record, 0x2d4) |= 4;
++            record->terrain_flags_2d4 |= 4;
+         else if (strcmp(value, "LAND") == 0)
+-            CatalogField<unsigned int>(record, 0x2d4) |= 1;
++            record->terrain_flags_2d4 |= 1;
+         else if (strcmp(value, "DEEP_SEA") == 0)
+-            CatalogField<unsigned int>(record, 0x2d4) |= 8;
++            record->terrain_flags_2d4 |= 8;
+         else if (strcmp(value, "BEACH") == 0)
+-            CatalogField<unsigned int>(record, 0x2d4) |= 2;
++            record->terrain_flags_2d4 |= 2;
+         else if (strcmp(value, "PATH") == 0)
+-            CatalogField<unsigned int>(record, 0x2d4) |= 128;
++            record->terrain_flags_2d4 |= 128;
+     }
+     else if (strcmp(key, "COLLIDE") == 0)
+-        record[0x2d8] = atoi(value) != 0;
++    {
++        if (atoi(value))
++            record->unknown_2d8[0] = 1;
++        else
++            record->unknown_2d8[0] = 0;
++    }
+     else if (strcmp(key, "CAPACITY") == 0)
+-        CatalogField<int>(record, 0x2dc) = atoi(value);
++        record->capacity_2dc = atoi(value);
+     else if (strcmp(key, "MENU") == 0)
+-        strcpy(reinterpret_cast<char*>(record + 0x2e0), value);
++        strcpy(record->service_2e0, value);
+     else if (strcmp(key, "ICON") == 0)
+-        CatalogField<int>(record, 0x300) = atoi(value);
++        record->preview_frame_300 = atoi(value);
+     else if (strcmp(key, "CATEGORY") == 0)
+     {
+         if (strcmp(value, "FURNITURE") == 0)
+-            CatalogField<unsigned int>(record, 0x2c4) = 0;
++            record->list_kind_2c4 = 0;
+         else if (strcmp(value, "PATHS") == 0)
+-            CatalogField<unsigned int>(record, 0x2c4) = 1;
++            record->list_kind_2c4 = 1;
+         else if (strcmp(value, "PLANTS") == 0)
+-            CatalogField<unsigned int>(record, 0x2c4) = 2;
++            record->list_kind_2c4 = 2;
+         else if (strcmp(value, "ORNAMENTS") == 0)
+-            CatalogField<unsigned int>(record, 0x2c4) = 3;
++            record->list_kind_2c4 = 3;
+         else if (strcmp(value, "TREES") == 0)
+-            CatalogField<unsigned int>(record, 0x2c4) = 4;
++            record->list_kind_2c4 = 4;
+         else if (strcmp(value, "SHRUBS") == 0)
+-            CatalogField<unsigned int>(record, 0x2c4) = 5;
++            record->list_kind_2c4 = 5;
+         else if (strcmp(value, "BILLBOARD") == 0)
+-            CatalogField<unsigned int>(record, 0x2c4) = 6;
++            record->list_kind_2c4 = 6;
+         else if (strcmp(value, "OTHER") == 0)
+-            CatalogField<unsigned int>(record, 0x2c4) = 7;
++            record->list_kind_2c4 = 7;
+         else
+             StartupFatal("Unknown scenery category");
+     }
+     else if (strcmp(key, "RATING") == 0)
+-        CatalogField<float>(record, 0x304) = static_cast<float>(atof(value));
++        record->rating_304 = static_cast<float>(atof(value));
+     else if (strcmp(key, "CLEAN") == 0)
+-        record[0x308] = atoi(value) != 0;
++    {
++        if (atoi(value))
++            record->cleanable_308 = 1;
++        else
++            record->cleanable_308 = 0;
++    }
+     else if (strcmp(key, "REPAIR") == 0)
+-        record[0x309] = atoi(value) != 0;
++    {
++        if (atoi(value))
++            record->repairable_309 = 1;
++        else
++            record->repairable_309 = 0;
++    }
+     else if (strcmp(key, "BURN") == 0)
+-        record[0x310] = atoi(value) != 0;
++    {
++        if (atoi(value))
++            record->unknown_310 = 1;
++        else
++            record->unknown_310 = 0;
++    }
+     else if (strcmp(key, "USERREMOVE") == 0)
+-        record[0x311] = atoi(value) != 0;
++    {
++        if (atoi(value))
++            record->removable_311 = 1;
++        else
++            record->removable_311 = 0;
++    }
+     else if (strcmp(key, "VEGFLAG") == 0)
+-        record[0x312] = atoi(value) != 0;
++    {
++        if (atoi(value))
++            record->blocks_tile_312 = 1;
++        else
++            record->blocks_tile_312 = 0;
++    }
+     else if (strcmp(key, "PATHFLAG") == 0)
+-        CatalogField<int>(record, 0x30c) = atoi(value);
++        record->flag_30c = atoi(value);
+     else if (strcmp(key, "WATER") == 0)
+-        record[0x30a] = atoi(value) != 0;
++    {
++        if (atoi(value))
++            record->serviceable_30a = 1;
++        else
++            record->serviceable_30a = 0;
++    }
+ }

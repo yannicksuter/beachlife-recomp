@@ -1,0 +1,528 @@
+diff --git a/src/startup_building_construction_tasks.cpp b/src/startup_building_construction_tasks.cpp
+index cc4389b693d2485af9a123c8c6e37f32c78ec2b0..fd8050cafa8c18100d9101fac6eaaba86c07031c 100644
+--- a/src/startup_building_construction_tasks.cpp
++++ b/src/startup_building_construction_tasks.cpp
+@@ -77,7 +77,7 @@ void VariableBuildingStatus::StartDemolition(unsigned int id)
+     if (building->footprint_e14)
+     {
+         ScreenPoint position = entity->TilePosition();
+-        SetFootprint(position.x, position.y, 0, 3, id);
++        SetFootprint(position, 0, 3, id);
+     }
+     overlay_map->PendingTileCount();
+     ScreenRectangle& rectangle = variable_world->FindObject(id)->AsBuilding()->footprint_rectangle_3f0;
+@@ -164,7 +164,7 @@ void VariableBuildingStatus::UpdateBuilding(unsigned int id)
+ void VariableBuildingStatus::CompleteConstruction(unsigned int id)
+ {
+     ScreenPoint position = variable_world->FindObject(id)->TilePosition();
+-    SetFootprint(position.x, position.y, 1, 2, id);
++    SetFootprint(position, 1, 2, id);
+     RemoveTask(id);
+     ReassignBuilders();
+ }
+@@ -176,7 +176,7 @@ void VariableBuildingStatus::RemoveBuilding(unsigned int id)
+     VariableBuilding* building = entity->building_60;
+     RestoreFootprint(id);
+     ScreenPoint position = entity->TilePosition();
+-    SetFootprint(position.x, position.y, 1, 3, id);
++    SetFootprint(position, 1, 3, id);
+     unsigned int refund = *reinterpret_cast<unsigned int*>(building->unknown_1d0);
+     window_deactivation_state->economy_1c->value_80 = static_cast<float>(static_cast<double>(window_deactivation_state->economy_1c->value_80) + static_cast<int>(refund));
+     double value = *reinterpret_cast<unsigned int*>(building->unknown_1d0);
+diff --git a/src/startup_building_footprint.cpp b/src/startup_building_footprint.cpp
+index 78c06a125026738caf0f84f79dd87cb843d5d829..5247d8ed765b83b32d0bc8e44050b1236a9e3001 100644
+--- a/src/startup_building_footprint.cpp
++++ b/src/startup_building_footprint.cpp
+@@ -12,13 +12,13 @@ static ScreenTerrainCell* BuildingFootprintCell(ScreenTerrainGrid* grid, ScreenP
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00422c50
+-void VariableBuildingStatus::SetFootprint(int x, int y, unsigned char enabled, unsigned int stage, unsigned int id)
++void VariableBuildingStatus::SetFootprint(ScreenPoint origin, unsigned char enabled, unsigned int stage, unsigned int id)
+ {
+     WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
+     VariableBuilding* building = entity->building_60;
+     unsigned int rotation = entity->keyline_state_44->word_18;
+     ScreenTerrainGrid* grid = screen_terrain_grid;
+-    ScreenPoint row_start = { x, y };
++    ScreenPoint row_start = origin;
+     unsigned int path;
+     if (building->count_d8c)
+         path = static_cast<unsigned int*>(building->data_d90)[static_cast<unsigned int>(std::rand()) % building->count_d8c];
+@@ -211,7 +211,7 @@ void VariableBuildingStatus::PrepareConstruction(unsigned int id)
+         height = temporary;
+     }
+     if (building->footprint_e14)
+-        SetFootprint(origin.x, origin.y, 0, 2, id);
++        SetFootprint(origin, 0, 2, id);
+     for (unsigned int row = 0; row < width; ++row)
+     {
+         for (unsigned int column = 0; column < height; ++column)
+diff --git a/src/startup_building_status.h b/src/startup_building_status.h
+index cf525dd99da838dfe16dc6c310982970535919d8..9984b5a231b7d47d2a4a4566372340042cea47c8 100644
+--- a/src/startup_building_status.h
++++ b/src/startup_building_status.h
+@@ -76,7 +76,7 @@ struct VariableBuildingStatus
+     void PrepareConstruction(unsigned int id);                                                                             // 0x004235f0.
+     void PrepareBuilderLocations(unsigned int id);                                                                         // 0x00422700.
+     void UpdateConstructionFootprint(unsigned int id);                                                                     // 0x00422a50.
+-    void SetFootprint(int x, int y, unsigned char enabled, unsigned int stage, unsigned int id);                           // 0x00422c50.
++    void SetFootprint(ScreenPoint tile, unsigned char enabled, unsigned int stage, unsigned int id);                       // 0x00422c50.
+     void RestoreFootprint(unsigned int id);                                                                                // 0x00423c20.
+     CircularListNode* head_00;
+     int word_04;
+diff --git a/src/startup_entity_hire_staff.cpp b/src/startup_entity_hire_staff.cpp
+index 816fd3029e8076dd1f1c1f2a179e3d27bec8bf1f..4ef7fbfcc614d9d2e89f66dc94a7388139a033d5 100644
+--- a/src/startup_entity_hire_staff.cpp
++++ b/src/startup_entity_hire_staff.cpp
+@@ -7,54 +7,52 @@ bool VariableEntity::HireStaff()
+ {
+     if (AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90 == AsBuilding()->building_60->capacity_288)
+         return false;
+-    VariableStaffState* definition = variable_catalog->Staff(AsBuilding()->building_60->staff_index_290);
+-    const char* role = definition->role_1cc;
+-    unsigned int index = AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90;
+-    ScreenModeCommand command;
+-    for (unsigned int i = 0; i < 5; ++i)
+-        command.words[i] = 0;
+-    int kind;
+-    if (strcmp(role, "LIFEGUARD") == 0)
+-        kind = 7;
+-    else if (strcmp(role, "MECHANIC") == 0)
+-        kind = 8;
+-    else if (strcmp(role, "REP") == 0)
+-        kind = 9;
+-    else if (strcmp(role, "CLEANER") == 0)
+-        kind = 11;
+-    else if (strcmp(role, "SECURITYGUARD") == 0)
+-        kind = 12;
+-    else if (strcmp(role, "BUILDER") == 0)
+-        kind = 10;
+-    else
+-        return false;
+-    command.words[0] = -2;
+-    command.words[1] = -2;
+-    command.words[2] = 0;
+-    command.words[3] = 0;
+-    command.words[4] = kind;
++    VariableStaffState* staff = variable_catalog->Staff(AsBuilding()->building_60->staff_ids_290[0]);
++    unsigned int slot = AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90;
++    ScreenModeCommand message(0, 0, 0, 0, 0);
++    const char* name = staff->role_1cc;
+     ScreenStaffPlacement placement;
+-    if (kind == 10)
++    if (strcmp(name, "LIFEGUARD") == 0)
++        message = ScreenModeCommand(-2, -2, 0, 0, 7);
++    else if (strcmp(name, "MECHANIC") == 0)
++        message = ScreenModeCommand(-2, -2, 0, 0, 8);
++    else if (strcmp(name, "REP") == 0)
++        message = ScreenModeCommand(-2, -2, 0, 0, 9);
++    else if (strcmp(name, "CLEANER") == 0)
++        message = ScreenModeCommand(-2, -2, 0, 0, 0xb);
++    else if (strcmp(name, "SECURITYGUARD") == 0)
++        message = ScreenModeCommand(-2, -2, 0, 0, 0xc);
++    else if (strcmp(name, "BUILDER") == 0)
+     {
+-        unsigned char occupied[50] = { };
+-        for (unsigned int i = 0; i < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90; ++i)
+-            occupied[variable_world->FindObject(AsBuilding()->staff_ids_64[i])->AsBuilder()->builder_index_7f0] = 1;
+-        for (unsigned int i = 0; i < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90; ++i)
+-        {
+-            if (!occupied[i])
++        message = ScreenModeCommand(-2, -2, 0, 0, 0xa);
++        unsigned char used[50] = { 0 };
++        for (unsigned int i = 0; i < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90; i++)
++            used[variable_world->FindObject(AsBuilding()->staff_ids_64[i])->AsBuilder()->builder_index_7f0] = 1;
++        for (unsigned int j = 0; j < AsBuilding()->staff_count_8c + AsBuilding()->pending_staff_90; j++)
++            if (!used[j])
+             {
+-                index = i;
++                slot = j;
+                 break;
+             }
+-        }
+-        placement.position = AsBuilding()->staff_position_d8;
+-        OffsetStaffPlacement(index, &placement);
++        placement.position.x = AsBuilding()->staff_position_d8.x;
++        placement.position.y = AsBuilding()->staff_position_d8.y;
++        placement.position.z = AsBuilding()->staff_position_d8.z;
++        OffsetStaffPlacement(slot, &placement);
++    }
++    else
++        return false;
++
++    strcpy(placement.name,
++        AsBuilding()->staff_count_8c > AsBuilding()->pending_staff_90 ? AsBuilding()->building_60->staff_model_d04
++                                                                      : AsBuilding()->building_60->staff_model_d44);
++    if (strcmp(name, "BUILDER") != 0)
++    {
++        placement.position.x = AsBuilding()->staff_position_d8.x;
++        placement.position.y = AsBuilding()->staff_position_d8.y;
++        placement.position.z = AsBuilding()->staff_position_d8.z;
+     }
+-    strcpy(placement.name, AsBuilding()->staff_count_8c > AsBuilding()->pending_staff_90 ? AsBuilding()->building_60->staff_model_d04 : AsBuilding()->building_60->staff_model_d44);
+-    if (strcmp(role, "BUILDER") != 0)
+-        placement.position = AsBuilding()->staff_position_d8;
++    placement.index = slot;
+     placement.building_id = id_28;
+-    placement.index = index;
+-    screen_mode_commands->QueuePlacement(&command, &placement);
++    screen_mode_commands->QueuePlacement(&message, &placement);
+     return true;
+ }
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index dfd9be45c4320b5a9d95dbcad1a6ffbf7ed07c75..b9542c423ff25927034ccc1817918d095b04f14e 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -166,12 +166,23 @@ struct VariableBuilding
+     unsigned char unknown_260[0x14];
+     float feature_prices_274[5]; // Copied into WorldBuildingEntity::feature_prices_1f8.
+     unsigned int capacity_288;
+-    unsigned char unknown_28c[4];
+-    unsigned int staff_index_290;
+-    unsigned char unknown_294[0x80];
++    unsigned int staff_count_28c;
++    unsigned int staff_ids_290[10]; // Catalog staff indices.
++    unsigned int vehicle_count_2b8;
++    unsigned int vehicle_ids_2bc[5]; // Catalog vehicle indices.
++    unsigned int vehicle_offset_count_2d0;
++    struct VehicleOffset
++    {
++        int x;
++        int y;
++    };
++    VehicleOffset vehicle_offsets_2d4[5]; // Tile steps from the building's tile.
++    int vehicle_directions_2fc[5];
++    unsigned char unknown_310[4];
+     short staff_x_314;
+     short staff_y_316;
+-    unsigned char unknown_318[4];
++    short offset_x_318; // Staff placement offset, rotated by ScreenTerrainGrid::BuildingOffset.
++    short offset_y_31a;
+     unsigned int terrain_flags_31c;
+     char required_320[0x40];
+     // Screen name starts here; the span preserves the next recovered field.
+@@ -330,7 +341,8 @@ struct VariableEventSchedule
+ // Observed staff state; +0xc4 selects the female photo. Size not proved.
+ struct VariableStaffState
+ {
+-    unsigned char unknown_00[0xc4];
++    unsigned int id_00;
++    char name_04[0xc0];
+     int female_c4;
+     unsigned int wage_c8;
+     char resource_cc[0x100];
+diff --git a/src/startup_world_building_commands.cpp b/src/startup_world_building_commands.cpp
+index 29813561a46a2ee8c8274c27a0acacfc72fdcafc..42043f9c61d83216fb9d1fff9503a3a9673299df 100644
+--- a/src/startup_world_building_commands.cpp
++++ b/src/startup_world_building_commands.cpp
+@@ -367,12 +367,7 @@ bool WorldBuildingEntity::Unknown14(ScreenModeCommand* incoming)
+             unsigned int index = staff_count_8c + pending_staff_90;
+             staff_ids_64[index] = sender;
+             staff_flags_c0[index] = 0;
+-            unsigned int staff;
+-            if (index == 0)
+-                staff = building_60->staff_index_290;
+-            else
+-                memcpy(&staff, building_60->unknown_294 + (index - 1) * 4, 4);
+-            if (variable_catalog->Staff(staff)->female_c4 == 0)
++            if (variable_catalog->Staff(building_60->staff_ids_290[index])->female_c4 == 0)
+                 ++staff_count_8c;
+             else
+                 ++pending_staff_90;
+diff --git a/src/startup_world_building_initialize_staff.cpp b/src/startup_world_building_initialize_staff.cpp
+index c9938c69d7af139c70216dc3ee23d11e3ce4f061..684f1ed2fea8e2f9e8de43386dacb5bef42a6ba9 100644
+--- a/src/startup_world_building_initialize_staff.cpp
++++ b/src/startup_world_building_initialize_staff.cpp
+@@ -6,35 +6,22 @@
+ // FUNCTION: BEACHLIFE 0x0045bab0
+ void WorldBuildingEntity::InitializeStaff()
+ {
+-    unsigned int count;
+-    memcpy(&count, building_60->unknown_28c, sizeof(count));
+-    for (unsigned int i = 0; i < count; ++i)
++    for (unsigned int i = 0; i < building_60->staff_count_28c; ++i)
+     {
+-        unsigned int staff;
+-        if (i == 0)
+-            staff = building_60->staff_index_290;
+-        else
+-            memcpy(&staff, building_60->unknown_294 + (i - 1) * 4, sizeof(staff));
+-        VariableStaffState* definition = variable_catalog->Staff(staff);
++        VariableStaffState* definition = variable_catalog->Staff(building_60->staff_ids_290[i]);
+         const char* role = definition->role_1cc;
+-        ScreenModeCommand command;
+-        command.words[0] = -2;
+-        command.words[1] = -2;
+-        command.words[2] = 0;
+-        command.words[3] = 0;
+-        ScreenStaffPlacement placement;
+         if (strcmp(role, "SERVE") == 0)
+         {
+-            command.words[4] = 6;
+-            strcpy(placement.name, reinterpret_cast<const char*>(definition->unknown_00 + 4));
+-            short x, y;
+-            memcpy(&x, building_60->unknown_318, sizeof(x));
+-            memcpy(&y, building_60->unknown_318 + 2, sizeof(y));
+-            ScreenMapPosition offset = { static_cast<float>(x), static_cast<float>(y) };
+-            VariableBuilding* building = building_60;
++            ScreenModeCommand command;
++            command = ScreenModeCommand(-2, -2, 0, 0, 6);
++            ScreenStaffPlacement placement;
++            strcpy(placement.name, definition->name_04);
++            ScreenMapPosition offset;
++            offset.x = static_cast<float>(building_60->offset_x_318);
++            offset.y = static_cast<float>(building_60->offset_y_31a);
+             unsigned int rotation = keyline_state_44->word_18;
+-            ScreenPoint tile = TilePosition();
+-            ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(tile, building->footprint_x_1d4, building->footprint_y_1d8, offset, rotation);
++            ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(
++                TilePosition(), building_60->footprint_x_1d4, building_60->footprint_y_1d8, offset, rotation);
+             placement.position.x = point.x;
+             placement.position.y = point.y;
+             placement.building_id = id_28;
+@@ -42,54 +29,87 @@ void WorldBuildingEntity::InitializeStaff()
+         }
+         else if (strcmp(role, "LIFEGUARD") == 0)
+         {
+-            command.words[4] = 7;
+-            strcpy(placement.name, rand() % 2 ? building_60->staff_model_d04 : building_60->staff_model_d44);
+-            placement.position = staff_position_d8;
++            ScreenModeCommand command;
++            command = ScreenModeCommand(-2, -2, 0, 0, 7);
++            ScreenStaffPlacement placement;
++            if (rand() % 2)
++                strcpy(placement.name, building_60->staff_model_d04);
++            else
++                strcpy(placement.name, building_60->staff_model_d44);
++            placement.position.x = staff_position_d8.x;
++            placement.position.y = staff_position_d8.y;
++            placement.position.z = staff_position_d8.z;
+             placement.building_id = id_28;
+             screen_mode_commands->QueuePlacement(&command, &placement);
+         }
+         else if (strcmp(role, "MECHANIC") == 0)
+         {
+-            command.words[4] = 8;
+-            strcpy(placement.name, reinterpret_cast<const char*>(definition->unknown_00 + 4));
+-            placement.position = staff_position_d8;
++            ScreenModeCommand command;
++            command = ScreenModeCommand(-2, -2, 0, 0, 8);
++            ScreenStaffPlacement placement;
++            strcpy(placement.name, definition->name_04);
++            placement.position.x = staff_position_d8.x;
++            placement.position.y = staff_position_d8.y;
++            placement.position.z = staff_position_d8.z;
+             placement.building_id = id_28;
+             screen_mode_commands->QueuePlacement(&command, &placement);
+         }
+         else if (strcmp(role, "BUILDER") == 0)
+         {
+-            command.words[4] = 10;
+-            strcpy(placement.name, reinterpret_cast<const char*>(definition->unknown_00 + 4));
+-            placement.position = staff_position_d8;
++            ScreenModeCommand command;
++            command = ScreenModeCommand(-2, -2, 0, 0, 10);
++            ScreenStaffPlacement placement;
++            strcpy(placement.name, definition->name_04);
++            placement.position.x = staff_position_d8.x;
++            placement.position.y = staff_position_d8.y;
+             placement.index = i;
++            placement.position.z = staff_position_d8.z;
+             OffsetStaffPlacement(i, &placement);
+             placement.building_id = id_28;
+             screen_mode_commands->QueuePlacement(&command, &placement);
+         }
+         else if (strcmp(role, "REP") == 0)
+         {
+-            strcpy(placement.name, rand() % 2 ? building_60->staff_model_d04 : building_60->staff_model_d44);
+-            placement.position = staff_position_d8;
++            ScreenModeCommand command;
++            ScreenStaffPlacement placement;
++            if (rand() % 2)
++                strcpy(placement.name, building_60->staff_model_d04);
++            else
++                strcpy(placement.name, building_60->staff_model_d44);
++            placement.position.x = staff_position_d8.x;
++            placement.position.y = staff_position_d8.y;
++            placement.position.z = staff_position_d8.z;
+             placement.building_id = id_28;
++            command.words[0] = -2;
++            command.words[1] = -2;
++            command.words[2] = 0;
++            command.words[3] = 0;
+             command.words[4] = 9;
+             screen_mode_commands->QueuePlacement(&command, &placement);
+         }
+         else if (strcmp(role, "CLEANER") == 0)
+         {
+-            command.words[4] = 11;
+-            strcpy(placement.name, reinterpret_cast<const char*>(definition->unknown_00 + 4));
+-            placement.position = staff_position_d8;
++            ScreenModeCommand command;
++            command = ScreenModeCommand(-2, -2, 0, 0, 11);
++            ScreenStaffPlacement placement;
++            strcpy(placement.name, definition->name_04);
++            placement.position.x = staff_position_d8.x;
++            placement.position.y = staff_position_d8.y;
++            placement.position.z = staff_position_d8.z;
+             placement.building_id = id_28;
+             screen_mode_commands->QueuePlacement(&command, &placement);
+         }
+         else if (strcmp(role, "SECURITYGUARD") == 0)
+         {
+-            command.words[4] = 12;
+-            strcpy(placement.name, reinterpret_cast<const char*>(definition->unknown_00 + 4));
+-            placement.position = staff_position_d8;
++            ScreenModeCommand command;
++            command = ScreenModeCommand(-2, -2, 0, 0, 12);
++            ScreenStaffPlacement placement;
++            strcpy(placement.name, definition->name_04);
++            placement.position.x = staff_position_d8.x;
++            placement.position.y = staff_position_d8.y;
++            placement.position.z = staff_position_d8.z;
+             placement.building_id = id_28;
+             screen_mode_commands->QueuePlacement(&command, &placement);
+         }
+-        memcpy(&count, building_60->unknown_28c, sizeof(count));
+     }
+ }
+diff --git a/src/startup_world_building_initialize_vehicles.cpp b/src/startup_world_building_initialize_vehicles.cpp
+index a15179e47c8d314363a8923c6d91e1c2242e967b..52b14cf6c53fe3c0604b2343ed11cdb55cef7e1c 100644
+--- a/src/startup_world_building_initialize_vehicles.cpp
++++ b/src/startup_world_building_initialize_vehicles.cpp
+@@ -5,44 +5,51 @@
+ // FUNCTION: BEACHLIFE 0x0045c2a0
+ void WorldBuildingEntity::InitializeVehicles()
+ {
+-    auto read = [this](unsigned int offset)
++    unsigned int i;
++    int j;
++    ScreenModeCommand command;
++    ScreenStaffPlacement placement;
++    for (i = 0; i < building_60->vehicle_count_2b8; i++)
+     {
+-        int value;
+-        memcpy(&value, building_60->unknown_294 + offset, sizeof(value));
+-        return value;
+-    };
+-    for (unsigned int i = 0; i < static_cast<unsigned int>(read(0x24)); ++i)
+-    {
+-        VariableVehicleDefinition* definition = variable_catalog->Vehicle(read(0x28 + i * 4));
+-        ScreenModeCommand command;
++        VariableVehicleDefinition* vehicle = variable_catalog->Vehicle(building_60->vehicle_ids_2bc[i]);
+         command.words[0] = -2;
+         command.words[1] = -2;
+         command.words[2] = 0;
+         command.words[3] = 0;
+         command.words[4] = 4;
+-        ScreenStaffPlacement placement;
+-        strcpy(placement.name, definition->name_04);
++        strcpy(placement.name, vehicle->name_04);
+         ScreenPoint tile = TilePosition();
+-        unsigned int rotation = keyline_state_44->word_18;
+-        if (rotation < 4)
++        switch (keyline_state_44->word_18)
+         {
+-            int first_direction = (rotation & 1) ? 0 : 6;
+-            int second_direction = (rotation & 1) ? 6 : 0;
+-            for (int step = 0; step < ((rotation == 1 || rotation == 2)
+-                                           ? static_cast<int>(building_60->footprint_x_1d4) - read(0x40 + i * 8) - 1
+-                                           : read(0x40 + i * 8));
+-                ++step)
+-                screen_terrain_grid->Step(tile, first_direction, &tile);
+-            for (int step = 0; step < ((rotation == 2 || rotation == 3)
+-                                           ? static_cast<int>(building_60->footprint_y_1d8) - read(0x44 + i * 8) - 1
+-                                           : read(0x44 + i * 8));
+-                ++step)
+-                screen_terrain_grid->Step(tile, second_direction, &tile);
++        case 0:
++            for (j = 0; j < building_60->vehicle_offsets_2d4[i].x; j++)
++                screen_terrain_grid->Step(tile, 6, &tile);
++            for (j = 0; j < building_60->vehicle_offsets_2d4[i].y; j++)
++                screen_terrain_grid->Step(tile, 0, &tile);
++            break;
++        case 1:
++            for (j = 0; j < static_cast<int>(building_60->footprint_x_1d4) - building_60->vehicle_offsets_2d4[i].x - 1; j++)
++                screen_terrain_grid->Step(tile, 0, &tile);
++            for (j = 0; j < building_60->vehicle_offsets_2d4[i].y; j++)
++                screen_terrain_grid->Step(tile, 6, &tile);
++            break;
++        case 2:
++            for (j = 0; j < static_cast<int>(building_60->footprint_x_1d4) - building_60->vehicle_offsets_2d4[i].x - 1; j++)
++                screen_terrain_grid->Step(tile, 6, &tile);
++            for (j = 0; j < static_cast<int>(building_60->footprint_y_1d8) - building_60->vehicle_offsets_2d4[i].y - 1; j++)
++                screen_terrain_grid->Step(tile, 0, &tile);
++            break;
++        case 3:
++            for (j = 0; j < building_60->vehicle_offsets_2d4[i].x; j++)
++                screen_terrain_grid->Step(tile, 0, &tile);
++            for (j = 0; j < static_cast<int>(building_60->footprint_y_1d8) - building_60->vehicle_offsets_2d4[i].y - 1; j++)
++                screen_terrain_grid->Step(tile, 6, &tile);
++            break;
+         }
+-        ScreenWorldPosition position = screen_terrain_grid->TileCenter(tile);
+-        placement.index = (read(0x68 + i * 4) + 2 * (4 - static_cast<int>(keyline_state_44->word_18))) % 8;
+-        placement.position.x = position.x;
+-        placement.position.y = position.y;
++        ScreenWorldPosition center = screen_terrain_grid->TileCenter(tile);
++        placement.index = (building_60->vehicle_directions_2fc[i] + 2 * (4 - static_cast<int>(keyline_state_44->word_18))) % 8;
++        placement.position.x = center.x;
++        placement.position.y = center.y;
+         placement.building_id = id_28;
+         screen_mode_commands->QueuePlacement(&command, &placement);
+     }
+diff --git a/src/startup_world_building_selection.cpp b/src/startup_world_building_selection.cpp
+index bd08334c50b65ac461acef785ac72523acaaa2d1..1989cde9f9b9a9846901770600380a44657ad256 100644
+--- a/src/startup_world_building_selection.cpp
++++ b/src/startup_world_building_selection.cpp
+@@ -57,22 +57,33 @@ int WorldBuildingEntity::Unknown44()
+ // FUNCTION: BEACHLIFE 0x00460190
+ void WorldBuildingEntity::Unknown40()
+ {
+-    float demolition = window_deactivation_state->building_status_48->ValueAt00422430(id_28);
+-    if (demolition < 0.0f || demolition > 0.0f)
++    ScreenPoint point;
++    ScreenPoint screen;
++    WindowDeactivationState* state = window_deactivation_state;
++    VariableBuildingStatus* status = state->building_status_48;
++    if (status->ValueAt00422430(id_28) != 0.0f)
+         return;
+-    if (!byte_364 && power_state_33c != 3)
+-        return;
+-    ScreenPoint position = overlay_map->WorldToScreen(marker_position_fc);
+-    float scale;
+-    scale = screen_request_renderer->value_58;
+-    int x = static_cast<int>(static_cast<long double>(position.x) * scale);
+-    int y = static_cast<int>(static_cast<long double>(position.y) * scale);
+-    ScreenDialogResource* size_resource = resource_164;
+-    float time = window_deactivation_state->clock_158;
+-    y -= size_resource->SelectedFrame()->height_10 * 2;
+-    x -= size_resource->SelectedFrame()->width_0e / 2;
+     if (byte_364)
+-        resource_164->Draw(x, y, 0, time);
+-    else
+-        resource_168->Draw(x, y, 0, time);
++    {
++        point = overlay_map->WorldToScreen(marker_position_fc);
++        screen.x = static_cast<int>(static_cast<long double>(point.x) * screen_request_renderer->value_58);
++        screen.y = static_cast<int>(static_cast<long double>(point.y) * screen_request_renderer->value_58);
++        float time = window_deactivation_state->time_158;
++        resource_164->Draw(screen.x - resource_164->SelectedFrame()->width_0e / 2,
++            screen.y - resource_164->SelectedFrame()->height_10 * 2,
++            0,
++            time);
++        return;
++    }
++    if (power_state_33c == 3)
++    {
++        point = overlay_map->WorldToScreen(marker_position_fc);
++        screen.x = static_cast<int>(static_cast<long double>(point.x) * screen_request_renderer->value_58);
++        screen.y = static_cast<int>(static_cast<long double>(point.y) * screen_request_renderer->value_58);
++        float time = window_deactivation_state->time_158;
++        resource_168->Draw(screen.x - resource_164->SelectedFrame()->width_0e / 2,
++            screen.y - resource_164->SelectedFrame()->height_10 * 2,
++            0,
++            time);
++    }
+ }
