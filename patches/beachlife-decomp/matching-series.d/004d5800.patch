@@ -1,0 +1,152 @@
+diff --git a/fixtures/game.d/fixture_004d5800.cpp b/fixtures/game.d/fixture_004d5800.cpp
+new file mode 100644
+index 0000000..765aeac
+--- /dev/null
++++ b/fixtures/game.d/fixture_004d5800.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_subsystems.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004d5800(WorldSubsystemScript* script, const char* text)
++{
++    script->WorldSubsystemScript::LoadScript(text);
++}
+diff --git a/metadata.d/004d5800.csv b/metadata.d/004d5800.csv
+new file mode 100644
+index 0000000..aa10612
+--- /dev/null
++++ b/metadata.d/004d5800.csv
+@@ -0,0 +1,6 @@
++address,type,size,symbol
++0x004d5800,function,628,?LoadScript@WorldSubsystemScript@@QAEXPBD@Z
++0x004d8fd0,function,281,?ReadToken@WorldSubsystemScript@@QAEHPAD@Z
++0x004ee6fc,library,6,??2@YAPAXI@Z
++0x00583cfc,string,6,
++0x00583cd0,string,44,
+diff --git a/src/match_004d5800.cpp b/src/match_004d5800.cpp
+new file mode 100644
+index 0000000..35b4684
+--- /dev/null
++++ b/src/match_004d5800.cpp
+@@ -0,0 +1,86 @@
++#include "startup_world_subsystems.h"
++#include "startup_game_file.h"
++#include "startup_ble_file.h"
++#include <string.h>
++
++// The retail unit expands one level of the comment skipper at both call sites.
++static inline int SkipLoadComments(WorldSubsystemScript* script)
++{
++    int count = 0;
++    if (*script->cursor_591c == '/')
++    {
++        script->cursor_591c++;
++        count = 1;
++        if (*script->cursor_591c != '\n')
++        {
++            do
++            {
++                count++;
++                script->cursor_591c++;
++            } while (*script->cursor_591c != '\n');
++        }
++        int leading = 0;
++        while (*script->cursor_591c == ' ' || *script->cursor_591c == '\r' || *script->cursor_591c == '\n'
++               || *script->cursor_591c == '\t')
++        {
++            leading++;
++            script->cursor_591c++;
++        }
++        count += script->SkipComments() + leading;
++        int trailing = 0;
++        while (*script->cursor_591c == ' ' || *script->cursor_591c == '\r' || *script->cursor_591c == '\n'
++               || *script->cursor_591c == '\t')
++        {
++            trailing++;
++            script->cursor_591c++;
++        }
++        count += trailing;
++    }
++    return count;
++}
++
++// Loads the compiled .ble image beside the given script name and parses its State blocks.
++// FUNCTION: BEACHLIFE 0x004d5800
++void WorldSubsystemScript::LoadScript(const char* text)
++{
++    char token[52];
++    int position = 0;
++    int length = strlen(text);
++    char* name = new char[length + 1];
++    strcpy(name, text);
++    name[length - 4] = '.';
++    name[length - 3] = 'b';
++    name[length - 2] = 'l';
++    name[length - 1] = 'e';
++    int size = GetFileSize(name);
++    cursor_591c = LoadBleFile(name);
++    delete name;
++    char* image = cursor_591c;
++    while (size > position)
++    {
++        int count = 0;
++        while (*cursor_591c == ' ' || *cursor_591c == '\r' || *cursor_591c == '\n' || *cursor_591c == '\t')
++        {
++            count++;
++            cursor_591c++;
++        }
++        position += count;
++        position += SkipLoadComments(this);
++        if (size <= position)
++            break;
++        position += ReadToken(token);
++        if (strcmp(token, "State") == 0)
++        {
++            position += ParseState();
++        }
++        else if (token[0] == '/')
++        {
++            position += SkipLoadComments(this);
++        }
++        else
++        {
++            StartupFatal("Invalid Command Recieved in ObjectScript %s", token);
++        }
++    }
++    delete image;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004d5800.json b/targets/beachlife-uk-1.1.d/004d5800.json
+new file mode 100644
+index 0000000..0c57818
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004d5800.json
+@@ -0,0 +1,29 @@
++{
++  "functions": [
++    {
++      "address": "0x004d5800",
++      "size": 628,
++      "name": "WorldSubsystemScript::LoadScript",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004d5800.cpp": [
++      "/Ob1"
++    ]
++  },
++  "comparison_anchors": [
++    {
++      "address": "0x004d8fd0",
++      "size": 281,
++      "name": "WorldSubsystemScript::ReadToken",
++      "symbol": "?ReadToken@WorldSubsystemScript@@QAEHPAD@Z",
++      "header": "startup_world_subsystems.h",
++      "kind": "integer-member",
++      "return_type": "int",
++      "parameters": [
++        "char*"
++      ]
++    }
++  ]
++}

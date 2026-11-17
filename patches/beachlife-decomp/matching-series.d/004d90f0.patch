@@ -1,0 +1,168 @@
+diff --git a/fixtures/game.d/fixture_004d90f0.cpp b/fixtures/game.d/fixture_004d90f0.cpp
+new file mode 100644
+index 0000000..c194d9f
+--- /dev/null
++++ b/fixtures/game.d/fixture_004d90f0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_subsystems.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) int Fixture_004d90f0(WorldSubsystemScript* script)
++{
++    return script->WorldSubsystemScript::ParseMessage();
++}
+diff --git a/metadata.d/004d90f0.csv b/metadata.d/004d90f0.csv
+new file mode 100644
+index 0000000..d1c2bd4
+--- /dev/null
++++ b/metadata.d/004d90f0.csv
+@@ -0,0 +1,9 @@
++address,type,size,symbol
++0x004d90f0,function,665,?ParseMessage@WorldSubsystemScript@@QAEHXZ
++0x004d8fd0,function,281,?ReadToken@WorldSubsystemScript@@QAEHPAD@Z
++0x00582e80,global,864,?world_script_message_names@@3QBUWorldScriptMessageName@@B
++0x00584cb8,string,85,
++0x00584c64,string,63,
++0x005828e8,string,4,
++0x00584cac,string,10,
++0x00584ca4,string,7,
+diff --git a/src/match_004d90f0.cpp b/src/match_004d90f0.cpp
+new file mode 100644
+index 0000000..7e5fd2f
+--- /dev/null
++++ b/src/match_004d90f0.cpp
+@@ -0,0 +1,89 @@
++#include "startup_world_subsystems.h"
++#include "startup_game_file.h"
++#include <string.h>
++
++static inline int SkipMessageWhitespace(WorldSubsystemScript* script)
++{
++    int count = 0;
++    while (*script->cursor_591c == ' ' || *script->cursor_591c == '\r' || *script->cursor_591c == '\n'
++           || *script->cursor_591c == '\t')
++    {
++        count++;
++        script->cursor_591c++;
++    }
++    return count;
++}
++
++// The retail unit expands one level of the comment skipper here.
++static inline int SkipMessageComments(WorldSubsystemScript* script)
++{
++    int count = 0;
++    if (*script->cursor_591c == '/')
++    {
++        script->cursor_591c++;
++        count = 1;
++        if (*script->cursor_591c != '\n')
++        {
++            do
++            {
++                count++;
++                script->cursor_591c++;
++            } while (*script->cursor_591c != '\n');
++        }
++        int leading = 0;
++        while (*script->cursor_591c == ' ' || *script->cursor_591c == '\r' || *script->cursor_591c == '\n'
++               || *script->cursor_591c == '\t')
++        {
++            leading++;
++            script->cursor_591c++;
++        }
++        count += script->SkipComments() + leading;
++        int trailing = 0;
++        while (*script->cursor_591c == ' ' || *script->cursor_591c == '\r' || *script->cursor_591c == '\n'
++               || *script->cursor_591c == '\t')
++        {
++            trailing++;
++            script->cursor_591c++;
++        }
++        count += trailing;
++    }
++    return count;
++}
++
++// Reads the message name and stores its id in the current rule's next command slot.
++static inline int DetermineMessage(WorldSubsystemScript* script)
++{
++    char name[52];
++    int count = script->ReadToken(name);
++    for (unsigned int index = 0; index < 108; ++index)
++    {
++        if (strcmp(name, world_script_message_names[index].name) == 0)
++        {
++            script->rules_00[script->count_5910].commands_04[script->rules_00[script->count_5910].count_16c].id_00 = world_script_message_names[index].id;
++            return count;
++        }
++    }
++    StartupFatal("ObjectScript::DetermineMessage - Message doesn't exist check message decode table %s", name);
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004d90f0
++int WorldSubsystemScript::ParseMessage()
++{
++    int count = DetermineMessage(this) + SkipMessageWhitespace(this);
++    int comments = SkipMessageComments(this);
++    char token[52];
++    count += ReadToken(token) + comments;
++    while (strcmp(token, "End") != 0)
++    {
++        if (strcmp(token, "OnReceipt") == 0)
++            count += ParseStateActions(3);
++        else if (strcmp(token, "OnSend") == 0)
++            count += ParseStateActions(4);
++        else
++            StartupFatal("ObjectScript::ProcessMessageCommand - Unknown Command Found %s", token);
++        count += ReadToken(token);
++    }
++    ++rules_00[count_5910].count_16c;
++    return count;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004d90f0.json b/targets/beachlife-uk-1.1.d/004d90f0.json
+new file mode 100644
+index 0000000..20d8236
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004d90f0.json
+@@ -0,0 +1,39 @@
++{
++  "functions": [
++    {
++      "address": "0x004d90f0",
++      "size": 665,
++      "name": "WorldSubsystemScript::ParseMessage",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004d90f0.cpp": [
++      "/Ob1"
++    ]
++  },
++  "comparison_global_operands": [
++    {
++      "function": "0x004d90f0",
++      "instruction_offset": 83,
++      "global": "0x00582e80",
++      "source": "match_004d90f0.cpp",
++      "member_offset": 4,
++      "element_size": 8
++    }
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x004d8fd0",
++      "size": 281,
++      "name": "WorldSubsystemScript::ReadToken",
++      "symbol": "?ReadToken@WorldSubsystemScript@@QAEHPAD@Z",
++      "header": "startup_world_subsystems.h",
++      "kind": "integer-member",
++      "return_type": "int",
++      "parameters": [
++        "char*"
++      ]
++    }
++  ]
++}

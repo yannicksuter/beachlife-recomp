@@ -1,0 +1,342 @@
+diff --git a/fixtures/game.d/fixture_0048d3e0.cpp b/fixtures/game.d/fixture_0048d3e0.cpp
+new file mode 100644
+index 0000000..d6ee3a2
+--- /dev/null
++++ b/fixtures/game.d/fixture_0048d3e0.cpp
+@@ -0,0 +1,10 @@
++#include "startup_world_entities.h"
++
++// The handler is a virtual slot; this standalone wrapper retains the body.
++typedef bool (WorldServiceStaffEntity::*ServiceCommandHandler)(ScreenModeCommand* command);
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) bool Fixture_0048d3e0(WorldServiceStaffEntity* entity, ScreenModeCommand* command)
++{
++    return entity->WorldServiceStaffEntity::Unknown14(command);
++}
+diff --git a/metadata.d/0048d3e0.csv b/metadata.d/0048d3e0.csv
+new file mode 100644
+index 0000000..88a6f78
+--- /dev/null
++++ b/metadata.d/0048d3e0.csv
+@@ -0,0 +1,18 @@
++address,type,size,symbol
++0x0048d3e0,function,3520,?Unknown14@WorldServiceStaffEntity@@UAE_NPAUScreenModeCommand@@@Z
++0x0057b9e4,string,17,
++0x0057b9f8,string,16,
++0x0057ba08,string,17,
++0x0057ba1c,string,10,
++0x0057ba28,string,16,
++0x0057ba38,string,13,
++0x0057ba48,string,16,
++0x0057ba58,string,13,
++0x0057ba68,string,14,
++0x0057ba78,string,14,
++0x0057ba88,string,12,
++0x0057ba94,string,11,
++0x0057baa0,string,12,
++0x0057baac,string,13,
++0x0057babc,string,11,
++0x0057bac8,string,13,
+diff --git a/src/match_0048d3e0.cpp b/src/match_0048d3e0.cpp
+new file mode 100644
+index 0000000..2aa16d6
+--- /dev/null
++++ b/src/match_0048d3e0.cpp
+@@ -0,0 +1,275 @@
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include "startup_world_entities.h"
++#include "window_activation.h"
++#include <stdlib.h>
++#include <string.h>
++
++#include "startup_screen_command_inlines.h"
++
++// Index of the named frame in a keyline's resource record, or -1.
++static inline int ServiceFrameIndex(ScreenDialogResource* keyline, const char* name)
++{
++    for (int i = 0; i < keyline->record->frame_count; ++i)
++        if (strcmp(name, keyline->record->frames[i]->name) == 0)
++            return i;
++    return -1;
++}
++
++// The service animations' clock (window_deactivation_state->time_158).
++static inline float ServiceClock()
++{
++    return window_deactivation_state->time_158;
++}
++
++// The bar and kitchen staff command handler: 0x24 answers an order (the chef
++// waits for his catch_burger frames), 0x32 reports home, 0x26 pays the wages,
++// 0x3c steps the barman/barwoman glass and chef burger animations, 0x54 starts
++// collecting glasses and 0x39 steps the DJ's fourteen-state routine. Like
++// retail, every handled command returns an unset byte.
++// FUNCTION: BEACHLIFE 0x0048d3e0
++bool WorldServiceStaffEntity::Unknown14(ScreenModeCommand* command)
++{
++    bool result;
++    float duration;
++    switch (command->words[2])
++    {
++    case 0x24:
++    {
++        ScreenModeCommand reply(id_28, command->words[4], 0x30, command->words[3], command->words[4], command->words[6].number);
++        if (strcmp(staff_104->resource_cc, "CHEF") == 0)
++        {
++            int frame = ServiceFrameIndex(keyline_state_44, "catch_burger");
++            Unknown24(reply, static_cast<float>(keyline_state_44->record->frames[frame]->count_0a) / keyline_state_44->word_0c + 1.0f);
++        }
++        else
++            Unknown24(reply, 1.0f);
++        if (word_778)
++            keyline_state_44->SetAnimation("stand", ServiceClock(), &position_30);
++        word_778 = 1;
++        ScreenModeCommand next(id_28, id_28, 0x3c, 0, 1);
++        Unknown24(next, 1.0f);
++        break;
++    }
++    case 0x32:
++    {
++        ScreenModeCommand next(id_28, home_id_100, 0x53, 0, 0);
++        Unknown20(next);
++        break;
++    }
++    case 0x26:
++    {
++        float cash = window_deactivation_state->economy_1c->value_80;
++        cash -= wages_108;
++        window_deactivation_state->economy_1c->value_80 = cash;
++        break;
++    }
++    case 0x3c:
++    {
++        if (strcmp(staff_104->resource_cc, "BARMAN") == 0 || strcmp(staff_104->resource_cc, "BARWOMAN") == 0)
++        {
++            switch (command->words[4])
++            {
++            case 1:
++            {
++                word_778 = 1;
++                duration = window_deactivation_state->time_158;
++                duration = keyline_state_44->SetAnimation("serve_drink", duration, &position_30);
++                ScreenModeCommand next(id_28, id_28, 0x3c, 0, 2);
++                Unknown24(next, duration);
++                break;
++            }
++            case 3:
++                if (word_778 == 3)
++                {
++                    if (rand() % 2)
++                    {
++                        duration = window_deactivation_state->time_158;
++                        duration = keyline_state_44->SetAnimation("blow_glass", duration, &position_30);
++                    }
++                    else
++                    {
++                        duration = window_deactivation_state->time_158;
++                        duration = keyline_state_44->SetAnimation("clean_glass", duration, &position_30);
++                    }
++                    ScreenModeCommand next(id_28, id_28, 0x3c, 0, 4);
++                    Unknown24(next, duration);
++                    word_778 = 4;
++                }
++                break;
++            case 4:
++                if (word_778 == 4)
++                {
++                    duration = window_deactivation_state->time_158;
++                    duration = keyline_state_44->SetAnimation("replace_glass", duration, &position_30);
++                    ScreenModeCommand next(id_28, id_28, 0x3c, 0, 5);
++                    Unknown24(next, duration);
++                    word_778 = 5;
++                }
++                break;
++            case 5:
++                if (word_778 == 5)
++                {
++                    keyline_state_44->SetAnimation("stand", ServiceClock(), &position_30);
++                    word_778 = 0;
++                }
++                break;
++            default:
++                word_778 = 0;
++                keyline_state_44->SetAnimation("stand", ServiceClock(), &position_30);
++                break;
++            }
++        }
++        else if (strcmp(staff_104->resource_cc, "CHEF") == 0 || strcmp(staff_104->resource_cc, "CHEFFFETTE") == 0)
++        {
++            switch (command->words[4])
++            {
++            case 0:
++            {
++                duration = window_deactivation_state->time_158;
++                duration = keyline_state_44->SetAnimation("serve_burger", duration, &position_30);
++                ScreenModeCommand next(id_28, id_28, 0x3c, 0, 2);
++                Unknown24(next, duration);
++                break;
++            }
++            case 1:
++            {
++                duration = window_deactivation_state->time_158;
++                duration = keyline_state_44->SetAnimation("catch_burger", duration, &position_30);
++                ScreenModeCommand next(id_28, id_28, 0x3c, 0, 0);
++                Unknown24(next, duration);
++                break;
++            }
++            default:
++                keyline_state_44->SetAnimation("stand", ServiceClock(), &position_30);
++                break;
++            }
++        }
++        break;
++    }
++    case 0x54:
++    {
++        if (!word_778)
++        {
++            word_778 = 3;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("pick_up_glass", duration, &position_30);
++            ScreenModeCommand next(id_28, id_28, 0x3c, 0, 3);
++            Unknown24(next, duration);
++        }
++        ScreenModeCommand next(id_28, id_28, 0x54, 0, 0);
++        Unknown24(next, 20.0f);
++        break;
++    }
++    case 0x39:
++    {
++        ScreenModeCommand next(id_28, id_28, 0x39, 0, 0);
++        switch (word_778)
++        {
++        case 0:
++            keyline_state_44->word_08 = 0;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_dance1", duration, &position_30);
++            Unknown24(next, duration * 20.0f);
++            word_778 = 1;
++            break;
++        case 1:
++            keyline_state_44->word_08 = 1;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_to_dance1", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 2;
++            break;
++        case 2:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_to_mic", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 3;
++            break;
++        case 3:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_que_deck1", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 4;
++            break;
++        case 4:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_mix", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 5;
++            break;
++        case 5:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_flip_deck2", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 6;
++            break;
++        case 6:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_to_dance1", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 7;
++            break;
++        case 7:
++            keyline_state_44->word_08 = 0;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_dance1", duration, &position_30);
++            Unknown24(next, duration * 20.0f);
++            word_778 = 8;
++            break;
++        case 8:
++            keyline_state_44->word_08 = 1;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_to_dance1", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 9;
++            break;
++        case 9:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_to_mic", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 10;
++            break;
++        case 10:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_que_deck2", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 11;
++            break;
++        case 11:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_mix", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 12;
++            break;
++        case 12:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_flip_deck1", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 13;
++            break;
++        case 13:
++            keyline_state_44->word_08 = 2;
++            duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation("Stand_to_dance1", duration, &position_30);
++            Unknown24(next, duration);
++            word_778 = 0;
++            break;
++        }
++        break;
++    }
++    default:
++        result = WorldPedestrianEntity::Unknown14(command);
++        break;
++    }
++    return result;
++}
+diff --git a/targets/beachlife-uk-1.1.d/0048d3e0.json b/targets/beachlife-uk-1.1.d/0048d3e0.json
+new file mode 100644
+index 0000000..121c6ef
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0048d3e0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x0048d3e0",
++      "size": 3362,
++      "name": "WorldServiceStaffEntity::Unknown14",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment and its three inline jump tables and byte index table (0x0048e104-0x0048e1a0)."
++    }
++  ],
++  "source_compile_options": {
++    "match_0048d3e0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

@@ -1,0 +1,102 @@
+diff --git a/fixtures/game.d/fixture_0041ab20.cpp b/fixtures/game.d/fixture_0041ab20.cpp
+new file mode 100644
+index 0000000..8609f28
+--- /dev/null
++++ b/fixtures/game.d/fixture_0041ab20.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_overlay_layout.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_0041ab20(OverlayMapPrefix* map)
++{
++    map->OverlayMapPrefix::UpdateViewTiles();
++}
+diff --git a/metadata.d/0041ab20.csv b/metadata.d/0041ab20.csv
+new file mode 100644
+index 0000000..f613b91
+--- /dev/null
++++ b/metadata.d/0041ab20.csv
+@@ -0,0 +1,6 @@
++address,type,size,symbol
++0x0041ab20,function,452,?UpdateViewTiles@OverlayMapPrefix@@QAEXXZ
++0x004f336c,float,4,
++0x004f3394,float,4,
++0x004f3318,float,4,
++0x004ee6f0,library,6,__ftol
+diff --git a/src/match_0041ab20.cpp b/src/match_0041ab20.cpp
+new file mode 100644
+index 0000000..0536923
+--- /dev/null
++++ b/src/match_0041ab20.cpp
+@@ -0,0 +1,55 @@
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++
++// Maps the cached tile views inside the visible tile range and releases the views outside it. The ready tests
++// index rows by cache_height_d8 while the stores use cache_width_d4, as in retail.
++// FUNCTION: BEACHLIFE 0x0041ab20
++void OverlayMapPrefix::UpdateViewTiles()
++{
++    // The scale stays in float arithmetic: a double product makes VC6 emit fld st(1); fmulp instead of
++    // fmul st,st(1).
++    float scale;
++    switch (renderer_fc->clip_mode_54)
++    {
++    case 0:
++        scale = 0.5f;
++        break;
++    case 2:
++        scale = 2.0f;
++        break;
++    default:
++        scale = 1.0f;
++        break;
++    }
++    int left = scroll_x_c4 / tile_size_dc;
++    int top = scroll_y_c8 / tile_size_dc;
++    int right = (scroll_x_c4 + static_cast<int>(static_cast<unsigned int>(view_ac.right) * scale)) / tile_size_dc;
++    int bottom = (scroll_y_c8 + static_cast<int>(static_cast<unsigned int>(view_ac.bottom) * scale)) / tile_size_dc;
++    for (int y = 0; y < static_cast<int>(cache_height_d8); ++y)
++    {
++        for (int x = 0; x < static_cast<int>(cache_width_d4); ++x)
++        {
++            if (x >= left && x <= right && y >= top && y <= bottom)
++            {
++                if (!cached_tiles_e0[y * cache_height_d8 + x].ready)
++                {
++                    cached_tiles_e0[y * cache_width_d4 + x].ready = 1;
++                    unsigned int pixels = static_cast<unsigned int>(tile_size_dc) * tile_size_dc;
++                    unsigned int offset = (y * cache_width_d4 + x) * pixels * 4;
++                    void* view = mapped_file_f4->MapView(offset, pixels * 4);
++                    cached_tiles_e0[y * cache_width_d4 + x].view = view;
++                }
++            }
++            else if (cached_tiles_e0[y * cache_height_d8 + x].ready)
++            {
++                OverlayCachedTile& tile = cached_tiles_e0[y * cache_width_d4 + x];
++                if (tile.ready && tile.view)
++                {
++                    mapped_file_f4->ReleaseView(tile.view);
++                    cached_tiles_e0[y * cache_width_d4 + x].view = 0;
++                }
++                cached_tiles_e0[y * cache_width_d4 + x].ready = 0;
++            }
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/0041ab20.json b/targets/beachlife-uk-1.1.d/0041ab20.json
+new file mode 100644
+index 0000000..5bfe886
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0041ab20.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x0041ab20",
++      "size": 452,
++      "name": "OverlayMapPrefix::UpdateViewTiles",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

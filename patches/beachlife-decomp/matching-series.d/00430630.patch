@@ -1,0 +1,114 @@
+diff --git a/fixtures/game.d/fixture_00430630.cpp b/fixtures/game.d/fixture_00430630.cpp
+new file mode 100644
+index 0000000..217e27e
+--- /dev/null
++++ b/fixtures/game.d/fixture_00430630.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_subsystems.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) bool Fixture_00430630(WorldRouteReference* route)
++{
++    return route->WorldRouteReference::IsStraight();
++}
+diff --git a/metadata.d/00430630.csv b/metadata.d/00430630.csv
+new file mode 100644
+index 0000000..4b3311f
+--- /dev/null
++++ b/metadata.d/00430630.csv
+@@ -0,0 +1,4 @@
++address,type,size,symbol
++0x00430630,function,435,?IsStraight@WorldRouteReference@@QAE_NXZ
++0x005bac34,global,4,?screen_terrain_grid@@3PAUScreenTerrainGrid@@A
++0x00587f88,global,4,?fast_reciprocal_two@@3MA
+diff --git a/src/match_00430630.cpp b/src/match_00430630.cpp
+new file mode 100644
+index 0000000..fe7da7f
+--- /dev/null
++++ b/src/match_00430630.cpp
+@@ -0,0 +1,64 @@
++#include "startup_world_motion_helpers.h"
++#include "startup_screen_mode_world.h"
++
++extern float fast_reciprocal_two; // 2.0 read by the inline-assembly reciprocal step, 0x00587f88.
++
++// The route copies store x, then y.
++static inline void CopyRoutePosition(ScreenMapPosition& destination, const ScreenMapPosition& source)
++{
++    destination.x = source.x;
++    destination.y = source.y;
++}
++
++// Retail's fast reciprocal: 0x7f000000 - bits, then one Newton step against 2.0. The y component multiplies a float
++// copy of y by the reciprocal; x multiplies the reciprocal by x.
++static inline void DivideRoutePosition(ScreenMapPosition& position, float divisor)
++{
++    float reciprocal;
++    __asm
++        {
++        mov eax, 0x7f000000
++        sub eax, divisor
++        mov reciprocal, eax
++        fld divisor
++        fmul reciprocal
++        fsubr fast_reciprocal_two
++        fmul reciprocal
++        fstp reciprocal
++        }
++    position.x = reciprocal * position.x;
++    float y = position.y;
++    position.y = y * reciprocal;
++}
++
++// True when every step of the route keeps the first step's eight-way heading.
++// FUNCTION: BEACHLIFE 0x00430630
++bool WorldRouteReference::IsStraight()
++{
++    int count = data_00->count_08;
++    if (count <= 1)
++        return false;
++    ScreenMapPosition previous = screen_terrain_grid->TileWorldPosition(data_00->points_0c[0]);
++    ScreenMapPosition current = screen_terrain_grid->TileWorldPosition(data_00->points_0c[1]);
++    ScreenMapPosition direction;
++    float y;
++    direction.x = current.x - previous.x;
++    y = current.y - previous.y;
++    direction.y = y;
++    DivideRoutePosition(direction, WorldSquareRoot(direction.x * direction.x + y * y));
++    int heading = MotionDirection(direction, 8);
++    CopyRoutePosition(previous, current);
++    for (int i = 2; i < count; i++)
++    {
++        CopyRoutePosition(current, screen_terrain_grid->TileWorldPosition(data_00->points_0c[i]));
++        float dx = current.x - previous.x;
++        float dy = current.y - previous.y;
++        direction.x = dx;
++        direction.y = dy;
++        DivideRoutePosition(direction, WorldSquareRoot(dy * dy + dx * dx));
++        if (MotionDirection(direction, 8) != heading)
++            return false;
++        CopyRoutePosition(previous, current);
++    }
++    return true;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00430630.json b/targets/beachlife-uk-1.1.d/00430630.json
+new file mode 100644
+index 0000000..04f3081
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00430630.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00430630",
++      "size": 435,
++      "name": "WorldRouteReference::IsStraight",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00430630.cpp": [
++      "/Ob1"
++    ]
++  }
++}

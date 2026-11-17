@@ -1,0 +1,613 @@
+diff --git a/fixtures/game.d/fixture_0045caa0.cpp b/fixtures/game.d/fixture_0045caa0.cpp
+new file mode 100644
+index 0000000..d552547
+--- /dev/null
++++ b/fixtures/game.d/fixture_0045caa0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_0045caa0(WorldBuildingEntity* item, const char* value0, unsigned short* value1)
++{
++    item->WorldBuildingEntity::ReadText(value0, value1);
++}
+diff --git a/metadata.d/0045caa0.csv b/metadata.d/0045caa0.csv
+new file mode 100644
+index 0000000..99098ff
+--- /dev/null
++++ b/metadata.d/0045caa0.csv
+@@ -0,0 +1,82 @@
++address,type,size,symbol
++0x0045caa0,function,7360,?ReadText@WorldBuildingEntity@@UAEXPBDPAG@Z
++0x004f36e0,float,8,
++0x005771e4,string,63,
++0x00577254,string,14,
++0x00577264,string,12,
++0x00577278,string,8,
++0x00577280,string,7,
++0x00577288,string,16,
++0x005772a4,string,17,
++0x005772b8,string,17,
++0x005772cc,string,18,
++0x005772e0,string,20,
++0x005772f4,string,26,
++0x00577310,string,16,
++0x00577320,string,22,
++0x00577338,string,22,
++0x00577350,string,23,
++0x00577368,string,23,
++0x00577380,string,23,
++0x00577398,string,23,
++0x005773b0,string,25,
++0x005773f0,string,16,
++0x00577400,string,15,
++0x00577410,string,16,
++0x00577420,string,13,
++0x00577440,string,15,
++0x00577450,widechar,6,
++0x00577458,string,19,
++0x00577480,string,21,
++0x00577498,widechar,12,
++0x005774a4,string,18,
++0x005774b8,string,22,
++0x005774d0,string,19,
++0x005774fc,string,24,
++0x00577514,string,20,
++0x00577528,string,22,
++0x00577540,string,7,
++0x00577548,string,10,
++0x00577554,string,5,
++0x0057755c,string,5,
++0x00577564,string,21,
++0x0057757c,string,19,
++0x00577590,string,21,
++0x005775a8,string,21,
++0x005775c0,string,21,
++0x005775d8,string,19,
++0x005775ec,string,20,
++0x00577600,string,15,
++0x00577610,string,15,
++0x00577620,string,17,
++0x00577634,string,13,
++0x00577644,string,9,
++0x00577650,string,16,
++0x00577660,string,21,
++0x00577678,string,22,
++0x00577690,string,15,
++0x005776a0,string,24,
++0x005776b8,string,22,
++0x005776d0,string,20,
++0x005776e4,widechar,18,
++0x005776f8,widechar,20,
++0x0057770c,string,22,
++0x00577724,widechar,10,
++0x00577730,string,22,
++0x00577748,string,23,
++0x00577760,string,19,
++0x00577774,widechar,58,
++0x005777b0,string,15,
++0x005777c0,string,6,
++0x005777c8,string,17,
++0x005777dc,string,8,
++0x005777e4,string,13,
++0x005777f4,string,4,
++0x005777f8,string,17,
++0x0057780c,string,8,
++0x00577814,string,16,
++0x00577824,string,9,
++0x00577830,string,19,
++0x00577844,string,5,
++0x0057784c,string,7,
++0x00577854,string,14,
+diff --git a/src/match_0045caa0.cpp b/src/match_0045caa0.cpp
+new file mode 100644
+index 0000000..1a90f38
+--- /dev/null
++++ b/src/match_0045caa0.cpp
+@@ -0,0 +1,476 @@
++#include "startup_building_status.h"
++#include "startup_game_file.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_text.h"
++#include "startup_world_entities.h"
++#include "startup_world_power_factors.h"
++#include "startup_world_repairs.h"
++#include "startup_world_subsystems.h"
++#include "window_activation.h"
++
++#include <math.h>
++#include <stdlib.h>
++#include <string.h>
++#include <wchar.h>
++
++static inline ScreenRequestGamePrefix* Game()
++{
++    return screen_request_game;
++}
++
++static inline ScreenTextLookup* Lookup()
++{
++    return screen_text_lookup;
++}
++
++// Rounds with the current FPU mode, as the retail fistp does.
++static inline void RoundBuildingCents(float value, int* result)
++{
++    __asm {
++        mov eax, result
++        fld value
++        fistp DWORD PTR [eax]
++    }
++}
++
++static inline void BuildingText(unsigned short* output, const char* name)
++{
++    wcscpy(output, screen_text_lookup->LookupText(name));
++}
++
++static inline void BuildingNumber(unsigned short* output, unsigned int value)
++{
++    swprintf(output, L"%d", value);
++}
++
++static inline void BuildingMoney(unsigned short* output, float value)
++{
++    bool negative = false;
++    float fraction;
++    {
++        double integral;
++        fraction = modf(value, &integral);
++    }
++    if (value < 0.0f)
++        negative = true;
++    int whole = static_cast<int>(ceil(static_cast<float>(fabs(value)) * 100.0f)) / 100;
++    int cents;
++    RoundBuildingCents(fraction * 100.0f, &cents);
++    if (negative)
++        swprintf(output, L"-$%d.%02d", abs(whole), abs(cents));
++    else
++        swprintf(output, L"$%d.%02d", whole, abs(cents));
++    unsigned short* end = wcsrchr(output, L'.') + 3;
++    if (*end)
++        *end = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0045caa0
++void WorldBuildingEntity::ReadText(const char* key, unsigned short* output)
++{
++    if (strcmp(key, "BUILDING_NAME") == 0)
++    {
++        char name[100];
++        strcpy(name, "BUILDING_NAME_");
++        strcat(name, building_60->name_04);
++        BuildingText(output, name);
++    }
++    else if (strcmp(key, "BUILDING_OPEN") == 0)
++    {
++        switch (building_state_19c)
++        {
++        case 0:
++            BuildingText(output, "OPEN");
++            break;
++        case 1:
++            BuildingText(output, "CLOSED");
++            break;
++        }
++    }
++    else if (strcmp(key, "BUILDING_OPENHOURS") == 0)
++    {
++        if (strcmp(variable_catalog->HoursName(building_60->hours_1e8), "ALLHOURS") == 0)
++            BuildingText(output, "BI_HOURS_ALLDAY");
++        else if (strcmp(variable_catalog->HoursName(building_60->hours_1e8), "MORNING") == 0)
++            BuildingText(output, "BI_HOURS_MORNING");
++        else if (strcmp(variable_catalog->HoursName(building_60->hours_1e8), "DAY") == 0)
++            BuildingText(output, "BI_HOURS_DAY");
++        else if (strcmp(variable_catalog->HoursName(building_60->hours_1e8), "EVENING") == 0)
++            BuildingText(output, "BI_HOURS_EVENING");
++        else if (strcmp(variable_catalog->HoursName(building_60->hours_1e8), "NIGHT") == 0)
++            BuildingText(output, "BI_HOURS_NIGHT");
++        else
++            wcscpy(output, L"HOURS KEYWORD NOT RECOGNISED");
++    }
++    else if (strcmp(key, "BUILDING_MAXGUESTS") == 0)
++        BuildingNumber(output, building_60->capacity_1dc);
++    else if (strcmp(key, "BUILDING_CURRENTGUESTS") == 0)
++        BuildingNumber(output, word_1a0);
++    else if (strcmp(key, "BUILDING_SATISFACTION") == 0)
++        swprintf(output, L"%.2f", static_cast<double>(*reinterpret_cast<float*>(&word_1a4)));
++    else if (strcmp(key, "BUILDING_INCOMETODAY$") == 0)
++        BuildingMoney(output, building_values_214[0]);
++    else if (strcmp(key, "BUILDING_COSTTODAY$") == 0)
++        BuildingMoney(output, building_values_214[1]);
++    else if (strcmp(key, "BUILDING_PROFITTODAY$") == 0)
++        BuildingMoney(output, building_values_214[2]);
++    else if (strcmp(key, "BUILDING_AVERAGEPROFIT$") == 0)
++        BuildingMoney(output, building_values_214[3]);
++    else if (strcmp(key, "BUILDING_POWER") == 0)
++    {
++        int value = word_35c;
++        if (value < 0)
++        {
++            if (building_state_19c == 0)
++                BuildingNumber(output, abs(value));
++            else
++                BuildingNumber(output, 0);
++        }
++        else
++            BuildingNumber(output, value);
++    }
++    else if (strcmp(key, "BUILDING_OUTPUT_POWER") == 0)
++    {
++        int value = building_60->power_cf4;
++        if (value < 0)
++        {
++            if (building_state_19c == 0)
++            {
++                value = abs(value);
++                switch (power_state_33c)
++                {
++                case 0:
++                    value = static_cast<int>(value * building_power_factor_full);
++                    break;
++                case 1:
++                    value = static_cast<int>(value * building_power_factor_high);
++                    break;
++                case 2:
++                    value = static_cast<int>(value * building_power_factor_half);
++                    break;
++                case 3:
++                    value = static_cast<int>(value * building_power_factor_low);
++                    break;
++                }
++            }
++            else
++                value = 0;
++        }
++        BuildingNumber(output, value);
++    }
++    else if (strcmp(key, "BUILDING_POWER_TITLE") == 0)
++    {
++        if (static_cast<int>(word_35c) < 0)
++            BuildingText(output, "BI_POWER_OUTPUT");
++        else
++            BuildingText(output, "BI_POWER");
++    }
++    else if (strcmp(key, "BUILDING_AGE") == 0)
++    {
++        if (word_224 == 0)
++            swprintf(output, screen_text_lookup->LookupText("BI_BUILD_AGE_NEW"));
++        else if (word_224 == 1)
++            swprintf(output, screen_text_lookup->LookupText("BI_BUILD_AGE_1"));
++        else
++            swprintf(output, screen_text_lookup->LookupText("BI_BUILD_AGE_N"), word_224);
++    }
++    else if (strcmp(key, "BUILDING_LAST_FAULT") == 0)
++    {
++        float time = value_328;
++        if (time < 0.0f)
++            swprintf(output, screen_text_lookup->LookupText("BI_LAST_FAULT_NONE"));
++        else
++        {
++            swprintf(output, Lookup()->LookupText("BI_LAST_FAULT_FORMAT"), Game()->TimeHours(value_328), Game()->TimeMinutes(time), word_32c + 1);
++        }
++    }
++    else if (strcmp(key, "BUILDING_LASTINSPECT") == 0)
++    {
++        float time = value_348;
++        if (time < 0.0f)
++            swprintf(output, screen_text_lookup->LookupText("BI_LAST_INSPECT_NONE"));
++        else
++        {
++            swprintf(output, Lookup()->LookupText("BI_LAST_FAULT_FORMAT"), Game()->TimeHours(value_348), Game()->TimeMinutes(time), word_34c + 1);
++        }
++    }
++    else if (strcmp(key, "BUILDING_NUMFAULTS") == 0)
++        BuildingNumber(output, building_value_330);
++    else if (strcmp(key, "BUILDING_REPAIRSTATE") == 0)
++    {
++        switch (power_state_33c)
++        {
++        case 0:
++            BuildingText(output, "GOOD");
++            break;
++        case 1:
++            BuildingText(output, "POOR");
++            break;
++        case 2:
++            BuildingText(output, "DANGEROUS");
++            break;
++        case 3:
++            BuildingText(output, "BROKEN");
++            break;
++        }
++    }
++    else if (strcmp(key, "BUILDING_REPAIRSTATUS") == 0)
++    {
++        WorldRepairManager* repairs = window_deactivation_state->repairs_28;
++        switch (repairs->ObjectStatus(id_28))
++        {
++        case 0:
++            BuildingText(output, "BI_REPAIR_NO_MECHANICS");
++            break;
++        case 1:
++            BuildingText(output, "BI_REPAIR_CANT_REACH");
++            break;
++        case 2:
++            if (flags_5a[3] || repair_requested_5f)
++                BuildingText(output, "BI_REPAIR_WAITING");
++            else
++                BuildingText(output, "BI_REPAIR_NOT_NEEDED");
++            break;
++        case 3:
++            if (flags_5a[3] || repair_requested_5f)
++                BuildingText(output, "BI_REPAIR_REQUESTED");
++            else
++                BuildingText(output, "BI_REPAIR_REQUIRED");
++            break;
++        case 5:
++            BuildingText(output, "BI_REPAIR_MECHANIC_COMING");
++            break;
++        case 6:
++            BuildingText(output, "BI_REPAIR_REPAIRING");
++            break;
++        case 4:
++            BuildingText(output, "BI_INSPECT_REQUIRED");
++            break;
++        }
++    }
++    else if (strcmp(key, "BUILDING_CLEANINGSTATUS") == 0)
++    {
++        WorldCleaningManager* cleaning = window_deactivation_state->cleaning_2c;
++        switch (cleaning->ObjectTask(id_28))
++        {
++        case 2:
++            BuildingText(output, "BI_CLEAN_NOT_NEEDED");
++            break;
++        case 3:
++            BuildingText(output, "BI_CLEAN_REQUIRED");
++            break;
++        case 4:
++            BuildingText(output, "BI_CLEAN_ONROUTE");
++            break;
++        case 5:
++            BuildingText(output, "BI_CLEAN_CLEANING");
++            break;
++        case 1:
++            BuildingText(output, "BI_CLEAN_NO_CLEANERS");
++            break;
++        }
++    }
++    else if (strcmp(key, "BUILDING_REPAIRINTERVAL") == 0)
++        BuildingNumber(output, word_334);
++    else if (strcmp(key, "BUILDING_NUMVISITS") == 0)
++        BuildingNumber(output, building_value_350);
++    else if (strcmp(key, "BUILDING_SINCECLEANED") == 0)
++        BuildingNumber(output, word_354);
++    else if (strcmp(key, "BUILDING_BEERCOST") == 0)
++    {
++        VariableBuilding* definition = building_60;
++        int index = -1;
++        for (unsigned int i = 0; i < definition->rows_1f4; ++i)
++            if (_stricmp("Beer", variable_catalog->FeatureName(definition->features_1fc[i])) == 0)
++            {
++                index = i;
++                break;
++            }
++        swprintf(output, L"$%.2f", static_cast<double>(feature_prices_1f8[index]));
++    }
++    else if (strcmp(key, "BUILDING_BEERPROFIT$") == 0)
++    {
++        VariableBuilding* definition = building_60;
++        int index = -1;
++        for (unsigned int i = 0; i < definition->rows_1f4; ++i)
++            if (_stricmp("Beer", variable_catalog->FeatureName(definition->features_1fc[i])) == 0)
++            {
++                index = i;
++                break;
++            }
++        swprintf(output, L"$%.2f", static_cast<double>(feature_floats_1d0[index] - feature_prices_1f8[index]));
++    }
++    else if (strcmp(key, "BUILDING_BEERPRICE") == 0)
++    {
++        VariableBuilding* definition = building_60;
++        int index = -1;
++        for (unsigned int i = 0; i < definition->rows_1f4; ++i)
++            if (_stricmp("Beer", variable_catalog->FeatureName(definition->features_1fc[i])) == 0)
++            {
++                index = i;
++                break;
++            }
++        swprintf(output, L"%.2f", static_cast<double>(feature_floats_1d0[index]));
++    }
++    else if (strncmp(key, "BUILDING_THOUGHTS_", 18) == 0)
++    {
++        swprintf(output, L"%s", thoughts_428[atoi(key + 18)]->data_00);
++    }
++    else if (strncmp(key, "THOUGHTS_NAME_", 14) == 0)
++    {
++        VariableThought* thought = thoughts_428[atoi(key + 14)];
++        VariableEntity* guest = variable_world->FindObject(thought->target_04);
++        swprintf(output, L"%s", guest->AsGuest()->personal_name_260);
++    }
++    else if (strncmp(key, "COMMOD_PRICE_", 13) == 0)
++        swprintf(output, L"%.2f", static_cast<double>(feature_floats_1d0[atoi(key + 13)]));
++    else if (strncmp(key, "COMMOD_NAME_", 12) == 0)
++    {
++        int index = atoi(key + 12);
++        if (_stricmp("Beer", variable_catalog->FeatureName(building_60->features_1fc[index])) == 0)
++        {
++            if (strcmp(name_06, "COCKTAIL") == 0)
++                swprintf(output, L"%s", Lookup()->LookupText(variable_catalog->UnlockRecord(drink_type_210)->cocktail_84));
++            else
++                swprintf(output, L"%s", Lookup()->LookupText(variable_catalog->UnlockRecord(drink_type_210)->beer_44));
++        }
++        else
++        {
++            char name[100];
++            strcpy(name, "COMMODITY_NAME_");
++            strcat(name, variable_catalog->FeatureKey(building_60->features_1fc[index]));
++            BuildingText(output, name);
++        }
++    }
++    else if (strncmp(key, "COMMOD_PROFIT_", 14) == 0)
++    {
++        int index = atoi(key + 14);
++        swprintf(output, L"%.2f", static_cast<double>(feature_floats_1d0[index] - feature_prices_1f8[index]));
++    }
++    else if (strncmp(key, "COMMOD_PROFIT$_", 15) == 0)
++    {
++        int index = atoi(key + 15);
++        float profit = feature_floats_1d0[index] - feature_prices_1f8[index];
++        swprintf(output, L"$%.2f", static_cast<double>(fabs(profit) > 0.001f ? profit : 0.0f));
++    }
++    else if (strcmp(key, "BEER_STRENGTH") == 0)
++        swprintf(output, L"%.2f", static_cast<double>(drink_value_20c));
++    else if (strcmp(key, "BI_BUILDING_OPEN") == 0)
++    {
++        if (building_state_19c == 0)
++            BuildingNumber(output, 0);
++        else
++            BuildingNumber(output, 1);
++    }
++    else if (strncmp(key, "BI_BUILDING_OPEN_STATUS_", 24) == 0)
++    {
++        if (atoi(key + 24))
++            BuildingNumber(output, 1);
++        else
++        {
++            bool working = true;
++            if (byte_364)
++                working = false;
++            if (power_state_33c != 3 && working)
++            {
++                unsigned int hour = window_deactivation_state->CurrentHour();
++                unsigned int open = static_cast<int>(variable_catalog->OpeningHour(building_60->hours_1e8));
++                unsigned int close = static_cast<int>(variable_catalog->ClosingHour(building_60->hours_1e8));
++                if ((hour >= open && hour < close) || (open > close ? hour >= open || hour <= close : open == close))
++                {
++                    BuildingNumber(output, 1);
++                    return;
++                }
++            }
++            BuildingNumber(output, 0);
++        }
++    }
++    else if (strcmp(key, "BI_CALL_CLEANER_STATE") == 0)
++    {
++        bool enabled = true;
++        if (cleaning_requested_5e)
++            enabled = false;
++        if (variable_world->CountType(11) && enabled)
++            BuildingNumber(output, 1);
++        else
++            BuildingNumber(output, 0);
++    }
++    else if (strcmp(key, "BI_CALL_MECHANIC_STATE") == 0)
++    {
++        bool enabled = true;
++        if (repair_requested_5f)
++            enabled = false;
++        if (variable_world->CountType(8) && enabled)
++            BuildingNumber(output, 1);
++        else
++            BuildingNumber(output, 0);
++    }
++    else if (strcmp(key, "BUILDING_GUESTARRTOTAL") == 0)
++        swprintf(output, screen_text_lookup->LookupText("FP_GUEST_FORMAT"), window_deactivation_state->arrived_740[0] + window_deactivation_state->arrived_740[1], window_deactivation_state->arrived_740[0], window_deactivation_state->arrived_740[1]);
++    else if (strcmp(key, "BUILDING_GUESTARRTODAY") == 0)
++        swprintf(output, screen_text_lookup->LookupText("FP_GUEST_FORMAT"), window_deactivation_state->arrived_750[0] + window_deactivation_state->arrived_750[1], window_deactivation_state->arrived_750[0], window_deactivation_state->arrived_750[1]);
++    else if (strcmp(key, "BUILDING_GUESTDEPTOTAL") == 0)
++        swprintf(output, screen_text_lookup->LookupText("FP_GUEST_FORMAT"), window_deactivation_state->departed_748[0] + window_deactivation_state->departed_748[1], window_deactivation_state->departed_748[0], window_deactivation_state->departed_748[1]);
++    else if (strcmp(key, "BUILDING_GUESTDEPTODAY") == 0)
++        swprintf(output, screen_text_lookup->LookupText("FP_GUEST_FORMAT"), window_deactivation_state->departed_758[0] + window_deactivation_state->departed_758[1], window_deactivation_state->departed_758[0], window_deactivation_state->departed_758[1]);
++    else if (strcmp(key, "BUILDING_GUESTUNTOTAL") == 0)
++        swprintf(output, screen_text_lookup->LookupText("FP_GUEST_FORMAT"), window_deactivation_state->unhappy_760[0] + window_deactivation_state->unhappy_760[1], window_deactivation_state->unhappy_760[0], window_deactivation_state->unhappy_760[1]);
++    else if (strcmp(key, "BUILDING_GUESTUNTODAY") == 0)
++        swprintf(output, screen_text_lookup->LookupText("FP_GUEST_FORMAT"), window_deactivation_state->unhappy_768[0] + window_deactivation_state->unhappy_768[1], window_deactivation_state->unhappy_768[0], window_deactivation_state->unhappy_768[1]);
++    else if (strcmp(key, "BUILDING_CONFIRM_DEMOLISH") == 0)
++    {
++        VariableBuilding* building = building_60;
++        swprintf(output, screen_text_lookup->LookupText("BI_CONFIRM_DEMOLISH"), *reinterpret_cast<unsigned int*>(building->unknown_1d0));
++    }
++    else if (strcmp(key, "CONSTRUCT_AMOUNT%") == 0)
++    {
++        VariableBuildingStatus* status = window_deactivation_state->building_status_48;
++        swprintf(output, L"%d%%", static_cast<int>(status->ConstructionProgress(id_28) * 100.0f));
++    }
++    else if (strcmp(key, "CONSTRUCT_AMOUNT") == 0)
++    {
++        VariableBuildingStatus* status = window_deactivation_state->building_status_48;
++        swprintf(output, L"%f", static_cast<double>(status->ConstructionProgress(id_28)));
++    }
++    else if (strcmp(key, "DEMOLISH_AMOUNT%") == 0)
++    {
++        VariableBuildingStatus* status = window_deactivation_state->building_status_48;
++        swprintf(output, L"%d%%", static_cast<int>(status->DemolitionProgress(id_28) * 100.0f));
++    }
++    else if (strcmp(key, "DEMOLISH_AMOUNT") == 0)
++    {
++        VariableBuildingStatus* status = window_deactivation_state->building_status_48;
++        swprintf(output, L"%f", static_cast<double>(status->DemolitionProgress(id_28)));
++    }
++    else if (strncmp(key, "EVENT", 5) == 0)
++    {
++        int index = static_cast<signed char>(key[5]) - '0';
++        const char* suffix = key + 6;
++        if (strncmp(suffix, "_PRICE", 6) == 0)
++            swprintf(output, L"%f", static_cast<double>(events_170->Price(index)));
++        else if (strcmp(suffix, "_PROFIT") == 0)
++            swprintf(output, L"%f", static_cast<double>(events_170->Profit(index)));
++        else if (strcmp(suffix, "_START_TIME") == 0)
++        {
++            float time = events_170->StartTime(index);
++            swprintf(output, Lookup()->LookupText("BI_EVENT_TIME"), index + 1, Game()->TimeHours(time), Game()->TimeMinutes(time));
++        }
++    }
++    else if (strcmp(key, "STAFF_BEACH_OPEN") == 0)
++    {
++        if (screen_terrain_grid->RouteEnabled(0, word_450) && screen_terrain_grid->RouteEnabled(1, word_450))
++            BuildingNumber(output, 1);
++        else
++            BuildingNumber(output, 0);
++    }
++    else if (strncmp(key, "STAFF_BEACH_OPEN_STATUS_", 24) == 0)
++    {
++        if (pending_staff_90 + staff_count_8c == 0)
++            BuildingNumber(output, 0);
++        else
++            BuildingNumber(output, 1);
++    }
++    else
++        StartupFatal("BuildingObject::GetVariable - data keyword not recognised - %s", key);
++}
+diff --git a/targets/beachlife-uk-1.1.d/0045caa0.json b/targets/beachlife-uk-1.1.d/0045caa0.json
+new file mode 100644
+index 0000000..f7320b5
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0045caa0.json
+@@ -0,0 +1,24 @@
++{
++  "functions": [
++    {
++      "address": "0x0045caa0",
++      "size": 7278,
++      "name": "WorldBuildingEntity::ReadText",
++      "name_status": "Virtual text reader; audited original code extent, excluding alignment and four inline switch tables."
++    }
++  ],
++  "runtime_cdecl_imports": [
++    "modf",
++    "wcsrchr"
++  ],
++  "source_compile_options": {
++    "match_0045caa0.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_0045caa0.cpp",
++    "fixture_0045caa0.cpp"
++  ]
++}
