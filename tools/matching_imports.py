@@ -54,14 +54,24 @@ def coff_import_symbols(path):
     return sorted(result)
 
 
-def validate_stdcall_imports(dll, symbols, export_names='undecorated'):
-    """Validate import identities before writing files or invoking the librarian."""
+def validate_stdcall_imports(dll, symbols, export_names='undecorated', ordinals=None):
+    """Validate import identities before writing files or invoking the librarian.
+
+    export_names 'ordinal' imports every symbol by its DLL ordinal (NONAME):
+    ordinals then maps each symbol to a distinct ordinal; other modes take none."""
     if not isinstance(dll, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*\.dll", dll):
         raise ValueError('Expected a DLL basename.')
     if not isinstance(symbols, dict) or not symbols:
         raise ValueError('Expected at least one stdcall import.')
-    if export_names not in ('undecorated', 'decorated'):
-        raise ValueError('Expected undecorated or decorated export names.')
+    if export_names not in ('undecorated', 'decorated', 'ordinal'):
+        raise ValueError('Expected undecorated, decorated or ordinal export names.')
+    if export_names == 'ordinal':
+        if (not isinstance(ordinals, dict) or set(ordinals) != set(symbols) or
+                any(type(value) is not int or not 1 <= value <= 65535 for value in ordinals.values()) or
+                len(set(ordinals.values())) != len(ordinals)):
+            raise ValueError('Expected one distinct ordinal per ordinal import.')
+    elif ordinals is not None:
+        raise ValueError('Only ordinal imports take ordinals.')
     for name, stack_bytes in symbols.items():
         runtime_throw = (dll == 'MSVCRT.dll' and name == '_CxxThrowException' and
                          type(stack_bytes) is int and stack_bytes == 8 and
@@ -72,8 +82,12 @@ def validate_stdcall_imports(dll, symbols, export_names='undecorated'):
             raise ValueError('Expected an undecorated source name and x86 stack byte count.')
 
 
-def stdcall_export_names(symbols, export_names):
-    """Return PE names, keeping source/COFF decoration separate from DLL exports."""
+def stdcall_export_names(symbols, export_names, ordinals=None):
+    """Return PE names, keeping source/COFF decoration separate from DLL exports.
+
+    Ordinal imports carry no PE name; they are named ordinal:N as pe_imports does."""
+    if export_names == 'ordinal':
+        return {f'ordinal:{ordinals[name]}' for name in symbols}
     if export_names == 'decorated':
         return {f'_{name}@{count}' for name, count in symbols.items()}
     if export_names == 'undecorated':
@@ -81,9 +95,13 @@ def stdcall_export_names(symbols, export_names):
     raise ValueError('Expected undecorated or decorated export names.')
 
 
-def rewrite_stdcall_import_archive(path, dll, symbols, export_names='undecorated'):
-    """Change only LIB.EXE's short-import name mode; public symbols stay intact."""
-    validate_stdcall_imports(dll, symbols, export_names)
+def rewrite_stdcall_import_archive(path, dll, symbols, export_names='undecorated', ordinals=None):
+    """Change only LIB.EXE's short-import name mode; public symbols stay intact.
+
+    An ordinal import already has LIB's ORDINAL name type and its ordinal in
+    the hint field; it is verified and left unchanged."""
+    validate_stdcall_imports(dll, symbols, export_names, ordinals)
+    by_symbol = {f"_{name}@{stack_bytes}": name for name, stack_bytes in symbols.items()}
     data = bytearray(Path(path).read_bytes())
     if data[:8] != b"!<arch>\n":
         raise ValueError("Expected a COFF archive")
@@ -106,7 +124,8 @@ def rewrite_stdcall_import_archive(path, dll, symbols, export_names='undecorated
             if len(member) < 20:
                 raise ValueError("Incomplete short import object")
             sig1, sig2, version, machine, timestamp, payload_size, hint, flags = struct.unpack_from("<HHHHIIHH", member)
-            if version != 0 or machine != 0x14c or payload_size != len(member) - 20 or flags != (2 << 2):
+            ordinal = export_names == 'ordinal'
+            if version != 0 or machine != 0x14c or payload_size != len(member) - 20 or flags != (0 if ordinal else 2 << 2):
                 raise ValueError("Unexpected LIB.EXE short import object")
             parts = member[20:].split(b"\0")
             if len(parts) != 3 or parts[2] != b"":
@@ -115,6 +134,11 @@ def rewrite_stdcall_import_archive(path, dll, symbols, export_names='undecorated
             if imported_dll != dll or symbol not in expected or symbol in seen:
                 raise ValueError("Unexpected or duplicate stdcall import identity")
             seen.add(symbol)
+            if ordinal:
+                if hint != ordinals[by_symbol[symbol]]:
+                    raise ValueError("Unexpected ordinal in short import object")
+                offset = end + (size & 1)
+                continue
             # NAME=1 keeps _name@N; UNDECORATE=3 produces name. LIB emits
             # NO_PREFIX=2, which would wrongly retain @N for Win32 or lose
             # the leading underscore for a decorated DLL export.
@@ -136,15 +160,16 @@ def undecorate_import_archive(path, dll, symbols):
     return rewrite_stdcall_import_archive(path, dll, symbols)
 
 
-def stdcall_import_library(tool, folder, dll, symbols, export_names='undecorated'):
+def stdcall_import_library(tool, folder, dll, symbols, export_names='undecorated', ordinals=None):
     """Return a library path and the exact name-mode adjustments made to it."""
-    validate_stdcall_imports(dll, symbols, export_names)
+    validate_stdcall_imports(dll, symbols, export_names, ordinals)
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     stem = dll[:-4].lower()
     definition = folder / (stem + ".def")
     definition.write_text("LIBRARY " + dll + "\nEXPORTS\n" + "".join(
-        f"    {name}@{count}\n" for name, count in symbols.items()))
+        f"    {name}@{count}" + (f" @{ordinals[name]} NONAME" if ordinals else "") + "\n"
+        for name, count in symbols.items()))
     library = folder / (stem + "-import.lib")
     arguments = ["/nologo", "/machine:IX86", "/def:" + definition.name,
                  "/out:" + library.name]
@@ -153,5 +178,5 @@ def stdcall_import_library(tool, folder, dll, symbols, export_names='undecorated
     command = [str(tool.compiler / "LIB.EXE"), "@" + response.name]
     log = tool.run(command if os.name == "nt" else ["wine", *command], folder)
     (folder / (stem + "-librarian.log")).write_text(log)
-    changed = rewrite_stdcall_import_archive(library, dll, symbols, export_names)
+    changed = rewrite_stdcall_import_archive(library, dll, symbols, export_names, ordinals)
     return library, changed

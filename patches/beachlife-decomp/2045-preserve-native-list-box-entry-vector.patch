@@ -1,0 +1,195 @@
+diff --git b/fixtures/game.cpp a/fixtures/game.cpp
+index 369d3ec..be41327 100644
+--- b/fixtures/game.cpp
++++ a/fixtures/game.cpp
+@@ -1297,7 +1297,8 @@ typedef char ListBoxPrepareRowFlag[(offsetof(ScreenListBoxEntry, flag_8) == 8) ?
+ typedef char ListBoxPrepareRectangle[(offsetof(ScreenListBoxPrefix, rectangle_44) == 0x44) ? 1 : -1];
+ typedef char ListBoxPrepareName[(offsetof(ScreenListBoxPrefix, name_54) == 0x54) ? 1 : -1];
+ typedef char ListBoxPrepareEntries[(offsetof(ScreenListBoxPrefix, entries) == 0x6c) ? 1 : -1];
+-typedef char ListBoxPrepareRange[(sizeof(ScreenListBoxEntryRange) == 12) ? 1 : -1];
++typedef char ListBoxPrepareEnd[(offsetof(ScreenListBoxEntryRange, end) == 4) ? 1 : -1];
++typedef char ListBoxPrepareCapacity[(offsetof(ScreenListBoxEntryRange, capacity) == 8) ? 1 : -1];
+ typedef char ListBoxPrepareSelection[(offsetof(ScreenListBoxPrefix, selection) == 0x78) ? 1 : -1];
+ typedef char ListBoxPrepareOwnedItem[(offsetof(ScreenListBoxPrefix, owned_item_8c) == 0x8c) ? 1 : -1];
+ typedef char ListBoxPrepareTail[(offsetof(ScreenListBoxPrefix, unknown_96) == 0x96) ? 1 : -1];
+@@ -1323,20 +1324,18 @@ extern "C" __declspec(dllexport) void FixtureListBoxMarkPrepared(ScreenListBoxPr
+     fixture_listbox_prepare_owner = item;
+     fixture_listbox_prepare_base = item;
+     fixture_listbox_prepare_before = item->preparation_flag;
+-    // The row vector's begin and end words, read without instantiating members.
+-    ScreenListBoxEntry** const* range = reinterpret_cast<ScreenListBoxEntry** const*>(&item->entries);
+-    fixture_listbox_prepare_begin_before = range[0];
+-    fixture_listbox_prepare_end_before = range[1];
+-    if (range[0] != range[1])
++    fixture_listbox_prepare_begin_before = item->entries.begin;
++    fixture_listbox_prepare_end_before = item->entries.end;
++    if (item->entries.begin != item->entries.end)
+     {
+-        ScreenListBoxEntry* entry = *range[0];
++        ScreenListBoxEntry* entry = *item->entries.begin;
+         fixture_listbox_prepare_first_row = entry;
+         fixture_listbox_prepare_first_item = entry->item;
+     }
+     item->ScreenListBoxPrefix::MarkPrepared();
+     fixture_listbox_prepare_after = item->preparation_flag;
+-    fixture_listbox_prepare_begin_after = range[0];
+-    fixture_listbox_prepare_end_after = range[1];
++    fixture_listbox_prepare_begin_after = item->entries.begin;
++    fixture_listbox_prepare_end_after = item->entries.end;
+ }
+ 
+ #include "startup_screen_renderer.h"
+diff --git b/src/startup_screen_list_box.h a/src/startup_screen_list_box.h
+index 790b1bd..e5cd898 100644
+--- b/src/startup_screen_list_box.h
++++ a/src/startup_screen_list_box.h
+@@ -3,33 +3,21 @@
+ 
+ #include "startup_screen_item.h"
+ 
+-#include <new>
+-#ifdef _STLPORT_VERSION
+-#include <vector>
+-#endif
+-
+ struct ScreenListBoxEntry;
+ 
+ struct ScreenListBoxTrueType
+ {
+ };
+ 
+-// The rows at original +6c are an STLport 4.5.3 std::vector of owned entries
+-// (destructor 0x004c5710). Units compiled without STLport see a layout
+-// stand-in whose special members are private, so any use there fails.
+-#ifdef _STLPORT_VERSION
+-typedef std::vector<ScreenListBoxEntry*> ScreenListBoxEntryRange;
+-#else
++// Observed three-pointer member at original +6c.
+ struct ScreenListBoxEntryRange
+ {
+-private:
+-    ScreenListBoxEntryRange();
+-    ScreenListBoxEntryRange(const ScreenListBoxEntryRange&);
+-    ~ScreenListBoxEntryRange();
+-    ScreenListBoxEntryRange& operator=(const ScreenListBoxEntryRange&);
+-    void* words_[3];
++    ScreenListBoxEntry** begin;
++    ScreenListBoxEntry** end;
++    ScreenListBoxEntry** capacity;
++
++    ~ScreenListBoxEntryRange(); // Actual 0x004c5710; not defined or used here.
+ };
+-#endif
+ 
+ // Signed-word selection range at original +78. The unsigned field aliases
+ // preserve existing matching callers while their source migrates.
+diff --git b/src/startup_screen_list_box_clear.cpp a/src/startup_screen_list_box_clear.cpp
+index 82d8352..7464541 100644
+--- b/src/startup_screen_list_box_clear.cpp
++++ a/src/startup_screen_list_box_clear.cpp
+@@ -1,17 +1,22 @@
++#include "copy_trivial.h"
+ #include "startup_screen_list_box.h"
+ #include "startup_screen_list_box_entry.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004c41e0
+ void ScreenListBoxPrefix::ClearEntries()
+ {
+-    ScreenListBoxEntry** entry = entries.begin();
+-    while (entry != entries.end())
++    ScreenListBoxEntry** entry = entries.begin;
++    while (entry != entries.end)
+     {
+         ScreenListBoxEntry* row = *entry;
+         if (row->item->kind_28 != 0)
+         {
+             delete row;
+-            entry = entries.erase(entry);
++            if (entry + 1 != entries.end)
++            {
++                CopyTrivial(entry + 1, entries.end, entry);
++            }
++            --entries.end;
+         }
+         else
+         {
+diff --git b/src/startup_screen_list_box_mark_prepared.cpp a/src/startup_screen_list_box_mark_prepared.cpp
+index 0268052..d623192 100644
+--- b/src/startup_screen_list_box_mark_prepared.cpp
++++ a/src/startup_screen_list_box_mark_prepared.cpp
+@@ -5,7 +5,7 @@
+ void ScreenListBoxPrefix::MarkPrepared()
+ {
+     ScreenItem::MarkPrepared();
+-    for (ScreenListBoxEntry** entry = entries.begin(); entry != entries.end(); ++entry)
++    for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
+     {
+         (*entry)->item->MarkPrepared();
+     }
+diff --git b/src/startup_screen_list_box_move.cpp a/src/startup_screen_list_box_move.cpp
+index fc8fae4..05b8688 100644
+--- b/src/startup_screen_list_box_move.cpp
++++ a/src/startup_screen_list_box_move.cpp
+@@ -13,7 +13,7 @@ void ScreenListBoxPrefix::MoveRectangle(int dx, int dy)
+     {
+         owned_item_8c->MoveRectangle(dx, dy);
+     }
+-    for (ScreenListBoxEntry** entry = entries.begin(); entry != entries.end(); ++entry)
++    for (ScreenListBoxEntry** entry = entries.begin; entry != entries.end; ++entry)
+     {
+         (*entry)->item->MoveRectangle(dx, dy);
+     }
+diff --git b/src/startup_screen_list_box_unresolved24.cpp a/src/startup_screen_list_box_unresolved24.cpp
+index 4c0cf7d..42bddd9 100644
+--- b/src/startup_screen_list_box_unresolved24.cpp
++++ a/src/startup_screen_list_box_unresolved24.cpp
+@@ -1,3 +1,4 @@
++#include "copy_trivial.h"
+ #include "startup_screen_list_box.h"
+ #include "startup_screen_list_box_entry.h"
+ 
+@@ -11,12 +12,12 @@ void ScreenListBoxPrefix::Unresolved24(unsigned char enabled)
+     }
+     if (!enabled)
+     {
+-        ScreenListBoxEntry** finish = entries.end();
+-        for (ScreenListBoxEntry** current = entries.begin(); current != finish; ++current)
++        ScreenListBoxEntry** finish = entries.end;
++        for (ScreenListBoxEntry** current = entries.begin; current != finish; ++current)
+         {
+             delete *current;
+         }
+-        entries.clear();
++        entries.end = static_cast<ScreenListBoxEntry**>(CopyTrivial(entries.end, entries.end, entries.begin));
+         word_68 = 0;
+         word_64 = 0;
+         word_88 = 0;
+diff --git b/targets/beachlife-uk-1.1.json a/targets/beachlife-uk-1.1.json
+index 0dbdf31..ee69412 100644
+--- b/targets/beachlife-uk-1.1.json
++++ a/targets/beachlife-uk-1.1.json
+@@ -2819,12 +2819,6 @@
+     "startup_screen_list_box_clear.cpp": [
+       "/Ob1"
+     ],
+-    "startup_screen_list_box_mark_prepared.cpp": [
+-      "/Ob1"
+-    ],
+-    "startup_screen_list_box_move.cpp": [
+-      "/Ob1"
+-    ],
+     "window_sound_find_sample.cpp": [
+       "/GX"
+     ],
+@@ -4690,10 +4684,6 @@
+     "startup_match_0042d100.cpp",
+     "startup_staff_title_order_retention.cpp",
+     "startup_match_004e3d40.cpp",
+-    "startup_table_building_order_retention.cpp",
+-    "startup_screen_list_box_clear.cpp",
+-    "startup_screen_list_box_mark_prepared.cpp",
+-    "startup_screen_list_box_move.cpp",
+-    "startup_screen_list_box_unresolved24.cpp"
++    "startup_table_building_order_retention.cpp"
+   ]
+ }

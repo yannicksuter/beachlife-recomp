@@ -1,0 +1,186 @@
+diff --git a/fixtures/game.d/fixture_00401b60.cpp b/fixtures/game.d/fixture_00401b60.cpp
+new file mode 100644
+index 0000000..8023f45
+--- /dev/null
++++ b/fixtures/game.d/fixture_00401b60.cpp
+@@ -0,0 +1,9 @@
++#include "startup_resource_rasters.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00401b60(unsigned short* destination, const unsigned char* source,
++    const unsigned short* palette, unsigned int stride, int x, int y, int width, int height, int left, int top,
++    int right, int bottom)
++{
++    ResourceRaster1Packed(destination, source, palette, stride, x, y, width, height, left, top, right, bottom);
++}
+diff --git a/metadata.d/00401b60.csv b/metadata.d/00401b60.csv
+new file mode 100644
+index 0000000..02e5ef2
+--- /dev/null
++++ b/metadata.d/00401b60.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00401b60,function,642,?ResourceRaster1Packed@@YAXPAGPBEPBGIHHHHHHHH@Z
+diff --git a/src/match_00401b60.cpp b/src/match_00401b60.cpp
+new file mode 100644
+index 0000000..b9feaf7
+--- /dev/null
++++ b/src/match_00401b60.cpp
+@@ -0,0 +1,141 @@
++#include "startup_resource_rasters.h"
++
++// Draws an RLE-packed 8-bit sprite through a 16-bit palette, clipped to the
++// rectangle left/top/right/bottom given in sprite pixels. Each packed row
++// covers `width` pixels: a positive packet byte is a run of that many palette
++// indices, any other packet skips -n transparent pixels. A drawn run counts n
++// down to zero, so the skip step that follows it changes nothing.
++// FUNCTION: BEACHLIFE 0x00401b60
++void ResourceRaster1Packed(unsigned short* destination, const unsigned char* source, const unsigned short* palette,
++    unsigned int stride, int x, int y, int width, int height, int left, int top, int right, int bottom)
++{
++    unsigned short* row = destination + stride * y;
++
++    // Nothing is clipped.
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (int j = 0; j < height; j++)
++        {
++            unsigned short* output = row + j * stride + x;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet -= count;
++                    do
++                    {
++                        *output++ = palette[*source++];
++                    } while (--count != 0);
++                }
++                output -= packet;
++                column -= packet;
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped: the first `left` pixels of every row are dropped.
++    if (left > 0)
++    {
++        for (int skip = top; skip > 0; skip--)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet >= 0)
++                {
++                    column += packet;
++                    source += packet;
++                }
++                else
++                {
++                    column -= packet;
++                }
++            }
++        }
++
++        for (int j = 0; j < bottom - top; j++)
++        {
++            unsigned short* output = row + j * stride + x;
++            int remaining_left = left;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet -= count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else
++                            *output++ = palette[*source];
++                        source++;
++                    } while (--count != 0);
++                }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
++                {
++                    remaining_left--;
++                    column++;
++                    packet--;
++                }
++                column += packet;
++                output += packet;
++            }
++        }
++        return;
++    }
++
++    // Top, right or bottom edge clipped: pixels from `right` on are dropped.
++    for (int skip = top; skip > 0; skip--)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
++            else
++            {
++                column -= packet;
++            }
++        }
++    }
++
++    for (int j = 0; j < bottom - top; j++)
++    {
++        unsigned short* output = row + j * stride + x;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet > 0)
++            {
++                int count = packet;
++                packet -= count;
++                do
++                {
++                    if (column < right)
++                        *output++ = palette[*source];
++                    source++;
++                    column++;
++                } while (--count != 0);
++            }
++            if (column < right)
++                output -= packet;
++            column -= packet;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00401b60.json b/targets/beachlife-uk-1.1.d/00401b60.json
+new file mode 100644
+index 0000000..6a800ce
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00401b60.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x00401b60",
++      "size": 642,
++      "name": "ResourceRaster1Packed",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

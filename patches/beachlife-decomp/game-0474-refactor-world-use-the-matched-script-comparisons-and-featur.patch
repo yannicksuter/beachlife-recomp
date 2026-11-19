@@ -1,0 +1,502 @@
+diff --git a/src/startup_world_feature_update.cpp b/src/startup_world_feature_update.cpp
+index 65575cc0342feb9ce6bbdf5077d6dd6f278c280f..a771fb20f60721c85ca987cd38c21f7f29a3011a 100644
+--- a/src/startup_world_feature_update.cpp
++++ b/src/startup_world_feature_update.cpp
+@@ -9,16 +9,13 @@ const char* world_feature_names[26] = {
+     "ACCOMDTN", "ALCOHOL", "AMUSEMNT", "FIRSTAID", "PILLS", "MEALS", "PARTYFUN", "SHOWER", "SNACKS", "SOFTDRNK", "SOUVENIR", "SPORTFUN", "SUNBATHE", "SWIMFUN", "RELIEF", "WATERFUN", "STROLL", "LEAVE", "VANDAL", "FIGHT", "FLIRT", "NONE", "LOTION", "NONE", "NONE", "NONE"
+ };
+ 
+-// GLOBAL: BEACHLIFE 0x005a8968
+-WorldFeatureEntry world_feature_scratch[500];
+-
+-// GLOBAL: BEACHLIFE 0x005a8960
+-static unsigned char world_feature_scratch_initialized;
+-
+-// FUNCTION: BEACHLIFE 0x004248f0
+-static void DestroyWorldFeatureScratch()
++// Retail keeps the scratch table in a function-local static whose (empty)
++// destructor is registered with atexit (guard 0x005a8960).
++struct WorldFeatureScratchEntry : WorldFeatureEntry
+ {
+-}
++    // FUNCTION: BEACHLIFE 0x004248f0
++    ~WorldFeatureScratchEntry() { }
++};
+ 
+ // FUNCTION: BEACHLIFE 0x00424710
+ void WorldSubsystem4c::Update()
+@@ -28,27 +25,31 @@ void WorldSubsystem4c::Update()
+         return;
+     unsigned int building_count = variable_world->buildings_04;
+     VariableEntity** buildings = variable_world->buildings_12120;
+-    if (!(world_feature_scratch_initialized & 1))
++    // Retail scratch table 0x005a8968.
++    static WorldFeatureScratchEntry scratch[500];
++    for (int kind = 0; kind < 26; ++kind)
+     {
+-        world_feature_scratch_initialized |= 1;
+-        std::atexit(DestroyWorldFeatureScratch);
+-    }
+-    for (unsigned int kind = 0; kind < 26; ++kind)
+-    {
+-        unsigned int type = variable_catalog->FindFeatureType(world_feature_names[kind]);
+         unsigned int count = 0;
++        unsigned int type = variable_catalog->FindFeatureType(world_feature_names[kind]);
+         for (unsigned int building_index = 0; building_index < building_count; ++building_index)
+         {
+             VariableBuilding* definition = buildings[building_index]->AsBuilding()->building_60;
+-            for (unsigned int row = 0; row < definition->rows_1f4; ++row)
++            unsigned int row = 0;
++            if (row < definition->rows_1f4)
+             {
+-                if (variable_catalog->FeatureType(definition->features_1fc[row]) == type)
++                WorldFeatureEntry* entry = scratch + count;
++                do
+                 {
+-                    world_feature_scratch[count].id_00 = buildings[building_index]->id_28;
+-                    world_feature_scratch[count].tile_0c = buildings[building_index]->TilePosition();
+-                    world_feature_scratch[count].index_04 = row;
+-                    ++count;
+-                }
++                    if (variable_catalog->FeatureType(definition->features_1fc[row]) == type)
++                    {
++                        entry->id_00 = buildings[building_index]->id_28;
++                        entry->tile_0c = buildings[building_index]->TilePosition();
++                        entry->index_04 = row;
++                        ++count;
++                        ++entry;
++                    }
++                    ++row;
++                } while (row < definition->rows_1f4);
+             }
+         }
+         if (data_04[kind])
+@@ -58,15 +59,18 @@ void WorldSubsystem4c::Update()
+         }
+         if (count)
+         {
++            // Plain operator new pairs with the operator delete above (VC6's new[] of this POD).
+             data_04[kind] = static_cast<WorldFeatureEntry*>(::operator new(count * sizeof(WorldFeatureEntry)));
+             for (unsigned int index = 0; index < count; ++index)
+             {
+-                data_04[kind][index].id_00 = world_feature_scratch[index].id_00;
+-                data_04[kind][index].tile_0c = world_feature_scratch[index].tile_0c;
+-                data_04[kind][index].index_04 = world_feature_scratch[index].index_04;
++                data_04[kind][index].id_00 = scratch[index].id_00;
++                data_04[kind][index].tile_0c = scratch[index].tile_0c;
++                data_04[kind][index].index_04 = scratch[index].index_04;
+             }
++            counts_6c[kind] = count;
+         }
+-        counts_6c[kind] = count;
++        else
++            counts_6c[kind] = 0;
+     }
+     word_00 = generation;
+ }
+diff --git a/src/startup_world_script_actions.cpp b/src/startup_world_script_actions.cpp
+index be9e69c71d8538d2946bf4776e23def131803430..62499cce415fd0f530bf05e18075ee77f5bc5ef4 100644
+--- a/src/startup_world_script_actions.cpp
++++ b/src/startup_world_script_actions.cpp
+@@ -105,7 +105,7 @@ void WorldSubsystem20::Action::Update()
+     case 4:
+     {
+         WorldActionBranchData* data = static_cast<WorldActionBranchData*>(data_08);
+-        Action* action = Evaluate(data->left_08.kind, data->left_08.data, data->right_10.kind, data->right_10.data, data->comparison_18)
++        Action* action = Evaluate(WorldScriptValue { data->left_08.kind, data->left_08.data }, WorldScriptValue { data->right_10.kind, data->right_10.data }, data->comparison_18)
+                            ? data->first_00
+                            : data->second_04;
+         while (action)
+diff --git a/src/startup_world_script_evaluate.cpp b/src/startup_world_script_evaluate.cpp
+index 5d3c113178187015c5322e099f06ba6bbe6a24ee..5794c319d04d9d853dbf1c84ea32e61e37d02ddb 100644
+--- a/src/startup_world_script_evaluate.cpp
++++ b/src/startup_world_script_evaluate.cpp
+@@ -34,56 +34,112 @@ ScreenModeCommand WorldSubsystem20::Action::MakeCommand(const WorldActionCommand
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004dc500
+-bool WorldSubsystem20::Action::Evaluate(unsigned int left_kind, std::uintptr_t left_data,
+-    unsigned int right_kind, std::uintptr_t right_data, unsigned int comparison)
++bool WorldSubsystem20::Action::Evaluate(WorldScriptValue left, WorldScriptValue right, unsigned int comparison)
+ {
+-    if (right_kind == 0x110)
++    bool result = false;
++    if (right.kind == 0x110)
+     {
+-        WorldScriptValue value = window_deactivation_state->ReadScriptValue(left_kind, left_data);
++        WorldScriptValue value = window_deactivation_state->ReadScriptValue(left.kind, left.data);
+         if (value.kind == 0)
+-            return static_cast<unsigned char>(value.data) != 0;
+-        if (value.kind == 2)
+-            return static_cast<unsigned int>(value.data) != 0;
+-        if (value.kind == 3)
++            result = static_cast<unsigned char>(value.data) != 0;
++        else if (value.kind == 2)
++            result = static_cast<unsigned int>(value.data) != 0;
++        else if (value.kind == 3)
+         {
++            // Retail 0x004dc566: test ah,0x40 counts an unordered value as zero.
+             float number = ScriptValueFloat(value.data);
+-            return !std::isnan(number) && number != 0.0f;
++            result = !std::isnan(number) && number != 0.0f;
+         }
+-        return false;
+     }
+-    if (right_kind == 0x36)
++    else if (right.kind == 0x36)
+     {
+-        if (comparison != 4 && comparison != 7)
+-            return false;
+-        WorldScriptValue value = window_deactivation_state->ReadScriptValue(left_kind, left_data);
+-        int result = _stricmp(reinterpret_cast<const char*>(value.data), reinterpret_cast<const char*>(right_data));
+-        return comparison == 4 ? result == 0 : result != 0;
++        switch (comparison)
++        {
++        case 4:
++            result = _stricmp(reinterpret_cast<const char*>(window_deactivation_state->ReadScriptValue(left.kind, left.data).data),
++                         reinterpret_cast<const char*>(right.data))
++                  == 0;
++            break;
++        case 7:
++            result = _stricmp(reinterpret_cast<const char*>(window_deactivation_state->ReadScriptValue(left.kind, left.data).data),
++                         reinterpret_cast<const char*>(right.data))
++                  != 0;
++            break;
++        }
+     }
+-    if (comparison > 7)
+-        return false;
+-    WorldScriptValue left = window_deactivation_state->ReadScriptValue(left_kind, left_data);
+-    WorldScriptValue right = window_deactivation_state->ReadScriptValue(right_kind, right_data);
+-    if (comparison == 0)
+-        return ConvertWorldScriptInteger(left) && ConvertWorldScriptInteger(right);
+-    if (comparison == 1)
+-        return ConvertWorldScriptInteger(left) || ConvertWorldScriptInteger(right);
+-    float first = ConvertWorldScriptNumber(left);
+-    double second = ConvertWorldScriptNumber(right);
+-    bool unordered = std::isnan(first) || std::isnan(second);
+-    switch (comparison)
++    else
+     {
+-    case 2:
+-        return unordered || second < first;
+-    case 3:
+-        return second > first;
+-    case 4:
+-        return unordered || second == first;
+-    case 5:
+-        return second >= first;
+-    case 6:
+-        return unordered || second <= first;
+-    case 7:
+-        return !unordered && second != first;
++        switch (comparison)
++        {
++        case 0:
++        {
++            WorldScriptValue first = window_deactivation_state->ReadScriptValue(left.kind, left.data);
++            WorldScriptValue second = window_deactivation_state->ReadScriptValue(right.kind, right.data);
++            result = ConvertWorldScriptInteger(first) && ConvertWorldScriptInteger(second);
++            break;
++        }
++        case 1:
++        {
++            WorldScriptValue first = window_deactivation_state->ReadScriptValue(left.kind, left.data);
++            WorldScriptValue second = window_deactivation_state->ReadScriptValue(right.kind, right.data);
++            result = ConvertWorldScriptInteger(first) || ConvertWorldScriptInteger(second);
++            break;
++        }
++        case 2:
++        {
++            WorldScriptValue first = window_deactivation_state->ReadScriptValue(left.kind, left.data);
++            WorldScriptValue second = window_deactivation_state->ReadScriptValue(right.kind, right.data);
++            float number = ConvertWorldScriptNumber(first);
++            // test ah,1: less or unordered.
++            result = !(ConvertWorldScriptNumber(second) >= number);
++            break;
++        }
++        case 3:
++        {
++            WorldScriptValue first = window_deactivation_state->ReadScriptValue(left.kind, left.data);
++            WorldScriptValue second = window_deactivation_state->ReadScriptValue(right.kind, right.data);
++            float number = ConvertWorldScriptNumber(first);
++            result = ConvertWorldScriptNumber(second) > number;
++            break;
++        }
++        case 4:
++        {
++            WorldScriptValue first = window_deactivation_state->ReadScriptValue(left.kind, left.data);
++            WorldScriptValue second = window_deactivation_state->ReadScriptValue(right.kind, right.data);
++            float number = ConvertWorldScriptNumber(first);
++            double other = ConvertWorldScriptNumber(second);
++            // test ah,0x40: equal or unordered.
++            result = !(other < number || other > number);
++            break;
++        }
++        case 5:
++        {
++            WorldScriptValue first = window_deactivation_state->ReadScriptValue(left.kind, left.data);
++            WorldScriptValue second = window_deactivation_state->ReadScriptValue(right.kind, right.data);
++            float number = ConvertWorldScriptNumber(first);
++            result = ConvertWorldScriptNumber(second) >= number;
++            break;
++        }
++        case 6:
++        {
++            WorldScriptValue first = window_deactivation_state->ReadScriptValue(left.kind, left.data);
++            WorldScriptValue second = window_deactivation_state->ReadScriptValue(right.kind, right.data);
++            float number = ConvertWorldScriptNumber(first);
++            // test ah,0x41: less, equal or unordered.
++            result = !(ConvertWorldScriptNumber(second) > number);
++            break;
++        }
++        case 7:
++        {
++            WorldScriptValue first = window_deactivation_state->ReadScriptValue(left.kind, left.data);
++            WorldScriptValue second = window_deactivation_state->ReadScriptValue(right.kind, right.data);
++            float number = ConvertWorldScriptNumber(first);
++            double other = ConvertWorldScriptNumber(second);
++            // test ah,0x40 clear: ordered and unequal.
++            result = other < number || other > number;
++            break;
++        }
++        }
+     }
+-    return false;
++    return result;
+ }
+diff --git a/src/startup_world_script_expression_evaluate.cpp b/src/startup_world_script_expression_evaluate.cpp
+index 111e1ef908d2f3b601402bf85e38096b07370850..101cbace845b3c4e88562fa196f0ef6351b35689 100644
+--- a/src/startup_world_script_expression_evaluate.cpp
++++ b/src/startup_world_script_expression_evaluate.cpp
+@@ -42,67 +42,119 @@ ScreenModeCommand WorldSubsystemScript::Expression::MakeCommand(VariableEntity*
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004d4880
+-bool WorldSubsystemScript::Expression::Evaluate(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+-    unsigned int right_kind, std::uintptr_t right_data, unsigned int comparison)
++bool WorldSubsystemScript::Expression::Evaluate(VariableEntity* entity, WorldScriptValue left, WorldScriptValue right, unsigned int comparison)
+ {
+-    if (left_kind == 0xeb || right_kind == 0xeb)
++    bool result = false;
++    if (left.kind == 0xeb || right.kind == 0xeb)
+         return true;
+-    if (right_kind == 0x110)
++    if (right.kind == 0x110)
+     {
+-        WorldScriptValue value = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
++        WorldScriptValue value = entity->Unknown2c(left);
+         if (value.kind == 0)
+-            return static_cast<unsigned char>(value.data) != 0;
+-        if (value.kind == 2)
+-            return static_cast<unsigned int>(value.data) != 0;
+-        if (value.kind == 3)
++            result = static_cast<unsigned char>(value.data) != 0;
++        else if (value.kind == 2)
++            result = static_cast<unsigned int>(value.data) != 0;
++        else if (value.kind == 3)
+         {
++            // Retail 0x004d48ff: test ah,0x40 counts an unordered value as zero.
+             float number = ExpressionValueFloat(value);
+-            return !std::isnan(number) && number != 0.0f;
++            result = !std::isnan(number) && number != 0.0f;
+         }
+-        return false;
+     }
+-    if (right_kind == 0x36)
++    else if (right.kind == 0x36)
+     {
+-        if (comparison != 4 && comparison != 7)
+-            return false;
+-        WorldScriptValue value = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
+-        int result = _stricmp(reinterpret_cast<const char*>(value.data), reinterpret_cast<const char*>(right_data));
+-        return comparison == 4 ? result == 0 : result != 0;
+-    }
+-    if (comparison > 7)
+-        return false;
+-    if (comparison == 4)
+-        return EqualOperands(entity, WorldScriptValue { left_kind, left_data }, WorldScriptValue { right_kind, right_data });
+-    if (comparison == 7)
+-        return UnequalOperands(entity, WorldScriptValue { left_kind, left_data }, WorldScriptValue { right_kind, right_data });
+-    WorldScriptValue left = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
+-    WorldScriptValue right = entity->Unknown2c(WorldScriptValue { right_kind, right_data });
+-    if (comparison == 0)
+-        return ConvertWorldScriptInteger(left) && ConvertWorldScriptInteger(right);
+-    if (comparison == 1)
+-        return ConvertWorldScriptInteger(left) || ConvertWorldScriptInteger(right);
+-    if (comparison == 5 && left.kind == 2)
+-        return static_cast<unsigned int>(ConvertWorldScriptInteger(right)) >= static_cast<unsigned int>(left.data);
+-    if (comparison == 6 && left.kind == 2)
+-    {
+-        unsigned int second = ConvertWorldScriptInteger(right);
+-        return static_cast<unsigned int>(ConvertWorldScriptInteger(left)) >= second;
++        switch (comparison)
++        {
++        case 4:
++            result = _stricmp(reinterpret_cast<const char*>(entity->Unknown2c(left).data),
++                         reinterpret_cast<const char*>(right.data))
++                  == 0;
++            break;
++        case 7:
++            result = _stricmp(reinterpret_cast<const char*>(entity->Unknown2c(left).data),
++                         reinterpret_cast<const char*>(right.data))
++                  != 0;
++            break;
++        }
+     }
+-    float first = ConvertWorldScriptNumber(left);
+-    double second = ConvertWorldScriptNumber(right);
+-    bool unordered = std::isnan(first) || std::isnan(second);
+-    switch (comparison)
++    else
+     {
+-    case 2:
+-        return unordered || second < first;
+-    case 3:
+-        return second > first;
+-    case 5:
+-        return second >= first;
+-    case 6:
+-        return unordered || second <= first;
++        switch (comparison)
++        {
++        case 0:
++        {
++            WorldScriptValue first = entity->Unknown2c(left);
++            WorldScriptValue second = entity->Unknown2c(right);
++            result = ConvertWorldScriptInteger(first) && ConvertWorldScriptInteger(second);
++            break;
++        }
++        case 1:
++        {
++            WorldScriptValue first = entity->Unknown2c(left);
++            WorldScriptValue second = entity->Unknown2c(right);
++            result = ConvertWorldScriptInteger(first) || ConvertWorldScriptInteger(second);
++            break;
++        }
++        case 2:
++        {
++            WorldScriptValue first = entity->Unknown2c(left);
++            WorldScriptValue second = entity->Unknown2c(right);
++            float number = ConvertWorldScriptNumber(first);
++            // Retail 0x004d4b30: fcomp; test ah,1 (less or unordered).
++            result = !(ConvertWorldScriptNumber(second) >= number);
++            break;
++        }
++        case 3:
++        {
++            WorldScriptValue first = entity->Unknown2c(left);
++            WorldScriptValue second = entity->Unknown2c(right);
++            float number = ConvertWorldScriptNumber(first);
++            result = ConvertWorldScriptNumber(second) > number;
++            break;
++        }
++        case 4:
++            result = EqualOperands(entity, left, right);
++            break;
++        case 5:
++        {
++            WorldScriptValue first = entity->Unknown2c(left);
++            WorldScriptValue second = entity->Unknown2c(right);
++            if (first.kind == 2)
++            {
++                unsigned int data = static_cast<unsigned int>(first.data);
++                result = data <= static_cast<unsigned int>(ConvertWorldScriptInteger(second));
++            }
++            else
++            {
++                float number = ConvertWorldScriptNumber(first);
++                result = ConvertWorldScriptNumber(second) >= number;
++            }
++            break;
++        }
++        case 6:
++        {
++            WorldScriptValue first = entity->Unknown2c(left);
++            WorldScriptValue second = entity->Unknown2c(right);
++            if (first.kind == 2)
++            {
++                // Retail 0x004d4ccc converts the second operand first.
++                unsigned int other = ConvertWorldScriptInteger(second);
++                result = static_cast<unsigned int>(ConvertWorldScriptInteger(first)) >= other;
++            }
++            else
++            {
++                float number = ConvertWorldScriptNumber(first);
++                // Retail 0x004d4d1b: fcomp; test ah,0x41 (less, equal or unordered).
++                result = !(ConvertWorldScriptNumber(second) > number);
++            }
++            break;
++        }
++        case 7:
++            result = UnequalOperands(entity, left, right);
++            break;
++        }
+     }
+-    return false;
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004d4f60
+diff --git a/src/startup_world_script_expression_update.cpp b/src/startup_world_script_expression_update.cpp
+index 3ce8abfd10ecebbe9b46c8dcdf0361c2cf1ee034..0a6405ef9f42595708e1b1327c77864fa2f50570 100644
+--- a/src/startup_world_script_expression_update.cpp
++++ b/src/startup_world_script_expression_update.cpp
+@@ -86,7 +86,7 @@ void WorldSubsystemScript::Expression::Update(VariableEntity* entity)
+         case 4:
+         {
+             WorldExpressionBranchData* data = static_cast<WorldExpressionBranchData*>(expression->data_08);
+-            Expression* branch = expression->Evaluate(entity, data->left_08.kind, data->left_08.data, data->right_10.kind, data->right_10.data, data->comparison_18) ? data->first_00 : data->second_04;
++            Expression* branch = expression->Evaluate(entity, WorldScriptValue { data->left_08.kind, data->left_08.data }, WorldScriptValue { data->right_10.kind, data->right_10.data }, data->comparison_18) ? data->first_00 : data->second_04;
+             if (branch)
+                 branch->Update(entity);
+             break;
+@@ -109,7 +109,7 @@ void WorldSubsystemScript::Expression::Update(VariableEntity* entity)
+                 }
+                 while (item)
+                 {
+-                    if (expression->Evaluate(entity, item->value_00.kind, item->value_00.data, kind, switch_data, 4))
++                    if (expression->Evaluate(entity, WorldScriptValue { item->value_00.kind, item->value_00.data }, WorldScriptValue { kind, switch_data }, 4))
+                     {
+                         item->expression_08->Update(entity);
+                         break;
+@@ -121,7 +121,7 @@ void WorldSubsystemScript::Expression::Update(VariableEntity* entity)
+             {
+                 while (item)
+                 {
+-                    if (expression->Evaluate(entity, data->value_04.kind, data->value_04.data, item->value_00.kind, item->value_00.data, 4))
++                    if (expression->Evaluate(entity, WorldScriptValue { data->value_04.kind, data->value_04.data }, WorldScriptValue { item->value_00.kind, item->value_00.data }, 4))
+                     {
+                         if (item->expression_08)
+                             item->expression_08->Update(entity);
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 8b8dac0dbfb00f0b276b50265d93cc8e213a2529..f86d4b831600a3a00d35c5c2f5d4bc50f864e9f1 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -214,11 +214,10 @@ struct WorldSubsystem20
+         Action* next;
+         unsigned int kind_04;
+         void* data_08;
+-        ~Action() noexcept(false);                                         // 0x004db250.
+-        void Update();                                                     // 0x004db4b0.
+-        ScreenModeCommand MakeCommand(const WorldActionCommandData* data); // 0x004dc9a0.
+-        bool Evaluate(unsigned int left_kind, std::uintptr_t left_data, unsigned int right_kind,
+-            std::uintptr_t right_data, unsigned int comparison); // 0x004dc500.
++        ~Action() noexcept(false);                                                             // 0x004db250.
++        void Update();                                                                         // 0x004db4b0.
++        ScreenModeCommand MakeCommand(const WorldActionCommandData* data);                     // 0x004dc9a0.
++        bool Evaluate(WorldScriptValue left, WorldScriptValue right, unsigned int comparison); // 0x004dc500.
+     };
+     struct Group
+     {
+@@ -295,8 +294,8 @@ struct WorldSubsystemScript
+         ScreenModeCommand MakeCommand(VariableEntity* entity, const WorldActionCommandData* data);   // 0x004d4d80.
+         bool EqualOperands(VariableEntity* entity, WorldScriptValue left, WorldScriptValue right);   // 0x004d4f60.
+         bool UnequalOperands(VariableEntity* entity, WorldScriptValue left, WorldScriptValue right); // 0x004d5100.
+-        bool Evaluate(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+-            unsigned int right_kind, std::uintptr_t right_data, unsigned int comparison); // 0x004d4880.
++        bool Evaluate(VariableEntity* entity, WorldScriptValue left, WorldScriptValue right,
++            unsigned int comparison); // 0x004d4880.
+         Expression* next_00;
+         unsigned int kind_04;
+         void* data_08;

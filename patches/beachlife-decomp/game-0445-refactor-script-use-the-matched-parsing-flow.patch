@@ -1,0 +1,117 @@
+diff --git a/src/startup_world_object_script_parse_switch.cpp b/src/startup_world_object_script_parse_switch.cpp
+index 801ea76336e5917f821892fa01213290b9525ea7..298eed1dee05e379333c30ac2416b925c05094d7 100644
+--- a/src/startup_world_object_script_parse_switch.cpp
++++ b/src/startup_world_object_script_parse_switch.cpp
+@@ -7,37 +7,41 @@ extern unsigned char world_object_script_nested;
+ int WorldSubsystemScript::ParseSwitchAction(unsigned int phase)
+ {
+     unsigned char nested = world_object_script_nested;
+-    int count = 0;
++    int scanned = 0;
++    char condition[52];
++    char* end = condition;
+     while (*cursor_591c != '(')
+     {
+         ++cursor_591c;
+-        ++count;
++        ++scanned;
+     }
+-    char condition[52];
+-    char* end = condition;
+     while (*cursor_591c != ')')
+     {
+         *end++ = *cursor_591c++;
+-        ++count;
++        ++scanned;
+     }
+     *end++ = *cursor_591c++;
+-    ++count;
+     *end = 0;
++    int count = scanned + 1;
+     WorldExpressionSwitchData* data = new (std::nothrow) WorldExpressionSwitchData;
+     if (data)
+         data->cases_00 = 0;
+     if (condition[0] == '(')
+     {
++        const char separator = ' ';
+         unsigned int index = 1;
+-        while (condition[index] == ' ')
++        while (condition[index] == separator)
+             ++index;
+         char value[52];
+         unsigned int length = 0;
+-        while (condition[index] != ' ' && condition[index] != ')')
+-            value[length++] = condition[index++];
++        while (condition[index] != separator && condition[index] != ')')
++        {
++            char letter = condition[index++];
++            value[length++] = letter;
++        }
+         value[length] = 0;
+         data->value_04 = DecodeOperand(value);
+-        while (condition[index] == ' ' || condition[index] == ')')
++        while (condition[index] == separator || condition[index] == ')')
+             ++index;
+     }
+     Expression* expression = new (std::nothrow) Expression { 0, 5, data };
+diff --git a/src/startup_world_script_load.cpp b/src/startup_world_script_load.cpp
+index 960b7a0224d1474f18e4c045ef476b060c5ce943..eb8387d9e860efe50c9ec8748428c185b909875c 100644
+--- a/src/startup_world_script_load.cpp
++++ b/src/startup_world_script_load.cpp
+@@ -92,6 +92,7 @@ int WorldSubsystem20::ReadToken(char* token)
+ // FUNCTION: BEACHLIFE 0x004dce70
+ int WorldSubsystem20::LoadScript(const char* path)
+ {
++    int consumed = 0;
+     unsigned int length = std::strlen(path);
+     char* filename = static_cast<char*>(::operator new(length + 1, std::nothrow));
+     std::strcpy(filename, path);
+@@ -103,14 +104,13 @@ int WorldSubsystem20::LoadScript(const char* path)
+     cursor_00 = LoadBleFile(filename);
+     ::operator delete(filename);
+     char* buffer = cursor_00;
+-    int consumed = 0;
+-    while (consumed < size)
++    while (size > consumed)
+     {
+         consumed += SkipWorldScriptWhitespace(cursor_00);
+-        if (consumed >= size)
++        if (size <= consumed)
+             break;
+         consumed += SkipComments();
+-        if (consumed >= size)
++        if (size <= consumed)
+             break;
+         char token[64];
+         consumed += ReadToken(token);
+diff --git a/src/startup_world_script_parse_messages.cpp b/src/startup_world_script_parse_messages.cpp
+index 76d702f98f2d10e3eb842933ed8078c533c4d61d..8ac7409717b25e5aa038c449e3e22ab1662d8dd0 100644
+--- a/src/startup_world_script_parse_messages.cpp
++++ b/src/startup_world_script_parse_messages.cpp
+@@ -47,7 +47,7 @@ int WorldSubsystem20::ParseMessageAction()
+         if (std::strcmp(token, world_script_message_names[index].name) == 0)
+         {
+             data->word_00 = world_script_message_names[index].id;
+-            break;
++            index = 108;
+         }
+     }
+     count += ReadToken(token);
+@@ -71,7 +71,16 @@ int WorldSubsystem20::ParseMessageAction()
+         }
+         count += ReadToken(token);
+     }
+-    AppendAction(new (std::nothrow) Action { 0, 1, data });
++    Action* action = new (std::nothrow) Action;
++    if (action)
++    {
++        action->data_08 = data;
++        action->kind_04 = 1;
++        action->next = 0;
++    }
++    else
++        action = 0;
++    AppendAction(action);
+     return count;
+ }
+ 

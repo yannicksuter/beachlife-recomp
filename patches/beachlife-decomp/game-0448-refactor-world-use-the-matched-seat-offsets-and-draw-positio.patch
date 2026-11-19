@@ -1,0 +1,305 @@
+diff --git a/src/startup_world_guest_water_actions.cpp b/src/startup_world_guest_water_actions.cpp
+index 895130f84120119759a25f093b94f17cc08f06a4..a34b12012c281c6c157189fa46d53034cf83fef2 100644
+--- a/src/startup_world_guest_water_actions.cpp
++++ b/src/startup_world_guest_water_actions.cpp
+@@ -133,14 +133,25 @@ void WorldGuestEntity::PerformAction89()
+             x += 22.0f;
+             y += 72.0f;
+         }
+-        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 5, static_cast<int>(x), static_cast<int>(y));
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(x);
++        command.words[4] = static_cast<int>(y);
+         screen_mode_commands->QueueCommand(&command);
+     }
+     else
+     {
+-        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 22);
+-        command.words[5] = 41;
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 22;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        // Float 0.0f, stored as its all-zero bit pattern.
+         command.words[6] = 0;
++        command.words[5] = 41;
+         screen_mode_commands->QueueCommand(&command);
+     }
+ }
+diff --git a/src/startup_world_lifeguard_draw.cpp b/src/startup_world_lifeguard_draw.cpp
+index af6fd82d56677def6f06ef41e380779d82640b36..7c4a289d923a57caf6357d73a1f3949aeb307542 100644
+--- a/src/startup_world_lifeguard_draw.cpp
++++ b/src/startup_world_lifeguard_draw.cpp
+@@ -8,11 +8,10 @@ void WorldLifeguardEntity::Unknown3c()
+         return;
+     if (attached_7f0)
+     {
+-        ScreenWorldPosition position = {
+-            static_cast<float>(static_cast<long double>(position_30.x) - static_cast<unsigned int>(attached_x_7f4)),
+-            static_cast<float>(static_cast<long double>(position_30.y) - static_cast<unsigned int>(attached_y_7f8)),
+-            position_30.z
+-        };
++        ScreenWorldPosition position = position_30;
++        // x87 subtracts the unsigned attachment offset before the single float store.
++        position.x = static_cast<float>(static_cast<long double>(position.x) - static_cast<unsigned int>(attached_x_7f4));
++        position.y = static_cast<float>(static_cast<long double>(position.y) - static_cast<unsigned int>(attached_y_7f8));
+         attached_7f0->SelectVariant(keyline_state_44->word_18);
+         attached_7f0->DrawWorld(&position, window_deactivation_state->time_158);
+     }
+@@ -21,11 +20,10 @@ void WorldLifeguardEntity::Unknown3c()
+         VariableEntity* guest = variable_world->FindObject(saving_id_77c);
+         ScreenDialogResource* resource = guest->keyline_state_44;
+         float time = window_deactivation_state->time_158;
++        // Retail evaluates the last argument first.
+         float value = guest->GuestValue467d70();
+         float fade = guest->GuestFade();
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        resource->DrawWorldModified(&position, time, fade, value);
++        resource->DrawWorldModified(&position_30, time, fade, value);
+     }
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    keyline_state_44->DrawWorld(&position, window_deactivation_state->time_158);
++    keyline_state_44->DrawWorld(&position_30, window_deactivation_state->time_158);
+ }
+diff --git a/src/startup_world_lifeguard_tower.cpp b/src/startup_world_lifeguard_tower.cpp
+index eaf9a2887b193f7c751661f180db005242435502..a9de13bb7350f690595a8fd6ec891856fd789f55 100644
+--- a/src/startup_world_lifeguard_tower.cpp
++++ b/src/startup_world_lifeguard_tower.cpp
+@@ -7,7 +7,8 @@ void WorldLifeguardEntity::EnterTower()
+ {
+     WorldBuildingEntity* tower = variable_world->FindObject(home_id_100)->AsBuilding();
+     ScreenWorldPosition position = tower->StaffPosition();
+-    switch (tower->keyline_state_44->word_18)
++    unsigned int rotation = tower->keyline_state_44->word_18;
++    switch (rotation)
+     {
+     case 2:
+         position.x -= 29.0f;
+diff --git a/src/startup_world_scenery_bench.cpp b/src/startup_world_scenery_bench.cpp
+index 520e78db439808ce847fa70dd12647877d2bae6e..0462d37ad6b430d4d2391861abac404f4305c2e2 100644
+--- a/src/startup_world_scenery_bench.cpp
++++ b/src/startup_world_scenery_bench.cpp
+@@ -2,31 +2,103 @@
+ #include "window_activation.h"
+ #include <cstring>
+ 
+-static void ScenerySeatOffset(unsigned int seat, unsigned int direction, ScreenMapPosition& offset)
+-{
+-    static const ScreenMapPosition offsets[2][8] = {
+-        { { -13.0f, 20.0f }, { -22.0f, 8.0f }, { -19.0f, -20.0f }, { -3.0f, -24.0f }, { 15.0f, -12.0f }, { 27.0f, 0.0f }, { 22.0f, -16.0f }, { 24.0f, 2.0f } },
+-        { { 15.0f, 20.0f }, { -1.0f, 28.0f }, { -19.0f, 14.0f }, { -24.0f, -4.0f }, { -15.0f, -12.0f }, { 2.0f, -24.0f }, { 22.0f, 16.0f }, { 6.0f, 24.0f } }
+-    };
+-    if (seat < 2 && direction < 8)
+-        offset = offsets[seat][direction];
+-}
+-
+ // FUNCTION: BEACHLIFE 0x0041df90
+ void DrawSceneryBench(WorldSceneryEntity* entity)
+ {
+-    ScreenWorldPosition position = { entity->position_30.x, entity->position_30.y, entity->position_30.z };
+-    entity->keyline_state_44->DrawWorld(&position, window_deactivation_state->clock_158);
++    float clock = window_deactivation_state->clock_158;
++    entity->keyline_state_44->DrawWorld(&entity->position_30, clock);
+     ScreenMapPosition offset;
++    ScreenWorldPosition position;
+     for (unsigned int i = 0; i < entity->count_98; ++i)
+     {
+         unsigned int id = entity->ids_80[i];
+         if (id == ~0u || variable_world->FindObject(id)->visible_40)
+             continue;
+-        ScenerySeatOffset(i, entity->keyline_state_44->word_18, offset);
+-        position = { offset.x + entity->position_30.x, offset.y + entity->position_30.y, 0.0f };
++        switch (i)
++        {
++        case 0:
++            switch (entity->keyline_state_44->word_18)
++            {
++            case 0:
++                offset.x = -13.0f;
++                offset.y = 20.0f;
++                break;
++            case 1:
++                offset.x = -22.0f;
++                offset.y = 8.0f;
++                break;
++            case 2:
++                offset.x = -19.0f;
++                offset.y = -20.0f;
++                break;
++            case 3:
++                offset.x = -3.0f;
++                offset.y = -24.0f;
++                break;
++            case 4:
++                offset.x = 15.0f;
++                offset.y = -12.0f;
++                break;
++            case 5:
++                offset.x = 27.0f;
++                offset.y = 0.0f;
++                break;
++            case 6:
++                offset.x = 22.0f;
++                offset.y = -16.0f;
++                break;
++            case 7:
++                offset.x = 24.0f;
++                offset.y = 2.0f;
++                break;
++            }
++            break;
++        case 1:
++            switch (entity->keyline_state_44->word_18)
++            {
++            case 0:
++                offset.x = 15.0f;
++                offset.y = 20.0f;
++                break;
++            case 1:
++                offset.x = -1.0f;
++                offset.y = 28.0f;
++                break;
++            case 2:
++                offset.x = -19.0f;
++                offset.y = 14.0f;
++                break;
++            case 3:
++                offset.x = -24.0f;
++                offset.y = -4.0f;
++                break;
++            case 4:
++                offset.x = -15.0f;
++                offset.y = -12.0f;
++                break;
++            case 5:
++                offset.x = 2.0f;
++                offset.y = -24.0f;
++                break;
++            case 6:
++                offset.x = 22.0f;
++                offset.y = 16.0f;
++                break;
++            case 7:
++                offset.x = 6.0f;
++                offset.y = 24.0f;
++                break;
++            }
++            break;
++        }
++        position.x = offset.x + entity->position_30.x;
++        position.y = offset.y + entity->position_30.y;
++        position.z = 0.0f;
+         VariableEntity* guest = variable_world->FindObject(entity->ids_80[i]);
+-        guest->keyline_state_44->SelectVariant(static_cast<int>(entity->keyline_state_44->word_18 + 4) % 8);
++        {
++            ScreenDialogResource* variant_resource = guest->keyline_state_44;
++            variant_resource->SelectVariant(static_cast<int>(entity->keyline_state_44->word_18 + 4) % 8);
++        }
+         float time = window_deactivation_state->clock_158;
+         ScreenDialogResource* resource = guest->keyline_state_44;
+         float value = guest->GuestValue467d70();
+@@ -46,12 +118,92 @@ ScreenWorldPosition WorldSceneryEntity::ApproachPosition()
+     }
+     if (_stricmp(name_06, "Bench") == 0)
+     {
+-        ScreenMapPosition offset;
+-        if (word_9c < 2)
+-            ScenerySeatOffset(word_9c, keyline_state_44->word_18, offset);
+-        else
+-            offset = { 0.0f, 0.0f };
+-        return { offset.x + position_30.x, offset.y + position_30.y, 0.0f };
++        ScreenWorldPosition offset;
++        switch (word_9c)
++        {
++        case 0:
++            switch (keyline_state_44->word_18)
++            {
++            case 0:
++                offset.x = -13.0f;
++                offset.y = 20.0f;
++                break;
++            case 1:
++                offset.x = -22.0f;
++                offset.y = 8.0f;
++                break;
++            case 2:
++                offset.x = -19.0f;
++                offset.y = -20.0f;
++                break;
++            case 3:
++                offset.x = -3.0f;
++                offset.y = -24.0f;
++                break;
++            case 4:
++                offset.x = 15.0f;
++                offset.y = -12.0f;
++                break;
++            case 5:
++                offset.x = 27.0f;
++                offset.y = 0.0f;
++                break;
++            case 6:
++                offset.x = 22.0f;
++                offset.y = -16.0f;
++                break;
++            case 7:
++                offset.x = 24.0f;
++                offset.y = 2.0f;
++                break;
++            }
++            break;
++        case 1:
++            switch (keyline_state_44->word_18)
++            {
++            case 0:
++                offset.x = 15.0f;
++                offset.y = 20.0f;
++                break;
++            case 1:
++                offset.x = -1.0f;
++                offset.y = 28.0f;
++                break;
++            case 2:
++                offset.x = -19.0f;
++                offset.y = 14.0f;
++                break;
++            case 3:
++                offset.x = -24.0f;
++                offset.y = -4.0f;
++                break;
++            case 4:
++                offset.x = -15.0f;
++                offset.y = -12.0f;
++                break;
++            case 5:
++                offset.x = 2.0f;
++                offset.y = -24.0f;
++                break;
++            case 6:
++                offset.x = 22.0f;
++                offset.y = 16.0f;
++                break;
++            case 7:
++                offset.x = 6.0f;
++                offset.y = 24.0f;
++                break;
++            }
++            break;
++        default:
++            offset.x = 0.0f;
++            offset.y = 0.0f;
++            break;
++        }
++        offset.x += position_30.x;
++        offset.y += position_30.y;
++        offset.z = 0.0f;
++        return offset;
+     }
+-    return { position_30.x, position_30.y, position_30.z };
++    return position_30;
+ }

@@ -1,0 +1,190 @@
+diff --git a/fixtures/game.d/fixture_00408120.cpp b/fixtures/game.d/fixture_00408120.cpp
+new file mode 100644
+index 0000000..9d33eda
+--- /dev/null
++++ b/fixtures/game.d/fixture_00408120.cpp
+@@ -0,0 +1,7 @@
++#include "startup_resource_rasters.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00408120(unsigned short* destination, const unsigned char* source, const unsigned short* palette, int value, unsigned int flags)
++{
++    ResourceRasterFlagged(destination, source, palette, 640, value, value, value, value, value, value, value, value, flags);
++}
+diff --git a/metadata.d/00408120.csv b/metadata.d/00408120.csv
+new file mode 100644
+index 0000000..88a22fe
+--- /dev/null
++++ b/metadata.d/00408120.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00408120,function,759,?ResourceRasterFlagged@@YAXPAGPBEPBGIHHHHHHHHI@Z
+diff --git a/src/match_00408120.cpp b/src/match_00408120.cpp
+new file mode 100644
+index 0000000..a6ea40a
+--- /dev/null
++++ b/src/match_00408120.cpp
+@@ -0,0 +1,147 @@
++#include "startup_resource_rasters.h"
++#include "render_mask_setup.h"
++#include <stdlib.h>
++
++// Darkens the pixels under an RLE packet sprite (a shadow) in a four-byte
++// surface whose high word holds a depth: positive packets cover that many
++// pixels, any other packet skips -n. Each covered pixel whose depth is not
++// above the row depth becomes half its colour (render_half_mask) with the row
++// depth in the high word. The depth starts from the low word of flags minus
++// 16 per sprite row and grows by 16 per row. The packet stream carries no
++// palette indices, so palette is unused.
++// FUNCTION: BEACHLIFE 0x00408120
++void ResourceRasterFlagged(unsigned short* destination, const unsigned char* source, const unsigned short* palette,
++    unsigned int stride, int x, int y, int width, int height, int left, int top, int right, int bottom,
++    unsigned int flags)
++{
++    unsigned int* row = reinterpret_cast<unsigned int*>(destination) + (stride * y + x);
++    unsigned int depth = (height * 0xfff0 + (flags & 0xffff)) << 16;
++
++    // Nothing is clipped.
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (int j = 0; j < height; j++)
++        {
++            depth += 0x100000;
++            unsigned int* output = row + j * stride;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet -= count;
++                    do
++                    {
++                        unsigned int pixel = *output;
++                        if ((pixel & 0xffff0000) <= depth)
++                            *output = ((pixel >> 1) & (render_half_mask >> 1)) + depth;
++                        output++;
++                    } while (--count != 0);
++                }
++                output -= packet;
++                column -= packet;
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped.
++    if (left > 0)
++    {
++        for (int skip = top; skip > 0; skip--)
++        {
++            depth += 0x100000;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                column += abs(packet);
++            }
++        }
++
++        for (int j = 0; j < bottom - top; j++)
++        {
++            unsigned int* output = row + j * stride;
++            int remaining_left = left;
++            depth += 0x100000;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    packet -= count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else if (column < right)
++                        {
++                            unsigned int pixel = *output;
++                            if ((pixel & 0xffff0000) <= depth)
++                                *output = ((pixel >> 1) & (render_half_mask >> 1)) + depth;
++                            output++;
++                        }
++                        column++;
++                    } while (--count != 0);
++                }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
++                {
++                    remaining_left--;
++                    column++;
++                    packet--;
++                }
++                column += packet;
++                output += packet;
++            }
++        }
++        return;
++    }
++
++    // Top, right or bottom edge clipped.
++    for (int skip = top; skip > 0; skip--)
++    {
++        depth += 0x100000;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            column += abs(packet);
++        }
++    }
++
++    for (int j = 0; j < bottom - top; j++)
++    {
++        unsigned int* output = row + j * stride;
++        depth += 0x100000;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet > 0)
++            {
++                int count = packet;
++                packet -= count;
++                do
++                {
++                    if (column < right)
++                    {
++                        unsigned int pixel = *output;
++                        if ((pixel & 0xffff0000) <= depth)
++                            *output = ((pixel >> 1) & (render_half_mask >> 1)) + depth;
++                        output++;
++                    }
++                    column++;
++                } while (--count != 0);
++            }
++            if (column < right)
++                output -= packet;
++            column -= packet;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00408120.json b/targets/beachlife-uk-1.1.d/00408120.json
+new file mode 100644
+index 0000000..c4f9d58
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00408120.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x00408120",
++      "size": 759,
++      "name": "ResourceRasterFlagged",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

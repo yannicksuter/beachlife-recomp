@@ -1,0 +1,220 @@
+diff --git a/src/startup_screen_table_column_constructor.cpp b/src/startup_screen_table_column_constructor.cpp
+index 800d89a01c99a06281be5560fd273393b46795ef..157e6692bc89a891c42a1e199c484d3cfad1784d 100644
+--- a/src/startup_screen_table_column_constructor.cpp
++++ b/src/startup_screen_table_column_constructor.cpp
+@@ -5,8 +5,7 @@
+ #include <string.h>
+ 
+ // FUNCTION: BEACHLIFE 0x004b6300
+-ScreenTableColumn::ScreenTableColumn(
+-    ScreenRectangle bounds, const char* source, int value_a, int value_b, int value_c, int value_d)
++ScreenTableColumn::ScreenTableColumn(ScreenRectangle bounds, const char* source, int value_a, int value_b, int value_c, int value_d)
+     : ScreenItem(bounds)
+     , variable_image_5c(0)
+     , items_60()
+@@ -23,6 +22,8 @@ ScreenTableColumn::ScreenTableColumn(
+     if (strncmp(source, "VAR_", 4) == 0)
+     {
+         source_kind_58 = 0;
++        name_44 = static_cast<char*>(::operator new(strlen(source) + 1 - 4));
++        strcpy(name_44, source + 4);
+     }
+     else if (strncmp(source, "VARIMG_", 7) == 0)
+     {
+@@ -36,8 +37,9 @@ ScreenTableColumn::ScreenTableColumn(
+         source_kind_58 = 3;
+         name_44 = static_cast<char*>(::operator new(strlen(source) + 1 - 7));
+         strcpy(name_44, source + 7);
+-        child.bottom = child.top + 13;
+-        filter_80 = new ScreenVariableFilter(child);
++        ScreenRectangle line = child;
++        line.bottom = line.top + 13;
++        filter_80 = new ScreenVariableFilter(line);
+     }
+     else if (strncmp(source, "NUMADJ_", 7) == 0)
+     {
+@@ -48,10 +50,6 @@ ScreenTableColumn::ScreenTableColumn(
+     else
+     {
+         source_kind_58 = 2;
+-    }
+-
+-    if (source_kind_58 == 0 || source_kind_58 == 2)
+-    {
+         name_44 = static_cast<char*>(::operator new(strlen(source) + 1 - 4));
+         strcpy(name_44, source + 4);
+     }
+diff --git a/src/startup_screen_table_column_rows.cpp b/src/startup_screen_table_column_rows.cpp
+index 08670c4729e01b23a403c4c3ceeabdf41a498903..165f589f5c24df20614eeba667771b78a5119156 100644
+--- a/src/startup_screen_table_column_rows.cpp
++++ b/src/startup_screen_table_column_rows.cpp
+@@ -119,9 +119,13 @@ void ScreenTableColumn::DrawRowOverlay(ScreenRequestContext* context, unsigned c
+     ScreenFontRenderer* font = screen_manager->fonts_2c[value_a_50];
+     if (selected)
+     {
+-        ScreenRectangle bounds = { rectangle.left, rectangle.top + row_position_54, rectangle.right, rectangle.top + row_position_54 + table_word_48 - 1 };
++        ScreenRectangle bounds;
++        bounds.left = rectangle.left;
++        bounds.top = row_position_54 + rectangle.top;
++        bounds.right = rectangle.right;
++        bounds.bottom = bounds.top + table_word_48 - 1;
+         ScreenRequestRenderer* renderer = screen_request_renderer;
+-        renderer->FillRectangle(bounds, renderer->ConvertColour(26, 219, 123));
++        renderer->FillRectangle(bounds, screen_request_renderer->ConvertColour(26, 219, 123));
+     }
+     switch (source_kind_58)
+     {
+@@ -142,11 +146,6 @@ void ScreenTableColumn::DrawRowOverlay(ScreenRequestContext* context, unsigned c
+         variable_image_5c->SetRectanglePosition(rectangle.left + value_d_88, rectangle.top + row_position_54);
+         variable_image_5c->Unresolved1c();
+         break;
+-    case 2:
+-        if (selected)
+-            items_60.begin[current_item_7c]->MarkPrepared();
+-        items_60.begin[current_item_7c]->Unresolved0c();
+-        break;
+     case 3:
+         SelectColumnFilter(this);
+         filter_80->DrawRowOverlay(rectangle.top + row_position_54, context, value_a_50);
+@@ -161,6 +160,13 @@ void ScreenTableColumn::DrawRowOverlay(ScreenRequestContext* context, unsigned c
+         static_cast<ScreenNumberAdjust*>(items_6c.begin[current_item_7c])->context_44 = context;
+         items_6c.begin[current_item_7c]->Unresolved1c();
+         break;
++    case 2:
++        if (selected)
++        {
++            items_60.begin[current_item_7c]->MarkPrepared();
++            items_60.begin[current_item_7c]->Unresolved0c();
++        }
++        break;
+     }
+     row_position_54 += table_word_48;
+     ++current_item_7c;
+diff --git a/src/startup_screen_table_order.cpp b/src/startup_screen_table_order.cpp
+index c2b5323517964af7acb34723a6152f76b67aaa1c..f3aed77ecca0a8ee5984516867604054720a57ee 100644
+--- a/src/startup_screen_table_order.cpp
++++ b/src/startup_screen_table_order.cpp
+@@ -2,23 +2,30 @@
+ #include <utility>
+ 
+ // FUNCTION: BEACHLIFE 0x004ba1f0
+-bool ScreenTableOrder::GuestBefore(ScreenRequestContext* left, ScreenRequestContext* right)
++bool ScreenTableOrder::GuestBefore(ScreenRequestContext* a, ScreenRequestContext* b)
+ {
+-    if (!reversed)
+-        std::swap(left, right);
+-    switch (kind)
++    ScreenRequestContext* left;
++    ScreenRequestContext* right;
++    if (reversed)
+     {
+-    case 2:
+-        return !(right->AsGuest()->guest_value_25c >= left->AsGuest()->guest_value_25c);
+-    case 5:
++        left = a;
++        right = b;
++    }
++    else
+     {
+-        float value = left->GuestValue47ab00();
+-        return !(right->GuestValue47ab00() >= value);
++        left = b;
++        right = a;
+     }
+-    case 6:
+-        return left->AsGuest()->weather_values_16c[4] > right->AsGuest()->weather_values_16c[4];
++    switch (kind)
++    {
++    case 1:
++    case 3:
++    case 4:
++        return !(left->AsGuest()->happiness_264 <= right->AsGuest()->happiness_264);
++    case 2:
++        return !(left->AsGuest()->guest_value_25c <= right->AsGuest()->guest_value_25c);
+     case 7:
+-        return !(right->AsGuest()->guest_value_254 >= left->AsGuest()->guest_value_254);
++        return !(left->AsGuest()->guest_value_254 <= right->AsGuest()->guest_value_254);
+     case 8:
+         return left->AsGuest()->weather_values_16c[14] > right->AsGuest()->weather_values_16c[14];
+     case 9:
+@@ -40,46 +47,60 @@ bool ScreenTableOrder::GuestBefore(ScreenRequestContext* left, ScreenRequestCont
+         return left->AsGuest()->happiness_values_1d4[2] > right->AsGuest()->happiness_values_1d4[2];
+     case 16:
+         return left->AsGuest()->happiness_values_1d4[4] > right->AsGuest()->happiness_values_1d4[4];
++    case 6:
++        return left->AsGuest()->weather_values_16c[4] > right->AsGuest()->weather_values_16c[4];
++    case 5:
++    {
++        float value = left->GuestValue47ab00();
++        return !(right->GuestValue47ab00() >= value);
++    }
+     default:
+-        return !(right->AsGuest()->happiness_264 >= left->AsGuest()->happiness_264);
++        return !(left->AsGuest()->happiness_264 <= right->AsGuest()->happiness_264);
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004baba0
+-bool ScreenTableOrder::BuildingBefore(ScreenRequestContext* left, ScreenRequestContext* right)
++bool ScreenTableOrder::BuildingBefore(ScreenRequestContext* a, ScreenRequestContext* b)
+ {
+-    if (!reversed)
+-        std::swap(left, right);
++    unsigned short first_name[256], second_name[256];
++    ScreenRequestContext* left;
++    ScreenRequestContext* right;
++    if (reversed)
++    {
++        left = a;
++        right = b;
++    }
++    else
++    {
++        left = b;
++        right = a;
++    }
+     switch (kind)
+     {
++    case 23:
++        return left->AsBuilding()->building_60->power_cf4 > right->AsBuilding()->building_60->power_cf4;
+     case 18:
+         return left->AsBuilding()->power_state_33c > right->AsBuilding()->power_state_33c;
++    case 28:
++        return left->AsBuilding()->building_value_330 > right->AsBuilding()->building_value_330;
+     case 19:
+-        return !(right->AsBuilding()->building_values_214[0] >= left->AsBuilding()->building_values_214[0]);
++        return !(left->AsBuilding()->building_values_214[0] <= right->AsBuilding()->building_values_214[0]);
+     case 20:
+-        return !(right->AsBuilding()->building_values_214[1] >= left->AsBuilding()->building_values_214[1]);
++        return !(left->AsBuilding()->building_values_214[1] <= right->AsBuilding()->building_values_214[1]);
+     case 21:
+-        return !(right->AsBuilding()->building_values_214[2] >= left->AsBuilding()->building_values_214[2]);
++        return !(left->AsBuilding()->building_values_214[2] <= right->AsBuilding()->building_values_214[2]);
+     case 22:
+-        return !(right->AsBuilding()->building_values_214[3] >= left->AsBuilding()->building_values_214[3]);
+-    case 23:
+-        return left->AsBuilding()->building_60->power_cf4 > right->AsBuilding()->building_60->power_cf4;
++        return !(left->AsBuilding()->building_values_214[3] <= right->AsBuilding()->building_values_214[3]);
+     case 26:
+         return left->AsBuilding()->word_224 > right->AsBuilding()->word_224;
+     case 27:
+         return left->AsBuilding()->building_value_350 > right->AsBuilding()->building_value_350;
+-    case 28:
+-        return left->AsBuilding()->building_value_330 > right->AsBuilding()->building_value_330;
+     default:
+-    {
+-        unsigned short left_name[256];
+-        unsigned short right_name[256];
+-        left->ReadText("BUILDING_NAME", left_name);
+-        right->ReadText("BUILDING_NAME", right_name);
++        left->ReadText("BUILDING_NAME", second_name);
++        right->ReadText("BUILDING_NAME", first_name);
+         unsigned int index = 0;
+-        while (left_name[index] == right_name[index] && left_name[index])
++        while (second_name[index] && second_name[index] == first_name[index])
+             ++index;
+-        return left_name[index] < right_name[index];
+-    }
++        return second_name[index] < first_name[index];
+     }
+ }

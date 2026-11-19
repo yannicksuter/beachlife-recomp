@@ -1,0 +1,216 @@
+diff --git a/src/startup_world_security_crime.cpp b/src/startup_world_security_crime.cpp
+index 271f88bec88710ecb65aa4a223a0666abdd00e2e..6e94b73ea978b3025b4548a4fda354451b6d486a 100644
+--- a/src/startup_world_security_crime.cpp
++++ b/src/startup_world_security_crime.cpp
+@@ -132,50 +132,79 @@ bool WorldSecurityEntity::FindCrime(ScreenWorldPosition*)
+ void WorldSecurityEntity::DirectTo(unsigned int id)
+ {
+     WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(variable_world->FindObject(id));
+-    ScreenWorldPosition position;
+-    bool found = false;
+-    if (guest && guest->CanBeFined())
++    unsigned int failure = 0;
++    if (guest == 0)
+     {
+-        position = { guest->position_30.x, guest->position_30.y, guest->position_30.z };
+-        found = FindInteractionOffset(&position, 20, 10);
++        failure = 0x400000;
+     }
+-    if (found)
++    else
+     {
+-        fine_offset_7e8 = position;
+-        if (word_788 <= 2)
++        ScreenWorldPosition position;
++        bool found = false;
++        if (guest->CanBeFined())
+         {
+-            if (word_788 == 2)
++            position.x = guest->position_30.x;
++            position.y = guest->position_30.y;
++            position.z = guest->position_30.z;
++            found = FindInteractionOffset(&position, 20, 10);
++        }
++        if (found)
++        {
++            fine_offset_7e8 = position;
++            switch (word_788)
++            {
++            case 0:
++            {
++                word_77c = id;
++                ScreenModeCommand command(id_28, id_28, 3, 1, 0x7d);
++                word_7e4 = 0;
++                Unknown20(command);
++                break;
++            }
++            case 1:
++            {
++                word_7e4 = 1;
++                word_77c = id;
++                ScreenModeCommand command(id_28, id_28, 3, 1, 0x7d);
++                Unknown20(command);
++                break;
++            }
++            case 2:
+             {
+-                position = { guest->position_30.x, guest->position_30.y, guest->position_30.z };
+-                FindInteractionOffset(&position, 13, 8);
+-                fine_offset_7e8 = position;
++                ScreenWorldPosition spot;
++                spot.x = guest->position_30.x;
++                spot.y = guest->position_30.y;
++                spot.z = guest->position_30.z;
++                FindInteractionOffset(&spot, 13, 8);
++                fine_offset_7e8 = spot;
++                word_77c = id;
++                ScreenModeCommand command(id_28, id_28, 3, 1, 0x7e);
++                Unknown20(command);
++                break;
+             }
+-            else
+-                word_7e4 = word_788;
+-            word_77c = id;
+-            ScreenModeCommand command;
+-            command.words[0] = id_28;
+-            command.words[1] = id_28;
+-            command.words[2] = 3;
+-            command.words[3] = 1;
+-            command.words[4] = word_788 == 2 ? 0x7e : 0x7d;
+-            Unknown20(command);
++            }
++        }
++        else
++        {
++            failure = 0x400000;
+         }
+         flag_766 = 0;
+-        return;
+     }
+-    required_feedback_7c4 = 0;
+-    feedback_status_7c0 &= ~0x400000u;
+-    flag_766 = 1;
+-    ScreenModeCommand command;
+-    command.words[0] = id_28;
+-    command.words[1] = id_28;
+-    command.words[2] = 0x3c;
+-    command.words[3] = 0;
+-    command.words[4] = 0;
+-    command.words[5] = 0x83;
+-    command.words[6] = 0;
+-    screen_mode_commands->QueueCommand(&command);
++    if (failure != 0)
++    {
++        required_feedback_7c4 = 0;
++        flag_766 = 1;
++        feedback_status_7c0 &= ~failure;
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 0x3c;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        command.words[6] = 0;
++        command.words[5] = 0x83;
++        screen_mode_commands->QueueCommand(&command);
++    }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0048ae60
+diff --git a/src/startup_world_staff_job_helpers.cpp b/src/startup_world_staff_job_helpers.cpp
+index 3753cde7342c3f2eea347e66b3ad849abc27e132..ffa7e800ada8c240cb309c34297d5fdfc154f260 100644
+--- a/src/startup_world_staff_job_helpers.cpp
++++ b/src/startup_world_staff_job_helpers.cpp
+@@ -7,19 +7,13 @@
+ // FUNCTION: BEACHLIFE 0x00482200
+ void WorldMechanicEntity::DirectTo(unsigned int id)
+ {
+-    ScreenModeCommand command;
+     if (window_deactivation_state->repairs_28->AssignDirectedJob(id, id_28, &repair_type_7a0) != 0xffffffffu)
+     {
+         word_98 = id;
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = 0x3c;
+-        command.words[3] = 0;
+-        command.words[4] = 1;
+-        command.words[5] = 0x83;
+-        command.words[6] = 0;
++        ScreenModeCommand command = ScreenModeCommand(id_28, id_28, 0x3c, 0, 1, 0.0f, 0x83);
+         found_repair_780 = 1;
+         flag_766 = 0;
++        screen_mode_commands->QueueCommand(&command);
+     }
+     else
+     {
+@@ -27,15 +21,16 @@ void WorldMechanicEntity::DirectTo(unsigned int id)
+         flag_766 = 1;
+         required_feedback_78c = 0;
+         feedback_status_788 &= ~0x400000u;
++        ScreenModeCommand command;
+         command.words[0] = id_28;
+         command.words[1] = id_28;
+         command.words[2] = 0x3c;
+         command.words[3] = 0;
+         command.words[4] = 0;
+-        command.words[5] = 0x83;
+         command.words[6] = 0;
++        command.words[5] = 0x83;
++        screen_mode_commands->QueueCommand(&command);
+     }
+-    screen_mode_commands->QueueCommand(&command);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00482630
+diff --git a/src/startup_world_worker_feedback.cpp b/src/startup_world_worker_feedback.cpp
+index 0efe3d330b108754d3761167c3c5dd36e97160bb..a8c5325244d850b86ccb35cce27942988c3bdc40 100644
+--- a/src/startup_world_worker_feedback.cpp
++++ b/src/startup_world_worker_feedback.cpp
+@@ -151,28 +151,32 @@ void WorldRepresentativeEntity::UpdateFeedback()
+ void WorldCleanerEntity::DirectTo(unsigned int id)
+ {
+     unsigned int kind = window_deactivation_state->cleaning_2c->ClaimRequest(id, id_28);
+-    unsigned int accepted = 0;
+-    if (kind != ~0u)
++    if (kind != 0xffffffffu)
+     {
+         word_98 = id;
+-        if (kind <= 2)
+-            word_7c0 = kind;
++        if (kind == 2)
++            word_7c0 = 2;
++        else if (kind == 1)
++            word_7c0 = 1;
++        else if (kind == 0)
++            word_7c0 = 0;
+         flag_766 = 0;
+-        accepted = 1;
++        ScreenModeCommand command = ScreenModeCommand(id_28, id_28, 0x3c, 0, 1, 0.0f, 0x83);
++        screen_mode_commands->QueueCommand(&command);
+     }
+     else
+     {
+         required_feedback_7a0 = 0;
+-        feedback_status_79c &= ~0x400000u;
+         flag_766 = 1;
++        feedback_status_79c &= ~0x400000u;
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 0x3c;
++        command.words[3] = 0;
++        command.words[4] = 0;
++        command.words[6] = 0;
++        command.words[5] = 0x83;
++        screen_mode_commands->QueueCommand(&command);
+     }
+-    ScreenModeCommand command;
+-    command.words[0] = id_28;
+-    command.words[1] = id_28;
+-    command.words[2] = 60;
+-    command.words[3] = 0;
+-    command.words[4] = accepted;
+-    command.words[5] = 131;
+-    command.words[6] = 0;
+-    screen_mode_commands->QueueCommand(&command);
+ }

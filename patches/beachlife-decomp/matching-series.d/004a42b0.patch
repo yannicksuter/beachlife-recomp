@@ -1,0 +1,311 @@
+diff --git a/fixtures/game.d/fixture_004a42b0.cpp b/fixtures/game.d/fixture_004a42b0.cpp
+new file mode 100644
+index 0000000..a689b9d
+--- /dev/null
++++ b/fixtures/game.d/fixture_004a42b0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_combo_box.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004a42b0(ScreenComboBox* box, float elapsed)
++{
++    box->Unresolved04(elapsed);
++}
+diff --git a/metadata.d/004a42b0.csv b/metadata.d/004a42b0.csv
+new file mode 100644
+index 0000000..97f1e63
+--- /dev/null
++++ b/metadata.d/004a42b0.csv
+@@ -0,0 +1,8 @@
++address,type,size,symbol
++0x004a42b0,function,788,?Unresolved04@ScreenComboBox@@UAEXM@Z
++0x0057e530,global,48,?resolution_choices@@3QBUComboBoxResolution@@B
++0x0057e560,global,152,?guest_filter_choices@@3QBUComboBoxChoice@@B
++0x0057e5f8,global,128,?building_filter_choices@@3QBUComboBoxChoice@@B
++0x0057e678,global,72,?cell_paint_choices@@3QBUComboBoxChoice@@B
++0x0057e6c0,global,56,?staff_filter_choices@@3QBUComboBoxChoice@@B
++0x004fd420,widechar,6,
+diff --git a/src/match_004a42b0.cpp b/src/match_004a42b0.cpp
+new file mode 100644
+index 0000000..3f357c7
+--- /dev/null
++++ b/src/match_004a42b0.cpp
+@@ -0,0 +1,210 @@
++#include "startup_screen_combo_box.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_scroll_bar.h"
++#include "startup_screen_button.h"
++#include <algorithm>
++#include <stdio.h>
++
++// Display-mode choices of the resolution list: mode flag index, text key, height.
++struct ComboBoxResolution
++{
++    int mode;
++    const char* key;
++    int height;
++};
++
++// GLOBAL: BEACHLIFE 0x0057e530
++extern const ComboBoxResolution resolution_choices[4] = {
++    { 0, "640_480", 480 }, { 1, "800_600", 600 }, { 2, "1024_768", 768 }, { 3, "1280_960", 960 }
++};
++
++// GLOBAL: BEACHLIFE 0x0057e560
++extern const ComboBoxChoice guest_filter_choices[19] = { { "OB_GF_HAPPY", 1 }, { "OB_GF_SUNBURN", 5 }, { "OB_GF_HEADACHE", 6 }, { "OB_GF_DRUNK", 7 }, { "OB_GF_BLADDER", 8 }, { "OB_GF_ILL", 9 }, { 0, -1 }, { "OB_GF_PRICE", 10 }, { "OB_GF_SAFETY", 11 }, { "OB_GF_QUEUING", 12 }, { "OB_GF_BEAUTY", 13 }, { "OB_GF_CLEANLINESS", 14 }, { "OB_GF_TOTTY", 15 }, { "OB_GF_VARIETY", 16 }, { 0, -1 }, { "OB_GF_CASH", 2 }, { 0, -1 }, { "OB_GF_MALE", 3 }, { "OB_GF_FEMALE", 4 } };
++
++// GLOBAL: BEACHLIFE 0x0057e5f8
++extern const ComboBoxChoice building_filter_choices[16] = { { "OB_BF_ALL", 17 }, { 0, -1 }, { "OB_BF_REPAIR", 18 }, { "OB_BF_FAULTS", 28 }, { "OB_BF_AGE", 26 }, { "OB_BF_POWER", 23 }, { 0, -1 }, { "OB_BF_INCOME", 19 }, { "OB_BF_COSTS", 20 }, { "OB_BF_PROFIT", 21 }, { "OB_BF_AVPROFIT", 22 }, { 0, -1 }, { "OB_BF_CUSTOMERS_TODAY", 27 }, { 0, -1 }, { "OB_BF_OPEN", 24 }, { "OB_BF_CLOSED", 25 } };
++
++// GLOBAL: BEACHLIFE 0x0057e678
++extern const ComboBoxChoice cell_paint_choices[9] = { { "CELL_LAND_TEXT", static_cast<int>(0x80000001) },
++    { "CELL_SHALLOW_SEA_TEXT", 0x40000004 },
++    { "CELL_DEEP_SEA_TEXT", 0x20000008 },
++    { "CELL_STRUCTURE_TEXT", 0x10 },
++    { "CELL_ROCK_TEXT", 0x20 },
++    { "CELL_PLANT_TEXT", 0x8040 },
++    { "CELL_PATH_TEXT", 0x80 },
++    { "CELL_BEACH_TEXT", static_cast<int>(0x80000002) },
++    { "SEA_EDGE_TEXT", 0x100 } };
++
++// GLOBAL: BEACHLIFE 0x0057e6c0
++extern const ComboBoxChoice staff_filter_choices[7] = { { "STAFFB_FILTER_ALL", 6 }, { "STAFFB_FILTER_BUILDERS", 1 }, { "STAFFB_FILTER_CLEANERS", 0 }, { "STAFFB_FILTER_LIFEGUARD", 4 }, { "STAFFB_FILTER_MECHANICS", 2 }, { "STAFFB_FILTER_REP", 3 }, { "STAFFB_FILTER_SECURITY", 5 } };
++
++static inline const ComboBoxResolution& ResolutionChoice(unsigned int index)
++{
++    return resolution_choices[index];
++}
++
++static inline const ComboBoxChoice& GuestFilterChoice(unsigned int index)
++{
++    return guest_filter_choices[index];
++}
++
++static inline const ComboBoxChoice& BuildingFilterChoice(unsigned int index)
++{
++    return building_filter_choices[index];
++}
++
++static inline const ComboBoxChoice& CellPaintChoice(unsigned int index)
++{
++    return cell_paint_choices[index];
++}
++
++static inline const ComboBoxChoice& StaffFilterChoice(unsigned int index)
++{
++    return staff_filter_choices[index];
++}
++
++static inline void ClearComboEntries(ScreenComboBox* box)
++{
++    std::for_each(box->range_78.begin(), box->range_78.end(), DeleteComboBoxEntry);
++    box->range_78.clear();
++}
++
++static inline ScreenRequestGamePrefix* Game()
++{
++    return screen_request_game;
++}
++
++static inline const unsigned short* ScenarioText(unsigned int index)
++{
++    return Game()->ScenarioName(index);
++}
++
++static inline void FormatNumber(unsigned short* text, unsigned int value)
++{
++    swprintf(text, L"%d", value);
++}
++
++static inline void PopulateGuestFilter(ScreenComboBox* box)
++{
++    box->MarkPrepared();
++    ClearComboEntries(box);
++    box->flag_88 = 0;
++    for (unsigned int guest = 0; guest < 19; ++guest)
++        box->AddKey(GuestFilterChoice(guest).key, GuestFilterChoice(guest).value);
++    screen_manager->SetWord(7, 1);
++}
++
++static inline void PopulateScenarios(ScreenComboBox* box)
++{
++    ClearComboEntries(box);
++    box->flag_88 = 0;
++    for (unsigned int scenario = 0; scenario < Game()->ScenarioNameCount(); ++scenario)
++        box->AddText(ScenarioText(scenario), scenario);
++}
++
++static inline void PopulateTestList(ScreenComboBox* box)
++{
++    ClearComboEntries(box);
++    unsigned short text[128];
++    for (unsigned int value = 0; value < 100; ++value)
++    {
++        FormatNumber(text, value);
++        box->AddText(text, value);
++    }
++}
++
++static inline void PopulateBuildingFilter(ScreenComboBox* box)
++{
++    box->MarkPrepared();
++    ClearComboEntries(box);
++    box->flag_88 = 0;
++    for (unsigned int building = 0; building < 16; ++building)
++        box->AddKey(BuildingFilterChoice(building).key, BuildingFilterChoice(building).value);
++}
++
++// FUNCTION: BEACHLIFE 0x004a42b0
++void ScreenComboBox::Unresolved04(float elapsed)
++{
++    ScreenItem::Unresolved04(elapsed);
++    if (list_60)
++        word_6c = list_60->position_48;
++    if (flag_88)
++    {
++        switch (list_type_48)
++        {
++        case 0:
++            PopulateGuestFilter(this);
++            break;
++        case 1:
++        {
++            int height = screen_request_renderer->height;
++            flag_88 = 0;
++            MarkPrepared();
++            for (unsigned int mode = 0; mode < 4; ++mode)
++            {
++                if (screen_request_renderer->display_mode_flags_48[ResolutionChoice(mode).mode])
++                {
++                    AddKey(ResolutionChoice(mode).key, ResolutionChoice(mode).height);
++                    if (ResolutionChoice(mode).height == height)
++                        word_58 = mode;
++                }
++            }
++            break;
++        }
++        case 3:
++            PopulateScenarios(this);
++            break;
++        case 4:
++            PopulateBeer();
++            break;
++        case 5:
++            PopulateTestList(this);
++            break;
++        case 6:
++            PopulateBuildingFilter(this);
++            break;
++        case 2:
++        {
++            MarkPrepared();
++            flag_88 = 0;
++            for (unsigned int cell = 0; cell < 9; ++cell)
++                AddKey(CellPaintChoice(cell).key, CellPaintChoice(cell).value);
++            break;
++        }
++        case 7:
++        {
++            MarkPrepared();
++            ClearEntries();
++            for (unsigned int staff = 0; staff < 7; ++staff)
++            {
++                AddKey(StaffFilterChoice(staff).key, StaffFilterChoice(staff).value);
++                if (StaffFilterChoice(staff).value == screen_manager->word_7c)
++                    word_58 = staff;
++            }
++            break;
++        }
++        case 8:
++            PopulateStaffHire();
++            break;
++        case 9:
++            PopulateEvents(0);
++            break;
++        case 10:
++            PopulateEvents(1);
++            break;
++        case 11:
++            PopulateEvents(2);
++            break;
++        case 12:
++            PopulateCocktails();
++            break;
++        }
++    }
++    button_84->Unresolved04(elapsed);
++    if (list_60)
++    {
++        list_60->Unresolved04(elapsed);
++        word_6c = list_60->position_48;
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/004a42b0.json b/targets/beachlife-uk-1.1.d/004a42b0.json
+new file mode 100644
+index 0000000..3af2396
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004a42b0.json
+@@ -0,0 +1,62 @@
++{
++  "functions": [
++    {
++      "address": "0x004a42b0",
++      "size": 736,
++      "name": "ScreenComboBox::Unresolved04",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment and its 52-byte inline jump table."
++    }
++  ],
++  "source_compile_options": {
++    "match_004a42b0.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004a42b0.cpp",
++    "fixture_004a42b0.cpp"
++  ],
++  "comparison_global_operands": [
++    {
++      "function": "0x004a42b0",
++      "instruction_offset": 138,
++      "global": "0x0057e560",
++      "source": "match_004a42b0.cpp"
++    },
++    {
++      "function": "0x004a42b0",
++      "instruction_offset": 238,
++      "global": "0x0057e530",
++      "source": "match_004a42b0.cpp",
++      "member_offset": 8,
++      "element_size": 12
++    },
++    {
++      "function": "0x004a42b0",
++      "instruction_offset": 517,
++      "global": "0x0057e5f8",
++      "source": "match_004a42b0.cpp"
++    },
++    {
++      "function": "0x004a42b0",
++      "instruction_offset": 566,
++      "global": "0x0057e678",
++      "source": "match_004a42b0.cpp"
++    },
++    {
++      "function": "0x004a42b0",
++      "instruction_offset": 630,
++      "global": "0x0057e6c0",
++      "source": "match_004a42b0.cpp",
++      "member_offset": 4,
++      "element_size": 8
++    }
++  ],
++  "comparison_equivalent_copies": [
++    {
++      "address": "0x004a5030",
++      "symbol": "?for_each@_STL@@YAP6AXPAUScreenComboBoxEntry@@@ZPAPAU2@1P6AX0@Z@Z"
++    }
++  ]
++}

@@ -2337,6 +2337,10 @@ endif()
 if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
     add_executable(reconstructed_renderer_present_effect_tests
         tests/reconstructed_renderer_present_effect.cpp)
+    if(BEACHLIFE_ENABLE_BOOT_GAME)
+        target_compile_definitions(reconstructed_renderer_present_effect_tests PRIVATE
+            BEACHLIFE_NATIVE_GAME_EFFECT=1)
+    endif()
     target_link_libraries(reconstructed_renderer_present_effect_tests PRIVATE
         beachlife_reconstructed_renderer_present_effect)
     set_target_properties(reconstructed_renderer_present_effect_tests PROPERTIES
@@ -3925,8 +3929,12 @@ if(BEACHLIFE_ENABLE_EXPERIMENTAL_GAME)
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_lookup_constructor.cpp"
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_lookup_destructor.cpp"
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_table_reserve.cpp"
-        "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_table_destructor.cpp"
         "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_storage.cpp")
+    if(NOT BEACHLIFE_ENABLE_BOOT_GAME)
+        # The game tree defines the table destructor inline.
+        target_sources(beachlife_reconstructed_screen_localization PRIVATE
+            "${BEACHLIFE_DECOMP_SOURCE}/startup_screen_text_table_destructor.cpp")
+    endif()
     target_link_libraries(beachlife_reconstructed_screen_localization PUBLIC
         beachlife_reconstructed_files beachlife_reconstructed_sound_bank)
 

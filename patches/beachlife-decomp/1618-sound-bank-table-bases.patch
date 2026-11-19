@@ -1,0 +1,74 @@
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+index 1123fc7..cfb39f8 100644
+--- a/src/window_sound_bank.h
++++ b/src/window_sound_bank.h
+@@ -1,6 +1,7 @@
+ #ifndef WINDOW_SOUND_BANK_H
+ #define WINDOW_SOUND_BANK_H
+ 
++#include "startup_screen_text.h"
+ #include "startup_screen_text_key.h"
+ #include <stdio.h>
+ 
+@@ -51,17 +52,30 @@ struct WindowSoundIterator
+     ~WindowSoundIterator() { }
+     // Inline step to the next available bucket.
+     WindowSoundIterator& operator++();
++    bool operator!=(const WindowSoundIterator& other) const { return bucket != other.bucket; }
+ };
+ 
+-// Actual 32-byte x86 bank allocation. Destruction/loading remain real dependencies.
+-struct WindowSoundBank
++// The bank's table has the text table's layout and shares its storage base
++// (both call the same 0x004d38b0 constructor and 0x004d3890 destructor).
++struct WindowSoundBucketArray
+ {
+     int end_index;
+     int capacity_04;
+     WindowSoundBucket* buckets;
++    ~WindowSoundBucketArray();
++};
++
++struct WindowSoundTable : ScreenTextStorageBase, WindowSoundBucketArray
++{
+     unsigned char unknown_0c[4];
+     int bucket_count;
+     unsigned int word_14;
++    ~WindowSoundTable(); // Actual 0x004d22a0: array then base cleanup.
++};
++
++// Actual 32-byte x86 bank allocation. Destruction/loading remain real dependencies.
++struct WindowSoundBank : WindowSoundTable
++{
+     FILE* stream_18;
+     unsigned int cached_bytes_1c;
+ 
+@@ -79,7 +93,6 @@ struct WindowSoundBank
+     WindowSoundBank* InitializeStorageBase(); // 0x004d38b0, real return-this.
+     void DestroyStorageBase();                // 0x004d3890, real empty cleanup.
+     void ReleaseBucketStorage();              // 0x0049f560, actual array cleanup.
+-    void ReleaseIndexStorage();               // 0x004d22a0, array then base cleanup.
+     void ResetBuckets();                      // 0x004d23d0, unavailable bytes/word14.
+ 
+     // These are the same physical 0x004d2310/0x004d2450 bodies already supplied
+@@ -104,4 +117,20 @@ inline WindowSoundIterator& WindowSoundIterator::operator++()
+     return *this;
+ }
+ 
++// Expanded by /Ob1 owners; the delete[] runs the folded empty element
++// destructor through the vector destructor iterator.
++inline WindowSoundBucketArray::~WindowSoundBucketArray()
++{
++    WindowSoundBucket* storage = buckets;
++    if (storage != 0)
++        delete[] storage;
++}
++
++// Expanded by /Ob1 owners; the bank's unwinding uses the out-of-line copy
++// that the /Ob1 bank destructor (match_004d1d30.cpp) emits.
++// FUNCTION: BEACHLIFE 0x004d22a0
++inline WindowSoundTable::~WindowSoundTable()
++{
++}
++
+ #endif

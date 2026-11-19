@@ -1,0 +1,236 @@
+diff --git a/fixtures/game.d/fixture_00407be0.cpp b/fixtures/game.d/fixture_00407be0.cpp
+new file mode 100644
+index 0000000..b8b254b
+--- /dev/null
++++ b/fixtures/game.d/fixture_00407be0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_resource_rasters.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00407be0(unsigned short* destination, const unsigned char* pixels, const unsigned char* depths, const unsigned short* palette, int value, float step)
++{
++    ResourceBuildingRasterAt00407be0(destination, pixels, depths, palette, 640, value, value, value, value, value, value, value, value, value, step);
++}
+diff --git a/metadata.d/00407be0.csv b/metadata.d/00407be0.csv
+new file mode 100644
+index 0000000..45b20e2
+--- /dev/null
++++ b/metadata.d/00407be0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00407be0,function,1344,?ResourceBuildingRasterAt00407be0@@YAXPAGPBE1PBGIHHHHHHHHHM@Z
+diff --git a/src/match_00407be0.cpp b/src/match_00407be0.cpp
+new file mode 100644
+index 0000000..ad98219
+--- /dev/null
++++ b/src/match_00407be0.cpp
+@@ -0,0 +1,193 @@
++#include "startup_resource_rasters.h"
++#include "render_mask_setup.h"
++
++// Half-resolution variant of ResourceBuildingRasterAt004067d0: the sprite is
++// mapped onto every second destination row and column (odd sprite rows and
++// columns only), and each written pixel blends half of the palette colour
++// with half of the old colour (render_half_mask) under the depth test.
++// FUNCTION: BEACHLIFE 0x00407be0
++void ResourceBuildingRasterAt00407be0(unsigned short* destination, const unsigned char* pixels,
++    const unsigned char* depths, const unsigned short* palette, unsigned int stride, int x, int y, int width,
++    int height, int left, int top, int right, int bottom, int depth, float depth_step)
++{
++    int row;
++    int column;
++    unsigned int* base = reinterpret_cast<unsigned int*>(destination) + (y / 2 * stride + x / 2);
++
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (row = 0; row < height; ++row)
++        {
++            bool odd = row % 2 != 0;
++            unsigned int* output = base + row / 2 * stride;
++            column = 0;
++            while (column < width)
++            {
++                signed char c = (signed char)*pixels++;
++                ++depths;
++                if (c >= 0)
++                {
++                    while (c--)
++                    {
++                        if ((column & 1) && odd)
++                        {
++                            unsigned int value = ((depth & 0xFFFFu) + (unsigned short)(int)(*depths * depth_step)) << 16;
++                            if (value >= (*output & 0xFFFF0000u))
++                                *output = value + ((palette[*pixels] >> 1) & (render_half_mask >> 1)) + (((unsigned short)*output >> 1) & (render_half_mask >> 1));
++                            ++output;
++                        }
++                        ++pixels;
++                        ++depths;
++                        ++column;
++                    }
++                }
++                else
++                {
++                    c = (signed char)-c;
++                    while (c--)
++                    {
++                        if (odd && (column & 1))
++                            ++output;
++                        ++column;
++                    }
++                }
++            }
++        }
++        return;
++    }
++
++    if (left > 0)
++    {
++        for (int skipped = 0; skipped < top; ++skipped)
++        {
++            column = 0;
++            while (column < width)
++            {
++                signed char c = (signed char)*pixels++;
++                ++depths;
++                if (c >= 0)
++                {
++                    column += c;
++                    pixels += c;
++                    depths += c;
++                }
++                else
++                {
++                    column -= c;
++                }
++            }
++        }
++
++        for (row = 0; row < bottom - top; ++row)
++        {
++            bool odd = row % 2 != 0;
++            unsigned int* output = base + row / 2 * stride;
++            int remaining_left = left;
++            column = 0;
++            while (column < width)
++            {
++                signed char c = (signed char)*pixels++;
++                ++depths;
++                if (c >= 0)
++                {
++                    while (c--)
++                    {
++                        if (remaining_left != 0)
++                        {
++                            --remaining_left;
++                        }
++                        else if (column < right && (column & 1) && odd)
++                        {
++                            unsigned int value = ((depth & 0xFFFFu) + (unsigned short)(int)((*depths + 1.0f) * depth_step))
++                                              << 16;
++                            if (value >= (*output & 0xFFFF0000u))
++                                *output = value + ((palette[*pixels] >> 1) & (render_half_mask >> 1)) + (((unsigned short)*output >> 1) & (render_half_mask >> 1));
++                            ++output;
++                        }
++                        ++depths;
++                        ++pixels;
++                        ++column;
++                    }
++                }
++                else
++                {
++                    c = (signed char)-c;
++                    while (remaining_left != 0 && c != 0)
++                    {
++                        --remaining_left;
++                        ++column;
++                        --c;
++                    }
++                    while (c != 0)
++                    {
++                        if (odd && (column & 1))
++                            ++output;
++                        ++column;
++                        --c;
++                    }
++                }
++            }
++        }
++        return;
++    }
++
++    for (int skipped = 0; skipped < top; ++skipped)
++    {
++        column = 0;
++        while (column < width)
++        {
++            signed char c = (signed char)*pixels++;
++            ++depths;
++            if (c >= 0)
++            {
++                column += c;
++                pixels += c;
++                depths += c;
++            }
++            else
++            {
++                column -= c;
++            }
++        }
++    }
++
++    for (row = 0; row < bottom - top; ++row)
++    {
++        bool odd = row % 2 != 0;
++        unsigned int* output = base + row / 2 * stride;
++        column = 0;
++        while (column < width)
++        {
++            signed char c = (signed char)*pixels++;
++            ++depths;
++            if (c >= 0)
++            {
++                while (c--)
++                {
++                    if ((column & 1) && odd && column < right)
++                    {
++                        unsigned int value = ((depth & 0xFFFFu) + (unsigned short)(int)((*depths + 1.0f) * depth_step)) << 16;
++                        if (value >= (*output & 0xFFFF0000u))
++                            *output = value + ((palette[*pixels] >> 1) & (render_half_mask >> 1)) + (((unsigned short)*output >> 1) & (render_half_mask >> 1));
++                        ++output;
++                    }
++                    ++depths;
++                    ++pixels;
++                    ++column;
++                }
++            }
++            else
++            {
++                c = (signed char)-c;
++                while (c != 0 && column < right)
++                {
++                    if (odd && (column & 1))
++                        ++output;
++                    ++column;
++                    --c;
++                }
++                column += c;
++            }
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00407be0.json b/targets/beachlife-uk-1.1.d/00407be0.json
+new file mode 100644
+index 0000000..5836471
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00407be0.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x00407be0",
++      "size": 1344,
++      "name": "ResourceBuildingRasterAt00407be0",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

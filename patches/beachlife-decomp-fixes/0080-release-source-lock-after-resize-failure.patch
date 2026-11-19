@@ -1,0 +1,38 @@
+diff --git a/src/startup_renderer_resize_entries.cpp b/src/startup_renderer_resize_entries.cpp
+index 1c7d781..08f4063 100644
+--- a/src/startup_renderer_resize_entries.cpp
++++ b/src/startup_renderer_resize_entries.cpp
+@@ -26,10 +26,29 @@ void ScreenRequestRenderer::ResizeSurfaceImageEntries(
+             from_description.pixels = source->native_surface->lock().data();
+         else if (source->surface->vtable->Lock(source->surface, 0, &from_description, 0, 0) < 0)
+             return;
+-        if (destination->native_surface)
+-            to_description.pixels = destination->native_surface->lock().data();
+-        else if (destination->surface->vtable->Lock(destination->surface, 0, &to_description, 0, 0) < 0)
+-            return;
++        // Retail leaks the first lock when acquiring the destination fails.
++        auto unlock_source = [source]()
++        {
++            if (source->native_surface)
++                source->native_surface->unlock();
++            else
++                source->surface->vtable->Unlock(source->surface, 0);
++        };
++        try
++        {
++            if (destination->native_surface)
++                to_description.pixels = destination->native_surface->lock().data();
++            else if (destination->surface->vtable->Lock(destination->surface, 0, &to_description, 0, 0) < 0)
++            {
++                unlock_source();
++                return;
++            }
++        }
++        catch (...)
++        {
++            unlock_source();
++            throw;
++        }
+ 
+         TgaImage from(source->pitch >> 1, source->height);
+         TgaImage to(destination->pitch >> 1, destination->height);

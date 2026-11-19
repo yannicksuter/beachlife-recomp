@@ -1,0 +1,263 @@
+diff --git b/src/resource_depth_rasters.cpp a/src/resource_depth_rasters.cpp
+index 5c8c03c..bac6e7e 100644
+--- b/src/resource_depth_rasters.cpp
++++ a/src/resource_depth_rasters.cpp
+@@ -1,4 +1,3 @@
+-#include "startup_resource_rasters.h"
+ #include "render_mask_setup.h"
+ 
+ // The render masks belong to the unit of the depth-tested rasters, defined
+@@ -36,253 +35,3 @@ unsigned short render_red_mask;
+ unsigned int render_mask_width;
+ // GLOBAL: BEACHLIFE 0x00588834
+ unsigned short render_blue_mask;
+-
+-// The depth-tested 16-bit blend of a sprite pixel over the old one, returned
+-// with the depth in the high word: the source byte's top two bits select
+-// opaque (0x00, the new depth), or three quarters (0x40), half (0x80) or one
+-// quarter (0xc0) colour over the destination, which keep the old depth; the
+-// 0x100 case can never be selected, retail still tests it.
+-static inline unsigned int BlendDepthPixel(unsigned char mode, int value, const unsigned int* output, const unsigned short* palette, unsigned int old, unsigned int depth)
+-{
+-    unsigned int result;
+-    unsigned short pixel = *output;
+-    unsigned short color = palette[value - mode];
+-    switch (mode)
+-    {
+-    case 0x00:
+-        result = color + depth;
+-        break;
+-    case 0x40:
+-        result = old + (unsigned short)(((color >> 2) & (render_quarter_mask >> 2)) + ((color >> 1) & (render_half_mask >> 1))) + ((pixel >> 2) & (render_quarter_mask >> 2));
+-        break;
+-    case 0x80:
+-        result = old + ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
+-        break;
+-    case 0xc0:
+-        result = old + (unsigned short)(((pixel >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 1) & (render_half_mask >> 1))) + ((color >> 2) & (render_quarter_mask >> 2));
+-        break;
+-    case 0x100:
+-        result = old + pixel;
+-        break;
+-    }
+-    return result;
+-}
+-
+-// Depth-tested blended sprite raster: the RLE sprite is drawn onto a
+-// four-byte surface whose high word holds a depth, and a pixel is drawn only
+-// where the stored depth is not above the sprite's. The depth starts from the
+-// low word of flags and moves 8 down per negative frame_word row and 16 up per
+-// other row.
+-// FUNCTION: BEACHLIFE 0x00403f60
+-void ResourceRasterAt00403f60(unsigned short* destination, const unsigned char* source, const unsigned short* palette,
+-    unsigned int stride, int x, int y, int width, int height, int left, int top, int right, int bottom,
+-    unsigned int flags, int frame_word)
+-{
+-    int column;
+-    unsigned char mode;
+-    unsigned short pixel;
+-    unsigned int old;
+-    unsigned int result;
+-    signed char packet;
+-    unsigned int* row = reinterpret_cast<unsigned int*>(destination) + (stride * y + x);
+-    unsigned int depth = ((unsigned short)flags + frame_word * 0xfff8) << 16;
+-
+-    // Nothing is clipped.
+-    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
+-    {
+-        for (int j = 0; j < height; j++)
+-        {
+-            unsigned int* output = row + j * stride;
+-            column = 0;
+-            if (frame_word++ < 0)
+-                depth -= 0x80000;
+-            else
+-                depth += 0x100000;
+-            while (column < width)
+-            {
+-                packet = *source++;
+-                while (packet > 0)
+-                {
+-                    old = *output & 0xffff0000;
+-                    if (old <= depth)
+-                    {
+-                        mode = *source & 0xc0;
+-                        *output = BlendDepthPixel(mode, *source, output, palette, old, depth);
+-                    }
+-                    output++;
+-                    source++;
+-                    column++;
+-                    packet--;
+-                }
+-                output -= packet;
+-                column -= packet;
+-            }
+-        }
+-        return;
+-    }
+-
+-    // Left edge clipped.
+-    if (left > 0)
+-    {
+-        for (int skip = top; skip > 0; skip--)
+-        {
+-            column = 0;
+-            if (frame_word++ < 0)
+-                depth -= 0x80000;
+-            else
+-                depth += 0x100000;
+-            while (column < width)
+-            {
+-                packet = *source++;
+-                if (packet >= 0)
+-                {
+-                    column += packet;
+-                    source += packet;
+-                }
+-                else
+-                {
+-                    column -= packet;
+-                }
+-            }
+-        }
+-
+-        for (int j = 0; j < bottom - top; j++)
+-        {
+-            unsigned int* output = row + j * stride;
+-            column = 0;
+-            int remaining_left = left;
+-            if (frame_word++ < 0)
+-                depth -= 0x80000;
+-            else
+-                depth += 0x100000;
+-            while (column < width)
+-            {
+-                packet = *source++;
+-                while (packet > 0)
+-                {
+-                    if (remaining_left != 0)
+-                        remaining_left--;
+-                    else if (column < right)
+-                    {
+-                        old = *output & 0xffff0000;
+-                        if (old <= depth)
+-                        {
+-                            mode = *source & 0xc0;
+-                            pixel = *output;
+-                            unsigned short color = palette[*source - mode];
+-                            switch (mode)
+-                            {
+-                            case 0x00:
+-                                result = color + depth;
+-                                break;
+-                            case 0x40:
+-                                result = old + (unsigned short)(((color >> 2) & (render_quarter_mask >> 2)) + ((color >> 1) & (render_half_mask >> 1))) + ((pixel >> 2) & (render_quarter_mask >> 2));
+-                                break;
+-                            case 0x80:
+-                                result = old + ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
+-                                break;
+-                            case 0xc0:
+-                                result = old + (unsigned short)(((pixel >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 1) & (render_half_mask >> 1))) + ((color >> 2) & (render_quarter_mask >> 2));
+-                                break;
+-                            case 0x100:
+-                                result = old + pixel;
+-                                break;
+-                            }
+-                            *output = result;
+-                        }
+-                        output++;
+-                    }
+-                    source++;
+-                    column++;
+-                    packet--;
+-                }
+-                packet = -packet;
+-                while (remaining_left != 0 && packet != 0)
+-                {
+-                    remaining_left--;
+-                    column++;
+-                    packet--;
+-                }
+-                column += packet;
+-                output += packet;
+-            }
+-        }
+-        return;
+-    }
+-
+-    // Top, right or bottom edge clipped.
+-    for (int skip = top; skip > 0; skip--)
+-    {
+-        column = 0;
+-        if (frame_word++ < 0)
+-            depth -= 0x80000;
+-        else
+-            depth += 0x100000;
+-        while (column < width)
+-        {
+-            packet = *source++;
+-            if (packet >= 0)
+-            {
+-                column += packet;
+-                source += packet;
+-            }
+-            else
+-            {
+-                column -= packet;
+-            }
+-        }
+-    }
+-
+-    for (int j = 0; j < bottom - top; j++)
+-    {
+-        unsigned int* output = row + j * stride;
+-        column = 0;
+-        if (frame_word++ < 0)
+-            depth -= 0x80000;
+-        else
+-            depth += 0x100000;
+-        while (column < width)
+-        {
+-            packet = *source++;
+-            while (packet > 0)
+-            {
+-                if (column < right)
+-                {
+-                    old = *output & 0xffff0000;
+-                    if (old <= depth)
+-                    {
+-                        mode = *source & 0xc0;
+-                        pixel = *output;
+-                        unsigned short color = palette[*source - mode];
+-                        switch (mode)
+-                        {
+-                        case 0x00:
+-                            result = color + depth;
+-                            break;
+-                        case 0x40:
+-                            result = old + (unsigned short)(((color >> 2) & (render_quarter_mask >> 2)) + ((color >> 1) & (render_half_mask >> 1))) + ((pixel >> 2) & (render_quarter_mask >> 2));
+-                            break;
+-                        case 0x80:
+-                            result = old + ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
+-                            break;
+-                        case 0xc0:
+-                            result = old + (unsigned short)(((pixel >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 1) & (render_half_mask >> 1))) + ((color >> 2) & (render_quarter_mask >> 2));
+-                            break;
+-                        case 0x100:
+-                            result = old + pixel;
+-                            break;
+-                        }
+-                        *output = result;
+-                    }
+-                    output++;
+-                }
+-                source++;
+-                column++;
+-                packet--;
+-            }
+-            if (column < right)
+-                output -= packet;
+-            column -= packet;
+-        }
+-    }
+-}

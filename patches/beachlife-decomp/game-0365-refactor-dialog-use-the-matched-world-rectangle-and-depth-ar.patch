@@ -1,0 +1,250 @@
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 3e7a50536874bd5690974f9275f052e549896a61..70603d8c3f6c44f05cef00d3de5908faa609b817 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -88,7 +88,7 @@ struct ScreenDialogResourceRecord
+ struct ScreenDialogResource
+ {
+     void BurnTerrain(const ScreenWorldPosition* position);                                                                                                     // 0x00415090.
+-    ScreenRectangle WorldRectangle(const ScreenWorldPosition* position);                                                                                       // 0x00412b80.
++    void WorldRectangle(ScreenRectangle* rectangle, const ScreenWorldPosition* position);                                                                      // 0x00412b80.
+     void BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y, unsigned short depth);                                                           // 0x00415210.
+     void BurnTerrainClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y, int offset_x, int offset_y, unsigned short depth);                  // 0x004146f0.
+     void BurnBuildingFootprint(const ScreenWorldPosition* position, unsigned int width, unsigned int height);                                                  // 0x004155f0.
+@@ -145,7 +145,7 @@ struct ScreenDialogResource
+     void UpdateTerrainIntersection(ScreenRectangle* rectangle, const ScreenWorldPosition* position,
+         int x, int y); // 0x00414b30.
+     void UpdateTerrainIntersectionTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y,
+-        int offset_x, int offset_y, unsigned int depth, int x, int y);                     // 0x00414c10.
++        int offset_x, int offset_y, unsigned short depth, int x, int y);                   // 0x00414c10.
+     float SetAnimation(const char* name, float time, const ScreenWorldPosition* position); // 0x004168e0.
+     void UpdateBuildingRectangle(ScreenRectangle* rectangle, const ScreenWorldPosition* position,
+         unsigned int width, unsigned int height);                                                   // 0x00414240.
+@@ -165,7 +165,7 @@ struct ScreenDialogResource
+     void UpdateFrame(float time);
+     bool TestPixel(int x, int y);
+     void Draw(int x, int y, unsigned int flags, float time);
+-    void DrawClipped(int x, int y, int left, int top, int right, int bottom, unsigned int flags);
++    void DrawClipped(int x, int y, int left, int top, int right, int bottom, unsigned short depth);
+ };
+ 
+ struct ScreenDialogPaletteModifiers;
+diff --git a/src/startup_screen_dialog_resource_dispatch.cpp b/src/startup_screen_dialog_resource_dispatch.cpp
+index 0e3b04e313edd2cb34a208455be77fe8ee82be6e..5a500edc4c74402bb292b2a6430f0164cb669a75 100644
+--- a/src/startup_screen_dialog_resource_dispatch.cpp
++++ b/src/startup_screen_dialog_resource_dispatch.cpp
+@@ -5,7 +5,7 @@
+ #include <string.h>
+ // FUNCTION: BEACHLIFE 0x00412db0
+ void ScreenDialogResource::DrawClipped(int x, int y, int left, int top, int right, int bottom,
+-    unsigned int flags)
++    unsigned short depth)
+ {
+     unsigned short* pixels = screen_request_renderer->pixels_1c;
+     const unsigned char* data = record->frames[word_10]->SelectData(word_14, word_18);
+@@ -45,11 +45,11 @@ void ScreenDialogResource::DrawClipped(int x, int y, int left, int top, int righ
+         break;
+ 
+     case 3:
+-        ResourceRaster3(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags, frame->word_14, flag_28, flag_34, flag_29);
++        ResourceRaster3(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, depth, frame->word_14, flag_28, flag_34, flag_29);
+         break;
+ 
+     case 4:
+-        ResourceRasterFlagged(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags);
++        ResourceRasterFlagged(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, depth);
+         break;
+ 
+     case 5:
+@@ -62,11 +62,11 @@ void ScreenDialogResource::DrawClipped(int x, int y, int left, int top, int righ
+             int mode = screen_request_renderer->clip_mode_54;
+             if (mode == 0 || mode == 1)
+             {
+-                ResourceRasterFlagged(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags);
++                ResourceRasterFlagged(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, depth);
+             }
+             else if (mode == 2)
+             {
+-                ResourceRaster5Mode2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, flags);
++                ResourceRaster5Mode2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, depth);
+             }
+         }
+         break;
+@@ -77,7 +77,7 @@ void ScreenDialogResource::DrawClipped(int x, int y, int left, int top, int righ
+ 
+     case 12:
+     {
+-        unsigned int adjusted_flags = flags + 0x102;
++        unsigned int adjusted_flags = depth + 0x102;
+         if (screen_request_renderer->clip_mode_54 == 2)
+         {
+             ResourceRaster12Mode2(pixels, data, palette, stride, x, y, frame_width, frame_height, left, top, right, bottom, adjusted_flags);
+diff --git a/src/startup_screen_dialog_resource_state.cpp b/src/startup_screen_dialog_resource_state.cpp
+index d4b668823a04ac868759d01dad09e5bdae7e66fe..f52e1ecd5513db57e4220e8027d24b6db991ac10 100644
+--- a/src/startup_screen_dialog_resource_state.cpp
++++ b/src/startup_screen_dialog_resource_state.cpp
+@@ -19,8 +19,10 @@ void ScreenDialogResource::SaveState(GameFileReader* file)
+ // FUNCTION: BEACHLIFE 0x00416c40
+ void ScreenDialogResource::LoadState(GameFileReader* file)
+ {
++    unsigned int type;
+     file->ReadFloat(&word_04);
+-    file->Unknown68(&word_08);
++    file->Unknown68(&type);
++    word_08 = type;
+     file->Unknown68(reinterpret_cast<unsigned int*>(&word_0c));
+     file->Unknown68(&word_10);
+     file->Unknown68(reinterpret_cast<unsigned int*>(&word_14));
+diff --git a/src/startup_screen_dialog_resource_terrain.cpp b/src/startup_screen_dialog_resource_terrain.cpp
+index 5aca9c53c9f9574d1a97a6286fc424f75ae0f5e6..542dd0fd7224768a19bfbfae3c3630bf7b656e6a 100644
+--- a/src/startup_screen_dialog_resource_terrain.cpp
++++ b/src/startup_screen_dialog_resource_terrain.cpp
+@@ -2,14 +2,17 @@
+ #include "startup_screen_overlay_layout.h"
+ 
+ // FUNCTION: BEACHLIFE 0x00412b80
+-ScreenRectangle ScreenDialogResource::WorldRectangle(const ScreenWorldPosition* position)
++void ScreenDialogResource::WorldRectangle(ScreenRectangle* rectangle, const ScreenWorldPosition* position)
+ {
+     ScreenPoint screen = overlay_map->WorldToScreen(*position);
+     screen.x += overlay_map->scroll_x_c4;
+     screen.y += overlay_map->scroll_y_c8;
+     screen.x += CurrentFrameValue();
+     screen.y += SelectedFrame()->word_14;
+-    return { screen.x, screen.y, screen.x + SelectedFrame()->width_0e, screen.y + SelectedFrame()->height_10 };
++    rectangle->left = screen.x;
++    rectangle->top = screen.y;
++    rectangle->right = screen.x + SelectedFrame()->width_0e;
++    rectangle->bottom = screen.y + SelectedFrame()->height_10;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00415090
+diff --git a/src/startup_screen_dialog_resource_world_effects.cpp b/src/startup_screen_dialog_resource_world_effects.cpp
+index 0792f0f9a6e4c960e9aa91e83e2e24f33099af7a..26504a9696e31961bb4770bef95ac70306f27a64 100644
+--- a/src/startup_screen_dialog_resource_world_effects.cpp
++++ b/src/startup_screen_dialog_resource_world_effects.cpp
+@@ -8,9 +8,9 @@
+ void ScreenDialogResource::DrawValues(int x, int y, unsigned int depth, float time, float first, float second)
+ {
+     int left = 0;
++    int right = record->frames[word_10]->width_0e;
+     int top = 0;
+-    int right = SelectedFrame()->width_0e;
+-    int bottom = SelectedFrame()->height_10;
++    int bottom = record->frames[word_10]->height_10;
+     if (screen_request_renderer->ClipRectangle(x, y, left, top, right, bottom))
+     {
+         UpdateFrame(time);
+@@ -45,15 +45,16 @@ void ScreenDialogResource::WorldCoordinates(const ScreenWorldPosition* position,
+ {
+     ScreenPoint screen = overlay_map->WorldToScreen(*position);
+     screen.x += CurrentFrameValue();
+-    screen.y += SelectedFrame()->word_14;
++    ScreenDialogResourceFrame** frames = record->frames;
++    screen.y += frames[word_10]->word_14;
+     UpdateWorldFrame(time, position);
+     *x = screen.x;
+     *y = screen.y;
+-    *depth = static_cast<unsigned short>(overlay_map->DepthAt(position) + 8);
++    *depth = overlay_map->DepthAt(position) + 8;
+     if (record->format_18 == 3)
+     {
+         ScreenPoint tile = overlay_map->WorldToTile(position);
+         ScreenTerrainGrid* grid = screen_terrain_grid;
+-        *depth += grid->cells_0c[grid->TileIndex(tile.x, tile.y)].depth_50;
++        *depth += grid->cells_0c[(tile.y % grid->height_08) * grid->width_04 + tile.x % grid->width_04].depth_50;
+     }
+ }
+diff --git a/src/startup_screen_dialog_terrain_intersection.cpp b/src/startup_screen_dialog_terrain_intersection.cpp
+index 3a51e25928beaa7772ce521edc0f34903ef2d4e5..26cc8b79a1c7f957f91328f621cd073445daa035 100644
+--- a/src/startup_screen_dialog_terrain_intersection.cpp
++++ b/src/startup_screen_dialog_terrain_intersection.cpp
+@@ -9,13 +9,18 @@ void ScreenDialogResource::UpdateTerrainIntersection(ScreenRectangle* rectangle,
+     ScreenPoint point = overlay_map->WorldToScreen(*position);
+     point.x += CurrentFrameValue();
+     point.y += SelectedFrame()->word_14;
+-    unsigned int depth = (overlay_map->DepthAt(position) + 8) | 1;
++    unsigned short depth = overlay_map->DepthAt(position) + 8;
++    if (!(depth & 1))
++    {
++        depth++;
++    }
+     point.x += overlay_map->scroll_x_c4;
+     point.y += overlay_map->scroll_y_c8;
+     rectangle->left -= point.x;
+-    rectangle->right -= point.x;
+     rectangle->top -= point.y;
++    rectangle->right -= point.x;
+     rectangle->bottom -= point.y;
+     int size = overlay_map->tile_size_dc;
+-    UpdateTerrainIntersectionTiles(rectangle, point.x / size, point.y / size, point.x % size, point.y % size, depth, x, y);
++    UpdateTerrainIntersectionTiles(
++        rectangle, point.x / size, point.y / size, point.x % size, point.y % size, depth, x, y);
+ }
+diff --git a/src/startup_screen_dialog_terrain_tiles.cpp b/src/startup_screen_dialog_terrain_tiles.cpp
+index 19e3805726025a4e19986becb43ce7fc2000b48b..7578dece00387d057fa7518c17de1b787c0d4741 100644
+--- a/src/startup_screen_dialog_terrain_tiles.cpp
++++ b/src/startup_screen_dialog_terrain_tiles.cpp
+@@ -159,7 +159,7 @@ void ScreenDialogResource::BurnTerrainClippedTiles(const ScreenRectangle* rectan
+ 
+ // FUNCTION: BEACHLIFE 0x00414c10
+ void ScreenDialogResource::UpdateTerrainIntersectionTiles(const ScreenRectangle* rectangle,
+-    int tile_x, int tile_y, int offset_x, int offset_y, unsigned int depth, int x, int y)
++    int tile_x, int tile_y, int offset_x, int offset_y, unsigned short depth, int x, int y)
+ {
+     const unsigned char* data = SelectedFrame()->SelectData(word_14, word_18);
+     OverlayMapPrefix* map = overlay_map;
+diff --git a/src/startup_screen_dialog_world_draw.cpp b/src/startup_screen_dialog_world_draw.cpp
+index 4f992c87d51cc08ebbee0e4b4af6f2622445b17d..ec07c8dd58d8afbe79b9db94ff5676316fc7430f 100644
+--- a/src/startup_screen_dialog_world_draw.cpp
++++ b/src/startup_screen_dialog_world_draw.cpp
+@@ -86,19 +86,23 @@ void ScreenDialogResource::DrawWorld(const ScreenWorldPosition* position, float
+     screen.x += CurrentFrameValue();
+     screen.y += SelectedFrame()->word_14;
+     UpdateWorldFrame(time, position);
++    ScreenDialogResourceFrame* frame = SelectedFrame();
++    int x = screen.x;
++    int y = screen.y;
+     int left = 0;
++    int right = frame->width_0e;
+     int top = 0;
+-    int right = SelectedFrame()->width_0e;
+-    int bottom = SelectedFrame()->height_10;
+-    if (screen_request_renderer->ClipRectangle(screen.x, screen.y, left, top, right, bottom))
++    int bottom = frame->height_10;
++    if (screen_request_renderer->ClipRectangle(x, y, left, top, right, bottom))
+     {
+-        unsigned int depth = overlay_map->DepthAt(position) + 8;
++        unsigned short depth = overlay_map->DepthAt(position) + 8;
+         if (record->format_18 == 3)
+         {
+             ScreenPoint tile = overlay_map->WorldToTile(position);
+-            ScreenTerrainGrid* grid = screen_terrain_grid;
+-            depth += grid->cells_0c[grid->TileIndex(tile.x, tile.y)].depth_50;
++            ScreenTerrainGrid* terrain = screen_terrain_grid;
++            depth += terrain->cells_0c[tile.y % terrain->height_08 * terrain->width_04 + tile.x % terrain->width_04]
++                         .depth_50;
+         }
+-        DrawClipped(screen.x, screen.y, left, top, right, bottom, depth);
++        DrawClipped(x, y, left, top, right, bottom, depth);
+     }
+ }
+diff --git a/src/startup_world_scenery_special.cpp b/src/startup_world_scenery_special.cpp
+index 93b19834d2ff6db0e8cacab5fd6dad82acbf51de..863d3e2a0153d4e35cfd2db3e3f598fe692a37f0 100644
+--- a/src/startup_world_scenery_special.cpp
++++ b/src/startup_world_scenery_special.cpp
+@@ -10,10 +10,10 @@ static void IgnoreSceneryDraw(WorldSceneryEntity*)
+ // FUNCTION: BEACHLIFE 0x0041e290
+ void DrawScenerySpecial(WorldSceneryEntity* entity)
+ {
+-    ScreenWorldPosition position = { entity->position_30.x, entity->position_30.y, entity->position_30.z };
+-    entity->keyline_state_44->BurnTerrain(&position);
++    entity->keyline_state_44->BurnTerrain(&entity->position_30);
+     entity->flag_d0 = 0;
+-    entity->removal_rectangle_c0 = entity->keyline_state_44->WorldRectangle(&position);
+-    entity->keyline_state_44->DrawWorld(&position, window_deactivation_state->clock_158);
++    entity->keyline_state_44->WorldRectangle(&entity->removal_rectangle_c0, &entity->position_30);
++    float time = window_deactivation_state->clock_158;
++    entity->keyline_state_44->DrawWorld(&entity->position_30, time);
+     entity->draw_ec = IgnoreSceneryDraw;
+ }

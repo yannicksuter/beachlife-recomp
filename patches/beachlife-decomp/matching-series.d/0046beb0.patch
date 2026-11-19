@@ -1,0 +1,877 @@
+diff --git a/fixtures/game.d/fixture_0046beb0.cpp b/fixtures/game.d/fixture_0046beb0.cpp
+new file mode 100644
+index 0000000..2ca2b1e
+--- /dev/null
++++ b/fixtures/game.d/fixture_0046beb0.cpp
+@@ -0,0 +1,12 @@
++#include "startup_guest_thought_time.h"
++#include "startup_world_guest_action_helpers.h"
++#include "startup_world_guest_thought.h"
++#include "startup_animation_sound.h"
++#include "startup_world_subsystems.h"
++#include "startup_game_file.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) bool Fixture_0046beb0(WorldGuestEntity* item)
++{
++    return item->WorldGuestEntity::PerformAction3();
++}
+diff --git a/metadata.d/0046beb0.csv b/metadata.d/0046beb0.csv
+new file mode 100644
+index 0000000..13c0739
+--- /dev/null
++++ b/metadata.d/0046beb0.csv
+@@ -0,0 +1,27 @@
++address,type,size,symbol
++0x0046beb0,function,9052,?PerformAction3@WorldGuestEntity@@QAE_NXZ
++0x00424900,function,1544,?FindGuestFeature@WorldSubsystem4c@@QAEIPAIPAE0001IIPBUScreenPoint@@II@Z
++0x00468ac0,function,2625,?FindBeachWalkpoints@WorldGuestEntity@@QAEPAUScreenWorldPosition@@U2@@Z
++0x005bacb8,global,4,?world_guest_selected_building@@3IA
++0x005bacbc,global,4,?world_guest_selected_feature@@3IA
++0x004f3868,float,4,
++0x004f398c,float,4,
++0x00572e1c,string,22,
++0x00572e34,string,22,
++0x00578ab0,string,35,
++0x00578ad4,string,32,
++0x00578af4,string,32,
++0x00578b14,string,31,
++0x00578b34,string,32,
++0x00578b54,string,19,
++0x00578b68,string,19,
++0x00578b7c,string,30,
++0x00578b9c,string,32,
++0x00578bbc,string,32,
++0x00578bdc,string,32,
++0x00578bfc,string,32,
++0x00578c1c,string,35,
++0x00578c40,string,40,
++0x00578c68,string,30,
++0x00578c88,string,29,
++0x00578cb8,string,22,
+diff --git a/src/match_0046beb0.cpp b/src/match_0046beb0.cpp
+new file mode 100644
+index 0000000..b76cd4c
+--- /dev/null
++++ b/src/match_0046beb0.cpp
+@@ -0,0 +1,763 @@
++#include "startup_guest_thought_time.h"
++#include "startup_world_guest_action_helpers.h"
++#include "startup_world_guest_thought.h"
++#include "startup_animation_sound.h"
++#include "startup_world_subsystems.h"
++#include "startup_game_file.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++extern const char* world_guest_desire_names[26];
++
++// GLOBAL: BEACHLIFE 0x005bacb8
++unsigned int world_guest_selected_building;
++// GLOBAL: BEACHLIFE 0x005bacbc
++unsigned int world_guest_selected_feature;
++
++static inline VariableCatalog* Catalog()
++{
++    return variable_catalog;
++}
++
++static inline WorldSubsystem4c* GuestFeatures()
++{
++    return world_subsystem_4c;
++}
++
++static inline WindowDeactivationState* Window()
++{
++    return window_deactivation_state;
++}
++
++// FUNCTION: BEACHLIFE 0x0046beb0
++bool WorldGuestEntity::PerformAction3()
++{
++    bool found = false;
++    unsigned char unavailable = 0;
++    unsigned int broken = 0;
++    unsigned int closed = 0;
++    unsigned int beach_closed = 0;
++    flag_3c0 = 0;
++    bool state_sent = false;
++    bool failed = false;
++    int weather = variable_weather->lighting_2c38;
++    if (flags_3d2[2])
++        flags_3d2[1] = 1;
++    else
++        flags_3d2[1] = 0;
++    if (window_deactivation_state->value_16c > 0.0f)
++    {
++        if (CheckIllness())
++            return true;
++        if (CheckDeparture())
++            return true;
++        float desires[26];
++        memcpy(desires, weather_values_16c, sizeof(desires));
++        if (CheckBedtime())
++            return true;
++        if (variable_weather->lighting_2c38 != 1)
++        {
++            char prefix[100];
++            char digits[2];
++            switch (variable_weather->lighting_2c38)
++            {
++            case 0:
++                strcpy(prefix, "GUEST_THOUGHT_WEATHER_HEAT_WAVE");
++                break;
++            case 2:
++                strcpy(prefix, "GUEST_THOUGHT_WEATHER_OVERCAST");
++                break;
++            case 3:
++                strcpy(prefix, "GUEST_THOUGHT_WEATHER_LIGHTRAIN");
++                break;
++            case 4:
++                strcpy(prefix, "GUEST_THOUGHT_WEATHER_HEAVYRAIN");
++                break;
++            case 5:
++                strcpy(prefix, "GUEST_THOUGHT_WEATHER_THUNDERSTORM");
++                break;
++            }
++            _itoa(rand() % 3 + 1, digits, 10);
++            strcat(prefix, digits);
++            ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++        }
++        unsigned int desire;
++        float strength;
++        while (!found)
++        {
++            strength = 0.0f;
++            broken = 0;
++            closed = 0;
++            beach_closed = 0;
++            desire = 26;
++            if (flags_3d2[2] && !flag_228 && word_390 != word_338)
++            {
++                VariableBuilding* building = variable_catalog->Building(word_394);
++                const char* type = Catalog()->FeatureTypeName(Catalog()->FeatureType(building->features_1fc[words_1f0[12]]));
++                for (unsigned int i = 0; i < 26; ++i)
++                {
++                    if (strcmp(type, world_guest_desire_names[i]) == 0)
++                    {
++                        desire = i;
++                        i = 26;
++                    }
++                }
++                if (desire == 0)
++                {
++                    for (unsigned int k = 0; k < 26; ++k)
++                    {
++                        if (strength < desires[k])
++                        {
++                            if (k == 14)
++                            {
++                                if (desires[14] > 0.6f)
++                                {
++                                    desire = 14;
++                                    strength = desires[14];
++                                }
++                            }
++                            else
++                            {
++                                desire = k;
++                                strength = desires[k];
++                            }
++                        }
++                    }
++                }
++                flags_3d2[2] = 0;
++            }
++            else
++            {
++                flag_228 = 0;
++                for (unsigned int k = 0; k < 26; ++k)
++                {
++                    if (strength < desires[k])
++                    {
++                        if (k == 14)
++                        {
++                            if (desires[14] > 0.6f)
++                            {
++                                desire = 14;
++                                strength = desires[14];
++                            }
++                        }
++                        else
++                        {
++                            desire = k;
++                            strength = desires[k];
++                        }
++                    }
++                }
++            }
++            if (desire == 26)
++            {
++                if (traits_138[11] > 0.0f)
++                {
++                    unsigned int id = id_28;
++                    ScreenModeCommand command;
++                    command.words[0] = id;
++                    command.words[1] = id;
++                    command.words[2] = 3;
++                    command.words[3] = 0;
++                    command.words[4] = 57;
++                    screen_mode_commands->QueueCommand(&command);
++                    return true;
++                }
++                StartupFatal("Please Give Me A Desire To Walk!!!!! %s", name_06);
++                return true;
++            }
++            desires[desire] = 0.0f;
++            if (desire == 16)
++            {
++                if (weather < 4)
++                {
++                    ScreenWorldPosition position;
++                    position = RandomWalkPosition();
++                    walkpoints_22c[0].x = position.x;
++                    walkpoints_22c[0].y = position.y;
++                    words_1f0[12] = 0;
++                    word_250 = 0;
++                    flag_228 = 1;
++                    found = 1;
++                    word_31c = static_cast<unsigned int>(*reinterpret_cast<unsigned int*>(guest_f4->unknown_320 + 0x360 - 0x320) * strength);
++                    word_98 = static_cast<unsigned int>(-1);
++                    if (word_31c < 1)
++                        word_31c = 1;
++                }
++                continue;
++            }
++            if (desire == 12)
++            {
++                if (window_deactivation_state->render_value_160 < 18.0f && window_deactivation_state->render_value_160 > 9.0f && (weather == 1 || weather == 0))
++                {
++                    world_guest_selected_building = GuestFeatures()->FindGuestFeature(&world_guest_selected_feature, reinterpret_cast<unsigned char*>(&found), &broken, &closed, &beach_closed, &unavailable, guest_f4->word_1c4, desire, &TilePosition(), word_390, id_28);
++                    if (beach_closed + closed + broken)
++                    {
++                        happiness_values_1d4[4] -= static_cast<float>(beach_closed + closed + broken) * guest_f4->ranges_200[24][1];
++                        if (happiness_values_1d4[4] < 0.0f)
++                            happiness_values_1d4[4] = 0.0f;
++                    }
++                    if (!found || (rand() % 4 == 0 && window_deactivation_state->render_value_160 < 18.0f && window_deactivation_state->render_value_160 > 9.0f))
++                    {
++                        ScreenWorldPosition* points = FindWaterWalkpoints();
++                        walkpoints_22c[0].x = points[1].x;
++                        walkpoints_22c[0].y = points[1].y;
++                        found = 1;
++                        flag_228 = 1;
++                        walkpoints_22c[1].x = 0.0f;
++                        walkpoints_22c[1].y = 0.0f;
++                        walkpoints_22c[2].x = 0.0f;
++                        walkpoints_22c[2].y = 0.0f;
++                        words_1f0[12] = 1;
++                        word_250 = 0;
++                        word_98 = static_cast<unsigned int>(-1);
++                    }
++                    word_31c = static_cast<unsigned int>(*reinterpret_cast<unsigned int*>(guest_f4->unknown_320 + 0x350 - 0x320) * strength);
++                    if (word_31c < 1)
++                        word_31c = 1;
++                }
++                continue;
++            }
++            if (desire == 13)
++            {
++                if (weather < 4)
++                {
++                    world_guest_selected_building = GuestFeatures()->FindGuestFeature(&world_guest_selected_feature, reinterpret_cast<unsigned char*>(&found), &broken, &closed, &beach_closed, &unavailable, guest_f4->word_1c4, desire, &TilePosition(), word_390, id_28);
++                    if (!found)
++                    {
++                        if (beach_closed + closed + broken)
++                        {
++                            happiness_values_1d4[4] -= static_cast<float>(beach_closed + closed + broken) * guest_f4->ranges_200[24][1];
++                            if (happiness_values_1d4[4] < 0.0f)
++                                happiness_values_1d4[4] = 0.0f;
++                            if (!unavailable)
++                            {
++                                char prefix[250];
++                                char digits[2];
++                                if (closed)
++                                {
++                                    strcpy(prefix, "GUEST_THOUGHT_CLOSED_");
++                                    strcat(prefix, variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60->name_04);
++                                    _itoa(rand() % 3 + 1, digits, 10);
++                                    strcat(prefix, digits);
++                                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                                }
++                                else if (broken)
++                                {
++                                    strcpy(prefix, "GUEST_THOUGHT_BROKEN_");
++                                    strcat(prefix, variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60->name_04);
++                                    _itoa(rand() % 3 + 1, digits, 10);
++                                    strcat(prefix, digits);
++                                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                                }
++                                else if (beach_closed)
++                                {
++                                    strcpy(prefix, "GUEST_THOUGHT_BEACH_CLOSED_");
++                                    VariableBuilding* definition = variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60;
++                                    unsigned int feature = definition->features_1fc[world_guest_selected_feature];
++                                    strcat(prefix, variable_catalog->FeatureKey(feature));
++                                    _itoa(rand() % 3 + 1, digits, 10);
++                                    strcat(prefix, digits);
++                                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                                }
++                                else
++                                {
++                                    strcpy(prefix, "GUEST_THOUGHT_MISSED_");
++                                    strcat(prefix, world_guest_desire_names[desire]);
++                                    _itoa(rand() % 3 + 1, digits, 10);
++                                    strcat(prefix, digits);
++                                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                                }
++                                failed = true;
++                                PerformAction50();
++                                found = 1;
++                                flag_3ac = 1;
++                                flag_38d = 1;
++                                Unknown28("WalkAnimation", 0, static_cast<unsigned int>(-1), 1, 0);
++                                if (flag_38c)
++                                {
++                                    flag_38c = 0;
++                                    if (word_3cc <= 0.0f)
++                                    {
++                                        resource_3c8->word_14 = 0;
++                                        word_3cc = guest_thought_bubble_time;
++                                    }
++                                }
++                                else if (flag_38d)
++                                {
++                                    flag_38d = 0;
++                                    if (word_3cc <= 0.0f)
++                                    {
++                                        resource_3c8->word_14 = 1;
++                                        word_3cc = guest_thought_bubble_time;
++                                    }
++                                }
++                                if (guest_f4->word_1c4 == 0)
++                                {
++                                    ScreenWorldPosition point;
++                                    point = position_30;
++
++                                    animation_sounds->PlayOpinion(8, &point);
++                                }
++                                else
++                                {
++                                    ScreenWorldPosition point;
++                                    point = position_30;
++
++                                    animation_sounds->PlayOpinion(15, &point);
++                                }
++                                happiness_values_1d4[4] -= guest_f4->ranges_200[24][1];
++                                if (happiness_values_1d4[4] < 0.0f)
++                                    happiness_values_1d4[4] = 0.0f;
++                                else if (happiness_values_1d4[4] > 1.0f)
++                                    happiness_values_1d4[4] = 1.0f;
++                                weather_values_16c[desire] = 0.0f;
++                                continue;
++                            }
++                        }
++                    }
++                    if (!failed && (!found || (rand() % 4 == 0 && window_deactivation_state->render_value_160 < 18.0f && window_deactivation_state->render_value_160 > 9.0f))
++                        && window_deactivation_state->render_value_160 < 18.0f && window_deactivation_state->render_value_160 > 9.0f)
++                    {
++                        found = 0;
++                        ScreenWorldPosition* points = FindBeachWalkpoints(position_30);
++                        if (points)
++                        {
++                            walkpoints_22c[0].x = points[0].x;
++                            walkpoints_22c[0].y = points[0].y;
++                            walkpoints_22c[1].x = points[1].x;
++                            walkpoints_22c[1].y = points[1].y;
++                            walkpoints_22c[2].x = 0.0f;
++                            walkpoints_22c[2].y = 0.0f;
++                            word_250 = 0;
++                            word_98 = static_cast<unsigned int>(-1);
++                            flag_228 = 1;
++                            words_1f0[12] = 2;
++                            found = 1;
++                            word_31c = static_cast<unsigned int>(*reinterpret_cast<unsigned int*>(guest_f4->unknown_320 + 0x354 - 0x320) * strength);
++                            if (word_31c < 1)
++                                word_31c = 1;
++                        }
++                        else
++                        {
++                            char prefix[250];
++                            char digits[2];
++                            strcpy(prefix, "GUEST_THOUGHT_MISSED_");
++                            strcat(prefix, world_guest_desire_names[13]);
++                            _itoa(rand() % 3 + 1, digits, 10);
++                            strcat(prefix, digits);
++                            ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                            failed = true;
++                            PerformAction50();
++                            found = 1;
++                            flag_3ac = 1;
++                            flag_38d = 1;
++                            Unknown28("WalkAnimation", 0, static_cast<unsigned int>(-1), 1, 0);
++                            if (flag_38c)
++                            {
++                                flag_38c = 0;
++                                if (word_3cc <= 0.0f)
++                                {
++                                    resource_3c8->word_14 = 0;
++                                    word_3cc = guest_thought_bubble_time;
++                                }
++                            }
++                            else if (flag_38d)
++                            {
++                                flag_38d = 0;
++                                if (word_3cc <= 0.0f)
++                                {
++                                    resource_3c8->word_14 = 1;
++                                    word_3cc = guest_thought_bubble_time;
++                                }
++                            }
++                            if (guest_f4->word_1c4 == 0)
++                            {
++                                ScreenWorldPosition point;
++                                point = position_30;
++
++                                animation_sounds->PlayOpinion(8, &point);
++                            }
++                            else
++                            {
++                                ScreenWorldPosition point;
++                                point = position_30;
++
++                                animation_sounds->PlayOpinion(15, &point);
++                            }
++                            happiness_values_1d4[4] -= guest_f4->ranges_200[24][1];
++                            happiness_values_1d4[0] -= guest_f4->ranges_200[20][1];
++                            happiness_values_1d4[1] -= guest_f4->ranges_200[21][1];
++                            happiness_values_1d4[2] -= guest_f4->ranges_200[22][1];
++                            happiness_values_1d4[3] -= guest_f4->ranges_200[23][1];
++                            happiness_values_1d4[5] -= guest_f4->ranges_200[25][1];
++                            happiness_values_1d4[6] -= guest_f4->ranges_200[26][1];
++                            weather_values_16c[desire] = 0.0f;
++                            for (int i = 0; i < 7; ++i)
++                            {
++                                if (happiness_values_1d4[i] < 0.0f)
++                                    happiness_values_1d4[i] = 0.0f;
++                            }
++                        }
++                    }
++                }
++                continue;
++            }
++            if (desire == 19)
++            {
++                words_1f0[12] = 3;
++                flag_228 = 1;
++                word_98 = static_cast<unsigned int>(-1);
++                state_sent = true;
++                found = 1;
++                ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 31);
++                screen_mode_commands->QueueCommand(&command);
++                continue;
++            }
++            if (desire == 18)
++            {
++                words_1f0[12] = 8;
++                flag_228 = 1;
++                word_98 = static_cast<unsigned int>(-1);
++                found = 1;
++                ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 51);
++                screen_mode_commands->QueueCommand(&command);
++                char prefix[250];
++                char digits[2];
++                _itoa(rand() % 3 + 1, digits, 10);
++                strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_VANDALISING");
++                strcat(prefix, digits);
++                ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                return true;
++            }
++            if (desire == 25)
++            {
++                weather_values_16c[desire] = 0.0f;
++                continue;
++            }
++            if (desire == 23)
++            {
++                weather_values_16c[desire] = 0.0f;
++                continue;
++            }
++            if (desire == 20)
++            {
++                unsigned int id = id_28;
++                flag_228 = 1;
++                words_1f0[12] = 4;
++                found = 1;
++                ScreenModeCommand command;
++                command.words[0] = id;
++                command.words[1] = id;
++                command.words[2] = 3;
++                command.words[3] = 0;
++                command.words[4] = 34;
++                screen_mode_commands->QueueCommand(&command);
++                char prefix[250];
++                char digits[2];
++                _itoa(rand() % 3 + 1, digits, 10);
++                strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_FLIRTING");
++                strcat(prefix, digits);
++                ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                return found;
++            }
++            if ((desire == 15 && weather > 2) || (desire == 6 && weather > 3))
++            {
++                found = 0;
++                unavailable = 1;
++                broken = 0;
++                closed = 0;
++                beach_closed = 0;
++            }
++            else
++            {
++                world_guest_selected_building = GuestFeatures()->FindGuestFeature(&world_guest_selected_feature, reinterpret_cast<unsigned char*>(&found), &broken, &closed, &beach_closed, &unavailable, guest_f4->word_1c4, desire, &TilePosition(), word_390, id_28);
++                if (beach_closed * 2 + closed + broken)
++                {
++                    happiness_values_1d4[4] -= static_cast<float>(beach_closed + closed + broken) * guest_f4->ranges_200[24][1];
++                    if (happiness_values_1d4[4] < 0.0f)
++                        happiness_values_1d4[4] = 0.0f;
++                }
++                if (found)
++                {
++                    SetActivityDuration(desire, strength);
++                    continue;
++                }
++            }
++            if (desire == 14)
++            {
++                found = 1;
++                flag_228 = 1;
++                words_1f0[12] = 6;
++                ScreenPoint tiles[4];
++                for (int i = 0; i < 4; ++i)
++                {
++                    ScreenPoint tile;
++                    tile = TilePosition();
++                    ScreenPoint& target = tiles[i];
++                    target.x = tile.x;
++                    target.y = tile.y;
++                }
++                word_250 = 0;
++                walkpoints_22c[0] = position_30;
++                walkpoints_22c[1] = position_30;
++                word_98 = static_cast<unsigned int>(-1);
++                continue;
++            }
++            if (desire == 10 && !Window()->CanBuild(variable_catalog->FindBuilding("SOUVSHOP")))
++            {
++                char prefix[50];
++                char digits[2];
++                _itoa(rand() % 3 + 1, digits, 10);
++                strcpy(prefix, "GUEST_THOUGHT_GO_HOME");
++                strcat(prefix, digits);
++                ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                unsigned int id = id_28;
++                ScreenModeCommand command;
++                command.words[0] = id;
++                command.words[1] = id;
++                command.words[2] = 3;
++                command.words[3] = 0;
++                command.words[4] = 41;
++                screen_mode_commands->QueueCommand(&command);
++                return true;
++            }
++            if (!unavailable)
++            {
++                char prefix[250];
++                char digits[2];
++                if (closed)
++                {
++                    strcpy(prefix, "GUEST_THOUGHT_CLOSED_");
++                    strcat(prefix, variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60->name_04);
++                    _itoa(rand() % 3 + 1, digits, 10);
++                    strcat(prefix, digits);
++                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                }
++                else if (broken)
++                {
++                    strcpy(prefix, "GUEST_THOUGHT_BROKEN_");
++                    strcat(prefix, variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60->name_04);
++                    _itoa(rand() % 3 + 1, digits, 10);
++                    strcat(prefix, digits);
++                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                }
++                else if (beach_closed)
++                {
++                    strcpy(prefix, "GUEST_THOUGHT_BEACH_CLOSED_");
++                    VariableBuilding* definition = variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60;
++                    unsigned int feature = definition->features_1fc[world_guest_selected_feature];
++                    strcat(prefix, variable_catalog->FeatureKey(feature));
++                    _itoa(rand() % 3 + 1, digits, 10);
++                    strcat(prefix, digits);
++                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                }
++                else
++                {
++                    strcpy(prefix, "GUEST_THOUGHT_MISSED_");
++                    strcat(prefix, world_guest_desire_names[desire]);
++                    _itoa(rand() % 3 + 1, digits, 10);
++                    strcat(prefix, digits);
++                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                }
++                failed = true;
++                PerformAction50();
++                found = 1;
++                flag_3ac = 1;
++                flag_38d = 1;
++                Unknown28("WalkAnimation", 0, static_cast<unsigned int>(-1), 1, 0);
++                if (flag_38c)
++                {
++                    flag_38c = 0;
++                    if (word_3cc <= 0.0f)
++                    {
++                        resource_3c8->word_14 = 0;
++                        word_3cc = guest_thought_bubble_time;
++                    }
++                }
++                else if (flag_38d)
++                {
++                    flag_38d = 0;
++                    if (word_3cc <= 0.0f)
++                    {
++                        resource_3c8->word_14 = 1;
++                        word_3cc = guest_thought_bubble_time;
++                    }
++                }
++                if (guest_f4->word_1c4 == 0)
++                {
++                    ScreenWorldPosition point;
++                    point = position_30;
++
++                    animation_sounds->PlayOpinion(8, &point);
++                }
++                else
++                {
++                    ScreenWorldPosition point;
++                    point = position_30;
++
++                    animation_sounds->PlayOpinion(15, &point);
++                }
++                if (desire < 26)
++                    happiness_values_1d4[4] -= guest_f4->ranges_200[24][1];
++                if (happiness_values_1d4[4] < 0.0f)
++                    happiness_values_1d4[4] = 0.0f;
++                else if (happiness_values_1d4[4] > 1.0f)
++                    happiness_values_1d4[4] = 1.0f;
++                if (desire == 4)
++                    weather_values_16c[4] = 0.0f;
++            }
++            else
++            {
++                if (desire == 4)
++                {
++                    char prefix[250];
++                    char digits[2];
++                    strcpy(prefix, "GUEST_THOUGHT_HEADACHE_LATER");
++                    _itoa(rand() % 3 + 1, digits, 10);
++                    strcat(prefix, digits);
++                    ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                }
++                unavailable = 0;
++            }
++            if (desire == 10)
++            {
++                char prefix[50];
++                char digits[2];
++                _itoa(rand() % 3 + 1, digits, 10);
++                strcpy(prefix, "GUEST_THOUGHT_GO_HOME");
++                strcat(prefix, digits);
++                ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                unsigned int id = id_28;
++                ScreenModeCommand command;
++                command.words[0] = id;
++                command.words[1] = id;
++                command.words[2] = 3;
++                command.words[3] = 0;
++                command.words[4] = 41;
++                screen_mode_commands->QueueCommand(&command);
++                return true;
++            }
++            if (desire != 4)
++                weather_values_16c[desire] = 0.0f;
++        }
++        if (!failed)
++        {
++            if (!state_sent)
++            {
++                ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 13);
++                screen_mode_commands->QueueCommand(&command);
++            }
++            if (flag_228)
++            {
++                char prefix[250];
++                char digits[2];
++                _itoa(rand() % 3 + 1, digits, 10);
++                switch (words_1f0[12])
++                {
++                case 0:
++                    strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_STROLL");
++                    break;
++                case 1:
++                    strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_SUNBATHE");
++                    break;
++                case 2:
++                    strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_SWIMMING");
++                    break;
++                case 3:
++                    strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_FIGHTING");
++                    break;
++                case 4:
++                    strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_FLIRTING");
++                    break;
++                case 6:
++                    strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_PEEING");
++                    break;
++                case 8:
++                    strcpy(prefix, "GUEST_THOUGHT_HEAD_ACT_VANDALISING");
++                    break;
++                }
++                strcat(prefix, digits);
++                ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                last_activities_3b8[word_3bc] = 1;
++                last_ids_3b0[word_3bc] = words_1f0[12];
++                word_3bc = (word_3bc - 1) & 1;
++                if (words_1f0[12] == 2 || words_1f0[12] == 6)
++                {
++                    ScreenModeCommand command;
++                    command.words[0] = id_28;
++                    command.words[1] = id_28;
++                    command.words[2] = 8;
++                    command.words[3] = static_cast<int>(walkpoints_22c[0].x);
++                    command.words[4] = static_cast<int>(walkpoints_22c[0].y);
++                    screen_mode_commands->QueueCommand(&command);
++                }
++                else if (!state_sent)
++                {
++                    ScreenModeCommand command;
++                    command.words[0] = id_28;
++                    command.words[1] = id_28;
++                    command.words[2] = 8;
++                    command.words[3] = static_cast<int>(walkpoints_22c[0].x);
++                    command.words[4] = static_cast<int>(walkpoints_22c[0].y);
++                    screen_mode_commands->QueueCommand(&command);
++                }
++                if (desire != 20 && desire != 19 && desire != 14 && desire != 16 && desire != 13 && desire != 12)
++                    happiness_values_1d4[4] += guest_f4->ranges_200[24][0];
++            }
++            else
++            {
++                last_activities_3b8[word_3bc] = 0;
++                last_ids_3b0[word_3bc] = world_guest_selected_building;
++                word_3bc = (word_3bc - 1) & 1;
++                word_390 = world_guest_selected_building;
++                word_394 = variable_world->FindObject(world_guest_selected_building)->AsBuilding()->building_60->id_00;
++                unsigned int id = id_28;
++                unsigned int building = world_guest_selected_building;
++                ScreenModeCommand command;
++                command.words[0] = id;
++                command.words[1] = id;
++                command.words[4] = building;
++                words_1f0[12] = world_guest_selected_feature;
++                command.words[2] = 9;
++                command.words[3] = 1;
++                screen_mode_commands->QueueCommand(&command);
++                char prefix[250];
++                char digits[2];
++                strcpy(prefix, "GUEST_THOUGHT_HEAD_");
++                VariableBuilding* definition = variable_world->FindObject(word_390)->AsBuilding()->building_60;
++                strcat(prefix, variable_catalog->FeatureKey(definition->features_1fc[words_1f0[12]]));
++                _itoa(rand() % 3 + 1, digits, 10);
++                strcat(prefix, digits);
++                ShowThought(screen_text_lookup->LookupTextIndex(prefix));
++                if (desire != 20 && desire != 19)
++                    happiness_values_1d4[4] += guest_f4->ranges_200[24][0];
++            }
++            if (desire == 14 && strength > 0.8f)
++            {
++                strcpy(walk_animation_268, "D_WALK_DESPERATE");
++                if (rand() % 2)
++                    strcpy(text_290, "D_STAND_DESPERATE1");
++                else
++                    strcpy(text_290, "D_STAND_DESPERATE2");
++            }
++            else if (strcmp(walk_animation_268, "D_WALK_DESPERATE") == 0)
++            {
++                strcpy(walk_animation_268, "D_WALK_NORMAL");
++                strcpy(text_290, "D_STAND_NORMAL");
++            }
++            float time = window_deactivation_state->time_158;
++            keyline_state_44->SetAnimation(walk_animation_268, time, &position_30);
++            strcpy(current_animation_2b9, walk_animation_268);
++            if (happiness_values_1d4[4] < 0.0f)
++                happiness_values_1d4[4] = 0.0f;
++            else if (happiness_values_1d4[4] > 1.0f)
++                happiness_values_1d4[4] = 1.0f;
++            return found;
++        }
++        return true;
++    }
++    else
++        return false;
++}
+diff --git a/targets/beachlife-uk-1.1.d/0046beb0.json b/targets/beachlife-uk-1.1.d/0046beb0.json
+new file mode 100644
+index 0000000..173219e
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0046beb0.json
+@@ -0,0 +1,51 @@
++{
++  "functions": [
++    {
++      "address": "0x0046beb0",
++      "size": 8991,
++      "name": "WorldGuestEntity::PerformAction3",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment and its two inline jump tables (24 and 36 bytes)."
++    }
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x00424900",
++      "size": 1544,
++      "name": "WorldSubsystem4c::FindGuestFeature",
++      "symbol": "?FindGuestFeature@WorldSubsystem4c@@QAEIPAIPAE0001IIPBUScreenPoint@@II@Z",
++      "header": "startup_world_subsystems.h",
++      "kind": "integer-member",
++      "return_type": "unsigned int",
++      "parameters": [
++        "unsigned int*",
++        "unsigned char*",
++        "unsigned int*",
++        "unsigned int*",
++        "unsigned int*",
++        "unsigned char*",
++        "unsigned int",
++        "unsigned int",
++        "const ScreenPoint*",
++        "unsigned int",
++        "unsigned int"
++      ]
++    },
++    {
++      "address": "0x00468ac0",
++      "size": 2625,
++      "name": "WorldGuestEntity::FindBeachWalkpoints",
++      "symbol": "?FindBeachWalkpoints@WorldGuestEntity@@QAEPAUScreenWorldPosition@@U2@@Z",
++      "header": "startup_world_entities.h",
++      "kind": "null-pointer-member",
++      "return_type": "ScreenWorldPosition*",
++      "parameters": [
++        "ScreenWorldPosition"
++      ]
++    }
++  ],
++  "source_compile_options": {
++    "match_0046beb0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

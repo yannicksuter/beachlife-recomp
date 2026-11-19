@@ -1,0 +1,171 @@
+diff --git a/src/startup_world_script_action_data.cpp b/src/startup_world_script_action_data.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea6ce1eb49f25a820cc00e08ac95c7c38a7ef42b
+--- /dev/null
++++ b/src/startup_world_script_action_data.cpp
+@@ -0,0 +1,27 @@
++#include "startup_world_script_actions.h"
++
++// Empty data constructors; retail and LINK fold them into the shared
++// `mov eax, ecx; ret` at 0x004d38b0 (annotated on InitializeStorageBase).
++WorldActionArithmeticData::WorldActionArithmeticData()
++{
++}
++
++WorldActionEntryData::WorldActionEntryData()
++{
++}
++
++WorldActionStripData::WorldActionStripData()
++{
++}
++
++WorldActionRouteData::WorldActionRouteData()
++{
++}
++
++WorldActionEndpointData::WorldActionEndpointData()
++{
++}
++
++WorldActionPositionData::WorldActionPositionData()
++{
++}
+diff --git a/src/startup_world_script_actions.h b/src/startup_world_script_actions.h
+index 6b0cb613c18e387e27b1e381ccdc1c10291f5afe..20e22f814e0a5a94eae062543720e2f38cc439c8 100644
+--- a/src/startup_world_script_actions.h
++++ b/src/startup_world_script_actions.h
+@@ -27,6 +27,7 @@ struct WorldActionBranchData
+ 
+ struct WorldActionArithmeticData
+ {
++    WorldActionArithmeticData();                  // Folded constructor, 0x004d38b0.
+     ~WorldActionArithmeticData() noexcept(false); // 0x004d3610.
+     WorldScriptOperand left_00;
+     WorldScriptOperand right_08;
+@@ -58,6 +59,7 @@ struct WorldActionCreateData
+ 
+ struct WorldActionStripData
+ {
++    WorldActionStripData(); // Folded constructor, 0x004d38b0.
+     ScreenPoint point_00;
+     int direction_08;
+     int count_0c;
+@@ -79,6 +81,7 @@ struct WorldActionSoundData
+ 
+ struct WorldActionRouteData
+ {
++    WorldActionRouteData();                  // Folded constructor, 0x004d38b0.
+     ~WorldActionRouteData() noexcept(false); // 0x004d38a0.
+     unsigned int kind_00;
+     unsigned int count_04;
+@@ -88,6 +91,7 @@ struct WorldActionRouteData
+ 
+ struct WorldActionPositionData
+ {
++    WorldActionPositionData(); // Folded constructor, 0x004d38b0.
+     ScreenWorldPosition position_00;
+     float duration_0c;
+ };
+@@ -101,6 +105,7 @@ struct WorldActionBoatPointData
+ 
+ struct WorldActionEndpointData
+ {
++    WorldActionEndpointData(); // Folded constructor, 0x004d38b0.
+     ScreenWorldPosition position_00;
+     ScreenPoint tile_0c;
+     int heading_14;
+@@ -120,6 +125,7 @@ struct WorldActionTransportData
+ 
+ struct WorldActionEntryData
+ {
++    WorldActionEntryData(); // Folded constructor, 0x004d38b0.
+     std::uintptr_t first_00;
+     std::uintptr_t second_04;
+     unsigned int kind_08;
+diff --git a/src/startup_world_script_expression_evaluate.cpp b/src/startup_world_script_expression_evaluate.cpp
+index b963e7bd05a709d7199ec1b0cedc328d18629cbe..e04665949aee19e1f71f251f530dd211d6689438 100644
+--- a/src/startup_world_script_expression_evaluate.cpp
++++ b/src/startup_world_script_expression_evaluate.cpp
+@@ -72,9 +72,9 @@ bool WorldSubsystemScript::Expression::Evaluate(VariableEntity* entity, unsigned
+     if (comparison > 7)
+         return false;
+     if (comparison == 4)
+-        return EqualOperands(entity, left_kind, left_data, right_kind, right_data);
++        return EqualOperands(entity, WorldScriptValue { left_kind, left_data }, WorldScriptValue { right_kind, right_data });
+     if (comparison == 7)
+-        return UnequalOperands(entity, left_kind, left_data, right_kind, right_data);
++        return UnequalOperands(entity, WorldScriptValue { left_kind, left_data }, WorldScriptValue { right_kind, right_data });
+     WorldScriptValue left = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
+     WorldScriptValue right = entity->Unknown2c(WorldScriptValue { right_kind, right_data });
+     if (comparison == 0)
+@@ -106,30 +106,28 @@ bool WorldSubsystemScript::Expression::Evaluate(VariableEntity* entity, unsigned
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004d4f60
+-bool WorldSubsystemScript::Expression::EqualOperands(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+-    unsigned int right_kind, std::uintptr_t right_data)
++bool WorldSubsystemScript::Expression::EqualOperands(VariableEntity* entity, WorldScriptValue left, WorldScriptValue right)
+ {
+-    WorldScriptValue left = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
+-    WorldScriptValue right = entity->Unknown2c(WorldScriptValue { right_kind, right_data });
+-    if (left.kind == 1)
+-        return std::strcmp(reinterpret_cast<const char*>(left.data), reinterpret_cast<const char*>(right.data)) == 0;
+-    if (left.kind == 2)
+-        return static_cast<unsigned int>(left.data) == static_cast<unsigned int>(ConvertWorldScriptInteger(right));
+-    long double first = ConvertWorldScriptNumber(left);
+-    long double second = ConvertWorldScriptNumber(right);
+-    long double difference = std::fabs(first - second);
++    WorldScriptValue first = entity->Unknown2c(left);
++    WorldScriptValue second = entity->Unknown2c(right);
++    if (first.kind == 1)
++        return std::strcmp(reinterpret_cast<const char*>(first.data), reinterpret_cast<const char*>(second.data)) == 0;
++    if (first.kind == 2)
++        return static_cast<unsigned int>(first.data) == static_cast<unsigned int>(ConvertWorldScriptInteger(second));
++    // Retail's x87 test counts an unordered difference as within 0.00001f.
++    long double difference = std::fabs(ConvertWorldScriptNumber(first) - ConvertWorldScriptNumber(second));
+     return !(difference > 9.999999747378752e-06);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004d5100
+-bool WorldSubsystemScript::Expression::UnequalOperands(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+-    unsigned int right_kind, std::uintptr_t right_data)
++bool WorldSubsystemScript::Expression::UnequalOperands(VariableEntity* entity, WorldScriptValue left, WorldScriptValue right)
+ {
+-    WorldScriptValue left = entity->Unknown2c(WorldScriptValue { left_kind, left_data });
+-    WorldScriptValue right = entity->Unknown2c(WorldScriptValue { right_kind, right_data });
+-    if (left.kind == 2)
+-        return static_cast<unsigned int>(left.data) != static_cast<unsigned int>(ConvertWorldScriptInteger(right));
+-    double first = ConvertWorldScriptNumber(left);
+-    double second = ConvertWorldScriptNumber(right);
+-    return !std::isnan(first) && !std::isnan(second) && first != second;
++    WorldScriptValue first = entity->Unknown2c(left);
++    WorldScriptValue second = entity->Unknown2c(right);
++    if (first.kind == 2)
++        return static_cast<unsigned int>(first.data) != static_cast<unsigned int>(ConvertWorldScriptInteger(second));
++    // Retail's x87 test treats unordered numbers as equal.
++    double first_number = ConvertWorldScriptNumber(first);
++    double second_number = ConvertWorldScriptNumber(second);
++    return !std::isnan(first_number) && !std::isnan(second_number) && first_number != second_number;
+ }
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index 50b30ffddf8a2d6cc423e4d89982629ce3d38682..24c48416effa08b107c75dc58671a6d8e7a28e3b 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -288,12 +288,10 @@ struct WorldSubsystemScript
+     void UpdateState(VariableEntity* entity, unsigned int state);          // 0x004d57a0.
+     struct Expression
+     {
+-        void Update(VariableEntity* entity);                                                       // 0x004d4080.
+-        ScreenModeCommand MakeCommand(VariableEntity* entity, const WorldActionCommandData* data); // 0x004d4d80.
+-        bool EqualOperands(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+-            unsigned int right_kind, std::uintptr_t right_data); // 0x004d4f60.
+-        bool UnequalOperands(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+-            unsigned int right_kind, std::uintptr_t right_data); // 0x004d5100.
++        void Update(VariableEntity* entity);                                                         // 0x004d4080.
++        ScreenModeCommand MakeCommand(VariableEntity* entity, const WorldActionCommandData* data);   // 0x004d4d80.
++        bool EqualOperands(VariableEntity* entity, WorldScriptValue left, WorldScriptValue right);   // 0x004d4f60.
++        bool UnequalOperands(VariableEntity* entity, WorldScriptValue left, WorldScriptValue right); // 0x004d5100.
+         bool Evaluate(VariableEntity* entity, unsigned int left_kind, std::uintptr_t left_data,
+             unsigned int right_kind, std::uintptr_t right_data, unsigned int comparison); // 0x004d4880.
+         Expression* next_00;

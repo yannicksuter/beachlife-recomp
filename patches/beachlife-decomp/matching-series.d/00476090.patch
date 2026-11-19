@@ -1,0 +1,235 @@
+diff --git a/fixtures/game.d/fixture_00476090.cpp b/fixtures/game.d/fixture_00476090.cpp
+new file mode 100644
+index 0000000..fc27485
+--- /dev/null
++++ b/fixtures/game.d/fixture_00476090.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00476090(WorldGuestEntity* item)
++{
++    item->WorldGuestEntity::PerformAction50();
++}
+diff --git a/metadata.d/00476090.csv b/metadata.d/00476090.csv
+new file mode 100644
+index 0000000..81bfa5d
+--- /dev/null
++++ b/metadata.d/00476090.csv
+@@ -0,0 +1,6 @@
++address,type,size,symbol
++0x00476090,function,1921,?PerformAction50@WorldGuestEntity@@QAEXXZ
++0x00579844,string,28,
++0x00579860,string,28,
++0x0057987c,string,26,
++0x00579898,string,23,
+diff --git a/src/match_00476090.cpp b/src/match_00476090.cpp
+new file mode 100644
+index 0000000..a8f294a
+--- /dev/null
++++ b/src/match_00476090.cpp
+@@ -0,0 +1,183 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_world_cursor_names.h"
++#include "startup_world_subsystems.h"
++#include "startup_world_entities.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_text.h"
++#include "window_activation.h"
++#include <stdio.h>
++#include <stdlib.h>
++
++#include <string.h>
++
++static inline unsigned int CellFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
++static inline bool GuestPathLand(unsigned int flags)
++{
++    return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
++}
++
++static inline void RememberThought(WorldGuestEntity* guest, unsigned int text)
++{
++    if (text != 0xffffffff)
++    {
++        for (int i = 2; i > 0; --i)
++            guest->words_3e8[i] = guest->words_3e8[i - 1];
++        guest->words_3e8[0] = text;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00476090
++void WorldGuestEntity::PerformAction50()
++{
++    ScreenPoint tile = TilePosition();
++    unsigned int count = 0;
++    bool found = false;
++    lightning_state_318 = 0;
++    if (state_3c == 58 && strcmp(walk_animation_268, "D_WALK_DESPERATE") == 0)
++        lightning_state_318 = 1;
++    ScreenPoint neighbors[8];
++    bool available[8];
++    for (int i0 = 0; i0 < 8; ++i0)
++    {
++        screen_terrain_grid->Step(tile, i0, &neighbors[i0]);
++        if (GuestPathLand(CellFlags(screen_terrain_grid, neighbors[i0])))
++        {
++            available[i0] = true;
++            ++count;
++        }
++        else
++            available[i0] = false;
++    }
++    if (count)
++    {
++        unsigned int choice = static_cast<unsigned int>(rand()) % count + 1;
++        unsigned int i1 = 0;
++        unsigned int direction = 0;
++        for (; choice; ++i1)
++        {
++            if (available[i1])
++            {
++                --choice;
++                direction = i1;
++            }
++        }
++        ScreenPoint& target = neighbors[direction];
++        unsigned int flags = CellFlags(screen_terrain_grid, target);
++        ScreenPoint current = target;
++        while (GuestPathLand(flags))
++        {
++            walkpoints_22c[0] = screen_terrain_grid->TileCenter(current);
++            current = ScreenPoint(target.x, target.y);
++            found = true;
++            screen_terrain_grid->Step(target, direction, &target);
++            flags = screen_terrain_grid->cells_0c[(static_cast<unsigned int>(target.y) % screen_terrain_grid->height_08) * screen_terrain_grid->width_04 + static_cast<unsigned int>(target.x) % screen_terrain_grid->width_04].flags_48;
++        }
++        word_250 = 0;
++        if (found)
++        {
++            if (state_3c == 58)
++            {
++                flag_3ac = 1;
++                if (!flag_228)
++                {
++                    char prefix[250];
++                    strcpy(prefix, "GUEST_THOUGHT_NO_PATH_");
++                    strcat(prefix, variable_catalog->Building(word_394)->name_04);
++                    char number[2];
++                    _itoa(rand() % 3 + 1, number, 10);
++                    strcat(prefix, number);
++                    unsigned int thought = screen_text_lookup->LookupTextIndex(prefix);
++                    RememberThought(this, thought);
++                    VariableEntity* building = variable_world->FindObject(word_390);
++                    if (building)
++                        building->AsBuilding()->AddThought(screen_text_lookup->LookupText(thought), id_28);
++                }
++                else if (words_1f0[12] == 2)
++                {
++                    char prefix[250];
++                    strcpy(prefix, "GUEST_THOUGHT_NO_PATH_SEA");
++                    char number[2];
++                    _itoa(rand() % 3 + 1, number, 10);
++                    strcat(prefix, number);
++                    RememberThought(this, screen_text_lookup->LookupTextIndex(prefix));
++                }
++                else
++                {
++                    char prefix[250];
++                    strcpy(prefix, "GUEST_THOUGHT_NO_PATH_BEACH");
++                    char number[2];
++                    _itoa(rand() % 3 + 1, number, 10);
++                    strcat(prefix, number);
++                    RememberThought(this, screen_text_lookup->LookupTextIndex(prefix));
++                }
++                ScreenModeCommand command;
++                command.words[0].data = id_28;
++                command.words[1].data = id_28;
++                command.words[2].data = 8;
++                command.words[3].data = static_cast<int>(walkpoints_22c[0].x);
++                command.words[4].data = static_cast<int>(walkpoints_22c[0].y);
++                screen_mode_commands->QueueCommand(&command);
++            }
++            else
++            {
++                ScreenModeCommand command;
++                command.words[0].data = id_28;
++                command.words[1].data = id_28;
++                command.words[2].data = 8;
++                command.words[3].data = static_cast<int>(walkpoints_22c[0].x);
++                command.words[4].data = static_cast<int>(walkpoints_22c[0].y);
++                screen_mode_commands->QueueCommand(&command);
++            }
++        }
++        else
++        {
++            flag_3ac = 1;
++            char prefix[250];
++            strcpy(prefix, "GUEST_THOUGHT_NO_PATH_ATALL");
++            char number[2];
++            _itoa(rand() % 3 + 1, number, 10);
++            strcat(prefix, number);
++            RememberThought(this, screen_text_lookup->LookupTextIndex(prefix));
++            Unknown28("StandAnimation", 0, -1, 1, 0);
++            ScreenModeCommand command;
++            command.words[0].data = id_28;
++            command.words[1].data = id_28;
++            command.words[2].data = 22;
++            command.words[3].data = 0;
++            command.words[4].data = 0;
++            command.words[6].number = 0.0f;
++            command.words[5].data = state_3c;
++            screen_mode_commands->QueueDelayed(&command, 2.0f);
++        }
++    }
++    else
++    {
++        flag_3ac = 1;
++        char prefix[250];
++        strcpy(prefix, "GUEST_THOUGHT_NO_PATH_ATALL");
++        char number[2];
++        _itoa(rand() % 3 + 1, number, 10);
++        strcat(prefix, number);
++        RememberThought(this, screen_text_lookup->LookupTextIndex(prefix));
++        Unknown28("StandAnimation", 0, -1, 1, 0);
++        ScreenModeCommand command;
++        command.words[0].data = id_28;
++        command.words[1].data = id_28;
++        command.words[2].data = 22;
++        command.words[3].data = 0;
++        command.words[4].data = 0;
++        command.words[6].number = 0.0f;
++        command.words[5].data = state_3c;
++        screen_mode_commands->QueueDelayed(&command, 2.0f);
++    }
++    if (state_3c == 58)
++    {
++        happiness_values_1d4[4] -= guest_f4->ranges_200[24][1];
++        if (happiness_values_1d4[4] < 0.0f)
++            happiness_values_1d4[4] = 0.0f;
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00476090.json b/targets/beachlife-uk-1.1.d/00476090.json
+new file mode 100644
+index 0000000..0111b3e
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00476090.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00476090",
++      "size": 1921,
++      "name": "WorldGuestEntity::PerformAction50",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00476090.cpp": [
++      "/Ob1"
++    ]
++  }
++}

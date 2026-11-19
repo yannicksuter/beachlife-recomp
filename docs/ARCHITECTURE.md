@@ -15,6 +15,32 @@ flowchart LR
     platform --> gpu[DX12 / Vulkan / Metal]
 ```
 
+## Repository layout
+
+```text
+CMakeLists.txt        native targets and the sole release version
+CMakePresets.json     shared local/CI configure, build and test presets
+cmake/               platform configuration and toolchains
+src/bootstrap/       native entry point and command line
+src/data/            read-only game sources and the headless data tool
+decomp/              frozen reconstruction baseline and matching setup
+src/launcher/        graphical launcher, source selection and preferences
+src/platform/        native graphics (the game window), audio, input and file services
+src/runtime/         the game loop and reconstructed-game integration
+extern/              pinned dependency checkouts; builds use prepared exports
+patches/             reconstructed methods, native adaptations and optional tweaks
+assets/              launcher resources and their provenance
+tools/               versioning, packaging and release helpers
+tests/               generated-fixture and native startup checks
+docs/                architecture, building, installation and releases
+```
+
+New retail reconstruction belongs in `patches/beachlife-decomp/`. Matching,
+the game and optional native subsystem tests consume the pinned baseline plus
+ordered patches in build trees. See
+[subsystem tests](BUILDING.md#reconstructed-subsystem-tests) and the
+[patch rules](../patches/README.md).
+
 ## Source and build boundaries
 
 This repository owns both tracks. `src/` contains new bootstrap, launcher,
@@ -74,7 +100,11 @@ Prepared matching targets can opt into `stdcall_imports`, a DLL mapping with
 names to x86 stack-byte counts. The build generates import metadata and verifies
 the requested names against both original and rebuilt PE import tables. It does
 not copy DLL code or execute the comparison image. Native service adaptations
-remain separate from this original-ABI link support.
+remain separate from this original-ABI link support. A DLL that the original
+imports only by ordinal uses `export_names` `ordinal` with an `ordinals` mapping
+from each source name to its distinct ordinal; the generated `NONAME` import
+metadata is verified as LIB.EXE wrote it, and both PE import tables are checked
+by ordinal.
 
 The separate `runtime_stdcall_imports` policy currently accepts only
 `{"_CxxThrowException": 8}` from `MSVCRT.dll`. It verifies the original export

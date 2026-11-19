@@ -1,0 +1,134 @@
+diff --git a/src/startup_world_motion_target.cpp b/src/startup_world_motion_target.cpp
+index 710cf6ee456a331abd36e76de81690a3972c0625..18c856d61e01abe38123adf0faea931029b88ba7 100644
+--- a/src/startup_world_motion_target.cpp
++++ b/src/startup_world_motion_target.cpp
+@@ -44,53 +44,67 @@ void WorldMovingEntity::UpdateSteeringTarget()
+     {
+         WorldRoutePosition* route = static_cast<WorldRoutePosition*>(route_b8);
+         ScreenPoint current = route->data_00->points_0c[route->index_08];
+-        unsigned int offset = MotionWord(values_d8[0]);
+-        ScreenPoint target = route->Position();
+-        ScreenMapPosition position = CurrentScreenTerrain()->TileWorldPosition(target);
+-        if (offset)
++        switch (MotionWord(values_d8[0]))
+         {
+-            ScreenMapPosition adjustment = offset == 1 ? motion_positive_offset : motion_negative_offset;
+-            position.x += adjustment.x;
+-            position.y += adjustment.y;
++        case 0:
++        {
++            SetSteeringTarget(CurrentScreenTerrain()->TileWorldPosition(route->Position()));
++            break;
++        }
++        case 1:
++        {
++            SetSteeringTarget(CurrentScreenTerrain()->TileWorldPosition(route->Position()) + motion_positive_offset);
++            break;
++        }
++        case 2:
++            SetSteeringTarget(CurrentScreenTerrain()->TileWorldPosition(route->Position()) + motion_negative_offset);
++            break;
++        default:
++            SetSteeringTarget(CurrentScreenTerrain()->TileWorldPosition(route->Position()) + motion_negative_offset);
++            break;
+         }
+-        SetSteeringTarget(position);
+-        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(current.x, current.y)].flags_48;
++        ScreenTerrainGrid* grid = screen_terrain_grid;
++        unsigned int flags = grid->cells_0c[grid->TileIndex(current.x, current.y)].flags_48;
+         unsigned int blocked = flags & 0x10;
+-        if ((blocked && !(flags & 0x80000000u)) || (flags & 0x8000)
++        if ((blocked && !(flags & 0x80000000)) || (flags & 0x8000)
+             || !static_cast<WorldRoutePosition*>(route_b8)->data_00->flag_24)
+         {
+-            ScreenPoint tile = CurrentScreenTerrain()->WorldToTile({ position_30.x, position_30.y, position_30.z });
+-            unsigned int current_flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
+-            route = static_cast<WorldRoutePosition*>(route_b8);
+-            if (((current_flags & 0x80000000u) || !route->data_00->flag_24) && !flag_d4
+-                && route->data_00->kind_20 != 4)
++            ScreenPoint tile;
++            tile = CurrentScreenTerrain()->WorldToTile(position_30);
++            grid = screen_terrain_grid;
++            if (((grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48 & 0x80000000)
++                    || !static_cast<WorldRoutePosition*>(route_b8)->data_00->flag_24)
++                && !flag_d4)
+             {
+-                unsigned int kind = route->data_00->kind_20;
+-                route->data_00->flag_24 = 0;
+-                world_subsystem_18->ReleaseRoute(route_b8);
+-                route_b8 = 0;
+-                ScreenModeCommand command;
+-                command.words[0] = id_28;
+-                command.words[1] = id_28;
+-                command.words[2] = 0;
+-                command.words[3] = static_cast<int>(MotionFloat(word_8c));
+-                command.words[4] = static_cast<int>(MotionFloat(word_90));
+-                switch (kind)
++                unsigned int kind = static_cast<WorldRoutePosition*>(route_b8)->data_00->kind_20;
++                if (kind != 4)
+                 {
+-                case 0:
+-                    command.words[2] = 8;
+-                    break;
+-                case 1:
+-                    command.words[2] = 5;
+-                    break;
+-                case 2:
+-                    command.words[2] = 10;
+-                    break;
+-                case 3:
+-                    command.words[2] = 11;
+-                    break;
++                    static_cast<WorldRoutePosition*>(route_b8)->data_00->flag_24 = 0;
++                    world_subsystem_18->ReleaseRoute(route_b8);
++                    route_b8 = 0;
++                    ScreenModeCommand command;
++                    command.words[2] = 0;
++                    command.words[0] = id_28;
++                    command.words[1] = id_28;
++                    command.words[3] = static_cast<int>(MotionFloat(word_8c));
++                    command.words[4] = static_cast<int>(MotionFloat(word_90));
++                    switch (kind)
++                    {
++                    case 3:
++                        command.words[2] = 11;
++                        break;
++                    case 2:
++                        command.words[2] = 10;
++                        break;
++                    case 1:
++                        command.words[2] = 5;
++                        break;
++                    case 0:
++                        command.words[2] = 8;
++                        break;
++                    }
++                    screen_mode_commands->QueueCommand(&command);
+                 }
+-                screen_mode_commands->QueueCommand(&command);
+             }
+         }
+         if (flag_d4 && blocked)
+@@ -100,9 +114,9 @@ void WorldMovingEntity::UpdateSteeringTarget()
+             ScreenModeCommand command;
+             command.words[0] = id_28;
+             command.words[1] = id_28;
+-            command.words[2] = 10;
+             command.words[3] = static_cast<int>(MotionFloat(word_8c));
+             command.words[4] = static_cast<int>(MotionFloat(word_90));
++            command.words[2] = 10;
+             screen_mode_commands->QueueDelayed(&command, 3.0f);
+         }
+         return;
+@@ -119,9 +133,6 @@ void WorldMovingEntity::UpdateSteeringTarget()
+         word_90 = MotionWord(variable_world->FindObject(building)->AsBuilding()->ContentPosition(index).y);
+     }
+     else if (word_a0 == 4)
+-    {
+-        VariableEntity* target = variable_world->FindObject(word_ac);
+-        StoreMotionDestination(this, { target->position_30.x, target->position_30.y, target->position_30.z });
+-    }
+-    SetSteeringTarget({ MotionFloat(word_8c), MotionFloat(word_90) });
++        StoreMotionDestination(this, variable_world->FindObject(word_ac)->position_30);
++    SetSteeringTarget(ScreenMapPosition(MotionFloat(word_8c), MotionFloat(word_90)));
+ }

@@ -1,0 +1,93 @@
+diff --git a/src/startup_renderer_present_effect.cpp b/src/startup_renderer_present_effect.cpp
+index 3435cc2108b10881410ce96d90c85e9486aaa344..bb1c7f282df54142f643bc0ed7357e96369debe7 100644
+--- a/src/startup_renderer_present_effect.cpp
++++ b/src/startup_renderer_present_effect.cpp
+@@ -2,47 +2,36 @@
+ #include "render_mask_setup.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004017e0
+-void ApplyPresentEffect(unsigned short* pixels, unsigned int width,
+-    unsigned int height, unsigned int mode)
++void ApplyPresentEffect(unsigned short* pixels, int width, int height, unsigned char mode)
+ {
+-    if (height == 0 || height >= 0x80000000U)
+-        return;
+-
+-    unsigned int output = height;
+-    unsigned int rows = height;
+-    do
++    // With an unknown mode retail retains the height in EAX.
++    unsigned short color = static_cast<unsigned short>(height);
++    unsigned short* p = pixels;
++    for (int y = 0; y < height; y++)
+     {
+-        if (width != 0 && width < 0x80000000U)
++        for (int x = 0; x < width; x++)
+         {
+-            unsigned int effect = mode & 0xff;
+-            unsigned int remaining = width;
+-            do
++            unsigned short pixel = *p;
++            switch (mode)
+             {
+-                unsigned short pixel = *pixels;
+-                switch (effect)
+-                {
+-                case 0:
+-                    output = pixel;
+-                    break;
+-                case 1:
+-                {
+-                    unsigned int quarter = (pixel >> 2) & (render_quarter_mask >> 2);
+-                    unsigned int half = (pixel >> 1) & (render_half_mask >> 1);
+-                    output = half + (render_quarter_bias + quarter);
+-                    break;
+-                }
+-                case 2:
+-                    output = ((pixel >> 1) & (render_half_mask >> 1)) + render_half_bias;
+-                    break;
+-                case 3:
+-                    output = ((pixel >> 2) & (render_quarter_mask >> 2)) + render_sum_bias;
+-                    break;
+-                case 4:
+-                    output = 0xffff;
+-                    break;
+-                }
+-                *pixels++ = static_cast<unsigned short>(output);
+-            } while (--remaining != 0);
++            case 0:
++                color = pixel;
++                break;
++            case 1:
++                // Retail reads the 16-bit bias as a dword; only its low half reaches the colour.
++                color = ((pixel >> 1) & (render_half_mask >> 1)) + (render_quarter_bias + ((pixel >> 2) & (render_quarter_mask >> 2)));
++                break;
++            case 2:
++                color = ((pixel >> 1) & (render_half_mask >> 1)) + render_half_bias;
++                break;
++            case 3:
++                color = ((pixel >> 2) & (render_quarter_mask >> 2)) + render_sum_bias;
++                break;
++            case 4:
++                color = 0xffff;
++                break;
++            }
++            *p++ = color;
+         }
+-    } while (--rows != 0);
++    }
+ }
+diff --git a/src/startup_renderer_present_effect.h b/src/startup_renderer_present_effect.h
+index f97cece9a8235e9dd145fc0adaeb1d7c327734c4..db2251a9c0f81ec83edaef6528b95b777e5972f1 100644
+--- a/src/startup_renderer_present_effect.h
++++ b/src/startup_renderer_present_effect.h
+@@ -2,8 +2,7 @@
+ #define STARTUP_RENDERER_PRESENT_EFFECT_H
+ 
+ // Actual 0x004017e0, four cdecl argument words; only the low mode byte is used.
+-void ApplyPresentEffect(unsigned short* pixels, unsigned int width,
+-    unsigned int height, unsigned int mode);
++void ApplyPresentEffect(unsigned short* pixels, int width, int height, unsigned char mode);
+ 
+ extern unsigned char render_effect_active;
+ extern unsigned char render_effect_decreasing;

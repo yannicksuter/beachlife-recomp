@@ -1,0 +1,70 @@
+diff --git a/src/startup_ticker_remove_feedback.cpp b/src/startup_ticker_remove_feedback.cpp
+index cf20bd250510f96123e27e2d4fd571429b6c41d2..8758ad03fc2f6f03fc1c92651ae74579d5b4ee8a 100644
+--- a/src/startup_ticker_remove_feedback.cpp
++++ b/src/startup_ticker_remove_feedback.cpp
+@@ -43,12 +43,12 @@ void VariableTicker::ClearFeedback(unsigned int kind)
+ // FUNCTION: BEACHLIFE 0x0042a680
+ void VariableTicker::RemovePendingEntityMessages(unsigned int id)
+ {
+-    for (;;)
++    WorldDequeIterator<TickerQueuedMessage*> position;
++    position = FindQueuedMessage(pending_00.Begin(), pending_00.End(), id);
++    while (position != pending_00.End())
+     {
+-        auto position = FindQueuedMessage(pending_00.Begin(), pending_00.End(), id);
+-        if (position == pending_00.End())
+-            return;
+         // Retail erases the pointer without destroying the message.
+         pending_00.Erase(position);
++        position = FindQueuedMessage(pending_00.Begin(), pending_00.End(), id);
+     }
+ }
+diff --git a/src/startup_ticker_save_remove.cpp b/src/startup_ticker_save_remove.cpp
+index beab569ebd9a84f429c1f6962233263c77bcdcdc..b7f1ac16974bb806c719c829e710afa3e2ef107f 100644
+--- a/src/startup_ticker_save_remove.cpp
++++ b/src/startup_ticker_save_remove.cpp
+@@ -22,28 +22,38 @@ void VariableTicker::SaveState(GameFileReader* file)
+     file->Unknown3c(ticker_state_class_name);
+     file->Unknown24("sizeof", 0x218);
+     file->Unknown24("List size", pending_00.Size());
+-    for (unsigned int i = 0; i < pending_00.Size(); ++i)
++    for (WorldDequeIterator<TickerQueuedMessage*> i = pending_00.Begin(); i != pending_00.End(); ++i)
+     {
+-        TickerQueuedMessage* message = pending_00[i];
++        TickerQueuedMessage* message = *i;
+         file->Unknown28("ID", message->id_00);
+-        file->Unknown34("pwText set", message->text_04 != 0);
+         if (message->text_04)
++        {
++            file->Unknown34("pwText set", 1);
+             file->Unknown1c("pwText", message->text_04);
++        }
+         else
++        {
++            file->Unknown34("pwText set", 0);
+             file->Unknown38("pText", message->key_08);
++        }
+     }
+     file->Unknown24("Buffer size", history_28.Size());
+-    for (unsigned int i = 0; i < history_28.Size(); ++i)
++    for (WorldDequeIterator<TickerHistoryMessage*> h = history_28.Begin(); h != history_28.End(); ++h)
+     {
+-        TickerHistoryMessage* message = history_28[i];
++        TickerHistoryMessage* message = *h;
+         file->Unknown28("ID", message->id_00);
+         file->Unknown28("day", message->day_04);
+         WriteStateFloat(file, "time", message->time_08);
+-        file->Unknown34("pwText set", message->text_0c != 0);
+         if (message->text_0c)
++        {
++            file->Unknown34("pwText set", 1);
+             file->Unknown1c("pwText", message->text_0c);
++        }
+         else
++        {
++            file->Unknown34("pwText set", 0);
+             file->Unknown38("pText", message->key_10);
++        }
+     }
+     file->Unknown28("m_CleanerMessages", word_64);
+     file->Unknown28("m_LifeGuardMessages", word_60);

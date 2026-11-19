@@ -1,0 +1,188 @@
+diff --git a/fixtures/game.d/fixture_00483a80.cpp b/fixtures/game.d/fixture_00483a80.cpp
+new file mode 100644
+index 0000000..5e68a10
+--- /dev/null
++++ b/fixtures/game.d/fixture_00483a80.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) bool Fixture_00483a80(WorldMovingEntity* item)
++{
++    return item->WorldMovingEntity::Unknown0c();
++}
+diff --git a/metadata.d/00483a80.csv b/metadata.d/00483a80.csv
+new file mode 100644
+index 0000000..a0ce335
+--- /dev/null
++++ b/metadata.d/00483a80.csv
+@@ -0,0 +1,8 @@
++address,type,size,symbol
++0x00483a80,function,801,?Unknown0c@WorldMovingEntity@@UAE_NXZ
++0x0057a74c,string,61,
++0x004f3bc4,global,4,?moving_update_step@@3MB
++0x004f3bbc,global,4,?moving_limit_x@@3MB
++0x004f3bc0,global,4,?moving_limit_y@@3MB
++0x00482f00,function,702,?IntegrateMotion@WorldMovingEntity@@QAE_NM@Z
++0x004835a0,function,1244,?AdvanceMotion@WorldMovingEntity@@QAEXXZ
+diff --git a/src/match_00483a80.cpp b/src/match_00483a80.cpp
+new file mode 100644
+index 0000000..f2f688c
+--- /dev/null
++++ b/src/match_00483a80.cpp
+@@ -0,0 +1,110 @@
++#include "startup_world_motion_helpers.h"
++#include "startup_world_subsystems.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_position_inlines.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_square_root_table.h"
++#include "startup_game_file.h"
++#include "window_activation.h"
++
++extern float fast_reciprocal_two;
++extern const float moving_update_step;
++extern const float moving_limit_x;
++extern const float moving_limit_y;
++
++// Table square root (fastmath fastsqrt).
++static inline float MovingSquareRoot(float value)
++{
++    unsigned int& bits = *reinterpret_cast<unsigned int*>(&value);
++    if (bits == 0)
++        return 0.0f;
++    bits = square_root_mantissas[(bits >> 8) & 0xffff] | ((((bits - 0x3f800000) >> 1) + 0x3f800000) & 0x7f800000);
++    return value;
++}
++
++static inline float MovingLength(const ScreenMapPosition& position)
++{
++    return MovingSquareRoot(position.y * position.y + position.x * position.x);
++}
++
++static inline void MovingNormalize(ScreenMapPosition& position)
++{
++    float root = MovingLength(position);
++    float inverse;
++    // Fastmath reciprocal estimate refined by one Newton step.
++    __asm
++        {
++        mov eax, 0x7f000000
++        sub eax, dword ptr [root]
++        mov dword ptr [inverse], eax
++        fld dword ptr [root]
++        fmul dword ptr [inverse]
++        fsubr dword ptr [fast_reciprocal_two]
++        fmul dword ptr [inverse]
++        fstp dword ptr [inverse]
++        }
++    position.x *= inverse;
++    position.y *= inverse;
++}
++
++// FUNCTION: BEACHLIFE 0x00483a80
++bool WorldMovingEntity::Unknown0c()
++{
++    if (!VariableEntity::Unknown0c())
++        StartupFatal("MovingObject::Update - error calling baseobject::update - %s", name_06);
++
++    if (!flag_5c)
++        return true;
++
++    value_58 += window_deactivation_state->value_16c;
++    while (value_58 > moving_update_step && flag_5c)
++    {
++        value_58 -= moving_update_step;
++        UpdateSteeringTarget();
++        if (IntegrateMotion(moving_update_step))
++            AdvanceMotion();
++        if (word_ec == 0 && flag_d4 != 0 && values_d8[2] > 0.0f && route_b8 != 0)
++        {
++            ScreenMapPosition point = screen_terrain_grid->TileWorldPosition(
++                static_cast<WorldRoutePosition*>(route_b8)->data_00->destination_18);
++            float x = motion_64[0] - point.x;
++            float y = motion_64[1] - point.y;
++            float distance = MovingSquareRoot(y * y + x * x);
++            float speed = MovingSquareRoot(motion_64[3] * motion_64[3] + motion_64[2] * motion_64[2]);
++            if (distance / speed < values_d8[2])
++            {
++                ScreenModeCommand command;
++                command.words[0] = id_28;
++                command.words[1] = id_28;
++                command.words[2] = 0x14;
++                command.words[3] = 0;
++                command.words[4] = 0;
++                screen_mode_commands->QueueCommand(&command);
++                values_d8[2] = 0.0f;
++            }
++        }
++    }
++
++    if (motion_64[0] < 0.0f)
++        motion_64[0] = 0.0f;
++    if (motion_64[0] > moving_limit_x)
++        motion_64[0] = moving_limit_x;
++    if (motion_64[1] < 0.0f)
++        motion_64[1] = 0.0f;
++    if (motion_64[1] > moving_limit_y)
++        motion_64[1] = moving_limit_y;
++
++    SetMovementPosition(ScreenWorldPosition(MotionPosition().x, MotionPosition().y, 0.0f));
++
++    if (flag_5c && flags_d0[3] != 0)
++    {
++        ScreenMapPosition velocity = *reinterpret_cast<ScreenMapPosition*>(&motion_64[2]);
++        MovingNormalize(velocity);
++        keyline_state_44->FaceDirection(velocity);
++    }
++    return true;
++}
++
++extern const float moving_update_step = 0.02f;
++extern const float moving_limit_x = 4096.0f;
++extern const float moving_limit_y = 8192.0f;
+diff --git a/targets/beachlife-uk-1.1.d/00483a80.json b/targets/beachlife-uk-1.1.d/00483a80.json
+new file mode 100644
+index 0000000..2cb79a3
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00483a80.json
+@@ -0,0 +1,39 @@
++{
++  "functions": [
++    {
++      "address": "0x00483a80",
++      "size": 801,
++      "name": "WorldMovingEntity::Unknown0c",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x00482f00",
++      "size": 702,
++      "name": "WorldMovingEntity::IntegrateMotion",
++      "symbol": "?IntegrateMotion@WorldMovingEntity@@QAE_NM@Z",
++      "header": "startup_world_entities.h",
++      "kind": "false-member",
++      "return_type": "bool",
++      "parameters": [
++        "float"
++      ]
++    },
++    {
++      "address": "0x004835a0",
++      "size": 1244,
++      "name": "WorldMovingEntity::AdvanceMotion",
++      "symbol": "?AdvanceMotion@WorldMovingEntity@@QAEXXZ",
++      "header": "startup_world_entities.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
++    }
++  ],
++  "source_compile_options": {
++    "match_00483a80.cpp": [
++      "/Ob1"
++    ]
++  }
++}

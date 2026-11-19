@@ -1,0 +1,150 @@
+diff --git a/fixtures/game.d/fixture_004a73e0.cpp b/fixtures/game.d/fixture_004a73e0.cpp
+new file mode 100644
+index 0000000..284cfab
+--- /dev/null
++++ b/fixtures/game.d/fixture_004a73e0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_modes.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004a73e0(ScreenMode10Controller* item, const ScreenPoint* point)
++{
++    item->Remove(point);
++}
+diff --git a/metadata.d/004a73e0.csv b/metadata.d/004a73e0.csv
+new file mode 100644
+index 0000000..6393401
+--- /dev/null
++++ b/metadata.d/004a73e0.csv
+@@ -0,0 +1,4 @@
++address,type,size,symbol
++0x004a73e0,function,603,?Remove@ScreenMode10Controller@@QAEEPBUScreenPoint@@@Z
++0x0041f240,function,415,?RequestRemoval@VariableEntity@@QAEXXZ
++0x004f4520,global,4,?screen_mode10_refund_rate@@3MB
+diff --git a/src/match_004a73e0.cpp b/src/match_004a73e0.cpp
+new file mode 100644
+index 0000000..bb52b45
+--- /dev/null
++++ b/src/match_004a73e0.cpp
+@@ -0,0 +1,84 @@
++#include "startup_screen_modes.h"
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include "startup_world_entities.h"
++#include "startup_terrain_entity_list.h"
++#include "window_activation.h"
++#include "startup_world_cursor_names.h"
++
++static inline unsigned int TileIndex(ScreenTerrainGrid* terrain, int x, int y)
++{
++    return (static_cast<unsigned int>(y) % terrain->height_08) * terrain->width_04
++         + static_cast<unsigned int>(x) % terrain->width_04;
++}
++
++static inline bool PathHasClearNeighbours(const ScreenPoint* point)
++{
++    ScreenTerrainCell* neighbours[8];
++    screen_terrain_grid->Neighbours(*point, neighbours);
++    for (int index = 0; index < 8; ++index)
++        if (neighbours[index]->flags_48 & 0x10)
++            return false;
++    return true;
++}
++
++// GLOBAL: BEACHLIFE 0x004f4520
++extern const float screen_mode10_refund_rate = 0.75f;
++// GLOBAL: BEACHLIFE 0x004f4524
++static const float screen_mode10_removal_income = 5.0f;
++
++static inline void AddIncome(WindowDeactivationState* state, float amount)
++{
++    state->income_770 = amount + state->income_770;
++    state->income_774 = amount + state->income_774;
++}
++
++static inline void AddRemovalIncome()
++{
++    AddIncome(window_deactivation_state, screen_mode10_removal_income);
++    VariableEconomy* economy = window_deactivation_state->economy_1c;
++    economy->value_80 = static_cast<float>(economy->value_80 + static_cast<double>(screen_mode10_removal_income));
++}
++
++// FUNCTION: BEACHLIFE 0x004a73e0
++unsigned char ScreenMode10Controller::Remove(const ScreenPoint* point)
++{
++    TerrainEntityList* list = screen_terrain_grid->ObjectsAt(point->x, point->y);
++    for (TerrainEntityList::iterator object = list->begin(); object != list->end(); ++object)
++    {
++        VariableEntity* entity = *object;
++        switch (entity->kind_2c)
++        {
++        case 1:
++            if (entity->AsScenery()->scenery_f4->removable_311)
++            {
++                entity->RequestRemoval();
++                float refund = static_cast<unsigned int>(entity->AsScenery()->scenery_f4->cost_2d0) * screen_mode10_refund_rate;
++                AddIncome(window_deactivation_state, refund);
++                return 1;
++            }
++            break;
++        }
++    }
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(point->x, point->y)].flags_48;
++    if ((flags & 1) && (flags & 0x80000000) && (flags & 0x10000000) && PathHasClearNeighbours(point))
++    {
++        grid = screen_terrain_grid;
++        ScreenTerrainCell* cell = &grid->cells_0c[grid->TileIndex(point->x, point->y)];
++        cell->flags_48 &= 0xefffff7f;
++        world_cursor_names->UpdateTile(point->x, point->y, 1);
++        AddRemovalIncome();
++        return 1;
++    }
++    if (flags & 0x7000)
++    {
++        grid = screen_terrain_grid;
++        ScreenTerrainCell* cell = &grid->cells_0c[TileIndex(grid, point->x, point->y)];
++        cell->flags_48 &= 0xffff8fff;
++        world_cursor_names->UpdateTile(point->x, point->y, 0);
++        AddRemovalIncome();
++        return 1;
++    }
++    return 0;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004a73e0.json b/targets/beachlife-uk-1.1.d/004a73e0.json
+new file mode 100644
+index 0000000..1db7fab
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004a73e0.json
+@@ -0,0 +1,31 @@
++{
++  "functions": [
++    {
++      "address": "0x004a73e0",
++      "size": 603,
++      "name": "ScreenMode10Controller::Remove",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004a73e0.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004a73e0.cpp",
++    "fixture_004a73e0.cpp"
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x0041f240",
++      "size": 415,
++      "name": "VariableEntity::RequestRemoval",
++      "symbol": "?RequestRemoval@VariableEntity@@QAEXXZ",
++      "header": "startup_variable_state.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
++    }
++  ]
++}

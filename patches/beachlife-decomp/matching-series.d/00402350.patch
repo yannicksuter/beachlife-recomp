@@ -1,0 +1,266 @@
+diff --git a/fixtures/game.d/fixture_00402350.cpp b/fixtures/game.d/fixture_00402350.cpp
+new file mode 100644
+index 0000000..78a50a8
+--- /dev/null
++++ b/fixtures/game.d/fixture_00402350.cpp
+@@ -0,0 +1,7 @@
++#include "startup_resource_rasters.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00402350(unsigned short* destination, const unsigned char* source, const unsigned short* palette, int value)
++{
++    ResourceRasterAt00402350(destination, source, palette, 640, value, value, value, value, value, value, value, value);
++}
+diff --git a/metadata.d/00402350.csv b/metadata.d/00402350.csv
+new file mode 100644
+index 0000000..05afb59
+--- /dev/null
++++ b/metadata.d/00402350.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00402350,function,1317,?ResourceRasterAt00402350@@YAXPAGPBEPBGIHHHHHHHH@Z
+diff --git a/src/match_00402350.cpp b/src/match_00402350.cpp
+new file mode 100644
+index 0000000..5f3cdfa
+--- /dev/null
++++ b/src/match_00402350.cpp
+@@ -0,0 +1,223 @@
++#include "startup_resource_rasters.h"
++#include "render_mask_setup.h"
++
++// Draws an RLE-packed sprite whose source bytes carry a blend mode in their
++// top two bits and a palette index below them into two-byte pixels,
++// clipped like ResourceRaster1Packed: mode 0x00 is opaque, 0x40 three
++// quarters colour, 0x80 half colour, 0xc0 one quarter colour over the
++// destination pixel (render_half_mask/render_quarter_mask). The 0x100 case can
++// never be selected; retail still tests it.
++// FUNCTION: BEACHLIFE 0x00402350
++void ResourceRasterAt00402350(unsigned short* destination, const unsigned char* source, const unsigned short* palette,
++    unsigned int stride, int x, int y, int width, int height, int left, int top, int right, int bottom)
++{
++    int column;
++    int value;
++    unsigned char mode;
++    unsigned short pixel;
++    unsigned short color;
++    unsigned short result;
++    signed char packet;
++    unsigned short* row = destination + (stride * y + x);
++
++    // Nothing is clipped.
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (int j = 0; j < height; j++)
++        {
++            unsigned short* output = row + j * stride;
++            column = 0;
++            while (column < width)
++            {
++                packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet -= count;
++                    do
++                    {
++                        {
++                            value = *source;
++                            mode = value & 0xc0;
++                            pixel = *output;
++                            color = palette[(unsigned char)value - mode];
++                            switch (mode)
++                            {
++                            case 0x00:
++                                result = color;
++                                break;
++                            case 0x40:
++                                result = ((render_half_mask >> 1) & (color >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                                break;
++                            case 0x80:
++                                result = ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
++                                break;
++                            case 0xc0:
++                                result = ((render_half_mask >> 1) & (pixel >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                                break;
++                            case 0x100:
++                                result = pixel;
++                                break;
++                            }
++                            *output++ = result;
++                        }
++                        source++;
++                    } while (--count != 0);
++                }
++                output -= packet;
++                column -= packet;
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped: the first `left` pixels of every row are dropped.
++    if (left > 0)
++    {
++        for (int skip = top; skip > 0; skip--)
++        {
++            column = 0;
++            while (column < width)
++            {
++                packet = *source++;
++                if (packet >= 0)
++                {
++                    column += packet;
++                    source += packet;
++                }
++                else
++                {
++                    column -= packet;
++                }
++            }
++        }
++
++        for (int j = 0; j < bottom - top; j++)
++        {
++            unsigned short* output = row + j * stride;
++            int remaining_left = left;
++            column = 0;
++            while (column < width)
++            {
++                packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet -= count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else
++                        {
++                            value = *source;
++                            mode = value & 0xc0;
++                            pixel = *output;
++                            color = palette[(unsigned char)value - mode];
++                            switch (mode)
++                            {
++                            case 0x00:
++                                result = color;
++                                break;
++                            case 0x40:
++                                result = ((render_half_mask >> 1) & (color >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                                break;
++                            case 0x80:
++                                result = ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
++                                break;
++                            case 0xc0:
++                                result = ((render_half_mask >> 1) & (pixel >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                                break;
++                            case 0x100:
++                                result = pixel;
++                                break;
++                            }
++                            *output++ = result;
++                        }
++                        source++;
++                    } while (--count != 0);
++                }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
++                {
++                    remaining_left--;
++                    column++;
++                    packet--;
++                }
++                column += packet;
++                output += packet;
++            }
++        }
++        return;
++    }
++
++    // Top, right or bottom edge clipped: pixels from `right` on are dropped.
++    for (int skip = top; skip > 0; skip--)
++    {
++        column = 0;
++        while (column < width)
++        {
++            packet = *source++;
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
++            else
++            {
++                column -= packet;
++            }
++        }
++    }
++
++    for (int j = 0; j < bottom - top; j++)
++    {
++        unsigned short* output = row + j * stride;
++        column = 0;
++        while (column < width)
++        {
++            packet = *source++;
++            if (packet > 0)
++            {
++                int count = packet;
++                packet -= count;
++                do
++                {
++                    if (column < right)
++                    {
++                        value = *source;
++                        mode = value & 0xc0;
++                        pixel = *output;
++                        color = palette[(unsigned char)value - mode];
++                        switch (mode)
++                        {
++                        case 0x00:
++                            result = color;
++                            break;
++                        case 0x40:
++                            result = ((render_half_mask >> 1) & (color >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                            break;
++                        case 0x80:
++                            result = ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
++                            break;
++                        case 0xc0:
++                            result = ((render_half_mask >> 1) & (pixel >> 1)) + ((color >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                            break;
++                        case 0x100:
++                            result = pixel;
++                            break;
++                        }
++                        *output++ = result;
++                    }
++                    source++;
++                    column++;
++                } while (--count != 0);
++            }
++            if (column < right)
++                output -= packet;
++            column -= packet;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00402350.json b/targets/beachlife-uk-1.1.d/00402350.json
+new file mode 100644
+index 0000000..abcc40e
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00402350.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x00402350",
++      "size": 1317,
++      "name": "ResourceRasterAt00402350",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

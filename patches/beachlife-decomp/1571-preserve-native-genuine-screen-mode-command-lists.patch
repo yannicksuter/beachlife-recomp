@@ -1,0 +1,124 @@
+diff --git a/src/startup_screen_mode_command_end.cpp b/src/startup_screen_mode_command_end.cpp
+new file mode 100644
+index 0000000..cd763a0
+--- /dev/null
++++ b/src/startup_screen_mode_command_end.cpp
+@@ -0,0 +1,10 @@
++#include "startup_screen_mode_world.h"
++
++// Same qualified library body; line matching covers this retained ICF alias.
++// FUNCTION: BEACHLIFE 0x00437a40 FOLDED
++ScreenModeCommandIterator ScreenModeCommandQueue::End() const
++{
++    ScreenModeCommandIterator result;
++    result.node = head;
++    return result;
++}
+diff --git a/src/startup_screen_mode_command_lists.h b/src/startup_screen_mode_command_lists.h
+deleted file mode 100644
+index 814dc08..0000000
+--- a/src/startup_screen_mode_command_lists.h
++++ /dev/null
+@@ -1,26 +0,0 @@
+-#ifndef STARTUP_SCREEN_MODE_COMMAND_LISTS_H
+-#define STARTUP_SCREEN_MODE_COMMAND_LISTS_H
+-
+-#include "startup_screen_mode_world.h"
+-
+-// Matching retention of the command lists' out-of-line vendor members:
+-// insert 0x0042e5b0 with its node constructor 0x0042e5e0, erase 0x0042e4e0,
+-// clear 0x0042e6f0 and the node deallocation 0x0042e6a0.
+-struct ScreenModeCommandListRetention : ScreenModeCommandList
+-{
+-    typedef ScreenModeCommandList::iterator (ScreenModeCommandList::*InsertMember)(
+-        ScreenModeCommandList::iterator, const ScreenModeCommand&);
+-    typedef ScreenModeCommandList::_Node* (ScreenModeCommandList::*CreateNodeMember)(const ScreenModeCommand&);
+-    typedef ScreenModeCommandList::iterator (ScreenModeCommandList::*EraseMember)(ScreenModeCommandList::iterator);
+-    typedef void (std::_List_base<ScreenModeCommand, std::allocator<ScreenModeCommand> >::*ClearMember)();
+-    typedef std::allocator<ScreenModeCommandList::_Node> NodeAllocator;
+-    typedef void (NodeAllocator::*DeallocateMember)(ScreenModeCommandList::_Node*, size_t) const;
+-
+-    // The node constructor is protected in the vendor list.
+-    static CreateNodeMember CreateNode()
+-    {
+-        return &ScreenModeCommandListRetention::_M_create_node;
+-    }
+-};
+-
+-#endif
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 1bb3181..40c31f9 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -288,8 +288,25 @@ struct ScreenBuildingPlacement
+     unsigned char byte_6c;
+ };
+ 
+-// Retail's command queue lists (STLport std::list<ScreenModeCommand>).
+-typedef WorldList<ScreenModeCommand>::Type ScreenModeCommandList;
++struct ScreenModeCommandNode
++{
++    ScreenModeCommandNode* next;
++    ScreenModeCommandNode* previous;
++    ScreenModeCommand command;
++};
++
++// Retail iterators have a user copy constructor: they are returned through a
++// hidden pointer and constructed directly in by-value argument slots.
++struct ScreenModeCommandIterator
++{
++    ScreenModeCommandNode* node;
++
++    ScreenModeCommandIterator() { }
++    ScreenModeCommandIterator(const ScreenModeCommandIterator& other)
++        : node(other.node)
++    {
++    }
++};
+ 
+ struct ScreenModeCommandQueue;
+ extern ScreenModeCommandQueue* screen_mode_commands; // 0x005ab148.
+@@ -305,11 +322,15 @@ struct ScreenModeCommandRegistration
+ 
+ struct ScreenModeCommandQueue : ScreenModeCommandRegistration
+ {
+-    void RemoveCommands(unsigned int id); // 0x0042e020.
+-    ScreenModeCommandQueue();             // 0x0042dc90.
+-    void Update();                        // 0x0042df50.
+-    ScreenModeCommandList commands_00;
+-    ScreenModeCommandList pending_04;
++    ScreenModeCommandIterator Begin() const;
++    ScreenModeCommandIterator End() const;                               // 0x00437a40.
++    ScreenModeCommandIterator Erase(ScreenModeCommandIterator position); // 0x0042e4e0.
++    void RemoveCommands(unsigned int id);                                // 0x0042e020.
++    ScreenModeCommandQueue();                                            // 0x0042dc90.
++    void Update();                                                       // 0x0042df50.
++    ScreenModeCommandNode* head;
++    ScreenModeCommandNode* pending_head_04;
++    ScreenModeCommandNode* CreateNode(const ScreenModeCommand& command);    // 0x0042e5e0.
+     ~ScreenModeCommandQueue();                                              // 0x0042dd90.
+     void LoadState(GameFileReader* file);                                   // 0x0042e390.
+     void SaveState(GameFileReader* file);                                   // 0x0042e260.
+@@ -318,6 +339,8 @@ struct ScreenModeCommandQueue : ScreenModeCommandRegistration
+     void QueuePlacement(ScreenModeCommand* command, const void* placement); // 0x0042df20.
+     void Append(
+         VariableEntity* entity, ScreenModeCommand* command, const void* placement); // 0x0042e080.
++    ScreenModeCommandIterator Insert(
++        ScreenModeCommandIterator position, const ScreenModeCommand& command); // 0x0042e5b0.
+ };
+ 
+ // Expanded by /Ob1 owners; unwinding and /Ob0 callers use the shared
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index d71728b..6972e5d 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -3074,6 +3074,9 @@
+     "startup_match_00491130.cpp": [
+       "/Ob1"
+     ],
++    "startup_screen_mode_command_end.cpp": [
++      "/Ob1"
++    ],
+     "startup_screen_command_constructors.cpp": [
+       "/Ob1"
+     ],

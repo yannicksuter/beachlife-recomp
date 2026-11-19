@@ -1,0 +1,51 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 4531b35..be41327 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4789,3 +4789,6 @@ typedef char RepairSelectionIteratorOffset[offsetof(WorldRepairSelection, list_1
+ // The ticker messages keep their 12- and 20-byte layouts with inline constructors.
+ typedef char TickerQueuedMessageSize[sizeof(TickerQueuedMessage) == 0xc ? 1 : -1];
+ typedef char TickerHistoryMessageSize[sizeof(TickerHistoryMessage) == 0x14 ? 1 : -1];
++
++// The filled rectangle keeps the 16-byte RenderRectangle layout with its empty destructor.
++typedef char SizedRectangleSize[sizeof(SizedRectangle) == 0x10 ? 1 : -1];
+diff --git a/src/startup_render_rectangle.h b/src/startup_render_rectangle.h
+index 8885c92..ddf9df2 100644
+--- a/src/startup_render_rectangle.h
++++ b/src/startup_render_rectangle.h
+@@ -11,6 +11,20 @@ struct RenderRectangle
+     int height;
+ };
+ 
++// The rectangle FillSizedRectangle fills: the same fields as RenderRectangle,
++// but its callers' locals carry an empty destructor (an EH state of its own),
++// which the clip rectangles of SetScreenSize and friends do not have.
++struct SizedRectangle
++{
++    ~SizedRectangle()
++    {
++    }
++    int x;
++    int y;
++    int width;
++    int height;
++};
++
+ // Observed prefix only; the original complete class and names are unknown.
+ struct RenderRectangleState
+ {
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index 95e6dca..b6c50fa 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -142,8 +142,8 @@ struct ScreenRequestRenderer : ScreenRendererRegistration
+ 
+     unsigned char InitializeDisplay(void* window, unsigned char mode, unsigned int width, unsigned int height, unsigned int bits); // 0x0040d9c0, RET20.
+ 
+-    unsigned char SupportsWidth(int width);                                   // 0x00411b50.
+-    void FillSizedRectangle(RenderRectangle* rectangle, unsigned int colour); // 0x0040c240.
++    unsigned char SupportsWidth(int width);                                    // 0x00411b50.
++    void FillSizedRectangle(SizedRectangle* rectangle, unsigned short colour); // 0x0040c240.
+     void FillRectangle(const ScreenRectangle& bounds, unsigned short colour);
+     void DrawPixel(int x, int y, unsigned short colour);                                   // 0x00410c40.
+     bool ClipWorldRectangle(int& x, int& y, int& left, int& top, int& right, int& bottom); // 0x0040ca50.

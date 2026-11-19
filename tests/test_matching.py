@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import re
 import struct
 import sys
 import tempfile
@@ -15,6 +16,228 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 spec = importlib.util.spec_from_file_location('matching', Path(__file__).resolve().parents[1] / 'tools/matching.py')
 matching = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(matching)
+
+
+class VendorIdentityTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.folder = Path(temporary.name)
+        self.left = '?erase@?$deque@PAUA@@@_STL@@QAEXXZ'
+        self.right = '?erase@?$deque@PAUB@@@_STL@@QAEXXZ'
+        self.copy_left = '?copy@_STL@@YAXPAUA@@@Z'
+        self.copy_right = '?copy@_STL@@YAXPAUB@@@Z'
+        self.names = {self.left: 0x410000, self.right: 0x420000,
+                      self.copy_left: 0x430000, self.copy_right: 0x440000, '_sink': 0x450000}
+        self.objects, self.images = {}, {}
+        self.code = b'\x6a\x01\xe8\0\0\0\0\xc3'
+        self.rows = [{'address': '0x401000', 'type': 'library', 'size': '8', 'symbol': self.left}]
+        self.item = {'function': '0x402000', 'address': '0x401000', 'symbol': self.right}
+        self.target = {'functions': [{'address': '0x402000'}],
+                       'library_functions': [{'address': '0x401000'}],
+                       'comparison_vendor_identities': [self.item]}
+        self.write(self.left, self.copy_left)
+        self.write(self.right, self.copy_right)
+        self.write(self.copy_left, '_sink')
+        self.write(self.copy_right, '_sink')
+
+    def write(self, symbol, callee, code=None, kind=0x14, addend=0):
+        code = bytearray(self.code if code is None else code)
+        struct.pack_into('<I', code, 3, addend)
+        name = self.objects.setdefault(symbol, f'body{len(self.objects)}.obj')
+        (self.folder / name).write_bytes(MatchingInputTests.call_coff(symbol, callee, bytes(code), kind))
+        value = self.names[callee] + addend
+        if kind == 0x14:
+            value -= self.names[symbol] + 7
+        struct.pack_into('<I', code, 3, value & 0xffffffff)
+        self.images[self.names[symbol]] = bytes(code)
+
+    def specs(self, target=None, rows=None):
+        publics = {}
+        for name, address in self.names.items():
+            publics.setdefault(address, set()).add(name)
+        linked = [f'"{name}"' for name in self.objects.values()]
+        return matching.vendor_identity_specs(
+            self.target if target is None else target, self.rows if rows is None else rows,
+            publics, self.objects, self.folder, linked,
+            lambda address, size: self.images[address][:size])
+
+    def test_recursive_callees_and_folded_layouts_have_one_scoped_identity(self):
+        spec, = self.specs()
+        self.assertFalse(spec['folded'])
+        self.assertEqual(spec['function'], '0x00402000')
+        self.assertEqual(len(spec['proof']), 2)
+        self.assertTrue(all(item['bytes'] == 8 for item in spec['proof']))
+        # The nested function can fold independently of its caller.
+        self.names[self.copy_right] = self.names[self.copy_left]
+        self.write(self.right, self.copy_right)
+        spec, = self.specs()
+        self.assertEqual(sum(item['folded'] for item in spec['proof']), 1)
+        # The registration describes an identity, never a fictitious extra copy.
+        self.names[self.right] = self.names[self.left]
+        spec, = self.specs()
+        self.assertTrue(spec['folded'])
+        self.assertEqual(spec['recomp'], spec['identity_recomp'])
+        self.assertEqual(len(spec['proof']), 1)
+
+    def test_changed_nested_code_relocations_and_linked_image_are_rejected(self):
+        for reason in ('code', 'kind', 'addend', 'image', 'unlinked'):
+            with self.subTest(reason=reason):
+                self.write(self.copy_right, '_sink')
+                if reason == 'code':
+                    self.write(self.copy_right, '_sink', b'\x6a\x02' + self.code[2:])
+                elif reason == 'kind':
+                    self.write(self.copy_right, '_sink', kind=6)
+                elif reason == 'addend':
+                    self.write(self.copy_right, '_sink', addend=4)
+                elif reason == 'image':
+                    self.images[self.names[self.copy_right]] = b'\x90' + self.code[1:]
+                else:
+                    (self.folder / self.objects[self.copy_right]).unlink()
+                with self.assertRaises(ValueError):
+                    self.specs()
+
+    def test_distinct_data_is_not_recursive_code_identity(self):
+        self.write(self.left, self.copy_left, kind=6)
+        self.write(self.right, self.copy_right, kind=6)
+        with self.assertRaisesRegex(ValueError, 'distinct data targets'):
+            self.specs()
+        # Even REL32 cannot turn a data-only definition into a code identity.
+        self.write(self.left, self.copy_left)
+        self.write(self.right, self.copy_right)
+        path = self.folder / self.objects[self.copy_right]
+        data = bytearray(path.read_bytes())
+        struct.pack_into('<I', data, 56, 0xc0000040)
+        path.write_bytes(data)
+        with self.assertRaisesRegex(ValueError, 'no linked COFF function'):
+            self.specs()
+
+    def test_recursive_cycles_are_checked_before_accepting_the_graph(self):
+        self.write(self.copy_left, self.left)
+        self.write(self.copy_right, self.right)
+        spec, = self.specs()
+        self.assertEqual(len(spec['proof']), 2)
+        self.write(self.copy_right, self.right, b'\x6a\x02' + self.code[2:])
+        with self.assertRaises(ValueError):
+            self.specs()
+
+    def test_identity_requires_registered_library_scope_and_unique_names(self):
+        for item in (self.item | {'function': '0x403000'}, self.item | {'symbol': self.left},
+                     self.item | {'extra': 'ignored'}, self.item | {'function': ''}):
+            with self.subTest(item=item), self.assertRaises(ValueError):
+                self.specs(self.target | {'comparison_vendor_identities': [item]})
+        with self.assertRaises(ValueError):
+            self.specs(self.target | {'comparison_vendor_identities': [self.item, self.item]})
+        with self.assertRaises(ValueError):
+            self.specs(rows=[self.rows[0] | {'type': 'function'}])
+        # A library callee identity need not claim a separately credited body.
+        self.assertEqual(self.specs(self.target | {'library_functions': []}), self.specs())
+        publics = {address: {name} for name, address in self.names.items()}
+        publics[0x460000] = {self.right}
+        with self.assertRaisesRegex(ValueError, 'not uniquely linked'):
+            matching.vendor_identity_specs(self.target, self.rows, publics, self.objects,
+                                            self.folder, [], lambda address, size: b'')
+
+
+class PlainImmediateTests(unittest.TestCase):
+    """A colour constant whose value falls inside an image range on one side only."""
+    original_start, rebuilt_start = 0x437f4e, 0x41b5ce
+
+    @staticmethod
+    def mov(address, value, register='eax'):
+        opcode = {'eax': 0xb8, 'ecx': 0xb9}[register]
+        return (address, 5, 'mov', f'{register}, 0x{value:x}'), bytes([opcode]) + struct.pack('<I', value)
+
+    @staticmethod
+    def reader(code):
+        return lambda address: code[address:address + 4]
+
+    def rules(self, original_value, rebuilt_value, relocations=(), original_relocations=(), names=None):
+        original, original_code = self.mov(self.original_start, original_value)
+        rebuilt, rebuilt_code = self.mov(self.rebuilt_start, rebuilt_value)
+        original_bytes = {self.original_start + offset: original_code[offset:] for offset in range(5)}
+        rebuilt_bytes = {self.rebuilt_start + offset: rebuilt_code[offset:] for offset in range(5)}
+        rules = matching.plain_immediate_rules(
+            set(original_relocations), {0x500000, *relocations},
+            lambda address: original_bytes[address][:4], lambda address: rebuilt_bytes[address][:4],
+            [rebuilt], (names or {}).get)
+        return (original, rules[0]), (rebuilt, rules[1])
+
+    @staticmethod
+    def sanitize(names):
+        # reccmp's address heuristic: any value inside a known range gets a name or placeholder.
+        def sanitize(instruction):
+            address, size, mnemonic, operands = instruction
+            return mnemonic, re.sub(r'0x[0-9a-f]+', lambda found: names.get(int(found.group(0), 16), found.group(0)),
+                                    operands)
+        return sanitize
+
+    def compared(self, original_value, rebuilt_value, **options):
+        (original, original_rule), (rebuilt, rebuilt_rule) = self.rules(original_value, rebuilt_value, **options)
+        left = matching.keep_plain_immediates(self.sanitize({original_value: '<OFFSET7>'}), original_rule)
+        right = matching.keep_plain_immediates(
+            self.sanitize({rebuilt_value: 'building_footprint_hotel+7092'}), rebuilt_rule)
+        return left(original), right(rebuilt)
+
+    def test_trailing_immediate_is_plain_only_without_a_relocation(self):
+        instruction, code = self.mov(0x1000, 0x4b4b64)
+        self.assertEqual(matching.plain_immediate(instruction, code[1:], set()), '0x4b4b64')
+        self.assertIsNone(matching.plain_immediate(instruction, code[1:], {0x1001}))
+        store = (0x1000, 10, 'mov', 'dword ptr [esi + 0x2a08], 0x4b4b64')
+        self.assertEqual(matching.plain_immediate(store, struct.pack('<I', 0x4b4b64), {0x1002}), '0x4b4b64')
+        self.assertEqual(matching.plain_immediate((0x1000, 5, 'push', '0x4b4b64'), code[1:], set()), '0x4b4b64')
+        for instruction in [(0x1000, 5, 'call', '0x4b4b64'), (0x1000, 5, 'jmp', '0x4b4b64'),
+                            (0x1000, 6, 'je', '0x4b4b64'), (0x1000, 2, 'push', '0x10'),
+                            (0x1000, 6, 'mov', 'eax, dword ptr [0x4b4b64]'),
+                            (0x1000, 6, 'mov', 'eax, dword ptr [ecx + 0x4b4b64]')]:
+            with self.subTest(instruction=instruction):
+                self.assertIsNone(matching.plain_immediate(instruction, code[1:], set()))
+        # The decoded value must be the instruction's last four bytes.
+        self.assertIsNone(matching.plain_immediate(instruction, struct.pack('<I', 0x4b4b65), set()))
+
+    def test_unrelocated_equal_constants_compare_as_numbers(self):
+        self.assertEqual(self.compared(0x4b4b64, 0x4b4b64), (('mov', 'eax, 0x4b4b64'), ('mov', 'eax, 0x4b4b64')))
+
+    def test_changed_constant_is_still_rejected(self):
+        original, rebuilt = self.compared(0x4b4b64, 0x4b4b65)
+        self.assertEqual((original, rebuilt), (('mov', 'eax, <OFFSET7>'), ('mov', 'eax, 0x4b4b65')))
+        self.assertNotEqual(original, rebuilt)
+
+    def test_relocated_rebuilt_address_and_named_original_keep_their_names(self):
+        original, rebuilt = self.compared(0x4b4b64, 0x4b4b64, relocations={self.rebuilt_start + 1})
+        self.assertEqual((original, rebuilt), (('mov', 'eax, <OFFSET7>'), ('mov', 'eax, building_footprint_hotel+7092')))
+        # An original identity starting at the value keeps reccmp's answer.
+        original, rebuilt = self.compared(0x4b4b64, 0x4b4b64, names={0x4b4b64: 'colour_table'})
+        self.assertEqual((original, rebuilt), (('mov', 'eax, <OFFSET7>'), ('mov', 'eax, 0x4b4b64')))
+
+    def test_original_relocations_decide_on_their_own(self):
+        original, _ = self.compared(0x4b4b64, 0x4b4b65, original_relocations={0x600000})
+        self.assertEqual(original, ('mov', 'eax, 0x4b4b64'))
+        original, _ = self.compared(0x4b4b64, 0x4b4b64, original_relocations={self.original_start + 1})
+        self.assertEqual(original, ('mov', 'eax, <OFFSET7>'))
+
+    def test_rebuilt_image_without_relocations_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, 'base relocations'):
+            matching.plain_immediate_rules(set(), set(), bytes, bytes, [], {}.get)
+
+    @unittest.skipUnless(importlib.util.find_spec('reccmp'), 'reccmp is not installed')
+    def test_reccmp_sanitizer_numbers_stay_aligned(self):
+        from reccmp.compare.asm.parse import ParseAsm
+        original_code = bytes.fromhex('b8644b4b00') + bytes.fromhex('68') + struct.pack('<I', 0x4b0000)
+        rebuilt_code = bytes.fromhex('b8644b4b00') + bytes.fromhex('68') + struct.pack('<I', 0x41f000)
+        original_asm = ParseAsm(addr_test=lambda value: 0x401000 <= value < 0x500000)
+        rebuilt_asm = ParseAsm(addr_test=lambda value: 0x401000 <= value < 0x500000)
+        rebuilt_instructions = [(0x41b5ce, 5, 'mov', 'eax, 0x4b4b64'), (0x41b5d3, 5, 'push', '0x41f000')]
+        original_rule, rebuilt_rule = matching.plain_immediate_rules(
+            set(), {0x41b5d4}, lambda address: original_code[address - 0x437f4e:address - 0x437f4a],
+            lambda address: rebuilt_code[address - 0x41b5ce:address - 0x41b5ca], rebuilt_instructions,
+            lambda value: original_asm.lookup(value, exact=True))
+        original_asm.sanitize = matching.keep_plain_immediates(original_asm.sanitize, original_rule)
+        rebuilt_asm.sanitize = matching.keep_plain_immediates(rebuilt_asm.sanitize, rebuilt_rule)
+        # The relocated push keeps placeholder number 1 on both sides.
+        expected = ['mov eax, 0x4b4b64', 'push <OFFSET1>']
+        self.assertEqual([text for _, text in original_asm.parse_asm(original_code, 0x437f4e)], expected)
+        self.assertEqual([text for _, text in rebuilt_asm.parse_asm(rebuilt_code, 0x41b5ce)], expected)
 
 
 class FixtureGroupTests(unittest.TestCase):
@@ -426,6 +649,90 @@ class MatchingInputTests(unittest.TestCase):
                 matching.static_identity_specs([{'address': '0x1', 'type': 'function', 'symbol': symbol}],
                                                statics)
 
+    @staticmethod
+    def static_data_coff(symbols):
+        """COFF object with .text, .data (8 B) and .bss (0x2711 B); symbols are
+        (name, value, section number, storage class, auxiliary record count)."""
+        sections = [(b'.text', 4, 0x60500020), (b'.data', 8, 0xc0300040), (b'.bss', 0x2711, 0xc0400080)]
+        table = 20 + 40 * len(sections)
+        header = struct.pack('<HHIIIHH', 0x14c, len(sections), 0, table,
+                             sum(1 + item[4] for item in symbols), 0, 0)
+        names, entries = b'', b''
+        for name, value, section, storage, auxiliary in symbols:
+            entries += struct.pack('<IIIhHBB', 0, 4 + len(names), value, section, 0, storage, auxiliary)
+            entries += b'\0' * 18 * auxiliary
+            names += name.encode() + b'\0'
+        return (header + b''.join(struct.pack('<8sIIIIIIHHI', name, 0, 0, size, 0, 0, 0, 0, 0, flags)
+                                  for name, size, flags in sections) +
+                entries + struct.pack('<I', len(names) + 4) + names)
+
+    def test_static_data_identity_names_one_data_static_of_one_linked_object(self):
+        guard = '_?$S3@?3??Update@WorldSubsystem4c@@QAEXXZ@4EA'
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / 'one.obj').write_bytes(self.static_data_coff([
+                (guard, 0x2710, 3, 3, 0), ('_?scratch@?3??Update@@4PAHA', 0, 3, 3, 0),
+                ('_$E4', 0, 1, 3, 0), ('.bss', 0, 3, 3, 1), ('_twice', 0, 2, 3, 0), ('_twice', 4, 2, 3, 0),
+                ('?public@@3HA', 4, 2, 2, 0)]))
+            (folder / 'unlinked.obj').write_bytes((folder / 'one.obj').read_bytes())
+            statics = matching.coff_static_data_symbols(folder / 'one.obj')
+            self.assertEqual(statics[guard], [(0x2710, 0x2711)])
+            self.assertEqual(statics['_twice'], [(0, 8), (4, 8)])
+            for name in ('_$E4', '.bss', '?public@@3HA'):
+                self.assertNotIn(name, statics)
+            linked = ['"/nologo"', '"one.obj"']
+            rows = [{'address': '0x5a8960', 'type': 'global', 'size': '1', 'symbol': 'one.obj:' + guard},
+                    {'address': '0x4248f0', 'type': 'function', 'size': '1', 'symbol': 'one.obj:_$E4'},
+                    {'address': '0x5a8968', 'type': 'global', 'size': '4', 'symbol': '_?scratch@?3??Update@@4PAHA'}]
+            self.assertEqual(matching.static_data_identity_specs(rows, folder, linked), [
+                {'address': '0x005a8960', 'symbol': 'one.obj:' + guard, 'object': 'one.obj', 'name': guard,
+                 'offset': 0x2710, 'section_size': 0x2711}])
+            for symbol, size in (('unlinked.obj:' + guard, '1'), ('absent.obj:' + guard, '1'),
+                                 ('one.obj:_twice', '1'), ('one.obj:_$E4', '1'), ('one.obj:' + guard, '2')):
+                with self.subTest(symbol=symbol, size=size), self.assertRaises(ValueError):
+                    matching.static_data_identity_specs(
+                        [{'address': '0x1', 'type': 'global', 'size': size, 'symbol': symbol}], folder, linked)
+            with self.assertRaises(ValueError):
+                matching.static_data_identity_specs(rows[:1], folder, linked + ['"one.obj"'])
+
+    def test_static_data_identity_address_comes_from_its_object_pdb_record(self):
+        guard = '_?$S3@?3??Update@WorldSubsystem4c@@QAEXXZ@4EA'
+        spec = {'address': '0x005a8960', 'symbol': 'one.obj:' + guard, 'object': 'one.obj', 'name': guard,
+                'offset': 0x2710, 'section_size': 0x2711}
+        contributions = [(1, 0, 0x1e0), (3, 0x68, 7), (3, 0x148, 0x2711), (3, 0x3000, 0x2711)]
+        def absolute(section, offset):
+            return 0x400000 + section * 0x1000 + offset
+        cases = [
+            # VC6 drops the COFF name's leading underscore in the PDB.
+            ([('Z:\\build\\one.obj', 3, 0x2858, guard[1:])], [absolute(3, 0x2858)]),
+            ([('one.obj', 3, 0x2858, guard)], [absolute(3, 0x2858)]),
+            ([('two.obj', 3, 0x2858, guard[1:])], []),                     # another object's static
+            ([('one.obj', 3, 0x2858, '?$S1@?3??Update@WorldSubsystem4c@@QAEXXZ@4EA')], []),
+            ([('one.obj', 3, 0x2857, guard[1:])], []),                     # not at its COFF offset
+            ([('one.obj', 3, 0x77, guard[1:])], []),                       # contribution of another size
+            ([('one.obj', 3, 0x2858, guard[1:]), ('one.obj', 3, 0x5710, guard[1:])],
+             [absolute(3, 0x2858), absolute(3, 0x5710)])]                  # ambiguous: never bound
+        for statics, expected in cases:
+            with self.subTest(statics=statics):
+                self.assertEqual(matching.static_data_identity_addresses([spec], statics, contributions, absolute),
+                                 {spec['symbol']: expected})
+
+    def test_static_data_identity_binds_its_one_pdb_address_when_both_sides_are_free(self):
+        def spec(address):
+            return {'address': f'0x{address:08x}', 'symbol': f'one.obj:_?$S{address}', 'object': 'one.obj',
+                    'name': f'_?$S{address}', 'offset': 0, 'section_size': 1}
+        specs = [spec(0x1100), spec(0x1200), spec(0x1300), spec(0x1400), spec(0x1500), spec(0x1600)]
+        addresses = {'one.obj:_?$S4352': [0x2100], 'one.obj:_?$S4608': [0x2200], 'one.obj:_?$S4864': [0x2300],
+                     'one.obj:_?$S5120': [0x2400], 'one.obj:_?$S5376': [0x2500, 0x2510]}
+        original = {0x1100: 0x2100, 0x1200: 0x2900}
+        rebuilt = {0x2100: 0x1100, 0x2900: 0x1200, 0x2400: 0x1900}
+        records, pairs = matching.bind_static_data_identities(specs, addresses, original.get, rebuilt.get)
+        self.assertEqual([(record['address'], record['recomp'], record['bound']) for record in records], [
+            ('0x00001100', '0x00002100', 'reccmp'), ('0x00001200', '0x00002200', 'other'),
+            ('0x00001300', '0x00002300', 'pdb'), ('0x00001400', '0x00002400', False),
+            ('0x00001500', None, False), ('0x00001600', None, False)])
+        self.assertEqual(pairs, [(0x1300, 0x2300)])
+
     def test_static_identity_binds_only_when_both_sides_are_unmatched(self):
         def spec(address, recomp):
             return {'address': f'0x{address:08x}', 'symbol': f'one.obj:_$E{address}', 'recomp': f'0x{recomp:08x}'}
@@ -526,6 +833,42 @@ class MatchingInputTests(unittest.TestCase):
         self.assertEqual(lookup(0x432000, indirect=True), 'Item::Empty')
         scoped['current'] = {}
         self.assertEqual(lookup(0x432000), 'Item::Empty')
+
+    def test_literal_copy_is_a_separate_constant_with_the_literal_bytes(self):
+        literal = '__real@4@00000000000000000000'
+        target = {'functions': [{'address': '0x00416710'}],
+                  'comparison_literal_copies': [{'function': '0x00416710', 'symbol': '?zero@@3MB',
+                                                 'literal': literal}]}
+        image = {0x4773b4: b'\0\0\0\0', 0x4773b8: b'\0\0\0\0', 0x4773bc: b'\0\0\x80?'}
+        read = lambda address, size: image[address][:size]
+        publics = {0x4773b4: {literal}, 0x4773b8: {'?zero@@3MB'}, 0x4773bc: {'?one@@3MB'}}
+        self.assertEqual(matching.literal_copy_specs(target, publics, read), [
+            {'function': '0x00416710', 'symbol': '?zero@@3MB', 'identity_symbol': literal,
+             'recomp': '0x004773b8', 'identity_recomp': '0x004773b4', 'size': 4}])
+        self.assertEqual(matching.literal_copy_specs({}, publics, read), [])
+        item = target['comparison_literal_copies'][0]
+        for bad in ({**item, 'symbol': '?one@@3MB'}, {**item, 'symbol': '?missing@@3MB'},
+                    {**item, 'function': '0x00416711'}, {**item, 'literal': '?zero@@3MB'},
+                    {**item, 'symbol': literal}, {**item, 'extra': 'x'}):
+            with self.subTest(item=bad), self.assertRaises(ValueError):
+                matching.literal_copy_specs(target | {'comparison_literal_copies': [bad]}, publics, read)
+        with self.assertRaises(ValueError):
+            matching.literal_copy_specs(target | {'comparison_literal_copies': [item, item]}, publics, read)
+        with self.assertRaises(ValueError):
+            matching.literal_copy_specs(target, publics | {0x4773c0: {'?zero@@3MB'}}, read)
+
+    def test_literal_copies_can_share_one_constant_across_functions(self):
+        literal = '__real@4@00000000000000000000'
+        target = {'functions': [{'address': '0x00416710'}, {'address': '0x00416800'}],
+                  'comparison_literal_copies': [
+                      {'function': '0x00416710', 'symbol': '?zero@@3MB', 'literal': literal},
+                      {'function': '0x00416800', 'symbol': '?zero@@3MB', 'literal': literal}]}
+        image = {0x4773b4: b'\0\0\0\0', 0x4773b8: b'\0\0\0\0'}
+        publics = {0x4773b4: {literal}, 0x4773b8: {'?zero@@3MB'}}
+        specs = matching.literal_copy_specs(target, publics, lambda address, size: image[address][:size])
+        self.assertEqual([(item['function'], item['recomp'], item['identity_recomp']) for item in specs],
+                         [('0x00416710', '0x004773b8', '0x004773b4'), ('0x00416800', '0x004773b8', '0x004773b4')])
+        self.assertEqual(publics, {0x4773b4: {literal}, 0x4773b8: {'?zero@@3MB'}})
 
     def test_equivalent_copy_operands_name_the_identity_function(self):
         calls = []
@@ -644,6 +987,29 @@ class MatchingInputTests(unittest.TestCase):
                 {'address': '0x00001020', 'symbol': '?Erase@List@@QAEXXZ', 'recomp': '0x00002020',
                  'sources': ['list.cpp', 'owner.cpp']}])
             self.assertEqual(matching.unfolded_annotations(paths, rows, {}, publics), [])
+
+    def test_plain_annotations_on_folded_rows_are_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'plain.cpp').write_text(
+                '// FUNCTION: BEACHLIFE 0x1040\nvoid Plain::Folded()\n{\n}\n'
+                '// FUNCTION: BEACHLIFE 0x1060\nvoid Plain::Alone()\n{\n}\n'
+                '// FUNCTION: BEACHLIFE 0x1080\nvoid Plain::Marked()\n{\n}\n')
+            (root / 'marked.cpp').write_text('// FUNCTION: BEACHLIFE 0x1080 FOLDED\nvoid Other::Marked()\n{\n}\n')
+            rows = [{'address': '0x1040', 'type': 'function', 'size': '4', 'symbol': '?Folded@Plain@@QAEXXZ'},
+                    {'address': '0x1060', 'type': 'function', 'size': '4', 'symbol': '?Alone@Plain@@QAEXXZ'},
+                    {'address': '0x1080', 'type': 'function', 'size': '4', 'symbol': '?Marked@Plain@@QAEXXZ'}]
+            functions = [{'address': address} for address in ('0x1040', '0x1060', '0x1080', '0x10a0')]
+            rebuilt = {'?Folded@Plain@@QAEXXZ': 0x2040, '?Alone@Plain@@QAEXXZ': 0x2060,
+                       '?Marked@Plain@@QAEXXZ': 0x2080}
+            publics = {0x2040: {'?Folded@Plain@@QAEXXZ', '?Other@@YAXXZ'}, 0x2060: {'?Alone@Plain@@QAEXXZ'},
+                       0x2080: {'?Marked@Plain@@QAEXXZ', '?Marked@Other@@QAEXXZ'}}
+            paths = [root / 'plain.cpp', root / 'marked.cpp']
+            # Only 0x1040: folded by LINK and annotated plainly; 0x1080 already has a FOLDED annotation.
+            self.assertEqual(matching.unmarked_folded_annotations(paths, functions, rows, rebuilt, publics), [
+                {'address': '0x00001040', 'symbol': '?Folded@Plain@@QAEXXZ', 'recomp': '0x00002040',
+                 'other_names': ['?Other@@YAXXZ'], 'sources': ['plain.cpp']}])
+            self.assertEqual(matching.unmarked_folded_annotations(paths, functions, rows, {}, publics), [])
 
     def test_unfolded_identities_bind_their_own_rebuilt_address(self):
         records = [{'address': '0x004d3890', 'symbol': '?Ignore@@YAXH@Z', 'recomp': '0x00457810',

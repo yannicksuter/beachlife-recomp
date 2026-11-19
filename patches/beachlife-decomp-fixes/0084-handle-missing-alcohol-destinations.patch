@@ -1,0 +1,64 @@
+diff --git a/src/startup_world_guest_social_actions.cpp b/src/startup_world_guest_social_actions.cpp
+index cb660a0..0416d6b 100644
+--- a/src/startup_world_guest_social_actions.cpp
++++ b/src/startup_world_guest_social_actions.cpp
+@@ -8,13 +8,13 @@ static bool GuestLandFlags(unsigned int flags)
+     return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
+ }
+ 
+-static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
++static bool GuestAlcoholWalkTile(WorldGuestEntity* guest, ScreenPoint* result)
+ {
+     unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
+     unsigned int count;
+     VariableEntity** buildings = variable_world->ByType(2, &count);
+     float nearest = 50000.0f;
+-    unsigned int selected = 0;
++    unsigned int selected = count;
+     for (unsigned int i = 0; i < count; ++i)
+     {
+         if (!buildings[i]->FlagAt00460370())
+@@ -38,6 +38,8 @@ static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
+             }
+         }
+     }
++    if (selected == count)
++        return false;
+     ScreenPoint tile;
+     for (;;)
+     {
+@@ -47,16 +49,19 @@ static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
+         tile.y = y + std::rand() % 15 - 7;
+         unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
+         if (GuestLandFlags(flags) && tile.x < 128 && tile.x >= 0 && tile.y < 128 && tile.y >= 0)
+-            return tile;
++        {
++            *result = tile;
++            return true;
++        }
+     }
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00477ca0
+ void WorldGuestEntity::PerformAction15()
+ {
+-    if (weather_values_16c[19] > 0.0f)
++    ScreenPoint tile;
++    if (weather_values_16c[19] > 0.0f && GuestAlcoholWalkTile(this, &tile))
+     {
+-        ScreenPoint tile = GuestAlcoholWalkTile(this);
+         int y = static_cast<int>(screen_terrain_grid->TileOrigin(tile).y);
+         int x = static_cast<int>(screen_terrain_grid->TileOrigin(tile).x);
+         ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 8, x, y);
+@@ -148,9 +153,9 @@ void WorldGuestEntity::PerformAction21()
+             }
+         }
+     }
+-    if (weather_values_16c[20] > 0.0f)
++    ScreenPoint target;
++    if (weather_values_16c[20] > 0.0f && GuestAlcoholWalkTile(this, &target))
+     {
+-        ScreenPoint target = GuestAlcoholWalkTile(this);
+         SendGuestWalk(id_28, 8, screen_terrain_grid->TilePosition(target, 4));
+     }
+     else

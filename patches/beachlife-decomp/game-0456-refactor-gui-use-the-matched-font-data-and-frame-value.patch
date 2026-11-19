@@ -1,0 +1,122 @@
+diff --git a/src/startup_screen_dialog_frame_value.cpp b/src/startup_screen_dialog_frame_value.cpp
+index baa663d1166fc24ec4169577abf33282c62da3b1..fd38479c4839cf6a11320de0fd510cfae5acea01 100644
+--- a/src/startup_screen_dialog_frame_value.cpp
++++ b/src/startup_screen_dialog_frame_value.cpp
+@@ -4,25 +4,26 @@
+ int ScreenDialogResource::CurrentFrameValue()
+ {
+     ScreenDialogResourceFrame* frame = record->frames[word_10];
+-    if (record->format_18 != 5 && record->format_18 != 4)
+-        return frame->word_12;
+     int result;
+-    switch (word_18)
+-    {
+-    case 0:
+-    case 2:
++    if (record->format_18 != 5 && record->format_18 != 4)
+         result = frame->word_12;
+-        break;
+-    case 1:
+-    case 3:
+-        if (frame->name[0] == 's' || frame->name[0] == 'l')
++    else
++        switch (word_18)
+         {
+-            ScreenDialogResourceFrame* first = record->frames[0];
+-            result = frame->word_12 - 2 * first->word_12 - first->width_0e;
++        case 0:
++        case 2:
++            result = frame->word_12;
++            break;
++        case 1:
++        case 3:
++            if (frame->name[0] == 's' || frame->name[0] == 'l')
++            {
++                ScreenDialogResourceFrame* first = record->frames[0];
++                result = frame->word_12 - 2 * first->word_12 - first->width_0e;
++            }
++            else
++                result = -(frame->word_12 + frame->width_0e);
++            break;
+         }
+-        else
+-            result = -(frame->word_12 + frame->width_0e);
+-        break;
+-    }
+     return result;
+ }
+diff --git a/src/startup_screen_font_data_constructor.cpp b/src/startup_screen_font_data_constructor.cpp
+index 0808fbb8d8fe626d9e32bd650bede30dcdedb619..fdbcc6b698470a9bf6f9e0dde26129bc4c48f377 100644
+--- a/src/startup_screen_font_data_constructor.cpp
++++ b/src/startup_screen_font_data_constructor.cpp
+@@ -1,29 +1,29 @@
+ #include "startup_screen_font_data.h"
+ #include <new>
+ #include "tga_image.h"
++#include "tiff_image_loader.h"
+ #include <string.h>
+ 
+ char* LoadFile(const char* filename);
+-// Actual 0x004ebd80 TIFF loader, distinct from LoadTgaFile at 0x004ea910.
+-// It allocates/constructs the same genuine 0x20-byte image owner.
+-TgaImage* LoadTiffFile(const char* filename);
+ void StartupFatal(const char* format, ...);
+ 
+ // FUNCTION: BEACHLIFE 0x0049eb70
+ ScreenFontData::ScreenFontData(const char* name)
+ {
+     char directory[64];
+-    char coordinates_path[64];
++    char path[64];
+     char image_path[64];
+     strcpy(directory, "Data\\Fonts\\");
+-    strcpy(coordinates_path, directory);
+-    strcat(coordinates_path, name);
+-    strcat(coordinates_path, "TexCoord.Dat");
+-
+-    char* coordinates = LoadFile(coordinates_path);
+-    memcpy(&unknown_10804[0], coordinates, 4);
+-    memcpy(&unknown_10804[1], coordinates + 4, 4);
+-    const char* source = coordinates + 8;
++    strcpy(path, directory);
++    strcat(path, name);
++    strcat(path, "TexCoord.Dat");
++    char* data = LoadFile(path);
++    char* coordinates = data;
++    memcpy(&unknown_10804[0], data, 4);
++    data += 4;
++    memcpy(&unknown_10804[1], data, 4);
++    data += 4;
++    const char* source = data;
+     if (source)
+     {
+         for (int glyph = 0; glyph < 256; ++glyph)
+@@ -38,20 +38,19 @@ ScreenFontData::ScreenFontData(const char* name)
+     }
+     else
+         StartupFatal("Font::Font - could not find TexCoord file %s", name);
+-
+     strcpy(image_path, directory);
+     strcat(image_path, name);
+     strcat(image_path, ".tiff");
+     image = LoadTiffFile(image_path);
+-
+-    strcpy(coordinates_path, directory);
+-    strcat(coordinates_path, name);
+-    strcat(coordinates_path, ".Dat");
+-    char* kerning_data = LoadFile(coordinates_path);
+-    if (kerning_data)
++    strcpy(path, directory);
++    strcat(path, name);
++    strcat(path, ".Dat");
++    char* kerning_source = LoadFile(path);
++    char* kerning_data = kerning_source;
++    if (kerning_source)
+     {
+-        for (int index = 0; index < 65536; ++index)
+-            memcpy(&kerning[index], kerning_data + index, 1);
++        for (int index = 0; index < 0x10000; ++index)
++            memcpy(&kerning[index], kerning_source++, 1);
+         ::operator delete(kerning_data);
+     }
+     else

@@ -1,0 +1,46 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 461cc25..e348ffc 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4709,3 +4709,13 @@ typedef char PositionFromMapSize[(sizeof(ScreenWorldPosition) == 12) ? 1 : -1];
+ typedef char PositionFromMapHeightOffset[(offsetof(ScreenWorldPosition, z) == 8) ? 1 : -1];
+ 
+ typedef char SharedBuildingRowOrderSize[(sizeof(ScreenTableBuildingOrder) == 8) ? 1 : -1];
++
++// The table accessor preserves the weather object layout and return type.
++typedef char WeatherColourTableOwnerSize[sizeof(VariableWeather) == 0x2c78 ? 1 : -1];
++typedef char WeatherColourTableSize[sizeof(((VariableWeather*)0)->colour_table_00) == 0x1200 ? 1 : -1];
++typedef char WeatherColourTableOffset[offsetof(VariableWeather, colour_table_00) == 0 ? 1 : -1];
++unsigned short* fixture_weather_colour_table;
++extern "C" __declspec(dllexport) void FixtureWeatherColourTable(VariableWeather* weather)
++{
++    fixture_weather_colour_table = weather->ColourTable();
++}
+diff --git a/src/startup_variable_state.h b/src/startup_variable_state.h
+index 4f57e7d..04cdb40 100644
+--- a/src/startup_variable_state.h
++++ b/src/startup_variable_state.h
+@@ -733,7 +733,8 @@ struct WeatherRegistration
+ 
+ struct VariableWeather : WeatherRegistration
+ {
+-    unsigned int* GuestChanges(); // 0x0043a040.
++    unsigned short* ColourTable(); // Folded at 0x004d38b0.
++    unsigned int* GuestChanges();  // 0x0043a040.
+     struct LightKey
+     {
+         LightKey();  // 0x0043b4e0.
+diff --git a/src/startup_weather_haze_globals.cpp b/src/startup_weather_haze_globals.cpp
+index d2bee41..ee18049 100644
+--- a/src/startup_weather_haze_globals.cpp
++++ b/src/startup_weather_haze_globals.cpp
+@@ -5,3 +5,9 @@ int weather_haze_jitter = 0;
+ 
+ // GLOBAL: BEACHLIFE 0x004f3494
+ extern const float weather_rain_level = 0.8f;
++
++// FUNCTION: BEACHLIFE 0x004d38b0 FOLDED
++unsigned short* VariableWeather::ColourTable()
++{
++    return colour_table_00;
++}

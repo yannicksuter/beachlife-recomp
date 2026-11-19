@@ -1,0 +1,336 @@
+diff --git a/src/startup_screen_text.h b/src/startup_screen_text.h
+index 7eaba8487ab7a1a08858aef03d206eae45c4c265..d938c3f6e8cfa49538b9cbcb3e10fb5fb20568d8 100644
+--- a/src/startup_screen_text.h
++++ b/src/startup_screen_text.h
+@@ -109,6 +109,13 @@ struct ScreenTextIterator
+     ScreenTextBucket* bucket;
+     ScreenTextLookup* lookup;
+ 
++    ScreenTextIterator() { }
++    ScreenTextIterator(ScreenTextBucket* found_bucket, ScreenTextLookup* found_lookup)
++        : bucket(found_bucket)
++        , lookup(found_lookup)
++    {
++    }
++
+     // Same actual RET0 cleanup as ScreenTextKey, with a distinct receiver.
+     ~ScreenTextIterator() { }
+ };
+diff --git a/src/startup_screen_text_lookup.cpp b/src/startup_screen_text_lookup.cpp
+index c660e5cfb0b0ef5c29aa3702df7571580f32e941..732012eedf77d5f3562280fff7394795d46ba59a 100644
+--- a/src/startup_screen_text_lookup.cpp
++++ b/src/startup_screen_text_lookup.cpp
+@@ -3,7 +3,7 @@
+ // FUNCTION: BEACHLIFE 0x0049f370
+ const unsigned short* ScreenTextLookup::LookupText(const char* key)
+ {
+-    ScreenTextIterator found = { 0, 0 };
++    ScreenTextIterator found(0, 0);
+     if (key != 0)
+     {
+         found = FindText(ScreenTextKey(key));
+diff --git a/src/startup_string_key_lookup.h b/src/startup_string_key_lookup.h
+index 1afd643ba76fc251c5ae421a749d8aa567b46d05..1539d87224da3e32e81894034376afcffb79f6c0 100644
+--- a/src/startup_string_key_lookup.h
++++ b/src/startup_string_key_lookup.h
+@@ -22,7 +22,7 @@ inline Iterator FindStringKey(Table& table, Owner* owner, const Key& key, Iterat
+         if (table.buckets[index].unavailable == 0
+             && _stricmp(table.buckets[index].key, key.text) == 0)
+         {
+-            Iterator found = { table.buckets + index, owner };
++            Iterator found(table.buckets + index, owner);
+             return found;
+         }
+         ++index;
+@@ -35,8 +35,7 @@ inline Iterator FindStringKey(Table& table, Owner* owner, const Key& key, Iterat
+ template <class Iterator, class Table, class Owner>
+ inline Iterator StringKeyEnd(Table& table, Owner* owner)
+ {
+-    Iterator end = { table.buckets + table.end_index, owner };
+-    return end;
++    return Iterator(table.buckets + table.end_index, owner);
+ }
+ 
+ #endif
+diff --git a/src/startup_world_aerobic_commands.cpp b/src/startup_world_aerobic_commands.cpp
+index 02ad6414c8489fbb25e178299cd60d33ddf32cc5..66b4286374f2545027e1ec9559020063b901fe8e 100644
+--- a/src/startup_world_aerobic_commands.cpp
++++ b/src/startup_world_aerobic_commands.cpp
+@@ -9,7 +9,8 @@ bool WorldEntity20::Unknown14(ScreenModeCommand* command)
+     if (kind == 0x3b)
+     {
+         flag_10c = 1;
+-        unsigned char result;
++        // Retail returns an unwritten stack byte; every caller discards it.
++        unsigned char result = 0;
+         return result != 0;
+     }
+     if (kind == 0x39)
+diff --git a/src/startup_world_entity17_commands.cpp b/src/startup_world_entity17_commands.cpp
+index 75275c8c86a07c9290e668b5372693547829f389..9cc85a7b7e467baea4bd2e045514c3d08e6b58d1 100644
+--- a/src/startup_world_entity17_commands.cpp
++++ b/src/startup_world_entity17_commands.cpp
+@@ -14,8 +14,8 @@ bool WorldEntity17::Unknown14(ScreenModeCommand* incoming)
+     int code = incoming->words[2];
+     if (code == 0x3b)
+     {
+-        // This branch returns an unwritten local byte in the retail body.
+-        unsigned char result;
++        // Retail returns an unwritten stack byte; every caller discards it.
++        unsigned char result = 0;
+         flag_104 = 1;
+         return result != 0;
+     }
+diff --git a/src/startup_world_entity19_commands.cpp b/src/startup_world_entity19_commands.cpp
+index 97847b95051fc5964aa28dad94ed6bd9d69fe2c7..ace2d0040878dfa2ea3ebdd926356fa455360364 100644
+--- a/src/startup_world_entity19_commands.cpp
++++ b/src/startup_world_entity19_commands.cpp
+@@ -42,28 +42,31 @@ void WorldEntity19::SetHome(unsigned int id)
+ // FUNCTION: BEACHLIFE 0x0049ae00
+ bool WorldEntity19::Unknown14(ScreenModeCommand* command)
+ {
++    // Retail never stores the result: it returns the low byte of the command
++    // argument's stack slot (the pointer, or the duration after FSTP); every
++    // caller discards it.
+     unsigned char result = static_cast<unsigned char>(reinterpret_cast<std::uintptr_t>(command));
+-    if (command->words[2] == 0x16)
++    ScreenModeCommand finished;
++    ScreenModeCommand forwarded;
++    switch (command->words[2])
+     {
+-        ScreenModeCommand forwarded;
++    case 0x16:
+         forwarded.words[0] = id_28;
+         forwarded.words[1] = home_id_100;
+         forwarded.words[2] = 0x16;
+         forwarded.words[3] = 0;
+         forwarded.words[4] = 0;
+         screen_mode_commands->QueueCommand(&forwarded);
+-    }
+-    else if (command->words[2] == 0x3c)
++        break;
++    case 0x3c:
+     {
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        float duration = keyline_state_44->SetAnimation(reinterpret_cast<const char*>(command->words[4].data),
+-            window_deactivation_state->clock_158,
+-            &position);
++        float time = window_deactivation_state->clock_158;
++        float duration = keyline_state_44->SetAnimation(
++            reinterpret_cast<const char*>(command->words[4].data), time, &position_30);
+         keyline_state_44->word_08 = 2;
+         result = static_cast<unsigned char>(std::bit_cast<unsigned int>(duration));
+         if (command->words[3] == 0)
+         {
+-            ScreenModeCommand finished;
+             finished.words[0] = id_28;
+             finished.words[1] = home_id_100;
+             finished.words[2] = 0x53;
+@@ -71,8 +74,10 @@ bool WorldEntity19::Unknown14(ScreenModeCommand* command)
+             finished.words[4] = 0;
+             screen_mode_commands->QueueDelayed(&finished, duration);
+         }
++        break;
+     }
+-    else
++    default:
+         return WorldPedestrianEntity::Unknown14(command);
++    }
+     return result != 0;
+ }
+diff --git a/src/startup_world_singer_commands.cpp b/src/startup_world_singer_commands.cpp
+index 2e5fd1fa3638a73c52b21064495225a7dcb12a37..3178f9a31d3d1d1e54eb22cdff4594fca8dd9d27 100644
+--- a/src/startup_world_singer_commands.cpp
++++ b/src/startup_world_singer_commands.cpp
+@@ -9,7 +9,8 @@ bool WorldEntity15::Unknown14(ScreenModeCommand* command)
+     if (kind == 0x3b)
+     {
+         flag_114 = 1;
+-        unsigned char result;
++        // Retail returns an unwritten stack byte; every caller discards it.
++        unsigned char result = 0;
+         return result != 0;
+     }
+     if (kind == 0x39)
+diff --git a/src/startup_world_weightlifter_commands.cpp b/src/startup_world_weightlifter_commands.cpp
+index 26150b7be7af1db43de08c1fa033b17bebe6aadb..5e317f1a1efc9b4ac5bb1bdaa9b8869a36ffa041 100644
+--- a/src/startup_world_weightlifter_commands.cpp
++++ b/src/startup_world_weightlifter_commands.cpp
+@@ -8,7 +8,8 @@ bool WorldEntity16::Unknown14(ScreenModeCommand* command)
+     if (kind == 0x3b)
+     {
+         flag_108 = 1;
+-        unsigned char result;
++        // Retail returns an unwritten stack byte; every caller discards it.
++        unsigned char result = 0;
+         return result != 0;
+     }
+     if (kind == 0x39)
+diff --git a/src/window_sound_bank.h b/src/window_sound_bank.h
+index 0e4bbd6b2dba3d6d3ce2d7ae953b4b259d6c613b..ef36ada75252ed267f72fdb152417c10db2e789b 100644
+--- a/src/window_sound_bank.h
++++ b/src/window_sound_bank.h
+@@ -37,6 +37,19 @@ struct WindowSoundIterator
+     WindowSoundBucket* bucket;
+     WindowSoundBank* lookup;
+ 
++    WindowSoundIterator()
++        : bucket(0)
++        , lookup(0)
++    {
++    }
++    WindowSoundIterator(WindowSoundBucket* found_bucket, WindowSoundBank* found_lookup)
++        : bucket(found_bucket)
++        , lookup(found_lookup)
++    {
++    }
++    // Inline step to the next available bucket.
++    WindowSoundIterator& operator++();
++
+     // The actual 0x00437d10 RET0 cleanup, shared with the text iterator/key.
+     ~WindowSoundIterator() { }
+ };
+@@ -78,6 +91,15 @@ struct WindowSoundBank
+     WindowSoundIterator EndSound();
+ };
+ 
++// Retail inlines the iterator step into each loop.
++inline WindowSoundIterator& WindowSoundIterator::operator++()
++{
++    do
++        ++bucket;
++    while (bucket != lookup->EndSound().bucket && bucket->unavailable);
++    return *this;
++}
++
+ // Writable pointer slots initialized to the retail extension strings.
+ extern const char* window_sound_wave_extension; // 0x00582714.
+ extern const char* window_sound_mp3_extension;  // 0x00582718.
+diff --git a/src/window_sound_bank_begin.cpp b/src/window_sound_bank_begin.cpp
+index 6e8ac862ff93f2b0c388571d8329e70b42a462ae..3bfa5ad7b1c7f500187158e58e40342fc7ad1707 100644
+--- a/src/window_sound_bank_begin.cpp
++++ b/src/window_sound_bank_begin.cpp
+@@ -4,18 +4,12 @@
+ WindowSoundIterator WindowSoundBank::BeginSound()
+ {
+     WindowSoundIterator result = EndSound();
+-    int count = bucket_count;
+-    if (count > 0)
++    for (int index = 0; index < bucket_count; ++index)
+     {
+-        WindowSoundBucket* entries = buckets;
+-        for (int index = 0; index < count; ++index)
++        if (buckets[index].unavailable == 0)
+         {
+-            if (entries[index].unavailable == 0)
+-            {
+-                result.bucket = entries + index;
+-                result.lookup = this;
+-                break;
+-            }
++            result = WindowSoundIterator(buckets + index, this);
++            break;
+         }
+     }
+     return result;
+diff --git a/src/window_sound_bank_destructor.cpp b/src/window_sound_bank_destructor.cpp
+index 985e03c7559a1fc66d7c205c338962a348dbae92..b2cff9ce70703aed55e1941c6460a48db955c170 100644
+--- a/src/window_sound_bank_destructor.cpp
++++ b/src/window_sound_bank_destructor.cpp
+@@ -7,9 +7,8 @@ WindowSoundBank::~WindowSoundBank()
+ {
+     try
+     {
+-        WindowSoundIterator current = { 0, 0 };
+-        current = BeginSound();
+-        while (current.bucket != EndSound().bucket)
++        WindowSoundIterator current;
++        for (current = BeginSound(); current.bucket != EndSound().bucket; ++current)
+         {
+             WindowSoundRecord* record = current.bucket->value;
+             if (record != 0)
+@@ -19,13 +18,6 @@ WindowSoundBank::~WindowSoundBank()
+                     ::operator delete(cached);
+                 ::operator delete(record);
+             }
+-
+-            do
+-            {
+-                ++current.bucket;
+-                if (current.bucket == current.lookup->EndSound().bucket)
+-                    break;
+-            } while (current.bucket->unavailable != 0);
+         }
+ 
+         int count = end_index;
+diff --git a/src/window_sound_find_sample.cpp b/src/window_sound_find_sample.cpp
+index 550121a1b03e55d8bf4bea274e22da7bcee3d692..13cdc801dc7759012ddd092c29010b2f33c681ab 100644
+--- a/src/window_sound_find_sample.cpp
++++ b/src/window_sound_find_sample.cpp
+@@ -4,7 +4,7 @@
+ // FUNCTION: BEACHLIFE 0x004d1ee0
+ void* WindowSoundBank::FindSample(const char* name, unsigned int* bytes)
+ {
+-    WindowSoundIterator found = { 0, 0 };
++    WindowSoundIterator found(0, 0);
+     *bytes = 0;
+     found = FindSoundKey(ScreenTextKey(name));
+     if (found.bucket != EndSound().bucket)
+diff --git a/src/window_sound_has_sound.cpp b/src/window_sound_has_sound.cpp
+index 66b9b28674c17875f499c949ce3da1aa15f082fd..6702ed9c4b4a747667c4db6fa6ee662299c2f598 100644
+--- a/src/window_sound_has_sound.cpp
++++ b/src/window_sound_has_sound.cpp
+@@ -3,7 +3,7 @@
+ // FUNCTION: BEACHLIFE 0x004d1e50
+ bool WindowSoundBank::HasSound(const char* name)
+ {
+-    WindowSoundIterator found = { 0, 0 };
++    WindowSoundIterator found(0, 0);
+     found = FindSoundKey(ScreenTextKey(name));
+     bool result = false;
+     if (found.bucket != EndSound().bucket)
+diff --git a/src/window_sound_release_sample.cpp b/src/window_sound_release_sample.cpp
+index 7af35d74103cafa91615dbca9cf02e907da06a7d..14a709d3946073a953f9ed4723e25b02b322436a 100644
+--- a/src/window_sound_release_sample.cpp
++++ b/src/window_sound_release_sample.cpp
+@@ -3,7 +3,7 @@
+ // FUNCTION: BEACHLIFE 0x004d1fe0
+ void WindowSoundBank::ReleaseSample(const char* name)
+ {
+-    WindowSoundIterator found = { 0, 0 };
++    WindowSoundIterator found(0, 0);
+     found = FindSoundKey(ScreenTextKey(name));
+     if (found.bucket != EndSound().bucket)
+     {
+diff --git a/src/window_sound_update_cache.cpp b/src/window_sound_update_cache.cpp
+index c5f493d09a120367208f22101685cbf1342895b3..bdeb5c48c5bddc9b0602df1ef3bc9cc5df48cb82 100644
+--- a/src/window_sound_update_cache.cpp
++++ b/src/window_sound_update_cache.cpp
+@@ -5,11 +5,10 @@
+ // FUNCTION: BEACHLIFE 0x004d2070
+ void WindowSoundBank::UpdateCache(float delta)
+ {
+-    WindowSoundIterator current = { 0, 0 };
+-    current = BeginSound();
+-    while (current.bucket != EndSound().bucket)
++    WindowSoundIterator it;
++    for (it = BeginSound(); it.bucket != EndSound().bucket; ++it)
+     {
+-        WindowSoundRecord* record = current.bucket->value;
++        WindowSoundRecord* record = it.bucket->value;
+         void* cached = record->cached_28;
+         if (cached != 0 && record->references_30 == 0)
+         {
+@@ -24,12 +23,5 @@ void WindowSoundBank::UpdateCache(float delta)
+                 cached_bytes_1c -= bytes;
+             }
+         }
+-
+-        do
+-        {
+-            ++current.bucket;
+-            if (current.bucket == current.lookup->EndSound().bucket)
+-                break;
+-        } while (current.bucket->unavailable != 0);
+     }
+ }

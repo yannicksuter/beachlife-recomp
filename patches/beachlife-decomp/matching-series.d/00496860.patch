@@ -1,0 +1,386 @@
+diff --git a/fixtures/game.d/fixture_00496860.cpp b/fixtures/game.d/fixture_00496860.cpp
+new file mode 100644
+index 0000000..c6641a1
+--- /dev/null
++++ b/fixtures/game.d/fixture_00496860.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Typed retention only; the comparison image is never executed.
++extern "C" __declspec(dllexport) bool Fixture_00496860(WorldVehicleEntity* item, ScreenModeCommand* command)
++{
++    return item->WorldVehicleEntity::Unknown14(command);
++}
+diff --git a/metadata.d/00496860.csv b/metadata.d/00496860.csv
+new file mode 100644
+index 0000000..157921e
+--- /dev/null
++++ b/metadata.d/00496860.csv
+@@ -0,0 +1,8 @@
++address,type,size,symbol
++0x00496860,function,3152,?Unknown14@WorldVehicleEntity@@UAE_NPAUScreenModeCommand@@@Z
++0x004f34cc,float,4,
++0x004f39ec,float,4,
++0x0057cb1c,string,12,
++0x00496150,function,1291,?PassengerAnimation@WorldVehicleEntity@@QAEMMEE@Z
++0x00499d50,function,546,?Roam@WorldVehicleEntity@@QAEXXZ
++0x0049a090,function,591,?FindFishingPoint@WorldVehicleEntity@@QAE_NXZ
+diff --git a/src/match_00496860.cpp b/src/match_00496860.cpp
+new file mode 100644
+index 0000000..37b1a01
+--- /dev/null
++++ b/src/match_00496860.cpp
+@@ -0,0 +1,284 @@
++#include "startup_world_entities.h"
++#include "startup_world_subsystems.h"
++#include "startup_world_vehicle_animation_names.h"
++#include "startup_screen_command_inlines.h"
++#include "startup_screen_mode_world.h"
++#include "startup_sound_position.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++#include "window_audio.h"
++
++VariableWorldPrefix* CurrentVariableWorld(); // 0x0043af90.
++
++// The ride time is set through an inline setter taking a float.
++static inline void SetRideTime(WorldVehicleEntity* vehicle, float time)
++{
++    vehicle->ride_time_5c0 = time;
++}
++
++extern const float vehicle_door_volume; // 0x004f3ffc.
++
++// FUNCTION: BEACHLIFE 0x00496860
++bool WorldVehicleEntity::Unknown14(ScreenModeCommand* incoming)
++{
++    // Retail returns this unset outside cases 1 and default (its stack slot
++    // is shared with the delays).
++    bool result;
++    ScreenModeCommand message(0, 0, 0, 0, 0);
++    switch (incoming->words[2].data)
++    {
++    case 0x24:
++        if (vehicle_type_f8 != 2 && vehicle_type_f8 != 5)
++        {
++            passengers_10c[passenger_count_5bc] = incoming->words[4].data;
++            passenger_count_5bc++;
++            if (!flag_924)
++            {
++                float now = window_deactivation_state->time_158;
++                float delay = PassengerAnimation(now, 1, passenger_count_5bc > 1);
++                message = ScreenModeCommand(id_28, incoming->words[4].data, 0x4e, 0, 0);
++                screen_mode_commands->QueueDelayed(&message, delay);
++                float later = window_deactivation_state->time_158;
++                ride_time_5c0 = later + delay;
++                flag_924 = 1;
++            }
++        }
++        else
++            word_5c4 += incoming->words[4].data;
++        break;
++    case 1:
++        result = true;
++        break;
++    case 0x33:
++        if (vehicle_type_f8 != 2 && vehicle_type_f8 != 5)
++        {
++            if (flag_924 && passenger_count_5bc > 1)
++            {
++                float now = window_deactivation_state->time_158;
++                float delay = PassengerAnimation(now, 1, 1);
++                message = ScreenModeCommand(id_28, passengers_10c[1], 0x4e, 0, 0);
++                screen_mode_commands->QueueDelayed(&message, delay);
++                float later = window_deactivation_state->time_158;
++                ride_time_5c0 = later + delay;
++                flag_924 = 0;
++            }
++            else
++            {
++                flag_924 = 0;
++                SetRideTime(this, window_deactivation_state->time_158);
++            }
++        }
++        else
++        {
++            passengers_10c[passenger_count_5bc] = incoming->words[0].data;
++            passenger_count_5bc++;
++            float now = window_deactivation_state->time_158;
++            float delay = PassengerAnimation(now, 1, 1);
++            SetRideTime(this, window_deactivation_state->time_158);
++            if (passenger_count_5bc == word_5c4)
++            {
++                ScreenModeCommand done(id_28, id_28, 0x3c, 0, 0);
++                screen_mode_commands->QueueDelayed(&done, delay);
++            }
++        }
++        break;
++    case 0x16:
++        if (state_3c == 0x44)
++        {
++            if (vehicle_type_f8 != 0 && vehicle_type_f8 != 1)
++            {
++                word_8d8 = (static_cast<int>(word_8d8) + 1) % static_cast<int>(route_count_8d4);
++                if (word_8d8 == vehicle_variant_5cd)
++                {
++                    message = ScreenModeCommand(id_28, id_28, 3, 0, 0x42);
++                    screen_mode_commands->QueueCommand(&message);
++                }
++                else if (word_8d8 == byte_5cc)
++                {
++                    message = ScreenModeCommand(id_28, id_28, 3, 0, 0x48);
++                    screen_mode_commands->QueueCommand(&message);
++                }
++                else
++                {
++                    if (vehicle_type_f8 != 5 && vehicle_type_f8 != 2)
++                        message = ScreenModeCommand(id_28, id_28, 0xb, static_cast<int>(route_5d4[word_8d8].x), static_cast<int>(route_5d4[word_8d8].y));
++                    else
++                        message = ScreenModeCommand(id_28, id_28, 0xf, static_cast<int>(route_5d4[word_8d8].x), static_cast<int>(route_5d4[word_8d8].y));
++                    screen_mode_commands->QueueCommand(&message);
++                }
++            }
++            else
++                StartCircuit();
++        }
++        else if (state_3c == 0x42)
++        {
++            if (flag_8e4)
++            {
++                {
++                    ScreenTerrainCell* cells[8];
++                    screen_terrain_grid->Neighbours(current_grid_964, cells);
++                    for (int i = 0; i < 8; i++)
++                        cells[i]->flags_48 &= ~0x10;
++                }
++                message = ScreenModeCommand(id_28, id_28, 0xa, static_cast<int>(route_5d4[vehicle_variant_5cd].x), static_cast<int>(route_5d4[vehicle_variant_5cd].y));
++                screen_mode_commands->QueueCommand(&message);
++                {
++                    ScreenTerrainCell* cells[8];
++                    screen_terrain_grid->Neighbours(current_grid_964, cells);
++                    for (int i = 0; i < 8; i++)
++                        cells[i]->flags_48 |= 0x10;
++                }
++                flag_8e4 = 0;
++                FaceVehicle(heading_5d0);
++            }
++            else if (vehicle_type_f8 != 4 && vehicle_type_f8 != 0 && vehicle_type_f8 != 1)
++            {
++                message = ScreenModeCommand(id_28, id_28, 3, 0, 0x43);
++                screen_mode_commands->QueueCommand(&message);
++                word_8d8 = (static_cast<int>(word_8d8) + 1) % static_cast<int>(route_count_8d4);
++            }
++            else
++            {
++                ScreenModeCommand idle(id_28, id_28, 3, 0, 0x46);
++                screen_mode_commands->QueueCommand(&idle);
++            }
++        }
++        else if (state_3c == 0x45)
++        {
++            if (vehicle_type_f8 == 4)
++                Roam();
++            if (vehicle_type_f8 == 6)
++            {
++                if (!flag_8e5)
++                {
++                    if (FindFishingPoint())
++                        flag_8e5 = 1;
++                    else
++                    {
++                        float delay = IdleVehicle();
++                        message = ScreenModeCommand(id_28, id_28, 3, 0, 0x42);
++                        screen_mode_commands->QueueDelayed(&message, delay * 2);
++                        flag_8e5 = 0;
++                    }
++                }
++                else
++                {
++                    float delay = IdleVehicle();
++                    message = ScreenModeCommand(id_28, id_28, 3, 0, 0x42);
++                    screen_mode_commands->QueueDelayed(&message, delay * 2);
++                    flag_8e5 = 0;
++                }
++            }
++            else if (window_deactivation_state->time_158 > ride_time_5c0)
++            {
++                message = ScreenModeCommand(id_28, id_28, 3, 0, 0x42);
++                screen_mode_commands->QueueCommand(&message);
++            }
++        }
++        break;
++    case 0x34:
++        SetRideTime(this, window_deactivation_state->time_158);
++        passenger_count_5bc--;
++        if (vehicle_type_f8 != 2 && vehicle_type_f8 != 5)
++        {
++            WorldMovingEntity* guest = static_cast<WorldMovingEntity*>(variable_world->FindObject(passengers_10c[passenger_count_5bc]));
++            guest->SetMovementPosition(
++                static_cast<WorldBuildingEntity*>(CurrentVariableWorld()->FindObject(word_5c8))->StaffPosition());
++            if (passenger_count_5bc != 0)
++            {
++                float now = window_deactivation_state->time_158;
++                float delay = PassengerAnimation(now, 0, passenger_count_5bc > 1);
++                message = ScreenModeCommand(id_28, passengers_10c[passenger_count_5bc - 1], 0x4f, 0, 0);
++                screen_mode_commands->QueueDelayed(&message, delay + 0.5f);
++            }
++            else
++            {
++                message = ScreenModeCommand(id_28, id_28, 3, 0, 0x41);
++                screen_mode_commands->QueueCommand(&message);
++            }
++            if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
++            {
++                motion_64[2] = 0.0f;
++                motion_64[3] = 0.0f;
++                motion_64[4] = 0.0f;
++                motion_64[5] = 0.0f;
++            }
++        }
++        else
++        {
++            if (vehicle_type_f8 == 5)
++            {
++                ScreenWorldPosition exit;
++                exit.x = position_30.x;
++                exit.y = position_30.y;
++                exit.z = position_30.z;
++                if (heading_5d0 == 7)
++                {
++                    exit.x -= 63.0f;
++                    exit.y += 14.0f;
++                }
++                else if (heading_5d0 == 5)
++                {
++                    exit.x += 22.0f;
++                    exit.y += 72.0f;
++                }
++                variable_world->FindObject(incoming->words[0].data)->SetWorldPosition(&exit);
++            }
++            if (passenger_count_5bc != 0)
++            {
++                float now = window_deactivation_state->time_158;
++                float delay = PassengerAnimation(now, 0, passenger_count_5bc > 1);
++                message = ScreenModeCommand(id_28, passengers_10c[passenger_count_5bc - 1], 0x4f, 0, 0);
++                screen_mode_commands->QueueDelayed(&message, delay);
++            }
++            else
++            {
++                message = ScreenModeCommand(id_28, id_28, 3, 0, 0x41);
++                screen_mode_commands->QueueCommand(&message);
++            }
++        }
++        message = ScreenModeCommand(incoming->words[0].data, word_5c8, 0x34, 0, id_28);
++        screen_mode_commands->QueueCommand(&message);
++        break;
++    case 0x12:
++        if (vehicle_type_f8 != 0 && vehicle_type_f8 != 1)
++            FaceVehicle(incoming->words[3].data);
++        break;
++    case 0x32:
++        message = ScreenModeCommand(id_28, word_5c8, 0x53, 0, 0);
++        screen_mode_commands->QueueCommand(&message);
++        break;
++    case 0x3c:
++    {
++        ScreenModeCommand opened(id_28, id_28, 3, 0, 0x44);
++        if (vehicle_type_f8 == 5)
++        {
++            if (!door_animation_92c)
++            {
++                WindowAudioVector position;
++                position.x = position_30.x;
++                position.y = position_30.y;
++                position.z = 0;
++                window_audio_state->PlaySoundAtPosition(vehicle_door_open_sound, vehicle_door_volume, &position, 1, -1);
++                door_animation_92c = 1;
++                resource_928->word_08 = 1;
++                float now = window_deactivation_state->time_158;
++                float delay = resource_928->SetAnimation("coach_doors", now, &position_30);
++                screen_mode_commands->QueueDelayed(&opened, delay);
++            }
++        }
++        else
++            screen_mode_commands->QueueCommand(&opened);
++        break;
++    }
++    case 0x14:
++        break;
++    default:
++        result = WorldMovingEntity::Unknown14(incoming);
++        break;
++    }
++    return result;
++}
++
++// GLOBAL: BEACHLIFE 0x004f3ffc
++extern const float vehicle_door_volume = 1.0f;
+diff --git a/targets/beachlife-uk-1.1.d/00496860.json b/targets/beachlife-uk-1.1.d/00496860.json
+new file mode 100644
+index 0000000..6550a0d
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00496860.json
+@@ -0,0 +1,63 @@
++{
++  "functions": [
++    {
++      "address": "0x00496860",
++      "size": 3052,
++      "name": "WorldVehicleEntity::Unknown14",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment and the jump and index tables."
++    }
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x00484120",
++      "size": 6191,
++      "name": "WorldMovingEntity::Unknown14",
++      "symbol": "?Unknown14@WorldMovingEntity@@UAE_NPAUScreenModeCommand@@@Z",
++      "header": "startup_world_entities.h",
++      "kind": "false-member",
++      "return_type": "bool",
++      "parameters": [
++        "ScreenModeCommand*"
++      ]
++    },
++    {
++      "address": "0x00496150",
++      "size": 1291,
++      "name": "WorldVehicleEntity::PassengerAnimation",
++      "symbol": "?PassengerAnimation@WorldVehicleEntity@@QAEMMEE@Z",
++      "header": "startup_world_entities.h",
++      "kind": "float-member",
++      "return_type": "float",
++      "parameters": [
++        "float",
++        "unsigned char",
++        "unsigned char"
++      ]
++    },
++    {
++      "address": "0x00499d50",
++      "size": 546,
++      "name": "WorldVehicleEntity::Roam",
++      "symbol": "?Roam@WorldVehicleEntity@@QAEXXZ",
++      "header": "startup_world_entities.h",
++      "kind": "void-member",
++      "return_type": "void",
++      "parameters": []
++    },
++    {
++      "address": "0x0049a090",
++      "size": 591,
++      "name": "WorldVehicleEntity::FindFishingPoint",
++      "symbol": "?FindFishingPoint@WorldVehicleEntity@@QAE_NXZ",
++      "header": "startup_world_entities.h",
++      "kind": "false-member",
++      "return_type": "bool",
++      "parameters": []
++    }
++  ],
++  "source_compile_options": {
++    "match_00496860.cpp": [
++      "/Ob1"
++    ]
++  }
++}

@@ -1,0 +1,210 @@
+diff --git a/src/resource_depth_rasters.cpp b/src/resource_depth_rasters.cpp
+index 5c8c03c..6605f32 100644
+--- a/src/resource_depth_rasters.cpp
++++ b/src/resource_depth_rasters.cpp
+@@ -286,3 +286,205 @@ void ResourceRasterAt00403f60(unsigned short* destination, const unsigned char*
+         }
+     }
+ }
++
++// Depth-tested blended sprite raster: as ResourceRasterAt00403f60, but the
++// depth starts 16 per sprite row below the low word of flags and moves 16 up
++// per row, and the left-clipped path never tests the right edge.
++// FUNCTION: BEACHLIFE 0x00403150
++void ResourceRaster12(unsigned short* destination, const unsigned char* source, const unsigned short* palette,
++    unsigned int stride, int x, int y, int width, int height, int left, int top, int right, int bottom,
++    unsigned int flags, int)
++{
++    int column;
++    unsigned char mode;
++    unsigned short pixel;
++    unsigned int old;
++    unsigned int result;
++    signed char packet;
++    unsigned int* row = reinterpret_cast<unsigned int*>(destination) + (stride * y + x);
++    unsigned int depth = (height * 0xfff0 + (flags & 0xffff)) << 16;
++
++    // Nothing is clipped.
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (int j = 0; j < height; j++)
++        {
++            unsigned int* output = row + j * stride;
++            column = 0;
++            depth += 0x100000;
++            while (column < width)
++            {
++                packet = *source++;
++                while (packet > 0)
++                {
++                    old = *output & 0xffff0000;
++                    if (old <= depth)
++                    {
++                        mode = *source & 0xc0;
++                        *output = BlendDepthPixel(mode, *source, output, palette, old, depth);
++                    }
++                    output++;
++                    source++;
++                    column++;
++                    packet--;
++                }
++                output -= packet;
++                column -= packet;
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped.
++    if (left > 0)
++    {
++        for (int skip = top; skip > 0; skip--)
++        {
++            column = 0;
++            depth += 0x100000;
++            while (column < width)
++            {
++                packet = *source++;
++                if (packet >= 0)
++                {
++                    column += packet;
++                    source += packet;
++                }
++                else
++                {
++                    column -= packet;
++                }
++            }
++        }
++
++        for (int j = 0; j < bottom - top; j++)
++        {
++            unsigned int* output = row + j * stride;
++            column = 0;
++            int remaining_left = left;
++            depth += 0x100000;
++            while (column < width)
++            {
++                packet = *source++;
++                while (packet > 0)
++                {
++                    if (remaining_left != 0)
++                        remaining_left--;
++                    else
++                    {
++                        old = *output & 0xffff0000;
++                        if (old <= depth)
++                        {
++                            mode = *source & 0xc0;
++                            pixel = *output;
++                            unsigned short color = palette[*source - mode];
++                            switch (mode)
++                            {
++                            case 0x00:
++                                result = color + depth;
++                                break;
++                            case 0x40:
++                                result = old + (unsigned short)(((color >> 2) & (render_quarter_mask >> 2)) + ((color >> 1) & (render_half_mask >> 1))) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                                break;
++                            case 0x80:
++                                result = old + ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
++                                break;
++                            case 0xc0:
++                                result = old + (unsigned short)(((pixel >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 1) & (render_half_mask >> 1))) + ((color >> 2) & (render_quarter_mask >> 2));
++                                break;
++                            case 0x100:
++                                result = old + pixel;
++                                break;
++                            }
++                            *output = result;
++                        }
++                        output++;
++                    }
++                    source++;
++                    column++;
++                    packet--;
++                }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
++                {
++                    remaining_left--;
++                    column++;
++                    packet--;
++                }
++                column += packet;
++                output += packet;
++            }
++        }
++        return;
++    }
++
++    // Top, right or bottom edge clipped.
++    for (int skip = top; skip > 0; skip--)
++    {
++        column = 0;
++        depth += 0x100000;
++        while (column < width)
++        {
++            packet = *source++;
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
++            else
++            {
++                column -= packet;
++            }
++        }
++    }
++
++    for (int j = 0; j < bottom - top; j++)
++    {
++        unsigned int* output = row + j * stride;
++        column = 0;
++        depth += 0x100000;
++        while (column < width)
++        {
++            packet = *source++;
++            while (packet > 0)
++            {
++                if (column < right)
++                {
++                    old = *output & 0xffff0000;
++                    if (old <= depth)
++                    {
++                        mode = *source & 0xc0;
++                        pixel = *output;
++                        unsigned short color = palette[*source - mode];
++                        switch (mode)
++                        {
++                        case 0x00:
++                            result = color + depth;
++                            break;
++                        case 0x40:
++                            result = old + (unsigned short)(((color >> 2) & (render_quarter_mask >> 2)) + ((color >> 1) & (render_half_mask >> 1))) + ((pixel >> 2) & (render_quarter_mask >> 2));
++                            break;
++                        case 0x80:
++                            result = old + ((color >> 1) & (render_half_mask >> 1)) + ((pixel >> 1) & (render_half_mask >> 1));
++                            break;
++                        case 0xc0:
++                            result = old + (unsigned short)(((pixel >> 2) & (render_quarter_mask >> 2)) + ((pixel >> 1) & (render_half_mask >> 1))) + ((color >> 2) & (render_quarter_mask >> 2));
++                            break;
++                        case 0x100:
++                            result = old + pixel;
++                            break;
++                        }
++                        *output = result;
++                    }
++                    output++;
++                }
++                source++;
++                column++;
++                packet--;
++            }
++            if (column < right)
++                output -= packet;
++            column -= packet;
++        }
++    }
++}

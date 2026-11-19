@@ -1,0 +1,741 @@
+diff --git a/src/startup_world_aerobic_commands.cpp b/src/startup_world_aerobic_commands.cpp
+index 66b4286374f2545027e1ec9559020063b901fe8e..d12e7bf0b0c99a2caa3f7440a5d3e0c1c630d49b 100644
+--- a/src/startup_world_aerobic_commands.cpp
++++ b/src/startup_world_aerobic_commands.cpp
+@@ -2,108 +2,170 @@
+ #include "window_activation.h"
+ #include <stdlib.h>
+ 
++// GLOBAL: BEACHLIFE 0x00575bbc
++const char* world_entity20_aerobic1_name = "Aerobic1";
++
++// GLOBAL: BEACHLIFE 0x00575bc0
++const char* world_entity20_aerobic2_name = "Aerobic2";
++
++// GLOBAL: BEACHLIFE 0x00575bc4
++const char* world_entity20_aerobic3_name = "Aerobic3";
++
++// GLOBAL: BEACHLIFE 0x00575bcc
++const char* world_entity20_stand_name = "Aerobic_To_Stand";
++
++// GLOBAL: BEACHLIFE 0x00575bd4
++const char* world_entity20_start_name = "stand_to_aerobic";
++
+ // FUNCTION: BEACHLIFE 0x00452dc0
+ bool WorldEntity20::Unknown14(ScreenModeCommand* command)
+ {
+-    unsigned int kind = command->words[2];
+-    if (kind == 0x3b)
++    // Retail returns an unwritten stack byte for command 0x3b; every caller
++    // discards it.
++    bool result = false;
++    switch (command->words[2])
+     {
+-        flag_10c = 1;
+-        // Retail returns an unwritten stack byte; every caller discards it.
+-        unsigned char result = 0;
+-        return result != 0;
+-    }
+-    if (kind == 0x39)
++    case 0x16:
+     {
+-        if (flag_10c && action_state_f4 != 0)
++        ScreenModeCommand start;
++        switch (state_3c)
+         {
+-            ScreenModeCommand next;
+-            next.words[0] = id_28;
+-            next.words[1] = id_28;
+-            next.words[2] = 3;
+-            next.words[3] = 0;
+-            next.words[4] = 6;
+-            screen_mode_commands->QueueCommand(&next);
+-            return true;
++        case 0:
++        {
++            float duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation(world_entity20_start_name, duration, &position_30);
++            keyline_state_44->word_08 = 2;
++            action_state_f4 = 0;
++            int rotation = variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18;
++            keyline_state_44->SelectVariant((11 - rotation * 2) % 8);
++            start.words[0] = id_28;
++            start.words[1] = id_28;
++            start.words[2] = 0x39;
++            start.words[3] = 0;
++            start.words[4] = 0;
++            screen_mode_commands->QueueDelayed(&start, duration);
++            break;
+         }
+-        int reaction;
+-        const char* animation;
+-        if (flag_10c)
++        case 6:
+         {
+-            animation = "Aerobic_To_Stand";
+-            reaction = 4;
++            inactive_04 = 1;
++            ScreenModeCommand next(id_28, owner_id_fc, 0x3b, 0, 0);
++            screen_mode_commands->QueueCommand(&next);
++            break;
+         }
+-        else
++        }
++        return true;
++    }
++    case 0x39:
++        if (flag_10c)
+         {
+-            reaction = rand() % 3;
+-            switch (reaction)
++            ScreenModeCommand broadcast;
++            if (action_state_f4 == 0)
++            {
++                ScreenModeCommand next;
++                float duration = window_deactivation_state->time_158;
++                duration = keyline_state_44->SetAnimation(world_entity20_stand_name, duration, &position_30);
++                keyline_state_44->word_08 = 1;
++                action_state_f4 = 1;
++                next.words[0] = id_28;
++                next.words[1] = id_28;
++                next.words[2] = 0x39;
++                next.words[3] = 0;
++                next.words[4] = 0;
++                screen_mode_commands->QueueDelayed(&next, duration);
++                broadcast.words[0] = id_28;
++                broadcast.words[1] = id_28;
++                broadcast.words[2] = 0x3c;
++                broadcast.words[3] = 0;
++                broadcast.words[4] = 4;
++                broadcast.words[6] = 0;
++                broadcast.words[5] = 0x40;
++                variable_world->FindObject(owner_id_fc)->AsBuilding()->events_170->BroadcastGuests(&broadcast, 0.0f);
++                return true;
++            }
++            else
+             {
+-            case 0:
+-                animation = "Aerobic1";
+-                break;
+-            case 1:
+-                animation = "Aerobic2";
+-                break;
+-            case 2:
+-                animation = "Aerobic3";
+-                break;
+-            default:
++                ScreenModeCommand next(id_28, id_28, 3, 0, 6);
++                screen_mode_commands->QueueCommand(&next);
+                 return true;
+             }
+         }
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        float duration = keyline_state_44->SetAnimation(animation, window_deactivation_state->time_158, &position);
+-        keyline_state_44->word_08 = 1;
+-        if (flag_10c)
+-            action_state_f4 = 1;
+-        ScreenModeCommand next;
+-        next.words[0] = id_28;
+-        next.words[1] = id_28;
+-        next.words[2] = 0x39;
+-        next.words[3] = 0;
+-        next.words[4] = 0;
+-        screen_mode_commands->QueueDelayed(&next, duration);
+-        ScreenModeCommand broadcast;
+-        broadcast.words[0] = id_28;
+-        broadcast.words[1] = id_28;
+-        broadcast.words[2] = 0x3c;
+-        broadcast.words[3] = 0;
+-        broadcast.words[4] = reaction;
+-        broadcast.words[5] = 0x40;
+-        broadcast.words[6] = 0;
+-        variable_world->FindObject(owner_id_fc)->AsBuilding()->events_170->BroadcastGuests(&broadcast, 0.0f);
+-        return true;
+-    }
+-    if (kind == 0x16)
+-    {
+-        if (state_3c == 0)
++        switch (rand() % 3)
+         {
+-            ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-            float duration = keyline_state_44->SetAnimation("stand_to_aerobic", window_deactivation_state->time_158, &position);
+-            keyline_state_44->word_08 = 2;
+-            action_state_f4 = 0;
+-            int rotation = variable_world->FindObject(owner_id_fc)->keyline_state_44->word_18;
+-            keyline_state_44->SelectVariant((11 - rotation * 2) % 8);
++        case 0:
++        {
++            ScreenModeCommand broadcast;
+             ScreenModeCommand next;
++            float duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation(world_entity20_aerobic1_name, duration, &position_30);
++            keyline_state_44->word_08 = 1;
+             next.words[0] = id_28;
+             next.words[1] = id_28;
+             next.words[2] = 0x39;
+             next.words[3] = 0;
+             next.words[4] = 0;
+             screen_mode_commands->QueueDelayed(&next, duration);
++            broadcast.words[0] = id_28;
++            broadcast.words[1] = id_28;
++            broadcast.words[2] = 0x3c;
++            broadcast.words[3] = 0;
++            broadcast.words[4] = 0;
++            broadcast.words[6] = 0; // 0.0f
++            broadcast.words[5] = 0x40;
++            variable_world->FindObject(owner_id_fc)->AsBuilding()->events_170->BroadcastGuests(&broadcast, 0.0f);
++            return true;
+         }
+-        else if (state_3c == 6)
++        case 1:
+         {
+-            inactive_04 = 1;
++            ScreenModeCommand broadcast;
+             ScreenModeCommand next;
++            float duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation(world_entity20_aerobic2_name, duration, &position_30);
++            keyline_state_44->word_08 = 1;
+             next.words[0] = id_28;
+-            next.words[1] = owner_id_fc;
+-            next.words[2] = 0x3b;
++            next.words[1] = id_28;
++            next.words[2] = 0x39;
+             next.words[3] = 0;
+             next.words[4] = 0;
+-            screen_mode_commands->QueueCommand(&next);
++            screen_mode_commands->QueueDelayed(&next, duration);
++            broadcast.words[0] = id_28;
++            broadcast.words[1] = id_28;
++            broadcast.words[2] = 0x3c;
++            broadcast.words[3] = 0;
++            broadcast.words[4] = 1;
++            broadcast.words[6] = 0; // 0.0f
++            broadcast.words[5] = 0x40;
++            variable_world->FindObject(owner_id_fc)->AsBuilding()->events_170->BroadcastGuests(&broadcast, 0.0f);
++            return true;
++        }
++        case 2:
++        {
++            ScreenModeCommand broadcast;
++            ScreenModeCommand next;
++            float duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation(world_entity20_aerobic3_name, duration, &position_30);
++            keyline_state_44->word_08 = 1;
++            next.words[0] = id_28;
++            next.words[1] = id_28;
++            next.words[2] = 0x39;
++            next.words[3] = 0;
++            next.words[4] = 0;
++            screen_mode_commands->QueueDelayed(&next, duration);
++            broadcast.words[0] = id_28;
++            broadcast.words[1] = id_28;
++            broadcast.words[2] = 0x3c;
++            broadcast.words[3] = 0;
++            broadcast.words[4] = 2;
++            broadcast.words[6] = 0; // 0.0f
++            broadcast.words[5] = 0x40;
++            variable_world->FindObject(owner_id_fc)->AsBuilding()->events_170->BroadcastGuests(&broadcast, 0.0f);
++            return true;
++        }
+         }
+         return true;
++    case 0x3b:
++        flag_10c = 1;
++        return result;
+     }
+     return WorldPedestrianEntity::Unknown14(command);
+ }
+diff --git a/src/startup_world_builder_script.cpp b/src/startup_world_builder_script.cpp
+index 156ffe81601a89fc2084680101bd100796dac3c1..a2445f0f55156bbc29eea41f98062f51200e9603 100644
+--- a/src/startup_world_builder_script.cpp
++++ b/src/startup_world_builder_script.cpp
+@@ -13,84 +13,141 @@ ScreenWorldPosition BuilderTaskPosition(unsigned int building, unsigned int buil
+ // FUNCTION: BEACHLIFE 0x00454ff0
+ WorldScriptValue WorldBuilderEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (key.kind)
++    WorldScriptValue result;
++    unsigned int facing[10] = { 2, 6, 7, 3, 0, 1, 2, 4, 3, 1 };
++    unsigned int approach[10] = { 4, 6, 0, 2, 7, 3, 4, 1, 7, 3 };
++    // Retail writes only the low byte of the kind-0 results; the native
++    // values are whole words.
++    switch (static_cast<int>(key.kind))
+     {
+-    case 0x40:
+-        return { 2, words_794[0] };
+-    case 0x6f:
+-        return { 3, std::bit_cast<unsigned int>(window_deactivation_state->render_value_160 - time_78c) };
+-    case 0x70:
+-        return { 2, home_id_100 };
+     case 0xb0:
+-    {
++        result.kind = 0;
+         if (!window_deactivation_state->building_status_48->CountBuilderTasks(2))
+-            return { 0, 0 };
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        unsigned int task;
+-        word_98 = window_deactivation_state->building_status_48->AssignBuilderTask(id_28, &position, 2, &task);
+-        if (word_98 == static_cast<unsigned int>(-1))
+-            return { 0, 0 };
+-        word_804 = task;
+-        return { 0, 1 };
+-    }
++        {
++            result.data = 0;
++            break;
++        }
++        {
++            ScreenWorldPosition position = position_30;
++            unsigned int task;
++            word_98 = window_deactivation_state->building_status_48->AssignBuilderTask(id_28, &position, 2, &task);
++            if (word_98 != static_cast<unsigned int>(-1))
++            {
++                word_804 = task;
++                result.data = 1;
++            }
++            else
++                result.data = 0;
++        }
++        break;
+     case 0xb1:
+-        return { 2, word_804 };
++        result.kind = 2;
++        result.data = word_804;
++        break;
+     case 0xb2:
++        result.kind = 2;
++        result.data = static_cast<unsigned int>(TruncateFloatToWord(BuilderTaskPosition(word_98, builder_index_7f0, position_30).x));
++        break;
+     case 0xb3:
+-    {
+-        ScreenWorldPosition position = BuilderTaskPosition(word_98, builder_index_7f0, { position_30.x, position_30.y, position_30.z });
+-        return { 2, static_cast<unsigned int>(TruncateFloatToWord(key.kind == 0xb2 ? position.x : position.y)) };
+-    }
++        result.kind = 2;
++        result.data = static_cast<unsigned int>(TruncateFloatToWord(BuilderTaskPosition(word_98, builder_index_7f0, position_30).y));
++        break;
+     case 0xb4:
+     {
++        result.kind = 2;
+         unsigned int direction = window_deactivation_state->building_status_48->BuilderDirection(word_98, builder_index_7f0);
+-        if (!direction)
+-        {
+-            const unsigned int directions[] = { 2, 6, 7, 3, 0, 1, 2, 4, 3, 1 };
+-            direction = directions[builder_index_7f0];
+-        }
+-        return { 2, direction };
++        if (direction == 0)
++            direction = facing[builder_index_7f0];
++        result.data = direction;
++        break;
+     }
++    case 0xf9:
++        result.kind = 2;
++        result.data = static_cast<unsigned int>(TruncateFloatToWord(placement_position_7f4.x));
++        break;
++    case 0xfa:
++        result.kind = 2;
++        result.data = static_cast<unsigned int>(TruncateFloatToWord(placement_position_7f4.y));
++        break;
++    case 0xb6:
++        result.kind = 2;
++        result.data = builder_index_7f0;
++        break;
+     case 0xb5:
++        result.kind = 2;
++        result.data = approach[builder_index_7f0];
++        break;
++    case 0x6f:
+     {
+-        const unsigned int directions[] = { 4, 6, 0, 2, 7, 3, 4, 1, 7, 3 };
+-        return { 2, directions[builder_index_7f0] };
++        result.kind = 3;
++        result.data = std::bit_cast<unsigned int>(window_deactivation_state->render_value_160 - time_78c);
++        break;
+     }
+-    case 0xb6:
+-        return { 2, builder_index_7f0 };
+-    case 0xf9:
+-        return { 2, static_cast<unsigned int>(TruncateFloatToWord(placement_position_7f4.x)) };
+-    case 0xfa:
+-        return { 2, static_cast<unsigned int>(TruncateFloatToWord(placement_position_7f4.y)) };
++    case 0x70:
++        result.kind = 2;
++        result.data = home_id_100;
++        break;
++    case 0x40:
++        result.kind = 2;
++        result.data = words_794[0];
++        break;
++    case 0x106:
++        result.kind = 2;
++        result.data = words_794[1];
++        break;
++    case 0x107:
++        result.kind = 2;
++        result.data = words_794[2];
++        break;
+     case 0xfd:
+-        return { 2, word_77c };
++        result.kind = 2;
++        result.data = word_77c;
++        break;
+     case 0xfe:
+-        return { 2, word_780 };
++        result.kind = 2;
++        result.data = word_780;
++        break;
+     case 0xff:
+-        return { 2, word_784 };
+-    case 0x100:
+-        return { 2, word_788 };
++        result.kind = 2;
++        result.data = word_784;
++        break;
+     case 0x101:
+-        return { 2, world_builders_whistling };
++        result.kind = 2;
++        result.data = world_builders_whistling;
++        break;
++    case 0x104:
++        result.kind = 2;
++        result.data = window_deactivation_state->building_status_48->BuilderLocation(id_28);
++        break;
++    case 0x100:
++        result.kind = 2;
++        result.data = word_788;
++        break;
+     case 0x102:
+     {
++        result.kind = 0;
+         VariableEntity* building = variable_world->FindObject(word_98);
+-        return { 0, building && building->FlagAt00460340() };
++        if (building)
++            result.data = building->FlagAt00460340();
++        else
++            result.data = 0;
++        break;
+     }
+     case 0x103:
+     {
++        result.kind = 0;
+         VariableEntity* building = variable_world->FindObject(word_98);
+-        return { 0, building && (building->FlagAt00460340() || building->FlagAt00460310()) };
++        if (building)
++            result.data = building->FlagAt00460340() || building->FlagAt00460310();
++        else
++            result.data = 0;
++        break;
+     }
+-    case 0x104:
+-        return { 2, window_deactivation_state->building_status_48->BuilderLocation(id_28) };
+-    case 0x106:
+-        return { 2, words_794[1] };
+-    case 0x107:
+-        return { 2, words_794[2] };
+     default:
+-        return WorldStaffEntity::Unknown2c(key);
++        result = WorldStaffEntity::Unknown2c(key);
++        break;
+     }
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00454cc0
+diff --git a/src/startup_world_entity17_commands.cpp b/src/startup_world_entity17_commands.cpp
+index 9cc85a7b7e467baea4bd2e045514c3d08e6b58d1..930fec388cd7800b03f55dee560e9d6400525249 100644
+--- a/src/startup_world_entity17_commands.cpp
++++ b/src/startup_world_entity17_commands.cpp
+@@ -12,47 +12,48 @@ const char* catwalk_animations[9] = {
+ bool WorldEntity17::Unknown14(ScreenModeCommand* incoming)
+ {
+     int code = incoming->words[2];
+-    if (code == 0x3b)
++    float duration;
++    switch (code)
++    {
++    case 0x3b:
+     {
+         // Retail returns an unwritten stack byte; every caller discards it.
+-        unsigned char result = 0;
++        bool result = false;
+         flag_104 = 1;
+-        return result != 0;
++        return result;
+     }
+-    ScreenModeCommand command;
+-    auto queue = [&](int type, int next, float delay, bool delayed)
+-    {
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = type;
+-        command.words[3] = 0;
+-        command.words[4] = next;
+-        if (delayed)
+-            screen_mode_commands->QueueDelayed(&command, delay);
+-        else
+-            screen_mode_commands->QueueCommand(&command);
+-    };
+-    auto animate = [&](unsigned int index)
+-    {
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        return keyline_state_44->SetAnimation(catwalk_animations[index], window_deactivation_state->clock_158, &position);
+-    };
+-    auto face_owner = [&]
+-    {
+-        VariableEntity* owner = variable_world->FindObject(owner_fc);
+-        keyline_state_44->SelectVariant((11 - 2 * static_cast<int>(owner->keyline_state_44->word_18)) % 8);
+-    };
+-    if (code == 0x16 || code == 0x3c)
++    case 0x16:
+     {
+         if (state_3c == 0)
+         {
+-            float duration = animate(5 + rand() % 3);
+-            face_owner();
++            switch (rand() % 3)
++            {
++            case 0:
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[5], duration, &position_30);
++                break;
++            case 1:
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[6], duration, &position_30);
++                break;
++            case 2:
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[7], duration, &position_30);
++                break;
++            }
++            {
++                VariableEntity* owner = variable_world->FindObject(owner_fc);
++                keyline_state_44->SelectVariant((11 - 2 * static_cast<int>(owner->keyline_state_44->word_18)) % 8);
++            }
+             keyline_state_44->word_08 = 2;
+-            queue(0x3c, 0, duration, true);
++            {
++                ScreenModeCommand command(id_28, id_28, 0x3c, 0, 0);
++                screen_mode_commands->QueueDelayed(&command, duration);
++            }
+         }
+-        else if (code == 0x16)
++        else
+         {
++            ScreenModeCommand command;
+             if (state_3c == 6)
+             {
+                 if (variant_f8 == 0)
+@@ -68,68 +69,168 @@ bool WorldEntity17::Unknown14(ScreenModeCommand* incoming)
+             }
+             else if (action_f4 == 0)
+             {
+-                float duration = animate(2);
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[2], duration, &position_30);
+                 keyline_state_44->word_08 = 2;
+-                face_owner();
++                {
++                    VariableEntity* owner = variable_world->FindObject(owner_fc);
++                    keyline_state_44->SelectVariant((11 - 2 * static_cast<int>(owner->keyline_state_44->word_18)) % 8);
++                }
+                 action_f4 = 1;
+-                queue(0x39, 0, duration, true);
++                {
++                    unsigned int id = id_28;
++                    command.words[0] = id;
++                    command.words[1] = id;
++                    command.words[2] = 0x39;
++                    command.words[3] = 0;
++                    command.words[4] = 0;
++                    screen_mode_commands->QueueDelayed(&command, duration);
++                }
+             }
+         }
+         return true;
+     }
+-    if (code != 0x39)
+-        return WorldPedestrianEntity::Unknown14(incoming);
+-    if (action_f4 == 1)
+-    {
+-        int choice = rand() % 7;
+-        action_f4 = choice == 6 ? 3 : 2;
+-        float duration = animate(choice < 3 ? 3 : choice < 6 ? 4
+-                                                             : 8);
+-        keyline_state_44->word_08 = 2;
+-        queue(0x39, 0, duration, true);
+-    }
+-    else if (action_f4 == 2)
+-    {
+-        float duration = animate(rand() % 2 == 0 ? 3 : 4);
+-        keyline_state_44->word_08 = 2;
+-        action_f4 = 3;
+-        queue(0x39, 0, duration, true);
+-    }
+-    else if (!flag_104)
++    case 0x3c:
+     {
+-        queue(3, 0, 0.0f, false);
+-        unsigned int count;
+-        VariableEntity** objects = variable_world->ByType(17, &count);
+-        for (unsigned int i = 0; i < count; ++i)
++        if (state_3c == 0)
+         {
+-            WorldEntity17* other = static_cast<WorldEntity17*>(objects[i]);
+-            if (other->owner_fc == owner_fc && other->variant_f8 == static_cast<unsigned int>((static_cast<int>(variant_f8) + 1) % 3))
++            switch (rand() % 3)
+             {
+-                command.words[1] = other->id_28;
+-                command.words[4] = 4;
++            case 0:
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[5], duration, &position_30);
++                break;
++            case 1:
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[6], duration, &position_30);
++                break;
++            case 2:
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[7], duration, &position_30);
+                 break;
+             }
++            {
++                VariableEntity* owner = variable_world->FindObject(owner_fc);
++                keyline_state_44->SelectVariant((11 - 2 * static_cast<int>(owner->keyline_state_44->word_18)) % 8);
++            }
++            keyline_state_44->word_08 = 2;
++            {
++                ScreenModeCommand command(id_28, id_28, 0x3c, 0, 0);
++                screen_mode_commands->QueueDelayed(&command, duration);
++            }
+         }
+-        screen_mode_commands->QueueCommand(&command);
++        return true;
+     }
+-    else
++    default:
++        return WorldPedestrianEntity::Unknown14(incoming);
++    case 0x39:
+     {
+-        unsigned int count;
+-        VariableEntity** objects = variable_world->ByType(17, &count);
+-        command.words[0] = id_28;
+-        command.words[1] = 0;
+-        command.words[2] = 3;
+-        command.words[3] = 0;
+-        command.words[4] = 6;
+-        for (unsigned int i = 0; i < count; ++i)
++        ScreenModeCommand command;
++        if (action_f4 == 1)
++        {
++            switch (rand() % 7)
++            {
++            case 0:
++            case 1:
++            case 2:
++                action_f4 = 2;
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[3], duration, &position_30);
++                break;
++            case 3:
++            case 4:
++            case 5:
++                action_f4 = 2;
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[4], duration, &position_30);
++                break;
++            case 6:
++                action_f4 = 3;
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[8], duration, &position_30);
++                break;
++            }
++            keyline_state_44->word_08 = 2;
++            {
++                unsigned int id = id_28;
++                command.words[0] = id;
++                command.words[1] = id;
++                command.words[2] = 0x39;
++                command.words[3] = 0;
++                command.words[4] = 0;
++                screen_mode_commands->QueueDelayed(&command, duration);
++            }
++        }
++        else if (action_f4 == 2)
+         {
+-            WorldEntity17* other = static_cast<WorldEntity17*>(objects[i]);
+-            if (other->owner_fc == owner_fc)
++            switch (rand() % 2)
+             {
+-                command.words[1] = other->id_28;
++            case 0:
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[3], duration, &position_30);
++                break;
++            case 1:
++                duration = window_deactivation_state->clock_158;
++                duration = keyline_state_44->SetAnimation(catwalk_animations[4], duration, &position_30);
++                break;
++            }
++            keyline_state_44->word_08 = 2;
++            action_f4 = 3;
++            {
++                unsigned int id = id_28;
++                command.words[0] = id;
++                command.words[1] = id;
++                command.words[2] = 0x39;
++                command.words[3] = 0;
++                command.words[4] = 0;
++                screen_mode_commands->QueueDelayed(&command, duration);
++            }
++        }
++        else if (!flag_104)
++        {
++            {
++                unsigned int id = id_28;
++                command.words[0] = id;
++                command.words[1] = id;
++                command.words[2] = 3;
++                command.words[3] = 0;
++                command.words[4] = 0;
+                 screen_mode_commands->QueueCommand(&command);
+             }
++            unsigned int count;
++            VariableEntity** objects = variable_world->ByType(17, &count);
++            for (unsigned int i0 = 0; i0 < count; ++i0)
++            {
++                WorldEntity17* other = static_cast<WorldEntity17*>(objects[i0]);
++                if (other->owner_fc == owner_fc && other->variant_f8 == static_cast<unsigned int>((static_cast<int>(variant_f8) + 1) % 3))
++                {
++                    command.words[1] = other->id_28;
++                    command.words[4] = 4;
++                    i0 = count;
++                }
++            }
++            screen_mode_commands->QueueCommand(&command);
+         }
++        else
++        {
++            unsigned int count;
++            VariableEntity** objects = variable_world->ByType(17, &count);
++            command.words[0] = id_28;
++            command.words[1] = 0;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 6;
++            for (unsigned int i1 = 0; i1 < count; ++i1)
++            {
++                WorldEntity17* other = static_cast<WorldEntity17*>(objects[i1]);
++                if (other->owner_fc == owner_fc)
++                {
++                    command.words[1] = other->id_28;
++                    screen_mode_commands->QueueCommand(&command);
++                }
++            }
++        }
++        return true;
++    }
+     }
+-    return true;
+ }

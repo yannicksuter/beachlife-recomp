@@ -1,0 +1,76 @@
+diff --git a/fixtures/game.cpp b/fixtures/game.cpp
+index 5c6b909..055e525 100644
+--- a/fixtures/game.cpp
++++ b/fixtures/game.cpp
+@@ -4774,3 +4774,10 @@ typedef char FerryTerrainArrivalOffset[offsetof(ScreenTerrainGrid, arrival_tile_
+ typedef char FerryTerrainDepartureOffset[offsetof(ScreenTerrainGrid, departure_tile_144) == 0x144 ? 1 : -1];
+ typedef char FerryVehicleArrivalOffset[offsetof(WorldVehicleEntity, arrival_tile_948) == 0x948 ? 1 : -1];
+ typedef char FerryVehicleDepartureOffset[offsetof(WorldVehicleEntity, departure_tile_950) == 0x950 ? 1 : -1];
++
++// The combo-box entry keeps its 8-byte layout with an out-of-line destructor.
++typedef char ComboBoxEntryLifetimeSize[sizeof(ScreenComboBoxEntry) == 0x8 ? 1 : -1];
++extern "C" __declspec(dllexport) void FixtureComboBoxEntryLifetime(ScreenComboBoxEntry* entry)
++{
++    entry->~ScreenComboBoxEntry();
++}
+diff --git a/src/startup_screen_combo_box.h b/src/startup_screen_combo_box.h
+index 58f703b..f682cd5 100644
+--- a/src/startup_screen_combo_box.h
++++ b/src/startup_screen_combo_box.h
+@@ -4,6 +4,7 @@
+ #include "startup_screen_item.h"
+ #include "startup_trivial_range_algorithms.h"
+ #include <new>
++#include <string.h>
+ #ifdef _STLPORT_VERSION
+ #include <vector>
+ #endif
+@@ -23,6 +24,19 @@ struct ScreenComboBoxEntry
+ {
+     unsigned short* text;
+     int value;
++
++    // Inline in AddKey and AddText (0x004a39f0, 0x004a3ba0).
++    ScreenComboBoxEntry(const unsigned short* source, int entry_value)
++    {
++        text = 0;
++        if (source)
++        {
++            text = new unsigned short[wcslen(source) + 1];
++            wcscpy(text, source);
++        }
++        value = entry_value;
++    }
++    ~ScreenComboBoxEntry(); // Folded into 0x004184e0.
+ };
+ 
+ void DeleteComboBoxEntry(ScreenComboBoxEntry* entry); // 0x004a4f40.
+diff --git a/src/startup_screen_combo_box_entry.cpp b/src/startup_screen_combo_box_entry.cpp
+new file mode 100644
+index 0000000..b6728dd
+--- /dev/null
++++ b/src/startup_screen_combo_box_entry.cpp
+@@ -0,0 +1,9 @@
++#include "startup_owned_allocation.h"
++#include "startup_screen_combo_box.h"
++
++// Retail and LINK fold this destructor into the shared owned-pointer release.
++// FUNCTION: BEACHLIFE 0x004184e0 FOLDED
++ScreenComboBoxEntry::~ScreenComboBoxEntry()
++{
++    ReleaseOwnedAllocation(text);
++}
+diff --git a/targets/beachlife-uk-1.1.json b/targets/beachlife-uk-1.1.json
+index f531bfd..ee69412 100644
+--- a/targets/beachlife-uk-1.1.json
++++ b/targets/beachlife-uk-1.1.json
+@@ -2767,6 +2767,9 @@
+     "startup_world_script_action_data.cpp": [
+       "/Ob1"
+     ],
++    "startup_screen_combo_box_entry.cpp": [
++      "/Ob1"
++    ],
+     "surface_error_sink.cpp": [
+       "/Gy-"
+     ],

@@ -1,0 +1,136 @@
+diff --git a/src/startup_screen_mode_can_move.cpp b/src/startup_screen_mode_can_move.cpp
+index 2f5e77922d457b4bf49e7d31a5208897377b3810..7c8936af32f268acb01538517469b5ceb39b34ba 100644
+--- a/src/startup_screen_mode_can_move.cpp
++++ b/src/startup_screen_mode_can_move.cpp
+@@ -8,53 +8,106 @@ unsigned char ScreenMode9Controller::CanMove(const ScreenPoint* point, int* targ
+ {
+     special_16 = 0;
+     *target = -1;
++    unsigned char valid = 1;
+     ScreenTerrainGrid* grid = screen_terrain_grid;
+     unsigned int flags = grid->cells_0c[grid->TileIndex(tile_0c.x, tile_0c.y)].flags_48;
+-    unsigned char valid = (flags & 0x80000000) && !(flags & 0x10);
+-    const char* name = word_08->name_06;
+-    if (strcmp(name, "BUILDER") == 0)
++    if (!(flags & 0x80000000))
++        valid = 0;
++    if (flags & 0x10)
++        valid = 0;
++    if (strcmp(word_08->name_06, "BUILDER") == 0)
+     {
+         unsigned int count;
+         VariableEntity** selected = variable_world->Selected(&count);
+         if (count && selected[0]->kind_2c == 2 && (selected[0]->FlagAt00460310() || selected[0]->FlagAt00460340()))
+         {
+-            special_16 = valid = 1;
++            special_16 = 1;
++            valid = 1;
+             *target = selected[0]->id_28;
+         }
+-        return valid;
+     }
+-    bool cleaner = strcmp(name, "CLEANER") == 0;
+-    bool security = !cleaner && strcmp(name, "SECURITYGUARD") == 0;
+-    bool lifeguard = !cleaner && !security && (strcmp(name, "LIFEG_F") == 0 || strcmp(name, "LIFEG_M") == 0);
+-    bool rep = !cleaner && !security && !lifeguard && (strcmp(name, "REP_M") == 0 || strcmp(name, "REP_F") == 0);
+-    bool mechanic = !cleaner && !security && !lifeguard && !rep && strcmp(name, "MECHANIC") == 0;
+-    if (cleaner || mechanic)
++    else if (strcmp(word_08->name_06, "CLEANER") == 0)
+     {
+         unsigned int count;
+-        VariableEntity** selected = cleaner ? variable_world->Selected(&count) : variable_world->SelectedBuildings(&count);
+-        if (count && selected[0]->kind_2c == 2 && !selected[0]->FlagAt00460310() && !selected[0]->FlagAt00460340()
+-            && (!cleaner || strcmp(selected[0]->name_06, "LOO") == 0))
++        VariableEntity** selected = variable_world->Selected(&count);
++        if (count && selected[0]->kind_2c == 2 && !selected[0]->FlagAt00460310() && !selected[0]->FlagAt00460340() && strcmp(selected[0]->name_06, "LOO") == 0)
+         {
+-            special_16 = valid = 1;
++            special_16 = 1;
++            valid = 1;
+             *target = selected[0]->id_28;
+         }
++        CircularList* objects = screen_terrain_grid->ObjectsAt(point->x, point->y);
++        for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
++        {
++            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++            if (entity->kind_2c == 1 && entity->AsScenery()->scenery_f4->cleanable_308 && !entity->AsScenery()->byte_a0)
++            {
++                special_16 = 1;
++                valid = 1;
++                *target = entity->id_28;
++            }
++        }
++    }
++    else if (strcmp(word_08->name_06, "SECURITYGUARD") == 0)
++    {
++        CircularList* objects = screen_terrain_grid->ObjectsAt(point->x, point->y);
++        for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
++        {
++            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++            if (entity->kind_2c == 3)
++            {
++                special_16 = 1;
++                valid = 1;
++                *target = entity->id_28;
++            }
++        }
+     }
+-    if (cleaner || security || lifeguard || rep || mechanic)
++    else if (strcmp(word_08->name_06, "LIFEG_F") == 0 || strcmp(word_08->name_06, "LIFEG_M") == 0)
+     {
+         CircularList* objects = screen_terrain_grid->ObjectsAt(point->x, point->y);
+         for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
+         {
+             VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
+-            bool matches;
+-            if (cleaner)
+-                matches = entity->kind_2c == 1 && entity->AsScenery()->scenery_f4->cleanable_308 && !entity->AsScenery()->byte_a0;
+-            else if (mechanic)
+-                matches = entity->kind_2c == 1 && (entity->AsScenery()->scenery_f4->repairable_309 || entity->AsScenery()->scenery_f4->serviceable_30a);
+-            else
+-                matches = entity->kind_2c == 3;
+-            if (matches)
++            if (entity->kind_2c == 3)
++            {
++                special_16 = 1;
++                valid = 1;
++                *target = entity->id_28;
++            }
++        }
++    }
++    else if (strcmp(word_08->name_06, "REP_M") == 0 || strcmp(word_08->name_06, "REP_F") == 0)
++    {
++        CircularList* objects = screen_terrain_grid->ObjectsAt(point->x, point->y);
++        for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
++        {
++            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++            if (entity->kind_2c == 3)
++            {
++                special_16 = 1;
++                valid = 1;
++                *target = entity->id_28;
++            }
++        }
++    }
++    else if (strcmp(word_08->name_06, "MECHANIC") == 0)
++    {
++        unsigned int count;
++        VariableEntity** selected = variable_world->SelectedBuildings(&count);
++        if (count && selected[0]->kind_2c == 2 && !selected[0]->FlagAt00460310() && !selected[0]->FlagAt00460340())
++        {
++            special_16 = 1;
++            valid = 1;
++            *target = selected[0]->id_28;
++        }
++        CircularList* objects = screen_terrain_grid->ObjectsAt(point->x, point->y);
++        for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
++        {
++            VariableEntity* entity = static_cast<ScreenTerrainEntityNode*>(node)->entity;
++            if (entity->kind_2c == 1 && (entity->AsScenery()->scenery_f4->repairable_309 || entity->AsScenery()->scenery_f4->serviceable_30a))
+             {
+-                special_16 = valid = 1;
++                special_16 = 1;
++                valid = 1;
+                 *target = entity->id_28;
+             }
+         }

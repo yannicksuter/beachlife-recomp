@@ -1,0 +1,131 @@
+diff --git a/src/startup_screen_mode1_virtuals.cpp b/src/startup_screen_mode1_virtuals.cpp
+index 55f6e395387042eb9aabf722dfa6afd912d95ca6..c5e62f4a338e4fcab44dd6aeaf186992dbf4ea09 100644
+--- a/src/startup_screen_mode1_virtuals.cpp
++++ b/src/startup_screen_mode1_virtuals.cpp
+@@ -125,24 +125,17 @@ void ScreenMode1Controller::RenderScreens()
+ // FUNCTION: BEACHLIFE 0x004a97f0
+ unsigned char ScreenMode1Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int wheel)
+ {
+-    ScreenDialogResource* resource = word_0c;
+-    int rotation;
+     if (static_cast<int>(wheel) > 0)
+-        rotation = (static_cast<int>(resource->word_18) + 1)
+-                 % resource->record->frames[resource->word_10]->plane_count_0c;
+-    else
+     {
+-        rotation = static_cast<int>(resource->word_18) - 1;
+-        if (rotation < 0)
+-            rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
++        word_0c->SelectVariant((static_cast<int>(word_0c->word_18) + 1) % word_0c->SelectedFrame()->plane_count_0c);
+     }
+-    if (rotation >= resource->record->frames[resource->word_10]->plane_count_0c)
++    else
+     {
+-        rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
+-        char message[80];
+-        std::sprintf(message, "%s %d", resource->name, rotation);
++        int rotation = static_cast<int>(word_0c->word_18) - 1;
++        if (rotation < 0)
++            rotation = word_0c->SelectedFrame()->plane_count_0c - 1;
++        word_0c->SelectVariant(rotation);
+     }
+-    resource->word_18 = rotation;
+     return 1;
+ }
+ 
+diff --git a/src/startup_screen_mode5_virtuals.cpp b/src/startup_screen_mode5_virtuals.cpp
+index 5d78edd55fe780cb4b0ea78bac61fd818d1663a8..ccb5cefded90303606fa6e1ba7a46b67cde76d2d 100644
+--- a/src/startup_screen_mode5_virtuals.cpp
++++ b/src/startup_screen_mode5_virtuals.cpp
+@@ -189,23 +189,16 @@ void ScreenMode5Controller::RenderScreens()
+ // FUNCTION: BEACHLIFE 0x004a8530
+ unsigned char ScreenMode5Controller::HandleThreeWords(unsigned int, unsigned int, unsigned int wheel)
+ {
+-    ScreenDialogResource* resource = preview_08;
+-    int rotation;
+     if (static_cast<int>(wheel) > 0)
+-        rotation = (static_cast<int>(resource->word_18) + 1)
+-                 % resource->record->frames[0]->plane_count_0c;
+-    else
+     {
+-        rotation = static_cast<int>(resource->word_18) - 1;
+-        if (rotation < 0)
+-            rotation = resource->record->frames[0]->plane_count_0c - 1;
++        preview_08->SelectVariant((static_cast<int>(preview_08->word_18) + 1) % preview_08->record->frames[0]->plane_count_0c);
+     }
+-    if (rotation >= resource->record->frames[resource->word_10]->plane_count_0c)
++    else
+     {
+-        rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
+-        char message[80];
+-        std::sprintf(message, "%s %d", resource->name, rotation);
++        int rotation = static_cast<int>(preview_08->word_18) - 1;
++        if (rotation < 0)
++            rotation = preview_08->record->frames[0]->plane_count_0c - 1;
++        preview_08->SelectVariant(rotation);
+     }
+-    resource->word_18 = rotation;
+     return 1;
+ }
+diff --git a/src/startup_world_cursor_names.h b/src/startup_world_cursor_names.h
+index 48b40a3da13ec94822d6cbab9b6bf55eed522155..624d654086f220addd9c8ae10f056f7a71a50887 100644
+--- a/src/startup_world_cursor_names.h
++++ b/src/startup_world_cursor_names.h
+@@ -39,8 +39,8 @@ struct WorldCursorNames : WorldCursorRegistration
+ 
+     void SetTilePath(int x, int y, unsigned int path);       // 0x00432af0.
+     void UpdateAt00432b50(ScreenPoint tile);                 // 0x00432b50.
+-    void UpdateAt00432c70(int x, int y);                     // 0x00432c70.
+-    void UpdateAt00432900(int x, int y);                     // 0x00432900.
++    void UpdateAt00432c70(ScreenPoint tile);                 // 0x00432c70.
++    void UpdateAt00432900(ScreenPoint tile);                 // 0x00432900.
+     ~WorldCursorNames() noexcept(false);                     // 0x004321b0.
+     void RefreshRectangle(const ScreenRectangle* rectangle); // 0x00432d40.
+     void RefreshTerrain();                                   // 0x00432840.
+diff --git a/src/startup_world_cursor_terrain.cpp b/src/startup_world_cursor_terrain.cpp
+index 089e5f045152a999bcdd52b2945f99d07e2a1e62..48e1491f87947030142d6dacaa291644f4ae84ce 100644
+--- a/src/startup_world_cursor_terrain.cpp
++++ b/src/startup_world_cursor_terrain.cpp
+@@ -71,8 +71,8 @@ void WorldCursorNames::UpdateTile(int x, int y, unsigned char remove)
+         }
+     }
+     if (remove)
+-        UpdateAt00432c70(x, y);
+-    UpdateAt00432900(x, y);
++        UpdateAt00432c70(tile_position);
++    UpdateAt00432900(tile_position);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00432840
+diff --git a/src/startup_world_cursor_updates.cpp b/src/startup_world_cursor_updates.cpp
+index d7afafaf43949f455f7be0a4bd84ea6b05b206a0..e6dcf9b7385aa2b910f7a27413ee9a15369e16ba 100644
+--- a/src/startup_world_cursor_updates.cpp
++++ b/src/startup_world_cursor_updates.cpp
+@@ -5,9 +5,9 @@
+ #include <string.h>
+ 
+ // FUNCTION: BEACHLIFE 0x00432900
+-void WorldCursorNames::UpdateAt00432900(int x, int y)
++void WorldCursorNames::UpdateAt00432900(ScreenPoint tile)
+ {
+-    ScreenWorldPosition position = screen_terrain_grid->TilePosition(ScreenPoint(x, y), 1);
++    ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile, 1);
+     ScreenPoint point = overlay_map->WorldToScreen(position);
+     ScreenRectangle bounds;
+     bounds.left = point.x + overlay_map->scroll_x_c4 + names_00->CurrentFrameValue();
+@@ -54,13 +54,13 @@ void WorldCursorNames::UpdateAt00432b50(ScreenPoint tile)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00432c70
+-void WorldCursorNames::UpdateAt00432c70(int x, int y)
++void WorldCursorNames::UpdateAt00432c70(ScreenPoint tile)
+ {
+     unsigned int mask = 0x10000;
+     for (int direction = 0; direction < 8; ++direction, mask <<= 1)
+     {
+         ScreenPoint point;
+-        screen_terrain_grid->Step(ScreenPoint(x, y), (direction + 4) % 8, &point);
++        screen_terrain_grid->Step(tile, (direction + 4) % 8, &point);
+         ScreenTerrainGrid* terrain = screen_terrain_grid;
+         unsigned int index = (static_cast<unsigned int>(point.y) % terrain->height_08) * terrain->width_04
+                            + static_cast<unsigned int>(point.x) % terrain->width_04;

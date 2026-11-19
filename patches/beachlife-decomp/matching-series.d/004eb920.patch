@@ -1,0 +1,177 @@
+diff --git a/fixtures/game.d/fixture_004eb920.cpp b/fixtures/game.d/fixture_004eb920.cpp
+new file mode 100644
+index 0000000..dbe5704
+--- /dev/null
++++ b/fixtures/game.d/fixture_004eb920.cpp
+@@ -0,0 +1,7 @@
++#include "tiff_read_context.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004eb920(unsigned int offset, TiffReadContext* context)
++{
++    TiffReadDirectory(offset, context);
++}
+diff --git a/metadata.d/004eb920.csv b/metadata.d/004eb920.csv
+new file mode 100644
+index 0000000..30bdc55
+--- /dev/null
++++ b/metadata.d/004eb920.csv
+@@ -0,0 +1,3 @@
++address,type,size,symbol
++0x004eb920,function,972,?TiffReadDirectory@@YAHIPAUTiffReadContext@@@Z
++0x00587f78,string,15,
+diff --git a/src/match_004eb920.cpp b/src/match_004eb920.cpp
+new file mode 100644
+index 0000000..8dc0bef
+--- /dev/null
++++ b/src/match_004eb920.cpp
+@@ -0,0 +1,130 @@
++#include "tiff_read_context.h"
++#include "startup_resource_binary_read.h"
++#include <stdio.h>
++#include <string.h>
++
++// One twelve-byte TIFF image file directory entry.
++struct TiffLoaderEntry
++{
++    short tag;
++    short type;
++    int count;
++    unsigned int value;
++};
++
++// FUNCTION: BEACHLIFE 0x004eb920
++int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
++{
++    fseek(context->file, offset, SEEK_SET);
++    int count = ReadResourceWord(context->file);
++    for (int i = 0; i < count; ++i)
++    {
++        TiffLoaderEntry entry;
++        fread(&entry, 12, 1, context->file);
++        switch (entry.tag)
++        {
++        case 256:
++            context->width = entry.value;
++            break;
++        case 258:
++            context->bits_per_sample = static_cast<unsigned short>(entry.value);
++            break;
++        case 259:
++            context->compression = entry.value;
++            break;
++        case 257:
++            context->height = entry.value;
++            break;
++        case 273:
++            context->strip_count = entry.count;
++            context->strip_offsets_position = entry.value;
++            break;
++        case 277:
++            context->samples_per_pixel = static_cast<unsigned short>(entry.value);
++            break;
++        case 278:
++            context->rows_per_strip = entry.value;
++            break;
++        case 279:
++            context->strip_byte_counts_position = entry.value;
++            break;
++        case 270:
++            if (entry.count > 79)
++                strcpy(context->description, "Title too long");
++            else
++            {
++                long position = ftell(context->file);
++                fseek(context->file, entry.value, SEEK_SET);
++                fread(context->description, 1, entry.count, context->file);
++                fseek(context->file, position, SEEK_SET);
++            }
++            break;
++        case 320:
++            context->palette_offset = entry.value;
++            break;
++        case 322:
++            context->tile_width = entry.value;
++            break;
++        case 323:
++            context->tile_height = entry.value;
++            break;
++        case 324:
++            context->tile_offsets_position = entry.value;
++            break;
++        case 325:
++            context->tile_byte_counts_position = entry.value;
++            break;
++        case 4096:
++            context->word_ac = entry.value;
++            break;
++        case 4099:
++            context->word_b8 = entry.value;
++            break;
++        case 4098:
++            context->word_b4 = entry.value;
++            break;
++        case 4097:
++            context->word_b0 = entry.value;
++            break;
++        }
++    }
++    fread(&context->next_directory_offset, 4, 1, context->file);
++    if (context->strip_offsets_position)
++    {
++        context->strip_byte_counts = static_cast<unsigned int*>(::operator new(context->strip_count << 2));
++        context->strip_offsets = static_cast<unsigned int*>(::operator new(context->strip_count << 2));
++        if (context->strip_count > 1)
++        {
++            fseek(context->file, context->strip_byte_counts_position, SEEK_SET);
++            fread(context->strip_byte_counts, context->strip_count << 2, 1, context->file);
++            fseek(context->file, context->strip_offsets_position, SEEK_SET);
++            fread(context->strip_offsets, context->strip_count << 2, 1, context->file);
++        }
++        else
++        {
++            context->strip_byte_counts[0] = context->strip_byte_counts_position;
++            context->strip_offsets[0] = context->strip_offsets_position;
++        }
++    }
++    else
++    {
++        unsigned int tile_rows = context->height / context->tile_height;
++        unsigned int tile_count = tile_rows * (context->width / context->tile_width);
++        unsigned int bytes = tile_count << 2;
++        context->tile_byte_counts = static_cast<unsigned int*>(::operator new(bytes));
++        context->tile_offsets = static_cast<unsigned int*>(::operator new(bytes));
++        if (static_cast<int>(tile_count) > 1)
++        {
++            fseek(context->file, context->tile_byte_counts_position, SEEK_SET);
++            fread(context->tile_byte_counts, bytes, 1, context->file);
++            fseek(context->file, context->tile_offsets_position, SEEK_SET);
++            fread(context->tile_offsets, bytes, 1, context->file);
++        }
++        else
++        {
++            context->tile_byte_counts[0] = context->tile_byte_counts_position;
++            context->tile_offsets[0] = context->tile_offsets_position;
++        }
++    }
++    return 0;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004eb920.json b/targets/beachlife-uk-1.1.d/004eb920.json
+new file mode 100644
+index 0000000..27896b6
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004eb920.json
+@@ -0,0 +1,13 @@
++{
++  "functions": [
++    {
++      "address": "0x004eb920",
++      "size": 892,
++      "name": "TiffReadDirectory",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "runtime_cdecl_imports": [
++    "ftell"
++  ]
++}

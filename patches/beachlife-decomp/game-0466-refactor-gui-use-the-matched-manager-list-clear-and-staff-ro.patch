@@ -1,0 +1,128 @@
+diff --git a/src/startup_screen_manager_constructor.cpp b/src/startup_screen_manager_constructor.cpp
+index 080ff2eb30ff959ab217c214d7e480e8b4809f08..337094e58091c7f7dfbaeca92549e1e1b8b69197 100644
+--- a/src/startup_screen_manager_constructor.cpp
++++ b/src/startup_screen_manager_constructor.cpp
+@@ -38,12 +38,12 @@ ScreenManager::ScreenManager()
+             word_100 = 0;
+             word_104 = 0;
+             renderer = screen_request_renderer;
+-            byte_c0 = 1;
+             word_124 = 0;
+             flag_d4 = 0;
+             item_d0 = 0;
+             word_98 = -1;
+             byte_9c = 0;
++            byte_c0 = 1;
+ 
+             word_54 = 0;
+             word_58 = 0;
+@@ -76,26 +76,7 @@ ScreenManager::ScreenManager()
+             item_134 = 0;
+             value_138 = 0.0f;
+ 
+-            CircularListNode* node = active.head->next;
+-            while (node != active.head)
+-            {
+-                CircularListNode* released = node;
+-                node = node->next;
+-                if (released != 0)
+-                {
+-                    {
+-                        unsigned int pool_bytes = sizeof(CircularListValueNode);
+-                        PoolChunkLink* volatile* bucket = pool_chunk_buckets + (pool_bytes - 1) / 8;
+-                        AcquirePoolLock(&pool_lock_word);
+-                        PoolChunkLink* returned = ::new (static_cast<void*>(released)) PoolChunkLink;
+-                        returned->next = *bucket;
+-                        *bucket = returned;
+-                        pool_lock_word = 0;
+-                    }
+-                }
+-            }
+-            active.head->next = active.head;
+-            active.head->previous = active.head;
++            active.Clear();
+ 
+             panel_13c = new ScreenLoadPanel13c;
+             panel_140 = new ScreenLoadPanel140;
+diff --git a/src/startup_screen_table_sources.cpp b/src/startup_screen_table_sources.cpp
+index 6d1e45cb44a26cf94b36d6b0ef6557d9c1fd5bfa..381462aae2b4d07f0d95f00aa29ddbd5915c5174 100644
+--- a/src/startup_screen_table_sources.cpp
++++ b/src/startup_screen_table_sources.cpp
+@@ -301,21 +301,51 @@ void ScreenTable::UpdateSource6(float elapsed)
+     unsigned int count;
+     VariableEntity** staff = variable_world->AllStaff(&count);
+     unsigned int kind = screen_manager->word_7c;
+-    const unsigned char kinds[] = { 11, 10, 8, 9, 7, 12 };
++    auto push_row = [this](VariableEntity* entity)
++    {
++        ScreenRequestContext* value = entity;
++        if (rows_64.end != rows_64.limit)
++        {
++            ConstructTrivialValue(rows_64.end, value);
++            ++rows_64.end;
++        }
++        else
++            InsertTrivialRangeOverflow(rows_64.begin, rows_64.end, rows_64.limit, rows_64.end, value, 1, true);
++    };
+     for (unsigned int i = 0; i < count; ++i)
+     {
+         VariableEntity* entity = staff[i];
+-        if (!entity->AsStaff()->byte_758 && !entity->inactive_04 && kind <= 6
+-            && (kind == 6 || entity->kind_2c == kinds[kind]))
++        if (entity->AsStaff()->byte_758 || entity->inactive_04)
++            continue;
++        switch (kind)
+         {
+-            ScreenRequestContext* value = entity;
+-            if (rows_64.end != rows_64.limit)
+-            {
+-                ConstructTrivialValue(rows_64.end, value);
+-                ++rows_64.end;
+-            }
+-            else
+-                InsertTrivialRangeOverflow(rows_64.begin, rows_64.end, rows_64.limit, rows_64.end, value, 1, true);
++        case 0:
++            if (entity->kind_2c == 11)
++                push_row(entity);
++            break;
++        case 1:
++            if (entity->kind_2c == 10)
++                push_row(entity);
++            break;
++        case 3:
++            if (entity->kind_2c == 9)
++                push_row(entity);
++            break;
++        case 4:
++            if (entity->kind_2c == 7)
++                push_row(entity);
++            break;
++        case 5:
++            if (entity->kind_2c == 12)
++                push_row(entity);
++            break;
++        case 2:
++            if (entity->kind_2c == 8)
++                push_row(entity);
++            break;
++        case 6:
++            push_row(entity);
++            break;
+         }
+     }
+     if (kind == 6)
+@@ -337,8 +367,10 @@ void ScreenTable::UpdateSource6(float elapsed)
+     }
+     row_count_54 = rows_64.end - rows_64.begin;
+     RefreshScrollBar();
+-    unsigned int selected = -1;
+-    if (selected_row_a4 != -1)
+-        selected = rows_64.begin[individual_rows_50 ? selected_row_a4 : 0]->id_28;
+-    screen_manager->SetWord(12, selected);
++    if (selected_row_a4 == -1)
++        screen_manager->SetWord(12, selected_row_a4);
++    else if (!individual_rows_50)
++        screen_manager->SetWord(12, rows_64.begin[0]->id_28);
++    else
++        screen_manager->SetWord(12, rows_64.begin[selected_row_a4]->id_28);
+ }

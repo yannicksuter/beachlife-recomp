@@ -1,0 +1,63 @@
+diff --git a/src/startup_world_script_load.cpp b/src/startup_world_script_load.cpp
+index eb8387d..4e23923 100644
+--- a/src/startup_world_script_load.cpp
++++ b/src/startup_world_script_load.cpp
+@@ -54,7 +54,7 @@ int WorldSubsystem20::SkipComments()
+     {
+         ++cursor_00;
+         count = 1;
+-        while (*cursor_00 != '\n')
++        while (*cursor_00 && *cursor_00 != '\n')
+         {
+             ++count;
+             ++cursor_00;
+@@ -71,6 +71,8 @@ int WorldSubsystem20::ReadToken(char* token)
+ {
+     int count = SkipWorldScriptWhitespace(cursor_00);
+     count += SkipComments();
++    if (!*cursor_00)
++        StartupFatal("Unexpected end of world script data");
+     if (*cursor_00 == ';')
+     {
+         token[0] = ';';
+@@ -78,7 +80,7 @@ int WorldSubsystem20::ReadToken(char* token)
+         token[1] = 0;
+         return count + 1;
+     }
+-    while (*cursor_00 != ' ' && *cursor_00 != '\n' && *cursor_00 != '\t' && *cursor_00 != '\r')
++    while (*cursor_00 && *cursor_00 != ' ' && *cursor_00 != '\n' && *cursor_00 != '\t' && *cursor_00 != '\r')
+     {
+         *token++ = *cursor_00++;
+         ++count;
+@@ -102,6 +104,9 @@ int WorldSubsystem20::LoadScript(const char* path)
+     filename[length - 1] = 'e';
+     int size = GetFileSize(filename);
+     cursor_00 = LoadBleFile(filename);
++    // The BLE loader reserves one extra byte but retail fills it with a dot.
++    if (cursor_00)
++        cursor_00[size] = 0;
+     ::operator delete(filename);
+     char* buffer = cursor_00;
+     while (size > consumed)
+diff --git a/src/startup_world_script_parse_if.cpp b/src/startup_world_script_parse_if.cpp
+index b8e0fc8..6de3eca 100644
+--- a/src/startup_world_script_parse_if.cpp
++++ b/src/startup_world_script_parse_if.cpp
+@@ -9,6 +9,8 @@ int WorldSubsystem20::ParseIfAction()
+     int count = 0;
+     while (*cursor_00 != '(')
+     {
++        if (!*cursor_00)
++            StartupFatal("Unexpected end of world script data");
+         ++cursor_00;
+         ++count;
+     }
+@@ -16,6 +18,8 @@ int WorldSubsystem20::ParseIfAction()
+     char* destination = condition;
+     while (*cursor_00 != ')')
+     {
++        if (!*cursor_00)
++            StartupFatal("Unexpected end of world script data");
+         *destination++ = *cursor_00++;
+         ++count;
+     }

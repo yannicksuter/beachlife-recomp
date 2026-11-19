@@ -1,0 +1,137 @@
+diff --git a/fixtures/game.d/fixture_004a8820.cpp b/fixtures/game.d/fixture_004a8820.cpp
+new file mode 100644
+index 0000000..e18bb12
+--- /dev/null
++++ b/fixtures/game.d/fixture_004a8820.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_modes.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004a8820(ScreenMode4Controller* item, unsigned int x, unsigned int y, unsigned int buttons, unsigned int word3)
++{
++    item->ScreenMode4Controller::HandleFourWords(x, y, buttons, word3);
++}
+diff --git a/metadata.d/004a8820.csv b/metadata.d/004a8820.csv
+new file mode 100644
+index 0000000..08f52b1
+--- /dev/null
++++ b/metadata.d/004a8820.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004a8820,function,475,?HandleFourWords@ScreenMode4Controller@@UAEEIIII@Z
+diff --git a/src/match_004a8820.cpp b/src/match_004a8820.cpp
+new file mode 100644
+index 0000000..8b4edca
+--- /dev/null
++++ b/src/match_004a8820.cpp
+@@ -0,0 +1,89 @@
++#include "startup_screen_modes.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++
++// Retail assigns the converted position member by member (inline assignment).
++static inline void AssignPosition(ScreenWorldPosition& target, const ScreenWorldPosition& source)
++{
++    target.x = source.x;
++    target.y = source.y;
++    target.z = source.z;
++}
++
++// FUNCTION: BEACHLIFE 0x004a8820
++unsigned char ScreenMode4Controller::HandleFourWords(unsigned int x, unsigned int y,
++    unsigned int buttons, unsigned int second_buttons)
++{
++    ScreenPoint point;
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / screen_request_renderer->value_58);
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / screen_request_renderer->value_58);
++    point.x += overlay_map->scroll_x_c4;
++    point.y += overlay_map->scroll_y_c8;
++    if (second_buttons == 1 && !manager->IsPointerOverCurrentScreen())
++        manager->word_98 = -1;
++    if (buttons == 1)
++    {
++        // A click over a screen or on a selectable entity does not start a drag.
++        unsigned char handled = 1;
++        if (!manager->IsPointerOverScreen(1))
++            handled = SelectAtPointer();
++        if (!handled)
++        {
++            AssignPosition(drag_start_08, overlay_map->ScreenToWorld(point));
++            armed_21 = 1;
++            variable_world->ClearSelection();
++            word_24 = 0;
++        }
++    }
++    else if (buttons == 2)
++    {
++        if (!manager->IsPointerOverScreen(0))
++        {
++            if (manager->SelectionInputEnabled() && !dragging_20)
++                armed_21 = 0;
++            if (armed_21)
++            {
++                dragging_20 = 1;
++                manager->byte_123 = 0;
++            }
++        }
++        else
++        {
++            dragging_20 = 0;
++            manager->byte_123 = 1;
++        }
++    }
++    else if (dragging_20)
++    {
++        AssignPosition(drag_end_14, overlay_map->ScreenToWorld(point));
++        dragging_20 = 0;
++        armed_21 = 0;
++        if (rectangle_22)
++            FinishSelection();
++        manager->byte_123 = 1;
++    }
++    else if (second_buttons != 2)
++    {
++        if (!manager->IsPointerOverScreen(1) && !manager->HasActiveScreen())
++        {
++            unsigned int count;
++            variable_world->Selected(&count);
++            if (count)
++                startup_input_motion_state->SetCursor(1);
++            else
++                startup_input_motion_state->SetCursor(0);
++        }
++        else
++            startup_input_motion_state->SetCursor(0);
++    }
++    if (manager->ActiveScreenCount())
++    {
++        dragging_20 = 0;
++        manager->byte_123 = 1;
++    }
++    return 0;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004a8820.json b/targets/beachlife-uk-1.1.d/004a8820.json
+new file mode 100644
+index 0000000..eb4002f
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004a8820.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x004a8820",
++      "size": 475,
++      "name": "ScreenMode4Controller::HandleFourWords",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004a8820.cpp": [
++      "/Ob1"
++    ]
++  }
++}

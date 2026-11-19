@@ -1,0 +1,156 @@
+diff --git a/fixtures/game.d/fixture_004a9590.cpp b/fixtures/game.d/fixture_004a9590.cpp
+new file mode 100644
+index 0000000..a0b872b
+--- /dev/null
++++ b/fixtures/game.d/fixture_004a9590.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_modes.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004a9590(ScreenMode1Controller* item)
++{
++    item->ScreenMode1Controller::RenderScreens();
++}
+diff --git a/metadata.d/004a9590.csv b/metadata.d/004a9590.csv
+new file mode 100644
+index 0000000..76711b8
+--- /dev/null
++++ b/metadata.d/004a9590.csv
+@@ -0,0 +1,3 @@
++address,type,size,symbol
++0x004a9590,function,602,?RenderScreens@ScreenMode1Controller@@UAEXXZ
++0x004a9c10,function,460,?CanPlace@ScreenMode1Controller@@QAEEPBUScreenPoint@@@Z
+diff --git a/src/match_004a9590.cpp b/src/match_004a9590.cpp
+new file mode 100644
+index 0000000..9b0c6fd
+--- /dev/null
++++ b/src/match_004a9590.cpp
+@@ -0,0 +1,93 @@
++#include "startup_screen_position_inlines.h"
++#include "startup_screen_modes.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++static inline void AssignPosition(ScreenWorldPosition& target, const ScreenWorldPosition& source)
++{
++    target.x = source.x;
++    target.y = source.y;
++    target.z = source.z;
++}
++
++// Retail passes the address of TilePosition's returned temporary straight to DrawWorld.
++static inline const ScreenWorldPosition* PositionAddress(const ScreenWorldPosition& position)
++{
++    return &position;
++}
++
++// Retail copies WorldToTile's result through a by-value point (as SetTile in the mode 9/10 handlers).
++static inline void AssignPoint(ScreenPoint& target, ScreenPoint source)
++{
++    target = source;
++}
++
++// FUNCTION: BEACHLIFE 0x004a9590
++void ScreenMode1Controller::RenderScreens()
++{
++    ScreenRequestRenderer* renderer = screen_request_renderer;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    OverlayMapPrefix* map = overlay_map;
++    if (manager->IsPointerOverScreen(1))
++    {
++        startup_input_motion_state->SetCursor(0);
++        return;
++    }
++    ScreenPoint point;
++    point = startup_input_motion_state->Position();
++    point.x += map->scroll_x_c4;
++    point.y += map->scroll_y_c8;
++    ScreenWorldPosition position;
++    AssignPosition(position, map->ScreenToWorld(point));
++    ScreenPoint tile;
++    AssignPoint(tile, CurrentScreenTerrain()->WorldToTile(position));
++    AdjustTile(&tile);
++    ScreenPoint preview_tile = tile;
++    grid->TilePosition(tile, 4);
++    unsigned char valid = CanPlace(&tile);
++    unsigned short colour;
++    float money = window_deactivation_state->economy_1c->value_80;
++    money -= static_cast<unsigned int>(scenery_08->cost_2d0);
++    if (money < 0.0f)
++        valid = 0;
++    if (!valid)
++    {
++        startup_input_motion_state->SetCursor(5);
++        colour = invalid_colour_16;
++    }
++    else
++    {
++        startup_input_motion_state->SetCursor(0);
++        colour = valid_colour_14;
++    }
++    int width = scenery_08->footprint_x_2c8;
++    int height = scenery_08->footprint_y_2cc;
++    if (word_0c->word_18 & 1)
++    {
++        int temporary = width;
++        width = height;
++        height = temporary;
++    }
++    ScreenPoint current = tile;
++    for (int row = 0; row < width; ++row)
++    {
++        for (int column = 0; column < height; ++column)
++        {
++            manager->DrawPlacementTile(current, colour);
++            grid->Step(current, 0, &current);
++        }
++        grid->Step(tile, 6, &tile);
++        current = tile;
++    }
++    renderer->SetUnscaledClip(0);
++    float time = window_deactivation_state->time_158;
++    word_0c->DrawWorld(PositionAddress(grid->TilePosition(preview_tile, 4)), time);
++    renderer->SetUnscaledClip(1);
++}
+diff --git a/targets/beachlife-uk-1.1.d/004a9590.json b/targets/beachlife-uk-1.1.d/004a9590.json
+new file mode 100644
+index 0000000..ba05de8
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004a9590.json
+@@ -0,0 +1,29 @@
++{
++  "functions": [
++    {
++      "address": "0x004a9590",
++      "size": 602,
++      "name": "ScreenMode1Controller::RenderScreens",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004a9590.cpp": [
++      "/Ob1"
++    ]
++  },
++  "comparison_anchors": [
++    {
++      "address": "0x004a9c10",
++      "size": 460,
++      "name": "ScreenMode1Controller::CanPlace",
++      "symbol": "?CanPlace@ScreenMode1Controller@@QAEEPBUScreenPoint@@@Z",
++      "header": "startup_screen_modes.h",
++      "kind": "false-member",
++      "return_type": "unsigned char",
++      "parameters": [
++        "const ScreenPoint*"
++      ]
++    }
++  ]
++}

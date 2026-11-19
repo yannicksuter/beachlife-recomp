@@ -1,0 +1,169 @@
+diff --git a/src/tiff_directory_reader.cpp b/src/tiff_directory_reader.cpp
+index 14431b3d795613c1ab416304c36edc0e4e3f7b30..97bf164a9a401609e2a3162acdba62469dba1e22 100644
+--- a/src/tiff_directory_reader.cpp
++++ b/src/tiff_directory_reader.cpp
+@@ -19,8 +19,8 @@ struct TiffDirectoryEntry
+ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+ {
+     files::seek(context->file, offset, files::SeekOrigin::begin);
+-    int remaining = ReadResourceWord(context->file);
+-    while (remaining != 0)
++    int count = ReadResourceWord(context->file);
++    for (int i = 0; i < count; ++i)
+     {
+         TiffDirectoryEntry entry;
+         files::read(&entry, 12, 1, context->file);
+@@ -29,28 +29,14 @@ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+         case 256:
+             context->width = entry.value;
+             break;
+-        case 257:
+-            context->height = entry.value;
+-            break;
+         case 258:
+             context->bits_per_sample = static_cast<unsigned short>(entry.value);
+             break;
+         case 259:
+             context->compression = entry.value;
+             break;
+-        case 270:
+-            if (entry.count > 79)
+-            {
+-                strcpy(context->description, "Title too long");
+-            }
+-            else
+-            {
+-                files::Position position = static_cast<files::Position>(-1);
+-                files::position(context->file, &position);
+-                files::seek(context->file, entry.value, files::SeekOrigin::begin);
+-                files::read(context->description, 1, entry.count, context->file);
+-                files::seek(context->file, files::low_position(position), files::SeekOrigin::begin);
+-            }
++        case 257:
++            context->height = entry.value;
+             break;
+         case 273:
+             context->strip_count = entry.count;
+@@ -65,6 +51,18 @@ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+         case 279:
+             context->strip_byte_counts_position = entry.value;
+             break;
++        case 270:
++            if (entry.count > 79)
++                strcpy(context->description, "Title too long");
++            else
++            {
++                files::Position position = static_cast<files::Position>(-1);
++                files::position(context->file, &position);
++                files::seek(context->file, entry.value, files::SeekOrigin::begin);
++                files::read(context->description, 1, entry.count, context->file);
++                files::seek(context->file, files::low_position(position), files::SeekOrigin::begin);
++            }
++            break;
+         case 320:
+             context->palette_offset = entry.value;
+             break;
+@@ -83,26 +81,22 @@ int TiffReadDirectory(unsigned int offset, TiffReadContext* context)
+         case 4096:
+             context->word_ac = entry.value;
+             break;
+-        case 4097:
+-            context->word_b0 = entry.value;
++        case 4099:
++            context->word_b8 = entry.value;
+             break;
+         case 4098:
+             context->word_b4 = entry.value;
+             break;
+-        case 4099:
+-            context->word_b8 = entry.value;
++        case 4097:
++            context->word_b0 = entry.value;
+             break;
+         }
+-        --remaining;
+     }
+     files::read(&context->next_directory_offset, 4, 1, context->file);
+-
+-    if (context->strip_offsets_position != 0)
++    if (context->strip_offsets_position)
+     {
+-        unsigned int* counts = static_cast<unsigned int*>(::operator new(context->strip_count << 2));
+-        unsigned int offset_bytes = context->strip_count << 2;
+-        context->strip_byte_counts = counts;
+-        context->strip_offsets = static_cast<unsigned int*>(::operator new(offset_bytes));
++        context->strip_byte_counts = static_cast<unsigned int*>(::operator new(context->strip_count << 2));
++        context->strip_offsets = static_cast<unsigned int*>(::operator new(context->strip_count << 2));
+         if (context->strip_count > 1)
+         {
+             files::seek(context->file, context->strip_byte_counts_position, files::SeekOrigin::begin);
+diff --git a/src/tiff_image_loader.cpp b/src/tiff_image_loader.cpp
+index 4ee7c149e5e2b926a78f7930862e6aa8da07d694..e7442d0fec0a00efca76fd3dafec8e46f75806eb 100644
+--- a/src/tiff_image_loader.cpp
++++ b/src/tiff_image_loader.cpp
+@@ -22,44 +22,37 @@ TgaImage* LoadTiffFile(const char* filename)
+     memset(context, 0, sizeof(TiffReadContext));
+     if (!context)
+         return 0;
+-
+     context->file = files::open(filename, "rb");
+     if (!context->file)
+     {
+         free(context);
+         return 0;
+     }
+-
+     TiffFileHeader header;
+     files::read(&header, 8, 1, context->file);
+     if (header.byte_order != 0x4949)
+         return 0;
+     if (header.magic != 42)
+         return 0;
+-
+     TiffReadDirectory(header.directory_offset, context);
+-    TgaImage* image = new TgaImage(static_cast<int>(context->width),
+-        static_cast<int>(context->height),
+-        context->samples_per_pixel << 3,
+-        static_cast<unsigned char>(context->palette_offset != 0));
+-
+-    if (context->tile_offsets_position)
+-    {
+-        TiffDecodeTiles(image, context);
+-    }
+-    else if (context->compression == 1)
++    TgaImage* image = new TgaImage(static_cast<int>(context->width), static_cast<int>(context->height), context->samples_per_pixel << 3, context->palette_offset != 0);
++    if (!context->tile_offsets_position)
+     {
+-        TiffDecodeStrips(image, context);
++        switch (context->compression)
++        {
++        case 1:
++            TiffDecodeStrips(image, context);
++            break;
++        case 0x8005:
++            TiffDecodePackBits(image, context);
++            break;
++        }
+     }
+-    else if (context->compression == 0x8005)
+-    {
+-        TiffDecodePackBits(image, context);
+-    }
+-
++    else
++        TiffDecodeTiles(image, context);
+     if (context->palette_offset)
+         TiffReadPalette(context, image->palette);
+     files::close(context->file);
+-
+     if (context->samples_per_pixel == 4)
+     {
+         TgaImage* converted = TiffConvertFourSamples(image);
+@@ -72,7 +65,6 @@ TgaImage* LoadTiffFile(const char* filename)
+         delete image;
+         image = converted;
+     }
+-
+     ::operator delete(context->strip_byte_counts);
+     ::operator delete(context->strip_offsets);
+     ::operator delete(context->tile_offsets);

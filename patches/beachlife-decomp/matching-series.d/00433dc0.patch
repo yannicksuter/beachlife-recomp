@@ -1,0 +1,226 @@
+diff --git a/fixtures/game.d/fixture_00433dc0.cpp b/fixtures/game.d/fixture_00433dc0.cpp
+new file mode 100644
+index 0000000..3b9b621
+--- /dev/null
++++ b/fixtures/game.d/fixture_00433dc0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_variable_state.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00433dc0(BuildingGuestQueue* queue, unsigned int index, ScreenMapPosition* result)
++{
++    *result = queue->BuildingGuestQueue::Position(index);
++}
+diff --git a/metadata.d/00433dc0.csv b/metadata.d/00433dc0.csv
+new file mode 100644
+index 0000000..9c8d5c7
+--- /dev/null
++++ b/metadata.d/00433dc0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00433dc0,function,4151,?Position@BuildingGuestQueue@@QAE?AUScreenMapPosition@@I@Z
+diff --git a/src/match_00433dc0.cpp b/src/match_00433dc0.cpp
+new file mode 100644
+index 0000000..4f2633a
+--- /dev/null
++++ b/src/match_00433dc0.cpp
+@@ -0,0 +1,178 @@
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++#include "startup_building_queue_offsets.h"
++#include "startup_screen_position_inlines.h"
++#include "startup_screen_map_position_add.h"
++
++// Retail assigns queue points through an inline reference copy.
++static inline void Assign(ScreenMapPosition& target, const ScreenMapPosition& source)
++{
++    target.x = source.x;
++    target.y = source.y;
++}
++
++// Retail repeats every terrain lookup in place (78 CurrentScreenTerrain/CellAt
++// pairs, no helper calls), so these tests are textual macros.
++#define QUEUE_FLAGS(point) (CurrentScreenTerrain()->CellAt(point)->flags_48)
++#define QUEUE_OPEN(point, mask) \
++    (((QUEUE_FLAGS(point) & (mask)) && !(QUEUE_FLAGS(point) & 0x800) && !(QUEUE_FLAGS(point) & 0x8000)) || ((QUEUE_FLAGS(point) & 2) && !(QUEUE_FLAGS(point) & 0x10) && !(QUEUE_FLAGS(point) & 0x8000)))
++#define QUEUE_FALLBACK(point) \
++    (((QUEUE_FLAGS(point) & 0x10000080) && (!(QUEUE_FLAGS(point) & 0x800) || (QUEUE_FLAGS(point) & 0x8000))) || ((QUEUE_FLAGS(point) & 2) && (!(QUEUE_FLAGS(point) & 0x10) || (QUEUE_FLAGS(point) & 0x8000))))
++
++// FUNCTION: BEACHLIFE 0x00433dc0
++ScreenMapPosition BuildingGuestQueue::Position(unsigned int index)
++{
++    unsigned int start = index;
++    if (word_04 > 10)
++        return current_58;
++    ScreenMapPosition direction;
++    if (index <= 1)
++        Assign(direction, offset_68);
++    else
++        Assign(direction, ScreenMapPosition(positions_70[index - 1].x - positions_70[index - 2].x, positions_70[index - 1].y - positions_70[index - 2].y));
++    // Each path stores its queue point and advances the index itself.
++    for (; index < word_04 + 1;)
++    {
++        ScreenMapPosition candidate;
++        if (index == 0)
++            Assign(candidate, direction + entrance_60);
++        else
++            Assign(candidate, direction + positions_70[index - 1]);
++        if (QUEUE_OPEN(candidate, 0x10000000))
++        {
++            Assign(positions_70[index], candidate);
++            ++index;
++        }
++        else if ((direction.x == building_queue_offsets[2].x && direction.y == building_queue_offsets[2].y) || (direction.x == building_queue_offsets[5].x && direction.y == building_queue_offsets[5].y))
++        {
++            ScreenMapPosition first;
++            ScreenMapPosition second;
++            if (index == 0)
++            {
++                Assign(first, building_queue_offsets[0] + entrance_60);
++                Assign(second, building_queue_offsets[6] + entrance_60);
++            }
++            else
++            {
++                Assign(first, building_queue_offsets[0] + positions_70[index - 1]);
++                Assign(second, building_queue_offsets[6] + positions_70[index - 1]);
++            }
++            if (QUEUE_OPEN(second, 0x10000080) && QUEUE_OPEN(first, 0x10000080))
++            {
++                int first_count = 0;
++                int second_count = 0;
++                ScreenMapPosition point;
++                Assign(point, first);
++                while (QUEUE_OPEN(point, 0x10000080))
++                {
++                    ++first_count;
++                    point.x += building_queue_offsets[0].x;
++                    point.y += building_queue_offsets[0].y;
++                }
++                Assign(point, second);
++                while (QUEUE_OPEN(point, 0x10000080))
++                {
++                    ++second_count;
++                    point.x += building_queue_offsets[6].x;
++                    point.y += building_queue_offsets[6].y;
++                }
++                if (first_count >= second_count)
++                {
++                    Assign(direction, building_queue_offsets[0]);
++                    Assign(positions_70[index], first);
++                    ++index;
++                }
++                else
++                {
++                    Assign(direction, building_queue_offsets[6]);
++                    Assign(positions_70[index], second);
++                    ++index;
++                }
++            }
++            else if (QUEUE_FALLBACK(first))
++            {
++                Assign(direction, building_queue_offsets[0]);
++                Assign(positions_70[index], first);
++                ++index;
++            }
++            else if (QUEUE_FALLBACK(second))
++            {
++                Assign(direction, building_queue_offsets[6]);
++                Assign(positions_70[index], second);
++                ++index;
++            }
++            else
++            {
++                Assign(positions_70[index], candidate);
++                ++index;
++            }
++        }
++        else
++        {
++            ScreenMapPosition first;
++            ScreenMapPosition second;
++            if (index == 0)
++            {
++                Assign(first, building_queue_offsets[2] + entrance_60);
++                Assign(second, building_queue_offsets[5] + entrance_60);
++            }
++            else
++            {
++                Assign(first, building_queue_offsets[2] + positions_70[index - 1]);
++                Assign(second, building_queue_offsets[5] + positions_70[index - 1]);
++            }
++            // As retail: the scan test reads the second point's 0x8000 bit, and the
++            // first point's 2-bit alternative applies even when the second point is closed.
++            if ((QUEUE_OPEN(second, 0x10000080) && (QUEUE_FLAGS(first) & 0x10000080) && !(QUEUE_FLAGS(first) & 0x800) && !(QUEUE_FLAGS(second) & 0x8000)) || ((QUEUE_FLAGS(first) & 2) && (!(QUEUE_FLAGS(first) & 0x10) || (QUEUE_FLAGS(first) & 0x8000))))
++            {
++                int first_count = 0;
++                int second_count = 0;
++                ScreenMapPosition point;
++                Assign(point, first);
++                while (QUEUE_OPEN(point, 0x10000080))
++                {
++                    ++first_count;
++                    point.x += building_queue_offsets[2].x;
++                    point.y += building_queue_offsets[2].y;
++                }
++                Assign(point, second);
++                while (QUEUE_OPEN(point, 0x10000080))
++                {
++                    ++second_count;
++                    point.x += building_queue_offsets[5].x;
++                    point.y += building_queue_offsets[5].y;
++                }
++                if (first_count >= second_count)
++                {
++                    Assign(direction, building_queue_offsets[2]);
++                    Assign(positions_70[index], first);
++                    ++index;
++                }
++                else
++                {
++                    Assign(direction, building_queue_offsets[5]);
++                    Assign(positions_70[index], second);
++                    ++index;
++                }
++            }
++            else if (QUEUE_OPEN(second, 0x10000080))
++            {
++                Assign(direction, building_queue_offsets[5]);
++                Assign(positions_70[index], second);
++                ++index;
++            }
++            else if (QUEUE_OPEN(first, 0x10000080))
++            {
++                Assign(direction, building_queue_offsets[2]);
++                Assign(positions_70[index], first);
++                ++index;
++            }
++            else
++            {
++                Assign(positions_70[index], candidate);
++                ++index;
++            }
++        }
++    }
++    return positions_70[start];
++}
+diff --git a/targets/beachlife-uk-1.1.d/00433dc0.json b/targets/beachlife-uk-1.1.d/00433dc0.json
+new file mode 100644
+index 0000000..ce5658b
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00433dc0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00433dc0",
++      "size": 4151,
++      "name": "BuildingGuestQueue::Position",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00433dc0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

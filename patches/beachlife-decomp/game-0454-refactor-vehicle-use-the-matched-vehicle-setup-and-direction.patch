@@ -1,0 +1,241 @@
+diff --git a/src/startup_world_motion_helpers.h b/src/startup_world_motion_helpers.h
+index 8e188c688c0d5946bb9342b896bd393de929cab2..ddd087448f6801de61600d687a2878c08589d6e1 100644
+--- a/src/startup_world_motion_helpers.h
++++ b/src/startup_world_motion_helpers.h
+@@ -10,7 +10,7 @@ using WorldRoutePosition = WorldRouteReference;
+ 
+ float WorldSquareRoot(float value); // 0x00430850.
+ 
+-int WorldDirection(ScreenMapPosition direction, unsigned int directions); // 0x00430890.
++int MotionDirection(ScreenMapPosition direction, unsigned int count); // 0x00430890.
+ 
+ inline float MotionFloat(unsigned int word)
+ {
+diff --git a/src/startup_world_motion_progress.cpp b/src/startup_world_motion_progress.cpp
+index bf46d027527ab1f40ce7742c24151f19f767a4e6..fb0c08ca6e2b3b0d264dc7e533c7e755c5915a59 100644
+--- a/src/startup_world_motion_progress.cpp
++++ b/src/startup_world_motion_progress.cpp
+@@ -133,7 +133,7 @@ void WorldMovingEntity::AdvanceMotion()
+             float rounded_y = static_cast<float>(y);
+             float length = WorldSquareRoot(static_cast<float>(y * y + static_cast<long double>(x) * x));
+             float reciprocal = MotionReciprocal(length);
+-            int direction = WorldDirection({ x * reciprocal, rounded_y * reciprocal }, 8);
++            int direction = MotionDirection({ x * reciprocal, rounded_y * reciprocal }, 8);
+             if (MotionWord(values_d8[1]) != static_cast<unsigned int>(direction))
+             {
+                 flag_5c = 0;
+diff --git a/src/startup_world_moving_commands.cpp b/src/startup_world_moving_commands.cpp
+index d4e8b73a8cbc544fe5580b9a0effed4df4a26fba..fd8fa75f232a4f9ba692d03720fb69aa028be34a 100644
+--- a/src/startup_world_moving_commands.cpp
++++ b/src/startup_world_moving_commands.cpp
+@@ -263,7 +263,7 @@ bool WorldMovingEntity::Unknown14(ScreenModeCommand* command)
+         float rounded_y = static_cast<float>(y);
+         float length = MotionSquareRoot(static_cast<float>(y * rounded_y + static_cast<long double>(x) * x));
+         float reciprocal = MotionReciprocal(length);
+-        values_d8[1] = MotionFloat(WorldDirection({ x * reciprocal, rounded_y * reciprocal }, 8));
++        values_d8[1] = MotionFloat(MotionDirection({ x * reciprocal, rounded_y * reciprocal }, 8));
+         flag_d4 = 1;
+         flags_d0[3] = 0;
+         word_a0 = 1;
+diff --git a/src/startup_world_route_reference.cpp b/src/startup_world_route_reference.cpp
+index 711b5a7957571ef85c55ab8717759d9d3cdc7589..704475747b7fc4fbab5354905d38b4cf2387afcc 100644
+--- a/src/startup_world_route_reference.cpp
++++ b/src/startup_world_route_reference.cpp
+@@ -38,7 +38,7 @@ bool WorldRouteReference::IsStraight()
+     reciprocal = static_cast<float>((2.0L - static_cast<long double>(length) * reciprocal) * reciprocal);
+     direction.x = static_cast<float>(static_cast<long double>(reciprocal) * direction.x);
+     direction.y = static_cast<float>(static_cast<long double>(direction.y) * reciprocal);
+-    int heading = WorldDirection(direction, 8);
++    int heading = MotionDirection(direction, 8);
+     previous = current;
+     for (int i = 2; i < count; ++i)
+     {
+@@ -53,7 +53,7 @@ bool WorldRouteReference::IsStraight()
+         reciprocal = static_cast<float>((2.0L - static_cast<long double>(length) * reciprocal) * reciprocal);
+         direction.x = static_cast<float>(static_cast<long double>(reciprocal) * direction.x);
+         direction.y = static_cast<float>(static_cast<long double>(direction.y) * reciprocal);
+-        if (WorldDirection(direction, 8) != heading)
++        if (MotionDirection(direction, 8) != heading)
+             return false;
+         previous = current;
+     }
+diff --git a/src/startup_world_vehicle_constructor.cpp b/src/startup_world_vehicle_constructor.cpp
+index 133b8d41c060dc16dcfeb6f5f6c026e41d6e5cfe..599db0ee19c68214ad3bacc4fa47c8526150e17c 100644
+--- a/src/startup_world_vehicle_constructor.cpp
++++ b/src/startup_world_vehicle_constructor.cpp
+@@ -40,8 +40,9 @@ WorldVehicleEntity::WorldVehicleEntity(const char* name)
+         vehicle_type_f8 = 6;
+         flags_d0[3] = 0;
+     }
+-    route_count_8d4 = word_8d8 = 0;
+-    if (strcmp(definition_f4->staff_1e4, "NONE") != 0)
++    route_count_8d4 = 0;
++    word_8d8 = 0;
++    if (strcmp(definition_f4->staff_1e4, screen_dialog_none_name) != 0)
+     {
+         ScreenModeCommand command;
+         command.words[0] = id_28;
+@@ -52,17 +53,22 @@ WorldVehicleEntity::WorldVehicleEntity(const char* name)
+         ScreenStaffPlacement placement;
+         strcpy(placement.name, definition_f4->staff_1e4);
+         placement.building_id = id_28;
+-        placement.position = { 0.0f, 0.0f, 0.0f };
++        placement.position.x = 0.0f;
++        placement.position.y = 0.0f;
++        placement.position.z = 0.0f;
+         screen_mode_commands->QueuePlacement(&command, &placement);
+     }
+-    speed_80 = definition_f4->speed_1d4;
+-    acceleration_7c = definition_f4->acceleration_1d0;
+-    value_60 = definition_f4->value_1d8;
++    VariableVehicleDefinition* definition = definition_f4;
++    float speed = definition->speed_1d4;
++    speed_80 = speed;
++    float acceleration = definition->acceleration_1d0;
++    acceleration_7c = acceleration;
++    float value = definition->value_1d8;
++    value_60 = value;
+     if (vehicle_type_f8 == 0)
+     {
+         resource_fc = screen_dialog_resources->Find("jetski_sprite");
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        resource_fc->SetAnimation("d_wake_normal", 0.0f, &position);
++        resource_fc->SetAnimation("d_wake_normal", 0.0f, &position_30);
+         value_f0 = 10.0f;
+     }
+     else
+@@ -70,36 +76,47 @@ WorldVehicleEntity::WorldVehicleEntity(const char* name)
+     if (vehicle_type_f8 == 6)
+     {
+         resource_100 = screen_dialog_resources->Find("fishboat");
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        resource_100->SetAnimation(world_fishing_rod1_animation, 0.0f, &position);
++        resource_100->SetAnimation(world_fishing_rod1_animation, 0.0f, &position_30);
+         resource_104 = screen_dialog_resources->Find("fishboat");
+-        position = { position_30.x, position_30.y, position_30.z };
+-        resource_104->SetAnimation(world_fishing_rod2_animation, 0.0f, &position);
++        resource_104->SetAnimation(world_fishing_rod2_animation, 0.0f, &position_30);
+         resource_108 = screen_dialog_resources->Find("fishman");
+-        position = { position_30.x, position_30.y, position_30.z };
+-        resource_108->SetAnimation(world_fishing_driver_animation, 0.0f, &position);
++        resource_108->SetAnimation(world_fishing_driver_animation, 0.0f, &position_30);
+         int frame = 42;
+         if (resource_108->record->palette_count <= frame)
+             frame = resource_108->record->palette_count - 1;
+         resource_108->word_1c = frame;
+     }
+     else
+-        resource_100 = resource_104 = resource_108 = 0;
+-    word_5c4 = passenger_count_5bc = 0;
++    {
++        resource_100 = 0;
++        resource_104 = 0;
++        resource_108 = 0;
++    }
++    word_5c4 = 0;
++    passenger_count_5bc = 0;
+     byte_5cc = 0xff;
+     roam_point_8e8 = ScreenWorldPosition(0.0f, 0.0f, 0.0f);
+-    flag_900 = flag_901 = 0;
+-    for (int i = 0; i < 7; ++i)
+-        words_904[i] = 0;
+-    circuit_920 = nullptr;
+-    flag_924 = flag_8e4 = flag_8e5 = flag_960 = 0;
++    flag_900 = 0;
++    words_904[0] = 0;
++    flag_901 = 0;
++    words_904[1] = 0;
++    words_904[2] = 0;
++    words_904[3] = 0;
++    words_904[4] = 0;
++    words_904[5] = 0;
++    words_904[6] = 0;
++    circuit_920 = 0;
++    flag_924 = 0;
++    flag_8e4 = 0;
++    flag_8e5 = 0;
++    flag_960 = 0;
+     current_grid_964.x = -1;
+     current_grid_964.y = -1;
+     if (vehicle_type_f8 == 5)
+     {
+         resource_928 = screen_dialog_resources->Find("Coach");
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        resource_928->SetAnimation("coach_doors_closed", window_deactivation_state->time_158, &position);
++        float time = window_deactivation_state->time_158;
++        resource_928->SetAnimation("coach_doors_closed", time, &position_30);
+     }
+     else
+         resource_928 = 0;
+diff --git a/src/startup_world_vehicle_helpers.h b/src/startup_world_vehicle_helpers.h
+index 864510d7b49c9ab441d882e2185dd0f76ea85f25..28f34f860e11e456c57e9f0481e3a695748aadd2 100644
+--- a/src/startup_world_vehicle_helpers.h
++++ b/src/startup_world_vehicle_helpers.h
+@@ -7,12 +7,11 @@
+ #include "window_activation.h"
+ #include <bit>
+ 
+-float WorldSquareRoot(float value);                                       // 0x00430850.
+-int WorldDirection(ScreenMapPosition direction, unsigned int directions); // 0x00430890.
+-void ClearVehicleApproach(ScreenPoint point, int direction);              // 0x00497640.
+-void RestoreVehicleApproach(ScreenPoint point, int direction);            // 0x00497740.
+-void ClearVehicleReturn(ScreenPoint point, int direction);                // 0x00497840.
+-void RestoreVehicleReturn(ScreenPoint point, int direction);              // 0x00497940.
++float WorldSquareRoot(float value);                            // 0x00430850.
++void ClearVehicleApproach(ScreenPoint point, int direction);   // 0x00497640.
++void RestoreVehicleApproach(ScreenPoint point, int direction); // 0x00497740.
++void ClearVehicleReturn(ScreenPoint point, int direction);     // 0x00497840.
++void RestoreVehicleReturn(ScreenPoint point, int direction);   // 0x00497940.
+ 
+ inline float VehicleSquareRoot(float squared)
+ {
+diff --git a/src/startup_world_vehicle_math.cpp b/src/startup_world_vehicle_math.cpp
+index d1bb9cd2b7ce76de747de79079150b957e5e9d69..280cfe85ff8fca84deaf386d256652a95a9a84aa 100644
+--- a/src/startup_world_vehicle_math.cpp
++++ b/src/startup_world_vehicle_math.cpp
+@@ -1,7 +1,5 @@
+ #include "startup_world_vehicle_helpers.h"
+ 
+-int MotionDirection(ScreenMapPosition direction, unsigned int count); // Shared 0x00430890.
+-
+ // FUNCTION: BEACHLIFE 0x00430850
+ float WorldSquareRoot(float value)
+ {
+@@ -12,11 +10,6 @@ float WorldSquareRoot(float value)
+     return std::bit_cast<float>(square_root_mantissas[(bits >> 8) & 0xffff] | exponent);
+ }
+ 
+-int WorldDirection(ScreenMapPosition direction, unsigned int count)
+-{
+-    return MotionDirection(direction, count);
+-}
+-
+ // FUNCTION: BEACHLIFE 0x00497940
+ void RestoreVehicleReturn(ScreenPoint point, int direction)
+ {
+diff --git a/src/startup_world_vehicle_turn.cpp b/src/startup_world_vehicle_turn.cpp
+index 143f9a57aa3853060eef70632641d03f0ee7fb10..fe6b54ea2f01e2be7f993861b4f052a517ad31c4 100644
+--- a/src/startup_world_vehicle_turn.cpp
++++ b/src/startup_world_vehicle_turn.cpp
+@@ -12,7 +12,7 @@ void WorldVehicleEntity::FacePoint(ScreenMapPosition point)
+     float reciprocal = MotionReciprocal(length);
+     direction.x = static_cast<long double>(reciprocal) * direction.x;
+     direction.y = static_cast<long double>(direction.y) * reciprocal;
+-    FaceVehicle(WorldDirection(direction, 8));
++    FaceVehicle(MotionDirection(direction, 8));
+ }
+ 
+ // Folded with the other byte setters at +0x5c (m_bMoving), 0x00483590.
+diff --git a/src/startup_world_vehicle_update.cpp b/src/startup_world_vehicle_update.cpp
+index 61002c54d6c9f001f7c2a1a3dd20b739905777f4..bb485d1d7bd944aca5289dcd2045a2f7cb9ba202 100644
+--- a/src/startup_world_vehicle_update.cpp
++++ b/src/startup_world_vehicle_update.cpp
+@@ -88,7 +88,7 @@ bool WorldVehicleEntity::Unknown0c()
+                 reciprocal = static_cast<float>((2.0L - static_cast<long double>(magnitude) * reciprocal) * reciprocal);
+                 direction.x *= reciprocal;
+                 direction.y *= reciprocal;
+-                int facing = WorldDirection(direction, 16);
++                int facing = MotionDirection(direction, 16);
+                 ScreenWorldPosition point = { position_30.x, position_30.y, position_30.z };
+                 if (facing % 2)
+                 {

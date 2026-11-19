@@ -1,0 +1,816 @@
+diff --git a/fixtures/game.d/fixture_00458b60.cpp b/fixtures/game.d/fixture_00458b60.cpp
+new file mode 100644
+index 0000000..2ed5ebf
+--- /dev/null
++++ b/fixtures/game.d/fixture_00458b60.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; never execute this comparison image.
++extern "C" __declspec(dllexport) bool Fixture_00458b60(WorldBuildingEntity* self, ScreenModeCommand* command)
++{
++    return self->WorldBuildingEntity::Unknown14(command);
++}
+diff --git a/metadata.d/00458b60.csv b/metadata.d/00458b60.csv
+new file mode 100644
+index 0000000..ae2d9cd
+--- /dev/null
++++ b/metadata.d/00458b60.csv
+@@ -0,0 +1,17 @@
++address,type,size,symbol
++0x00458b60,function,10977,?Unknown14@WorldBuildingEntity@@UAE_NPAUScreenModeCommand@@@Z
++0x00460900,function,698,?ActivateBuilding@WorldBuildingEntity@@QAEXXZ
++0x004333f0,function,673,?AddGuest@BuildingGuestQueue@@QAE_NIIE@Z
++0x004336a0,function,477,?PopGuest@BuildingGuestQueue@@QAE_NPAI0@Z
++0x00491740,function,581,?ReceiveGuest@WorldObjectEntity@@QAE_NI@Z
++0x005bac44,global,4,?building_drink_count@@3IA
++0x004f345c,float,4,
++0x00572d9c,string,7,
++0x00572db8,string,6,
++0x005770d0,string,35,
++0x005770f4,string,114,
++0x00577168,string,9,
++0x00577174,string,9,
++0x00577180,string,9,
++0x0057718c,string,9,
++0x004fd250,string,27,
+diff --git a/src/match_00458b60.cpp b/src/match_00458b60.cpp
+new file mode 100644
+index 0000000..9538977
+--- /dev/null
++++ b/src/match_00458b60.cpp
+@@ -0,0 +1,705 @@
++#include "startup_world_entities.h"
++#include "startup_building_status.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_command_inlines.h"
++#include "startup_screen_position_inlines.h"
++#include "startup_screen_text.h"
++#include "startup_game_file.h"
++#include "startup_world_subsystems.h"
++#include "window_activation.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <wchar.h>
++
++// GLOBAL: BEACHLIFE 0x005bac44
++// Alcohol servings since the last random drink thought.
++unsigned int building_drink_count;
++
++static inline float BuildingRenderValue()
++{
++    return window_deactivation_state->render_value_160;
++}
++static inline float BuildingContamination()
++{
++    return window_deactivation_state->value_6f4;
++}
++static inline const char* BuildingFeatureKey(WorldBuildingEntity* self, unsigned int feature)
++{
++    return variable_catalog->FeatureKey(self->building_60->features_1fc[feature]);
++}
++static inline float BuildingFeatureValue(WorldBuildingEntity* self, unsigned int feature)
++{
++    const char* name = BuildingFeatureKey(self, feature);
++    if (strcmp("LIVEVENT", name) == 0)
++        return self->events_170->CurrentValue();
++    return self->feature_floats_1d0[feature];
++}
++static inline float BuildingFeatureCost(WorldBuildingEntity* self, unsigned int feature)
++{
++    const char* name = BuildingFeatureKey(self, feature);
++    if (strcmp("LIVEVENT", name) == 0)
++        return self->events_170->CurrentCost();
++    return self->feature_prices_1f8[feature];
++}
++static inline void SendBuildingCommand(WorldBuildingEntity* self, unsigned int from, unsigned int to, int code, int kind, unsigned int data)
++{
++    ScreenModeCommand command(from, to, code, kind, data);
++    self->Unknown20(command);
++}
++static inline void SetBuildingFrame(ScreenDialogResource* resource, int frame)
++{
++    if (resource->word_10 != frame)
++    {
++        resource->word_10 = frame;
++        resource->word_14 = 0;
++    }
++}
++static inline void AverageHistory(float* a, unsigned int n, float* out)
++{
++    float sum = 0.0f;
++    for (unsigned int i = 0; i < n && i < 64; i++)
++        sum += a[i];
++    float fn = n;
++    *out = sum / fn;
++}
++
++// FUNCTION: BEACHLIFE 0x00458b60
++bool WorldBuildingEntity::Unknown14(ScreenModeCommand* incoming)
++{
++    bool result;
++    unsigned int count = 0;
++    unsigned int guest, feature;
++    char error[256];
++    switch (incoming->words[2].data)
++    {
++    case 0x54:
++        if (word_354 > 25)
++        {
++            VariableWorldPrefix* world = variable_world;
++            VariableEntity** nearby = world->Nearby(TilePosition(), 2, &count);
++            if (count != 0)
++            {
++                for (unsigned int i = 0; i < count; i++)
++                {
++                    if (nearby[i]->kind_2c == 3)
++                        SendBuildingCommand(this, id_28, nearby[i]->id_28, 0x49, 0, 0);
++                }
++            }
++            ScreenModeCommand command(id_28, id_28, 0x54, 0, 0);
++            Unknown24(command, 2.0f);
++        }
++        result = true;
++        break;
++    case 0x3b:
++        events_170->FinishStaff();
++        break;
++    case 0x53:
++        if (strcmp(building_60->name_04, "WHARF") == 0 || strcmp(building_60->name_04, "BUSSTOP") == 0 || strcmp(building_60->name_04, "COMPLAINTHUT") == 0)
++        {
++            building_queue_16c->SendGuests(incoming->words[0].data);
++        }
++        else if (building_queue_16c->Count() != 0)
++        {
++            unsigned int n = variable_world->FindObject(incoming->words[0].data)->kind_2c == 4
++                               ? *reinterpret_cast<unsigned int*>(variable_world->FindObject(incoming->words[0].data)->AsVehicle()->definition_f4->unknown_1c4 + 8)
++                               : 1;
++            for (unsigned int i = 0; i < n; i++)
++            {
++                if (building_queue_16c->PopGuest(&guest, &feature))
++                {
++                    ScreenModeCommand command(id_28, guest, 0x1e, 0, incoming->words[0].data, BuildingFeatureValue(this, feature));
++                    if (variable_world->FindObject(incoming->words[0].data)->kind_2c == 4)
++                        Unknown20(command);
++                    else
++                        Unknown24(command, 3.0f);
++                }
++            }
++        }
++        else if (word_11c != 0)
++        {
++            for (unsigned int i = 0; i < word_11c; i++)
++                if (incoming->words[0].data == vehicle_ids_120[i])
++                    flags_138[i] = 0;
++        }
++        else if (staff_count_8c + pending_staff_90 != 0)
++        {
++            for (unsigned int i = 0; i < staff_count_8c + pending_staff_90; i++)
++                if (incoming->words[0].data == staff_ids_64[i])
++                    staff_flags_c0[i] = 0;
++        }
++        result = true;
++        break;
++    case 0x34:
++    {
++        for (unsigned int i = 0; i < word_11c; i++)
++        {
++            if (incoming->words[4].data == vehicle_ids_120[i])
++            {
++                if (contents_count_36c != 0)
++                    static_cast<WorldObjectEntity*>(variable_world->FindObject(contents_370[i]))->ReceiveGuest(incoming->words[0].data);
++                else
++                    SendBuildingCommand(this, id_28, incoming->words[0].data, 3, 0, 0x1c);
++                i = word_11c;
++            }
++        }
++        break;
++    }
++    case 0x45:
++        if (strcmp(building_60->name_04, "WHARF") == 0 || strcmp(building_60->name_04, "BUSSTOP") == 0 || strcmp(name_06, "COMPLAINTHUT") == 0)
++            building_queue_16c->AddGuest(incoming->words[0].data, 0, 0);
++        else
++            building_queue_16c->AddGuest(incoming->words[0].data, 0, 1);
++        result = true;
++        break;
++    case 0x47:
++        if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[3].data]), "SNORKEL") == 0)
++            word_114++;
++        else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[3].data]), "LILOS") == 0)
++            word_10c++;
++        else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[3].data]), "SURFBOARD") == 0)
++            word_110++;
++        if (incoming->words[4].data != 0)
++        {
++            if (building_queue_16c->Count() != 0)
++            {
++                if (building_queue_16c->PopGuest(&guest, &feature))
++                {
++                    if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[feature]), "SNORKEL") == 0)
++                    {
++                        if (word_114 != 0)
++                        {
++                            word_114--;
++                            BuildingFeatureValue(this, feature);
++                        }
++                    }
++                    else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[feature]), "LILOS") == 0)
++                    {
++                        if (word_10c != 0)
++                        {
++                            word_10c--;
++                            BuildingFeatureValue(this, feature);
++                        }
++                    }
++                    else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[feature]), "SURFBOARD") == 0)
++                    {
++                        if (word_110 != 0)
++                        {
++                            word_110--;
++                            BuildingFeatureValue(this, feature);
++                        }
++                    }
++                    else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[feature]), "SUNLNGER") == 0)
++                    {
++                        bool found = false;
++                        for (int i = 0; i < child_count_398; i++)
++                            if (variable_world->FindObject(child_ids_39c[i])->state_3c == 0)
++                                found = true;
++                        if (found)
++                            BuildingFeatureValue(this, feature);
++                    }
++                    else
++                    {
++                        ScreenModeCommand command(id_28, guest, 0x1e, 0, incoming->words[4].data, BuildingFeatureValue(this, feature));
++                        Unknown20(command);
++                    }
++                }
++            }
++            else
++            {
++                word_118--;
++                if (word_11c != 0)
++                {
++                    for (unsigned int i = 0; i < word_11c; i++)
++                        if (incoming->words[4].data == vehicle_ids_120[i])
++                            flags_138[i] = 0;
++                }
++                else if (staff_count_8c + pending_staff_90 != 0)
++                {
++                    for (unsigned int i = 0; i < staff_count_8c + pending_staff_90; i++)
++                        if (incoming->words[4].data == staff_ids_64[i])
++                            staff_flags_c0[i] = 0;
++                }
++            }
++        }
++        break;
++    case 0x46:
++        if (word_11c != 0)
++        {
++            bool assigned = false;
++            for (unsigned int i = 0; i < word_11c; i++)
++            {
++                if (!flags_138[i])
++                {
++                    SendBuildingCommand(this, id_28, incoming->words[0].data, 0x1e, 0, vehicle_ids_120[i]);
++                    flags_138[i] = assigned = true;
++                    i = word_11c;
++                }
++            }
++            if (!assigned)
++                building_queue_16c->AddGuest(incoming->words[0].data, incoming->words[4].data, 1);
++        }
++        else if (staff_count_8c + pending_staff_90 != 0)
++        {
++            bool assigned = false;
++            for (unsigned int i = 0; i < staff_count_8c + pending_staff_90; i++)
++            {
++                if (!staff_flags_c0[i])
++                {
++                    SendBuildingCommand(this, id_28, incoming->words[0].data, 0x1e, 0, staff_ids_64[i]);
++                    staff_flags_c0[i] = assigned = true;
++                    i = staff_count_8c + pending_staff_90;
++                }
++            }
++            if (!assigned)
++                building_queue_16c->AddGuest(incoming->words[0].data, incoming->words[4].data, 1);
++        }
++        else if ((word_118 >= building_60->capacity_1dc && word_10c == 0 && word_114 == 0 && word_110 == 0) || (child_count_398 != 0 && word_118 >= (unsigned int)child_count_398))
++        {
++            building_queue_16c->AddGuest(incoming->words[0].data, incoming->words[4].data, 1);
++        }
++        else
++        {
++            word_118++;
++            SendBuildingCommand(this, id_28, incoming->words[0].data, 0x1e, 0, id_28);
++        }
++        break;
++    case 0x1e:
++    {
++        float value;
++        building_values_214[0] += BuildingFeatureValue(this, incoming->words[3].data);
++        building_values_214[1] += BuildingFeatureCost(this, incoming->words[3].data);
++        switch (building_60->list_kind_1c8)
++        {
++        case 0:
++            if (strcmp(name_06, "HOTEL") == 0 || strcmp(name_06, "ACCOMBLK") == 0)
++            {
++                value = BuildingFeatureValue(this, incoming->words[3].data);
++                WindowDeactivationState* app = window_deactivation_state;
++                app->income_770 += value;
++                app->income_77c += value;
++            }
++            else
++            {
++                value = BuildingFeatureValue(this, incoming->words[3].data);
++                WindowDeactivationState* app = window_deactivation_state;
++                app->income_770 += value;
++                app->income_784 += value;
++            }
++            break;
++        case 1:
++        {
++            value = BuildingFeatureValue(this, incoming->words[3].data);
++            WindowDeactivationState* app = window_deactivation_state;
++            app->income_770 += value;
++            app->income_784 += value;
++            break;
++        }
++        case 2:
++        {
++            value = BuildingFeatureValue(this, incoming->words[3].data);
++            WindowDeactivationState* app = window_deactivation_state;
++            app->income_770 += value;
++            app->income_780 += value;
++            break;
++        }
++        default:
++            window_deactivation_state->income_770 += BuildingFeatureValue(this, incoming->words[3].data);
++            break;
++        }
++        float cost = BuildingFeatureCost(this, incoming->words[3].data);
++        WindowDeactivationState* app = window_deactivation_state;
++        app->spent_78c += cost;
++        app->cost_79c += cost;
++        float money = window_deactivation_state->economy_1c->value_80;
++        value = BuildingFeatureValue(this, incoming->words[3].data);
++        money = money + value - BuildingFeatureCost(this, incoming->words[3].data);
++        window_deactivation_state->economy_1c->value_80 = money;
++        int type = variable_catalog->FeatureType(building_60->features_1fc[incoming->words[3].data]);
++        if ((type == variable_catalog->FindFeatureType("MEALS") || type == variable_catalog->FindFeatureType("SNACKS") || type == variable_catalog->FindFeatureType("ALCOHOL") || type == variable_catalog->FindFeatureType("SOFTDRNK")) && window_deactivation_state->value_6f4 > 0.0f && strcmp(name_06, "ICESTALL") != 0 && strcmp(name_06, "BARBEQUE") != 0 && strcmp(name_06, "FASTFOOD") != 0)
++        {
++            VariableEntity* guest = variable_world->FindObject(incoming->words[0].data);
++            unsigned int cleaners_count;
++            VariableEntity** cleaners = variable_world->FindNamed("WATERCLN", &cleaners_count);
++            if (cleaners_count != 0)
++            {
++                if (cleaners[0]->AsBuilding()->building_state_19c != 0)
++                    guest->AsGuest()->AddContamination(BuildingContamination());
++                else
++                    guest->AsGuest()->AddContamination((1.0f - (3 - cleaners[0]->AsBuilding()->power_state_33c) * 0.33f) * window_deactivation_state->value_6f4);
++            }
++            else
++                guest->AsGuest()->AddContamination(BuildingContamination());
++        }
++        if (incoming->words[4].data == id_28)
++        {
++            if (contents_count_36c != 0)
++            {
++                for (int i = 0; i < contents_count_36c; i++)
++                    if (static_cast<WorldObjectEntity*>(variable_world->FindObject(contents_370[i]))->ReceiveGuest(incoming->words[0].data))
++                        i = contents_count_36c;
++            }
++            else if (child_count_398 != 0)
++            {
++                for (int i = 0; i < child_count_398; i++)
++                {
++                    if (variable_world->FindObject(child_ids_39c[i])->state_3c == 0)
++                    {
++                        SendBuildingCommand(this, id_28, incoming->words[0].data, 0x30, 0, 0);
++                        SendBuildingCommand(this, incoming->words[0].data, child_ids_39c[i], 3, 0, 4);
++                        SendBuildingCommand(this, id_28, incoming->words[0].data, 9, 0, child_ids_39c[i]);
++                        i = child_count_398;
++                    }
++                }
++            }
++            else if (type == variable_catalog->FindFeatureType("ALCOHOL"))
++            {
++                ScreenModeCommand command;
++                float strength = *reinterpret_cast<float*>(variable_catalog->UnlockRecord(drink_type_210)->unknown_d0) * drink_value_20c;
++                int kind;
++                if (++building_drink_count == 20)
++                {
++                    if (window_deactivation_state->AverageGuestHappiness() > 50)
++                    {
++                        switch (rand() % 3)
++                        {
++                        case 0:
++                            kind = 0;
++                            break;
++                        case 1:
++                            kind = 2;
++                            break;
++                        case 2:
++                            kind = 4;
++                            break;
++                        }
++                    }
++                    else
++                    {
++                        switch (rand() % 2)
++                        {
++                        case 0:
++                            kind = 1;
++                            break;
++                        case 1:
++                            kind = 3;
++                            break;
++                        }
++                    }
++                    command = ScreenModeCommand(id_28, incoming->words[0].data, 0x30, kind, id_28, strength);
++                    building_drink_count = 0;
++                }
++                else
++                {
++                    command = ScreenModeCommand(id_28, incoming->words[0].data, 0x30, *reinterpret_cast<int*>(variable_catalog->UnlockRecord(drink_type_210)->unknown_d0 + 4), id_28, strength);
++                }
++                Unknown24(command, 4.0f);
++            }
++            else if (building_60->features_1fc[incoming->words[3].data] == variable_catalog->FindFeature("LIVEVENT"))
++            {
++                events_170->AddGuest(incoming->words[0].data);
++                SendBuildingCommand(this, id_28, incoming->words[0].data, 0x30, 0, 0);
++            }
++            else if (building_60->features_1fc[incoming->words[3].data] == variable_catalog->FindFeature("SWIMMING"))
++            {
++                SendBuildingCommand(this, id_28, incoming->words[0].data, 0x30, 0, 0);
++            }
++            else if (building_60->features_1fc[incoming->words[3].data] == variable_catalog->FindFeature("FUNSLIDE"))
++            {
++                SendBuildingCommand(this, id_28, incoming->words[0].data, 0x30, 0, 0);
++            }
++            else
++            {
++                ScreenModeCommand command(id_28, incoming->words[0].data, 0x30, 0, 0);
++                Unknown24(command, 4.0f);
++            }
++        }
++        else if (contents_count_36c != 0)
++        {
++            if (word_11c != 0)
++            {
++                for (unsigned int i = 0; i < word_11c; i++)
++                    if (incoming->words[4].data == vehicle_ids_120[i])
++                        static_cast<WorldObjectEntity*>(variable_world->FindObject(contents_370[i]))->ReceiveGuest(incoming->words[0].data);
++            }
++        }
++        else
++        {
++            ScreenModeCommand command;
++            if (drink_type_210 != -1)
++            {
++                float strength = *reinterpret_cast<float*>(variable_catalog->UnlockRecord(drink_type_210)->unknown_d0) * drink_value_20c;
++                int kind;
++                if (++building_drink_count == 20)
++                {
++                    if (window_deactivation_state->AverageGuestHappiness() > 50)
++                    {
++                        switch (rand() % 3)
++                        {
++                        case 0:
++                            kind = 0;
++                            break;
++                        case 1:
++                            kind = 2;
++                            break;
++                        case 2:
++                            kind = 4;
++                            break;
++                        }
++                    }
++                    else
++                    {
++                        switch (rand() % 2)
++                        {
++                        case 0:
++                            kind = 1;
++                            break;
++                        case 1:
++                            kind = 3;
++                            break;
++                        }
++                    }
++                    command = ScreenModeCommand(id_28, incoming->words[4].data, 0x24, kind, incoming->words[0].data, strength);
++                    building_drink_count = 0;
++                }
++                else
++                {
++                    command = ScreenModeCommand(id_28, incoming->words[4].data, 0x24, *reinterpret_cast<int*>(variable_catalog->UnlockRecord(drink_type_210)->unknown_d0 + 4), incoming->words[0].data, strength);
++                }
++            }
++            else
++            {
++                command = ScreenModeCommand(id_28, incoming->words[4].data, 0x24, 0, incoming->words[0].data, 0.0f);
++            }
++            Unknown20(command);
++        }
++        break;
++    }
++    case 0x4c:
++    {
++        vehicle_ids_120[word_11c] = incoming->words[0].data;
++        flags_138[word_11c] = 0;
++        word_11c++;
++        VariableEntity* vehicle = variable_world->FindObject(incoming->words[0].data);
++        vehicle->AddRoutePoint(vehicle->position_30);
++        result = true;
++        break;
++    }
++    case 0x25:
++        if (incoming->words[4].data != 0)
++        {
++            additional_staff_94[additional_staff_count_bc] = incoming->words[0].data;
++            additional_staff_count_bc++;
++            if (building_state_19c == 1 && variable_world->FindObject(incoming->words[0].data)->kind_2c == 6)
++                variable_world->FindObject(incoming->words[0].data)->visible_40 = 0;
++        }
++        else
++        {
++            staff_ids_64[staff_count_8c + pending_staff_90] = incoming->words[0].data;
++            staff_flags_c0[staff_count_8c + pending_staff_90] = 0;
++            if (variable_catalog->Staff(building_60->staff_ids_290[staff_count_8c + pending_staff_90])->female_c4 == 0)
++                staff_count_8c++;
++            else
++                pending_staff_90++;
++            if (building_state_19c == 1 && variable_world->FindObject(incoming->words[0].data)->kind_2c == 6)
++                variable_world->FindObject(incoming->words[0].data)->visible_40 = 0;
++        }
++        result = true;
++        break;
++    case 0x50:
++        contents_370[contents_count_36c] = incoming->words[0].data;
++        contents_count_36c++;
++        result = true;
++        break;
++    case 0x51:
++        child_ids_39c[child_count_398] = incoming->words[0].data;
++        child_count_398++;
++        result = true;
++        break;
++    case 0x23:
++    {
++        building_value_350++;
++        if (window_deactivation_state->flag_385)
++            word_354++;
++        ScreenModeCommand command;
++        if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[4].data]), "SNORKEL") == 0)
++        {
++            if (word_114 == 0)
++                command = ScreenModeCommand(id_28, incoming->words[0].data, 0x4a, 0, 0);
++            else
++            {
++                word_114--;
++                command = ScreenModeCommand(id_28, incoming->words[0].data, 0x31, 0, 0, BuildingFeatureValue(this, incoming->words[4].data));
++            }
++        }
++        else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[4].data]), "LILOS") == 0)
++        {
++            if (word_10c == 0)
++                command = ScreenModeCommand(id_28, incoming->words[0].data, 0x4a, 0, 0);
++            else
++            {
++                word_10c--;
++                command = ScreenModeCommand(id_28, incoming->words[0].data, 0x31, 0, 0, BuildingFeatureValue(this, incoming->words[4].data));
++            }
++        }
++        else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[4].data]), "SURFBOARD") == 0)
++        {
++            if (word_110 == 0)
++                command = ScreenModeCommand(id_28, incoming->words[0].data, 0x4a, 0, 0);
++            else
++            {
++                word_110--;
++                command = ScreenModeCommand(id_28, incoming->words[0].data, 0x31, 0, 0, BuildingFeatureValue(this, incoming->words[4].data));
++            }
++        }
++        else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[4].data]), "SUNLNGER") == 0)
++        {
++            bool found = false;
++            for (int i = 0; i < child_count_398; i++)
++                if (variable_world->FindObject(child_ids_39c[i])->state_3c == 0)
++                    found = true;
++            if (!found)
++                command = ScreenModeCommand(id_28, incoming->words[0].data, 0x4a, 0, 0);
++            else
++                command = ScreenModeCommand(id_28, incoming->words[0].data, 0x31, 0, 0, BuildingFeatureValue(this, incoming->words[4].data));
++        }
++        else
++        {
++            command = ScreenModeCommand(id_28, incoming->words[0].data, 0x31, 0, 0, BuildingFeatureValue(this, incoming->words[4].data));
++        }
++        Unknown20(command);
++        break;
++    }
++    case 0x4e:
++    {
++        for (int i = 0; i < contents_count_36c; i++)
++        {
++            if (incoming->words[0].data == contents_370[i])
++            {
++                SendBuildingCommand(this, id_28, incoming->words[4].data, 3, 0, 0xf);
++                SendBuildingCommand(this, id_28, vehicle_ids_120[i], 0x24, 0, incoming->words[4].data);
++                result = true;
++                i = contents_count_36c;
++            }
++        }
++        break;
++    }
++    case 0x32:
++    {
++        if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[4].data]), "SNORKEL") == 0)
++            word_114++;
++        else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[4].data]), "LILOS") == 0)
++            word_10c++;
++        else if (strcmp(variable_catalog->FeatureKey(building_60->features_1fc[incoming->words[4].data]), "SURFBOARD") == 0)
++            word_110++;
++        word_118--;
++        int state = variable_world->FindObject(incoming->words[0].data)->state_3c;
++        VariableEntity* sender = variable_world->FindObject(incoming->words[0].data);
++        sprintf(error, "Error in building! \n queue sender type - %d \n sender state - %d \n my state - %d \n my name - %s \n open status - %d", sender->kind_2c, state, state_3c, name_06, building_state_19c);
++        if (building_queue_16c == 0)
++            StartupFatal(error);
++        if (building_queue_16c->Count() != 0)
++        {
++            unsigned int guest, feature;
++            building_queue_16c->PopGuest(&guest, &feature);
++            word_118++;
++            ScreenModeCommand command(id_28, guest, 0x1e, 0, id_28, BuildingFeatureValue(this, feature));
++            Unknown20(command);
++        }
++        break;
++    }
++    case 0x26:
++    {
++        if (state_3c != 0)
++            break;
++        for (int i = 1; i < 64; i++)
++            reinterpret_cast<float*>(data_228)[i] = reinterpret_cast<float*>(data_228)[i - 1];
++        reinterpret_cast<float*>(data_228)[0] = building_values_214[2];
++        building_values_214[2] = 0;
++        building_values_214[0] = 0;
++        building_values_214[1] = 0;
++        building_value_350 = 0;
++        word_224++;
++        word_360 = 0;
++        if (word_224 != 0)
++            AverageHistory(reinterpret_cast<float*>(data_228), word_224, &building_values_214[3]);
++        for (unsigned int j = 0; j < building_60->rows_1f4; j++)
++        {
++            appeal_1a8[j][0] *= reinterpret_cast<float*>(building_60->unknown_238)[j];
++            appeal_1a8[j][1] *= reinterpret_cast<float*>(building_60->unknown_238)[j];
++            feature_scale_1e4[j] *= reinterpret_cast<float*>(building_60->unknown_260)[j];
++        }
++        break;
++    }
++    case 0x27:
++        if (power_state_33c != 0)
++        {
++            if (power_state_33c == 1)
++                power_state_33c = 0;
++            else
++                power_state_33c = power_state_33c == 2 ? 1 : 2;
++        }
++        if (power_state_33c != 0)
++            SendBuildingCommand(this, id_28, incoming->words[0].data, 0x5b, 0, 0);
++        else
++        {
++            SendBuildingCommand(this, id_28, incoming->words[0].data, 0x5c, 0, 0);
++            SetRepairAssigned(0);
++            SetRepairActive(0);
++            SetRepairRequested(0);
++            flag_367 = 0;
++            flag_366 = 0;
++            if (flag_340)
++            {
++                unsigned int id = id_28;
++                if (byte_364)
++                {
++                    char key[52];
++                    strcpy(key, "BUILDING_NAME_");
++                    strcat(key, building_60->name_04);
++                    ScreenTextLookup* text = screen_text_lookup;
++                    unsigned short message[256];
++                    swprintf(message, text->LookupText("FEEDBACK_BUILDING_REPAIRED_NOPOWER"), screen_text_lookup->LookupText(key));
++                    window_deactivation_state->ticker_30->AddMessage(message, id, 4);
++                }
++                else
++                {
++                    char key[52];
++                    strcpy(key, "BUILDING_NAME_");
++                    strcat(key, building_60->name_04);
++                    ScreenTextLookup* text = screen_text_lookup;
++                    unsigned short message[256];
++                    swprintf(message, text->LookupText("FEEDBACK_BUILDING_REPAIRED"), screen_text_lookup->LookupText(key));
++                    window_deactivation_state->ticker_30->AddMessage(message, id, 4);
++                }
++                flag_340 = 0;
++            }
++            value_348 = BuildingRenderValue();
++            word_34c = window_deactivation_state->day_15c;
++        }
++        break;
++    case 0x62:
++        if (incoming->words[4].data == 0x28)
++        {
++            ActivateBuilding();
++            window_deactivation_state->building_status_48->CompleteConstruction(id_28);
++            SendBuildingCommand(this, id_28, id_28, 3, 0, 0);
++        }
++        else
++            SendBuildingCommand(this, id_28, id_28, 3, 0, 3);
++        break;
++    case 0x2f:
++        if (word_450 != -1)
++        {
++            if (screen_terrain_grid->RouteEnabled(1, word_450))
++                SetBuildingFrame(resources_140[0], 0);
++            else
++                SetBuildingFrame(resources_140[0], 1);
++        }
++        break;
++    default:
++        result = WorldStaticEntity::Unknown14(incoming);
++        break;
++    }
++    return result;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00458b60.json b/targets/beachlife-uk-1.1.d/00458b60.json
+new file mode 100644
+index 0000000..bed17cf
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00458b60.json
+@@ -0,0 +1,63 @@
++{
++  "functions": [
++    {
++      "address": "0x00458b60",
++      "size": 10826,
++      "name": "WorldBuildingEntity::Unknown14",
++      "name_status": "Descriptive; audited original code extent, excluding alignment and inline switch tables."
++    }
++  ],
++  "source_compile_options": {
++    "match_00458b60.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_00458b60.cpp",
++    "fixture_00458b60.cpp"
++  ],
++  "comparison_anchors": [
++    {
++      "address": "0x004333f0",
++      "size": 673,
++      "name": "BuildingGuestQueue::AddGuest",
++      "symbol": "?AddGuest@BuildingGuestQueue@@QAE_NIIE@Z",
++      "header": "startup_variable_state.h",
++      "kind": "false-member",
++      "return_type": "bool",
++      "parameters": [
++        "unsigned int",
++        "unsigned int",
++        "unsigned char"
++      ],
++      "stlport": true
++    },
++    {
++      "address": "0x004336a0",
++      "size": 477,
++      "name": "BuildingGuestQueue::PopGuest",
++      "symbol": "?PopGuest@BuildingGuestQueue@@QAE_NPAI0@Z",
++      "header": "startup_variable_state.h",
++      "kind": "false-member",
++      "return_type": "bool",
++      "parameters": [
++        "unsigned int*",
++        "unsigned int*"
++      ],
++      "stlport": true
++    },
++    {
++      "address": "0x00491740",
++      "size": 581,
++      "name": "WorldObjectEntity::ReceiveGuest",
++      "symbol": "?ReceiveGuest@WorldObjectEntity@@QAE_NI@Z",
++      "header": "startup_world_entities.h",
++      "kind": "false-member",
++      "return_type": "bool",
++      "parameters": [
++        "unsigned int"
++      ],
++      "stlport": true
++    }
++  ]
++}

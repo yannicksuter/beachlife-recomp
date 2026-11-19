@@ -1,0 +1,222 @@
+diff --git a/fixtures/game.d/fixture_004cefd0.cpp b/fixtures/game.d/fixture_004cefd0.cpp
+new file mode 100644
+index 0000000..f48fc1b
+--- /dev/null
++++ b/fixtures/game.d/fixture_004cefd0.cpp
+@@ -0,0 +1,9 @@
++#include "window_audio.h"
++
++#include <new>
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004cefd0(void* storage, unsigned char enable, const char* provider_name, const char* bank_name)
++{
++    new (storage) WindowAudioState(enable, provider_name, bank_name);
++}
+diff --git a/metadata.d/004cefd0.csv b/metadata.d/004cefd0.csv
+new file mode 100644
+index 0000000..3ee4705
+--- /dev/null
++++ b/metadata.d/004cefd0.csv
+@@ -0,0 +1,6 @@
++address,type,size,symbol
++0x004cefd0,function,861,??0WindowAudioState@@QAE@EPBD0@Z
++0x004d1bc0,function,363,??0WindowSoundBank@@QAE@PBD0@Z
++0x004f4d08,global,4,?window_audio_near_distance@@3MB
++0x004f4d0c,global,4,?window_audio_far_distance@@3MB
++0x00582754,string,7,
+diff --git a/src/match_004cefd0.cpp b/src/match_004cefd0.cpp
+new file mode 100644
+index 0000000..4055b5d
+--- /dev/null
++++ b/src/match_004cefd0.cpp
+@@ -0,0 +1,158 @@
++#include "miles_imports.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++#include "window_sound_bank.h"
++#include "window_sound_voice.h"
++
++#include <stdio.h>
++
++extern const float window_audio_near_distance;
++extern const float window_audio_far_distance;
++
++static inline float ClampLevel(float level)
++{
++    if (level < 0.0f)
++        level = 0.0f;
++    else if (level > 1.0f)
++        level = 1.0f;
++    return level;
++}
++
++static inline void ApplyStreamVolume(WindowAudioState* audio, float level)
++{
++    float volume_level = level;
++    if (!(level >= 0.0f))
++        volume_level = 0.0f;
++    else if (level > 1.0f)
++        volume_level = 1.0f;
++    audio->stream_volume_10 = volume_level;
++
++    if (audio->enabled && audio->stream)
++    {
++        if (!(volume_level >= 0.0f))
++            volume_level = 0.0f;
++        else if (volume_level > 1.0f)
++            volume_level = 1.0f;
++        int volume = static_cast<int>(volume_level * 127.0f);
++        if (volume < 3)
++            volume = 0;
++        AIL_set_stream_volume(audio->stream, volume);
++    }
++}
++
++static inline void ApplyEffectsVolume(WindowAudioState* audio, float level)
++{
++    float clamped = level;
++    if (clamped < 0.0f)
++        clamped = 0.0f;
++    else if (clamped > 1.0f)
++        clamped = 1.0f;
++    audio->scale_d8 = clamped;
++    float scaled;
++    scaled = level;
++    scaled = ClampLevel(scaled);
++    int volume = static_cast<int>(scaled * 127.0f);
++    if (volume < 3)
++        volume = 0;
++    audio->volume_d4 = volume;
++    for (int i = 0; i < 16; ++i)
++    {
++        WindowSoundVoice* voice = audio->voices_74[i];
++        if (!audio->voices_74[i])
++            continue;
++        float adjusted = voice->scale_14 * audio->scale_d8;
++        adjusted = ClampLevel(adjusted);
++        adjusted = ClampLevel(adjusted);
++        int voice_volume = static_cast<int>(adjusted * 127.0f);
++        if (voice_volume < 3)
++            voice_volume = 0;
++        if (!audio->voices_74[i]->word_10)
++        {
++            if (i >= 16)
++                AIL_set_3D_sample_volume(audio->samples_14[i], voice_volume);
++            else
++                AIL_set_sample_volume(audio->samples_14[i], voice_volume);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004cefd0
++WindowAudioState::WindowAudioState(
++    unsigned char enable, const char* provider_name, const char* bank_name)
++    : WindowAudioRegistration(this)
++{
++    enabled = enable;
++    enabled_3d = 0;
++    stream = 0;
++    stream_volume_10 = 0.0f;
++    scale_d8 = 0.0f;
++    value_ec = window_audio_near_distance;
++    value_f0 = window_audio_far_distance;
++
++    if (enable)
++    {
++        AIL_set_redist_directory(window_audio_redist_directory);
++        RegisterMilesShutdown();
++        int started = AIL_startup();
++        if (started && (digital_driver = AIL_open_digital_driver(22050, 16, 2, 0)) != 0)
++            Initialize3DProvider(provider_name);
++        else
++            enabled = 0;
++    }
++
++    int index;
++    for (index = 0; index < 24; ++index)
++    {
++        voices[index] = 0;
++    }
++
++    if (enabled)
++    {
++        void*(__stdcall * allocate_sample)(void*) = AIL_allocate_sample_handle;
++        for (index = 0; index < 16; ++index)
++        {
++            samples_14[index] = allocate_sample(digital_driver);
++        }
++
++        if (enabled_3d)
++        {
++            void*(__stdcall * allocate_3d_sample)(void*) = AIL_allocate_3D_sample_handle;
++            for (index = 0; index < 8; ++index)
++            {
++                samples_54[index] = allocate_3d_sample(provider_08);
++            }
++        }
++    }
++
++    ApplyStreamVolume(this, stream_volume_10);
++    ApplyEffectsVolume(this, scale_d8);
++
++    char header_path[64];
++    char bank_path[64];
++    sprintf(header_path, "%s%s%s", window_sound_directory, bank_name, window_sound_header_extension);
++    sprintf(bank_path, "%s%s%s", window_sound_directory, bank_name, window_sound_bank_extension);
++    bank_f4 = new WindowSoundBank(header_path, bank_path);
++}
++
++// GLOBAL: BEACHLIFE 0x004f4d08
++extern const float window_audio_near_distance = 250.0f;
++// GLOBAL: BEACHLIFE 0x004f4d0c
++extern const float window_audio_far_distance = 750.0f;
++
++// Observed writable original backing and pointer initializers, as the sound extension globals.
++// GLOBAL: BEACHLIFE 0x00582724
++char window_sound_bank_backing[5] = ".spf";
++// GLOBAL: BEACHLIFE 0x0058272c
++char window_sound_header_backing[5] = ".hdr";
++// GLOBAL: BEACHLIFE 0x0058273c
++char window_sound_directory_backing[13] = "data\\sounds\\";
++// GLOBAL: BEACHLIFE 0x0058274c
++char window_audio_redist_backing[7] = "Miles\\";
++// GLOBAL: BEACHLIFE 0x0058270c
++const char* window_audio_redist_directory = window_audio_redist_backing;
++// GLOBAL: BEACHLIFE 0x00582710
++const char* window_sound_directory = window_sound_directory_backing;
++// GLOBAL: BEACHLIFE 0x0058271c
++const char* window_sound_header_extension = window_sound_header_backing;
++// GLOBAL: BEACHLIFE 0x00582720
++const char* window_sound_bank_extension = window_sound_bank_backing;
+diff --git a/targets/beachlife-uk-1.1.d/004cefd0.json b/targets/beachlife-uk-1.1.d/004cefd0.json
+new file mode 100644
+index 0000000..3e8ac34
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004cefd0.json
+@@ -0,0 +1,25 @@
++{
++  "functions": [
++    {
++      "address": "0x004cefd0",
++      "size": 861,
++      "name": "WindowAudioState::WindowAudioState",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004cefd0.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "comparison_lifetime_anchors": [
++    {
++      "address": "0x004d1bc0",
++      "size": 363,
++      "name": "WindowSoundBank::WindowSoundBank",
++      "symbol": "??0WindowSoundBank@@QAE@PBD0@Z",
++      "header": "window_sound_bank.h"
++    }
++  ]
++}

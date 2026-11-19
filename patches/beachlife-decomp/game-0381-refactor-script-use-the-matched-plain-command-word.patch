@@ -1,0 +1,71 @@
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index bb83cdf96bd80fa95556f5b70340011ea31c79a2..3f2ca108d5c3c18a18f4532de57a6e90c3bcc871 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -137,8 +137,7 @@ struct ScreenTerrainGrid : TerrainRegistration
+     void Step(int x, int y, int direction, ScreenPoint* result);                            // 0x00446080, RET16.
+     ScreenWorldPosition TileOrigin(ScreenPoint tile);                                       // 0x00446200.
+     ScreenWorldPosition TileCenter(ScreenPoint tile);                                       // 0x00446350.
+-    ScreenWorldPosition TilePosition(ScreenPoint tile, int direction);
+-    // 0x00446260.
++    ScreenWorldPosition TilePosition(ScreenPoint tile, int direction);                      // 0x00446260.
+     ScreenMapPosition BuildingOffset(ScreenPoint tile, unsigned int width, unsigned int height,
+         ScreenMapPosition offset, unsigned int rotation);                                   // 0x00446940.
+     void EnableRoute(unsigned int kind, unsigned int index);                                // 0x00447520.
+@@ -192,11 +191,6 @@ struct ScreenEventPlacement
+ struct ScreenModeCommandWord
+ {
+     std::uintptr_t data;
+-    ScreenModeCommandWord() = default;
+-    ScreenModeCommandWord(int value)
+-        : data(static_cast<unsigned int>(value))
+-    {
+-    }
+     operator int() const { return static_cast<int>(data); }
+     ScreenModeCommandWord& operator=(int value)
+     {
+diff --git a/src/startup_world_script_evaluate.cpp b/src/startup_world_script_evaluate.cpp
+index 3400a53d59a6af946d5b479cc313de3c290ee255..5d3c113178187015c5322e099f06ba6bbe6a24ee 100644
+--- a/src/startup_world_script_evaluate.cpp
++++ b/src/startup_world_script_evaluate.cpp
+@@ -15,10 +15,10 @@ static ScreenModeCommandWord CommandOperand(const WorldScriptOperand& operand)
+ {
+     WorldScriptValue value = window_deactivation_state->ReadScriptValue(operand.kind, operand.data);
+     if (value.kind == 0)
+-        return static_cast<unsigned char>(value.data);
++        return ScreenModeCommandWord::FromData(static_cast<unsigned char>(value.data));
+     if (value.kind == 2)
+         return ScreenModeCommandWord::FromData(value.data);
+-    return static_cast<unsigned int>(ConvertWorldScriptInteger({ 3, value.data }));
++    return ScreenModeCommandWord::FromData(static_cast<unsigned int>(ConvertWorldScriptInteger({ 3, value.data })));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004dc9a0
+diff --git a/src/startup_world_script_expression_evaluate.cpp b/src/startup_world_script_expression_evaluate.cpp
+index e04665949aee19e1f71f251f530dd211d6689438..111e1ef908d2f3b601402bf85e38096b07370850 100644
+--- a/src/startup_world_script_expression_evaluate.cpp
++++ b/src/startup_world_script_expression_evaluate.cpp
+@@ -12,9 +12,9 @@ static float ExpressionValueFloat(WorldScriptValue value)
+ static ScreenModeCommandWord ExpressionCommandWord(WorldScriptValue value, bool numeric)
+ {
+     if (value.kind == 0)
+-        return static_cast<unsigned char>(value.data);
++        return ScreenModeCommandWord::FromData(static_cast<unsigned char>(value.data));
+     if (value.kind == 3 || (numeric && value.kind != 2))
+-        return static_cast<unsigned int>(ConvertWorldScriptInteger({ 3, value.data }));
++        return ScreenModeCommandWord::FromData(static_cast<unsigned int>(ConvertWorldScriptInteger({ 3, value.data })));
+     return ScreenModeCommandWord::FromData(value.data);
+ }
+ 
+@@ -34,9 +34,9 @@ ScreenModeCommand WorldSubsystemScript::Expression::MakeCommand(VariableEntity*
+                                        : ExpressionValueFloat(value);
+         command.words[6] = std::bit_cast<unsigned int>(number);
+     }
+-    command.words[5] = data->operands_04[4].kind == 0x110 ? ScreenModeCommandWord(entity->state_3c)
++    command.words[5] = data->operands_04[4].kind == 0x110 ? ScreenModeCommandWord::FromData(entity->state_3c)
+                                                           : ExpressionCommandWord(entity->Unknown2c(WorldScriptValue { data->operands_04[4].kind, data->operands_04[4].data }), false);
+-    command.words[0] = data->operands_04[5].kind == 0x110 ? ScreenModeCommandWord(entity->id_28)
++    command.words[0] = data->operands_04[5].kind == 0x110 ? ScreenModeCommandWord::FromData(entity->id_28)
+                                                           : ExpressionCommandWord(entity->Unknown2c(WorldScriptValue { data->operands_04[5].kind, data->operands_04[5].data }), false);
+     return command;
+ }

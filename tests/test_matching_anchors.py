@@ -484,6 +484,77 @@ class ComparisonAnchorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, 'Inaccessible value initialization must fail.')
 
 
+class ComparisonAnchorAliasTests(unittest.TestCase):
+    def setUp(self):
+        ComparisonAnchorTests.setUp(self)
+        self.alias = {'name': 'Alternate', 'symbol': '?Alternate@@YAXH@Z'}
+        self.anchor = {'address': '0x00401100', 'size': 16, 'name': 'Primary',
+                       'symbol': '?Primary@@YAXH@Z', 'header': 'generated.h',
+                       'kind': 'void-function', 'return_type': 'void', 'parameters': ['int'],
+                       'aliases': [self.alias]}
+        self.target['comparison_anchors'] = [self.anchor]
+        (self.metadata / 'metadata.csv').write_text(
+            'address,type,size,symbol\n0x00401100,function,16,?Primary@@YAXH@Z\n')
+        (self.source / 'generated.h').write_text('void Primary(int);\nvoid Alternate(int);\n')
+
+    def test_alias_shares_one_marker_and_one_original_identity(self):
+        specs = matching.comparison_anchor_specs(self.metadata, self.target)
+        paths, records = matching.generate_comparison_anchors(
+            self.metadata, self.source, self.directory / 'output', specs)
+        text = paths[0].read_text()
+        self.assertEqual(len(paths), 1)
+        self.assertEqual(text.count('volatile unsigned int comparison_anchor_marker_00401100;'), 1)
+        self.assertNotIn('static volatile', text)
+        self.assertEqual(text.count('comparison_anchor_marker_00401100 = 0x00401100;'), 2)
+        self.assertNotIn('// FUNCTION:', text)
+        self.assertIn('Folded dependency bound by its CSV identity and LINK address.', text)
+        self.assertIn('&Alternate;', text)
+        self.assertEqual(records[0]['aliases'], [self.alias])
+        self.assertFalse(records[0]['qualified'])
+        self.assertFalse(records[0]['image_execution_permitted'])
+
+    def test_alias_rejects_missing_or_different_header_declaration(self):
+        if shutil.which('c++') is None:
+            self.skipTest('A host C++ compiler is needed for declaration checking.')
+        specs = matching.comparison_anchor_specs(self.metadata, self.target)
+        paths, _ = matching.generate_comparison_anchors(
+            self.metadata, self.source, self.directory / 'output', specs)
+        for declaration, accepted in [('void Alternate(int);', True),
+                                      ('', False), ('void Alternate(float);', False)]:
+            with self.subTest(declaration=declaration):
+                (self.source / 'generated.h').write_text('void Primary(int);\n' + declaration)
+                result = subprocess.run([shutil.which('c++'), '-std=c++98', '-D__cdecl=', '-fsyntax-only',
+                                         '-I' + str(self.source), str(paths[0])],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
+    def test_aliases_cannot_duplicate_or_add_registered_identities(self):
+        for aliases in ([], None, [self.alias, self.alias],
+                        [{'name': 'Primary', 'symbol': '?Other@@YAXH@Z'}],
+                        [{'name': 'Other', 'symbol': self.anchor['symbol']}],
+                        [{'name': 'Owner::Other', 'symbol': '?Other@@YAXH@Z'}],
+                        [self.alias | {'parameters': []}]):
+            with self.subTest(aliases=aliases), self.assertRaises(ValueError):
+                target = copy.deepcopy(self.target)
+                target['comparison_anchors'][0]['aliases'] = aliases
+                matching.comparison_anchor_specs(self.metadata, target)
+        with (self.metadata / 'metadata.csv').open('a') as stream:
+            stream.write('0x00401200,function,16,?Alternate@@YAXH@Z\n')
+        with self.assertRaises(ValueError):
+            matching.comparison_anchor_specs(self.metadata, self.target)
+
+    def test_alias_must_have_exactly_the_primary_link_address(self):
+        primary, alternate = self.anchor['symbol'], self.alias['symbol']
+        record = {'symbol': primary, 'aliases': [self.alias]}
+        matching.verify_comparison_anchor_alias_links([record], {0x401000: {primary, alternate}})
+        self.assertEqual(record['alias_recomp'], '0x00401000')
+        for publics in ({0x401000: {primary}}, {0x401000: {alternate}},
+                        {0x401000: {primary}, 0x402000: {alternate}},
+                        {0x401000: {primary, alternate}, 0x402000: {alternate}}, {}):
+            with self.subTest(publics=publics), self.assertRaises(ValueError):
+                matching.verify_comparison_anchor_alias_links([record], publics)
+
+
 class ComparisonAnchorObjectTests(unittest.TestCase):
     @staticmethod
     def coff(symbol, section=1, symbol_type=0x20, storage=2, copies=1):
@@ -523,6 +594,23 @@ class ComparisonAnchorObjectTests(unittest.TestCase):
             tool.run = compile_only
             with self.assertRaisesRegex(ValueError, 'exactly the declared symbol'):
                 tool.build(folder, [source], 'generated', anchor_symbols={source: '?Generated@@YAHXZ'})
+
+    def test_build_requires_an_actual_alias_definition_before_linking(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            source = folder / 'generated.cpp'
+            source.write_text('// synthetic compiler input\n')
+            tool = object.__new__(matching.Toolchain)
+            tool.compiler = folder
+            tool.native = str
+            def compile_only(command, cwd):
+                self.assertTrue(any('CL.EXE' in str(argument) for argument in command))
+                (cwd / 'generated.obj').write_bytes(self.coff('?Primary@@YAHXZ'))
+                return ''
+            tool.run = compile_only
+            with self.assertRaisesRegex(ValueError, 'exactly the declared symbol.*Alternate'):
+                tool.build(folder, [source], 'generated',
+                           anchor_symbols={source: ['?Primary@@YAHXZ', '?Alternate@@YAHXZ']})
 
 
 class ComparisonGlobalOperandTests(unittest.TestCase):
@@ -567,6 +655,45 @@ class ComparisonGlobalOperandTests(unittest.TestCase):
             with self.subTest(csv=changed), self.assertRaises(ValueError):
                 (self.folder / 'metadata.csv').write_text(changed)
                 matching.comparison_global_operand_specs(self.folder, self.target)
+
+    def test_switch_identity_may_cover_its_inline_tables(self):
+        # A switch row keeps its code-only extent; the CSV identity adds the tables.
+        (self.folder / 'metadata.csv').write_text(self.csv.replace('function,12', 'function,20'))
+        record, = matching.comparison_global_operand_specs(self.folder, self.target)
+        self.assertEqual((record['function_size'], record['code_size']), (20, 12))
+        (self.folder / 'metadata.csv').write_text(self.csv.replace('function,12', 'function,11'))
+        with self.assertRaisesRegex(ValueError, 'extent disagrees'):
+            matching.comparison_global_operand_specs(self.folder, self.target)
+        (self.folder / 'metadata.csv').write_text(self.csv.replace('function,12', 'function,20'))
+        with self.assertRaisesRegex(ValueError, 'unique instruction'):
+            matching.comparison_global_operand_specs(self.folder, dict(
+                self.target, comparison_global_operands=[dict(self.item, instruction_offset=8)]))
+
+    def test_inline_table_tail_holds_only_tables_and_alignment(self):
+        start = 0x401000
+        code = [(start, 5), (start + 5, 2), (start + 7, 1)]
+        raw = bytes(8) + bytes([0x90] * 4) + (start + 2).to_bytes(4, 'little') + \
+            (start + 7).to_bytes(4, 'little') + bytes([0, 1])
+        sections = [('code', code + [(start + 8, 1), (start + 9, 1), (start + 10, 1), (start + 11, 1)]),
+                    ('address', [(start + 12, 4), (start + 16, 4)]), ('data', [(start + 20, 1), (start + 21, 1)])]
+        entries = matching.inline_table_tail(sections, raw, start, 8, 22)
+        self.assertEqual([item[0] for item in entries], ['address', 'address', 'data', 'data'])
+        self.assertEqual(matching.inline_table_tail([('code', code)], raw[:8], start, 8, 8), [])
+        bad_tail = raw[:8] + b'\x55' + raw[9:]
+        with self.assertRaisesRegex(ValueError, 'code after'):
+            matching.inline_table_tail(sections, bad_tail, start, 8, 22)
+        with self.assertRaisesRegex(ValueError, 'no table entry'):
+            matching.inline_table_tail(sections[:2], raw, start, 8, 22)
+        with self.assertRaisesRegex(ValueError, 'no address table'):
+            matching.inline_table_tail([sections[0], ('data', [(start + 12 + i, 1) for i in range(10)])],
+                                       raw, start, 8, 22)
+        escaped = raw[:12] + (start + 8).to_bytes(4, 'little') + raw[16:]
+        with self.assertRaisesRegex(ValueError, 'leaves the registered code'):
+            matching.inline_table_tail(sections, escaped, start, 8, 22)
+        with self.assertRaisesRegex(ValueError, 'inside an instruction'):
+            matching.inline_table_tail([('code', [(start, 5), (start + 5, 4)])] + sections[1:], raw, start, 8, 22)
+        with self.assertRaisesRegex(ValueError, 'outside the CSV tail'):
+            matching.inline_table_tail(sections[:1] + [('address', [(start + 20, 4)])], raw, start, 8, 22)
 
     def test_member_of_the_element_past_the_end_is_bounded_by_the_element(self):
         # A loop over &array[i].member ends at array + extent + member offset.
