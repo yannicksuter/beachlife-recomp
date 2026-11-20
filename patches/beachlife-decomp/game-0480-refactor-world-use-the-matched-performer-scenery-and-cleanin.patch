@@ -1,0 +1,537 @@
+diff --git a/src/startup_building_construction_tasks.cpp b/src/startup_building_construction_tasks.cpp
+index fd8050cafa8c18100d9101fac6eaaba86c07031c..be4e7029aa2bed6394f769a025ea978351eb888d 100644
+--- a/src/startup_building_construction_tasks.cpp
++++ b/src/startup_building_construction_tasks.cpp
+@@ -26,6 +26,7 @@ unsigned int VariableBuildingStatus::AvailableBuilders()
+ // FUNCTION: BEACHLIFE 0x00421e00
+ void VariableBuildingStatus::StartConstruction(unsigned int id)
+ {
++    ScreenModeCommand command(0, 0, 0, 0, 0);
+     if (!window_deactivation_state->flag_17c)
+         ++word_04;
+     BuildingStatusEntry* entry = new (std::nothrow) BuildingStatusEntry(id);
+@@ -33,7 +34,7 @@ void VariableBuildingStatus::StartConstruction(unsigned int id)
+     end.node = head_00;
+     Insert(end, entry);
+     FindTask(id)->byte_2a = 1;
+-    VariableBuilding* building = variable_world->FindObject(id)->AsBuilding()->building_60;
++    VariableBuilding* building = static_cast<WorldBuildingEntity*>(variable_world->FindObject(id))->building_60;
+     PrepareConstruction(id);
+     if (building->footprint_e14)
+         PrepareBuilderLocations(id);
+@@ -42,12 +43,7 @@ void VariableBuildingStatus::StartConstruction(unsigned int id)
+         ReassignBuilders();
+     else
+     {
+-        ScreenModeCommand command;
+-        command.words[0] = id;
+-        command.words[1] = id;
+-        command.words[2] = 3;
+-        command.words[3] = 0;
+-        command.words[4] = 0;
++        command = ScreenModeCommand(id, id, 3, 0, 0);
+         screen_mode_commands->QueueCommand(&command);
+     }
+ }
+diff --git a/src/startup_world_cleaning_tasks.cpp b/src/startup_world_cleaning_tasks.cpp
+index 7d60802e3f34bb29078b07b6e237b150d65ea0d4..a9433703395c025bc7782fd46f919a3db0b5802e 100644
+--- a/src/startup_world_cleaning_tasks.cpp
++++ b/src/startup_world_cleaning_tasks.cpp
+@@ -75,6 +75,8 @@ unsigned int WorldCleaningManager::FindUrgentTask(const ScreenWorldPosition* pos
+     unsigned int* kind, unsigned char bins, unsigned char litter, unsigned char toilets)
+ {
+     CircularListNode* selected = 0;
++    unsigned int id = ~0u;
++    bool found = false;
+     for (CircularListNode* node = requests_00.head->next; node != requests_00.head; node = node->next)
+     {
+         WorldCleaningRequest* request = CleaningRecord<WorldCleaningRequest>(node);
+@@ -85,35 +87,44 @@ unsigned int WorldCleaningManager::FindUrgentTask(const ScreenWorldPosition* pos
+             continue;
+         if (std::strcmp(entity->name_06, "Bin") == 0)
+         {
+-            if (!bins || static_cast<WorldSceneryEntity*>(entity)->byte_a0 || entity->NeedsRepair())
+-                continue;
++            if (bins && !static_cast<WorldSceneryEntity*>(entity)->byte_a0 && !entity->NeedsRepair())
++            {
++                selected = node;
++                found = true;
++            }
+         }
+         else if (entity->kind_2c == 2)
+         {
+-            if (!toilets || entity->FlagAt00460310() || entity->FlagAt00460340())
+-                continue;
++            if (toilets && !entity->FlagAt00460310() && !entity->FlagAt00460340())
++            {
++                selected = node;
++                found = true;
++            }
++        }
++        else if (litter)
++        {
++            selected = node;
++            found = true;
+         }
+-        else if (!litter)
+-            continue;
+-        selected = node;
+     }
+-    if (!selected)
+-        return ~0u;
+-    unsigned int id = CleaningRecord<WorldCleaningRequest>(selected)->id_00;
+-    *kind = ~0u;
+-    VariableEntity* entity = variable_world->FindObject(id);
+-    if (std::strcmp(entity->name_06, "Litter") == 0)
+-        *kind = 0;
+-    else if (std::strcmp(entity->name_06, "Bin") == 0)
+-        *kind = 1;
+-    else if (std::strcmp(entity->name_06, "LOO") == 0)
+-        *kind = 2;
+-    AddAssignment(id, 1);
+-    entity->SetFlag5a(1);
+-    delete CleaningRecord<WorldCleaningRequest>(selected);
+-    CircularListIterator iterator;
+-    iterator.node = selected;
+-    ErasePointerListNode<CircularListValueNode>(iterator);
++    if (found)
++    {
++        id = CleaningRecord<WorldCleaningRequest>(selected)->id_00;
++        *kind = ~0u;
++        VariableEntity* entity = variable_world->FindObject(id);
++        if (std::strcmp(entity->name_06, "Litter") == 0)
++            *kind = 0;
++        else if (std::strcmp(entity->name_06, "Bin") == 0)
++            *kind = 1;
++        else if (std::strcmp(entity->name_06, "LOO") == 0)
++            *kind = 2;
++        AddAssignment(id, 1);
++        entity->SetFlag5a(1);
++        delete CleaningRecord<WorldCleaningRequest>(selected);
++        CircularListIterator iterator;
++        iterator.node = selected;
++        ErasePointerListNode<CircularListValueNode>(iterator);
++    }
+     return id;
+ }
+ 
+@@ -123,11 +134,12 @@ unsigned int WorldCleaningManager::FindTask(const ScreenWorldPosition* position,
+ {
+     if (requests_00.Empty())
+         return ~0u;
+-    ScreenPoint tile = overlay_map->WorldToTile(position);
+     int best_score = 99999;
++    ScreenPoint tile = overlay_map->WorldToTile(position);
+     int score;
+     unsigned int candidate_kind;
+     CircularListNode* selected = 0;
++    bool found = false;
+     for (CircularListNode* node = requests_00.head->next; node != requests_00.head;)
+     {
+         WorldCleaningRequest* request = CleaningRecord<WorldCleaningRequest>(node);
+@@ -142,7 +154,7 @@ unsigned int WorldCleaningManager::FindTask(const ScreenWorldPosition* position,
+             continue;
+         }
+         ScreenPoint target = entity->TilePosition();
+-        int distance = std::abs(target.y - tile.y) + std::abs(target.x - tile.x);
++        int distance = std::abs(target.x - tile.x) + std::abs(target.y - tile.y);
+         if (std::strcmp(entity->name_06, "Litter") == 0)
+         {
+             score = distance - 50;
+@@ -160,35 +172,47 @@ unsigned int WorldCleaningManager::FindTask(const ScreenWorldPosition* position,
+         }
+         if (score < best_score)
+         {
+-            bool eligible = false;
+             switch (candidate_kind)
+             {
+             case 0:
+-                eligible = litter && !entity->NeedsCleaning();
++                if (litter && !entity->NeedsCleaning())
++                {
++                    selected = node;
++                    best_score = score;
++                    *kind = 0;
++                    found = true;
++                }
+                 break;
+             case 1:
+-                eligible = bins && !static_cast<WorldSceneryEntity*>(entity)->byte_a0
+-                        && (!entity->NeedsCleaning() || !entity->NeedsRepair());
++                if (bins && !static_cast<WorldSceneryEntity*>(entity)->byte_a0
++                    && (!entity->NeedsCleaning() || !entity->NeedsRepair()))
++                {
++                    selected = node;
++                    best_score = score;
++                    *kind = 1;
++                    found = true;
++                }
+                 break;
+             case 2:
+-                eligible = toilets && !entity->FlagAt00460310() && !entity->FlagAt00460340()
+-                        && !entity->NeedsCleaning() && !entity->NeedsRepair();
++                if (toilets && !entity->FlagAt00460310() && !entity->FlagAt00460340() && !entity->NeedsCleaning()
++                    && !entity->NeedsRepair())
++                {
++                    selected = node;
++                    best_score = score;
++                    *kind = 2;
++                    found = true;
++                }
+                 break;
+             }
+-            if (eligible)
+-            {
+-                selected = node;
+-                best_score = score;
+-                *kind = candidate_kind;
+-            }
+         }
+         node = node->next;
+     }
+-    if (!selected)
++    if (!found)
+         return ~0u;
+     unsigned int id = CleaningRecord<WorldCleaningRequest>(selected)->id_00;
+     AddAssignment(id, 0);
+-    variable_world->FindObject(id)->SetFlag5a(1);
++    VariableEntity* assigned = variable_world->FindObject(id);
++    assigned->SetFlag5a(1);
+     delete CleaningRecord<WorldCleaningRequest>(selected);
+     CircularListIterator iterator;
+     iterator.node = selected;
+diff --git a/src/startup_world_entity17_enter.cpp b/src/startup_world_entity17_enter.cpp
+index a8ad3b71cd3f219d3f649a976b30117d4d17058a..2eb8d909d1d404c5b9516e79f72dead4b1d8549b 100644
+--- a/src/startup_world_entity17_enter.cpp
++++ b/src/startup_world_entity17_enter.cpp
+@@ -7,70 +7,111 @@ extern const char* catwalk_animations[9];
+ // FUNCTION: BEACHLIFE 0x004646b0
+ bool WorldEntity17::Unknown08(unsigned int state)
+ {
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    ScreenModeCommand command;
+-    if (state == 6 || state == 0)
++    // Retail's result slot is the state parameter (0x004649e2).
++    bool result = static_cast<unsigned char>(state) != 0;
++    switch (state)
+     {
+-        WorldBuildingEntity* owner;
++    case 6:
++    {
++        keyline_state_44->SetAnimation(catwalk_animations[0], window_deactivation_state->time_158, &position_30);
++        keyline_state_44->word_08 = 0;
+         ScreenMapPosition offset;
+-        if (state == 6)
+-        {
+-            keyline_state_44->SetAnimation(catwalk_animations[0], window_deactivation_state->clock_158, &position);
+-            keyline_state_44->word_08 = 0;
+-            offset = { -122.0f, -286.0f };
+-            owner = variable_world->FindObject(owner_fc)->AsBuilding();
+-        }
+-        else
+-        {
+-            owner = variable_world->FindObject(owner_fc)->AsBuilding();
+-            keyline_state_44->SetAnimation(catwalk_animations[0], window_deactivation_state->clock_158, &position);
+-            switch (variant_f8)
+-            {
+-            case 0:
+-                offset = { -58.0f, -290.0f };
+-                break;
+-            case 1:
+-                offset = { -30.0f, -320.0f };
+-                break;
+-            case 2:
+-                offset = { -3.0f, -348.0f };
+-                break;
+-            }
+-            keyline_state_44->word_08 = 0;
+-        }
+-        unsigned int rotation = owner->keyline_state_44->word_18;
+-        ScreenPoint tile = owner->TilePosition();
+-        ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(tile, owner->BuildingDefinition()->footprint_x_1d4, owner->BuildingDefinition()->footprint_y_1d8, offset, rotation);
++        offset.x = -122.0f;
++        offset.y = -286.0f;
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_fc)->AsBuilding();
++        ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(owner->TilePosition(),
++            owner->BuildingDefinition()->footprint_x_1d4,
++            owner->BuildingDefinition()->footprint_y_1d8,
++            offset,
++            owner->keyline_state_44->word_18);
++        ScreenModeCommand command;
+         command.words[0] = id_28;
+         command.words[1] = id_28;
+         command.words[2] = 5;
+         command.words[3] = static_cast<int>(point.x);
+         command.words[4] = static_cast<int>(point.y);
+         screen_mode_commands->QueueCommand(&command);
++        result = true;
++        break;
+     }
+-    else if (state == 1)
++    case 0:
+     {
+-        action_f4 = 0;
++        ScreenMapPosition offset;
++        WorldBuildingEntity* owner = variable_world->FindObject(owner_fc)->AsBuilding();
++        keyline_state_44->SetAnimation(catwalk_animations[0], window_deactivation_state->time_158, &position_30);
++        switch (variant_f8)
++        {
++        case 0:
++            offset.x = -58.0f;
++            offset.y = -290.0f;
++            break;
++        case 1:
++            offset.x = -30.0f;
++            offset.y = -320.0f;
++            break;
++        case 2:
++            offset.x = -3.0f;
++            offset.y = -348.0f;
++            break;
++        }
++        keyline_state_44->word_08 = 0;
++        ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(owner->TilePosition(),
++            owner->BuildingDefinition()->footprint_x_1d4,
++            owner->BuildingDefinition()->footprint_y_1d8,
++            offset,
++            owner->keyline_state_44->word_18);
++        ScreenModeCommand command;
+         command.words[0] = id_28;
+         command.words[1] = id_28;
+-        command.words[2] = 3;
+-        command.words[3] = 0;
+-        command.words[4] = variant_f8 == 0 ? 4 : 0;
++        command.words[2] = 5;
++        command.words[3] = static_cast<int>(point.x);
++        command.words[4] = static_cast<int>(point.y);
+         screen_mode_commands->QueueCommand(&command);
++        result = true;
++        break;
++    }
++    case 1:
++    {
++        action_f4 = 0;
++        if (variant_f8 == 0)
++        {
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 4;
++            screen_mode_commands->QueueCommand(&command);
++        }
++        else
++        {
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0;
++            screen_mode_commands->QueueCommand(&command);
++        }
++        result = true;
++        break;
+     }
+-    else if (state == 4)
++    case 4:
+     {
+-        float duration = keyline_state_44->SetAnimation(catwalk_animations[0], window_deactivation_state->clock_158, &position);
++        float duration = window_deactivation_state->time_158;
++        duration = keyline_state_44->SetAnimation(catwalk_animations[0], duration, &position_30);
+         keyline_state_44->word_08 = 0;
+         action_f4 = 0;
++        ScreenModeCommand command;
+         command.words[0] = id_28;
+         command.words[1] = id_28;
+         command.words[2] = 5;
+         command.words[3] = static_cast<int>(position_108.x);
+         command.words[4] = static_cast<int>(position_108.y);
+         screen_mode_commands->QueueDelayed(&command, duration);
++        result = true;
++        break;
++    }
+     }
+-    else
+-        return static_cast<unsigned char>(state) != 0;
+-    return true;
++    return result;
+ }
+diff --git a/src/startup_world_performer_enter.cpp b/src/startup_world_performer_enter.cpp
+index cbf808de2c62a335cc2e92f05073c4a34643ecc3..e33ae6763e85c8b978bfb895f41a3c51b773881c 100644
+--- a/src/startup_world_performer_enter.cpp
++++ b/src/startup_world_performer_enter.cpp
+@@ -4,6 +4,9 @@
+ // GLOBAL: BEACHLIFE 0x0057b72c
+ const char* world_singer_walk_animation_name = "SING_WALK";
+ 
++// GLOBAL: BEACHLIFE 0x00577fa4
++const char* cabaret_walk_name = "D_CABARET_WALK_CYCLE";
++
+ // FUNCTION: BEACHLIFE 0x0048ce20
+ bool WorldEntity15::Unknown08(unsigned int state)
+ {
+@@ -138,62 +141,68 @@ bool WorldEntity20::Unknown08(unsigned int state)
+ // FUNCTION: BEACHLIFE 0x004638d0
+ bool WorldEntity14::Unknown08(unsigned int state)
+ {
+-    if (state == 0)
+-        return true;
+-    if (state == 1)
++    // Retail returns an unset stack byte for states other than 0 and 1
++    // (Unknown04 rejects them before a caller gets here); natively false.
++    bool result = false;
++    switch (state)
+     {
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        keyline_state_44->SetAnimation("D_CABARET_WALK_CYCLE", window_deactivation_state->time_158, &position);
++    case 1:
++    {
++        float time = window_deactivation_state->time_158;
++        keyline_state_44->SetAnimation(cabaret_walk_name, time, &position_30);
+         keyline_state_44->word_08 = 0;
+         action_state_f4 = 0;
+         WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
+-        ScreenMapPosition point;
+-        {
+-            ScreenMapPosition offset_value = { -122.0f, -286.0f };
+-            unsigned int rotation_value = owner->keyline_state_44->word_18;
+-            unsigned int height_value = owner->BuildingDefinition()->footprint_y_1d8;
+-            unsigned int width_value = owner->BuildingDefinition()->footprint_x_1d4;
+-            ScreenPoint tile = owner->TilePosition();
+-            point = CurrentScreenTerrain()->BuildingOffset(tile, width_value, height_value, offset_value, rotation_value);
+-        }
+-        SetMovementPosition({ point.x, point.y, 0.0f });
++        ScreenMapPosition offset(-122.0f, -286.0f);
+         unsigned int rotation = owner->keyline_state_44->word_18;
+-        if (rotation == 0)
+-        {
+-            point.x = owner->position_30.x - 21.0f;
+-            point.y = owner->position_30.y - 322.0f;
+-            keyline_state_44->SelectVariant(4);
+-        }
+-        else if (rotation == 3)
++        ScreenMapPosition target;
++        target = CurrentScreenTerrain()->BuildingOffset(owner->TilePosition(),
++            owner->BuildingDefinition()->footprint_x_1d4,
++            owner->BuildingDefinition()->footprint_y_1d8,
++            offset,
++            rotation);
++        SetMovementPosition(ScreenWorldPosition(target, 0.0f));
++        switch (owner->keyline_state_44->word_18)
+         {
+-            point.x = owner->position_30.x + 33.0f;
+-            point.y = owner->position_30.y - 308.0f;
+-            keyline_state_44->SelectVariant(6);
+-        }
+-        else
++        default:
+         {
+             visible_40 = 0;
+-            {
+-                ScreenMapPosition offset_value = { -25.0f, -282.0f };
+-                unsigned int rotation_value = owner->keyline_state_44->word_18;
+-                unsigned int height_value = owner->BuildingDefinition()->footprint_y_1d8;
+-                unsigned int width_value = owner->BuildingDefinition()->footprint_x_1d4;
+-                ScreenPoint tile = owner->TilePosition();
+-                point = CurrentScreenTerrain()->BuildingOffset(tile, width_value, height_value, offset_value, rotation_value);
+-            }
+-            keyline_state_44->SelectVariant(((4 - static_cast<int>(owner->keyline_state_44->word_18)) * 2) % 8);
++            offset.x = -25.0f;
++            offset.y = -282.0f;
++            rotation = owner->keyline_state_44->word_18;
++            target = CurrentScreenTerrain()->BuildingOffset(owner->TilePosition(),
++                owner->BuildingDefinition()->footprint_x_1d4,
++                owner->BuildingDefinition()->footprint_y_1d8,
++                offset,
++                rotation);
++            keyline_state_44->SelectVariant((4 - static_cast<int>(owner->keyline_state_44->word_18)) * 2 % 8);
++            break;
++        }
++        case 3:
++            target.x = owner->X() + 33.0f;
++            target.y = owner->position_30.y - 308.0f;
++            keyline_state_44->SelectVariant(6);
++            break;
++        case 0:
++            target.x = owner->X() - 21.0f;
++            target.y = owner->position_30.y - 322.0f;
++            keyline_state_44->SelectVariant(4);
++            break;
+         }
+         ScreenModeCommand command;
+         command.words[0] = id_28;
+         command.words[1] = id_28;
+         command.words[2] = 0xa;
+-        command.words[3] = static_cast<int>(point.x);
+-        command.words[4] = static_cast<int>(point.y);
++        command.words[3] = static_cast<int>(target.x);
++        command.words[4] = static_cast<int>(target.y);
+         screen_mode_commands->QueueCommand(&command);
+         return true;
+     }
+-    // Unknown04 rejects these states before the caller reaches this fallback.
+-    return false;
++    case 0:
++        result = true;
++        break;
++    }
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0049ba50
+diff --git a/src/startup_world_scenery_update.cpp b/src/startup_world_scenery_update.cpp
+index 6e962066d01b48ebfe0b482cb0a4d0d85be5e1ac..0dd75ed7921087d909a6c1db64f8be4a7c53c902 100644
+--- a/src/startup_world_scenery_update.cpp
++++ b/src/startup_world_scenery_update.cpp
+@@ -10,10 +10,9 @@ bool WorldSceneryEntity::Unknown0c()
+ {
+     if (!WorldStaticEntity::Unknown0c())
+         StartupFatal("Scenery::Update - error calling staticobject::update - %s", name_06);
+-    if (state_3c != 0 && state_3c != 4)
+-        return true;
+-    if (state_3c == 0)
++    switch (state_3c)
+     {
++    case 0:
+         if (scenery_f4->repairable_309 && byte_a0)
+         {
+             if (!flags_5a[3] && !repair_requested_5f)
+@@ -24,21 +23,27 @@ bool WorldSceneryEntity::Unknown0c()
+             else if (effect_d4)
+                 flag_a8 = rand() % 20 == 0;
+         }
+-        if (scenery_f4->cleanable_308 && word_90 == scenery_f4->capacity_2dc
+-            && !byte_a0 && !NeedsCleaning() && !flags_5a[2] && !cleaning_requested_5e)
++        if (scenery_f4->cleanable_308 && word_90 == scenery_f4->capacity_2dc && !byte_a0 && !NeedsCleaning()
++            && !flags_5a[2] && !cleaning_requested_5e)
+         {
+             window_deactivation_state->cleaning_2c->AddCleaningRequest(id_28);
+             SetCleaningAssigned(1);
+         }
+-    }
+-    for (unsigned int i = 0; i < count_98; ++i)
+-    {
+-        if (ids_80[i] != -1)
++    case 4:
++        for (unsigned int i = 0; i < count_98; ++i)
+         {
+-            unsigned int state = variable_world->FindObject(ids_80[i])->state_3c;
+-            if (state != 0x35 && state != 0x18 && state != 0x1d && state != 0x33)
+-                StartupFatal("Guest thinks they've no Longer got the scenery item locked! \n Why's that then? Scenery Type = %s \n Guests Old State = %d \n Guests New State = %d", scenery_f4->name_04, ids_88[i], state);
++            if (ids_80[i] != -1)
++            {
++                unsigned int state = variable_world->FindObject(ids_80[i])->state_3c;
++                if (state != 0x35 && state != 0x18 && state != 0x1d && state != 0x33)
++                    StartupFatal("Guest thinks they've no Longer got the scenery item locked! \n Why's that then? Scenery "
++                                 "Type = %s \n Guests Old State = %d \n Guests New State = %d",
++                        scenery_f4->name_04,
++                        ids_88[i],
++                        state);
++            }
+         }
++        break;
+     }
+     return true;
+ }

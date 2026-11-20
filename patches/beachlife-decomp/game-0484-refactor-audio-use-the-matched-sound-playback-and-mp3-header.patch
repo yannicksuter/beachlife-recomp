@@ -1,0 +1,279 @@
+diff --git a/src/startup_screen_panel13c_file_info_buffer.cpp b/src/startup_screen_panel13c_file_info_buffer.cpp
+index 926e6050db4ec27938766765d04c1bdfa6c1fd45..b6f2b2e4baeb332939cf6694d52bfbe3c976284a 100644
+--- a/src/startup_screen_panel13c_file_info_buffer.cpp
++++ b/src/startup_screen_panel13c_file_info_buffer.cpp
+@@ -11,114 +11,106 @@ const int bitrate_v1[16] = { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192,
+ const int bitrate_v2[16] = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 44100 };
+ const int frequency_v1[4] = { 44100, 48000, 32000, 22050 };
+ const int frequency_v2[4] = { 22050, 24000, 16000, 626815781 };
++
++int HeaderFrequency(const unsigned char* header)
++{
++    int index = (header[2] >> 2) & 3;
++    return (header[1] & 8) ? frequency_v1[index] : frequency_v2[index];
++}
++
++int HeaderBitrate(const unsigned char* header)
++{
++    int index = header[2] >> 4;
++    return (header[1] & 8) ? bitrate_v1[index] : bitrate_v2[index];
++}
++
++int HeaderVersion(const unsigned char* header)
++{
++    return ((static_cast<unsigned char>(~header[1]) >> 3) & 1) + 1;
++}
++
++// The original LEA/SHL product wraps in 32 bits before the signed IDIV.
++unsigned int FrameBytes(const unsigned char* header, unsigned int scale)
++{
++    unsigned int scaled = static_cast<unsigned int>(HeaderBitrate(header)) * scale;
++    return static_cast<unsigned int>(static_cast<int>(scaled) / HeaderFrequency(header)) + ((header[2] >> 1) & 1);
++}
+ } // namespace
+ 
+ // FUNCTION: BEACHLIFE 0x004cecc0
+ void ScreenLoadPanel13cFileInfo::ScanBytes(const unsigned char* bytes, int count)
+ {
+     unsigned char* joined = 0;
+-    const unsigned char* cursor;
+     if (word_28 > 0)
+     {
+         joined = new unsigned char[word_28 + static_cast<unsigned int>(count)];
+         memcpy(joined, bytes_24, word_28);
+         memcpy(joined + word_28, bytes, static_cast<unsigned int>(count));
+         count = static_cast<int>(static_cast<unsigned int>(count) + word_28);
+-        cursor = joined;
+-    }
+-    else
+-    {
+-        cursor = bytes;
++        bytes = joined;
+     }
+-
+-    const unsigned char* end = cursor + count;
+-    cursor += word_20;
+-    while (cursor < end)
++    const unsigned char* end = bytes + count;
++    bytes += word_20;
++    while (bytes < end)
+     {
+-        if (static_cast<int>(end - cursor) < 4)
++        if (end - bytes < 4)
+         {
+-            word_28 = static_cast<unsigned int>(end - cursor);
+-            memcpy(bytes_24, cursor, word_28);
++            word_28 = static_cast<unsigned int>(end - bytes);
++            memcpy(bytes_24, bytes, word_28);
+             word_20 = 0;
+             if (joined)
+-            {
+                 delete[] joined;
+-            }
+             return;
+         }
+-
+-        if (cursor[0] != 0xff)
+-        {
+-            goto invalid_header;
+-        }
++        if (bytes[0] == 0xff && ((bytes[1] & 0xf0) == 0xf0 || (bytes[1] & 0xf0) == 0xe0))
+         {
+-            unsigned char second = cursor[1];
+-            if ((second & 0xf0) != 0xf0 && (second & 0xf0) != 0xe0)
+-            {
+-                goto invalid_header;
+-            }
+-
+-            unsigned int third = cursor[2];
+-            unsigned int frequency_index = (third >> 2) & 3;
+-            unsigned char version_bit = second & 8;
+-            int frequency = version_bit ? frequency_v1[frequency_index] : frequency_v2[frequency_index];
+-            if (frequency == 0)
++            if (HeaderFrequency(bytes) == 0)
+             {
+-                goto invalid_header;
++                word_30 = static_cast<int>(static_cast<unsigned int>(word_30) + 1U);
++                bytes++;
++                continue;
+             }
+-
+-            unsigned int version = ((~static_cast<unsigned int>(second) >> 3) & 1) + 1;
+-            unsigned int bitrate_index = third >> 4;
+-            int bitrate = version_bit ? bitrate_v1[bitrate_index] : bitrate_v2[bitrate_index];
+-            // The original LEA/SHL product wraps in 32 bits before signed IDIV.
+-            unsigned int scaled = static_cast<unsigned int>(bitrate) * (version == 1 ? 144000U : 72000U);
+-            unsigned int frame_bytes = static_cast<unsigned int>(static_cast<int>(scaled) / frequency);
+-            frame_bytes += (third >> 1) & 1;
+-            if (frame_bytes <= 1 || frame_bytes > 0x800)
++            unsigned int size;
++            if (HeaderVersion(bytes) == 1)
++                size = FrameBytes(bytes, 144000U);
++            else
++                size = FrameBytes(bytes, 72000U);
++            if (size <= 1 || size > 0x800)
+             {
+-                goto invalid_header;
++                word_30 = static_cast<int>(static_cast<unsigned int>(word_30) + 1U);
++                bytes++;
++                continue;
+             }
+-
+-            int frames = word_10;
+-            if (frames == 0)
++            if (word_10 == 0)
+             {
+-                word_1c = (second >> 1) & 3;
+-                word_04 = (cursor[1] & 8) ? frequency_v1[(cursor[2] >> 2) & 3]
+-                                          : frequency_v2[(cursor[2] >> 2) & 3];
+-                word_00 = (cursor[1] & 8) ? bitrate_v1[cursor[2] >> 4] : bitrate_v2[cursor[2] >> 4];
+-                word_14 = ((~static_cast<unsigned int>(cursor[1]) >> 3) & 1) + 1;
+-                word_08 = (cursor[3] & 0xc0) != 0xc0;
++                word_1c = (bytes[1] >> 1) & 3;
++                word_04 = HeaderFrequency(bytes);
++                word_00 = HeaderBitrate(bytes);
++                word_14 = HeaderVersion(bytes);
++                word_08 = (bytes[3] & 0xc0) != 0xc0;
+             }
+             else
+             {
+-                if (word_04 != frequency)
++                if (word_04 != HeaderFrequency(bytes))
+                 {
+-                    goto invalid_header;
++                    word_30 = static_cast<int>(static_cast<unsigned int>(word_30) + 1U);
++                    bytes++;
++                    continue;
+                 }
+-                if (word_00 != 0 && word_00 != static_cast<unsigned int>(bitrate))
+-                {
++                if (word_00 != 0 && word_00 != static_cast<unsigned int>(HeaderBitrate(bytes)))
+                     word_00 = 0;
+-                }
+             }
+-
+-            word_10 = static_cast<int>(static_cast<unsigned int>(frames) + 1U);
+-            word_2c = static_cast<int>(static_cast<unsigned int>(word_2c) + frame_bytes);
+-            bitrate = (cursor[1] & 8) ? bitrate_v1[cursor[2] >> 4] : bitrate_v2[cursor[2] >> 4];
+-            word_18 = static_cast<int>(
+-                static_cast<unsigned int>(word_18) + static_cast<unsigned int>(bitrate));
+-            cursor += frame_bytes;
++            word_10 = static_cast<int>(static_cast<unsigned int>(word_10) + 1U);
++            word_2c = static_cast<int>(static_cast<unsigned int>(word_2c) + size);
++            word_18 = static_cast<int>(static_cast<unsigned int>(word_18) + static_cast<unsigned int>(HeaderBitrate(bytes)));
++            bytes += size;
+             continue;
+         }
+-
+-    invalid_header:
+         word_30 = static_cast<int>(static_cast<unsigned int>(word_30) + 1U);
+-        ++cursor;
++        bytes++;
+     }
+-
+-    word_20 = static_cast<unsigned int>(cursor - end);
++    word_20 = static_cast<unsigned int>(bytes - end);
+     word_28 = 0;
+     if (joined)
+-    {
+         delete[] joined;
+-    }
+ }
+diff --git a/src/window_audio_playback.cpp b/src/window_audio_playback.cpp
+index 78cc88cbd5b47bcbab184c49876bb7c0a39c7461..924594595661f7c5552f0f05b8482f0729efd5da 100644
+--- a/src/window_audio_playback.cpp
++++ b/src/window_audio_playback.cpp
+@@ -6,29 +6,32 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
+-// FUNCTION: BEACHLIFE 0x004d0040
+-int WindowAudioState::PlaySoundWithParameters(
+-    const char* name, int volume, unsigned int flags, float fade, float scale)
++// The first free two-dimensional voice (0..15): its Miles sample is reset and
++// the voice index becomes the result.
++static bool FindFreeVoice(WindowAudioState* audio, int& result, void*& sample)
+ {
+-    int result = -1;
+-    if (enabled)
++    for (int index = 0; index < 16; ++index)
+     {
+-        int index;
+-        for (index = 0; index < 16; ++index)
+-        {
+-            if (voices_74[index] == 0)
+-            {
+-                break;
+-            }
+-        }
+-        if (index == 16)
++        if (!audio->voices_74[index])
+         {
+-            return result;
++            sample = audio->samples_14[index];
++            AIL_init_sample(sample);
++            result = index;
++            return true;
+         }
++    }
++    return false;
++}
+ 
+-        void* sample = samples_14[index];
+-        AIL_init_sample(sample);
+-        result = index;
++// FUNCTION: BEACHLIFE 0x004d0040
++int WindowAudioState::PlaySoundWithParameters(const char* name, int volume, unsigned int flags, float fade, float scale)
++{
++    int result = -1;
++    if (!enabled)
++        return result;
++    void* sample;
++    if (FindFreeVoice(this, result, sample))
++    {
+         if (sample)
+         {
+             char filename[64];
+@@ -38,21 +41,17 @@ int WindowAudioState::PlaySoundWithParameters(
+             if (data)
+             {
+                 WindowSoundVoice* voice = new WindowSoundVoice;
+-                voices_74[index] = voice;
++                voices_74[result] = voice;
+                 voice->data_04 = data;
+                 voice->bytes_0c = bytes;
+                 voice->name = static_cast<char*>(::operator new(strlen(filename) + 1));
+                 strcpy(voice->name, filename);
+ 
+-                unsigned int format = voice->word_08;
+-                unsigned int sample_bytes = voice->bytes_0c;
+-                void* sample_data = voice->data_04;
+-                const char* extension = window_sound_wave_extension;
+-                if (format)
+-                {
+-                    extension = window_sound_mp3_extension;
+-                }
+-                AIL_set_named_sample_file(sample, extension, sample_data, sample_bytes, 0);
++                // A nonzero format word hands the data to Miles as .mp3, otherwise as .wav.
++                if (!voice->word_08)
++                    AIL_set_named_sample_file(sample, window_sound_wave_extension, voice->data_04, voice->bytes_0c, 0);
++                else
++                    AIL_set_named_sample_file(sample, window_sound_mp3_extension, voice->data_04, voice->bytes_0c, 0);
+ 
+                 float target_volume = static_cast<float>(volume);
+                 voice->scale_14 = scale;
+@@ -68,14 +67,10 @@ int WindowAudioState::PlaySoundWithParameters(
+                     initial_volume = 0;
+                 }
+                 else
+-                {
+                     initial_volume = volume;
+-                }
+ 
+                 if (flags & 2)
+-                {
+                     AIL_set_sample_loop_count(sample, 0);
+-                }
+                 AIL_start_sample(sample);
+                 AIL_set_sample_volume(sample, initial_volume);
+             }

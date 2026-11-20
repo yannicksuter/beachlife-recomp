@@ -1,0 +1,339 @@
+diff --git a/src/startup_game_won_stage.cpp b/src/startup_game_won_stage.cpp
+index 9bf729c4ceaef2bc864c6722bd292ae638093c93..43663aa30a4cd1c8a3c5596401be8f93fe9c0de4 100644
+--- a/src/startup_game_won_stage.cpp
++++ b/src/startup_game_won_stage.cpp
+@@ -72,57 +72,77 @@ CircularListIterator GameWonList::Insert(CircularListIterator position, ScreenIt
+     return result;
+ }
+ 
+-// FUNCTION: BEACHLIFE 0x004e87a0
+-void GameWonController::ShowStage()
++char game_won_screen_format[] = "GameWon%d";
++
++// Deletes every credit item and returns the list nodes to the pool.
++static void ClearCredits(GameWonList& items)
+ {
+-    screen_manager->CloseActiveScreens();
+-    char name[128];
+-    std::sprintf(name, "GameWon%d", stage);
+-    screen_manager->RequestScreen(name, 0, 0);
+     CircularListIterator first;
+-    first.node = list_90.head->next;
++    first.node = items.head->next;
+     CircularListIterator last;
+-    last.node = list_90.head;
++    last.node = items.head;
+     VisitPointerList<GameWonListNode, ScreenItem*, &GameWonListNode::item>(first, last, DeleteGameWonItem);
++    CircularListNode* node = items.head->next;
++    while (node != items.head)
+     {
+-        CircularListNode* node = list_90.head->next;
+-        while (node != list_90.head)
++        CircularListNode* released = node;
++        node = node->next;
++        if (released)
+         {
+-            CircularListNode* released = node;
+-            node = node->next;
+-            if (released)
+-            {
+-                unsigned int pool_bytes = sizeof(GameWonListNode);
+-                PoolChunkLink* volatile* bucket = pool_chunk_buckets + (pool_bytes - 1) / 8;
+-                AcquirePoolLock(&pool_lock_word);
+-                PoolChunkLink* returned = ::new (static_cast<void*>(released)) PoolChunkLink;
+-                returned->next = *bucket;
+-                *bucket = returned;
+-                pool_lock_word = 0;
+-            }
++            unsigned int pool_bytes = sizeof(GameWonListNode);
++            PoolChunkLink* volatile* bucket = pool_chunk_buckets + (pool_bytes - 1) / 8;
++            AcquirePoolLock(&pool_lock_word);
++            PoolChunkLink* returned = ::new (static_cast<void*>(released)) PoolChunkLink;
++            returned->next = *bucket;
++            *bucket = returned;
++            pool_lock_word = 0;
+         }
+-        list_90.head->next = list_90.head;
+-        list_90.head->previous = list_90.head;
+     }
+-    GameWonCreditLayout* layouts = game_won_credit_layouts[stage];
++    items.head->next = items.head;
++    items.head->previous = items.head;
++}
++
++static void AddCredit(GameWonList& items, ScreenItem* item)
++{
++    CircularListIterator end;
++    end.node = items.head;
++    items.Insert(end, item);
++}
++
++// FUNCTION: BEACHLIFE 0x004e87a0
++void GameWonController::ShowStage()
++{
++    screen_manager->CloseActiveScreens();
++    char name[128];
++    std::sprintf(name, game_won_screen_format, stage);
++    screen_manager->RequestScreen(name, 0, 0);
++    ClearCredits(list_90);
++    GameWonCreditLayout* layout = game_won_credit_layouts[stage];
+     for (int i = 0; i < 3; ++i)
+     {
+-        GameWonCreditLayout& layout = layouts[i];
+-        if (layout.group == -1)
++        if (layout->group == -1)
+             break;
+-        int y = layout.y;
+-        int x = layout.x;
+-        int right = x + layout.width;
+-        for (GameWonCreditEntry* entry = game_won_credit_groups[layout.group]; entry->font != -1; ++entry)
++        int x = layout->x;
++        int y = layout->y;
++        ScreenRectangle bounds;
++        bounds.right = x + layout->width;
++        bounds.bottom = y + 15;
++        for (GameWonCreditEntry* entry = game_won_credit_groups[layout->group]; entry->font != -1; ++entry)
+         {
+             char key[128];
++            // Retail formats through the PE key format record (CREDIT_ENTRY_%d),
++            // which the boot session binds only with the credits data.
+             std::sprintf(key, "CREDIT_ENTRY_%d", entry->text_id);
+-            ScreenRectangle bounds = { x, y, right, y + 15 };
+-            ScreenItem* item = new (std::nothrow) ScreenTextItem(bounds, key, entry->font, entry->value, 4);
+-            CircularListIterator end;
+-            end.node = list_90.head;
+-            list_90.Insert(end, item);
+-            y += entry->double_spacing ? 30 : 15;
++            bounds.left = x;
++            bounds.top = y;
++            ScreenTextItem* item = new (std::nothrow) ScreenTextItem(bounds, key, entry->font, entry->value, 4);
++            AddCredit(list_90, item);
++            if (entry->double_spacing)
++                y += 30;
++            else
++                y += 15;
++            bounds.bottom = y + 15;
+         }
++        ++layout;
+     }
+ }
+diff --git a/src/startup_screen_panel13c_playlist.cpp b/src/startup_screen_panel13c_playlist.cpp
+index dd37564f9fea4fbffc505ddabd4f678e101f5e20..25f0a712b8171ce155321c00f69b38ba7c11eb6e 100644
+--- a/src/startup_screen_panel13c_playlist.cpp
++++ b/src/startup_screen_panel13c_playlist.cpp
+@@ -1,5 +1,6 @@
+ #include "startup_screen_load_dependencies.h"
+ #include "startup_screen_list_box.h"
++#include "startup_screen_list_box_selection.h"
+ #include "startup_screen_manager.h"
+ #include "startup_screen_panel13c_owner.h"
+ #include "startup_screen_placement.h"
+@@ -114,6 +115,17 @@ void ScreenLoadPanel13c::DeleteSelectedEntries()
+     list_04->EnsureRowVisible(row);
+ }
+ 
++static int FirstSelectedRow(ScreenListBoxPrefix* list)
++{
++    list->word_84 = 0;
++    return list->selection.begin[0];
++}
++
++static int NextSelectedRow(ScreenListBoxPrefix* list)
++{
++    return list->selection.begin[++list->word_84];
++}
++
+ // FUNCTION: BEACHLIFE 0x004c30c0
+ void ScreenLoadPanel13c::ShuffleSelection()
+ {
+@@ -123,27 +135,12 @@ void ScreenLoadPanel13c::ShuffleSelection()
+     else
+     {
+         ScreenListBoxSelectionRange rows = { 0, 0, 0 };
+-        list_04->word_84 = 0;
+-        int row = list_04->selection.begin[0];
+-        for (int i = 0; i < count; ++i)
++        int row = FirstSelectedRow(list_04);
++        PushBackSelection(rows, row);
++        for (int i = 1; i < count; ++i)
+         {
+-            if (i)
+-                row = list_04->NextSelectedRow();
+-            if (rows.end != rows.capacity)
+-                ::new (rows.end++) int(row);
+-            else if (i == 0)
+-                rows.InsertOverflow(rows.end, row, ScreenListBoxTrueType(), 1, true);
+-            else
+-            {
+-                unsigned int size = static_cast<unsigned int>(rows.end - rows.begin);
+-                unsigned int length = size + (size < 1 ? 1 : size);
+-                unsigned int bytes = length * sizeof(int);
+-                int* storage = length ? static_cast<int*>(bytes > 128 ? ::operator new(bytes) : AllocatePoolBytes(bytes)) : 0;
+-                int* next = static_cast<int*>(CopyTrivial(rows.begin, rows.end, storage));
+-                next = FillTrivialRange(next, 1, row);
+-                ReleaseTrivialStorage(rows.begin, rows.capacity);
+-                SetTrivialStorage(rows.begin, rows.end, rows.capacity, storage, next, storage + length);
+-            }
++            row = NextSelectedRow(list_04);
++            PushBackSelection(rows, row);
+         }
+         owner_00->ShuffleRows(&rows);
+     }
+diff --git a/src/startup_screen_table_column_count.cpp b/src/startup_screen_table_column_count.cpp
+index 41ae0fa38e23a3d1d60d9db04adc0f02ccb34b9e..1c7df8df6dadcf6a2d1cb4e6d94ccf348ea9af8f 100644
+--- a/src/startup_screen_table_column_count.cpp
++++ b/src/startup_screen_table_column_count.cpp
+@@ -26,41 +26,63 @@ const char* column_hours_up_resource = "UI3_inc_flat";
+ // GLOBAL: BEACHLIFE 0x0057ffbc
+ const char* column_hours_down_resource = "UI3_dec_flat";
+ 
+-static ScreenButtonPrefix* CreateColumnButton(ScreenRectangle bounds, const char* resource,
+-    unsigned char repeat, const char* tip)
+-{
+-    ScreenButtonPrefix* item = new (std::nothrow) ScreenButtonPrefix(bounds, resource, screen_button_no_text_name, screen_dialog_none_name, screen_dialog_none_name);
+-    item->flag_50 = repeat;
+-    item->SetOwnedText(tip);
+-    return item;
+-}
+-
+ // FUNCTION: BEACHLIFE 0x004b7250
+ void ScreenTableColumn::SetRowCount(unsigned int count)
+ {
+     if (count == count_78)
+         return;
+     count_78 = count;
+-    if (source_kind_58 == 4)
++    switch (source_kind_58)
+     {
+-        unsigned int old_count = items_6c.end - items_6c.begin;
++    case 2:
++    {
++        unsigned int old_count = items_60.end - items_60.begin;
+         if (old_count < count)
+         {
+             for (unsigned int i = 0; i < count_78 - old_count; ++i)
+             {
+-                int y = rectangle.top + static_cast<int>(items_6c.end - items_6c.begin) * table_word_48;
+-                ScreenRectangle bounds = { rectangle.left, y, rectangle.right, y + table_word_48 };
+-                char* key = static_cast<char*>(::operator new(std::strlen(name_44) + 32));
+-                std::sprintf(key, "%s_%d", name_44, static_cast<int>(i));
+-                ScreenNumberAdjust* item = new (std::nothrow) ScreenNumberAdjust(bounds,
+-                    value_c_84 ? 0 : 1,
+-                    value_a_50,
+-                    key,
+-                    false,
+-                    false);
++                int y = rectangle.top + static_cast<int>(items_60.end - items_60.begin) * table_word_48;
++                ScreenRectangle bounds = { rectangle.left + value_d_88, y, rectangle.right, y + table_word_48 };
++                // Retail leaves this pointer unset for an unrecognized button name.
++                ScreenButtonPrefix* item;
++                if (std::strcmp(name_44, "GOTO") == 0)
++                {
++                    ScreenButtonPrefix* button = new (std::nothrow) ScreenButtonPrefix(bounds, column_goto_resource, screen_button_no_text_name, screen_dialog_none_name, screen_dialog_none_name);
++                    button->flag_50 = 0;
++                    item = button;
++                    button->SetOwnedText(column_more_info_tip);
++                }
++                else if (std::strcmp(name_44, "GOTO_THOUGHT") == 0)
++                {
++                    ScreenButtonPrefix* button = new (std::nothrow) ScreenButtonPrefix(bounds, column_goto_resource, screen_button_no_text_name, screen_dialog_none_name, screen_dialog_none_name);
++                    button->flag_50 = 0;
++                    item = button;
++                    button->SetOwnedText(column_thought_tip);
++                }
++                else if (std::strcmp(name_44, "GOTO_HOME") == 0)
++                {
++                    ScreenButtonPrefix* button = new (std::nothrow) ScreenButtonPrefix(bounds, column_goto_resource, screen_button_no_text_name, screen_dialog_none_name, screen_dialog_none_name);
++                    button->flag_50 = 0;
++                    item = button;
++                    button->SetOwnedText(column_home_tip);
++                }
++                else if (std::strcmp(name_44, "STAFF_HOUR_DEC") == 0)
++                {
++                    ScreenButtonPrefix* button = new (std::nothrow) ScreenButtonPrefix(bounds, column_hours_down_resource, screen_button_no_text_name, screen_dialog_none_name, screen_dialog_none_name);
++                    button->flag_50 = 1;
++                    item = button;
++                    button->SetOwnedText(column_hours_down_tip);
++                }
++                else if (std::strcmp(name_44, "STAFF_HOUR_INC") == 0)
++                {
++                    ScreenButtonPrefix* button = new (std::nothrow) ScreenButtonPrefix(bounds, column_hours_up_resource, screen_button_no_text_name, screen_dialog_none_name, screen_dialog_none_name);
++                    button->flag_50 = 1;
++                    item = button;
++                    button->SetOwnedText(column_hours_up_tip);
++                }
+                 item->Unresolved24(1);
+                 {
+-                    auto& items = items_6c;
++                    auto& items = items_60;
+                     auto appended = item;
+                     if (items.end != items.limit)
+                     {
+@@ -80,37 +102,33 @@ void ScreenTableColumn::SetRowCount(unsigned int count)
+                         SetTrivialStorage(items.begin, items.end, items.limit, storage, next, storage + count);
+                     }
+                 }
+-                ::operator delete(key);
+             }
+         }
+         if (old_count > count_78)
+             for (unsigned int i = old_count - count_78; i; --i)
+-                delete *--items_6c.end;
++                delete *--items_60.end;
+     }
+-    else if (source_kind_58 == 2)
++    break;
++    case 4:
+     {
+-        unsigned int old_count = items_60.end - items_60.begin;
++        unsigned int old_count = items_6c.end - items_6c.begin;
+         if (old_count < count)
+         {
+             for (unsigned int i = 0; i < count_78 - old_count; ++i)
+             {
+-                int y = rectangle.top + static_cast<int>(items_60.end - items_60.begin) * table_word_48;
+-                ScreenRectangle bounds = { rectangle.left + value_d_88, y, rectangle.right, y + table_word_48 };
+-                // Retail leaves this pointer unset for an unrecognized button name.
+-                ScreenButtonPrefix* item;
+-                if (std::strcmp(name_44, "GOTO") == 0)
+-                    item = CreateColumnButton(bounds, column_goto_resource, 0, column_more_info_tip);
+-                else if (std::strcmp(name_44, "GOTO_THOUGHT") == 0)
+-                    item = CreateColumnButton(bounds, column_goto_resource, 0, column_thought_tip);
+-                else if (std::strcmp(name_44, "GOTO_HOME") == 0)
+-                    item = CreateColumnButton(bounds, column_goto_resource, 0, column_home_tip);
+-                else if (std::strcmp(name_44, "STAFF_HOUR_DEC") == 0)
+-                    item = CreateColumnButton(bounds, column_hours_down_resource, 1, column_hours_down_tip);
+-                else if (std::strcmp(name_44, "STAFF_HOUR_INC") == 0)
+-                    item = CreateColumnButton(bounds, column_hours_up_resource, 1, column_hours_up_tip);
++                int y = rectangle.top + static_cast<int>(items_6c.end - items_6c.begin) * table_word_48;
++                ScreenRectangle bounds = { rectangle.left, y, rectangle.right, y + table_word_48 };
++                char* key = static_cast<char*>(::operator new(std::strlen(name_44) + 32));
++                std::sprintf(key, "%s_%d", name_44, static_cast<int>(i));
++                ScreenNumberAdjust* item = new (std::nothrow) ScreenNumberAdjust(bounds,
++                    value_c_84 ? 0 : 1,
++                    value_a_50,
++                    key,
++                    false,
++                    false);
+                 item->Unresolved24(1);
+                 {
+-                    auto& items = items_60;
++                    auto& items = items_6c;
+                     auto appended = item;
+                     if (items.end != items.limit)
+                     {
+@@ -130,10 +148,13 @@ void ScreenTableColumn::SetRowCount(unsigned int count)
+                         SetTrivialStorage(items.begin, items.end, items.limit, storage, next, storage + count);
+                     }
+                 }
++                ::operator delete(key);
+             }
+         }
+         if (old_count > count_78)
+             for (unsigned int i = old_count - count_78; i; --i)
+-                delete *--items_60.end;
++                delete *--items_6c.end;
++    }
++    break;
+     }
+ }

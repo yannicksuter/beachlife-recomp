@@ -1,0 +1,593 @@
+diff --git a/src/startup_building_footprint.cpp b/src/startup_building_footprint.cpp
+index 3ec42c4ea0e18cab3c60da260f62b4308df966a9..c49ba9b30031776109e119aca7e18a4531361589 100644
+--- a/src/startup_building_footprint.cpp
++++ b/src/startup_building_footprint.cpp
+@@ -194,6 +194,14 @@ void VariableBuildingStatus::UpdateConstructionFootprint(unsigned int id)
+     entity->placed_time_108 = window_deactivation_state->time_158;
+ }
+ 
++static inline void ReserveFootprintTile(const ScreenPoint& tile)
++{
++    BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 |= 0x10;
++    BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 &= ~0x80000000u;
++    if (BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 & 1)
++        BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 |= 0x80;
++}
++
+ // FUNCTION: BEACHLIFE 0x004235f0
+ void VariableBuildingStatus::PrepareConstruction(unsigned int id)
+ {
+@@ -202,63 +210,100 @@ void VariableBuildingStatus::PrepareConstruction(unsigned int id)
+     ScreenPoint origin = entity->TilePosition();
+     ScreenPoint row_start = origin;
+     ScreenPoint tile = origin;
+-    unsigned int width = building->footprint_x_1d4;
+-    unsigned int height = building->footprint_y_1d8;
+-    if (entity->keyline_state_44->word_18 & 1)
++    unsigned int rows;
++    unsigned int columns;
++    if (entity->keyline_state_44->rotation_18 % 2)
+     {
+-        unsigned int temporary = width;
+-        width = height;
+-        height = temporary;
++        columns = building->footprint_x_1d4;
++        rows = building->footprint_y_1d8;
++    }
++    else
++    {
++        rows = building->footprint_x_1d4;
++        columns = building->footprint_y_1d8;
+     }
+     if (building->footprint_e14)
+         SetFootprint(origin, 0, 2, id);
+-    for (unsigned int row = 0; row < width; ++row)
++    for (unsigned int row = 0; row < rows; ++row)
+     {
+-        for (unsigned int column = 0; column < height; ++column)
++        for (unsigned int column = 0; column < columns; ++column)
+         {
+             if (!building->footprint_e14)
+-            {
+-                BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 |= 0x10;
+-                BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 &= 0x7fffffff;
+-                if (BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 & 1)
+-                    BuildingFootprintCell(screen_terrain_grid, tile)->flags_48 |= 0x80;
+-            }
++                ReserveFootprintTile(tile);
+             screen_terrain_grid->Step(tile, 0, &tile);
+         }
+         screen_terrain_grid->Step(row_start, 6, &row_start);
+         tile = row_start;
+     }
+-    ScreenMapPosition offset = { static_cast<float>(building->staff_x_314), static_cast<float>(building->staff_y_316) };
++    ScreenMapPosition offset;
++    offset.x = static_cast<float>(building->staff_x_314);
++    offset.y = static_cast<float>(building->staff_y_316);
+     unsigned int rotation = entity->keyline_state_44->word_18;
+-    ScreenPoint position = entity->TilePosition();
+-    ScreenMapPosition staff = CurrentScreenTerrain()->BuildingOffset(position, entity->BuildingDefinition()->footprint_x_1d4, entity->BuildingDefinition()->footprint_y_1d8, offset, rotation);
+-    ScreenPoint staff_tile = CurrentScreenTerrain()->WorldToTile({ staff.x, staff.y, 0.0f });
+-    BuildingFootprintCell(screen_terrain_grid, staff_tile)->flags_48 |= 0x80000080;
++    ScreenMapPosition staff = CurrentScreenTerrain()->BuildingOffset(entity->TilePosition(),
++        entity->BuildingDefinition()->footprint_x_1d4,
++        entity->BuildingDefinition()->footprint_y_1d8,
++        offset,
++        rotation);
++    ScreenWorldPosition position;
++    position.x = staff.x;
++    position.y = staff.y;
++    position.z = 0.0f;
++    ScreenPoint staff_tile = CurrentScreenTerrain()->WorldToTile(position);
++    {
++        ScreenTerrainCell* cell = BuildingFootprintCell(screen_terrain_grid, staff_tile);
++        cell->flags_48 |= 0x80000080;
++    }
+     if (!building->footprint_e14)
+     {
+         ScreenPoint border;
+         screen_terrain_grid->Step(origin, 2, &border);
+         screen_terrain_grid->Step(border, 4, &border);
+-        const int directions[] = { 6, 0, 2, 4 };
+-        for (int side = 0; side < 4; ++side)
++        for (unsigned int i6 = 0; i6 < rows + 1; ++i6)
+         {
+-            unsigned int count = (side & 1) ? height + 1 : width + 1;
+-            for (unsigned int i = 0; i < count; ++i)
++            screen_terrain_grid->Step(border, 6, &border);
++            ScreenTerrainCell* cell = BuildingFootprintCell(screen_terrain_grid, border);
++            if (static_cast<unsigned char>(cell->flags_48) & 1)
+             {
+-                screen_terrain_grid->Step(border, directions[side], &border);
+-                ScreenTerrainCell* cell = BuildingFootprintCell(screen_terrain_grid, border);
+-                if (cell->flags_48 & 1)
+-                {
+-                    cell->flags_48 |= 0x10000080;
+-                    world_cursor_names->UpdateTile(border.x, border.y, 0);
+-                }
++                cell->flags_48 |= 0x10000080;
++                world_cursor_names->UpdateTile(border.x, border.y, 0);
++            }
++        }
++        for (unsigned int i0 = 0; i0 < columns + 1; ++i0)
++        {
++            screen_terrain_grid->Step(border, 0, &border);
++            ScreenTerrainCell* cell = BuildingFootprintCell(screen_terrain_grid, border);
++            if (static_cast<unsigned char>(cell->flags_48) & 1)
++            {
++                cell->flags_48 |= 0x10000080;
++                world_cursor_names->UpdateTile(border.x, border.y, 0);
++            }
++        }
++        for (unsigned int i2 = 0; i2 < rows + 1; ++i2)
++        {
++            screen_terrain_grid->Step(border, 2, &border);
++            ScreenTerrainCell* cell = BuildingFootprintCell(screen_terrain_grid, border);
++            if (static_cast<unsigned char>(cell->flags_48) & 1)
++            {
++                cell->flags_48 |= 0x10000080;
++                world_cursor_names->UpdateTile(border.x, border.y, 0);
++            }
++        }
++        for (unsigned int i4 = 0; i4 < columns + 1; ++i4)
++        {
++            screen_terrain_grid->Step(border, 4, &border);
++            ScreenTerrainCell* cell = BuildingFootprintCell(screen_terrain_grid, border);
++            if (static_cast<unsigned char>(cell->flags_48) & 1)
++            {
++                cell->flags_48 |= 0x10000080;
++                world_cursor_names->UpdateTile(border.x, border.y, 0);
+             }
+         }
+     }
+-    tile = entity->TilePosition();
+-    for (unsigned char i = 0; i < static_cast<int>(entity->footprint_y_59) - 1; ++i)
++    ScreenPoint corner = entity->TilePosition();
++    tile = corner;
++    for (unsigned char step = 0; step < static_cast<int>(entity->footprint_y_59) - 1; ++step)
+         screen_terrain_grid->Step(tile, 0, &tile);
+-    for (unsigned char i = 0; i < static_cast<int>(entity->footprint_x_58) - 1; ++i)
++    for (unsigned char step2 = 0; step2 < static_cast<int>(entity->footprint_x_58) - 1; ++step2)
+         screen_terrain_grid->Step(tile, 6, &tile);
+     entity->SetMarkerPosition(CurrentScreenTerrain()->TilePosition(tile, 0));
+ }
+diff --git a/src/startup_building_footprint_restore.cpp b/src/startup_building_footprint_restore.cpp
+index 88776e99502f87888c958828b4535ab14ba930c3..19bea100d8b94ddfa398102eb8a7ce7bfb4bda3a 100644
+--- a/src/startup_building_footprint_restore.cpp
++++ b/src/startup_building_footprint_restore.cpp
+@@ -57,6 +57,13 @@ void VariableBuildingStatus::PrepareBuilderLocations(unsigned int id)
+     }
+ }
+ 
++static inline unsigned int GridTileIndex(ScreenTerrainGrid* terrain, int x, int y)
++{
++    unsigned int row = static_cast<unsigned int>(y) % terrain->height_08;
++    unsigned int column = static_cast<unsigned int>(x) % terrain->width_04;
++    return row * terrain->width_04 + column;
++}
++
+ // FUNCTION: BEACHLIFE 0x00423c20
+ void VariableBuildingStatus::RestoreFootprint(unsigned int id)
+ {
+@@ -64,11 +71,14 @@ void VariableBuildingStatus::RestoreFootprint(unsigned int id)
+     VariableBuilding* building = entity->building_60;
+     ScreenTerrainGrid* grid = screen_terrain_grid;
+     unsigned int rotation = entity->keyline_state_44->word_18;
+-    ScreenPoint row_start = entity->TilePosition();
++    ScreenPoint initial = entity->TilePosition();
++    ScreenPoint row_start = initial;
++    ScreenPoint tile;
++    tile = initial;
+     unsigned int columns = building->footprint_x_1d4 + 2;
+     unsigned int rows = building->footprint_y_1d8 + 2;
+-    bool odd = (rotation & 1) != 0;
+-    if (odd)
++    unsigned int odd = rotation & 1;
++    if (odd == 1)
+     {
+         unsigned int temporary = columns;
+         columns = rows;
+@@ -77,14 +87,20 @@ void VariableBuildingStatus::RestoreFootprint(unsigned int id)
+     int column_direction;
+     int row_direction;
+     grid->BuildingBounds(row_start, rows, columns, &column_direction, &row_direction, rotation);
+-    ScreenPoint tile = row_start;
++    tile = row_start;
+     for (unsigned int row = 0; row < rows; ++row)
+     {
+         for (unsigned int column = 0; column < columns; ++column)
+         {
+-            unsigned int index = odd ? column * 25 + row : row * 25 + column;
++            unsigned int first = column, second = row;
++            if (!(rotation & 1))
++            {
++                first = row;
++                second = column;
++            }
++            unsigned int index = first * 25 + second;
+             unsigned int footprint = building->footprint_e14[2 + index];
+-            ScreenTerrainCell* cell = &screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)];
++            ScreenTerrainCell* cell = &screen_terrain_grid->cells_0c[GridTileIndex(screen_terrain_grid, tile.x, tile.y)];
+             unsigned int flags = cell->flags_48;
+             if (footprint && footprint != 0x200)
+             {
+@@ -100,16 +116,22 @@ void VariableBuildingStatus::RestoreFootprint(unsigned int id)
+                     cell->flags_48 &= ~0x800u;
+                 cell->flags_48 &= ~0x80000000u;
+                 world_cursor_names->UpdateTile(tile.x, tile.y, 0);
+-                if (flags & 3)
++                if (!(flags & 3))
++                {
++                    if (flags & 4)
++                        cell->flags_48 |= 0x40000000;
++                    else if (flags & 8)
++                        cell->flags_48 |= 0x20000000;
++                }
++                else
++                {
+                     cell->flags_48 |= 0x80000000;
+-                else if (flags & 4)
+-                    cell->flags_48 |= 0x40000000;
+-                else if (flags & 8)
+-                    cell->flags_48 |= 0x20000000;
++                }
+             }
+             grid->Step(tile, column_direction, &tile);
+         }
+-        tile = row_start;
++        tile.x = row_start.x;
++        tile.y = row_start.y;
+         grid->Step(tile, row_direction, &tile);
+         row_start = tile;
+     }
+diff --git a/src/startup_screen_dialog_terrain_tiles.cpp b/src/startup_screen_dialog_terrain_tiles.cpp
+index cd5f5e4144de48f80060577c0c49c49b9efc9e6d..f0847d274a7f7b56eb32a7968eda4addb7ddb836 100644
+--- a/src/startup_screen_dialog_terrain_tiles.cpp
++++ b/src/startup_screen_dialog_terrain_tiles.cpp
+@@ -19,33 +19,6 @@ static constexpr std::array<unsigned char, 2048> MakeTerrainIntersectionMask()
+ // GLOBAL: BEACHLIFE 0x004fc410
+ const std::array<unsigned char, 2048> terrain_intersection_mask = MakeTerrainIntersectionMask();
+ 
+-static void BurnTerrainPixel(unsigned int* pixel, const unsigned char* data, const unsigned short* palette,
+-    unsigned int depth, unsigned int half, unsigned int quarter)
+-{
+-    unsigned int old_depth = *pixel & 0xffff0000u;
+-    if (old_depth > depth)
+-        return;
+-    unsigned int mode = *data & 0xc0u;
+-    unsigned int colour = palette[*data - mode];
+-    unsigned int old_colour = *pixel & 0xffffu;
+-    switch (mode)
+-    {
+-    case 0:
+-        old_depth = depth;
+-        break;
+-    case 0x40:
+-        colour = ((colour >> 1) & half) + ((old_colour >> 2) & quarter) + ((colour >> 2) & quarter);
+-        break;
+-    case 0x80:
+-        colour = ((old_colour >> 1) & half) + ((colour >> 1) & half);
+-        break;
+-    case 0xc0:
+-        colour = ((old_colour >> 1) & half) + ((old_colour >> 2) & quarter) + ((colour >> 2) & quarter);
+-        break;
+-    }
+-    *pixel = old_depth + (colour & 0xffffu);
+-}
+-
+ // FUNCTION: BEACHLIFE 0x00415210
+ void ScreenDialogResource::BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y,
+     unsigned short depth)
+@@ -123,64 +96,100 @@ void ScreenDialogResource::BurnTerrainTiles(int tile_x, int tile_y, int offset_x
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004146f0
+-void ScreenDialogResource::BurnTerrainClippedTiles(const ScreenRectangle* rectangle,
+-    int tile_x, int tile_y, int offset_x, int offset_y, unsigned short depth)
++void ScreenDialogResource::BurnTerrainClippedTiles(const ScreenRectangle* rectangle, int tile_x, int tile_y,
++    int offset_x, int offset_y, unsigned short depth)
+ {
+     const unsigned char* data = SelectedFrame()->SelectData(word_14, word_18);
+     OverlayMapPrefix* map = overlay_map;
+     const unsigned short* palette = record->palettes[0];
+-    int size = map->tile_size_dc;
+     int width = SelectedFrame()->width_0e;
+-    unsigned int half = RenderHalfMask() >> 1;
+-    unsigned int quarter = RenderQuarterMask() >> 2;
++    int size = map->tile_size_dc;
++    unsigned short half = RenderHalfMask();
++    unsigned short quarter = RenderQuarterMask();
+     int frame_y = SelectedFrame()->word_14;
+-    unsigned int row_depth = ((depth & 0xffffu) - static_cast<unsigned int>(frame_y) * 8) << 16;
+-    for (int row = 0; row < rectangle->top; ++row)
++    // Unsigned words give retail's wrapped depth without a signed shift.
++    unsigned int row_depth = (depth - static_cast<unsigned int>(frame_y) * 8) << 16;
++    unsigned int pixel_depth = 0;
++    unsigned short colour = 0;
++    int column;
++    int row;
++    signed char run;
++    for (row = 0; row < rectangle->top; ++row)
+     {
+-        row_depth += frame_y++ < 0 ? -0x80000u : 0x100000u;
+-        int column = 0;
++        column = 0;
++        if (frame_y++ < 0)
++            row_depth -= 0x80000;
++        else
++            row_depth += 0x100000;
+         while (column < width)
+         {
+-            int run = static_cast<signed char>(*data++);
++            run = static_cast<signed char>(*data++);
+             if (run > 0)
+             {
+-                data += run;
+                 column += run;
++                data += run;
+             }
+             else
+                 column -= run;
+         }
+     }
+-    for (int row = rectangle->top; row < rectangle->bottom; ++row)
++    for (row = rectangle->top; row < rectangle->bottom; ++row)
+     {
+-        row_depth += frame_y++ < 0 ? -0x80000u : 0x100000u;
+-        int column = 0;
++        if (frame_y++ < 0)
++            row_depth -= 0x80000;
++        else
++            row_depth += 0x100000;
++        column = 0;
+         while (column < width)
+         {
+-            int run = static_cast<signed char>(*data++);
++            run = static_cast<signed char>(*data++);
+             if (run > 0)
+             {
+-                for (int i = 0; i < run; ++i, ++column, ++data)
++                for (; run > 0; --run)
+                 {
+-                    if (column < rectangle->left || column >= rectangle->right)
+-                        continue;
+-                    int x = column - rectangle->left + offset_x;
+-                    int y = row - rectangle->top + offset_y;
+-                    unsigned int* view;
++                    if (column >= rectangle->left && column < rectangle->right)
+                     {
+-                        int view_x = tile_x + x / size;
+-                        int view_y = tile_y + y / size;
++                        int view_x = tile_x + (column - rectangle->left + offset_x) / size;
++                        int view_y = tile_y + (row - rectangle->top + offset_y) / size;
+                         if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+                             map->MapCachedTile(view_x, view_y);
+                         if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+                             map->MapCachedTile(view_x, view_y);
+-                        view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
++                        unsigned int* view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
++                        int index = ((row - rectangle->top + offset_y) % 128) * 128 + (column - rectangle->left + offset_x) % 128;
++                        unsigned int old_depth = view[index] & 0xffff0000;
++                        if (old_depth <= row_depth)
++                        {
++                            unsigned char mode = *data & 0xc0;
++                            unsigned short source = palette[*data - mode];
++                            unsigned short target = static_cast<unsigned short>(view[index]);
++                            switch (mode)
++                            {
++                            case 0x00:
++                                colour = source;
++                                pixel_depth = row_depth;
++                                break;
++                            case 0x40:
++                                colour = ((source >> 1) & (half >> 1)) + ((target >> 2) & (quarter >> 2)) + ((source >> 2) & (quarter >> 2));
++                                pixel_depth = old_depth;
++                                break;
++                            case 0x80:
++                                colour = ((target >> 1) & (half >> 1)) + ((source >> 1) & (half >> 1));
++                                pixel_depth = old_depth;
++                                break;
++                            case 0xc0:
++                                colour = ((target >> 1) & (half >> 1)) + ((target >> 2) & (quarter >> 2)) + ((source >> 2) & (quarter >> 2));
++                                pixel_depth = old_depth;
++                                break;
++                            }
++                            view[index] = pixel_depth + colour;
++                        }
+                     }
+-                    BurnTerrainPixel(view + (y % 128) * 128 + x % 128, data, palette, row_depth, half, quarter);
++                    ++data;
++                    ++column;
+                 }
+             }
+-            else
+-                column -= run;
++            column -= run;
+         }
+     }
+ }
+@@ -449,116 +458,90 @@ void ScreenDialogResource::DrawTerrainTiles(int tile_x, int tile_y, int offset_x
+     }
+ }
+ 
++static inline const unsigned char* FramePlane(ScreenDialogResource* resource, int index)
++{
++    ScreenDialogResourceFrame* frame = resource->record->frames[index];
++    return frame->SelectData(resource->word_14, resource->word_18);
++}
++
+ // FUNCTION: BEACHLIFE 0x00415890
+-void ScreenDialogResource::BurnBuildingTiles(int tile_x, int tile_y, int offset_x, int offset_y,
+-    float depth_step, unsigned int depth)
++void ScreenDialogResource::BurnBuildingTiles(int tile_x, int tile_y, int offset_x, int offset_y, float depth_step,
++    unsigned int depth)
+ {
+     if (record->format_18 != 5)
+         return;
+-    const unsigned char* colours = record->frames[0]->SelectData(word_14, word_18);
+-    const unsigned char* depths = record->frames[1]->SelectData(word_14, word_18);
++    const unsigned char* colours = FramePlane(this, 0);
++    const unsigned char* depths = FramePlane(this, 1);
+     OverlayMapPrefix* map = overlay_map;
+     const unsigned short* palette = record->palettes[0];
+-    int width = SelectedFrame()->width_0e;
+-    int height = SelectedFrame()->height_10;
++    int width = record->frames[word_10]->width_0e;
++    int height = record->frames[word_10]->height_10;
++    unsigned int data_index = 0;
++    int size = map->tile_size_dc;
++    int active_y = tile_y;
++    for (int row = 0; row < height; ++row)
+     {
+-        int top = 0;
+-        int bottom = height;
+-
+-        unsigned int data_index = 0;
+-        for (int row = 0; row < top; ++row)
+-        {
+-            int column = 0;
+-            while (column < width)
+-            {
+-                int run = static_cast<signed char>(colours[data_index++]);
+-                if (run > 0)
+-                {
+-                    column += run;
+-                    data_index += run;
+-                }
+-                else
+-                    column -= run;
+-            }
+-        }
+-        int size = map->tile_size_dc;
+-        int active_y = tile_y;
+-        for (int row = top; row < bottom; ++row)
++        int column = offset_x;
++        int active_x = tile_x;
++        int decoded = 0;
++        int y = offset_y + row;
++        if (y > size - 1)
++            active_y = tile_y + y / size;
++        int row_offset = (y % size) * size;
++        int pixel = row_offset + column;
++        if (!map->cached_tiles_e0[active_y * map->cache_height_d8 + active_x].ready)
++            map->MapCachedTile(active_x, active_y);
++        if (!map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].ready)
++            map->MapCachedTile(active_x, active_y);
++        unsigned int* view = static_cast<unsigned int*>(map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].view);
++        while (decoded < width)
+         {
+-            int y = offset_y + row - top;
+-            if (y > size - 1)
+-                active_y = tile_y + y / size;
+-            int active_x = tile_x;
+-            int column = offset_x;
+-            int row_offset = (y % size) * size;
+-            int pixel = row_offset + column;
+-            unsigned int* view;
+-            {
+-                int view_x = active_x;
+-                int view_y = active_y;
+-                if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                    map->MapCachedTile(view_x, view_y);
+-                if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                    map->MapCachedTile(view_x, view_y);
+-                view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
+-            }
+-            int decoded = 0;
+-            while (decoded < width)
++            signed char run = static_cast<signed char>(colours[data_index++]);
++            if (run >= 0)
+             {
+-                int run = static_cast<signed char>(colours[data_index++]);
+-                if (run >= 0)
++                while (run--)
+                 {
+-                    unsigned int current = data_index;
+-                    data_index += run;
+-                    decoded += run;
+-                    for (int count = 0; count < run; ++count, ++current, ++column, ++pixel)
+-                    {
+-                        if (column >= size)
+-                        {
+-                            active_x = (active_x + 1) % static_cast<int>(map->cache_width_d4);
+-                            column %= size;
+-                            {
+-                                int view_x = active_x;
+-                                int view_y = active_y;
+-                                if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                                    map->MapCachedTile(view_x, view_y);
+-                                if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                                    map->MapCachedTile(view_x, view_y);
+-                                view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
+-                            }
+-                            pixel = row_offset + column;
+-                        }
+-                        unsigned int value = (static_cast<unsigned short>(static_cast<int>(
+-                                                  depths[current] * static_cast<long double>(depth_step)))
+-                                                 + (depth & 0xffffu))
+-                                          << 16;
+-                        value = (value & 0xfffeffffu) + 0x10000;
+-                        if ((view[pixel] & 0xffff0000u) <= value)
+-                            view[pixel] = value + palette[colours[current]];
+-                    }
+-                }
+-                else
+-                {
+-                    decoded -= run;
+-                    column -= run;
+                     if (column >= size)
+                     {
+-                        column %= size;
+                         active_x = (active_x + 1) % static_cast<int>(map->cache_width_d4);
+-                        {
+-                            int view_x = active_x;
+-                            int view_y = active_y;
+-                            if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                                map->MapCachedTile(view_x, view_y);
+-                            if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                                map->MapCachedTile(view_x, view_y);
+-                            view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
+-                        }
++                        column %= size;
++                        if (!map->cached_tiles_e0[active_y * map->cache_height_d8 + active_x].ready)
++                            map->MapCachedTile(active_x, active_y);
++                        if (!map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].ready)
++                            map->MapCachedTile(active_x, active_y);
++                        view = static_cast<unsigned int*>(map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].view);
+                         pixel = row_offset + column;
+                     }
+-                    else
+-                        pixel -= run;
++                    // Retail multiplies in x87 precision (fild; fmul) and truncates (_ftol).
++                    unsigned int value = (static_cast<unsigned short>(static_cast<int>(depths[data_index] * static_cast<long double>(depth_step)))
++                                             + (depth & 0xffff))
++                                      << 16;
++                    value = (value & 0xfffeffff) + 0x10000;
++                    if ((view[pixel] & 0xffff0000) <= value)
++                        view[pixel] = value + palette[colours[data_index]];
++                    ++data_index;
++                    ++pixel;
++                    ++column;
++                    ++decoded;
++                }
++            }
++            else
++            {
++                decoded -= run;
++                column -= run;
++                if (column >= size)
++                {
++                    column %= size;
++                    active_x = (active_x + 1) % static_cast<int>(map->cache_width_d4);
++                    if (!map->cached_tiles_e0[active_y * map->cache_height_d8 + active_x].ready)
++                        map->MapCachedTile(active_x, active_y);
++                    if (!map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].ready)
++                        map->MapCachedTile(active_x, active_y);
++                    view = static_cast<unsigned int*>(map->cached_tiles_e0[active_y * map->cache_width_d4 + active_x].view);
++                    pixel = row_offset + column;
+                 }
++                else
++                    pixel -= run;
+             }
+         }
+     }

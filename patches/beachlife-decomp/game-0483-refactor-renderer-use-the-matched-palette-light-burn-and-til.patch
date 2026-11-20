@@ -1,0 +1,885 @@
+diff --git a/src/startup_overlay_draw_tile.cpp b/src/startup_overlay_draw_tile.cpp
+index 08ab22c5245fee81598e8c7d730dfd22fc225f14..662e8ad08821e20922a2ac97dad22d72a7918f2b 100644
+--- a/src/startup_overlay_draw_tile.cpp
++++ b/src/startup_overlay_draw_tile.cpp
+@@ -43,8 +43,8 @@ static ScreenPoint TileCorner(int x, int y)
+ // FUNCTION: BEACHLIFE 0x00418fe0
+ bool OverlayMapPrefix::DrawTile(int x, int y, unsigned short colour)
+ {
+-    int scroll_y = scroll_y_c8;
+     int scroll_x = scroll_x_c4;
++    int scroll_y = scroll_y_c8;
+     ScreenPoint west;
+     ScreenPoint east;
+     ScreenPoint south;
+@@ -60,7 +60,7 @@ bool OverlayMapPrefix::DrawTile(int x, int y, unsigned short colour)
+     ScreenPoint bottom = TileCorner(south.x, south.y);
+     bottom.y -= static_cast<int>(HeightAt(bottom.x, bottom.y));
+     ScreenWorldPosition origin = screen_terrain_grid->TileOrigin(ScreenPoint(x, y));
+-    unsigned int depth = overlay_map->DepthAt(&origin) + 16;
++    unsigned short depth = static_cast<unsigned short>(overlay_map->DepthAt(&origin) + 16);
+     top.x -= scroll_x;
+     top.y -= scroll_y;
+     middle.y -= scroll_y;
+@@ -77,40 +77,62 @@ bool OverlayMapPrefix::DrawTile(int x, int y, unsigned short colour)
+     }
+     else
+         scale = 1.0f;
++    int row = top.y;
+     int width = renderer->width;
+     int height = renderer->height;
+-    int row = top.y;
+     int span = 1;
+-    for (int phase = 0; phase < 2; ++phase)
++    while (row <= middle.y)
++    {
++        if (row >= 0 && row < height)
++        {
++            int parity = row % 2;
++            int column = parity ? (top.x - span / 2) * 2 : (top.x - span / 2) * 2 + 2;
++            if (parity < span)
++            {
++                unsigned int count = static_cast<unsigned int>(span - parity + 1) >> 1;
++                do
++                {
++                    if (column < width * 2 && column >= 0)
++                    {
++                        unsigned short* pixel = renderer->pixels_1c + row * width * 2 + column;
++                        if (pixel[1] <= depth)
++                            pixel[0] = colour;
++                    }
++                    column += 4;
++                } while (--count);
++            }
++        }
++        ++row;
++        span += 4;
++        // x87: the step is computed in double precision before the truncation.
++        depth = static_cast<unsigned short>(depth + static_cast<int>(16.0 / scale));
++    }
++    span -= 8;
++    while (row <= bottom.y)
+     {
+-        if (phase)
+-            span -= 8;
+-        int end = phase ? bottom.y : middle.y;
+-        while (row <= end)
++        if (row >= 0 && row < height)
+         {
+-            if (row >= 0 && row < height)
++            int parity = row % 2;
++            int column = parity ? (top.x - span / 2) * 2 : (top.x - span / 2) * 2 + 2;
++            if (parity < span)
+             {
+-                int parity = row % 2;
+-                int column = (top.x - span / 2) * 2 + (parity ? 0 : 2);
+-                if (parity < span)
++                unsigned int count = static_cast<unsigned int>(span - parity + 1) >> 1;
++                do
+                 {
+-                    unsigned int count = static_cast<unsigned int>(span - parity + 1) >> 1;
+-                    do
++                    if (column < width * 2 && column >= 0)
+                     {
+-                        if (column >= 0 && column < width * 2)
+-                        {
+-                            unsigned short* pixel = renderer->pixels_1c + row * width * 2 + column;
+-                            if (pixel[1] <= static_cast<unsigned short>(depth))
+-                                pixel[0] = static_cast<unsigned short>(colour);
+-                        }
+-                        column += 4;
+-                    } while (--count);
+-                }
++                        unsigned short* pixel = renderer->pixels_1c + row * width * 2 + column;
++                        if (pixel[1] <= depth)
++                            pixel[0] = colour;
++                    }
++                    column += 4;
++                } while (--count);
+             }
+-            ++row;
+-            span += phase ? -4 : 4;
+-            depth += static_cast<int>(16.0 / scale);
+         }
++        ++row;
++        span -= 4;
++        // x87: the step is computed in double precision before the truncation.
++        depth = static_cast<unsigned short>(depth + static_cast<int>(16.0 / scale));
+     }
+     return true;
+ }
+diff --git a/src/startup_resource_light_raster.cpp b/src/startup_resource_light_raster.cpp
+index 3abe7a38765fd6a4f9f492127b6c91c7e44aad19..dd8399c09ba5a562012c17d15cf5bddbf7f0e907 100644
+--- a/src/startup_resource_light_raster.cpp
++++ b/src/startup_resource_light_raster.cpp
+@@ -25,74 +25,143 @@ static void SkipResourceLightRows(const unsigned char*& source, int width, int r
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00407110
+-void ResourceLightRaster(unsigned char* light, const unsigned char* source,
+-    unsigned short*, unsigned int pitch, int x, int y, int width, int height,
+-    int left, int top, int right, int bottom)
++void ResourceLightRaster(unsigned char* light, const unsigned char* source, unsigned short* palette,
++    unsigned int pitch, int x, int y, int width, int height, int left, int top, int right, int bottom)
+ {
+-    unsigned char* row_start = light + pitch * y + x;
++    unsigned char* row = light + pitch * y + x;
++
++    // Nothing is clipped.
+     if (left <= 0 && top <= 0 && right >= width && bottom >= height)
+     {
+-        for (int row = 0; row < height; ++row, row_start += pitch)
++        for (int j = 0; j < height; j++)
++        {
++            unsigned char* output = row + j * pitch;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    column += count;
++                    packet -= count;
++                    do
++                    {
++                        if (*source - 24 > *output)
++                            *output = *source - 24;
++                        source++;
++                        output++;
++                    } while (--count != 0);
++                }
++                output -= packet;
++                column -= packet;
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped.
++    if (left > 0)
++    {
++        for (int skip = top; skip > 0; skip--)
+         {
+-            unsigned char* destination = row_start;
+             int column = 0;
+             while (column < width)
+             {
+-                int run = static_cast<signed char>(*source++);
+-                if (run > 0)
++                signed char packet = *source++;
++                if (packet >= 0)
+                 {
+-                    column += run;
+-                    while (run--)
+-                        RaiseResourceLight(destination++, *source++);
++                    column += packet;
++                    source += packet;
+                 }
+                 else
++                    column -= packet;
++            }
++        }
++
++        for (int j = 0; j < bottom - top; j++)
++        {
++            unsigned char* output = row + j * pitch;
++            int remaining_left = left;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    packet -= count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else if (column < right)
++                        {
++                            if (*source - 24 > *output)
++                                *output = *source - 24;
++                            output++;
++                        }
++                        source++;
++                        column++;
++                    } while (--count != 0);
++                }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
+                 {
+-                    column -= run;
+-                    destination -= run;
++                    remaining_left--;
++                    column++;
++                    packet--;
+                 }
++                column += packet;
++                output += packet;
+             }
+         }
+         return;
+     }
+-    SkipResourceLightRows(source, width, top);
+-    for (int row = 0; row < bottom - top; ++row, row_start += pitch)
++
++    // Top, right or bottom edge clipped.
++    for (int skip = top; skip > 0; skip--)
+     {
+-        unsigned char* destination = row_start;
+         int column = 0;
+-        int remaining_left = left;
+         while (column < width)
+         {
+-            int run = static_cast<signed char>(*source++);
+-            if (run >= 0)
++            signed char packet = *source++;
++            if (packet >= 0)
+             {
+-                while (run--)
+-                {
+-                    if (left > 0 && remaining_left)
+-                        --remaining_left;
+-                    else if (column < right)
+-                        RaiseResourceLight(destination++, *source);
+-                    ++source;
+-                    ++column;
+-                }
++                column += packet;
++                source += packet;
+             }
+-            else if (left > 0)
++            else
++                column -= packet;
++        }
++    }
++
++    for (int j = 0; j < bottom - top; j++)
++    {
++        unsigned char* output = row + j * pitch;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet >= 0)
+             {
+-                unsigned char skip = static_cast<unsigned char>(-run);
+-                while (remaining_left && skip)
++                while (packet--)
+                 {
+-                    --remaining_left;
+-                    ++column;
+-                    --skip;
++                    if (column < right)
++                    {
++                        if (*source - 24 > *output)
++                            *output = *source - 24;
++                        output++;
++                    }
++                    source++;
++                    column++;
+                 }
+-                int count = static_cast<signed char>(skip);
+-                column += count;
+-                destination += count;
+             }
+             else
+             {
+                 if (column < right)
+-                    destination -= run;
+-                column -= run;
++                    output -= packet;
++                column -= packet;
+             }
+         }
+     }
+diff --git a/src/startup_screen_dialog_resource.h b/src/startup_screen_dialog_resource.h
+index 70603d8c3f6c44f05cef00d3de5908faa609b817..3b955b201d965c2f155946bea638beca8c7ac2eb 100644
+--- a/src/startup_screen_dialog_resource.h
++++ b/src/startup_screen_dialog_resource.h
+@@ -164,7 +164,7 @@ struct ScreenDialogResource
+     void UpdateWorldFrame(float time, const ScreenWorldPosition* position); // 0x00416a90.
+     void UpdateFrame(float time);
+     bool TestPixel(int x, int y);
+-    void Draw(int x, int y, unsigned int flags, float time);
++    void Draw(int x, int y, unsigned short depth, float time); // 0x00412c30.
+     void DrawClipped(int x, int y, int left, int top, int right, int bottom, unsigned short depth);
+ };
+ 
+diff --git a/src/startup_screen_dialog_resource_draw.cpp b/src/startup_screen_dialog_resource_draw.cpp
+index 38fcdfe5bc23efcb35eb6ee8cb9f2d1edecb8513..103d2cdaf2015691424f9d0192ab72e60ca9d664 100644
+--- a/src/startup_screen_dialog_resource_draw.cpp
++++ b/src/startup_screen_dialog_resource_draw.cpp
+@@ -2,16 +2,15 @@
+ #include "startup_screen_renderer.h"
+ 
+ // FUNCTION: BEACHLIFE 0x00412c30
+-void ScreenDialogResource::Draw(int x, int y, unsigned int flags, float time)
++void ScreenDialogResource::Draw(int x, int y, unsigned short depth, float time)
+ {
+     int left = 0;
+-    int top = 0;
+     int right = record->frames[word_10]->width_0e;
++    int top = 0;
+     int bottom = record->frames[word_10]->height_10;
+-
+     if (screen_request_renderer->ClipRectangle(x, y, left, top, right, bottom))
+     {
+         UpdateFrame(time);
+-        DrawClipped(x, y, left, top, right, bottom, flags);
++        DrawClipped(x, y, left, top, right, bottom, depth);
+     }
+ }
+diff --git a/src/startup_screen_dialog_terrain_tiles.cpp b/src/startup_screen_dialog_terrain_tiles.cpp
+index 7578dece00387d057fa7518c17de1b787c0d4741..cd5f5e4144de48f80060577c0c49c49b9efc9e6d 100644
+--- a/src/startup_screen_dialog_terrain_tiles.cpp
++++ b/src/startup_screen_dialog_terrain_tiles.cpp
+@@ -56,40 +56,68 @@ void ScreenDialogResource::BurnTerrainTiles(int tile_x, int tile_y, int offset_x
+     int width = SelectedFrame()->width_0e;
+     int height = SelectedFrame()->height_10;
+     int size = map->tile_size_dc;
+-    unsigned int half = RenderHalfMask() >> 1;
+-    unsigned int quarter = RenderQuarterMask() >> 2;
++    unsigned short half = RenderHalfMask();
++    unsigned short quarter = RenderQuarterMask();
+     int frame_y = SelectedFrame()->word_14;
+-    unsigned int row_depth = ((depth & 0xffffu) - static_cast<unsigned int>(frame_y) * 8) << 16;
++    unsigned int row_depth = (depth + frame_y * 0xfff8) << 16;
++    unsigned int pixel_depth;
++    unsigned short colour;
+     for (int row = 0; row < height; ++row)
+     {
+-        row_depth += frame_y++ < 0 ? -0x80000u : 0x100000u;
++        if (frame_y++ < 0)
++            row_depth -= 0x80000;
++        else
++            row_depth += 0x100000;
+         int column = 0;
+         while (column < width)
+         {
+-            int run = static_cast<signed char>(*data++);
++            signed char run = *data++;
+             if (run > 0)
+             {
+                 int y = offset_y + row;
+-                int active_y = tile_y + y / size;
+-                int row_offset = (y % 128) * 128;
+-                for (int i = 0; i < run; ++i, ++column, ++data)
++                for (; run > 0; --run)
+                 {
+                     int x = offset_x + column;
+-                    unsigned int* view;
++                    int view_x = tile_x + x / size;
++                    int active_y = tile_y + y / size;
++                    if (!map->cached_tiles_e0[active_y * map->cache_height_d8 + view_x].ready)
++                        map->MapCachedTile(view_x, active_y);
++                    if (!map->cached_tiles_e0[active_y * map->cache_width_d4 + view_x].ready)
++                        map->MapCachedTile(view_x, active_y);
++                    unsigned int* view = static_cast<unsigned int*>(map->cached_tiles_e0[active_y * map->cache_width_d4 + view_x].view);
++                    int index = (y % 128) * 128 + x % 128;
++                    unsigned int old_depth = view[index] & 0xffff0000;
++                    if (old_depth <= row_depth)
+                     {
+-                        int view_x = tile_x + x / size;
+-                        int view_y = active_y;
+-                        if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                            map->MapCachedTile(view_x, view_y);
+-                        if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                            map->MapCachedTile(view_x, view_y);
+-                        view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
++                        unsigned char mode = *data & 0xc0;
++                        unsigned short source = palette[*data - mode];
++                        unsigned short target = static_cast<unsigned short>(view[index]);
++                        switch (mode)
++                        {
++                        case 0x00:
++                            colour = source;
++                            pixel_depth = row_depth;
++                            break;
++                        case 0x40:
++                            colour = ((source >> 1) & (half >> 1)) + ((target >> 2) & (quarter >> 2)) + ((source >> 2) & (quarter >> 2));
++                            pixel_depth = old_depth;
++                            break;
++                        case 0x80:
++                            colour = ((target >> 1) & (half >> 1)) + ((source >> 1) & (half >> 1));
++                            pixel_depth = old_depth;
++                            break;
++                        case 0xc0:
++                            colour = ((target >> 1) & (half >> 1)) + ((target >> 2) & (quarter >> 2)) + ((source >> 2) & (quarter >> 2));
++                            pixel_depth = old_depth;
++                            break;
++                        }
++                        view[index] = pixel_depth + colour;
+                     }
+-                    BurnTerrainPixel(view + row_offset + x % 128, data, palette, row_depth, half, quarter);
++                    ++data;
++                    ++column;
+                 }
+             }
+-            else
+-                column -= run;
++            column -= run;
+         }
+     }
+ }
+diff --git a/src/startup_screen_palette_modify.cpp b/src/startup_screen_palette_modify.cpp
+index e7ec443ca457c519d74a7d90e36188b619e48557..f4ba5f0be5f64949fe2e13e917e7ac58ca7fcc02 100644
+--- a/src/startup_screen_palette_modify.cpp
++++ b/src/startup_screen_palette_modify.cpp
+@@ -15,150 +15,343 @@ void BlendPaletteRange(int first, int last, const unsigned short* start,
+     }
+ }
+ 
+-static const unsigned short* ModifyPalette(ScreenDialogPaletteModifiers* modifiers,
+-    ScreenDialogResource* resource, float first, float second,
+-    unsigned char effect, bool with_effect)
++static void BlendInverse(int first, int last, const unsigned short* start, const unsigned short* end,
++    unsigned short* output, float inverse)
++{
++    for (int i = first; i <= last; ++i)
++        output[i] = screen_request_renderer->BlendColour(start[i], end[i], inverse);
++}
++
++// FUNCTION: BEACHLIFE 0x0040a370
++const unsigned short* ScreenDialogPaletteModifiers::Modify(ScreenDialogResource* resource, float first, float second)
+ {
+-    int variant = static_cast<int>(resource->word_1c) / 10;
+-    long double excess = static_cast<long double>(first) - 1.0f;
+-    bool upper = excess > 1.1920928955078125e-7f;
+-    float factor = upper ? static_cast<float>(excess) : first;
+-    bool alternate = second > 1.1920928955078125e-7f;
+-    if (alternate)
+-        factor = second;
+     ScreenDialogResourceRecord* record = resource->record;
+-    if (!record->word_1c)
+-        return 0;
+-    unsigned short* output = modifiers->modified_600;
+-    std::memcpy(output, record->palettes[resource->word_1c], 64 * sizeof(unsigned short));
+-    unsigned int bank;
+-    switch (record->word_1c)
++    int variant = static_cast<int>(resource->word_1c) / 10;
++    bool upper;
++    bool alternate = false;
++    float factor;
++    float inverse;
++    // x87: the excess is compared unrounded.
++    if (static_cast<long double>(first) - 1.0f > 1.1920929e-07f)
+     {
+-    case 1:
+-        bank = 0;
+-        break;
+-    case 2:
+-        bank = 4;
+-        break;
+-    case 3:
+-    case 4:
+-        bank = 8;
+-        break;
+-    default:
+-        return output;
++        factor = first - 1.0f;
++        upper = true;
+     }
+-    const unsigned short* start = modifiers->colours[bank + (upper ? 1 : 0)];
+-    const unsigned short* end = modifiers->colours[bank + (alternate ? 3 : upper ? 2
+-                                                                                 : 1)];
+-    float inverse = 1.0f - factor;
+-    auto blend = [&](int begin, int last)
++    else
+     {
+-        for (int i = begin; i <= last; ++i)
+-            output[i] = screen_request_renderer->BlendColour(start[i], end[i], inverse);
+-    };
+-    if (bank == 0)
++        upper = false;
++        factor = first;
++    }
++    if (second > 1.1920929e-07f)
+     {
+-        switch (variant)
+-        {
+-        case 0:
+-            blend(1, 24);
+-            blend(40, 47);
+-            blend(32, 39);
+-            break;
+-        case 1:
+-            blend(1, 24);
+-            blend(32, 39);
+-            break;
+-        case 2:
+-            blend(1, 24);
+-            break;
+-        }
++        alternate = true;
++        factor = second;
+     }
+-    else if (bank == 4)
++    if (record->word_1c)
+     {
+-        switch (variant)
++        unsigned short* output = modified_600;
++        std::memcpy(output, record->palettes[resource->word_1c], sizeof(modified_600));
++        const unsigned short* start;
++        const unsigned short* end;
++        switch (record->word_1c)
+         {
+-        case 0:
+-            blend(1, 24);
+-            blend(48, 55);
+-            blend(56, 63);
+-            blend(32, 39);
+-            break;
+         case 1:
+-            blend(1, 24);
+-            blend(56, 63);
+-            blend(32, 39);
++            if (upper)
++            {
++                start = colours[1];
++                end = colours[2];
++            }
++            else
++            {
++                start = colours[0];
++                end = colours[1];
++            }
++            if (alternate)
++                end = colours[3];
++            switch (variant)
++            {
++            case 0:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(40, 47, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 1:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 2:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                break;
++            }
+             break;
+         case 2:
+-            blend(1, 24);
+-            blend(32, 39);
++            if (upper)
++            {
++                start = colours[5];
++                end = colours[6];
++            }
++            else
++            {
++                start = colours[4];
++                end = colours[5];
++            }
++            if (alternate)
++                end = colours[7];
++            switch (variant)
++            {
++            case 0:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(48, 55, start, end, modified_600, inverse);
++                BlendInverse(56, 63, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 1:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(56, 63, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 2:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 3:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(48, 55, start, end, modified_600, inverse);
++                BlendInverse(56, 63, start, end, modified_600, inverse);
++                break;
++            case 4:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(56, 63, start, end, modified_600, inverse);
++                break;
++            case 5:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                break;
++            }
+             break;
+         case 3:
+-            blend(1, 24);
+-            blend(48, 55);
+-            blend(56, 63);
+-            break;
+         case 4:
+-            blend(1, 24);
+-            blend(56, 63);
+-            break;
+-        case 5:
+-            blend(1, 24);
++            if (upper)
++            {
++                start = colours[9];
++                end = colours[10];
++            }
++            else
++            {
++                start = colours[8];
++                end = colours[9];
++            }
++            if (alternate)
++                end = colours[11];
++            switch (variant)
++            {
++            case 0:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                BlendInverse(48, 55, start, end, modified_600, inverse);
++                break;
++            case 1:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 2:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendPaletteRange(48, 55, start, end, modified_600, factor);
++                break;
++            case 3:
++                BlendPaletteRange(1, 24, start, end, modified_600, factor);
++                break;
++            }
+             break;
+         }
++        return output;
++    }
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x0040ae10
++const unsigned short* ScreenDialogPaletteModifiers::ModifyEffect(ScreenDialogResource* resource, float first, float second, unsigned char effect)
++{
++    ScreenDialogResourceRecord* record = resource->record;
++    int variant = static_cast<int>(resource->word_1c) / 10;
++    bool upper;
++    bool alternate = false;
++    float factor;
++    float inverse;
++    // x87: the excess is compared unrounded.
++    if (static_cast<long double>(first) - 1.0f > 1.1920929e-07f)
++    {
++        factor = first - 1.0f;
++        upper = true;
+     }
+     else
+     {
+-        switch (variant)
++        upper = false;
++        factor = first;
++    }
++    if (second > 1.1920929e-07f)
++    {
++        alternate = true;
++        factor = second;
++    }
++    if (record->word_1c)
++    {
++        unsigned short* output = modified_600;
++        std::memcpy(output, record->palettes[resource->word_1c], sizeof(modified_600));
++        const unsigned short* start;
++        const unsigned short* end;
++        switch (record->word_1c)
+         {
+-        case 0:
+-            blend(1, 24);
+-            blend(32, 39);
+-            blend(48, 55);
+-            if (with_effect && effect)
+-                blend(56, 63);
+-            break;
+         case 1:
+-            blend(1, 24);
+-            blend(32, 39);
+-            if (with_effect && effect)
++            if (upper)
++            {
++                start = colours[1];
++                end = colours[2];
++            }
++            else
++            {
++                start = colours[0];
++                end = colours[1];
++            }
++            if (alternate)
++                end = colours[3];
++            switch (variant)
+             {
+-                blend(48, 55);
+-                blend(56, 63);
++            case 0:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(40, 47, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 1:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 2:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                break;
+             }
+             break;
+         case 2:
+-            blend(1, 24);
+-            if (with_effect)
++            if (upper)
+             {
+-                blend(48, 55);
+-                if (effect)
+-                    BlendPaletteRange(56, 63, start, end, output, factor);
++                start = colours[5];
++                end = colours[6];
+             }
+             else
+-                BlendPaletteRange(48, 55, start, end, output, factor);
++            {
++                start = colours[4];
++                end = colours[5];
++            }
++            if (alternate)
++                end = colours[7];
++            switch (variant)
++            {
++            case 0:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(48, 55, start, end, modified_600, inverse);
++                BlendInverse(56, 63, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 1:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(56, 63, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 2:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(32, 39, start, end, modified_600, inverse);
++                break;
++            case 3:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(48, 55, start, end, modified_600, inverse);
++                BlendInverse(56, 63, start, end, modified_600, inverse);
++                break;
++            case 4:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                BlendInverse(56, 63, start, end, modified_600, inverse);
++                break;
++            case 5:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, start, end, modified_600, inverse);
++                break;
++            }
+             break;
+         case 3:
+-            BlendPaletteRange(1, 24, start, end, output, factor);
+-            if (with_effect && effect)
++        case 4:
++        {
++            const unsigned short* from;
++            const unsigned short* to;
++            if (upper)
+             {
+-                BlendPaletteRange(48, 55, start, end, output, factor);
+-                BlendPaletteRange(56, 63, start, end, output, factor);
++                from = colours[9];
++                to = colours[10];
+             }
+-            break;
++            else
++            {
++                from = colours[8];
++                to = colours[9];
++            }
++            if (alternate)
++                to = colours[11];
++            switch (variant)
++            {
++            case 0:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, from, to, modified_600, inverse);
++                BlendInverse(32, 39, from, to, modified_600, inverse);
++                BlendInverse(48, 55, from, to, modified_600, inverse);
++                if (effect)
++                    BlendInverse(56, 63, from, to, modified_600, inverse);
++                break;
++            case 1:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, from, to, modified_600, inverse);
++                BlendInverse(32, 39, from, to, modified_600, inverse);
++                if (effect)
++                {
++                    BlendInverse(48, 55, from, to, modified_600, inverse);
++                    BlendInverse(56, 63, from, to, modified_600, inverse);
++                }
++                break;
++            case 2:
++                inverse = 1.0f - factor;
++                BlendInverse(1, 24, from, to, modified_600, inverse);
++                BlendInverse(48, 55, from, to, modified_600, inverse);
++                if (effect)
++                    BlendPaletteRange(56, 63, from, to, modified_600, factor);
++                break;
++            case 3:
++                BlendPaletteRange(1, 24, from, to, modified_600, factor);
++                if (effect)
++                {
++                    BlendPaletteRange(48, 55, from, to, modified_600, factor);
++                    BlendPaletteRange(56, 63, from, to, modified_600, factor);
++                }
++                break;
++            }
++        }
++        break;
+         }
++        return output;
+     }
+-    return output;
+-}
+-
+-// FUNCTION: BEACHLIFE 0x0040a370
+-const unsigned short* ScreenDialogPaletteModifiers::Modify(ScreenDialogResource* resource, float first, float second)
+-{
+-    return ModifyPalette(this, resource, first, second, 0, false);
+-}
+-
+-// FUNCTION: BEACHLIFE 0x0040ae10
+-const unsigned short* ScreenDialogPaletteModifiers::ModifyEffect(ScreenDialogResource* resource, float first, float second, unsigned char effect)
+-{
+-    return ModifyPalette(this, resource, first, second, effect, true);
++    return 0;
+ }

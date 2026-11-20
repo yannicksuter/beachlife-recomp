@@ -1,0 +1,461 @@
+diff --git a/src/startup_building_footprint.cpp b/src/startup_building_footprint.cpp
+index 5247d8ed765b83b32d0bc8e44050b1236a9e3001..3ec42c4ea0e18cab3c60da260f62b4308df966a9 100644
+--- a/src/startup_building_footprint.cpp
++++ b/src/startup_building_footprint.cpp
+@@ -12,7 +12,7 @@ static ScreenTerrainCell* BuildingFootprintCell(ScreenTerrainGrid* grid, ScreenP
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00422c50
+-void VariableBuildingStatus::SetFootprint(ScreenPoint origin, unsigned char enabled, unsigned int stage, unsigned int id)
++void VariableBuildingStatus::SetFootprint(ScreenPoint origin, unsigned int enabled, unsigned int stage, unsigned int id)
+ {
+     WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
+     VariableBuilding* building = entity->building_60;
+diff --git a/src/startup_building_guest_queue_methods.cpp b/src/startup_building_guest_queue_methods.cpp
+index 97a96b71cecfd735def92629cce7c93727b43c98..14b4da77e128caf501300e24e46851088a2e678b 100644
+--- a/src/startup_building_guest_queue_methods.cpp
++++ b/src/startup_building_guest_queue_methods.cpp
+@@ -107,27 +107,48 @@ static void QueuePopFront(WorldDequeStorage<int>& queue)
+     }
+ }
+ 
++// A slot without a position table: the entrance plus index offset steps,
++// converted and multiplied in x87 precision before the store.
++static void SetQueueSlot(ScreenMapPosition& out, const ScreenMapPosition& origin, const ScreenMapPosition& step, unsigned int index)
++{
++    out.x = static_cast<float>(static_cast<long double>(index) * step.x + origin.x);
++    out.y = static_cast<float>(static_cast<long double>(index) * step.y + origin.y);
++}
++
+ // FUNCTION: BEACHLIFE 0x004336a0
+ bool BuildingGuestQueue::PopGuest(unsigned int* id, unsigned int* feature)
+ {
+-    if (!static_cast<unsigned int>(guests_08.end.Distance(guests_08.begin)) || !pending_30.end.Distance(pending_30.begin))
+-        return false;
+-    *id = guests_08.At(0);
+-    *feature = pending_30.At(0);
+-    QueuePopFront(guests_08);
+-    QueuePopFront(pending_30);
+-    for (unsigned int i = 0; i < static_cast<unsigned int>(guests_08.end.Distance(guests_08.begin)); ++i)
++    bool popped = false;
++    unsigned int index;
++    unsigned int slot = 1;
++    if (static_cast<unsigned int>(guests_08.end.Distance(guests_08.begin)) != 0
++        && static_cast<unsigned int>(pending_30.end.Distance(pending_30.begin)) != 0)
+     {
+-        if (positions_70)
+-            QueueStorePosition(this, positions_70[i + 1]);
+-        else
+-            QueueStorePosition(this, { static_cast<float>(static_cast<long double>(i) * offset_68.x + entrance_60.x), static_cast<float>(static_cast<long double>(i) * offset_68.y + entrance_60.y) });
+-        if (CurrentScreenTerrain()->CellAt(QueueCurrentPosition(this))->flags_48 & 0x10000082)
+-            CurrentScreenTerrain()->CellAt(QueueCurrentPosition(this));
+-        QueueStorePosition(this, Position(i));
+-        QueueMoveGuest(this, guests_08.At(i), true);
++        *id = guests_08.At(0);
++        *feature = pending_30.At(0);
++        QueuePopFront(guests_08);
++        QueuePopFront(pending_30);
++        for (index = 0; index < static_cast<unsigned int>(guests_08.end.Distance(guests_08.begin)); ++index, ++slot)
++        {
++            if (positions_70 != 0)
++                current_58 = positions_70[slot];
++            else
++                SetQueueSlot(current_58, entrance_60, offset_68, index);
++            if (CurrentScreenTerrain()->CellAt(current_58)->flags_48 & 0x10000082)
++                CurrentScreenTerrain()->CellAt(current_58);
++            current_58 = Position(index);
++            int guest = guests_08.At(index);
++            ScreenModeCommand command;
++            command.words[0] = owner_00;
++            command.words[1] = guest;
++            command.words[2] = 0x1f;
++            command.words[3] = static_cast<int>(current_58.x);
++            command.words[4] = static_cast<int>(current_58.y);
++            screen_mode_commands->QueueDelayed(&command, 3.0f);
++        }
++        popped = true;
+     }
+-    return true;
++    return popped;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00433bc0
+diff --git a/src/startup_building_status.h b/src/startup_building_status.h
+index 9984b5a231b7d47d2a4a4566372340042cea47c8..6661fb86c4603efaf3181d441ce6cc2b7feb7479 100644
+--- a/src/startup_building_status.h
++++ b/src/startup_building_status.h
+@@ -76,7 +76,7 @@ struct VariableBuildingStatus
+     void PrepareConstruction(unsigned int id);                                                                             // 0x004235f0.
+     void PrepareBuilderLocations(unsigned int id);                                                                         // 0x00422700.
+     void UpdateConstructionFootprint(unsigned int id);                                                                     // 0x00422a50.
+-    void SetFootprint(ScreenPoint tile, unsigned char enabled, unsigned int stage, unsigned int id);                       // 0x00422c50.
++    void SetFootprint(ScreenPoint tile, unsigned int enabled, unsigned int stage, unsigned int id);                        // 0x00422c50.
+     void RestoreFootprint(unsigned int id);                                                                                // 0x00423c20.
+     CircularListNode* head_00;
+     int word_04;
+diff --git a/src/startup_screen_mode_world.h b/src/startup_screen_mode_world.h
+index 2bf39352efde05dc05067403a48df97d15696376..2067da1db42c434e5a32a2a307e9dec4cf130348 100644
+--- a/src/startup_screen_mode_world.h
++++ b/src/startup_screen_mode_world.h
+@@ -35,8 +35,7 @@ struct ScreenTerrainCell
+     int score_34;
+     int distance_38;
+     int cost_3c;
+-    int x_40;
+-    int y_44;
++    ScreenPoint position_40; // Tile position, copied whole by the route expansion 0x004310b0.
+     unsigned int flags_48;
+     TerrainEntityListBase objects_4c;
+     unsigned short depth_50;
+diff --git a/src/startup_terrain_constructor.cpp b/src/startup_terrain_constructor.cpp
+index 259b5f5557e57107ccbf22e595f8292136731102..ba7d74a75f42d5158d88e04624ae32615758059c 100644
+--- a/src/startup_terrain_constructor.cpp
++++ b/src/startup_terrain_constructor.cpp
+@@ -30,6 +30,11 @@ ScreenTerrainCell::ScreenTerrainCell()
+     objects_4c.Clear();
+ }
+ 
++static ScreenTerrainCell& GridCell(ScreenTerrainGrid* grid, unsigned int x, unsigned int y)
++{
++    return grid->cells_0c[(y % grid->height_08) * grid->width_04 + x % grid->width_04];
++}
++
+ // FUNCTION: BEACHLIFE 0x004456e0
+ ScreenTerrainGrid::ScreenTerrainGrid(unsigned int width, unsigned int height, int tile_size,
+     const char* height_map, float height_scale, const char* grid)
+@@ -46,9 +51,9 @@ ScreenTerrainGrid::ScreenTerrainGrid(unsigned int width, unsigned int height, in
+     for (unsigned int x1 = 0; x1 < height; ++x1)
+         for (unsigned int y1 = 0; y1 < width; ++y1)
+         {
+-            ScreenTerrainCell& cell = cells_0c[(y1 % height_08) * width_04 + x1 % width_04];
+-            cell.x_40 = x1;
+-            cell.y_44 = y1;
++            ScreenPoint* tile = &GridCell(this, x1, y1).position_40;
++            tile->x = x1;
++            tile->y = y1;
+         }
+     FILE* file = fopen(height_map, "rb");
+     if (file)
+@@ -97,13 +102,13 @@ ScreenTerrainGrid::ScreenTerrainGrid(unsigned int width, unsigned int height, in
+             if (water)
+                 overlay_map->cached_tiles_e0[y * overlay_map->cache_height_d8 + x].water_01 = 1;
+         }
+-    cells_0c[0].flags_48 = 32;
++    GridCell(this, 0, 0).flags_48 = 32;
+     for (unsigned int index = 0; index < 128; ++index)
+     {
+-        cells_0c[(index % height_08) * width_04].flags_48 = 32;
+-        cells_0c[(index % height_08) * width_04 + 127 % width_04].flags_48 = 32;
+-        cells_0c[index % width_04].flags_48 = 32;
+-        cells_0c[(127 % height_08) * width_04 + index % width_04].flags_48 = 32;
++        GridCell(this, 0, index).flags_48 = 32;
++        GridCell(this, 127, index).flags_48 = 32;
++        GridCell(this, index, 0).flags_48 = 32;
++        GridCell(this, index, 127).flags_48 = 32;
+     }
+     ::operator delete(data);
+ }
+diff --git a/src/startup_world_route_clear.cpp b/src/startup_world_route_clear.cpp
+index 28f4b763ffcf1066b3c2f2cd1b42d114b6373dcb..30a10cf0e9690646e306a4149fecf7b207322684 100644
+--- a/src/startup_world_route_clear.cpp
++++ b/src/startup_world_route_clear.cpp
+@@ -2,6 +2,33 @@
+ 
+ #include <cstdlib>
+ 
++static void ResetRouteCell(ScreenTerrainCell* cell)
++{
++    cell->closed_30 = 0;
++    cell->open_31 = 0;
++    cell->visited_generation_08 = 0;
++    cell->linked_generation_0c = 0;
++    cell->score_34 = 0;
++    cell->distance_38 = 0;
++    cell->cost_3c = 0;
++    cell->parent_00 = 0;
++    cell->next_04 = 0;
++    for (unsigned int i = 0; i < 8; ++i)
++        cell->neighbours_10[i] = 0;
++}
++
++static void LinkRouteCell(ScreenTerrainCell* cell, unsigned int generation)
++{
++    cell->linked_generation_0c = generation;
++    cell->next_04 = 0;
++}
++
++static void ClearCellPosition(ScreenTerrainCell* cell)
++{
++    cell->position_40.x = -1;
++    cell->position_40.y = -1;
++}
++
+ // FUNCTION: BEACHLIFE 0x00430e80
+ void WorldRouteFinder::Clear()
+ {
+@@ -15,20 +42,8 @@ void WorldRouteFinder::Clear()
+             std::free(old);
+         }
+     }
+-    cell_34.closed_30 = 0;
+-    cell_34.open_31 = 0;
+-    cell_34.visited_generation_08 = 0;
+-    cell_34.linked_generation_0c = 0;
+-    cell_34.score_34 = 0;
+-    cell_34.distance_38 = 0;
+-    cell_34.cost_3c = 0;
+-    cell_34.parent_00 = 0;
+-    cell_34.next_04 = 0;
+-    for (unsigned int i = 0; i < 8; ++i)
+-        cell_34.neighbours_10[i] = 0;
+-    cell_34.linked_generation_0c = generation_08;
+-    cell_34.next_04 = 0;
+-    cell_34.x_40 = -1;
+-    cell_34.y_44 = -1;
++    ResetRouteCell(&cell_34);
++    LinkRouteCell(&cell_34, generation_08);
++    ClearCellPosition(&cell_34);
+     data_88 = 0;
+ }
+diff --git a/src/startup_world_route_expand.cpp b/src/startup_world_route_expand.cpp
+index f2764c333ac52df5cc475f3aad0c19781049fca9..b7255c0673eed654cb5977d2b797c9f028b6a178 100644
+--- a/src/startup_world_route_expand.cpp
++++ b/src/startup_world_route_expand.cpp
+@@ -4,31 +4,29 @@
+ void WorldRouteFinder::ExpandRouteCell(ScreenTerrainCell* cell, ScreenPoint destination)
+ {
+     ScreenPoint neighbours[8];
+-    int cell_x = cell->x_40;
+-    int cell_y = cell->y_44;
+-    terrain_00->Step(ScreenPoint(cell_x, cell_y), 0, &neighbours[0]);
+-    terrain_00->Step(ScreenPoint(cell_x, cell_y), 1, &neighbours[1]);
+-    terrain_00->Step(ScreenPoint(cell_x, cell_y), 2, &neighbours[2]);
+-    terrain_00->Step(ScreenPoint(cell_x, cell_y), 3, &neighbours[3]);
+-    terrain_00->Step(ScreenPoint(cell_x, cell_y), 4, &neighbours[4]);
+-    terrain_00->Step(ScreenPoint(cell_x, cell_y), 5, &neighbours[5]);
+-    terrain_00->Step(ScreenPoint(cell_x, cell_y), 6, &neighbours[6]);
+-    terrain_00->Step(ScreenPoint(cell_x, cell_y), 7, &neighbours[7]);
+-
+-    if (callback_90(this, &neighbours[7]))
+-        VisitRouteCell(cell, &neighbours[7], &destination, 0x1000);
++    ScreenPoint origin = cell->position_40;
++    terrain_00->Step(origin, 0, &neighbours[1]);
++    terrain_00->Step(origin, 1, &neighbours[2]);
++    terrain_00->Step(origin, 2, &neighbours[3]);
++    terrain_00->Step(origin, 3, &neighbours[4]);
++    terrain_00->Step(origin, 4, &neighbours[5]);
++    terrain_00->Step(origin, 5, &neighbours[6]);
++    terrain_00->Step(origin, 6, &neighbours[7]);
++    terrain_00->Step(origin, 7, &neighbours[0]);
+     if (callback_90(this, &neighbours[0]))
+-        VisitRouteCell(cell, &neighbours[0], &destination, 0x800);
++        VisitRouteCell(cell, &neighbours[0], &destination, 0x1000);
+     if (callback_90(this, &neighbours[1]))
+-        VisitRouteCell(cell, &neighbours[1], &destination, 0x1000);
++        VisitRouteCell(cell, &neighbours[1], &destination, 0x800);
+     if (callback_90(this, &neighbours[2]))
+-        VisitRouteCell(cell, &neighbours[2], &destination, 0x800);
++        VisitRouteCell(cell, &neighbours[2], &destination, 0x1000);
+     if (callback_90(this, &neighbours[3]))
+-        VisitRouteCell(cell, &neighbours[3], &destination, 0x1000);
++        VisitRouteCell(cell, &neighbours[3], &destination, 0x800);
+     if (callback_90(this, &neighbours[4]))
+-        VisitRouteCell(cell, &neighbours[4], &destination, 0x800);
++        VisitRouteCell(cell, &neighbours[4], &destination, 0x1000);
+     if (callback_90(this, &neighbours[5]))
+-        VisitRouteCell(cell, &neighbours[5], &destination, 0x1000);
++        VisitRouteCell(cell, &neighbours[5], &destination, 0x800);
+     if (callback_90(this, &neighbours[6]))
+-        VisitRouteCell(cell, &neighbours[6], &destination, 0x800);
++        VisitRouteCell(cell, &neighbours[6], &destination, 0x1000);
++    if (callback_90(this, &neighbours[7]))
++        VisitRouteCell(cell, &neighbours[7], &destination, 0x800);
+ }
+diff --git a/src/startup_world_route_finder.cpp b/src/startup_world_route_finder.cpp
+index 5cbd0fae1770b9f472acf7e8ba598ebcd76dd99a..8513ee516b0323fe17b4a71e34c4adccb11d5c1a 100644
+--- a/src/startup_world_route_finder.cpp
++++ b/src/startup_world_route_finder.cpp
+@@ -1,51 +1,46 @@
+ #include "startup_world_subsystems.h"
+ #include <new>
+ 
+-static unsigned int CopyFoundRoute(WorldRouteFinder* finder, ScreenPoint** points, bool include_endpoints)
++// The route searches keep the tree's plain cell predicate (the finder is its
++// first argument) and allocate the points with the nothrow operator new that
++// WorldRouteData releases with operator delete.
++
++// FUNCTION: BEACHLIFE 0x004309e0
++unsigned int WorldRouteFinder::FindLandRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut)
+ {
+-    ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(finder->data_88);
++    flags_04[0] = shortcut;
++    flags_04[2] = 0;
++    CopyRoutePoint(start_0c, from);
++    ++generation_08;
++    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
++    { return finder->CanUseLandCell(point); };
++    bool start_allowed = CanUseLandCell(&from) != 0;
++    bool end_allowed = callback_90(this, &to) != 0;
++    if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
++        return 0;
++    ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
+     unsigned int count = 0;
+-    while (cell && cell->visited_generation_08 == finder->generation_08)
++    while (cell && cell->visited_generation_08 == generation_08)
+     {
+         cell = cell->parent_00;
+         ++count;
+     }
+-    if (!include_endpoints)
+-        count -= 2;
+-    if (include_endpoints || count)
++    count -= 2;
++    if (count)
+         *points = static_cast<ScreenPoint*>(::operator new(count * sizeof(ScreenPoint), std::nothrow));
+-    cell = static_cast<ScreenTerrainCell*>(finder->data_88);
+-    if (!include_endpoints)
+-        cell = cell->parent_00;
++    cell = static_cast<ScreenTerrainCell*>(data_88)->parent_00;
+     unsigned int index = 0;
+-    while ((include_endpoints ? cell != 0 : cell->parent_00 != 0)
+-           && cell->visited_generation_08 == finder->generation_08)
++    while (cell->parent_00 && cell->visited_generation_08 == generation_08)
+     {
+-        (*points)[index].x = cell->x_40;
+-        (*points)[index].y = cell->y_44;
++        (*points)[index].x = cell->position_40.x;
++        (*points)[index].y = cell->position_40.y;
+         cell = cell->parent_00;
+         ++index;
+     }
+-    finder->Clear();
++    Clear();
+     return count;
+ }
+ 
+-// FUNCTION: BEACHLIFE 0x004309e0
+-unsigned int WorldRouteFinder::FindLandRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut)
+-{
+-    flags_04[0] = shortcut;
+-    flags_04[2] = 0;
+-    CopyRoutePoint(start_0c, from);
+-    ++generation_08;
+-    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+-    { return finder->CanUseLandCell(point); };
+-    bool start_allowed = CanUseLandCell(&from);
+-    bool end_allowed = callback_90(this, &to);
+-    if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+-        return 0;
+-    return CopyFoundRoute(this, points, false);
+-}
+-
+ // FUNCTION: BEACHLIFE 0x00430b00
+ unsigned int WorldRouteFinder::FindWaterRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut)
+ {
+@@ -55,11 +50,31 @@ unsigned int WorldRouteFinder::FindWaterRoute(ScreenPoint from, ScreenPoint to,
+     ++generation_08;
+     callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+     { return finder->CanUseWaterCell(point); };
+-    bool start_allowed = CanUseWaterCell(&from);
+-    bool end_allowed = callback_90(this, &to);
++    bool start_allowed = CanUseWaterCell(&from) != 0;
++    bool end_allowed = callback_90(this, &to) != 0;
+     if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+         return 0;
+-    return CopyFoundRoute(this, points, false);
++    ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
++    unsigned int count = 0;
++    while (cell && cell->visited_generation_08 == generation_08)
++    {
++        cell = cell->parent_00;
++        ++count;
++    }
++    count -= 2;
++    if (count)
++        *points = static_cast<ScreenPoint*>(::operator new(count * sizeof(ScreenPoint), std::nothrow));
++    cell = static_cast<ScreenTerrainCell*>(data_88)->parent_00;
++    unsigned int index = 0;
++    while (cell->parent_00 && cell->visited_generation_08 == generation_08)
++    {
++        (*points)[index].x = cell->position_40.x;
++        (*points)[index].y = cell->position_40.y;
++        cell = cell->parent_00;
++        ++index;
++    }
++    Clear();
++    return count;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00430c20
+@@ -72,14 +87,31 @@ unsigned int WorldRouteFinder::FindVehicleRoute(ScreenPoint from, ScreenPoint to
+     { return finder->CanUseVehicleCell(point); };
+     CopyRoutePoint(start_0c, from);
+     ++generation_08;
+-    bool start_allowed = callback_90(this, &from);
+-    bool end_allowed = callback_90(this, &to);
++    bool start_allowed = callback_90(this, &from) != 0;
++    bool end_allowed = callback_90(this, &to) != 0;
+     if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+     {
+         flags_04[1] = 0;
+         return 0;
+     }
+-    unsigned int count = CopyFoundRoute(this, points, true);
++    ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
++    unsigned int count = 0;
++    while (cell && cell->visited_generation_08 == generation_08)
++    {
++        cell = cell->parent_00;
++        ++count;
++    }
++    *points = static_cast<ScreenPoint*>(::operator new(count * sizeof(ScreenPoint), std::nothrow));
++    cell = static_cast<ScreenTerrainCell*>(data_88);
++    unsigned int index = 0;
++    while (cell && cell->visited_generation_08 == generation_08)
++    {
++        (*points)[index].x = cell->position_40.x;
++        (*points)[index].y = cell->position_40.y;
++        cell = cell->parent_00;
++        ++index;
++    }
++    Clear();
+     flags_04[1] = 0;
+     return count;
+ }
+@@ -93,8 +125,8 @@ unsigned int WorldRouteFinder::FindGroundRoute(ScreenPoint from, ScreenPoint to,
+     callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+     { return finder->CanUseGroundCell(point); };
+     CopyRoutePoint(start_0c, from);
+-    bool start_allowed = callback_90(this, &from);
+-    bool end_allowed = callback_90(this, &to);
++    bool start_allowed = callback_90(this, &from) != 0;
++    bool end_allowed = callback_90(this, &to) != 0;
+     if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+         return 0;
+     ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
+@@ -112,8 +144,8 @@ unsigned int WorldRouteFinder::FindGroundRoute(ScreenPoint from, ScreenPoint to,
+         unsigned int index = 0;
+         while (cell->parent_00 && cell->visited_generation_08 == generation_08)
+         {
+-            (*points)[index].x = cell->x_40;
+-            (*points)[index].y = cell->y_44;
++            (*points)[index].x = cell->position_40.x;
++            (*points)[index].y = cell->position_40.y;
+             cell = cell->parent_00;
+             ++index;
+         }
+diff --git a/src/startup_world_route_search.cpp b/src/startup_world_route_search.cpp
+index bdee2ebce14453ac89ee0fe72c60054fb01f1cb0..46acffe8a129e2e9f68102787bc65e45f7ffb8ea 100644
+--- a/src/startup_world_route_search.cpp
++++ b/src/startup_world_route_search.cpp
+@@ -15,8 +15,8 @@ bool WorldRouteFinder::SearchRoute(int x1, int y1, int x2, int y2)
+     int dy = static_cast<int>(static_cast<long double>(position.y) - start_position_1c.y);
+     cell->distance_38 = static_cast<int>(static_cast<unsigned int>(dx) * dx + static_cast<unsigned int>(dy) * dy);
+     cell->score_34 = static_cast<int>(static_cast<unsigned int>(cell->cost_3c) + cell->distance_38);
+-    cell->x_40 = x2;
+-    cell->y_44 = y2;
++    cell->position_40.x = x2;
++    cell->position_40.y = y2;
+     cell->visited_generation_08 = generation_08;
+     cell->open_31 = 1;
+     cell->closed_30 = 0;

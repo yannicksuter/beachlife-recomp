@@ -1,0 +1,609 @@
+diff --git a/src/startup_renderer_resize_images.cpp b/src/startup_renderer_resize_images.cpp
+index e53082320ce1f1b087052dbf78c0f30636eae5c9..77bd0693648dc1deb2c327536d3be4d7d74ad8b8 100644
+--- a/src/startup_renderer_resize_images.cpp
++++ b/src/startup_renderer_resize_images.cpp
+@@ -2,18 +2,27 @@
+ #include "tga_image.h"
+ #include <cmath>
+ 
+-static int InterpolateImageChannel(int first, int second, float inverse, float fraction)
++// Rounds with the current FPU mode, as the retail fistp does.
++static void RoundToInt(float value, int* result)
+ {
+-    float value = static_cast<double>(first) * inverse + static_cast<double>(second) * fraction;
+-    return static_cast<int>(std::lrintf(value));
++    *result = static_cast<int>(std::lrintf(value));
+ }
+ 
+-static void ResizeWordImage(TgaImage* source, TgaImage* destination, int green_shift, int red_shift, int green_maximum)
++// Retail multiplies and adds in x87 precision and stores the sum as the float
++// argument of the rounding helper (double holds these products exactly).
++static float WeightedSum(int first, float first_weight, int second, float second_weight)
+ {
+-    int width = destination->width;
++    return static_cast<double>(first) * first_weight + static_cast<double>(second) * second_weight;
++}
++
++// Bilinear resize of a 565 image into the destination size (four source pixels per output pixel).
++// FUNCTION: BEACHLIFE 0x0040eb20
++void ScreenRequestRenderer::ResizeImage565(TgaImage* source, TgaImage* destination)
++{
++    unsigned short* input = reinterpret_cast<unsigned short*>(source->pixels);
+     int height = destination->height;
++    int width = destination->width;
+     unsigned short* output = reinterpret_cast<unsigned short*>(destination->pixels);
+-    unsigned short* input = reinterpret_cast<unsigned short*>(source->pixels);
+     int source_width = source->width;
+     float scale_x = static_cast<double>(source_width - 1) / width;
+     float scale_y = static_cast<double>(source->height - 1) / height;
+@@ -28,41 +37,107 @@ static void ResizeWordImage(TgaImage* source, TgaImage* destination, int green_s
+             double position_x = static_cast<double>(x) * scale_x;
+             int left = static_cast<int>(position_x);
+             float fraction_x = position_x - left;
+-            unsigned int colours[4] = {
+-                input[top * source_width + left],
+-                input[top * source_width + left + 1],
+-                input[(top + 1) * source_width + left],
+-                input[(top + 1) * source_width + left + 1]
+-            };
+-            int left_red = InterpolateImageChannel((colours[0] >> red_shift) & 31, (colours[2] >> red_shift) & 31, inverse_y, fraction_y);
+-            int left_green = InterpolateImageChannel((colours[0] >> green_shift) & 31, (colours[2] >> green_shift) & 31, inverse_y, fraction_y);
+-            int left_blue = InterpolateImageChannel(colours[0] & 31, colours[2] & 31, inverse_y, fraction_y);
+-            int right_red = InterpolateImageChannel((colours[1] >> red_shift) & 31, (colours[3] >> red_shift) & 31, inverse_y, fraction_y);
+-            int right_green = InterpolateImageChannel((colours[1] >> green_shift) & 31, (colours[3] >> green_shift) & 31, inverse_y, fraction_y);
+-            int right_blue = InterpolateImageChannel(colours[1] & 31, colours[3] & 31, inverse_y, fraction_y);
++            unsigned char red_00 = (input[top * source_width + left] >> 11) & 0x1f;
++            unsigned char green_00 = (input[top * source_width + left] >> 6) & 0x1f;
++            unsigned char blue_00 = input[top * source_width + left] & 0x1f;
++            unsigned char red_01 = (input[top * source_width + left + 1] >> 11) & 0x1f;
++            unsigned char green_01 = (input[top * source_width + left + 1] >> 6) & 0x1f;
++            unsigned char blue_01 = input[top * source_width + left + 1] & 0x1f;
++            unsigned char red_10 = (input[(top + 1) * source_width + left] >> 11) & 0x1f;
++            unsigned char green_10 = (input[(top + 1) * source_width + left] >> 6) & 0x1f;
++            unsigned char blue_10 = input[(top + 1) * source_width + left] & 0x1f;
++            unsigned char red_11 = (input[(top + 1) * source_width + left + 1] >> 11) & 0x1f;
++            unsigned char green_11 = (input[(top + 1) * source_width + left + 1] >> 6) & 0x1f;
++            unsigned char blue_11 = input[(top + 1) * source_width + left + 1] & 0x1f;
++            int blue_2;
++            int green_2;
++            int red_2;
++            int blue_1;
++            int green_1;
++            int red_1;
++            RoundToInt(WeightedSum(red_00, inverse_y, red_10, fraction_y), &red_1);
++            RoundToInt(WeightedSum(green_00, inverse_y, green_10, fraction_y), &green_1);
++            RoundToInt(WeightedSum(blue_00, inverse_y, blue_10, fraction_y), &blue_1);
++            RoundToInt(WeightedSum(red_01, inverse_y, red_11, fraction_y), &red_2);
++            RoundToInt(WeightedSum(green_01, inverse_y, green_11, fraction_y), &green_2);
++            RoundToInt(WeightedSum(blue_01, inverse_y, blue_11, fraction_y), &blue_2);
+             float inverse_x = 1.0 - static_cast<double>(fraction_x);
+-            int red = InterpolateImageChannel(left_red, right_red, inverse_x, fraction_x);
+-            int green = InterpolateImageChannel(left_green, right_green, inverse_x, fraction_x);
+-            int blue = InterpolateImageChannel(left_blue, right_blue, inverse_x, fraction_x);
++            int red;
++            int green;
++            int blue;
++            RoundToInt(WeightedSum(red_1, inverse_x, red_2, fraction_x), &red);
++            RoundToInt(WeightedSum(green_1, inverse_x, green_2, fraction_x), &green);
++            RoundToInt(WeightedSum(blue_1, inverse_x, blue_2, fraction_x), &blue);
+             if (red > 31)
+                 red = 31;
+-            if (green > green_maximum)
+-                green = green_maximum;
++            if (green > 63)
++                green = 63;
+             if (blue > 31)
+                 blue = 31;
+-            *output++ = (((red << 5) + green) << green_shift) + blue;
++            output[y * width + x] = (((red << 5) + green) << 6) + blue;
+         }
+     }
+ }
+ 
+-// FUNCTION: BEACHLIFE 0x0040eb20
+-void ScreenRequestRenderer::ResizeImage565(TgaImage* source, TgaImage* destination)
+-{
+-    ResizeWordImage(source, destination, 6, 11, 63);
+-}
+-
+ // FUNCTION: BEACHLIFE 0x0040ef00
+ void ScreenRequestRenderer::ResizeImage555(TgaImage* source, TgaImage* destination)
+ {
+-    ResizeWordImage(source, destination, 5, 10, 31);
++    unsigned short* input = reinterpret_cast<unsigned short*>(source->pixels);
++    int height = destination->height;
++    int width = destination->width;
++    unsigned short* output = reinterpret_cast<unsigned short*>(destination->pixels);
++    int source_width = source->width;
++    float scale_x = static_cast<double>(source_width - 1) / width;
++    float scale_y = static_cast<double>(source->height - 1) / height;
++    for (int y = 0; y < height; ++y)
++    {
++        double position_y = static_cast<double>(y) * scale_y;
++        int top = static_cast<int>(position_y);
++        float fraction_y = position_y - top;
++        float inverse_y = 1.0 - static_cast<double>(fraction_y);
++        for (int x = 0; x < width; ++x)
++        {
++            double position_x = static_cast<double>(x) * scale_x;
++            int left = static_cast<int>(position_x);
++            float fraction_x = position_x - left;
++            unsigned char red_00 = (input[top * source_width + left] >> 10) & 0x1f;
++            unsigned char green_00 = (input[top * source_width + left] >> 5) & 0x1f;
++            unsigned char blue_00 = input[top * source_width + left] & 0x1f;
++            unsigned char red_01 = (input[top * source_width + left + 1] >> 10) & 0x1f;
++            unsigned char green_01 = (input[top * source_width + left + 1] >> 5) & 0x1f;
++            unsigned char blue_01 = input[top * source_width + left + 1] & 0x1f;
++            unsigned char red_10 = (input[(top + 1) * source_width + left] >> 10) & 0x1f;
++            unsigned char green_10 = (input[(top + 1) * source_width + left] >> 5) & 0x1f;
++            unsigned char blue_10 = input[(top + 1) * source_width + left] & 0x1f;
++            unsigned char red_11 = (input[(top + 1) * source_width + left + 1] >> 10) & 0x1f;
++            unsigned char green_11 = (input[(top + 1) * source_width + left + 1] >> 5) & 0x1f;
++            unsigned char blue_11 = input[(top + 1) * source_width + left + 1] & 0x1f;
++            int blue_2;
++            int green_2;
++            int red_2;
++            int blue_1;
++            int green_1;
++            int red_1;
++            RoundToInt(WeightedSum(red_00, inverse_y, red_10, fraction_y), &red_1);
++            RoundToInt(WeightedSum(green_00, inverse_y, green_10, fraction_y), &green_1);
++            RoundToInt(WeightedSum(blue_00, inverse_y, blue_10, fraction_y), &blue_1);
++            RoundToInt(WeightedSum(red_01, inverse_y, red_11, fraction_y), &red_2);
++            RoundToInt(WeightedSum(green_01, inverse_y, green_11, fraction_y), &green_2);
++            RoundToInt(WeightedSum(blue_01, inverse_y, blue_11, fraction_y), &blue_2);
++            float inverse_x = 1.0 - static_cast<double>(fraction_x);
++            int red;
++            int green;
++            int blue;
++            RoundToInt(WeightedSum(red_1, inverse_x, red_2, fraction_x), &red);
++            RoundToInt(WeightedSum(green_1, inverse_x, green_2, fraction_x), &green);
++            RoundToInt(WeightedSum(blue_1, inverse_x, blue_2, fraction_x), &blue);
++            if (red > 31)
++                red = 31;
++            if (green > 31)
++                green = 31;
++            if (blue > 31)
++                blue = 31;
++            output[y * width + x] = (((red << 5) + green) << 5) + blue;
++        }
++    }
+ }
+diff --git a/src/startup_resource_light_mask.cpp b/src/startup_resource_light_mask.cpp
+index eeb66df167e1fa2e44241fd0899b41c1d3270aad..9368e998b82e099272fe358b0bce9fdcba59f411 100644
+--- a/src/startup_resource_light_mask.cpp
++++ b/src/startup_resource_light_mask.cpp
+@@ -1,84 +1,119 @@
+ #include "startup_screen_item.h"
++#include <cstdlib>
+ #include <cstring>
+ 
+ // FUNCTION: BEACHLIFE 0x00408ce0
+-void ResourceLightMask(unsigned char* light, const unsigned char* source, unsigned int stride,
+-    int x, int y, int width, int height, const ScreenRectangle* rectangle)
++void ResourceLightMask(unsigned char* light, const unsigned char* source, unsigned int stride, int x, int y, int width,
++    int height, const ScreenRectangle* rectangle)
+ {
+     unsigned char* row = light + stride * y + x;
+-    if (rectangle->left <= 0 && rectangle->top <= 0
+-        && rectangle->right >= width && rectangle->bottom >= height)
++    int j;
++
++    // Nothing is clipped.
++    if (rectangle->left <= 0 && rectangle->top <= 0 && rectangle->right >= width && rectangle->bottom >= height)
+     {
+-        for (int line = 0; line < height; ++line, row += stride)
++        for (j = 0; j < height; j++)
+         {
+-            unsigned char* destination = row;
++            unsigned char* output = row + j * stride;
+             int column = 0;
+             while (column < width)
+             {
+-                int run = static_cast<signed char>(*source++);
+-                if (run > 0)
++                signed char packet = *source++;
++                if (packet > 0)
+                 {
+-                    std::memset(destination, 0, run);
+-                    column += run;
+-                    destination += run;
++                    int count = packet;
++                    std::memset(output, 0, count);
++                    column += count;
++                    output += count;
++                    packet -= count;
+                 }
+-                else
++                output -= packet;
++                column -= packet;
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped.
++    if (rectangle->left > 0)
++    {
++        for (int skip = rectangle->top; skip > 0; skip--)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                column += std::abs(packet);
++            }
++        }
++
++        for (j = 0; j < rectangle->bottom - rectangle->top; j++)
++        {
++            int remaining_left = rectangle->left;
++            unsigned char* output = row + j * stride;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
+                 {
+-                    column -= run;
+-                    destination -= run;
++                    int count = packet;
++                    packet -= count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else if (column < rectangle->right)
++                            *output++ = 0;
++                        column++;
++                    } while (--count != 0);
+                 }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
++                {
++                    remaining_left--;
++                    column++;
++                    packet--;
++                }
++                column += packet;
++                output += packet;
+             }
+         }
+         return;
+     }
+-    for (int line = 0; line < rectangle->top; ++line)
++
++    // Top, right or bottom edge clipped.
++    for (int skip = rectangle->top; skip > 0; skip--)
+     {
+         int column = 0;
+         while (column < width)
+         {
+-            int run = static_cast<signed char>(*source++);
+-            column += run < 0 ? -run : run;
++            signed char packet = *source++;
++            column += std::abs(packet);
+         }
+     }
+-    for (int line = 0; line < rectangle->bottom - rectangle->top; ++line, row += stride)
++
++    for (j = 0; j < rectangle->bottom - rectangle->top; j++)
+     {
+-        unsigned char* destination = row;
++        unsigned char* output = row + j * stride;
+         int column = 0;
+-        int skip = rectangle->left;
+         while (column < width)
+         {
+-            signed char run = static_cast<signed char>(*source++);
+-            if (run > 0)
++            signed char packet = *source++;
++            if (packet > 0)
+             {
+-                int count = run;
+-                run = 0;
+-                while (count--)
++                int count = packet;
++                packet -= count;
++                do
+                 {
+-                    if (rectangle->left > 0 && skip)
+-                        --skip;
+-                    else if (column < rectangle->right)
+-                        *destination++ = 0;
+-                    ++column;
+-                }
+-            }
+-            if (rectangle->left > 0)
+-            {
+-                run = static_cast<signed char>(-run);
+-                while (skip && run)
+-                {
+-                    --skip;
+-                    ++column;
+-                    run = static_cast<signed char>(run - 1);
+-                }
+-                column += run;
+-                destination += run;
+-            }
+-            else
+-            {
+-                if (column < rectangle->right)
+-                    destination -= run;
+-                column -= run;
++                    if (column < rectangle->right)
++                        *output++ = 0;
++                    column++;
++                } while (--count != 0);
+             }
++            if (column < rectangle->right)
++                output -= packet;
++            column -= packet;
+         }
+     }
+ }
+diff --git a/src/startup_resource_light_raster.cpp b/src/startup_resource_light_raster.cpp
+index dd8399c09ba5a562012c17d15cf5bddbf7f0e907..605ff9fe804cccbab8b084e43ea52b6e78b42171 100644
+--- a/src/startup_resource_light_raster.cpp
++++ b/src/startup_resource_light_raster.cpp
+@@ -1,29 +1,3 @@
+-static void RaiseResourceLight(unsigned char* destination, unsigned char source)
+-{
+-    int level = static_cast<int>(source) - 24;
+-    if (level > *destination)
+-        *destination = static_cast<unsigned char>(level);
+-}
+-
+-static void SkipResourceLightRows(const unsigned char*& source, int width, int rows)
+-{
+-    for (int row = 0; row < rows; ++row)
+-    {
+-        int column = 0;
+-        while (column < width)
+-        {
+-            int run = static_cast<signed char>(*source++);
+-            if (run >= 0)
+-            {
+-                column += run;
+-                source += run;
+-            }
+-            else
+-                column -= run;
+-        }
+-    }
+-}
+-
+ // FUNCTION: BEACHLIFE 0x00407110
+ void ResourceLightRaster(unsigned char* light, const unsigned char* source, unsigned short* palette,
+     unsigned int pitch, int x, int y, int width, int height, int left, int top, int right, int bottom)
+@@ -168,51 +142,161 @@ void ResourceLightRaster(unsigned char* light, const unsigned char* source, unsi
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004073a0
+-void ResourceLightRasterHalf(unsigned char* light, const unsigned char* source,
+-    unsigned short*, unsigned int pitch, int x, int y, int width, int height,
+-    int left, int top, int right, int bottom)
++void ResourceLightRasterHalf(unsigned char* light, const unsigned char* source, unsigned short* palette,
++    unsigned int pitch, int x, int y, int width, int height, int left, int top, int right, int bottom)
+ {
+-    unsigned char* start = light + pitch * (y / 2) + x / 2;
+-    bool unclipped = left <= 0 && top <= 0 && right >= width && bottom >= height;
+-    if (!unclipped)
+-        SkipResourceLightRows(source, width, top);
+-    int rows = unclipped ? height : bottom - top;
+-    for (int row = 0; row < rows; ++row)
++    unsigned char* row = light + pitch * (y / 2) + x / 2;
++    int j;
++
++    // Nothing is clipped.
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
+     {
+-        unsigned char* destination = start + (row / 2) * pitch;
+-        int remaining_left = left;
+-        int column = 0;
+-        while (column < width)
++        for (j = 0; j < height; j++)
++        {
++            unsigned char* output = row + (j / 2) * pitch;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet >= 0)
++                {
++                    for (; packet > 0; packet--)
++                    {
++                        if (((x + column) & 1) == 0 && ((y + j) & 1) == 0)
++                        {
++                            if (*source - 24 > *output)
++                                *output = *source - 24;
++                            output++;
++                        }
++                        source++;
++                        column++;
++                    }
++                }
++                else
++                {
++                    for (packet = -packet; packet > 0; packet--)
++                    {
++                        if (((x + column) & 1) == 0 && ((y + j) & 1) == 0)
++                            output++;
++                        column++;
++                    }
++                }
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped.
++    if (left > 0)
++    {
++        for (int skip = top; skip > 0; skip--)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet >= 0)
++                {
++                    column += packet;
++                    source += packet;
++                }
++                else
++                    column -= packet;
++            }
++        }
++
++        for (j = 0; j < bottom - top; j++)
+         {
+-            int run = static_cast<signed char>(*source++);
+-            if (run >= 0)
++            unsigned char* output = row + (j / 2) * pitch;
++            int remaining_left = left;
++            int column = 0;
++            while (column < width)
+             {
+-                while (run--)
++                signed char packet = *source++;
++                if (packet > 0)
+                 {
+-                    if (left > 0 && remaining_left)
+-                        --remaining_left;
+-                    else if ((unclipped || column < right) && !((x + column) & 1) && !((y + row) & 1))
+-                        RaiseResourceLight(destination++, *source);
+-                    ++source;
+-                    ++column;
++                    int px = x + column;
++                    int count = packet;
++                    packet -= count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else if (column < right && (px & 1) == 0 && ((j + y) & 1) == 0)
++                        {
++                            if (*source - 24 > *output)
++                                *output = *source - 24;
++                            output++;
++                        }
++                        source++;
++                        column++;
++                        px++;
++                    } while (--count != 0);
++                }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
++                {
++                    remaining_left--;
++                    column++;
++                    packet--;
++                }
++                for (; packet > 0; packet--)
++                {
++                    if (((x + column) & 1) == 0 && ((j + y) & 1) == 0)
++                        output++;
++                    column++;
+                 }
+             }
++        }
++        return;
++    }
++
++    // Top, right or bottom edge clipped.
++    for (int skip = top; skip > 0; skip--)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
+             else
++                column -= packet;
++        }
++    }
++
++    for (j = 0; j < bottom - top; j++)
++    {
++        unsigned char* output = row + (j / 2) * pitch;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet >= 0)
+             {
+-                unsigned char skip = static_cast<unsigned char>(-run);
+-                if (left > 0)
++                while (packet--)
+                 {
+-                    while (remaining_left && skip)
++                    if (column < right && ((x + column) & 1) == 0 && ((y + j) & 1) == 0)
+                     {
+-                        --remaining_left;
+-                        ++column;
+-                        --skip;
++                        if (*source - 24 > *output)
++                            *output = *source - 24;
++                        output++;
+                     }
++                    source++;
++                    column++;
++                }
++            }
++            else
++            {
++                for (packet = -packet; packet > 0; packet--)
++                {
++                    if (((x + column) & 1) == 0 && ((y + j) & 1) == 0)
++                        output++;
++                    column++;
+                 }
+-                int count = static_cast<signed char>(skip);
+-                for (int index = 0; index < count; ++index, ++column)
+-                    if (!((x + column) & 1) && !((y + row) & 1))
+-                        ++destination;
+             }
+         }
+     }
+diff --git a/src/startup_weather_haze_update.cpp b/src/startup_weather_haze_update.cpp
+index cc756272a14d37da0ccc97f11011a3d54750f801..95cb088f43c7136d9d0eaa4495db1eb9015f58b0 100644
+--- a/src/startup_weather_haze_update.cpp
++++ b/src/startup_weather_haze_update.cpp
+@@ -3,20 +3,22 @@
+ #include "startup_screen_renderer.h"
+ 
+ // FUNCTION: BEACHLIFE 0x004070a0
+-void RasterWeatherHaze(unsigned char* destination, const unsigned char* source,
+-    unsigned short*, unsigned int pitch, int x, int y, int width, int,
+-    int left, int top, int right, int bottom)
++void RasterWeatherHaze(unsigned char* destination, const unsigned char* source, unsigned short* pixels,
++    unsigned int pitch, int x, int y, int width, int height, int left, int top, int right, int bottom)
+ {
++    unsigned char* row = destination + y * pitch;
+     source += width * top;
+-    destination += pitch * y + x;
+-    for (int row = top; row < bottom; ++row)
++    for (int rows = bottom - top; rows > 0; --rows)
+     {
+-        unsigned char* output = destination;
+-        for (int column = left; column < right; ++column, ++output)
+-            if (source[column] > *output)
+-                *output = source[column];
++        int offset = x;
++        for (int column = left; column < right; ++column)
++        {
++            if (source[column] > row[offset])
++                row[offset] = source[column];
++            ++offset;
++        }
+         source += width;
+-        destination += pitch;
++        row += pitch;
+     }
+ }
+ 
