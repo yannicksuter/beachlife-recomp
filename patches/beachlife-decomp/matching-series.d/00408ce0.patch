@@ -1,0 +1,168 @@
+diff --git a/fixtures/game.d/fixture_00408ce0.cpp b/fixtures/game.d/fixture_00408ce0.cpp
+new file mode 100644
+index 0000000..1614163
+--- /dev/null
++++ b/fixtures/game.d/fixture_00408ce0.cpp
+@@ -0,0 +1,8 @@
++#include "startup_resource_rasters.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00408ce0(unsigned char* light, const unsigned char* source,
++    unsigned int stride, int x, int y, int width, int height, const ScreenRectangle* rectangle)
++{
++    ResourceLightMask(light, source, stride, x, y, width, height, rectangle);
++}
+diff --git a/metadata.d/00408ce0.csv b/metadata.d/00408ce0.csv
+new file mode 100644
+index 0000000..05bf3e0
+--- /dev/null
++++ b/metadata.d/00408ce0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00408ce0,function,590,?ResourceLightMask@@YAXPAEPBEIHHHHPBUScreenRectangle@@@Z
+diff --git a/src/match_00408ce0.cpp b/src/match_00408ce0.cpp
+new file mode 100644
+index 0000000..ad3cdfc
+--- /dev/null
++++ b/src/match_00408ce0.cpp
+@@ -0,0 +1,124 @@
++#include "startup_resource_rasters.h"
++#include "startup_screen_item.h"
++#include <stdlib.h>
++#include <string.h>
++
++// Clears the light buffer under an RLE packet sprite: positive packets cover
++// that many pixels with zero, any other packet skips -n. The sprite is clipped
++// against rectangle (in sprite coordinates); rows above its top are decoded
++// and discarded, as are the covered columns left of its left edge.
++// FUNCTION: BEACHLIFE 0x00408ce0
++void ResourceLightMask(unsigned char* light, const unsigned char* source, unsigned int stride, int x, int y, int width,
++    int height, const ScreenRectangle* rectangle)
++{
++    unsigned char* row = light + stride * y + x;
++    int j;
++
++    // Nothing is clipped.
++    if (rectangle->left <= 0 && rectangle->top <= 0 && rectangle->right >= width && rectangle->bottom >= height)
++    {
++        for (j = 0; j < height; j++)
++        {
++            unsigned char* output = row + j * stride;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    memset(output, 0, count);
++                    column += count;
++                    output += count;
++                    packet -= count;
++                }
++                output -= packet;
++                column -= packet;
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped.
++    if (rectangle->left > 0)
++    {
++        for (int skip = rectangle->top; skip > 0; skip--)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                column += abs(packet);
++            }
++        }
++
++        for (j = 0; j < rectangle->bottom - rectangle->top; j++)
++        {
++            int remaining_left = rectangle->left;
++            unsigned char* output = row + j * stride;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int count = packet;
++                    packet -= count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else if (column < rectangle->right)
++                            *output++ = 0;
++                        column++;
++                    } while (--count != 0);
++                }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
++                {
++                    remaining_left--;
++                    column++;
++                    packet--;
++                }
++                column += packet;
++                output += packet;
++            }
++        }
++        return;
++    }
++
++    // Top, right or bottom edge clipped.
++    for (int skip = rectangle->top; skip > 0; skip--)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            column += abs(packet);
++        }
++    }
++
++    for (j = 0; j < rectangle->bottom - rectangle->top; j++)
++    {
++        unsigned char* output = row + j * stride;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet > 0)
++            {
++                int count = packet;
++                packet -= count;
++                do
++                {
++                    if (column < rectangle->right)
++                        *output++ = 0;
++                    column++;
++                } while (--count != 0);
++            }
++            if (column < rectangle->right)
++                output -= packet;
++            column -= packet;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00408ce0.json b/targets/beachlife-uk-1.1.d/00408ce0.json
+new file mode 100644
+index 0000000..a78ad50
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00408ce0.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x00408ce0",
++      "size": 590,
++      "name": "ResourceLightMask",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

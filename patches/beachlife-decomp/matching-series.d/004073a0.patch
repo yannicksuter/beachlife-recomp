@@ -1,0 +1,194 @@
+diff --git a/metadata.d/004073a0.csv b/metadata.d/004073a0.csv
+new file mode 100644
+index 0000000..18bae55
+--- /dev/null
++++ b/metadata.d/004073a0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004073a0,function,923,?ResourceLightRasterHalf@@YAXPAEPBEPAGIHHHHHHHH@Z
+diff --git a/src/match_004073a0.cpp b/src/match_004073a0.cpp
+new file mode 100644
+index 0000000..ba011d3
+--- /dev/null
++++ b/src/match_004073a0.cpp
+@@ -0,0 +1,164 @@
++#include "startup_resource_rasters.h"
++
++// Half-resolution ResourceLightRaster: the light map has half the screen size, so a
++// sprite pixel raises it only where its screen column and row are both even.
++// FUNCTION: BEACHLIFE 0x004073a0
++void ResourceLightRasterHalf(unsigned char* light, const unsigned char* source, unsigned short* palette,
++    unsigned int pitch, int x, int y, int width, int height, int left, int top, int right, int bottom)
++{
++    unsigned char* row = light + pitch * (y / 2) + x / 2;
++    int j;
++
++    // Nothing is clipped.
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
++    {
++        for (j = 0; j < height; j++)
++        {
++            unsigned char* output = row + (j / 2) * pitch;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet >= 0)
++                {
++                    for (; packet > 0; packet--)
++                    {
++                        if (((x + column) & 1) == 0 && ((y + j) & 1) == 0)
++                        {
++                            if (*source - 24 > *output)
++                                *output = *source - 24;
++                            output++;
++                        }
++                        source++;
++                        column++;
++                    }
++                }
++                else
++                {
++                    for (packet = -packet; packet > 0; packet--)
++                    {
++                        if (((x + column) & 1) == 0 && ((y + j) & 1) == 0)
++                            output++;
++                        column++;
++                    }
++                }
++            }
++        }
++        return;
++    }
++
++    // Left edge clipped.
++    if (left > 0)
++    {
++        for (int skip = top; skip > 0; skip--)
++        {
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet >= 0)
++                {
++                    column += packet;
++                    source += packet;
++                }
++                else
++                    column -= packet;
++            }
++        }
++
++        for (j = 0; j < bottom - top; j++)
++        {
++            unsigned char* output = row + (j / 2) * pitch;
++            int remaining_left = left;
++            int column = 0;
++            while (column < width)
++            {
++                signed char packet = *source++;
++                if (packet > 0)
++                {
++                    int px = x + column;
++                    int count = packet;
++                    packet -= count;
++                    do
++                    {
++                        if (remaining_left != 0)
++                            remaining_left--;
++                        else if (column < right && (px & 1) == 0 && ((j + y) & 1) == 0)
++                        {
++                            if (*source - 24 > *output)
++                                *output = *source - 24;
++                            output++;
++                        }
++                        source++;
++                        column++;
++                        px++;
++                    } while (--count != 0);
++                }
++                packet = -packet;
++                while (remaining_left != 0 && packet != 0)
++                {
++                    remaining_left--;
++                    column++;
++                    packet--;
++                }
++                for (; packet > 0; packet--)
++                {
++                    if (((x + column) & 1) == 0 && ((j + y) & 1) == 0)
++                        output++;
++                    column++;
++                }
++            }
++        }
++        return;
++    }
++
++    // Top, right or bottom edge clipped.
++    for (int skip = top; skip > 0; skip--)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet >= 0)
++            {
++                column += packet;
++                source += packet;
++            }
++            else
++                column -= packet;
++        }
++    }
++
++    for (j = 0; j < bottom - top; j++)
++    {
++        unsigned char* output = row + (j / 2) * pitch;
++        int column = 0;
++        while (column < width)
++        {
++            signed char packet = *source++;
++            if (packet >= 0)
++            {
++                while (packet--)
++                {
++                    if (column < right && ((x + column) & 1) == 0 && ((y + j) & 1) == 0)
++                    {
++                        if (*source - 24 > *output)
++                            *output = *source - 24;
++                        output++;
++                    }
++                    source++;
++                    column++;
++                }
++            }
++            else
++            {
++                for (packet = -packet; packet > 0; packet--)
++                {
++                    if (((x + column) & 1) == 0 && ((y + j) & 1) == 0)
++                        output++;
++                    column++;
++                }
++            }
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/004073a0.json b/targets/beachlife-uk-1.1.d/004073a0.json
+new file mode 100644
+index 0000000..861a689
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004073a0.json
+@@ -0,0 +1,10 @@
++{
++  "functions": [
++    {
++      "address": "0x004073a0",
++      "size": 923,
++      "name": "ResourceLightRasterHalf",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ]
++}

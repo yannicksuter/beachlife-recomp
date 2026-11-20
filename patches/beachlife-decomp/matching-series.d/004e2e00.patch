@@ -1,0 +1,155 @@
+diff --git a/fixtures/game.d/fixture_004e2e00.cpp b/fixtures/game.d/fixture_004e2e00.cpp
+new file mode 100644
+index 0000000..8900c1f
+--- /dev/null
++++ b/fixtures/game.d/fixture_004e2e00.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004e2e00(ScreenRequestGamePrefix* game)
++{
++    game->~ScreenRequestGamePrefix();
++}
+diff --git a/metadata.d/004e2e00.csv b/metadata.d/004e2e00.csv
+new file mode 100644
+index 0000000..15dc7be
+--- /dev/null
++++ b/metadata.d/004e2e00.csv
+@@ -0,0 +1,3 @@
++address,type,size,symbol
++0x004e2e00,function,688,??1ScreenRequestGamePrefix@@QAE@XZ
++0x0057d59c,string,3,
+diff --git a/src/match_004e2e00.cpp b/src/match_004e2e00.cpp
+new file mode 100644
+index 0000000..ce35182
+--- /dev/null
++++ b/src/match_004e2e00.cpp
+@@ -0,0 +1,77 @@
++#include "startup_screen_manager.h"
++#include "startup_screen_placement.h"
++#include "startup_screen_text.h"
++#include "startup_screen_renderer.h"
++#include "startup_debug_font.h"
++#include "startup_input_state.h"
++#include "startup_input_motion.h"
++#include "startup_frame_clock.h"
++#include "startup_timer.h"
++#include "startup_screen_dialog_resource.h"
++#include "window_audio.h"
++#include "startup_game_update_pair.h"
++
++#include <new>
++#include <stdio.h>
++
++#include "startup_game_save_record.h"
++
++// Retail expands SaveScenarioProgress (0x004e4100) and ClearSaveRecords
++// (0x004e4c80) here; the scenario names are released between them.
++static inline void SaveProgress(ScreenRequestGamePrefix* game)
++{
++    FILE* file = fopen(startup_game_state_path, "wb");
++    if (file)
++    {
++        fwrite(game->words_70, 0x30, 1, file);
++        fclose(file);
++    }
++}
++
++static inline void ClearNames(ScreenRequestGamePrefix* game)
++{
++    for (unsigned int i = 0; i < game->scenario_names.size(); ++i)
++        delete game->scenario_names[i];
++    game->scenario_names.clear();
++}
++
++static inline void ClearSaves(ScreenRequestGamePrefix* game)
++{
++    for (GameSaveRecord** record = game->saves.begin(); record != game->saves.end(); ++record)
++    {
++        if (*record)
++            delete *record;
++    }
++    game->saves.clear();
++    game->save_info_enabled = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004e2e00
++ScreenRequestGamePrefix::~ScreenRequestGamePrefix()
++{
++    SaveProgress(this);
++    if (placement)
++        delete placement;
++    if (text)
++        delete text;
++    if (controller_selection.first_controller)
++        delete controller_selection.first_controller;
++    delete controller_selection.controllers[0];
++    delete controller_selection.controllers[1];
++    delete controller_selection.controllers[2];
++    delete controller_selection.controllers[3];
++    delete controller_selection.controllers[4];
++    delete controller_selection.controllers[5];
++    delete screens;
++    delete audio;
++    delete update_pair;
++    delete debug_font;
++    delete input_motion;
++    delete profiler;
++    delete clock;
++    delete input;
++    delete renderer;
++    delete resources;
++    ClearNames(this);
++    ClearSaves(this);
++}
+diff --git a/src/startup_screen_font_shared_destructor.cpp b/src/startup_screen_font_shared_destructor.cpp
+new file mode 100644
+index 0000000..8d36b71
+--- /dev/null
++++ b/src/startup_screen_font_shared_destructor.cpp
+@@ -0,0 +1,18 @@
++#include "startup_debug_font.h"
++#include "tga_image.h"
++
++#include <new>
++
++// DebugFont shares ScreenFontData's image-only destructor body; LINK folds
++// both into the original 0x004183f0. This file sorts after the
++// ScreenFontData source so its folded annotation is the second one read.
++// FUNCTION: BEACHLIFE 0x004183f0 FOLDED
++DebugFont::~DebugFont()
++{
++    TgaImage* released = image;
++    if (released)
++    {
++        released->TgaImage::~TgaImage();
++        ::operator delete(released);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/004e2e00.json b/targets/beachlife-uk-1.1.d/004e2e00.json
+new file mode 100644
+index 0000000..3b32697
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004e2e00.json
+@@ -0,0 +1,20 @@
++{
++  "functions": [
++    {
++      "address": "0x004e2e00",
++      "size": 688,
++      "name": "ScreenRequestGamePrefix::~ScreenRequestGamePrefix",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004e2e00.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "fixture_004e2e00.cpp",
++    "match_004e2e00.cpp"
++  ]
++}
