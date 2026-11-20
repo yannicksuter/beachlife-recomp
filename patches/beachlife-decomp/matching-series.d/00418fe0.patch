@@ -1,0 +1,171 @@
+diff --git a/fixtures/game.d/fixture_00418fe0.cpp b/fixtures/game.d/fixture_00418fe0.cpp
+new file mode 100644
+index 0000000..9c9501a
+--- /dev/null
++++ b/fixtures/game.d/fixture_00418fe0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_overlay_layout.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) bool Fixture_00418fe0(OverlayMapPrefix* map, int x, int y, unsigned short colour)
++{
++    return map->DrawTile(x, y, colour);
++}
+diff --git a/metadata.d/00418fe0.csv b/metadata.d/00418fe0.csv
+new file mode 100644
+index 0000000..779ef65
+--- /dev/null
++++ b/metadata.d/00418fe0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00418fe0,function,1039,?DrawTile@OverlayMapPrefix@@QAE_NHHG@Z
+diff --git a/src/match_00418fe0.cpp b/src/match_00418fe0.cpp
+new file mode 100644
+index 0000000..485c620
+--- /dev/null
++++ b/src/match_00418fe0.cpp
+@@ -0,0 +1,123 @@
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_renderer.h"
++#include "startup_screen_position_inlines.h"
++
++static inline ScreenPoint ProjectTile(OverlayMapPrefix* map, const ScreenPoint& tile)
++{
++    unsigned int size = static_cast<unsigned int>(screen_terrain_grid->tile_size_00);
++    ScreenPoint result;
++    result.x = static_cast<int>(tile.x * (size >> 1));
++    result.y = static_cast<int>(tile.y * (size >> 1) + ((tile.x & 1) - 1) * (size >> 2));
++    result.y -= static_cast<int>(map->HeightAt(result.x, result.y));
++    return result;
++}
++
++static inline float RendererScale(const ScreenRequestRenderer* renderer)
++{
++    float value = renderer->value_58;
++    return value;
++}
++
++static inline unsigned short WorldDepth(OverlayMapPrefix* map, const ScreenWorldPosition* position)
++{
++    int x = static_cast<int>(position->x);
++    float height = position->y;
++    int y = static_cast<int>(height * 0.5f);
++    if (y >= 0 && y < 0x1000)
++    {
++        y += static_cast<int>(map->HeightAt(x, y));
++        float depth = static_cast<float>(y);
++        return static_cast<unsigned short>(static_cast<int>(map->depth_scale_160 * (depth * (1.0f / 4096.0f))) + map->depth_bias_15c + (y << 4));
++    }
++    return 0;
++}
++
++// FUNCTION: BEACHLIFE 0x00418fe0
++bool OverlayMapPrefix::DrawTile(int x, int y, unsigned short colour)
++{
++    int scroll_x = scroll_x_c4;
++    int scroll_y = scroll_y_c8;
++    ScreenPoint west;
++    ScreenPoint east;
++    ScreenPoint south;
++    screen_terrain_grid->Step(ScreenPoint(x, y), 4, &west);
++    screen_terrain_grid->Step(ScreenPoint(x, y), 2, &east);
++    screen_terrain_grid->Step(ScreenPoint(x, y), 3, &south);
++    ScreenPoint top = ProjectTile(this, ScreenPoint(x, y));
++    ScreenPoint west_corner = ProjectTile(this, west);
++    ScreenPoint middle = ProjectTile(this, east);
++    ScreenPoint bottom = ProjectTile(this, south);
++    ScreenWorldPosition origin = screen_terrain_grid->TileOrigin(ScreenPoint(x, y));
++    unsigned short depth = WorldDepth(overlay_map, &origin) + 16;
++    top.x -= scroll_x;
++    top.y -= scroll_y;
++    middle.y -= scroll_y;
++    bottom.y -= scroll_y;
++    ScreenRequestRenderer* renderer = renderer_fc;
++    float scale = RendererScale(screen_request_renderer);
++    if (renderer->clip_mode_54 == 2)
++    {
++        top.x = static_cast<int>(top.x * scale);
++        top.y = static_cast<int>(top.y * scale);
++        middle.y = static_cast<int>(middle.y * scale);
++        bottom.y = static_cast<int>(bottom.y * scale);
++    }
++    else
++        scale = 1.0f;
++    int row = top.y;
++    int width = renderer->width;
++    int height = renderer->height;
++    int span = 1;
++    unsigned short* line = renderer->pixels_1c + width * row * 2;
++    while (row <= middle.y)
++    {
++        if (row >= 0 && row < height)
++        {
++            int parity = row % 2;
++            int column = parity ? (top.x - span / 2) * 2 : (top.x - span / 2) * 2 + 2;
++            if (parity < span)
++            {
++                unsigned short* pixel = line + column;
++                unsigned int count = static_cast<unsigned int>(span - parity + 1) >> 1;
++                do
++                {
++                    if (column < width * 2 && column >= 0 && pixel[1] <= depth)
++                        pixel[0] = colour;
++                    column += 4;
++                    pixel += 4;
++                } while (--count);
++            }
++        }
++        ++row;
++        span += 4;
++        line += width * 2;
++        depth += static_cast<int>(16.0f / scale);
++    }
++    span -= 8;
++    while (row <= bottom.y)
++    {
++        if (row >= 0 && row < height)
++        {
++            int parity = row % 2;
++            int column = parity ? (top.x - span / 2) * 2 : (top.x - span / 2) * 2 + 2;
++            if (parity < span)
++            {
++                unsigned short* pixel = line + column;
++                unsigned int count = static_cast<unsigned int>(span - parity + 1) >> 1;
++                do
++                {
++                    if (column < width * 2 && column >= 0 && pixel[1] <= depth)
++                        pixel[0] = colour;
++                    column += 4;
++                    pixel += 4;
++                } while (--count);
++            }
++        }
++        ++row;
++        span -= 4;
++        line += width * 2;
++        depth += static_cast<int>(16.0f / scale);
++    }
++    return true;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00418fe0.json b/targets/beachlife-uk-1.1.d/00418fe0.json
+new file mode 100644
+index 0000000..ffac941
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00418fe0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00418fe0",
++      "size": 1039,
++      "name": "OverlayMapPrefix::DrawTile",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00418fe0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

@@ -1,0 +1,224 @@
+diff --git a/metadata.d/00425630.csv b/metadata.d/00425630.csv
+new file mode 100644
+index 0000000..5190273
+--- /dev/null
++++ b/metadata.d/00425630.csv
+@@ -0,0 +1,6 @@
++address,type,size,symbol
++0x00425630,function,4024,?Update@WorldSubsystem44@@QAEXXZ
++0x00572e88,string,20,
++0x00572eb4,string,20,
++0x005ab07c,global,100,?restored_beer_message@@3PADA
++0x005ab0e0,global,100,?shortage_beer_message@@3PADA
+diff --git a/src/match_00425630.cpp b/src/match_00425630.cpp
+new file mode 100644
+index 0000000..6fc7696
+--- /dev/null
++++ b/src/match_00425630.cpp
+@@ -0,0 +1,181 @@
++#include "startup_world_entities.h"
++#include "startup_world_subsystems.h"
++#include "startup_variable_state.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_command_inlines.h"
++#include "startup_screen_manager.h"
++#include "window_activation.h"
++#include "startup_world_index_deque.h"
++#include <stdlib.h>
++#include <string.h>
++
++// GLOBAL: BEACHLIFE 0x005ab07c
++char restored_beer_message[100];
++// GLOBAL: BEACHLIFE 0x005ab0e0
++char shortage_beer_message[100];
++
++static inline WindowDeactivationState* State()
++{
++    return window_deactivation_state;
++}
++static inline VariableWorldPrefix* World()
++{
++    return variable_world;
++}
++static inline ScreenModeCommandQueue* Commands()
++{
++    return screen_mode_commands;
++}
++static inline VariableCatalog* Catalog()
++{
++    return variable_catalog;
++}
++static inline ScreenManager* Screens()
++{
++    return screen_manager;
++}
++static inline VariableWeather* Weather()
++{
++    return variable_weather;
++}
++
++// FUNCTION: BEACHLIFE 0x00425630
++void WorldSubsystem44::Update()
++{
++    unsigned int day = State()->day_15c;
++    float time = State()->render_value_160;
++    if (word_58)
++    {
++        for (unsigned int index = 0; index < static_cast<unsigned int>(word_58); ++index)
++        {
++            unsigned int end_day = records_28[indices_00[index]]->day_1c;
++            float end_time = records_28[indices_00[index]]->time_18;
++            end_time += records_28[indices_00[index]]->duration_14;
++            while (end_time >= 24.0f)
++            {
++                int days = static_cast<int>(end_time * 0.0416666679084301f);
++                end_day += days;
++                end_time -= days * 24.0f;
++            }
++            if (end_day < day || (end_day == day && end_time < time))
++            {
++                switch (records_28[indices_00[index]]->kind_00)
++                {
++                case 0:
++                {
++                    ScreenModeCommand command(indices_00[index], 0, 2, 0, indices_00[index]);
++                    unsigned int count = 0;
++                    VariableEntity** sharks = World()->ByType(13, &count);
++                    for (unsigned int shark = 0; shark < count; ++shark)
++                    {
++                        command.words[1] = sharks[shark]->id_28;
++                        Commands()->QueueCommand(&command);
++                    }
++                    break;
++                }
++                case 1:
++                    State()->value_6f4 = 0.0f;
++                    break;
++                case 2:
++                    Catalog()->UnlockRecord(records_28[indices_00[index]]->catalog_index_28)->flag_d8 = 1;
++                    strcpy(restored_beer_message, "BEER_RESTORED_TYPE_");
++                    strcat(restored_beer_message, Catalog()->UnlockRecord(records_28[indices_00[index]]->catalog_index_28)->name_04);
++                    Screens()->RequestMessageScreen("MessageOKBox", restored_beer_message, 0, 1);
++                    break;
++                case 3:
++                    Weather()->SetEventIntensity(0);
++                    break;
++                }
++                indices_00[index] = indices_00[word_58 - 1];
++                indices_00.pop_back();
++                int remaining = word_58 - 1;
++                if (index != static_cast<unsigned int>(remaining))
++                    --index;
++                word_58 = remaining;
++            }
++        }
++    }
++    // Retail evaluates the first pending record here and discards it.
++    if (static_cast<unsigned int>(word_50) < count_54)
++        records_28[word_50];
++    while (static_cast<unsigned int>(word_50) < count_54)
++    {
++        if (!(records_28[word_50]->day_1c < day || (records_28[word_50]->day_1c == day && records_28[word_50]->time_18 < time)))
++            break;
++        switch (records_28[word_50]->kind_00)
++        {
++        case 0:
++        {
++            for (unsigned int index = 0; index < records_28[word_50]->count_20; ++index)
++            {
++                ScreenEventPlacement placement;
++                strcpy(placement.name, "Shark");
++                placement.index = word_50;
++                placement.bounds = records_28[word_50]->bounds_04;
++                int width = records_28[word_50]->bounds_04.right - records_28[word_50]->bounds_04.left;
++                placement.position.x = static_cast<float>(rand() % width + records_28[word_50]->bounds_04.left);
++                int height = records_28[word_50]->bounds_04.bottom - records_28[word_50]->bounds_04.top;
++                placement.position.y = static_cast<float>(rand() % height + records_28[word_50]->bounds_04.top);
++                placement.position.z = 0.0f;
++                ScreenModeCommand command;
++                command.words[0] = -2;
++                command.words[1] = -2;
++                command.words[2] = 0;
++                command.words[3] = 0;
++                command.words[4] = 13;
++                Commands()->QueuePlacement(&command, &placement);
++            }
++            break;
++        }
++        case 1:
++        {
++            float value = records_28[word_50]->value_24;
++            State()->value_6f4 = value;
++        }
++        break;
++        case 2:
++        {
++            unsigned int count;
++            VariableEntity** buildings = World()->ByType(2, &count);
++            for (unsigned int index = 0; index < count; ++index)
++            {
++                unsigned int drink = static_cast<WorldBuildingEntity*>(buildings[index])->drink_type_210;
++                if (drink == records_28[word_50]->catalog_index_28)
++                {
++                    static_cast<WorldBuildingEntity*>(buildings[index])->SetDrinkType(records_28[word_50]->replacement_2c);
++                    static_cast<WorldBuildingEntity*>(buildings[index])->SetDrinkValue(records_28[word_50]->value_30);
++                }
++            }
++            Catalog()->UnlockRecord(records_28[word_50]->catalog_index_28)->flag_d8 = 0;
++            strcpy(shortage_beer_message, "BEER_SHORTAGE_TYPE_");
++            strcat(shortage_beer_message, Catalog()->UnlockRecord(records_28[word_50]->catalog_index_28)->name_04);
++            Screens()->RequestMessageScreen("MessageOKBox", shortage_beer_message, 0, 1);
++            break;
++        }
++        case 3:
++            Weather()->SetEventIntensity(records_28[word_50]->count_20);
++            Weather()->SetEventArea(records_28[word_50]->bounds_04);
++            break;
++        case 4:
++            Weather()->SelectEventBuilding(static_cast<const char*>(records_28[word_50]->data_34));
++            break;
++        }
++        if (records_28[word_50]->kind_00 != 4)
++        {
++            indices_00.push_back(word_50);
++            ++word_58;
++        }
++        ++word_50;
++    }
++    if (static_cast<unsigned int>(word_50) == count_54 && word_5c && !word_58)
++    {
++        offset_60 += word_5c;
++        word_50 = 0;
++        for (unsigned int index = 0; index < count_54; ++index)
++        {
++            WorldDeque<WorldEventRecord*>::Iterator position = records_28.begin();
++            position += index;
++            (*position)->day_1c += static_cast<unsigned int>(word_5c);
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00425630.json b/targets/beachlife-uk-1.1.d/00425630.json
+new file mode 100644
+index 0000000..6249701
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00425630.json
+@@ -0,0 +1,19 @@
++{
++  "functions": [
++    {
++      "address": "0x00425630",
++      "size": 3987,
++      "name": "WorldSubsystem44::Update",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment and its two inline jump tables."
++    }
++  ],
++  "source_compile_options": {
++    "match_00425630.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_00425630.cpp"
++  ]
++}

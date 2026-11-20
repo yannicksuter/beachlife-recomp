@@ -1,0 +1,171 @@
+diff --git a/metadata.d/00478640.csv b/metadata.d/00478640.csv
+new file mode 100644
+index 0000000..fb5cafa
+--- /dev/null
++++ b/metadata.d/00478640.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00478640,function,1334,?PerformAction21@WorldGuestEntity@@QAEXXZ
+diff --git a/src/match_00478640.cpp b/src/match_00478640.cpp
+new file mode 100644
+index 0000000..b6a2774
+--- /dev/null
++++ b/src/match_00478640.cpp
+@@ -0,0 +1,136 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_screen_terrain_tile_index.h"
++#include "startup_screen_command_inlines.h"
++#include <math.h>
++
++static inline bool GuestLandFlags(unsigned int flags)
++{
++    return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
++}
++
++static inline VariableWorldPrefix* World()
++{
++    return variable_world;
++}
++
++static inline ScreenTerrainGrid* Terrain()
++{
++    return screen_terrain_grid;
++}
++
++static inline unsigned int GridFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
++// FUNCTION: BEACHLIFE 0x00478640
++void WorldGuestEntity::PerformAction21()
++{
++    unsigned int count;
++    VariableEntity** nearby = World()->Nearby(TilePosition(), 2, &count);
++    if (count)
++    {
++        unsigned int index = static_cast<unsigned int>(rand()) % count;
++        VariableEntity* entity = nearby[index];
++        if (entity->id_28 != id_28 && entity->kind_2c == 3)
++        {
++            WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(entity);
++            if (guest->guest_f4->word_1c4 == 1 && guest_f4->word_1c4 == 0 && (guest->state_3c == 13 || guest->state_3c == 34) && guest->guest_f4->group_value_1d8 == *reinterpret_cast<const float*>(guest_f4->unknown_1e0 + 4))
++            {
++                ScreenWorldPosition position = guest->position_30;
++                position.x -= 20.0f;
++                if (GuestLandFlags(CurrentScreenTerrain()->CellAt(position)->flags_48))
++                {
++                    lightning_state_318 = 1;
++                    word_32c = nearby[index]->id_28;
++                    ScreenModeCommand command;
++                    command.words[0] = id_28;
++                    command.words[1] = word_32c;
++                    command.words[2] = 21;
++                    command.words[3] = 0;
++                    command.words[4] = 0;
++                    screen_mode_commands->QueueCommand(&command);
++                    nearby[index]->KeylineState()->FacePositions(nearby[index]->Position(), ScreenWorldPosition(position_30));
++                    if (static_cast<WorldGuestEntity*>(nearby[index])->route_b8)
++                    {
++                        world_subsystem_18->ReleaseRoute(static_cast<WorldGuestEntity*>(nearby[index])->route_b8);
++                        static_cast<WorldGuestEntity*>(nearby[index])->route_b8 = 0;
++                    }
++                    ScreenModeCommand next;
++                    next.words[0] = id_28;
++                    next.words[1] = word_32c;
++                    next.words[2] = 3;
++                    next.words[3] = 0;
++                    next.words[4] = 35;
++                    screen_mode_commands->QueueCommand(&next);
++                    ScreenModeCommand walk;
++                    walk.words[0] = id_28;
++                    walk.words[1] = id_28;
++                    walk.words[2] = 8;
++                    walk.words[3] = static_cast<int>(position.x);
++                    walk.words[4] = static_cast<int>(position.y);
++                    screen_mode_commands->QueueCommand(&walk);
++                    return;
++                }
++            }
++        }
++    }
++    if (weather_values_16c[20] > 0.0f)
++    {
++        unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
++        struct
++        {
++            float distance;
++            unsigned int index;
++        } nearest;
++        nearest.distance = 50000.0f;
++        nearest.index = 0;
++        unsigned int count;
++        VariableEntity** buildings = variable_world->ByType(2, &count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (buildings[i]->FlagAt00460370())
++            {
++                VariableBuilding* definition = buildings[i]->AsBuilding()->building_60;
++                for (unsigned int j = 0; j < definition->rows_1f4; ++j)
++                {
++                    if (variable_catalog->FeatureType(definition->features_1fc[j]) == alcohol)
++                    {
++                        const ScreenPoint* building_tile = &buildings[i]->TilePosition();
++                        unsigned int x = TilePosition().x - building_tile->x;
++                        unsigned int y = TilePosition().y - buildings[i]->TilePosition().y;
++                        unsigned int squared = y * y + x * x;
++                        float distance = sqrt(static_cast<double>(squared));
++                        if (distance < nearest.distance)
++                        {
++                            nearest.distance = distance;
++                            nearest.index = i;
++                        }
++                    }
++                }
++            }
++        }
++        int x = buildings[nearest.index]->TilePosition().x + rand() % 15 - 7;
++        int y = buildings[nearest.index]->TilePosition().y + rand() % 15 - 7;
++        unsigned int flags = GridFlags(Terrain(), ScreenPoint(x, y));
++        while (!(GuestLandFlags(flags) && x < 128 && x >= 0 && y < 128 && y >= 0))
++        {
++            x = buildings[nearest.index]->TilePosition().x + rand() % 15 - 7;
++            y = buildings[nearest.index]->TilePosition().y + rand() % 15 - 7;
++            flags = Terrain()->cells_0c[Terrain()->TileIndex(x, y)].flags_48;
++        }
++        ScreenWorldPosition position = Terrain()->TilePosition(ScreenPoint(x, y), 4);
++        ScreenModeCommand walk;
++        walk.words[0] = id_28;
++        walk.words[1] = id_28;
++        walk.words[2] = 8;
++        walk.words[3] = static_cast<int>(position.x);
++        walk.words[4] = static_cast<int>(position.y);
++        screen_mode_commands->QueueCommand(&walk);
++    }
++    else
++    {
++        ScreenModeCommand command(id_28, id_28, 3, 0, 12);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00478640.json b/targets/beachlife-uk-1.1.d/00478640.json
+new file mode 100644
+index 0000000..9290f70
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00478640.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00478640",
++      "size": 1334,
++      "name": "WorldGuestEntity::PerformAction21",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00478640.cpp": [
++      "/Ob1"
++    ]
++  }
++}

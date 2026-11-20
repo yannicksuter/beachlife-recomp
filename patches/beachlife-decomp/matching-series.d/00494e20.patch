@@ -1,0 +1,374 @@
+diff --git a/fixtures/game.d/fixture_00494e20.cpp b/fixtures/game.d/fixture_00494e20.cpp
+new file mode 100644
+index 0000000..149a921
+--- /dev/null
++++ b/fixtures/game.d/fixture_00494e20.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Typed retention only; the comparison image is never executed.
++extern "C" __declspec(dllexport) bool Fixture_00494e20(WorldVehicleEntity* item)
++{
++    return item->WorldVehicleEntity::Unknown0c();
++}
+diff --git a/metadata.d/00494e20.csv b/metadata.d/00494e20.csv
+new file mode 100644
+index 0000000..eb53f76
+--- /dev/null
++++ b/metadata.d/00494e20.csv
+@@ -0,0 +1,5 @@
++address,type,size,symbol
++0x00494e20,function,2604,?Unknown0c@WorldVehicleEntity@@UAE_NXZ
++0x0057cb28,string,64,
++0x004f4068,float,4,
++0x004f4070,float,8,
+diff --git a/src/match_00494e20.cpp b/src/match_00494e20.cpp
+new file mode 100644
+index 0000000..ec58cb6
+--- /dev/null
++++ b/src/match_00494e20.cpp
+@@ -0,0 +1,323 @@
++#include "startup_world_vehicle_helpers.h"
++#include "startup_screen_dialog_variant.h"
++#include "startup_screen_position_inlines.h"
++#include "startup_world_vehicle_animation_names.h"
++#include "startup_screen_mode_world.h"
++#include "startup_application.h"
++#include "window_audio.h"
++#include <math.h>
++#include <string.h>
++
++extern float fast_reciprocal_two;
++extern const float vehicle_door_volume; // 0x004f3ffc.
++
++static inline float VehicleReciprocal(float value)
++{
++    float estimate;
++    __asm {
++        mov eax, 0x7f000000
++        sub eax, value
++        mov estimate, eax
++        fld value
++        fmul estimate
++        fsubr fast_reciprocal_two
++        fmul estimate
++        fstp estimate
++    }
++    return estimate;
++}
++
++static inline void MarkNeighbours(ScreenPoint tile, bool set)
++{
++    ScreenTerrainCell* cells[8];
++    screen_terrain_grid->Neighbours(tile, cells);
++    for (int i = 0; i < 8; ++i)
++    {
++        if (set)
++            cells[i]->flags_48 |= 0x10;
++        else
++            cells[i]->flags_48 &= ~0x10;
++    }
++}
++
++static inline bool VehicleCrossed(const float& before, const float& after)
++{
++    return (before >= 0.0f && after <= 0.0f) || (before <= 0.0f && after >= 0.0f);
++}
++
++static inline float FrameStep()
++{
++    return window_deactivation_state->value_16c;
++}
++
++// FUNCTION: BEACHLIFE 0x00494e20
++bool WorldVehicleEntity::Unknown0c()
++{
++    if (vehicle_type_f8 == 6 && flag_960)
++        MarkNeighbours(current_grid_964, false);
++    float time = window_deactivation_state->time_158;
++    if (broken_50)
++        broken_50 = 0;
++    if (!WorldMovingEntity::Unknown0c())
++        StartupFatal("VehicleObject::Update - error calling Movingobject::update - %s", name_06);
++
++    switch (state_3c)
++    {
++    case 0x41:
++        if (passenger_count_5bc && vehicle_type_f8 != 2 && vehicle_type_f8 != 5)
++        {
++            if (time - ride_time_5c0 > 1.0f && !flag_924)
++            {
++                if (definition_f4->unknown_1dc[0] == 1)
++                {
++                    ScreenModeCommand command;
++                    command.words[0] = id_28;
++                    command.words[1] = id_28;
++                    command.words[2] = 3;
++                    command.words[3] = 0;
++                    command.words[4] = 0x44;
++                    screen_mode_commands->QueueCommand(&command);
++                }
++                else
++                {
++                    ScreenModeCommand command;
++                    command.words[0] = id_28;
++                    command.words[1] = id_28;
++                    command.words[2] = 3;
++                    command.words[3] = 0;
++                    command.words[4] = 0x45;
++                    screen_mode_commands->QueueCommand(&command);
++                }
++            }
++        }
++        else if (!word_5c4 && (vehicle_type_f8 == 2 || vehicle_type_f8 == 5) && definition_f4->unknown_1dc[0] == 1)
++        {
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0x44;
++            if (vehicle_type_f8 == 5)
++            {
++                if (!door_animation_92c)
++                {
++                    WindowAudioVector position;
++                    position.x = position_30.x;
++                    position.y = position_30.y;
++                    position.z = 0.0f;
++                    window_audio_state->PlaySoundAtPosition(vehicle_door_open_sound, vehicle_door_volume, &position, 1, -1);
++                    door_animation_92c = 1;
++                    resource_928->word_08 = 1;
++                    float duration = resource_928->SetAnimation("coach_doors", time, &position_30);
++                    screen_mode_commands->QueueDelayed(&command, duration);
++                }
++            }
++            else
++                screen_mode_commands->QueueCommand(&command);
++        }
++        break;
++    case 0x42:
++    case 0x44:
++    case 0x45:
++        if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
++        {
++            if (flag_5c && !flag_900)
++            {
++                ScreenMapPosition direction = *reinterpret_cast<ScreenMapPosition*>(&motion_64[2]);
++                float speed = VehicleSquareRoot(direction.y * direction.y + direction.x * direction.x);
++                if (fabs(speed) < 9.999999747378752e-05)
++                {
++                    ScreenMapPosition current;
++                    current.x = motion_64[0];
++                    current.y = motion_64[1];
++                    ScreenMapPosition target;
++                    target.x = target_84[0];
++                    target.y = target_84[1];
++                    direction = ScreenMapPosition(target.x - current.x, target.y - current.y);
++                }
++                const ScreenMapPosition& vector = direction;
++                float y = vector.y;
++                float x = direction.x;
++                float squared = x * x;
++                squared += y * y;
++                float reciprocal = VehicleReciprocal(WorldSquareRoot(squared));
++                direction.x = reciprocal * direction.x;
++                float y2 = direction.y;
++                direction.y = y2 * reciprocal;
++                int facing = MotionDirection(direction, 16);
++                if (facing % 2)
++                {
++                    switch (vehicle_type_f8)
++                    {
++                    case 0:
++                        keyline_state_44->SetAnimation(vehicle_offset_animation, 0.0f, &position_30);
++                        break;
++                    case 1:
++                        keyline_state_44->SetAnimation(speedboat_offset_animation, 0.0f, &position_30);
++                        break;
++                    }
++                    SelectVehicleVariant(keyline_state_44, facing / 2);
++                }
++                else
++                {
++                    switch (vehicle_type_f8)
++                    {
++                    case 0:
++                        keyline_state_44->SetAnimation(vehicle_normal_animation, 0.0f, &position_30);
++                        break;
++                    case 1:
++                        keyline_state_44->SetAnimation(speedboat_normal_animation, 0.0f, &position_30);
++                        break;
++                    }
++                }
++                SelectVehicleVariant(keyline_state_44, facing / 2);
++            }
++            if (vehicle_type_f8 == 0)
++                resource_fc->SelectVariant(keyline_state_44->word_18);
++        }
++        if (flag_900)
++            UpdateVehicleTurn(time);
++        else
++        {
++            for (unsigned int i = 0; i < passenger_count_5bc; ++i)
++            {
++                WorldMovingEntity* guest = variable_world->FindObject(passengers_10c[i])->AsMoving();
++                guest->SetMovementPosition(position_30);
++                ScreenDialogResource* resource = guest->keyline_state_44;
++                resource->SelectVariant(keyline_state_44->word_18);
++            }
++        }
++        break;
++    case 0x46:
++        if (flag_900)
++            UpdateVehicleTurn(time);
++        else
++        {
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0x43;
++            screen_mode_commands->QueueCommand(&command);
++            word_8d8 = (static_cast<int>(word_8d8) + 1) % static_cast<int>(route_count_8d4);
++        }
++        break;
++    case 0x47:
++    {
++        float movement = FrameStep() * speed_80;
++        ScreenMapPosition step;
++        switch (arrival_heading_958)
++        {
++        case 0:
++            step.x = 0.0f;
++            step.y = -movement;
++            break;
++        case 1:
++            step.x = movement * 0.5f;
++            step.y = movement * -0.5f;
++            break;
++        case 2:
++            step.x = movement;
++            step.y = 0.0f;
++            break;
++        case 3:
++            step.x = movement * 0.5f;
++            step.y = step.x;
++            break;
++        case 4:
++            step.x = 0.0f;
++            step.y = movement;
++            break;
++        case 5:
++            step.x = movement * -0.5f;
++            step.y = movement * 0.5f;
++            break;
++        case 6:
++            step.x = -movement;
++            step.y = 0.0f;
++            break;
++        case 7:
++            step.x = movement * -0.5f;
++            step.y = step.x;
++            break;
++        }
++        ScreenMapPosition old = arrival_tile_948;
++        float x = arrival_tile_948.x - step.x;
++        arrival_tile_948.x = x;
++        float y = arrival_tile_948.y - step.y;
++        arrival_tile_948.y = y;
++        if (VehicleCrossed(old.x, x) && VehicleCrossed(old.y, y))
++        {
++            SetMovementPosition(route_5d4[0]);
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0x42;
++            screen_mode_commands->QueueCommand(&command);
++        }
++        break;
++    }
++    case 0x48:
++    {
++        float movement = FrameStep() * speed_80;
++        ScreenMapPosition step;
++        switch (departure_heading_95c)
++        {
++        case 0:
++            step.x = 0.0f;
++            step.y = -movement;
++            break;
++        case 1:
++            step.x = movement * 0.5f;
++            step.y = movement * -0.5f;
++            break;
++        case 2:
++            step.x = movement;
++            step.y = 0.0f;
++            break;
++        case 3:
++            step.x = movement * 0.5f;
++            step.y = step.x;
++            break;
++        case 4:
++            step.x = 0.0f;
++            step.y = movement;
++            break;
++        case 5:
++            step.x = movement * -0.5f;
++            step.y = movement * 0.5f;
++            break;
++        case 6:
++            step.x = -movement;
++            step.y = 0.0f;
++            break;
++        case 7:
++            step.x = movement * -0.5f;
++            step.y = step.x;
++            break;
++        }
++        ScreenMapPosition old = arrival_tile_948;
++        departure_tile_950.x -= step.x;
++        departure_tile_950.y -= step.y;
++        if (VehicleCrossed(old.x, arrival_tile_948.x) && VehicleCrossed(old.y, arrival_tile_948.y))
++            inactive_04 = 1;
++        break;
++    }
++    }
++    if (_stricmp(name_06, "BOAT") == 0)
++        keyline_state_44->SelectVariant(0);
++    ScreenPoint tile;
++    tile = overlay_map->WorldToTile(&position_30);
++    current_grid_964.x = tile.x;
++    current_grid_964.y = tile.y;
++    if (vehicle_type_f8 == 6)
++    {
++        MarkNeighbours(current_grid_964, true);
++        flag_960 = 1;
++    }
++    return true;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00494e20.json b/targets/beachlife-uk-1.1.d/00494e20.json
+new file mode 100644
+index 0000000..572d25f
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00494e20.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00494e20",
++      "size": 2505,
++      "name": "WorldVehicleEntity::Unknown0c",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment and the three inline jump tables."
++    }
++  ],
++  "source_compile_options": {
++    "match_00494e20.cpp": [
++      "/Ob1"
++    ]
++  }
++}
