@@ -1,0 +1,143 @@
+diff --git a/fixtures/game.d/fixture_0047fee0.cpp b/fixtures/game.d/fixture_0047fee0.cpp
+new file mode 100644
+index 0000000..711b2a6
+--- /dev/null
++++ b/fixtures/game.d/fixture_0047fee0.cpp
+@@ -0,0 +1,12 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++#include "startup_screen_command_inlines.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_position_inlines.h"
++#include <math.h>
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_0047fee0(WorldLifeguardEntity* item)
++{
++    item->WorldLifeguardEntity::FindRescueTarget();
++}
+diff --git a/metadata.d/0047fee0.csv b/metadata.d/0047fee0.csv
+new file mode 100644
+index 0000000..1594bb0
+--- /dev/null
++++ b/metadata.d/0047fee0.csv
+@@ -0,0 +1,3 @@
++address,type,size,symbol
++0x0047fee0,function,1860,?FindRescueTarget@WorldLifeguardEntity@@QAEXXZ
++0x00578918,string,54,
+diff --git a/src/match_0047fee0.cpp b/src/match_0047fee0.cpp
+new file mode 100644
+index 0000000..6b9f06a
+--- /dev/null
++++ b/src/match_0047fee0.cpp
+@@ -0,0 +1,89 @@
++#include "startup_world_entities.h"
++#include "startup_game_file.h"
++#include "startup_screen_command_inlines.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_position_inlines.h"
++#include <math.h>
++
++static inline unsigned int SeaFlags(ScreenPoint tile)
++{
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
++static inline ScreenWorldPosition Difference(const ScreenWorldPosition& a, const ScreenWorldPosition& b)
++{
++    return ScreenWorldPosition(a.x - b.x, a.y - b.y, a.z - b.z);
++}
++
++static inline float SeaDistance(const ScreenWorldPosition& offset)
++{
++    return sqrt(offset.y * offset.y + offset.z * offset.z + offset.x * offset.x);
++}
++
++// FUNCTION: BEACHLIFE 0x0047fee0
++void WorldLifeguardEntity::FindRescueTarget()
++{
++    ScreenTerrainRouteNode* nearest = screen_terrain_grid->routes_20;
++    unsigned int count;
++    ScreenPoint* points = nearest->Points(&count);
++    unsigned int index = 0;
++    ScreenPoint north, east, south, west;
++    ScreenPoint closest;
++    screen_terrain_grid->Step(points[index], 0, &north);
++    screen_terrain_grid->Step(points[index], 2, &east);
++    screen_terrain_grid->Step(points[index], 4, &south);
++    screen_terrain_grid->Step(points[index], 6, &west);
++    while (!(!(SeaFlags(points[index]) & 0x10) && !(SeaFlags(north) & 0x10) && !(SeaFlags(east) & 0x10) && !(SeaFlags(south) & 0x10) && !(SeaFlags(west) & 0x10)))
++    {
++        if (++index == count)
++        {
++            nearest = nearest->Next();
++            if (!nearest)
++                StartupFatal("I hope This Never Happens ( Cant Get Sea Entry Point)");
++            points = nearest->Points(&count);
++            index = 0;
++        }
++        screen_terrain_grid->Step(points[index], 0, &north);
++        screen_terrain_grid->Step(points[index], 2, &east);
++        screen_terrain_grid->Step(points[index], 4, &south);
++        screen_terrain_grid->Step(points[index], 6, &west);
++    }
++    closest = ScreenPoint(points[index].x, points[index].y);
++    for (++index; index < count; ++index)
++    {
++        screen_terrain_grid->Step(points[index], 0, &north);
++        screen_terrain_grid->Step(points[index], 2, &east);
++        screen_terrain_grid->Step(points[index], 4, &south);
++        screen_terrain_grid->Step(points[index], 6, &west);
++        ScreenWorldPosition offset = Difference(screen_terrain_grid->TileOrigin(points[index]), position_30);
++        ScreenWorldPosition previous = Difference(screen_terrain_grid->TileOrigin(closest), position_30);
++        if (SeaDistance(offset) < SeaDistance(previous) && !(SeaFlags(points[index]) & 0x10) && !(SeaFlags(north) & 0x10) && !(SeaFlags(east) & 0x10) && !(SeaFlags(south) & 0x10) && !(SeaFlags(west) & 0x10))
++            closest = ScreenPoint(points[index].x, points[index].y);
++    }
++    for (ScreenTerrainRouteNode* route = nearest->Next(); route; route = route->Next())
++    {
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            screen_terrain_grid->Step(points[i], 0, &north);
++            screen_terrain_grid->Step(points[i], 2, &east);
++            screen_terrain_grid->Step(points[i], 4, &south);
++            screen_terrain_grid->Step(points[i], 6, &west);
++            ScreenWorldPosition offset = Difference(screen_terrain_grid->TileOrigin(points[i]), position_30);
++            ScreenWorldPosition previous = Difference(screen_terrain_grid->TileOrigin(closest), position_30);
++            // Retail spells out the neighbour cell index of this last test.
++            if (SeaDistance(offset) < SeaDistance(previous) && !(SeaFlags(points[i]) & 0x10) && !(screen_terrain_grid->cells_0c[(static_cast<unsigned int>(north.y) % screen_terrain_grid->height_08) * screen_terrain_grid->width_04 + static_cast<unsigned int>(north.x) % screen_terrain_grid->width_04].flags_48 & 0x10) && !(screen_terrain_grid->cells_0c[(static_cast<unsigned int>(east.y) % screen_terrain_grid->height_08) * screen_terrain_grid->width_04 + static_cast<unsigned int>(east.x) % screen_terrain_grid->width_04].flags_48 & 0x10) && !(screen_terrain_grid->cells_0c[(static_cast<unsigned int>(south.y) % screen_terrain_grid->height_08) * screen_terrain_grid->width_04 + static_cast<unsigned int>(south.x) % screen_terrain_grid->width_04].flags_48 & 0x10) && !(screen_terrain_grid->cells_0c[(static_cast<unsigned int>(west.y) % screen_terrain_grid->height_08) * screen_terrain_grid->width_04 + static_cast<unsigned int>(west.x) % screen_terrain_grid->width_04].flags_48 & 0x10))
++            {
++                nearest = route;
++                closest = ScreenPoint(points[i].x, points[i].y);
++            }
++        }
++    }
++    if (nearest)
++    {
++        ScreenWorldPosition position;
++        position = screen_terrain_grid->TilePosition(closest, 4);
++        screen_mode_commands->QueueCommand(&ScreenModeCommand(id_28, id_28, 11, static_cast<int>(position.x), static_cast<int>(position.y)));
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/0047fee0.json b/targets/beachlife-uk-1.1.d/0047fee0.json
+new file mode 100644
+index 0000000..3f4dec6
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0047fee0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x0047fee0",
++      "size": 1860,
++      "name": "WorldLifeguardEntity::FindRescueTarget",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_0047fee0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

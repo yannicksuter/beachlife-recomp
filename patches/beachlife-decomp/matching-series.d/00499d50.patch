@@ -1,0 +1,109 @@
+diff --git a/metadata.d/00499d50.csv b/metadata.d/00499d50.csv
+new file mode 100644
+index 0000000..46e3a53
+--- /dev/null
++++ b/metadata.d/00499d50.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00499d50,function,546,?Roam@WorldVehicleEntity@@QAEXXZ
+diff --git a/src/match_00499d50.cpp b/src/match_00499d50.cpp
+new file mode 100644
+index 0000000..cee885a
+--- /dev/null
++++ b/src/match_00499d50.cpp
+@@ -0,0 +1,71 @@
++#include "startup_world_vehicle_helpers.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_command_inlines.h"
++#include <math.h>
++#include <stdlib.h>
++
++static inline void MoveVehicleToRoamPoint(WorldVehicleEntity* vehicle)
++{
++    ScreenModeCommand command;
++    command.words[0] = vehicle->id_28;
++    command.words[1] = vehicle->id_28;
++    command.words[2] = 10;
++    command.words[3] = static_cast<int>(vehicle->roam_point_8e8.x);
++    command.words[4] = static_cast<int>(vehicle->roam_point_8e8.y);
++    screen_mode_commands->QueueCommand(&command);
++}
++
++// FUNCTION: BEACHLIFE 0x00499d50
++void WorldVehicleEntity::Roam()
++{
++    ScreenPoint start;
++    start = TilePosition();
++    int direction = rand() % 8;
++    int best_direction = direction;
++    int attempt = 0;
++    int best_length = 0;
++    ScreenPoint best;
++    bool found = false;
++    int length = 0;
++    for (; attempt < 8 && !found; ++attempt, direction = (direction + 1) % 8)
++    {
++        ScreenPoint point = start;
++        ScreenPoint last;
++        while (1)
++        {
++            if (length >= 8)
++                break;
++            screen_terrain_grid->Step(point, direction, &point);
++            ScreenTerrainGrid* grid = screen_terrain_grid;
++            unsigned int flags = grid->cells_0c[grid->TileIndex(point.x, point.y)].flags_48;
++            if (point.x < 2 || point.x > 126 || point.y < 2 || point.y > 126
++                || !(flags & 0x60000000) || (flags & 0x10))
++                break;
++            ++length;
++            last = point;
++        }
++        if (length > best_length)
++        {
++            best_length = length;
++            best_direction = direction;
++            best = last;
++            if (length > 5)
++                found = true;
++        }
++        length = 0;
++    }
++    if (!best_length)
++    {
++        ScreenModeCommand command;
++        command = ScreenModeCommand(id_28, id_28, 3, 0, 0x42);
++        screen_mode_commands->QueueCommand(&command);
++        return;
++    }
++    SetMoving(0);
++    roam_point_8e8 = screen_terrain_grid->TilePosition(best, 4);
++    int facing = (best_direction + 1) % 8;
++    if (facing == keyline_state_44->word_18)
++        MoveVehicleToRoamPoint(this);
++    else
++        FaceVehicle(facing);
++}
+diff --git a/targets/beachlife-uk-1.1.d/00499d50.json b/targets/beachlife-uk-1.1.d/00499d50.json
+new file mode 100644
+index 0000000..87779d7
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00499d50.json
+@@ -0,0 +1,18 @@
++{
++  "functions": [
++    {
++      "address": "0x00499d50",
++      "size": 546,
++      "name": "WorldVehicleEntity::Roam",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00499d50.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_00499d50.cpp"
++  ]
++}

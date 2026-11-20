@@ -1,0 +1,116 @@
+diff --git a/src/startup_font_measure_wrapped_text.cpp b/src/startup_font_measure_wrapped_text.cpp
+index ff94e62..4e96044 100644
+--- a/src/startup_font_measure_wrapped_text.cpp
++++ b/src/startup_font_measure_wrapped_text.cpp
+@@ -3,65 +3,46 @@
+ #include <string.h>
+ 
+ // FUNCTION: BEACHLIFE 0x0049fbc0
+-unsigned int ScreenFontRenderer::MeasureWrappedText(const unsigned short* text,
+-    unsigned int width, unsigned int spacing)
++unsigned int ScreenFontRenderer::MeasureWrappedText(const unsigned short* text, unsigned int width, unsigned int spacing)
+ {
+     ScreenFontData* data = data_1c;
++    const signed char* kerning = data->kerning;
+     const unsigned short* cursor = text;
+     const unsigned short* line_start = text;
+-    const unsigned short* word_start = text;
+     unsigned int line_characters = 0;
+-    unsigned int word_characters = 0;
++    const unsigned short* word_start = text;
+     unsigned int line_width = spacing;
+     unsigned int maximum_width = 0;
++    unsigned int word_characters = 0;
+     unsigned short scratch[256];
+-
+     while (*cursor != 0)
+     {
+-        unsigned int current = *cursor;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = cursor[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
++        unsigned short current = *cursor;
++        unsigned short advance = data->glyphs[current][2] - data->glyphs[current][0];
++        if (cursor[1] != 0)
++            advance += kerning[current * 255 + cursor[1]];
+         line_width += advance;
+-
+-        if (cursor != text && current != ' ' && cursor[-1] == ' ')
++        if (cursor != text && *cursor != ' ' && cursor[-1] == ' ')
+         {
+             word_start = cursor;
+             word_characters = 0;
+         }
+-        if (current != ' ')
++        if (*cursor != ' ')
+             ++word_characters;
+-
+         if (line_width > width && line_characters > word_characters)
+         {
+             memset(scratch, 0, sizeof(scratch));
+-            unsigned int copy_bytes = (line_characters - word_characters) * 2;
+-            memcpy(scratch, line_start, copy_bytes);
+-
+-            const unsigned short* copied = scratch;
++            memcpy(scratch, line_start, (line_characters - word_characters) * 2);
+             unsigned int copied_width = 0;
+-            while (*copied != 0)
++            for (const unsigned short* measured = scratch; *measured != 0; ++measured)
+             {
+-                current = *copied;
+-                advance = static_cast<unsigned short>(
+-                    data->glyphs[current][2] - data->glyphs[current][0]);
+-                next = copied[1];
+-                if (next != 0)
+-                {
+-                    advance = static_cast<unsigned short>(
+-                        advance + data->kerning[current * 255 + next]);
+-                }
+-                copied_width += advance;
+-                ++copied;
++                unsigned short step = data->glyphs[*measured][2] - data->glyphs[*measured][0];
++                if (measured[1] != 0)
++                    step += kerning[*measured * 255 + measured[1]];
++                copied_width += step;
+             }
+             if (copied_width > maximum_width)
+                 maximum_width = copied_width;
+-
+             cursor = word_start;
+             line_start = cursor;
+             line_characters = 0;
+@@ -74,23 +55,15 @@ unsigned int ScreenFontRenderer::MeasureWrappedText(const unsigned short* text,
+             ++line_characters;
+         }
+     }
+-
+     unsigned int remaining_width = 0;
+-    while (*line_start != 0)
++    for (const unsigned short* measured = line_start; *measured != 0; ++measured)
+     {
+-        unsigned int current = *line_start;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = line_start[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
+-        remaining_width += advance;
+-        ++line_start;
++        unsigned short step = data->glyphs[*measured][2] - data->glyphs[*measured][0];
++        if (measured[1] != 0)
++            step += kerning[*measured * 255 + measured[1]];
++        remaining_width += step;
+     }
+     if (remaining_width > maximum_width)
+-        return remaining_width;
++        maximum_width = remaining_width;
+     return maximum_width;
+ }

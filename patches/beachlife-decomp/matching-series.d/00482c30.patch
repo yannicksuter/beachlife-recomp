@@ -1,0 +1,131 @@
+diff --git a/fixtures/game.d/fixture_00482c30.cpp b/fixtures/game.d/fixture_00482c30.cpp
+new file mode 100644
+index 0000000..f629b59
+--- /dev/null
++++ b/fixtures/game.d/fixture_00482c30.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00482c30(WorldMovingEntity* item)
++{
++    item->SteerFollowing();
++}
+diff --git a/metadata.d/00482c30.csv b/metadata.d/00482c30.csv
+new file mode 100644
+index 0000000..cdb1c1e
+--- /dev/null
++++ b/metadata.d/00482c30.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00482c30,function,341,?SteerFollowing@WorldMovingEntity@@QAEXXZ
+diff --git a/src/match_00482c30.cpp b/src/match_00482c30.cpp
+new file mode 100644
+index 0000000..f12929c
+--- /dev/null
++++ b/src/match_00482c30.cpp
+@@ -0,0 +1,83 @@
++#include "startup_world_motion_inlines.h"
++#include "startup_world_entities.h"
++
++extern float fast_reciprocal_two;
++
++// The motion floats hold two-component vectors (position, velocity, steering).
++static inline ScreenMapPosition& SteeringVector(float* components)
++{
++    return *reinterpret_cast<ScreenMapPosition*>(components);
++}
++
++static inline ScreenMapPosition SteeringDifference(const ScreenMapPosition& first, const ScreenMapPosition& second)
++{
++    return ScreenMapPosition(first.x - second.x, first.y - second.y);
++}
++
++static inline float SteeringLength(const ScreenMapPosition& vector)
++{
++    float x = vector.x;
++    float y = vector.y;
++    return WorldSquareRoot(y * y + x * x);
++}
++
++static inline float SteeringInlineLength(const ScreenMapPosition& vector)
++{
++    float x = vector.x;
++    float y = vector.y;
++    return MotionSquareRoot(y * y + x * x);
++}
++
++static inline ScreenMapPosition SteeringScaled(const ScreenMapPosition& vector, float scale)
++{
++    return ScreenMapPosition(scale * vector.x, vector.y * scale);
++}
++
++// Fast reciprocal estimate refined by one Newton step, then a scale by it.
++static inline ScreenMapPosition SteeringDivided(const ScreenMapPosition& vector, float divisor)
++{
++    float reciprocal;
++    __asm
++    {
++        mov eax, 0x7f000000
++        sub eax, divisor
++        mov reciprocal, eax
++        fld divisor
++        fmul reciprocal
++        fsubr fast_reciprocal_two
++        fmul reciprocal
++        fstp reciprocal
++    }
++    return ScreenMapPosition(reciprocal * vector.x, vector.y * reciprocal);
++}
++
++static inline float SteeringSpeed(const WorldMovingEntity* entity)
++{
++    return entity->speed_80;
++}
++
++static inline float SteeringForce(const WorldMovingEntity* entity)
++{
++    return entity->acceleration_7c;
++}
++
++// FUNCTION: BEACHLIFE 0x00482c30
++void WorldMovingEntity::SteerFollowing()
++{
++    ScreenMapPosition position = SteeringVector(motion_64);
++    ScreenMapPosition target = SteeringVector(target_84);
++    ScreenMapPosition desired = SteeringDifference(target, position);
++    float distance = SteeringLength(desired);
++    float speed = distance / static_cast<int>(word_b0) * SteeringSpeed(this);
++    if (speed > SteeringSpeed(this))
++        speed = SteeringSpeed(this);
++    float scale = speed / distance;
++    ScreenMapPosition velocity = SteeringVector(motion_64 + 2);
++    SteeringVector(motion_64 + 4) = SteeringDifference(SteeringScaled(desired, scale), velocity);
++    distance = SteeringInlineLength(SteeringVector(motion_64 + 4));
++    if (distance > SteeringForce(this))
++    {
++        ScreenMapPosition steer = SteeringVector(motion_64 + 4);
++        SteeringVector(motion_64 + 4) = SteeringDivided(steer, distance / SteeringForce(this));
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00482c30.json b/targets/beachlife-uk-1.1.d/00482c30.json
+new file mode 100644
+index 0000000..768cda2
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00482c30.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00482c30",
++      "size": 341,
++      "name": "WorldMovingEntity::SteerFollowing",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00482c30.cpp": [
++      "/Ob1"
++    ]
++  }
++}

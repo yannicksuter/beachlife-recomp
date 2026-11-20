@@ -1,0 +1,128 @@
+diff --git a/fixtures/game.d/fixture_0040eb20.cpp b/fixtures/game.d/fixture_0040eb20.cpp
+new file mode 100644
+index 0000000..837774b
+--- /dev/null
++++ b/fixtures/game.d/fixture_0040eb20.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_renderer.h"
++#include "tga_image.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_0040eb20(ScreenRequestRenderer* renderer, TgaImage* source, TgaImage* destination)
++{
++    renderer->ScreenRequestRenderer::ResizeImage565(source, destination);
++}
+diff --git a/metadata.d/0040eb20.csv b/metadata.d/0040eb20.csv
+new file mode 100644
+index 0000000..9b32c1a
+--- /dev/null
++++ b/metadata.d/0040eb20.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x0040eb20,function,978,?ResizeImage565@ScreenRequestRenderer@@QAEXPAUTgaImage@@0@Z
+diff --git a/src/match_0040eb20.cpp b/src/match_0040eb20.cpp
+new file mode 100644
+index 0000000..900fcbb
+--- /dev/null
++++ b/src/match_0040eb20.cpp
+@@ -0,0 +1,76 @@
++#include "startup_screen_renderer.h"
++#include "tga_image.h"
++
++// Rounds with the current FPU mode, as the retail fistp does.
++static inline void RoundToInt(float value, int* result)
++{
++    float rounded = value;
++    __asm {
++        mov eax, result
++        fld rounded
++        fistp DWORD PTR [eax]
++    }
++}
++
++// Bilinear resize of a 565 image into the destination size (four source pixels per output pixel).
++// FUNCTION: BEACHLIFE 0x0040eb20
++void ScreenRequestRenderer::ResizeImage565(TgaImage* source, TgaImage* destination)
++{
++    unsigned short* input = reinterpret_cast<unsigned short*>(source->pixels);
++    int height = destination->height;
++    int width = destination->width;
++    unsigned short* output = reinterpret_cast<unsigned short*>(destination->pixels);
++    int source_width = source->width;
++    float scale_x = static_cast<float>(source_width - 1) / width;
++    float scale_y = static_cast<float>(source->height - 1) / height;
++    for (int y = 0; y < height; ++y)
++    {
++        float position_y = y * scale_y;
++        int top = static_cast<int>(position_y);
++        float fraction_y = position_y - top;
++        for (int x = 0; x < width; ++x)
++        {
++            float position_x = x * scale_x;
++            int left = static_cast<int>(position_x);
++            float fraction_x = position_x - left;
++            unsigned char red_00 = (input[top * source_width + left] >> 11) & 0x1f;
++            unsigned char green_00 = (input[top * source_width + left] >> 6) & 0x1f;
++            unsigned char blue_00 = input[top * source_width + left] & 0x1f;
++            unsigned char red_01 = (input[top * source_width + left + 1] >> 11) & 0x1f;
++            unsigned char green_01 = (input[top * source_width + left + 1] >> 6) & 0x1f;
++            unsigned char blue_01 = input[top * source_width + left + 1] & 0x1f;
++            unsigned char red_10 = (input[(top + 1) * source_width + left] >> 11) & 0x1f;
++            unsigned char green_10 = (input[(top + 1) * source_width + left] >> 6) & 0x1f;
++            unsigned char blue_10 = input[(top + 1) * source_width + left] & 0x1f;
++            unsigned char red_11 = (input[(top + 1) * source_width + left + 1] >> 11) & 0x1f;
++            unsigned char green_11 = (input[(top + 1) * source_width + left + 1] >> 6) & 0x1f;
++            unsigned char blue_11 = input[(top + 1) * source_width + left + 1] & 0x1f;
++            int blue_2;
++            int green_2;
++            int red_2;
++            int blue_1;
++            int green_1;
++            int red_1;
++            RoundToInt(red_00 * (1.0f - fraction_y) + red_10 * fraction_y, &red_1);
++            RoundToInt(green_00 * (1.0f - fraction_y) + green_10 * fraction_y, &green_1);
++            RoundToInt(blue_00 * (1.0f - fraction_y) + blue_10 * fraction_y, &blue_1);
++            RoundToInt(red_01 * (1.0f - fraction_y) + red_11 * fraction_y, &red_2);
++            RoundToInt(green_01 * (1.0f - fraction_y) + green_11 * fraction_y, &green_2);
++            RoundToInt(blue_01 * (1.0f - fraction_y) + blue_11 * fraction_y, &blue_2);
++            float inverse_x = 1.0f - fraction_x;
++            int red;
++            int green;
++            int blue;
++            RoundToInt(red_1 * inverse_x + red_2 * fraction_x, &red);
++            RoundToInt(green_1 * inverse_x + green_2 * fraction_x, &green);
++            RoundToInt(blue_1 * inverse_x + blue_2 * fraction_x, &blue);
++            if (red > 31)
++                red = 31;
++            if (green > 63)
++                green = 63;
++            if (blue > 31)
++                blue = 31;
++            output[y * width + x] = (((red << 5) + green) << 6) + blue;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/0040eb20.json b/targets/beachlife-uk-1.1.d/0040eb20.json
+new file mode 100644
+index 0000000..d6c5e13
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0040eb20.json
+@@ -0,0 +1,18 @@
++{
++  "functions": [
++    {
++      "address": "0x0040eb20",
++      "size": 978,
++      "name": "ScreenRequestRenderer::ResizeImage565",
++      "name_status": "Descriptive; complete audited original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_0040eb20.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_0040eb20.cpp"
++  ]
++}

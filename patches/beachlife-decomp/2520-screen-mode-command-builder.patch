@@ -1,0 +1,68 @@
+diff --git a/src/startup_screen_command_builder.h b/src/startup_screen_command_builder.h
+new file mode 100644
+index 0000000..5dfb8da
+--- /dev/null
++++ b/src/startup_screen_command_builder.h
+@@ -0,0 +1,15 @@
++#ifndef STARTUP_SCREEN_COMMAND_BUILDER_H
++#define STARTUP_SCREEN_COMMAND_BUILDER_H
++
++#include "startup_screen_mode_world.h"
++
++// A command filled in place: Build writes the five words the five-word
++// constructor writes and returns the command. Both compile to the same code,
++// which LINK folds into 0x00466030; the out-of-line copy is emitted by
++// startup_screen_command_constructors.cpp.
++struct ScreenModeCommandBuilder : ScreenModeCommand
++{
++    ScreenModeCommand* Build(unsigned int sender, unsigned int recipient, int kind, int first, unsigned int second);
++};
++
++#endif
+diff --git a/src/startup_screen_command_constructors.cpp b/src/startup_screen_command_constructors.cpp
+index 0d8c2e8..1c765d1 100644
+--- a/src/startup_screen_command_constructors.cpp
++++ b/src/startup_screen_command_constructors.cpp
+@@ -1,12 +1,26 @@
++#include "startup_screen_command_builder.h"
+ #include "startup_screen_command_inlines.h"
+ #include <new>
+ 
+-// Emits the shared out-of-line constructor bodies once, from an /Ob1 source.
++// FUNCTION: BEACHLIFE 0x00466030 FOLDED
++inline ScreenModeCommand* ScreenModeCommandBuilder::Build(
++    unsigned int sender, unsigned int recipient, int kind, int first, unsigned int second)
++{
++    words[0] = sender;
++    words[1] = recipient;
++    words[2].data = kind;
++    words[3].data = first;
++    words[4].data = second;
++    return this;
++}
++
++// Emits the shared out-of-line constructor and builder bodies once, from an /Ob1 source.
+ // Retail callers that do not expand them call these copies.
+ #pragma inline_depth(0)
+ 
+ void EmitScreenModeCommandConstructors(void* storage, int word, float number)
+ {
+     new (storage) ScreenModeCommand(word, word, word, word, word);
++    static_cast<ScreenModeCommandBuilder*>(storage)->Build(word, word, word, word, word);
+     new (storage) ScreenModeCommand(word, word, word, word, word, number, word);
+ }
+diff --git a/src/startup_screen_command_inlines.h b/src/startup_screen_command_inlines.h
+index 87abdbc..8f56c36 100644
+--- a/src/startup_screen_command_inlines.h
++++ b/src/startup_screen_command_inlines.h
+@@ -10,7 +10,9 @@
+ // stored raw; only this spelling keeps both expanding callers 0x00433bc0 and
+ // 0x00458b60 on their retail code.
+ 
+-// FUNCTION: BEACHLIFE 0x00466030
++// ScreenModeCommandBuilder::Build (startup_screen_command_builder.h) is the
++// same code; LINK folds both.
++// FUNCTION: BEACHLIFE 0x00466030 FOLDED
+ inline ScreenModeCommand::ScreenModeCommand(unsigned int sender, unsigned int recipient, int kind, int first, unsigned int second)
+ {
+     words[0] = sender;

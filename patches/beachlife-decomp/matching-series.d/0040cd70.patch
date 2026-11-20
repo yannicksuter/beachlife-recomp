@@ -1,0 +1,305 @@
+diff --git a/fixtures/game.d/fixture_0040cd70.cpp b/fixtures/game.d/fixture_0040cd70.cpp
+new file mode 100644
+index 0000000..be2da5a
+--- /dev/null
++++ b/fixtures/game.d/fixture_0040cd70.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_renderer.h"
++
++// Compile/link retention only; never execute this image.
++extern "C" __declspec(dllexport) void Fixture_0040cd70(ScreenRequestRenderer* self, ScreenRectangle* bounds)
++{
++    self->ScreenRequestRenderer::AccumulateRectangle(*bounds);
++}
+diff --git a/metadata.d/0040cd70.csv b/metadata.d/0040cd70.csv
+new file mode 100644
+index 0000000..ca10e0a
+--- /dev/null
++++ b/metadata.d/0040cd70.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x0040cd70,function,3141,?AccumulateRectangle@ScreenRequestRenderer@@QAEXUScreenRectangle@@@Z
+diff --git a/src/match_0040cd70.cpp b/src/match_0040cd70.cpp
+new file mode 100644
+index 0000000..9a53829
+--- /dev/null
++++ b/src/match_0040cd70.cpp
+@@ -0,0 +1,253 @@
++#include "startup_screen_renderer.h"
++
++// Adds a dirty rectangle. A rectangle inside a recorded one is dropped and
++// recorded rectangles inside the new one are removed; when the new one
++// partly overlaps a recorded one, the parts outside it are added
++// recursively, otherwise it is appended.
++// FUNCTION: BEACHLIFE 0x0040cd70
++void ScreenRequestRenderer::AccumulateRectangle(ScreenRectangle bounds)
++{
++    ScreenRectangle overlap;
++    bool overlaps = false;
++    for (int index = 0; index < dirty_rectangle_count; ++index)
++    {
++        if (bounds.left >= dirty_rectangles[index].left
++            && bounds.right <= dirty_rectangles[index].right
++            && bounds.top >= dirty_rectangles[index].top
++            && bounds.bottom <= dirty_rectangles[index].bottom)
++        {
++            return;
++        }
++
++        if (dirty_rectangles[index].left >= bounds.left
++            && dirty_rectangles[index].right <= bounds.right
++            && dirty_rectangles[index].top >= bounds.top
++            && dirty_rectangles[index].bottom <= bounds.bottom)
++        {
++            dirty_rectangles[index] = dirty_rectangles[dirty_rectangle_count - 1];
++            dirty_rectangles.pop_back();
++            --dirty_rectangle_count;
++            --index;
++        }
++        else if (((bounds.left > dirty_rectangles[index].left
++                      && bounds.left < dirty_rectangles[index].right)
++                     || (bounds.right > dirty_rectangles[index].left
++                         && bounds.right < dirty_rectangles[index].right))
++                 && ((bounds.top > dirty_rectangles[index].top
++                         && bounds.top < dirty_rectangles[index].bottom)
++                     || (bounds.bottom > dirty_rectangles[index].top
++                         && bounds.bottom < dirty_rectangles[index].bottom)))
++        {
++            overlap = dirty_rectangles[index];
++            overlaps = true;
++            index = dirty_rectangle_count;
++        }
++    }
++
++    if (overlaps)
++    {
++        if (bounds.left > overlap.left && bounds.left < overlap.right && bounds.right > overlap.right)
++        {
++            if (bounds.top < overlap.top && bounds.bottom > overlap.bottom)
++            {
++                ScreenRectangle right;
++                right.top = overlap.top;
++                right.bottom = overlap.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = bounds.left;
++                top.right = bounds.right;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = bounds.left;
++                bottom.right = bounds.right;
++                AccumulateRectangle(right);
++                AccumulateRectangle(top);
++                AccumulateRectangle(bottom);
++            }
++            else if (bounds.top > overlap.top && bounds.top < overlap.bottom && bounds.bottom > overlap.bottom)
++            {
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = bounds.left;
++                bottom.right = overlap.right;
++                AccumulateRectangle(right);
++                AccumulateRectangle(bottom);
++            }
++            else if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
++            {
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = bounds.left;
++                top.right = overlap.right;
++                AccumulateRectangle(right);
++                AccumulateRectangle(top);
++            }
++            else
++            {
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                AccumulateRectangle(right);
++            }
++            return;
++        }
++
++        if (bounds.right > overlap.left && bounds.right < overlap.right && bounds.left < overlap.left)
++        {
++            if (bounds.top < overlap.top && bounds.bottom > overlap.bottom)
++            {
++                ScreenRectangle left;
++                left.top = overlap.top;
++                left.bottom = overlap.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = bounds.left;
++                top.right = bounds.right;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = bounds.left;
++                bottom.right = bounds.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(top);
++                AccumulateRectangle(bottom);
++            }
++            else if (bounds.top >= overlap.top && bounds.top <= overlap.bottom && bounds.bottom > overlap.bottom)
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = overlap.left;
++                bottom.right = bounds.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(bottom);
++            }
++            else if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = overlap.left;
++                top.right = bounds.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(top);
++            }
++            else
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                AccumulateRectangle(left);
++            }
++            return;
++        }
++
++        if (bounds.top > overlap.top && bounds.top < overlap.bottom && bounds.bottom > overlap.bottom)
++        {
++            if (bounds.left < overlap.left && bounds.right > overlap.right)
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = overlap.left;
++                bottom.right = overlap.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(right);
++                AccumulateRectangle(bottom);
++            }
++            else
++            {
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = bounds.left;
++                bottom.right = bounds.right;
++                AccumulateRectangle(bottom);
++            }
++            return;
++        }
++
++        if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
++        {
++            if (bounds.left < overlap.left && bounds.right > overlap.right)
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = overlap.left;
++                top.right = overlap.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(right);
++                AccumulateRectangle(top);
++            }
++            else
++            {
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = bounds.left;
++                top.right = bounds.right;
++                AccumulateRectangle(top);
++            }
++        }
++    }
++    else
++    {
++        dirty_rectangles.push_back(bounds);
++        ++dirty_rectangle_count;
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/0040cd70.json b/targets/beachlife-uk-1.1.d/0040cd70.json
+new file mode 100644
+index 0000000..6016c2c
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0040cd70.json
+@@ -0,0 +1,19 @@
++{
++  "functions": [
++    {
++      "address": "0x0040cd70",
++      "size": 3141,
++      "name": "ScreenRequestRenderer::AccumulateRectangle",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "stlport_sources": [
++    "match_0040cd70.cpp"
++  ],
++  "source_compile_options": {
++    "match_0040cd70.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  }
++}

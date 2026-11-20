@@ -1,0 +1,183 @@
+diff --git b/src/startup_screen_panel13c_file_info_buffer.cpp a/src/startup_screen_panel13c_file_info_buffer.cpp
+index 0904aa9..22c6ae1 100644
+--- b/src/startup_screen_panel13c_file_info_buffer.cpp
++++ a/src/startup_screen_panel13c_file_info_buffer.cpp
+@@ -2,108 +2,103 @@
+ 
+ #include <string.h>
+ 
+-// MPEG audio frame header tables (kbit/s and Hz). The original keeps them as
+-// writable data with 15/15/3/3 entries, so a reserved bitrate index 15 or
+-// frequency index 3 reads the next table or the "%s\\%s" string behind them.
+-// GLOBAL: BEACHLIFE 0x00582674
+-int mpeg1_bitrates[15] = { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320 };
+-// GLOBAL: BEACHLIFE 0x005826b0
+-int mpeg2_bitrates[15] = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160 };
+-// GLOBAL: BEACHLIFE 0x005826ec
+-int mpeg1_frequencies[3] = { 44100, 48000, 32000 };
+-// GLOBAL: BEACHLIFE 0x005826f8
+-int mpeg2_frequencies[3] = { 22050, 24000, 16000 };
+-
+-static inline int HeaderFrequency(const unsigned char* header)
+-{
+-    int index = (header[2] >> 2) & 3;
+-    return (header[1] & 8) ? mpeg1_frequencies[index] : mpeg2_frequencies[index];
+-}
+-
+-static inline int HeaderBitrate(const unsigned char* header)
++namespace
+ {
+-    int index = header[2] >> 4;
+-    return (header[1] & 8) ? mpeg1_bitrates[index] : mpeg2_bitrates[index];
+-}
+-
+-static inline int HeaderVersion(const unsigned char* header)
+-{
+-    return ((static_cast<unsigned char>(~header[1]) >> 3) & 1) + 1;
+-}
++// The original tables have 15/15/3/3 entries at 0x00582674, 0x005826b0,
++// 0x005826ec and 0x005826f8. Reserved indices read the following table or
++// the first DWORD of "%s\\%s". Keep those actual adjacent values here.
++const int bitrate_v1[16] = { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0 };
++const int bitrate_v2[16] = { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 44100 };
++const int frequency_v1[4] = { 44100, 48000, 32000, 22050 };
++const int frequency_v2[4] = { 22050, 24000, 16000, 626815781 };
++} // namespace
+ 
+ // FUNCTION: BEACHLIFE 0x004cecc0
+ void ScreenLoadPanel13cFileInfo::ScanBytes(const unsigned char* bytes, int count)
+ {
+     unsigned char* joined = 0;
++    const unsigned char* cursor;
+     if (word_28 > 0)
+     {
+-        joined = new unsigned char[word_28 + count];
++        joined = new unsigned char[word_28 + static_cast<unsigned int>(count)];
+         memcpy(joined, bytes_24, word_28);
+-        memcpy(joined + word_28, bytes, count);
+-        count += word_28;
+-        bytes = joined;
++        memcpy(joined + word_28, bytes, static_cast<unsigned int>(count));
++        count = static_cast<int>(static_cast<unsigned int>(count) + word_28);
++        cursor = joined;
+     }
+-    const unsigned char* end = bytes + count;
+-    bytes += word_20;
+-    while (bytes < end)
++    else
++        cursor = bytes;
++
++    const unsigned char* end = cursor + count;
++    cursor += word_20;
++    while (cursor < end)
+     {
+-        if (end - bytes < 4)
++        if (static_cast<int>(end - cursor) < 4)
+         {
+-            word_28 = end - bytes;
+-            memcpy(bytes_24, bytes, word_28);
++            word_28 = static_cast<unsigned int>(end - cursor);
++            memcpy(bytes_24, cursor, word_28);
+             word_20 = 0;
+             if (joined)
+                 delete[] joined;
+             return;
+         }
+-        if (bytes[0] == 0xff && ((bytes[1] & 0xf0) == 0xf0 || (bytes[1] & 0xf0) == 0xe0))
++
++        if (cursor[0] != 0xff)
++            goto invalid_header;
+         {
+-            if (HeaderFrequency(bytes) == 0)
+-            {
+-                word_30++;
+-                bytes++;
+-                continue;
+-            }
+-            unsigned int size;
+-            if (HeaderVersion(bytes) == 1)
+-                size = HeaderBitrate(bytes) * 144000 / HeaderFrequency(bytes) + ((bytes[2] >> 1) & 1);
+-            else
+-                size = HeaderBitrate(bytes) * 72000 / HeaderFrequency(bytes) + ((bytes[2] >> 1) & 1);
+-            if (size <= 1 || size > 0x800)
+-            {
+-                word_30++;
+-                bytes++;
+-                continue;
+-            }
+-            if (word_10 == 0)
++            unsigned char second = cursor[1];
++            if ((second & 0xf0) != 0xf0 && (second & 0xf0) != 0xe0)
++                goto invalid_header;
++
++            unsigned int third = cursor[2];
++            unsigned int frequency_index = (third >> 2) & 3;
++            unsigned char version_bit = second & 8;
++            int frequency = version_bit ? frequency_v1[frequency_index] : frequency_v2[frequency_index];
++            if (frequency == 0)
++                goto invalid_header;
++
++            unsigned int version = ((~static_cast<unsigned int>(second) >> 3) & 1) + 1;
++            unsigned int bitrate_index = third >> 4;
++            int bitrate = version_bit ? bitrate_v1[bitrate_index] : bitrate_v2[bitrate_index];
++            // The original LEA/SHL product wraps in 32 bits before signed IDIV.
++            unsigned int scaled = static_cast<unsigned int>(bitrate) * (version == 1 ? 144000U : 72000U);
++            unsigned int frame_bytes = static_cast<unsigned int>(static_cast<int>(scaled) / frequency);
++            frame_bytes += (third >> 1) & 1;
++            if (frame_bytes <= 1 || frame_bytes > 0x800)
++                goto invalid_header;
++
++            int frames = word_10;
++            if (frames == 0)
+             {
+-                word_1c = (bytes[1] >> 1) & 3;
+-                word_04 = HeaderFrequency(bytes);
+-                word_00 = HeaderBitrate(bytes);
+-                word_14 = HeaderVersion(bytes);
+-                word_08 = (bytes[3] & 0xc0) != 0xc0;
++                word_1c = (second >> 1) & 3;
++                word_04 = (cursor[1] & 8) ? frequency_v1[(cursor[2] >> 2) & 3]
++                                          : frequency_v2[(cursor[2] >> 2) & 3];
++                word_00 = (cursor[1] & 8) ? bitrate_v1[cursor[2] >> 4] : bitrate_v2[cursor[2] >> 4];
++                word_14 = ((~static_cast<unsigned int>(cursor[1]) >> 3) & 1) + 1;
++                word_08 = (cursor[3] & 0xc0) != 0xc0;
+             }
+             else
+             {
+-                if (word_04 != HeaderFrequency(bytes))
+-                {
+-                    word_30++;
+-                    bytes++;
+-                    continue;
+-                }
+-                if (word_00 != 0 && word_00 != static_cast<unsigned int>(HeaderBitrate(bytes)))
++                if (word_04 != frequency)
++                    goto invalid_header;
++                if (word_00 != 0 && word_00 != static_cast<unsigned int>(bitrate))
+                     word_00 = 0;
+             }
+-            word_10++;
+-            word_2c += size;
+-            word_18 += HeaderBitrate(bytes);
+-            bytes += size;
++
++            word_10 = static_cast<int>(static_cast<unsigned int>(frames) + 1U);
++            word_2c = static_cast<int>(static_cast<unsigned int>(word_2c) + frame_bytes);
++            bitrate = (cursor[1] & 8) ? bitrate_v1[cursor[2] >> 4] : bitrate_v2[cursor[2] >> 4];
++            word_18 = static_cast<int>(static_cast<unsigned int>(word_18) + static_cast<unsigned int>(bitrate));
++            cursor += frame_bytes;
+             continue;
+         }
+-        word_30++;
+-        bytes++;
++
++    invalid_header:
++        word_30 = static_cast<int>(static_cast<unsigned int>(word_30) + 1U);
++        ++cursor;
+     }
+-    word_20 = bytes - end;
++
++    word_20 = static_cast<unsigned int>(cursor - end);
+     word_28 = 0;
+     if (joined)
+         delete[] joined;

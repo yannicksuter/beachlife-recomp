@@ -1,0 +1,473 @@
+diff --git a/src/startup_world_lifeguard_sea_points.cpp b/src/startup_world_lifeguard_sea_points.cpp
+index ef4d22307245bf31f2aba0b00c9735213e05d253..d3a89e2b0bca8277962007fda92f4d8114f21009 100644
+--- a/src/startup_world_lifeguard_sea_points.cpp
++++ b/src/startup_world_lifeguard_sea_points.cpp
+@@ -4,53 +4,49 @@
+ #include "window_activation.h"
+ #include <cmath>
+ 
+-namespace
++static unsigned int SeaFlags(ScreenPoint tile)
+ {
+-inline void SeaPointNeighbours(ScreenPoint point, ScreenPoint* neighbours)
+-{
+-    screen_terrain_grid->Step(point, 0, &neighbours[0]);
+-    screen_terrain_grid->Step(point, 2, &neighbours[1]);
+-    screen_terrain_grid->Step(point, 4, &neighbours[2]);
+-    screen_terrain_grid->Step(point, 6, &neighbours[3]);
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
+ }
+ 
+-inline bool SeaPointClear(ScreenPoint point, const ScreenPoint* neighbours)
++// x87: the candidate's offset is stored as floats; the squares are summed
++// x, z, y unrounded (retail 0x0047fa70).
++static long double SeaDistance(ScreenPoint tile, const ScreenWorldPosition& position)
+ {
+-    unsigned int index = screen_terrain_grid->TileIndex(point.x, point.y);
+-    if (screen_terrain_grid->cells_0c[index].flags_48 & 0x10)
+-        return false;
+-    for (unsigned int i = 0; i < 4; ++i)
+-    {
+-        index = screen_terrain_grid->TileIndex(neighbours[i].x, neighbours[i].y);
+-        if (screen_terrain_grid->cells_0c[index].flags_48 & 0x10)
+-            return false;
+-    }
+-    return true;
++    ScreenWorldPosition origin = screen_terrain_grid->TileOrigin(tile);
++    float x = origin.x - position.x;
++    float y = origin.y - position.y;
++    float z = origin.z - position.z;
++    return std::sqrt(static_cast<long double>(x) * x + static_cast<long double>(z) * z + static_cast<long double>(y) * y);
+ }
+ 
+-inline bool SeaPointCloser(WorldLifeguardEntity* lifeguard, ScreenPoint point, ScreenPoint closest)
++// x87: the closest point's offset stays on the FPU stack (retail 0x0047fa5f).
++static long double ClosestSeaDistance(ScreenPoint tile, const ScreenWorldPosition& position)
+ {
+-    ScreenWorldPosition position = screen_terrain_grid->TileOrigin(point);
+-    float x = position.x - lifeguard->position_30.x;
+-    float y = position.y - lifeguard->position_30.y;
+-    float z = position.z - lifeguard->position_30.z;
+-    ScreenWorldPosition previous = screen_terrain_grid->TileOrigin(closest);
+-    float previous_x = previous.x - lifeguard->position_30.x;
+-    float previous_y = previous.y - lifeguard->position_30.y;
+-    float previous_z = previous.z - lifeguard->position_30.z;
+-    return std::sqrt(previous_x * previous_x + previous_z * previous_z + previous_y * previous_y)
+-         > std::sqrt(x * x + z * z + y * y);
++    ScreenWorldPosition origin = screen_terrain_grid->TileOrigin(tile);
++    long double x = static_cast<long double>(origin.x) - position.x;
++    long double y = static_cast<long double>(origin.y) - position.y;
++    long double z = static_cast<long double>(origin.z) - position.z;
++    return std::sqrt(x * x + z * z + y * y);
+ }
+ 
+-inline ScreenTerrainRouteNode* NearestSeaPoint(WorldLifeguardEntity* lifeguard, ScreenPoint* closest)
++// FUNCTION: BEACHLIFE 0x0047f760
++void WorldLifeguardEntity::FindExitPoint()
+ {
++    variable_world->FindObject(saving_id_77c)->AsGuest()->lightning_state_318 = 1;
+     ScreenTerrainRouteNode* nearest = screen_terrain_grid->routes_20;
+     unsigned int count;
+     ScreenPoint* points = nearest->Points(&count);
+     unsigned int index = 0;
+-    ScreenPoint neighbours[4];
+-    SeaPointNeighbours(points[index], neighbours);
+-    while (!SeaPointClear(points[index], neighbours))
++    ScreenPoint north, east, south, west;
++    ScreenPoint closest;
++    screen_terrain_grid->Step(points[index], 0, &north);
++    screen_terrain_grid->Step(points[index], 2, &east);
++    screen_terrain_grid->Step(points[index], 4, &south);
++    screen_terrain_grid->Step(points[index], 6, &west);
++    while (!(!(SeaFlags(points[index]) & 0x10) && !(SeaFlags(north) & 0x10) && !(SeaFlags(east) & 0x10)
++             && !(SeaFlags(south) & 0x10) && !(SeaFlags(west) & 0x10)))
+     {
+         if (++index == count)
+         {
+@@ -60,47 +56,47 @@ inline ScreenTerrainRouteNode* NearestSeaPoint(WorldLifeguardEntity* lifeguard,
+             points = nearest->Points(&count);
+             index = 0;
+         }
+-        SeaPointNeighbours(points[index], neighbours);
++        screen_terrain_grid->Step(points[index], 0, &north);
++        screen_terrain_grid->Step(points[index], 2, &east);
++        screen_terrain_grid->Step(points[index], 4, &south);
++        screen_terrain_grid->Step(points[index], 6, &west);
+     }
+-    *closest = points[index];
++    closest = points[index];
+     for (++index; index < count; ++index)
+     {
+-        SeaPointNeighbours(points[index], neighbours);
+-        if (SeaPointCloser(lifeguard, points[index], *closest) && SeaPointClear(points[index], neighbours))
+-            *closest = points[index];
++        screen_terrain_grid->Step(points[index], 0, &north);
++        screen_terrain_grid->Step(points[index], 2, &east);
++        screen_terrain_grid->Step(points[index], 4, &south);
++        screen_terrain_grid->Step(points[index], 6, &west);
++        if (SeaDistance(points[index], position_30) < ClosestSeaDistance(closest, position_30)
++            && !(SeaFlags(points[index]) & 0x10) && !(SeaFlags(north) & 0x10) && !(SeaFlags(east) & 0x10)
++            && !(SeaFlags(south) & 0x10) && !(SeaFlags(west) & 0x10))
++            closest = points[index];
+     }
+     for (ScreenTerrainRouteNode* route = nearest->Next(); route; route = route->Next())
+     {
+         points = route->Points(&count);
+         for (unsigned int i = 0; i < count; ++i)
+         {
+-            SeaPointNeighbours(points[i], neighbours);
+-            if (SeaPointCloser(lifeguard, points[i], *closest) && SeaPointClear(points[i], neighbours))
++            screen_terrain_grid->Step(points[i], 0, &north);
++            screen_terrain_grid->Step(points[i], 2, &east);
++            screen_terrain_grid->Step(points[i], 4, &south);
++            screen_terrain_grid->Step(points[i], 6, &west);
++            if (SeaDistance(points[i], position_30) < ClosestSeaDistance(closest, position_30)
++                && !(SeaFlags(points[i]) & 0x10) && !(SeaFlags(north) & 0x10) && !(SeaFlags(east) & 0x10)
++                && !(SeaFlags(south) & 0x10) && !(SeaFlags(west) & 0x10))
+             {
+                 nearest = route;
+-                *closest = points[i];
++                closest = points[i];
+             }
+         }
+     }
+-    return nearest;
+-}
+-} // namespace
+-
+-// FUNCTION: BEACHLIFE 0x0047f760
+-void WorldLifeguardEntity::FindExitPoint()
+-{
+-    variable_world->FindObject(saving_id_77c)->AsGuest()->lightning_state_318 = 1;
+-    ScreenPoint tile;
+-    if (NearestSeaPoint(this, &tile))
++    if (nearest)
+     {
+-        ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile, 4);
++        ScreenWorldPosition position;
++        position = screen_terrain_grid->TilePosition(closest, 4);
+         exit_point_788 = position;
+-        ScreenModeCommand command;
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = 5;
+-        command.words[3] = static_cast<int>(position.x);
+-        command.words[4] = static_cast<int>(position.y);
++        ScreenModeCommand command(id_28, id_28, 5, static_cast<int>(position.x), static_cast<int>(position.y));
+         screen_mode_commands->QueueCommand(&command);
+     }
+ }
+@@ -108,16 +104,67 @@ void WorldLifeguardEntity::FindExitPoint()
+ // FUNCTION: BEACHLIFE 0x0047fee0
+ void WorldLifeguardEntity::FindRescueTarget()
+ {
+-    ScreenPoint tile;
+-    if (NearestSeaPoint(this, &tile))
++    ScreenTerrainRouteNode* nearest = screen_terrain_grid->routes_20;
++    unsigned int count;
++    ScreenPoint* points = nearest->Points(&count);
++    unsigned int index = 0;
++    ScreenPoint north, east, south, west;
++    ScreenPoint closest;
++    screen_terrain_grid->Step(points[index], 0, &north);
++    screen_terrain_grid->Step(points[index], 2, &east);
++    screen_terrain_grid->Step(points[index], 4, &south);
++    screen_terrain_grid->Step(points[index], 6, &west);
++    while (!(!(SeaFlags(points[index]) & 0x10) && !(SeaFlags(north) & 0x10) && !(SeaFlags(east) & 0x10)
++             && !(SeaFlags(south) & 0x10) && !(SeaFlags(west) & 0x10)))
++    {
++        if (++index == count)
++        {
++            nearest = nearest->Next();
++            if (!nearest)
++                StartupFatal("I hope This Never Happens ( Cant Get Sea Entry Point)");
++            points = nearest->Points(&count);
++            index = 0;
++        }
++        screen_terrain_grid->Step(points[index], 0, &north);
++        screen_terrain_grid->Step(points[index], 2, &east);
++        screen_terrain_grid->Step(points[index], 4, &south);
++        screen_terrain_grid->Step(points[index], 6, &west);
++    }
++    closest = points[index];
++    for (++index; index < count; ++index)
++    {
++        screen_terrain_grid->Step(points[index], 0, &north);
++        screen_terrain_grid->Step(points[index], 2, &east);
++        screen_terrain_grid->Step(points[index], 4, &south);
++        screen_terrain_grid->Step(points[index], 6, &west);
++        if (SeaDistance(points[index], position_30) < ClosestSeaDistance(closest, position_30)
++            && !(SeaFlags(points[index]) & 0x10) && !(SeaFlags(north) & 0x10) && !(SeaFlags(east) & 0x10)
++            && !(SeaFlags(south) & 0x10) && !(SeaFlags(west) & 0x10))
++            closest = points[index];
++    }
++    for (ScreenTerrainRouteNode* route = nearest->Next(); route; route = route->Next())
++    {
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            screen_terrain_grid->Step(points[i], 0, &north);
++            screen_terrain_grid->Step(points[i], 2, &east);
++            screen_terrain_grid->Step(points[i], 4, &south);
++            screen_terrain_grid->Step(points[i], 6, &west);
++            if (SeaDistance(points[i], position_30) < ClosestSeaDistance(closest, position_30)
++                && !(SeaFlags(points[i]) & 0x10) && !(SeaFlags(north) & 0x10) && !(SeaFlags(east) & 0x10)
++                && !(SeaFlags(south) & 0x10) && !(SeaFlags(west) & 0x10))
++            {
++                nearest = route;
++                closest = points[i];
++            }
++        }
++    }
++    if (nearest)
+     {
+-        ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile, 4);
+-        ScreenModeCommand command;
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = 0x0b;
+-        command.words[3] = static_cast<int>(position.x);
+-        command.words[4] = static_cast<int>(position.y);
++        ScreenWorldPosition position;
++        position = screen_terrain_grid->TilePosition(closest, 4);
++        ScreenModeCommand command(id_28, id_28, 11, static_cast<int>(position.x), static_cast<int>(position.y));
+         screen_mode_commands->QueueCommand(&command);
+     }
+ }
+diff --git a/src/startup_world_lifeguard_tower.cpp b/src/startup_world_lifeguard_tower.cpp
+index a9de13bb7350f690595a8fd6ec891856fd789f55..13c00d3fd27d1dccc8d3b130b9ec73640f363ced 100644
+--- a/src/startup_world_lifeguard_tower.cpp
++++ b/src/startup_world_lifeguard_tower.cpp
+@@ -53,28 +53,41 @@ void WorldLifeguardEntity::LeaveTower()
+ // FUNCTION: BEACHLIFE 0x0047ef60
+ void WorldLifeguardEntity::GoToTower()
+ {
+-    WorldBuildingEntity* tower = variable_world->FindObject(home_id_100)->AsBuilding();
+-    unsigned int rotation = tower->keyline_state_44->word_18;
+-    ScreenModeCommand command;
+-    if (rotation == 0 || rotation == 1)
++    unsigned int home = home_id_100;
++    WorldBuildingEntity* tower = static_cast<WorldBuildingEntity*>(variable_world->FindObject(home));
++    ScreenWorldPosition position;
++    switch (tower->keyline_state_44->word_18)
+     {
++    case 0:
++    case 1:
++    {
++        ScreenModeCommand command;
++        command.words[4] = tower->id_28;
+         command.words[0] = id_28;
+         command.words[1] = id_28;
+         command.words[2] = 9;
+         command.words[3] = 0;
+-        command.words[4] = tower->id_28;
+         screen_mode_commands->QueueCommand(&command);
++        break;
+     }
+-    else if (rotation == 2 || rotation == 3)
++    case 2:
+     {
+-        ScreenWorldPosition position = tower->StaffPosition();
+-        position.x += rotation == 2 ? -29.0f : 29.0f;
++        // x87: x stays on the FPU stack until _ftol; y is stored first.
++        position = tower->StaffPosition();
++        long double x = static_cast<long double>(position.x) - 29.0f;
+         position.y += 30.0f;
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = 5;
+-        command.words[3] = static_cast<int>(position.x);
+-        command.words[4] = static_cast<int>(position.y);
++        ScreenModeCommand command(id_28, id_28, 5, static_cast<int>(x), static_cast<int>(position.y));
+         screen_mode_commands->QueueCommand(&command);
++        break;
++    }
++    case 3:
++    {
++        position = tower->StaffPosition();
++        long double x = static_cast<long double>(position.x) + 29.0f;
++        position.y += 30.0f;
++        ScreenModeCommand command(id_28, id_28, 5, static_cast<int>(x), static_cast<int>(position.y));
++        screen_mode_commands->QueueCommand(&command);
++        break;
++    }
+     }
+ }
+diff --git a/src/startup_world_lifeguard_values.cpp b/src/startup_world_lifeguard_values.cpp
+index b60d2af702d56a8e1d4987cde72525a082f34eae..08aee0b459da85b8c680ab32391d92f9ff179795 100644
+--- a/src/startup_world_lifeguard_values.cpp
++++ b/src/startup_world_lifeguard_values.cpp
+@@ -6,79 +6,137 @@
+ // GLOBAL: BEACHLIFE 0x005badf8
+ char lifeguard_animation_name[32];
+ 
+-static WorldScriptValue LifeguardBoolean(std::uintptr_t data, unsigned char value)
++// A byte result written into the key's data slot keeps its upper bytes.
++static std::uintptr_t KeyByte(std::uintptr_t data, unsigned char value)
+ {
+-    return { 0, (data & ~std::uintptr_t(0xff)) | value };
++    return (data & ~std::uintptr_t(0xff)) | value;
+ }
+ 
+-static WorldScriptValue LifeguardFloat(float value)
++static unsigned int FloatWord(float value)
+ {
+     unsigned int bits;
+     std::memcpy(&bits, &value, sizeof(bits));
+-    return { 3, bits };
++    return bits;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0047dc50
+ WorldScriptValue WorldLifeguardEntity::Unknown2c(WorldScriptValue key)
+ {
+-    switch (key.kind)
++    WorldScriptValue result;
++    switch (static_cast<int>(key.kind))
+     {
+     case 0x32:
+-        return LifeguardBoolean(key.data, flag_7e8);
++        result.kind = 0;
++        result.data = KeyByte(key.data, flag_7e8);
++        break;
+     case 0x3d:
+-        return { 1, reinterpret_cast<std::uintptr_t>(current_animation_7bc) };
++        result.kind = 1;
++        result.data = reinterpret_cast<std::uintptr_t>(current_animation_7bc);
++        break;
+     case 0x40:
+-        return { 2, action_state_7ec };
++        result.kind = 2;
++        result.data = action_state_7ec;
++        break;
+     case 0x97:
+-        return LifeguardFloat(exit_point_788.x);
++        result.kind = 3;
++        result.data = FloatWord(exit_point_788.x);
++        break;
+     case 0x98:
+-        return LifeguardFloat(exit_point_788.y);
++        result.kind = 3;
++        result.data = FloatWord(exit_point_788.y);
++        break;
+     case 0x99:
+-        return LifeguardBoolean(key.data, flag_778);
++        result.kind = 0;
++        result.data = KeyByte(key.data, flag_778);
++        break;
+     case 0x9a:
+-        return { 2, saving_id_77c };
++        result.kind = 2;
++        result.data = saving_id_77c;
++        break;
+     case 0x9b:
+-        return LifeguardBoolean(key.data, flags_828[1]);
++        result.kind = 0;
++        result.data = KeyByte(key.data, flags_828[1]);
++        break;
+     case 0x9c:
+-        return LifeguardBoolean(key.data, flags_828[2]);
++        result.kind = 0;
++        result.data = KeyByte(key.data, flags_828[2]);
++        break;
+     case 0x9d:
+-        return { 2, word_820 };
++        result.kind = 2;
++        result.data = word_820;
++        break;
+     case 0x9e:
+-        return LifeguardFloat(variable_world->FindObject(saving_id_77c)->position_30.x);
++        result.kind = 3;
++        {
++            ScreenWorldPosition position = variable_world->FindObject(saving_id_77c)->position_30;
++            result.data = FloatWord(position.x);
++        }
++        break;
+     case 0x9f:
+-        return LifeguardFloat(variable_world->FindObject(saving_id_77c)->position_30.y);
++        result.kind = 3;
++        {
++            ScreenWorldPosition position = variable_world->FindObject(saving_id_77c)->position_30;
++            result.data = FloatWord(position.y);
++        }
++        break;
+     case 0xa0:
+     {
+-        VariableEntity* guest = variable_world->FindObject(saving_id_77c);
+-        long double dx = static_cast<long double>(position_30.x) - guest->position_30.x;
+-        long double dy = static_cast<long double>(position_30.y) - guest->position_30.y;
+-        long double dz = static_cast<long double>(position_30.z) - guest->position_30.z;
+-        return LifeguardFloat(static_cast<float>(std::sqrt(dz * dz + dy * dy + dx * dx)));
++        result.kind = 3;
++        ScreenWorldPosition position = variable_world->FindObject(saving_id_77c)->position_30;
++        // x87: the differences stay unrounded until the result is stored.
++        long double x = static_cast<long double>(position_30.x) - position.x;
++        long double y = static_cast<long double>(position_30.y) - position.y;
++        long double z = static_cast<long double>(position_30.z) - position.z;
++        result.data = FloatWord(static_cast<float>(std::sqrt(z * z + y * y + x * x)));
++        break;
+     }
++    case 0xfc:
++        result.kind = 0;
++        {
++            unsigned int id = home_id_100;
++            result.data = KeyByte(key.data, !variable_world->FindObject(id)->FlagAt00460370());
++        }
++        break;
+     case 0xa1:
++        result.kind = 2;
+         std::strcpy(lifeguard_animation_name, "rescue");
+-        return { 2, reinterpret_cast<std::uintptr_t>(lifeguard_animation_name) };
++        result.data = reinterpret_cast<std::uintptr_t>(lifeguard_animation_name);
++        break;
+     case 0xa2:
++        result.kind = 2;
+         std::strcpy(lifeguard_animation_name, "rescue_swim");
+-        return { 2, reinterpret_cast<std::uintptr_t>(lifeguard_animation_name) };
++        result.data = reinterpret_cast<std::uintptr_t>(lifeguard_animation_name);
++        break;
++    case 0xe0:
++        result.kind = 2;
++        std::strcpy(lifeguard_animation_name, "D_STAND_SAD");
++        result.data = reinterpret_cast<std::uintptr_t>(lifeguard_animation_name);
++        break;
+     case 0xa3:
+-        return LifeguardBoolean(key.data, flags_828[0]);
++        result.kind = 0;
++        result.data = KeyByte(key.data, flags_828[0]);
++        break;
+     case 0xa4:
+-        return LifeguardBoolean(key.data, flags_828[3]);
++        result.kind = 0;
++        result.data = KeyByte(key.data, flags_828[3]);
++        break;
+     case 0xa6:
+-        return { 2, 600 };
++        result.kind = 2;
++        result.data = 600;
++        break;
+     case 0xa7:
+-        return LifeguardBoolean(key.data, flag_779);
++        result.kind = 0;
++        result.data = KeyByte(key.data, flag_779);
++        break;
+     case 0xa8:
+-        return LifeguardBoolean(key.data, variable_world->FindObject(saving_id_77c)->AsGuest()->lightning_state_318 == 1);
+-    case 0xe0:
+-        std::strcpy(lifeguard_animation_name, "D_STAND_SAD");
+-        return { 2, reinterpret_cast<std::uintptr_t>(lifeguard_animation_name) };
+-    case 0xfc:
+-        return LifeguardBoolean(key.data, !variable_world->FindObject(home_id_100)->FlagAt00460370());
++        result.kind = 0;
++        result.data = KeyByte(key.data, variable_world->FindObject(saving_id_77c)->AsGuest()->lightning_state_318 == 1);
++        break;
+     default:
+-        return WorldStaffEntity::Unknown2c(key);
++        result = WorldStaffEntity::Unknown2c(key);
++        break;
+     }
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0047e060

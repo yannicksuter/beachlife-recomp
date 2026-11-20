@@ -1,0 +1,199 @@
+diff --git a/fixtures/game.d/fixture_004235f0.cpp b/fixtures/game.d/fixture_004235f0.cpp
+new file mode 100644
+index 0000000..0ef37d5
+--- /dev/null
++++ b/fixtures/game.d/fixture_004235f0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_building_status.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004235f0(VariableBuildingStatus* self, unsigned int id)
++{
++    self->PrepareConstruction(id);
++}
+diff --git a/metadata.d/004235f0.csv b/metadata.d/004235f0.csv
+new file mode 100644
+index 0000000..f1d82a0
+--- /dev/null
++++ b/metadata.d/004235f0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004235f0,function,1570,?PrepareConstruction@VariableBuildingStatus@@QAEXI@Z
+diff --git a/src/match_004235f0.cpp b/src/match_004235f0.cpp
+new file mode 100644
+index 0000000..c7bc213
+--- /dev/null
++++ b/src/match_004235f0.cpp
+@@ -0,0 +1,147 @@
++#include "startup_screen_position_inlines.h"
++#include "startup_building_status.h"
++#include "startup_world_entities.h"
++#include "startup_world_cursor_names.h"
++#include "startup_screen_terrain_tile_index.h"
++#include "startup_variable_state.h"
++
++static inline ScreenTerrainCell* FootprintCell(ScreenTerrainGrid* grid, const ScreenPoint& tile)
++{
++    return &grid->cells_0c[grid->TileIndex(tile.x, tile.y)];
++}
++
++static inline void SetFlags(ScreenTerrainCell* cell, unsigned int flags)
++{
++    cell->flags_48 |= flags;
++}
++
++static inline void ClearFlags(ScreenTerrainCell* cell, unsigned int flags)
++{
++    cell->flags_48 &= ~flags;
++}
++
++static inline unsigned int FootprintFlags(ScreenTerrainGrid* grid, const ScreenPoint& tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
++static inline void ReserveFootprintTile(const ScreenPoint& tile)
++{
++    {
++        ScreenTerrainCell* cell = FootprintCell(screen_terrain_grid, tile);
++        SetFlags(cell, 0x10);
++    }
++    ClearFlags(FootprintCell(screen_terrain_grid, tile), 0x80000000);
++    if (FootprintFlags(screen_terrain_grid, tile) & 1)
++    {
++        ScreenTerrainCell* cell = FootprintCell(screen_terrain_grid, tile);
++        cell->flags_48 |= 0x80;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004235f0
++void VariableBuildingStatus::PrepareConstruction(unsigned int id)
++{
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    ScreenPoint origin = entity->TilePosition();
++    ScreenPoint row_start = origin;
++    ScreenPoint tile = origin;
++    ScreenPoint corner = origin;
++    unsigned int rows;
++    unsigned int columns;
++    if (entity->keyline_state_44->rotation_18 % 2)
++    {
++        columns = building->footprint_x_1d4;
++        rows = building->footprint_y_1d8;
++    }
++    else
++    {
++        rows = building->footprint_x_1d4;
++        columns = building->footprint_y_1d8;
++    }
++    if (building->footprint_e14)
++        SetFootprint(origin, 0, 2, id);
++    for (unsigned int row = 0; row < rows; ++row)
++    {
++        for (unsigned int column = 0; column < columns; ++column)
++        {
++            if (!building->footprint_e14)
++                ReserveFootprintTile(tile);
++            screen_terrain_grid->Step(tile, 0, &tile);
++        }
++        screen_terrain_grid->Step(row_start, 6, &row_start);
++        tile = row_start;
++    }
++    ScreenMapPosition offset;
++    offset.x = static_cast<float>(building->staff_x_314);
++    offset.y = static_cast<float>(building->staff_y_316);
++    unsigned int rotation = entity->keyline_state_44->word_18;
++    ScreenMapPosition staff = CurrentScreenTerrain()->BuildingOffset(entity->TilePosition(),
++        entity->BuildingDefinition()->footprint_x_1d4,
++        entity->BuildingDefinition()->footprint_y_1d8,
++        offset,
++        rotation);
++    ScreenWorldPosition position;
++    position.x = staff.x;
++    position.y = staff.y;
++    position.z = 0.0f;
++    ScreenPoint staff_tile = CurrentScreenTerrain()->WorldToTile(position);
++    {
++        ScreenTerrainCell* cell = FootprintCell(screen_terrain_grid, staff_tile);
++        cell->flags_48 |= 0x80000080;
++    }
++    if (!building->footprint_e14)
++    {
++        ScreenPoint border;
++        screen_terrain_grid->Step(origin, 2, &border);
++        screen_terrain_grid->Step(border, 4, &border);
++        for (unsigned int i6 = 0; i6 < rows + 1; ++i6)
++        {
++            screen_terrain_grid->Step(border, 6, &border);
++            ScreenTerrainCell* cell = FootprintCell(screen_terrain_grid, border);
++            if (static_cast<unsigned char>(cell->flags_48) & 1)
++            {
++                cell->flags_48 |= 0x10000080;
++                world_cursor_names->UpdateTile(border.x, border.y, 0);
++            }
++        }
++        for (unsigned int i0 = 0; i0 < columns + 1; ++i0)
++        {
++            screen_terrain_grid->Step(border, 0, &border);
++            ScreenTerrainCell* cell = FootprintCell(screen_terrain_grid, border);
++            if (static_cast<unsigned char>(cell->flags_48) & 1)
++            {
++                cell->flags_48 |= 0x10000080;
++                world_cursor_names->UpdateTile(border.x, border.y, 0);
++            }
++        }
++        for (unsigned int i2 = 0; i2 < rows + 1; ++i2)
++        {
++            screen_terrain_grid->Step(border, 2, &border);
++            ScreenTerrainCell* cell = FootprintCell(screen_terrain_grid, border);
++            if (static_cast<unsigned char>(cell->flags_48) & 1)
++            {
++                cell->flags_48 |= 0x10000080;
++                world_cursor_names->UpdateTile(border.x, border.y, 0);
++            }
++        }
++        for (unsigned int i4 = 0; i4 < columns + 1; ++i4)
++        {
++            screen_terrain_grid->Step(border, 4, &border);
++            ScreenTerrainCell* cell = FootprintCell(screen_terrain_grid, border);
++            if (static_cast<unsigned char>(cell->flags_48) & 1)
++            {
++                cell->flags_48 |= 0x10000080;
++                world_cursor_names->UpdateTile(border.x, border.y, 0);
++            }
++        }
++    }
++    corner = entity->TilePosition();
++    tile = corner;
++    for (unsigned char step = 0; step < static_cast<int>(entity->footprint_y_59) - 1; ++step)
++        screen_terrain_grid->Step(tile, 0, &tile);
++    for (unsigned char step2 = 0; step2 < static_cast<int>(entity->footprint_x_58) - 1; ++step2)
++        screen_terrain_grid->Step(tile, 6, &tile);
++    entity->SetMarkerPosition(CurrentScreenTerrain()->TilePosition(tile, 0));
++}
+diff --git a/targets/beachlife-uk-1.1.d/004235f0.json b/targets/beachlife-uk-1.1.d/004235f0.json
+new file mode 100644
+index 0000000..2019411
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004235f0.json
+@@ -0,0 +1,19 @@
++{
++  "functions": [
++    {
++      "address": "0x004235f0",
++      "size": 1570,
++      "name": "VariableBuildingStatus::PrepareConstruction",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004235f0.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004235f0.cpp",
++    "fixture_004235f0.cpp"
++  ]
++}

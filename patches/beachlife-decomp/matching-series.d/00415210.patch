@@ -1,0 +1,129 @@
+diff --git a/fixtures/game.d/fixture_00415210.cpp b/fixtures/game.d/fixture_00415210.cpp
+new file mode 100644
+index 0000000..452fdb5
+--- /dev/null
++++ b/fixtures/game.d/fixture_00415210.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_dialog_resource.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00415210(ScreenDialogResource* item, int tile_x, int tile_y, int offset_x,
++    int offset_y, unsigned short depth)
++{
++    item->BurnTerrainTiles(tile_x, tile_y, offset_x, offset_y, depth);
++}
+diff --git a/metadata.d/00415210.csv b/metadata.d/00415210.csv
+new file mode 100644
+index 0000000..376a344
+--- /dev/null
++++ b/metadata.d/00415210.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00415210,function,977,?BurnTerrainTiles@ScreenDialogResource@@QAEXHHHHG@Z
+diff --git a/src/match_00415210.cpp b/src/match_00415210.cpp
+new file mode 100644
+index 0000000..967c3a2
+--- /dev/null
++++ b/src/match_00415210.cpp
+@@ -0,0 +1,80 @@
++#include "startup_screen_dialog_resource_inlines.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_point.h"
++#include "render_mask_setup.h"
++
++// FUNCTION: BEACHLIFE 0x00415210
++void ScreenDialogResource::BurnTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y,
++    unsigned short depth)
++{
++    const unsigned char* data = SelectedFrame()->SelectData(word_14, word_18);
++    OverlayMapPrefix* map = overlay_map;
++    const unsigned short* palette = record->palettes[0];
++    int width = SelectedFrame()->width_0e;
++    int height = SelectedFrame()->height_10;
++    int size = map->tile_size_dc;
++    unsigned short half = RenderHalfMask();
++    unsigned short quarter = RenderQuarterMask();
++    int frame_y = SelectedFrame()->word_14;
++    unsigned int row_depth = (depth + frame_y * 0xfff8) << 16;
++    unsigned int pixel_depth;
++    unsigned short colour;
++    for (int row = 0; row < height; ++row)
++    {
++        if (frame_y++ < 0)
++            row_depth -= 0x80000;
++        else
++            row_depth += 0x100000;
++        int column = 0;
++        while (column < width)
++        {
++            signed char run = *data++;
++            if (run > 0)
++            {
++                int y = offset_y + row;
++                for (; run > 0; --run)
++                {
++                    int x = offset_x + column;
++                    int view_x = tile_x + x / size;
++                    int active_y = tile_y + y / size;
++                    if (!map->cached_tiles_e0[active_y * map->cache_height_d8 + view_x].ready)
++                        map->MapCachedTile(view_x, active_y);
++                    if (!map->cached_tiles_e0[active_y * map->cache_width_d4 + view_x].ready)
++                        map->MapCachedTile(view_x, active_y);
++                    unsigned int* view = static_cast<unsigned int*>(map->cached_tiles_e0[active_y * map->cache_width_d4 + view_x].view);
++                    int index = (y % 128) * 128 + x % 128;
++                    unsigned int old_depth = view[index] & 0xffff0000;
++                    if (old_depth <= row_depth)
++                    {
++                        unsigned char mode = *data & 0xc0;
++                        unsigned short source = palette[*data - mode];
++                        unsigned short target = static_cast<unsigned short>(view[index]);
++                        switch (mode)
++                        {
++                        case 0x00:
++                            colour = source;
++                            pixel_depth = row_depth;
++                            break;
++                        case 0x40:
++                            colour = ((source >> 1) & (half >> 1)) + ((target >> 2) & (quarter >> 2)) + ((source >> 2) & (quarter >> 2));
++                            pixel_depth = old_depth;
++                            break;
++                        case 0x80:
++                            colour = ((target >> 1) & (half >> 1)) + ((source >> 1) & (half >> 1));
++                            pixel_depth = old_depth;
++                            break;
++                        case 0xc0:
++                            colour = ((target >> 1) & (half >> 1)) + ((target >> 2) & (quarter >> 2)) + ((source >> 2) & (quarter >> 2));
++                            pixel_depth = old_depth;
++                            break;
++                        }
++                        view[index] = pixel_depth + colour;
++                    }
++                    ++data;
++                    ++column;
++                }
++            }
++            column -= run;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00415210.json b/targets/beachlife-uk-1.1.d/00415210.json
+new file mode 100644
+index 0000000..bf23f4a
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00415210.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00415210",
++      "size": 762,
++      "name": "ScreenDialogResource::BurnTerrainTiles",
++      "name_status": "Descriptive; audited code extent excluding alignment; the CSV row also covers the inline jump and index tables (977 B)."
++    }
++  ],
++  "source_compile_options": {
++    "match_00415210.cpp": [
++      "/Ob1"
++    ]
++  }
++}

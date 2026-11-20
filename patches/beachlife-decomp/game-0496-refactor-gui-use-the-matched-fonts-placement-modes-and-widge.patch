@@ -1,0 +1,707 @@
+diff --git a/src/startup_font_measure_text.cpp b/src/startup_font_measure_text.cpp
+index 26dae7739e6d16588677608c8de3447f9e13346e..c387ecfd156db7a38ba385a41c68c8fe6b7676ad 100644
+--- a/src/startup_font_measure_text.cpp
++++ b/src/startup_font_measure_text.cpp
+@@ -4,17 +4,17 @@
+ // FUNCTION: BEACHLIFE 0x0049fa30
+ unsigned int ScreenFontRenderer::MeasureText(const unsigned short* text)
+ {
++    unsigned int width = 0;
+     ScreenFontData* data = data_1c;
+     const signed char* kerning = data->kerning;
+-    unsigned int width = 0;
+-    while (*text != 0)
++    const unsigned short* character = text;
++    while (*character != 0)
+     {
+-        unsigned short current = *text;
+-        unsigned short advance = data->glyphs[current][2] - data->glyphs[current][0];
+-        if (text[1] != 0)
+-            advance += kerning[current * 255 + text[1]];
++        unsigned short advance = data->glyphs[*character][2] - data->glyphs[*character][0];
++        if (character[1] != 0)
++            advance += kerning[*character * 255 + character[1]];
+         width += advance;
+-        ++text;
++        ++character;
+     }
+     return width;
+ }
+diff --git a/src/startup_font_measure_wrapped_text.cpp b/src/startup_font_measure_wrapped_text.cpp
+index ff94e626ddbe759d08f0b6fe1e020b5f1378b1c0..4e960448596d586960ad639bfd929f29f61f528d 100644
+--- a/src/startup_font_measure_wrapped_text.cpp
++++ b/src/startup_font_measure_wrapped_text.cpp
+@@ -3,65 +3,46 @@
+ #include <string.h>
+ 
+ // FUNCTION: BEACHLIFE 0x0049fbc0
+-unsigned int ScreenFontRenderer::MeasureWrappedText(const unsigned short* text,
+-    unsigned int width, unsigned int spacing)
++unsigned int ScreenFontRenderer::MeasureWrappedText(const unsigned short* text, unsigned int width, unsigned int spacing)
+ {
+     ScreenFontData* data = data_1c;
++    const signed char* kerning = data->kerning;
+     const unsigned short* cursor = text;
+     const unsigned short* line_start = text;
+-    const unsigned short* word_start = text;
+     unsigned int line_characters = 0;
+-    unsigned int word_characters = 0;
++    const unsigned short* word_start = text;
+     unsigned int line_width = spacing;
+     unsigned int maximum_width = 0;
++    unsigned int word_characters = 0;
+     unsigned short scratch[256];
+-
+     while (*cursor != 0)
+     {
+-        unsigned int current = *cursor;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = cursor[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
++        unsigned short current = *cursor;
++        unsigned short advance = data->glyphs[current][2] - data->glyphs[current][0];
++        if (cursor[1] != 0)
++            advance += kerning[current * 255 + cursor[1]];
+         line_width += advance;
+-
+-        if (cursor != text && current != ' ' && cursor[-1] == ' ')
++        if (cursor != text && *cursor != ' ' && cursor[-1] == ' ')
+         {
+             word_start = cursor;
+             word_characters = 0;
+         }
+-        if (current != ' ')
++        if (*cursor != ' ')
+             ++word_characters;
+-
+         if (line_width > width && line_characters > word_characters)
+         {
+             memset(scratch, 0, sizeof(scratch));
+-            unsigned int copy_bytes = (line_characters - word_characters) * 2;
+-            memcpy(scratch, line_start, copy_bytes);
+-
+-            const unsigned short* copied = scratch;
++            memcpy(scratch, line_start, (line_characters - word_characters) * 2);
+             unsigned int copied_width = 0;
+-            while (*copied != 0)
++            for (const unsigned short* measured = scratch; *measured != 0; ++measured)
+             {
+-                current = *copied;
+-                advance = static_cast<unsigned short>(
+-                    data->glyphs[current][2] - data->glyphs[current][0]);
+-                next = copied[1];
+-                if (next != 0)
+-                {
+-                    advance = static_cast<unsigned short>(
+-                        advance + data->kerning[current * 255 + next]);
+-                }
+-                copied_width += advance;
+-                ++copied;
++                unsigned short step = data->glyphs[*measured][2] - data->glyphs[*measured][0];
++                if (measured[1] != 0)
++                    step += kerning[*measured * 255 + measured[1]];
++                copied_width += step;
+             }
+             if (copied_width > maximum_width)
+                 maximum_width = copied_width;
+-
+             cursor = word_start;
+             line_start = cursor;
+             line_characters = 0;
+@@ -74,23 +55,15 @@ unsigned int ScreenFontRenderer::MeasureWrappedText(const unsigned short* text,
+             ++line_characters;
+         }
+     }
+-
+     unsigned int remaining_width = 0;
+-    while (*line_start != 0)
++    for (const unsigned short* measured = line_start; *measured != 0; ++measured)
+     {
+-        unsigned int current = *line_start;
+-        unsigned short advance = static_cast<unsigned short>(
+-            data->glyphs[current][2] - data->glyphs[current][0]);
+-        unsigned int next = line_start[1];
+-        if (next != 0)
+-        {
+-            advance = static_cast<unsigned short>(
+-                advance + data->kerning[current * 255 + next]);
+-        }
+-        remaining_width += advance;
+-        ++line_start;
++        unsigned short step = data->glyphs[*measured][2] - data->glyphs[*measured][0];
++        if (measured[1] != 0)
++            step += kerning[*measured * 255 + measured[1]];
++        remaining_width += step;
+     }
+     if (remaining_width > maximum_width)
+-        return remaining_width;
++        maximum_width = remaining_width;
+     return maximum_width;
+ }
+diff --git a/src/startup_overlay_save_move.cpp b/src/startup_overlay_save_move.cpp
+index f104f0dcdc86175381fd375a26f949e2745ec3a1..5d927f29e74f5ebb49eddbabd1ab95aebdd975bd 100644
+--- a/src/startup_overlay_save_move.cpp
++++ b/src/startup_overlay_save_move.cpp
+@@ -9,17 +9,19 @@ const char* overlay_state_class_name = "Class name : ZEngine";
+ // FUNCTION: BEACHLIFE 0x0041a7f0
+ void OverlayMapPrefix::MoveView(ScreenWorldPosition position, float duration)
+ {
+-    int x = static_cast<int>(position.x);
+-    int y = static_cast<int>(position.y * 0.5);
+-    y -= static_cast<int>(HeightAt(x, y));
+-    int delta_x = x - scroll_x_c4;
+-    int delta_y = y - scroll_y_c8;
++    ScreenPoint point;
++    point.x = static_cast<int>(position.x);
++    point.y = static_cast<int>(position.y * 0.5f);
++    point.y -= static_cast<int>(HeightAt(point.x, point.y));
++    point.x -= scroll_x_c4;
++    point.y -= scroll_y_c8;
+     int start_x = scroll_x_c4;
+     int start_y = scroll_y_c8;
++    // Retail jumps for a duration below the bound or unordered (fcomp; test ah,1).
+     if (!(duration >= 1.1920928955078125e-7f))
+     {
+-        int target_x = start_x - (screen_request_renderer->width >> 1) + delta_x;
+-        int target_y = start_y - (screen_request_renderer->height >> 1) + delta_y;
++        int target_y = start_y - (screen_request_renderer->height >> 1) + point.y;
++        int target_x = start_x - (screen_request_renderer->width >> 1) + point.x;
+         screen_request_renderer->ClearMarkerBuffer();
+         view_x_e4 = target_x;
+         view_y_e8 = target_y;
+@@ -28,11 +30,12 @@ void OverlayMapPrefix::MoveView(ScreenWorldPosition position, float duration)
+     }
+     value_134 = duration;
+     flag_131 = 1;
+-    value_138 = window_deactivation_state->clock_158;
++    float clock = window_deactivation_state->clock_158;
++    value_138 = clock;
+     word_13c = static_cast<int>(view_x_e4);
+     word_140 = static_cast<int>(view_y_e8);
+-    word_144 = start_x - (screen_request_renderer->width >> 1) + delta_x;
+-    word_148 = start_y - (screen_request_renderer->height >> 1) + delta_y;
++    word_144 = start_x - (screen_request_renderer->width >> 1) + point.x;
++    word_148 = start_y - (screen_request_renderer->height >> 1) + point.y;
+     flag_130 = 1;
+     view_target_x_ec = 0.0f;
+     view_target_y_f0 = 0.0f;
+diff --git a/src/startup_screen_checkbox_update.cpp b/src/startup_screen_checkbox_update.cpp
+index 0b3f8def3f7640e40718f08f2ddc7607f45df326..dd16a43dfdf6362b0a10645e476958752977e68f 100644
+--- a/src/startup_screen_checkbox_update.cpp
++++ b/src/startup_screen_checkbox_update.cpp
+@@ -38,17 +38,35 @@ void ScreenCheckBox::Unresolved24(unsigned char enabled)
+ // FUNCTION: BEACHLIFE 0x004c18a0
+ bool ScreenCheckBox::HandleTimedCoordinates(int x, int y, int value)
+ {
++    bool result = false;
+     state_40 = TestRectangle(x, y);
+     ScreenItem::HandleTimedCoordinates(x, y, value);
+-    if (value != 1 || !ReadState40())
+-        return false;
+-    word_4c = word_4c == 1 ? 0 : 1;
+-    int checked = word_4c;
+-    ScreenRequestContext* context = screen_manager->CurrentContext();
+-    if (context)
+-        context->WriteValue(owned_name_44, &checked);
+-    else
+-        screen_request_game->WriteInteger(owned_name_44, &checked);
+-    MarkPrepared();
+-    return true;
++    if (value == 1 && ReadState40())
++    {
++        if (word_4c == 1)
++        {
++            word_4c = 0;
++            int checked = 0;
++            ScreenRequestContext* context = screen_manager->CurrentContext();
++            if (context)
++                context->WriteValue(owned_name_44, &checked);
++            else
++                screen_request_game->WriteInteger(owned_name_44, &checked);
++            MarkPrepared();
++            result = true;
++        }
++        else
++        {
++            word_4c = 1;
++            int checked = 1;
++            ScreenRequestContext* context = screen_manager->CurrentContext();
++            if (context)
++                context->WriteValue(owned_name_44, &checked);
++            else
++                screen_request_game->WriteInteger(owned_name_44, &checked);
++            MarkPrepared();
++            result = true;
++        }
++    }
++    return result;
+ }
+diff --git a/src/startup_screen_manager_active_operations.cpp b/src/startup_screen_manager_active_operations.cpp
+index 9bff1f98637c87fa324efb20b8a9ad939f191f49..79628d2cd2910169301fb71f2652bda52eb57441 100644
+--- a/src/startup_screen_manager_active_operations.cpp
++++ b/src/startup_screen_manager_active_operations.cpp
+@@ -5,37 +5,41 @@
+ // FUNCTION: BEACHLIFE 0x004b1650
+ bool ScreenManager::CloseScreenById(unsigned int id)
+ {
+-    CircularListNode* head = active.head;
+-    CircularListNode* first = head->next;
+-    for (CircularListNode* node = first; node != head; node = node->next)
++    bool result = false;
++    CircularListNode* node;
++    for (node = active.head->next; node != active.head; node = node->next)
+     {
+         ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
+         if (entry->item->word_2c == id)
+         {
+-            entry->state = 2;
+             ScreenDialog* item = entry->item;
+-            unsigned int group = item->group_7c;
++            entry->state = 2;
++            int group = item->group_7c;
+             ScreenRectangle placement = item->GetRectangle();
+             if (mode != 6 && previous_mode != 6)
+-                screen_request_game->placement->WritePlacement(placement.left, placement.top, static_cast<int>(group));
++                screen_request_game->placement->WritePlacement(placement.left, placement.top, group);
+             if (entry->context)
+                 entry->context->Replaced();
+-            return true;
++            result = true;
++            break;
+         }
+     }
+-    for (CircularListNode* node = first; node != active.head; node = node->next)
++    if (!result)
+     {
+-        ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
+-        entry->state = 2;
+-        ScreenDialog* item = entry->item;
+-        unsigned int group = item->group_7c;
+-        ScreenRectangle placement = item->GetRectangle();
+-        if (mode != 6 && previous_mode != 6)
+-            screen_request_game->placement->WritePlacement(placement.left, placement.top, static_cast<int>(group));
+-        if (entry->context)
+-            entry->context->Replaced();
++        for (node = active.head->next; node != active.head; node = node->next)
++        {
++            ActiveScreenEntry* entry = static_cast<CircularListValueNode*>(node)->entry;
++            ScreenDialog* item = entry->item;
++            entry->state = 2;
++            int group = item->group_7c;
++            ScreenRectangle placement = item->GetRectangle();
++            if (mode != 6 && previous_mode != 6)
++                screen_request_game->placement->WritePlacement(placement.left, placement.top, group);
++            if (entry->context)
++                entry->context->Replaced();
++        }
+     }
+-    return false;
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004b1750
+diff --git a/src/startup_screen_mode7_virtuals.cpp b/src/startup_screen_mode7_virtuals.cpp
+index 11dc89e2429c3df8c7197aad8855a434634d2529..74e18bb3219ef1edb2b69ffe4eadf5d001543873 100644
+--- a/src/startup_screen_mode7_virtuals.cpp
++++ b/src/startup_screen_mode7_virtuals.cpp
+@@ -67,29 +67,46 @@ void ScreenMode7Controller::RenderScreens()
+     }
+ }
+ 
++static inline bool TileDiffers(const ScreenPoint& tile, const ScreenPoint& other)
++{
++    return tile.x != other.x || tile.y != other.y;
++}
++
++static inline bool IsLastTile(const ScreenMode7Controller* controller, ScreenPoint tile)
++{
++    return controller->word_18 == tile.x && controller->word_1c == tile.y;
++}
++
+ // FUNCTION: BEACHLIFE 0x004a91b0
+ unsigned char ScreenMode7Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
+ {
+-    ScreenRequestRenderer* renderer = screen_request_renderer;
+     OverlayMapPrefix* map = overlay_map;
+     bool done = false;
+     ScreenPoint point;
+-    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / renderer->value_58);
+-    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / renderer->value_58);
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / screen_request_renderer->value_58);
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / screen_request_renderer->value_58);
+     point.x += map->scroll_x_c4;
+     point.y += map->scroll_y_c8;
+     ScreenWorldPosition position = map->ScreenToWorld(point);
+     tile_20 = CurrentScreenTerrain()->WorldToTile(position);
+-    if (word_18 != tile_20.x || word_1c != tile_20.y)
+-        word_18 = word_1c = -1;
++    if (!IsLastTile(this, tile_20))
++    {
++        word_18 = -1;
++        word_1c = -1;
++    }
+     ScreenTerrainGrid* grid = screen_terrain_grid;
+-    unsigned int flags = grid->cells_0c[grid->TileIndex(tile_20.x, tile_20.y)].flags_48;
+     unsigned char valid = 1;
+-    if (!(flags & 1) || !(flags & 0x80000000))
++    ScreenPoint* tile = &tile_20;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(tile->x, tile->y)].flags_48;
++    if (!((flags & 1) && (flags & 0x80000000)))
+         valid = 0;
+     if (flags & 0x10000000)
+         valid = 0;
+-    if (!(static_cast<double>(window_deactivation_state->economy_1c->value_80) - scenery_0c->cost_2d0 >= 0.0))
++    // Retail subtracts the cost in x87 precision (fisub) and tests the unrounded
++    // difference; an unordered one also counts as short of money.
++    double money = window_deactivation_state->economy_1c->value_80;
++    money -= static_cast<unsigned int>(scenery_0c->cost_2d0);
++    if (!(money >= 0.0))
+         valid = 0;
+     byte_14 = valid;
+     if (manager->IsPointerOverScreen(1))
+@@ -98,7 +115,7 @@ unsigned char ScreenMode7Controller::HandleFourWords(unsigned int x, unsigned in
+         Place(&tile_20, 0);
+     if (startup_input_state->IsStateOne(1))
+         done = true;
+-    if (!byte_14 && (tile_20.x != word_18 || tile_20.y != word_1c) && !manager->IsPointerOverScreen(1))
++    if (!byte_14 && TileDiffers(tile_20, ScreenPoint(word_18, word_1c)) && !manager->IsPointerOverScreen(1))
+         startup_input_motion_state->SetCursor(5);
+     else
+         startup_input_motion_state->SetCursor(0);
+diff --git a/src/startup_screen_mode8_virtuals.cpp b/src/startup_screen_mode8_virtuals.cpp
+index 7335207b02f1e3a6179858a7b34a5ae7aacb6be1..7c510b6a736955be770fc13d3d71502eb9796401 100644
+--- a/src/startup_screen_mode8_virtuals.cpp
++++ b/src/startup_screen_mode8_virtuals.cpp
+@@ -73,29 +73,46 @@ void ScreenMode8Controller::RenderScreens()
+     }
+ }
+ 
++static inline bool TileDiffers(const ScreenPoint& tile, const ScreenPoint& other)
++{
++    return tile.x != other.x || tile.y != other.y;
++}
++
++static inline bool IsLastTile(const ScreenMode8Controller* controller, ScreenPoint tile)
++{
++    return controller->word_18 == tile.x && controller->word_1c == tile.y;
++}
++
+ // FUNCTION: BEACHLIFE 0x004a7800
+ unsigned char ScreenMode8Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
+ {
+-    ScreenRequestRenderer* renderer = screen_request_renderer;
+     OverlayMapPrefix* map = overlay_map;
+     bool done = false;
+     ScreenPoint point;
+-    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / renderer->value_58);
+-    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / renderer->value_58);
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / screen_request_renderer->value_58);
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / screen_request_renderer->value_58);
+     point.x += map->scroll_x_c4;
+     point.y += map->scroll_y_c8;
+     ScreenWorldPosition position = map->ScreenToWorld(point);
+     tile_20 = CurrentScreenTerrain()->WorldToTile(position);
+-    if (word_18 != tile_20.x || word_1c != tile_20.y)
+-        word_18 = word_1c = -1;
++    if (!IsLastTile(this, tile_20))
++    {
++        word_18 = -1;
++        word_1c = -1;
++    }
+     ScreenTerrainGrid* grid = screen_terrain_grid;
+-    unsigned int flags = grid->cells_0c[grid->TileIndex(tile_20.x, tile_20.y)].flags_48;
+     unsigned char valid = 1;
++    ScreenPoint* tile = &tile_20;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(tile->x, tile->y)].flags_48;
+     if (!((flags & 1) && (flags & 0x80000000)) && !(flags & 0x40))
+         valid = 0;
+     if (flags & 0x10007000)
+         valid = 0;
+-    if (!(static_cast<double>(window_deactivation_state->economy_1c->value_80) - scenery_08->cost_2d0 >= 0.0))
++    // Retail subtracts the cost in x87 precision (fisub) and tests the unrounded
++    // difference; an unordered one also counts as short of money.
++    double money = window_deactivation_state->economy_1c->value_80;
++    money -= static_cast<unsigned int>(scenery_08->cost_2d0);
++    if (!(money >= 0.0))
+         valid = 0;
+     byte_14 = valid;
+     if (manager->word_68 != scenery_index_10)
+@@ -112,7 +129,7 @@ unsigned char ScreenMode8Controller::HandleFourWords(unsigned int x, unsigned in
+         Place(&tile_20, 0);
+     if (startup_input_state->IsStateOne(1))
+         done = true;
+-    if (!byte_14 && (tile_20.x != word_18 || tile_20.y != word_1c) && !manager->IsPointerOverScreen(1))
++    if (!byte_14 && TileDiffers(tile_20, ScreenPoint(word_18, word_1c)) && !manager->IsPointerOverScreen(1))
+         startup_input_motion_state->SetCursor(5);
+     else
+         startup_input_motion_state->SetCursor(0);
+diff --git a/src/startup_screen_placement_load_sound.cpp b/src/startup_screen_placement_load_sound.cpp
+index 0c5ecea776a9a945159cfda892cf48e5750daab8..3b7c9a4643206fc184998a2b2867b5a0cdf2cd23 100644
+--- a/src/startup_screen_placement_load_sound.cpp
++++ b/src/startup_screen_placement_load_sound.cpp
+@@ -34,6 +34,56 @@ const char* screen_placement_profile_playlist_attribute_key = "PlayListAttribute
+ // GLOBAL: BEACHLIFE 0x005868c4
+ const char* screen_placement_profile_playlist_time_key = "PlayListTime";
+ 
++// The tree's pointer vector push_back (retail's STLport vector growth with the pool).
++static void PushMusicEntry(ScreenPlacementStore* store, ScreenPlacementMusicEntry* entry)
++{
++    if (store->music_end_1c != store->music_limit_20)
++    {
++        if (store->music_end_1c)
++            ::new (store->music_end_1c) ScreenPlacementMusicEntry*(entry);
++        ++store->music_end_1c;
++    }
++    else
++    {
++        unsigned int size = static_cast<unsigned int>(store->music_end_1c - store->music_begin_18);
++        unsigned int length = size + (size < 1 ? 1 : size);
++        ScreenPlacementMusicEntry** storage = 0;
++        if (length)
++        {
++            unsigned int bytes = length * sizeof(ScreenPlacementMusicEntry*);
++            if (bytes > 128)
++                storage = static_cast<ScreenPlacementMusicEntry**>(::operator new(bytes));
++            else
++            {
++                PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
++                AcquirePoolLock(&pool_lock_word);
++                PoolLockGuard guard;
++                PoolChunkLink* pooled = *bucket;
++                if (pooled)
++                    *bucket = pooled->next;
++                else
++                    pooled = static_cast<PoolChunkLink*>(RefillPool((bytes + 7) & ~7u));
++                storage = reinterpret_cast<ScreenPlacementMusicEntry**>(pooled);
++            }
++        }
++        ScreenPlacementMusicEntry** next = static_cast<ScreenPlacementMusicEntry**>(CopyTrivial(store->music_begin_18, store->music_end_1c, storage));
++        if (next)
++            ::new (next) ScreenPlacementMusicEntry*(entry);
++        ++next;
++        if (store->music_begin_18)
++        {
++            unsigned int bytes = static_cast<unsigned int>(store->music_limit_20 - store->music_begin_18) * sizeof(ScreenPlacementMusicEntry*);
++            if (bytes > 128)
++                ::operator delete(store->music_begin_18);
++            else
++                ReturnPool(store->music_begin_18, bytes);
++        }
++        store->music_begin_18 = storage;
++        store->music_end_1c = next;
++        store->music_limit_20 = storage + length;
++    }
++}
++
+ // FUNCTION: BEACHLIFE 0x004e7430
+ void ScreenPlacementStore::LoadSoundPreferences()
+ {
+@@ -77,7 +127,12 @@ void ScreenPlacementStore::LoadSoundPreferences()
+         sizeof(buffer),
+         preferences_path_04);
+     if (strcmp(buffer, screen_placement_profile_default) != 0)
+-        flag_14 = atoi(buffer) != 0;
++    {
++        if (atoi(buffer))
++            flag_14 = 1;
++        else
++            flag_14 = 0;
++    }
+ 
+     GetPrivateProfileStringA(screen_placement_profile_sound_section,
+         screen_placement_profile_playlist_count_key,
+@@ -90,7 +145,9 @@ void ScreenPlacementStore::LoadSoundPreferences()
+ 
+     ScreenPlacementMusicEntry** last = music_end_1c;
+     for (ScreenPlacementMusicEntry** entry = music_begin_18; entry != last; ++entry)
++    {
+         ReleasePlacementMusicEntry(*entry);
++    }
+     music_end_1c = music_begin_18;
+     music_enabled_24 = 1;
+     int count = atoi(buffer);
+@@ -115,7 +172,8 @@ void ScreenPlacementStore::LoadSoundPreferences()
+ 
+         sprintf(key, "%s%d", screen_placement_profile_playlist_attribute_key, index);
+         GetPrivateProfileStringA(screen_placement_profile_sound_section, key, screen_placement_profile_default, buffer, sizeof(buffer), preferences_path_04);
+-        entry->word_08 = atoi(buffer);
++        int attribute = atoi(buffer);
++        entry->word_08 = attribute;
+         entry->word_0c = 0xffffffff;
+ 
+         sprintf(key, "%s%d", screen_placement_profile_playlist_time_key, index);
+@@ -123,52 +181,6 @@ void ScreenPlacementStore::LoadSoundPreferences()
+         if (strcmp(buffer, screen_placement_profile_default) != 0)
+             entry->word_0c = atoi(buffer);
+ 
+-        if (music_end_1c != music_limit_20)
+-        {
+-            if (music_end_1c)
+-                ::new (music_end_1c) ScreenPlacementMusicEntry*(entry);
+-            ++music_end_1c;
+-        }
+-        else
+-        {
+-            {
+-                unsigned int size = static_cast<unsigned int>(music_end_1c - music_begin_18);
+-                unsigned int length = size + (size < 1 ? 1 : size);
+-                ScreenPlacementMusicEntry** storage = 0;
+-                if (length)
+-                {
+-                    unsigned int bytes = length * sizeof(ScreenPlacementMusicEntry*);
+-                    if (bytes > 128)
+-                        storage = static_cast<ScreenPlacementMusicEntry**>(::operator new(bytes));
+-                    else
+-                    {
+-                        PoolChunkLink* volatile* bucket = pool_chunk_buckets + (bytes - 1) / 8;
+-                        AcquirePoolLock(&pool_lock_word);
+-                        PoolLockGuard guard;
+-                        PoolChunkLink* pooled = *bucket;
+-                        if (pooled)
+-                            *bucket = pooled->next;
+-                        else
+-                            pooled = static_cast<PoolChunkLink*>(RefillPool((bytes + 7) & ~7u));
+-                        storage = reinterpret_cast<ScreenPlacementMusicEntry**>(pooled);
+-                    }
+-                }
+-                ScreenPlacementMusicEntry** next = static_cast<ScreenPlacementMusicEntry**>(CopyTrivial(music_begin_18, music_end_1c, storage));
+-                if (next)
+-                    ::new (next) ScreenPlacementMusicEntry*(entry);
+-                ++next;
+-                if (music_begin_18)
+-                {
+-                    unsigned int bytes = static_cast<unsigned int>(music_limit_20 - music_begin_18) * sizeof(ScreenPlacementMusicEntry*);
+-                    if (bytes > 128)
+-                        ::operator delete(music_begin_18);
+-                    else
+-                        ReturnPool(music_begin_18, bytes);
+-                }
+-                music_begin_18 = storage;
+-                music_end_1c = next;
+-                music_limit_20 = storage + length;
+-            }
+-        }
++        PushMusicEntry(this, entry);
+     }
+ }
+diff --git a/src/startup_screen_scroll_bar_constructor.cpp b/src/startup_screen_scroll_bar_constructor.cpp
+index 8ddaf12dacf86e44ccd39b954e4468f9283c7543..952293980f96e9c3cc85860e3586dfa85f039e87 100644
+--- a/src/startup_screen_scroll_bar_constructor.cpp
++++ b/src/startup_screen_scroll_bar_constructor.cpp
+@@ -4,6 +4,21 @@
+ #include "startup_screen_frame_item.h"
+ #include "startup_screen_scroll_bar.h"
+ 
++static inline ScreenDialogResourceFrame* SelectedFrame(ScreenDialogResource* resource)
++{
++    return resource->record->frames[resource->word_10];
++}
++
++static inline unsigned short FrameHeight(ScreenDialogResource* resource)
++{
++    return SelectedFrame(resource)->height_10;
++}
++
++static inline unsigned short FrameWidth(ScreenDialogResource* resource)
++{
++    return SelectedFrame(resource)->width_0e;
++}
++
+ // FUNCTION: BEACHLIFE 0x004b4ee0
+ ScreenScrollBarPrefix::ScreenScrollBarPrefix(ScreenRectangle initial,
+     unsigned int position,
+@@ -21,15 +36,17 @@ ScreenScrollBarPrefix::ScreenScrollBarPrefix(ScreenRectangle initial,
+ {
+     kind_28 = 5;
+     ScreenDialogResource* arrow = screen_dialog_resources->Lookup(screen_scroll_bar_up_name);
+-    arrow_height_6c = arrow->record->frames[arrow->word_10]->height_10;
+-    int arrow_width = arrow->record->frames[arrow->word_10]->width_0e;
++    arrow_height_6c = FrameHeight(arrow);
++    int arrow_width = FrameWidth(arrow);
+     screen_dialog_resources->Release(arrow);
+     track_length_68 = static_cast<float>(rectangle.bottom - rectangle.top) - arrow_height_6c * 2;
+     SetItemCount(count);
+ 
+-    int left = rectangle.left;
+-    int right = left + arrow_width;
+-    ScreenRectangle up = { left, rectangle.top, right, rectangle.top + arrow_height_6c };
++    ScreenRectangle up;
++    up.left = rectangle.left;
++    up.top = rectangle.top;
++    up.right = up.left + arrow_width;
++    up.bottom = up.top + arrow_height_6c;
+     up_58 = new ScreenButtonPrefix(up,
+         screen_scroll_bar_up_name,
+         screen_button_no_text_name,
+@@ -38,7 +55,7 @@ ScreenScrollBarPrefix::ScreenScrollBarPrefix(ScreenRectangle initial,
+     up_58->flag_50 = 1;
+ 
+     int bottom = rectangle.bottom;
+-    ScreenRectangle down = { left, bottom - arrow_height_6c, right, bottom };
++    ScreenRectangle down = { up.left, bottom - arrow_height_6c, up.right, bottom };
+     down_5c = new ScreenButtonPrefix(down,
+         screen_scroll_bar_down_name,
+         screen_button_no_text_name,
+@@ -48,16 +65,18 @@ ScreenScrollBarPrefix::ScreenScrollBarPrefix(ScreenRectangle initial,
+ 
+     ScreenRectangle thumb;
+     thumb.left = rectangle.left + 1;
+-    thumb.top = rectangle.top;
+     thumb.right = thumb.left + 12;
+-    thumb.bottom = thumb_size_74 + rectangle.top;
++    thumb.top = rectangle.top;
++    thumb.bottom = thumb.top + thumb_size_74;
+     thumb_60 = new ScreenFrameItem(thumb, 5);
+ 
+     int thumb_left = thumb_60->GetRectangle().left;
+-    float offset = (track_length_68 - offset_70) / count_4c * position_48;
+-    if (offset < 0.0f)
++    // Retail keeps the offset on the x87 stack (fidiv; fimul; fcom) until the
++    // truncation, and an unordered offset also takes 0 (test ah,1), as in SetItemCount.
++    double offset = static_cast<int>(position_48) * ((static_cast<double>(track_length_68) - offset_70) / static_cast<int>(count_4c));
++    if (!(offset >= 0.0))
+     {
+-        offset = 0.0f;
++        offset = 0.0;
+     }
+     thumb_60->SetRectanglePosition(
+         thumb_left, static_cast<int>(rectangle.top + arrow_height_6c + offset));
+diff --git a/src/startup_screen_slider_constructor.cpp b/src/startup_screen_slider_constructor.cpp
+index a0f5fa06c797d1c90cd8312d3eaf1dc36db75f38..629eec021cf069a5b04f630cce4c98523821af09 100644
+--- a/src/startup_screen_slider_constructor.cpp
++++ b/src/startup_screen_slider_constructor.cpp
+@@ -52,6 +52,7 @@ ScreenSlider::~ScreenSlider()
+ // FUNCTION: BEACHLIFE 0x004b5d50
+ bool ScreenSlider::HandleTimedCoordinates(int x, int y, int value)
+ {
++    bool result = false;
+     state_40 = TestRectangle(x, y);
+     ScreenItem::HandleTimedCoordinates(x, y, value);
+     thumb_54->HandleTimedCoordinates(x, y, value);
+@@ -75,7 +76,8 @@ bool ScreenSlider::HandleTimedCoordinates(int x, int y, int value)
+         {
+             position = rectangle.right - 7;
+         }
+-        thumb_54->MoveRectangle(position - thumb_54->GetRectangle().left, 0);
++        position -= thumb_54->GetRectangle().left;
++        thumb_54->MoveRectangle(position, 0);
+         float fraction = static_cast<float>(thumb_54->GetRectangle().left - rectangle.left) / travel_60;
+         if (fraction < 0.0f)
+         {
+@@ -86,9 +88,9 @@ bool ScreenSlider::HandleTimedCoordinates(int x, int y, int value)
+             fraction = 1.0f;
+         }
+         SetValue(fraction);
+-        return true;
++        result = true;
+     }
+-    return false;
++    return result;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004b5e80

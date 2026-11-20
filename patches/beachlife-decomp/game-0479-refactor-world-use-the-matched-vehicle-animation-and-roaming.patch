@@ -1,0 +1,221 @@
+diff --git a/src/startup_world_vehicle_animation.cpp b/src/startup_world_vehicle_animation.cpp
+index c6245d9ea77def6d69c66cb66349b6a7ce199cd1..f3bc7bdc747bd43cf4cc01ba71ee335b79c96364 100644
+--- a/src/startup_world_vehicle_animation.cpp
++++ b/src/startup_world_vehicle_animation.cpp
+@@ -16,6 +16,8 @@ static float AnimateVehiclePassenger(WorldVehicleEntity* vehicle, unsigned int i
+ // FUNCTION: BEACHLIFE 0x00495980
+ void WorldVehicleEntity::AnimateVehicle(float time)
+ {
++    // Retail leaves the name unset for types 2, 3 and 5: its register holds
++    // the time argument's bits.
+     const char* animation = reinterpret_cast<const char*>(static_cast<std::uintptr_t>(MotionWord(time)));
+     const char* first;
+     const char* second;
+@@ -25,6 +27,11 @@ void WorldVehicleEntity::AnimateVehicle(float time)
+     const char* driver = 0;
+     switch (vehicle_type_f8)
+     {
++    case 4:
++        animation = vehicle_animation_57c370;
++        first = vehicle_animation_57c420;
++        second = vehicle_animation_57c428;
++        break;
+     case 0:
+         animation = vehicle_animation_57c31c;
+         first = vehicle_animation_57c3dc;
+@@ -35,11 +42,6 @@ void WorldVehicleEntity::AnimateVehicle(float time)
+         first = vehicle_animation_57c3f4;
+         second = vehicle_animation_57c404;
+         break;
+-    case 4:
+-        animation = vehicle_animation_57c370;
+-        first = vehicle_animation_57c420;
+-        second = vehicle_animation_57c428;
+-        break;
+     case 6:
+         animation = vehicle_animation_57c388;
+         first = vehicle_animation_57c44c;
+@@ -48,15 +50,25 @@ void WorldVehicleEntity::AnimateVehicle(float time)
+         rod2 = vehicle_animation_57c3c4;
+         driver = world_fishing_driver_animation;
+         break;
++    default:
++        break;
+     }
+-    ScreenWorldPosition position = Position();
++    ScreenWorldPosition& position = position_30;
+     keyline_state_44->SetAnimation(animation, time, &position);
+     keyline_state_44->word_08 = 0;
+     if (passenger_count_5bc)
+     {
+-        AnimateVehiclePassenger(this, passengers_10c[0], first, time, 0);
++        WorldMovingEntity* passenger = variable_world->FindObject(passengers_10c[0])->AsMoving();
++        passenger->SetMovementPosition(position);
++        passenger->keyline_state_44->SetAnimation(first, time, &position);
++        passenger->keyline_state_44->word_08 = 0;
+         if (passenger_count_5bc > 1)
+-            AnimateVehiclePassenger(this, passengers_10c[1], second, time, 0);
++        {
++            passenger = variable_world->FindObject(passengers_10c[1])->AsMoving();
++            passenger->SetMovementPosition(position);
++            passenger->keyline_state_44->SetAnimation(second, time, &position);
++            passenger->keyline_state_44->word_08 = 0;
++        }
+         if (wake)
+         {
+             resource_fc->SetAnimation(wake, time, &position);
+@@ -78,8 +90,11 @@ void WorldVehicleEntity::AnimateVehicle(float time)
+         resource_108->SetAnimation(driver, time, &position);
+         resource_108->word_08 = 0;
+     }
+-    words_904[0] = words_904[1] = words_904[2] = 0;
+-    flag_900 = flag_901 = 0;
++    words_904[0] = 0;
++    words_904[1] = 0;
++    words_904[2] = 0;
++    flag_900 = 0;
++    flag_901 = 0;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004974d0
+diff --git a/src/startup_world_vehicle_roaming.cpp b/src/startup_world_vehicle_roaming.cpp
+index bb7a6e2e78d303461285718de71625b05181194e..2d9e48a8ccbe3b48172c3ed7343291bfb03f3406 100644
+--- a/src/startup_world_vehicle_roaming.cpp
++++ b/src/startup_world_vehicle_roaming.cpp
+@@ -2,13 +2,6 @@
+ #include <cmath>
+ #include <cstdlib>
+ 
+-static void StoreVehicleRoamPoint(WorldVehicleEntity* vehicle, ScreenWorldPosition point)
+-{
+-    vehicle->roam_point_8e8.x = point.x;
+-    vehicle->roam_point_8e8.y = point.y;
+-    vehicle->roam_point_8e8.z = point.z;
+-}
+-
+ static void MoveVehicleToRoamPoint(WorldVehicleEntity* vehicle)
+ {
+     ScreenModeCommand command;
+@@ -23,19 +16,23 @@ static void MoveVehicleToRoamPoint(WorldVehicleEntity* vehicle)
+ // FUNCTION: BEACHLIFE 0x00499d50
+ void WorldVehicleEntity::Roam()
+ {
+-    ScreenPoint start = TilePosition();
++    ScreenPoint start;
++    start = TilePosition();
+     int direction = std::rand() % 8;
+     int best_direction = direction;
++    int attempt = 0;
+     int best_length = 0;
+     ScreenPoint best;
+     bool found = false;
+-    for (int attempt = 0; attempt < 8 && !found; ++attempt)
++    int length = 0;
++    for (; attempt < 8 && !found; ++attempt, direction = (direction + 1) % 8)
+     {
+         ScreenPoint point = start;
+         ScreenPoint last;
+-        int length = 0;
+-        while (length < 8)
++        while (1)
+         {
++            if (length >= 8)
++                break;
+             screen_terrain_grid->Step(point, direction, &point);
+             ScreenTerrainGrid* grid = screen_terrain_grid;
+             unsigned int flags = grid->cells_0c[grid->TileIndex(point.x, point.y)].flags_48;
+@@ -53,21 +50,17 @@ void WorldVehicleEntity::Roam()
+             if (length > 5)
+                 found = true;
+         }
+-        direction = (direction + 1) % 8;
++        length = 0;
+     }
+     if (!best_length)
+     {
+         ScreenModeCommand command;
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = 3;
+-        command.words[3] = 0;
+-        command.words[4] = 0x42;
++        command = ScreenModeCommand(id_28, id_28, 3, 0, 0x42);
+         screen_mode_commands->QueueCommand(&command);
+         return;
+     }
+     SetMoving(0);
+-    StoreVehicleRoamPoint(this, screen_terrain_grid->TilePosition(best, 4));
++    roam_point_8e8 = screen_terrain_grid->TilePosition(best, 4);
+     int facing = (best_direction + 1) % 8;
+     if (facing == keyline_state_44->word_18)
+         MoveVehicleToRoamPoint(this);
+@@ -108,16 +101,23 @@ void WorldVehicleEntity::SwimVehicle()
+ // FUNCTION: BEACHLIFE 0x0049a090
+ bool WorldVehicleEntity::FindFishingPoint()
+ {
+-    ScreenTerrainCell* neighbours[8];
+-    screen_terrain_grid->Neighbours(current_grid_964, neighbours);
+-    for (int i = 0; i < 8; ++i)
+-        neighbours[i]->flags_48 &= ~0x10u;
+-    ScreenPoint point = TilePosition();
++    {
++        ScreenTerrainCell* neighbours[8];
++        screen_terrain_grid->Neighbours(current_grid_964, neighbours);
++        for (int i = 0; i < 8; ++i)
++            neighbours[i]->flags_48 &= ~0x10u;
++    }
++    ScreenPoint tile;
++    tile = TilePosition();
+     int facing = (heading_5d0 + 2) % 8;
+     int count = 0;
++    ScreenPoint point;
++    point = tile;
+     ScreenPoint last;
+-    while (count < 15)
++    while (1)
+     {
++        if (count >= 15)
++            break;
+         screen_terrain_grid->Step(point, (facing + 7) % 8, &point);
+         ScreenTerrainGrid* grid = screen_terrain_grid;
+         unsigned int flags = grid->cells_0c[grid->TileIndex(point.x, point.y)].flags_48;
+@@ -126,7 +126,8 @@ bool WorldVehicleEntity::FindFishingPoint()
+             break;
+         if (count > 1)
+         {
+-            grid->Neighbours(point, neighbours);
++            ScreenTerrainCell* neighbours[8];
++            screen_terrain_grid->Neighbours(point, neighbours);
+             bool clear = true;
+             for (int i = 0; i < 8; ++i)
+                 if (!(neighbours[i]->flags_48 & 0x60000000) || (neighbours[i]->flags_48 & 0x10))
+@@ -140,13 +141,24 @@ bool WorldVehicleEntity::FindFishingPoint()
+     if (count <= 4)
+         return false;
+     SetMoving(0);
+-    StoreVehicleRoamPoint(this, screen_terrain_grid->TilePosition(last, 4));
++    roam_point_8e8 = screen_terrain_grid->TilePosition(last, 4);
+     if (facing % 8 == keyline_state_44->word_18)
+-        MoveVehicleToRoamPoint(this);
++    {
++        ScreenModeCommand command;
++        command.words[0] = id_28;
++        command.words[1] = id_28;
++        command.words[2] = 10;
++        command.words[3] = static_cast<int>(roam_point_8e8.x);
++        command.words[4] = static_cast<int>(roam_point_8e8.y);
++        screen_mode_commands->QueueCommand(&command);
++    }
+     else
+         FaceVehicle(facing % 8);
+-    screen_terrain_grid->Neighbours(current_grid_964, neighbours);
+-    for (int i = 0; i < 8; ++i)
+-        neighbours[i]->flags_48 |= 0x10;
++    {
++        ScreenTerrainCell* neighbours[8];
++        screen_terrain_grid->Neighbours(current_grid_964, neighbours);
++        for (int j = 0; j < 8; ++j)
++            neighbours[j]->flags_48 |= 0x10;
++    }
+     return true;
+ }

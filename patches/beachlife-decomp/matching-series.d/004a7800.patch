@@ -1,0 +1,146 @@
+diff --git a/fixtures/game.d/fixture_004a7800.cpp b/fixtures/game.d/fixture_004a7800.cpp
+new file mode 100644
+index 0000000..c6dd1b3
+--- /dev/null
++++ b/fixtures/game.d/fixture_004a7800.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_modes.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) unsigned char Fixture_004a7800(
++    ScreenMode8Controller* self, unsigned int x, unsigned int y, unsigned int buttons)
++{
++    return self->ScreenMode8Controller::HandleFourWords(x, y, buttons, 0);
++}
+diff --git a/metadata.d/004a7800.csv b/metadata.d/004a7800.csv
+new file mode 100644
+index 0000000..7fca6bd
+--- /dev/null
++++ b/metadata.d/004a7800.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004a7800,function,552,?HandleFourWords@ScreenMode8Controller@@UAEEIIII@Z
+diff --git a/src/match_004a7800.cpp b/src/match_004a7800.cpp
+new file mode 100644
+index 0000000..f9fc794
+--- /dev/null
++++ b/src/match_004a7800.cpp
+@@ -0,0 +1,93 @@
++#include "startup_screen_position_inlines.h"
++#include "startup_screen_modes.h"
++#include "startup_input_motion.h"
++#include "startup_input_state.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_manager.h"
++#include "startup_screen_mode_world.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_renderer.h"
++#include "startup_variable_state.h"
++#include "window_activation.h"
++
++// Retail assigns the converted position member by member (inline assignment).
++static inline void AssignPosition(ScreenWorldPosition& target, const ScreenWorldPosition& source)
++{
++    target.x = source.x;
++    target.y = source.y;
++    target.z = source.z;
++}
++
++static inline bool TileDiffers(const ScreenPoint& tile, const ScreenPoint& other)
++{
++    return tile.x != other.x || tile.y != other.y;
++}
++
++static inline bool IsLastTile(const ScreenMode8Controller* controller, ScreenPoint tile)
++{
++    return controller->word_18 == tile.x && controller->word_1c == tile.y;
++}
++
++// Retail stores the converted tile y first (as ScreenMode1Controller does).
++static inline void SetTile(ScreenPoint& target, ScreenPoint tile)
++{
++    target.y = tile.y;
++    target.x = tile.x;
++}
++
++// FUNCTION: BEACHLIFE 0x004a7800
++unsigned char ScreenMode8Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
++{
++    OverlayMapPrefix* map = overlay_map;
++    bool done = false;
++    ScreenPoint point;
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / screen_request_renderer->value_58);
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / screen_request_renderer->value_58);
++    point.x += map->scroll_x_c4;
++    point.y += map->scroll_y_c8;
++    ScreenWorldPosition position;
++    AssignPosition(position, map->ScreenToWorld(point));
++    SetTile(tile_20, CurrentScreenTerrain()->WorldToTile(position));
++    if (!IsLastTile(this, tile_20))
++    {
++        word_18 = -1;
++        word_1c = -1;
++    }
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    unsigned char valid = 1;
++    ScreenPoint* tile = &tile_20;
++    unsigned int flags = grid->cells_0c[grid->TileIndex(tile->x, tile->y)].flags_48;
++    if (!((flags & 1) && (flags & 0x80000000)) && !(flags & 0x40))
++        valid = 0;
++    if (flags & 0x10007000)
++        valid = 0;
++    float money = window_deactivation_state->economy_1c->value_80;
++    money -= static_cast<unsigned int>(scenery_08->cost_2d0);
++    if (money < 0.0f)
++        valid = 0;
++    byte_14 = valid;
++    if (manager->word_68 != scenery_index_10)
++    {
++        scenery_index_10 = manager->word_68;
++        scenery_08 = variable_catalog->Scenery(scenery_index_10);
++        if (scenery_08->animation_1c4[0])
++            word_0c->SetAnimation(scenery_08->animation_1c4, 0, 0);
++        word_0c->word_08 = 3;
++    }
++    if (manager->IsPointerOverScreen(1))
++        byte_14 = 0;
++    else if (buttons == 1 || buttons == 2)
++        Place(&tile_20, 0);
++    if (startup_input_state->IsStateOne(1))
++        done = true;
++    if (!byte_14 && TileDiffers(tile_20, ScreenPoint(word_18, word_1c)) && !manager->IsPointerOverScreen(1))
++        startup_input_motion_state->SetCursor(5);
++    else
++        startup_input_motion_state->SetCursor(0);
++    if (done)
++    {
++        manager->SetScreenState("SceneryPanel", 2, 1.0f, 0);
++        manager->SetMode(4);
++    }
++    return 0;
++}
+diff --git a/targets/beachlife-uk-1.1.d/004a7800.json b/targets/beachlife-uk-1.1.d/004a7800.json
+new file mode 100644
+index 0000000..0bd536d
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004a7800.json
+@@ -0,0 +1,19 @@
++{
++  "functions": [
++    {
++      "address": "0x004a7800",
++      "size": 552,
++      "name": "ScreenMode8Controller::HandleFourWords",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004a7800.cpp": [
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004a7800.cpp",
++    "fixture_004a7800.cpp"
++  ]
++}

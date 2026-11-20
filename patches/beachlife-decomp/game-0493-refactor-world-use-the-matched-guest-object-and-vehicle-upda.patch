@@ -1,0 +1,863 @@
+diff --git a/src/startup_world_find_guest_feature.cpp b/src/startup_world_find_guest_feature.cpp
+index 838a0e261fb9bb1b69b518ef802d4ac8cfd8566d..25312b65467f7248991fa86f5566bd13af9d8be3 100644
+--- a/src/startup_world_find_guest_feature.cpp
++++ b/src/startup_world_find_guest_feature.cpp
+@@ -2,112 +2,134 @@
+ #include <cstring>
+ 
+ // FUNCTION: BEACHLIFE 0x00424900
+-unsigned int WorldSubsystem4c::FindGuestFeature(unsigned int* feature, unsigned char* found,
+-    unsigned int* broken, unsigned int* closed, unsigned int* beach_closed,
+-    unsigned char* unavailable, unsigned int gender, unsigned int desire,
+-    const ScreenPoint* tile, unsigned int previous, unsigned int guest)
++unsigned int WorldSubsystem4c::FindGuestFeature(unsigned int* feature, unsigned char* found, unsigned int* broken,
++    unsigned int* closed, unsigned int* beach_closed, unsigned char* unavailable, unsigned int gender,
++    unsigned int desire, const ScreenPoint* tile, unsigned int previous, unsigned int guest)
+ {
+-    if (!counts_6c[desire])
++    if (counts_6c[desire])
+     {
+-        if (desire != 10 || window_deactivation_state->CanBuild(variable_catalog->FindBuilding("SOUVSHOP")))
+-            ++messages_d4[desire];
+-        *found = 0;
+-        *unavailable = 0;
+         *broken = 0;
+-        *closed = 0;
+-        *beach_closed = 0;
+-        return 0;
+-    }
+-
+-    *broken = 0;
+-    bool selected = false;
+-    unsigned char has_unavailable = 0;
+-    float best_score = -1.0f;
+-    // Retail copies unset stack words when no candidate supplies these outputs.
+-    // PerformAction3 guards their uses with found/closed/broken/beach_closed;
+-    // define the otherwise unused values without changing any guest choice.
+-    unsigned int selected_id = 0;
+-    unsigned int selected_feature = 0;
+-    for (unsigned int i = 0; i < counts_6c[desire]; ++i)
+-    {
+-        WorldBuildingEntity* building = variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding();
+-        if (building->id_28 == previous)
++        bool selected = false;
++        unsigned char has_unavailable = 0;
++        struct
+         {
+-            if (!selected)
+-                has_unavailable = 1;
+-            continue;
+-        }
+-
+-        bool accessible = FeatureUnavailable(data_04[desire][i].id_00, data_04[desire][i].index_04);
+-        if (building->FlagAt00460370() && accessible)
++            float score;
++            unsigned int id;
++            unsigned int feature;
++        } best;
++        best.score = -1.0f;
++        // Retail only assigns the selection words when a candidate supplies them
++        // and copies unset stack words otherwise. PerformAction3 guards their uses
++        // with found/closed/broken/beach_closed; define the otherwise unused values
++        // without changing any guest choice.
++        best.id = 0;
++        best.feature = 0;
++        for (unsigned int i = 0; i < counts_6c[desire]; ++i)
+         {
+-            ScreenPoint candidate = data_04[desire][i].tile_0c;
+-            float distance = static_cast<float>(std::abs(tile->y - candidate.y) + std::abs(tile->x - candidate.x));
+-            float rating = building->FeatureRating(data_04[desire][i].index_04, gender ? 1 : 0);
+-            long double random = static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * -0.0009000000427477062f;
+-            long double score = 1.0f - static_cast<long double>(distance) * 0.00390625f + random + rating + 0.0010000000474974513f;
+-            if (score > best_score)
++            WorldBuildingEntity* building = variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding();
++            if (building->id_28 != previous)
+             {
+-                best_score = static_cast<float>(score);
+-                selected_id = data_04[desire][i].id_00;
+-                selected_feature = data_04[desire][i].index_04;
+-                selected = true;
+-            }
+-            continue;
+-        }
++                bool available = FeatureUnavailable(data_04[desire][i].id_00, data_04[desire][i].index_04);
++                if (building->FlagAt00460370() && available)
++                {
++                    const ScreenPoint& candidate = data_04[desire][i].tile_0c;
++                    float distance = static_cast<float>(abs(tile->y - candidate.y) + abs(tile->x - candidate.x));
++                    float rating;
++                    if (gender == 0)
++                        rating = building->FeatureRating(data_04[desire][i].index_04, 0);
++                    else
++                        rating = building->FeatureRating(data_04[desire][i].index_04, 1);
++                    // Retail keeps the random term and the score in x87 precision and
++                    // compares the unrounded score (fcom) before storing it.
++                    long double random = static_cast<long double>(rand()) * 3.0518509447574615e-5f;
++                    random *= -0.0009000000427477062f;
++                    long double score = 1.0f - static_cast<long double>(distance) * 0.00390625f + random + rating + 0.0010000000474974513f;
++                    if (score > best.score)
++                    {
++                        best.score = static_cast<float>(score);
++                        best.id = data_04[desire][i].id_00;
++                        best.feature = data_04[desire][i].index_04;
++                        selected = true;
++                    }
++                    continue;
++                }
+ 
+-        char key[256];
+-        long double condition = static_cast<long double>(static_cast<int>(3u - building->power_state_33c)) * 0.33f;
+-        // Retail compares the scaled condition with 3.0f.
+-        if (condition == 3.0f)
+-        {
+-            if (!selected)
+-                selected_id = data_04[desire][i].id_00;
+-            ++*broken;
+-            std::strcpy(key, "GUEST_THOUGHT_BROKEN_");
+-            std::strcat(key, variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->building_60->name_04);
+-        }
+-        else if (building->FlagAt00460380())
+-        {
+-            if (!selected && !*broken)
+-                selected_id = data_04[desire][i].id_00;
+-            ++*closed;
+-            std::strcpy(key, "GUEST_THOUGHT_CLOSED_");
+-            std::strcat(key, variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->building_60->name_04);
+-        }
+-        else if (!accessible)
+-        {
+-            if (!selected && !*broken && !*closed)
+-            {
+-                selected_id = data_04[desire][i].id_00;
+-                selected_feature = data_04[desire][i].index_04;
++                long double condition = static_cast<long double>(static_cast<int>(3u - building->power_state_33c)) * 0.33f;
++                // Retail compares the scaled condition with 3.0f, so the broken branch never runs.
++                if (condition == 3.0f)
++                {
++                    char key[252];
++                    if (!selected)
++                        best.id = data_04[desire][i].id_00;
++                    ++*broken;
++                    strcpy(key, "GUEST_THOUGHT_BROKEN_");
++                    strcat(key, variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->building_60->name_04);
++                    char number[2];
++                    _itoa(rand() % 3 + 1, number, 10);
++                    strcat(key, number);
++                    const unsigned short* text = screen_text_lookup->LookupText(key);
++                    variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->AddThought(text, guest);
++                }
++                else if (building->FlagAt00460380())
++                {
++                    char key[252];
++                    if (!selected && !*broken)
++                        best.id = data_04[desire][i].id_00;
++                    ++*closed;
++                    strcpy(key, "GUEST_THOUGHT_CLOSED_");
++                    strcat(key, variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->building_60->name_04);
++                    char number[2];
++                    _itoa(rand() % 3 + 1, number, 10);
++                    strcat(key, number);
++                    const unsigned short* text = screen_text_lookup->LookupText(key);
++                    variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->AddThought(text, guest);
++                }
++                else if (!available)
++                {
++                    char key[252];
++                    if (!selected && !*broken && !*closed)
++                    {
++                        best.id = data_04[desire][i].id_00;
++                        best.feature = data_04[desire][i].index_04;
++                    }
++                    ++*beach_closed;
++                    strcpy(key, "GUEST_THOUGHT_BEACH_CLOSED_");
++                    building = variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding();
++                    unsigned int kind = building->building_60->features_1fc[data_04[desire][i].index_04];
++                    strcat(key, variable_catalog->FeatureKey(kind));
++                    char number[2];
++                    _itoa(rand() % 3 + 1, number, 10);
++                    strcat(key, number);
++                    const unsigned short* text = screen_text_lookup->LookupText(key);
++                    variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->AddThought(text, guest);
++                }
++                else
++                    has_unavailable = 1;
+             }
+-            ++*beach_closed;
+-            std::strcpy(key, "GUEST_THOUGHT_BEACH_CLOSED_");
+-            building = variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding();
+-            std::strcat(key, variable_catalog->FeatureKey(building->building_60->features_1fc[data_04[desire][i].index_04]));
++            else if (!selected)
++                has_unavailable = 1;
+         }
+-        else
++        if (selected)
+         {
+-            has_unavailable = 1;
+-            continue;
++            *found = 1;
++            *feature = best.feature;
++            *unavailable = 0;
++            return best.id;
+         }
+-
+-        char number[2];
+-        std::sprintf(number, "%d", std::rand() % 3 + 1);
+-        std::strcat(key, number);
+-        const unsigned short* text = screen_text_lookup->LookupText(key);
+-        variable_world->FindObject(data_04[desire][i].id_00)->AsBuilding()->AddThought(text, guest);
++        *feature = best.feature;
++        *unavailable = has_unavailable;
++        *found = 0;
++        return best.id;
+     }
+-    if (selected)
++    else
+     {
+-        *found = 1;
+-        *feature = selected_feature;
++        if (desire != 10 || window_deactivation_state->CanBuild(variable_catalog->FindBuilding("SOUVSHOP")))
++            ++messages_d4[desire];
++        *found = 0;
+         *unavailable = 0;
+-        return selected_id;
++        *broken = 0;
++        *closed = 0;
++        *beach_closed = 0;
++        return 0;
+     }
+-    *feature = selected_feature;
+-    *unavailable = has_unavailable;
+-    *found = 0;
+-    return selected_id;
+ }
+diff --git a/src/startup_world_guest_needs_update.cpp b/src/startup_world_guest_needs_update.cpp
+index 68ccd677bee6ef5bf78dc2cf52e9fd0dcc07bc00..dd59130ba8ad81d78fb0c4e1c3ae2e6b30ed191a 100644
+--- a/src/startup_world_guest_needs_update.cpp
++++ b/src/startup_world_guest_needs_update.cpp
+@@ -1,23 +1,53 @@
+ #include "startup_world_guest_action_helpers.h"
+ 
++// The elapsed time, its products and the sums stay in x87 precision until each
++// store, as in retail (fld; fmul; fsubr/fadd; fstp).
++static inline long double Elapsed()
++{
++    return window_deactivation_state->value_16c;
++}
++
++static inline void Grow(float& value, long double amount)
++{
++    value += amount;
++}
++
++// Retail stores the bound for a value below it or unordered (fcomp; test ah,1).
++static inline void ClampAtZero(float& value)
++{
++    if (!(value >= 0.0f))
++        value = 0.0f;
++}
++
+ // FUNCTION: BEACHLIFE 0x0046ab00
+ void WorldGuestEntity::PerformAction0()
+ {
+-    guest_value_254 = static_cast<float>(static_cast<long double>(guest_value_254) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->decay_1f0[0]);
+-    weather_values_16c[20] = static_cast<float>(static_cast<long double>(weather_values_16c[20]) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->decay_1f0[2]);
+-    weather_values_16c[19] = static_cast<float>(static_cast<long double>(weather_values_16c[19]) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->decay_1f0[1]);
+-    weather_values_16c[18] = static_cast<float>(static_cast<long double>(weather_values_16c[18]) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->decay_1f0[3]);
+-    if (!(guest_value_254 >= 0.0f))
+-        guest_value_254 = 0.0f;
+-    for (unsigned int index : { 20u, 19u, 18u })
+-        if (!(weather_values_16c[index] >= 0.0f))
+-            weather_values_16c[index] = 0.0f;
+-    static const unsigned int desires[] = { 1, 2, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16 };
+-    for (unsigned int i = 0; i < 12; ++i)
+-        weather_values_16c[desires[i]] = static_cast<float>(static_cast<long double>(window_deactivation_state->value_16c) * traits_138[i] + weather_values_16c[desires[i]]);
+-    for (float& desire : weather_values_16c)
+-        if (desire > 1.0f)
+-            desire = 1.0f;
++    VariableGuestState* state = guest_f4;
++    guest_value_254 -= Elapsed() * state->decay_1f0[0];
++    weather_values_16c[20] -= Elapsed() * state->decay_1f0[2];
++    weather_values_16c[19] -= Elapsed() * state->decay_1f0[1];
++    weather_values_16c[18] -= Elapsed() * state->decay_1f0[3];
++    ClampAtZero(guest_value_254);
++    ClampAtZero(weather_values_16c[20]);
++    ClampAtZero(weather_values_16c[19]);
++    ClampAtZero(weather_values_16c[18]);
++    Grow(weather_values_16c[1], Elapsed() * traits_138[0]);
++    Grow(weather_values_16c[2], Elapsed() * traits_138[1]);
++    Grow(weather_values_16c[5], Elapsed() * traits_138[2]);
++    Grow(weather_values_16c[6], Elapsed() * traits_138[3]);
++    Grow(weather_values_16c[8], Elapsed() * traits_138[4]);
++    Grow(weather_values_16c[9], Elapsed() * traits_138[5]);
++    Grow(weather_values_16c[10], Elapsed() * traits_138[6]);
++    Grow(weather_values_16c[11], Elapsed() * traits_138[7]);
++    Grow(weather_values_16c[12], Elapsed() * traits_138[8]);
++    Grow(weather_values_16c[13], Elapsed() * traits_138[9]);
++    Grow(weather_values_16c[15], Elapsed() * traits_138[10]);
++    Grow(weather_values_16c[16], Elapsed() * traits_138[11]);
++    for (int i = 0; i < 26; ++i)
++    {
++        if (weather_values_16c[i] > 1.0f)
++            weather_values_16c[i] = 1.0f;
++    }
+     if (!flag_364)
+     {
+         if (guest_value_360 > 0.99f)
+@@ -26,7 +56,8 @@ void WorldGuestEntity::PerformAction0()
+             guest_value_360 = 1.0f;
+             return;
+         }
+-        long double illness = static_cast<long double>(guest_value_360) - static_cast<long double>(window_deactivation_state->value_16c) * guest_f4->value_38c;
++        // Retail compares the unrounded difference (fst; fcomp).
++        long double illness = guest_value_360 - Elapsed() * guest_f4->value_38c;
+         guest_value_360 = static_cast<float>(illness);
+         if (!(illness >= 0.0f))
+             guest_value_360 = 0.0f;
+diff --git a/src/startup_world_guest_social_actions.cpp b/src/startup_world_guest_social_actions.cpp
+index 46aea0c3dbbe73a6a11e52be7d21dc848b8da71d..ca435bbdfbc79d0536830478d705c924c5664f96 100644
+--- a/src/startup_world_guest_social_actions.cpp
++++ b/src/startup_world_guest_social_actions.cpp
+@@ -51,20 +51,69 @@ static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
+     }
+ }
+ 
++static inline unsigned int GridFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
+ // FUNCTION: BEACHLIFE 0x00477ca0
+ void WorldGuestEntity::PerformAction15()
+ {
++    struct
++    {
++        float distance;
++        unsigned int index;
++    } nearest;
++    nearest.distance = 50000.0f;
++    nearest.index = 0;
+     if (weather_values_16c[19] > 0.0f)
+     {
+-        ScreenPoint tile = GuestAlcoholWalkTile(this);
+-        int y = static_cast<int>(screen_terrain_grid->TileOrigin(tile).y);
+-        int x = static_cast<int>(screen_terrain_grid->TileOrigin(tile).x);
+-        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 8, x, y);
++        unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
++        unsigned int count;
++        VariableEntity** buildings = variable_world->ByType(2, &count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (buildings[i]->FlagAt00460370())
++            {
++                VariableBuilding* definition = buildings[i]->AsBuilding()->building_60;
++                for (unsigned int j = 0; j < definition->rows_1f4; ++j)
++                {
++                    if (variable_catalog->FeatureType(definition->features_1fc[j]) == alcohol)
++                    {
++                        ScreenPoint building_tile = buildings[i]->TilePosition();
++                        unsigned int x = static_cast<unsigned int>(TilePosition().x) - building_tile.x;
++                        ScreenPoint guest_tile = TilePosition();
++                        unsigned int y = static_cast<unsigned int>(guest_tile.y) - buildings[i]->TilePosition().y;
++                        unsigned int squared = y * y + x * x;
++                        // Retail compares the unrounded root (fsqrt; fcom); an unordered one also selects.
++                        long double distance = std::sqrt(static_cast<long double>(squared));
++                        if (!(distance >= nearest.distance))
++                        {
++                            nearest.distance = static_cast<float>(distance);
++                            nearest.index = i;
++                        }
++                    }
++                }
++            }
++        }
++        int x = buildings[nearest.index]->TilePosition().x + std::rand() % 15 - 7;
++        int y = buildings[nearest.index]->TilePosition().y + std::rand() % 15 - 7;
++        unsigned int flags = GridFlags(screen_terrain_grid, ScreenPoint(x, y));
++        while (!(GuestLandFlags(flags) && x < 128 && x >= 0 && y < 128 && y >= 0))
++        {
++            x = buildings[nearest.index]->TilePosition().x + std::rand() % 15 - 7;
++            y = buildings[nearest.index]->TilePosition().y + std::rand() % 15 - 7;
++            flags = GridFlags(screen_terrain_grid, ScreenPoint(x, y));
++        }
++        // Retail converts the origin's y before its x.
++        int origin_y = static_cast<int>(screen_terrain_grid->TileOrigin(ScreenPoint(x, y)).y);
++        int origin_x = static_cast<int>(screen_terrain_grid->TileOrigin(ScreenPoint(x, y)).x);
++        ScreenModeCommand command(id_28, id_28, 8, origin_x, origin_y);
+         screen_mode_commands->QueueCommand(&command);
+     }
+     else
+     {
+-        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 12);
++        ScreenModeCommand command(id_28, id_28, 3, 0, 12);
+         screen_mode_commands->QueueCommand(&command);
+     }
+ }
+diff --git a/src/startup_world_object_constructor.cpp b/src/startup_world_object_constructor.cpp
+index 811f7607ca2e47df195bfad27152aa751eafc224..d020a1b95efb2c718bf7b5d0e0e6f4793a4dfa80 100644
+--- a/src/startup_world_object_constructor.cpp
++++ b/src/startup_world_object_constructor.cpp
+@@ -14,8 +14,7 @@ void WorldObjectEntity::CopyPosition(ScreenWorldPosition position)
+ WorldObjectEntity::WorldObjectEntity(const char* name)
+     : WorldStaticEntity(name)
+ {
+-    VariableCatalog* catalog = variable_catalog;
+-    definition_60 = catalog->Object(catalog->FindObject(name));
++    definition_60 = variable_catalog->Object(variable_catalog->FindObject(name));
+     slots_8c = static_cast<WorldObjectSlot*>(::operator new(definition_60->frame_count_3d0 * sizeof(WorldObjectSlot)));
+     for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
+     {
+@@ -24,9 +23,9 @@ WorldObjectEntity::WorldObjectEntity(const char* name)
+         slots_8c[i].id_04 = -1;
+         slots_8c[i].variant_00 = static_cast<int*>(definition_60->data_3f0)[i];
+     }
+-    CopyPosition({ 0.0f, 0.0f, 0.0f });
++    CopyPosition(ScreenWorldPosition(0.0f, 0.0f, 0.0f));
+     keyline_state_44 = screen_dialog_resources->Find(definition_60->resource_c4);
+-    if (strcmp(definition_60->resource_1c4, "None") != 0)
++    if (strcmp(definition_60->resource_1c4, screen_dialog_none_name) != 0)
+     {
+         resources_6c = static_cast<ScreenDialogResource**>(::operator new(definition_60->frame_count_3d0 * sizeof(ScreenDialogResource*)));
+         if (definition_60->flag_3f8)
+@@ -37,15 +36,15 @@ WorldObjectEntity::WorldObjectEntity(const char* name)
+         for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
+         {
+             resources_6c[i] = screen_dialog_resources->Find(definition_60->resource_1c4);
+-            ScreenDialogResource* resource = resources_6c[i];
+-            int variant = static_cast<int*>(definition_60->data_3f0)[i];
+-            if (resource->record->frames[0]->plane_count_0c != 8)
+-                variant /= 2;
+-            resource->SelectVariant(variant);
++            if (resources_6c[i]->record->frames[0]->plane_count_0c == 8)
++                resources_6c[i]->SelectVariant(static_cast<int*>(definition_60->data_3f0)[i]);
++            else
++                resources_6c[i]->SelectVariant(static_cast<int*>(definition_60->data_3f0)[i] / 2);
+             if (definition_60->flag_3f8)
+             {
+                 resources_70[i] = screen_dialog_resources->Find("Waiter");
+-                resources_70[i]->SetAnimation("d_Static_plate", window_deactivation_state->time_158, 0);
++                float time = window_deactivation_state->time_158;
++                resources_70[i]->SetAnimation("d_Static_plate", time, 0);
+                 resources_70[i]->SelectVariant(static_cast<int*>(definition_60->data_3f0)[i]);
+                 flags_78[i] = 0;
+             }
+@@ -53,7 +52,9 @@ WorldObjectEntity::WorldObjectEntity(const char* name)
+     }
+     else
+         resources_6c = 0;
+-    word_90 = word_9c = word_a0 = 0;
++    word_90 = 0;
++    word_9c = 0;
++    word_a0 = 0;
+     flag_98 = definition_60->flag_424;
+     word_7c = -1;
+     flag_74 = 0;
+diff --git a/src/startup_world_vehicle_update.cpp b/src/startup_world_vehicle_update.cpp
+index bb485d1d7bd944aca5289dcd2045a2f7cb9ba202..e947e50110ce7754e50d5ef67f65202b188e7666 100644
+--- a/src/startup_world_vehicle_update.cpp
++++ b/src/startup_world_vehicle_update.cpp
+@@ -6,62 +6,103 @@
+ #include <math.h>
+ #include <string.h>
+ 
++static const float vehicle_door_volume = 1.0f; // 0x004f3ffc.
++
++// Retail's inline reciprocal estimate: one Newton step from 0x7f000000 - bits,
++// formed in x87 precision and stored as a float.
++static inline float VehicleReciprocal(float value)
++{
++    float estimate = std::bit_cast<float>(0x7f000000u - std::bit_cast<unsigned int>(value));
++    return static_cast<float>((2.0L - static_cast<long double>(value) * estimate) * estimate);
++}
++
++static inline void MarkNeighbours(ScreenPoint tile, bool set)
++{
++    ScreenTerrainCell* cells[8];
++    screen_terrain_grid->Neighbours(tile, cells);
++    for (int i = 0; i < 8; ++i)
++    {
++        if (set)
++            cells[i]->flags_48 |= 0x10;
++        else
++            cells[i]->flags_48 &= ~0x10u;
++    }
++}
++
++// Retail tests `before >= 0` and `before <= 0` with fcomp; an unordered
++// `after <= 0` or `before <= 0` counts as true (test ah,0x41).
++static inline bool VehicleCrossed(float before, float after)
++{
++    return (before >= 0.0f && !(after > 0.0f)) || (!(before > 0.0f) && after >= 0.0f);
++}
++
++// The step stays in x87 precision until it is subtracted (fmul; fsubr).
++static inline long double FrameStep()
++{
++    return window_deactivation_state->value_16c;
++}
++
+ // FUNCTION: BEACHLIFE 0x00494e20
+ bool WorldVehicleEntity::Unknown0c()
+ {
+-    auto neighbours = [&](bool set)
+-    {
+-        ScreenTerrainCell* cells[8];
+-        screen_terrain_grid->Neighbours(current_grid_964, cells);
+-        for (int i = 0; i < 8; ++i)
+-            if (set)
+-                cells[i]->flags_48 |= 0x10;
+-            else
+-                cells[i]->flags_48 &= ~0x10u;
+-    };
+     if (vehicle_type_f8 == 6 && flag_960)
+-        neighbours(false);
++        MarkNeighbours(current_grid_964, false);
+     float time = window_deactivation_state->time_158;
+     if (broken_50)
+         broken_50 = 0;
+     if (!WorldMovingEntity::Unknown0c())
+         StartupFatal("VehicleObject::Update - error calling Movingobject::update - %s", name_06);
+-    auto make_state = [&](unsigned int state)
+-    {
+-        ScreenModeCommand command;
+-        command.words[0] = id_28;
+-        command.words[1] = id_28;
+-        command.words[2] = 3;
+-        command.words[3] = 0;
+-        command.words[4] = state;
+-        return command;
+-    };
+-    auto queue_state = [&](unsigned int state)
+-    {
+-        ScreenModeCommand command = make_state(state);
+-        screen_mode_commands->QueueCommand(&command);
+-    };
++
+     switch (state_3c)
+     {
+     case 0x41:
+         if (passenger_count_5bc && vehicle_type_f8 != 2 && vehicle_type_f8 != 5)
+         {
+-            if (static_cast<long double>(time) - ride_time_5c0 > 1.0L && !flag_924)
+-                queue_state(definition_f4->unknown_1dc[0] == 1 ? 0x44 : 0x45);
++            // Retail subtracts in x87 precision (fsub) before the comparison.
++            if (static_cast<long double>(time) - ride_time_5c0 > 1.0f && !flag_924)
++            {
++                if (definition_f4->unknown_1dc[0] == 1)
++                {
++                    ScreenModeCommand command;
++                    command.words[0] = id_28;
++                    command.words[1] = id_28;
++                    command.words[2] = 3;
++                    command.words[3] = 0;
++                    command.words[4] = 0x44;
++                    screen_mode_commands->QueueCommand(&command);
++                }
++                else
++                {
++                    ScreenModeCommand command;
++                    command.words[0] = id_28;
++                    command.words[1] = id_28;
++                    command.words[2] = 3;
++                    command.words[3] = 0;
++                    command.words[4] = 0x45;
++                    screen_mode_commands->QueueCommand(&command);
++                }
++            }
+         }
+         else if (!word_5c4 && (vehicle_type_f8 == 2 || vehicle_type_f8 == 5) && definition_f4->unknown_1dc[0] == 1)
+         {
+-            ScreenModeCommand command = make_state(0x44);
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0x44;
+             if (vehicle_type_f8 == 5)
+             {
+                 if (!door_animation_92c)
+                 {
+-                    WindowAudioVector position = { position_30.x, position_30.y, 0.0f };
+-                    window_audio_state->PlaySoundAtPosition(vehicle_door_open_sound, 1.0f, &position, 1, -1);
++                    WindowAudioVector position;
++                    position.x = position_30.x;
++                    position.y = position_30.y;
++                    position.z = 0.0f;
++                    window_audio_state->PlaySoundAtPosition(vehicle_door_open_sound, vehicle_door_volume, &position, 1, -1);
+                     door_animation_92c = 1;
+                     resource_928->word_08 = 1;
+-                    ScreenWorldPosition point = { position_30.x, position_30.y, position_30.z };
+-                    float duration = resource_928->SetAnimation("coach_doors", time, &point);
++                    float duration = resource_928->SetAnimation("coach_doors", time, &position_30);
+                     screen_mode_commands->QueueDelayed(&command, duration);
+                 }
+             }
+@@ -76,124 +117,205 @@ bool WorldVehicleEntity::Unknown0c()
+         {
+             if (flag_5c && !flag_900)
+             {
+-                ScreenMapPosition direction = { motion_64[2], motion_64[3] };
+-                float magnitude = VehicleSquareRoot(static_cast<float>(static_cast<long double>(direction.x) * direction.x + static_cast<long double>(direction.y) * direction.y));
+-                if (!(fabs(static_cast<double>(magnitude)) >= 9.999999747378752e-05))
++                ScreenMapPosition direction(motion_64[2], motion_64[3]);
++                // The squares are summed in x87 precision and stored as a float.
++                float speed = VehicleSquareRoot(static_cast<float>(static_cast<long double>(direction.y) * direction.y + static_cast<long double>(direction.x) * direction.x));
++                // Retail recomputes for a speed below the bound or unordered (fcomp; test ah,1).
++                if (!(fabs(static_cast<double>(speed)) >= 9.999999747378752e-05))
+                 {
+-                    direction.x = target_84[0] - motion_64[0];
+-                    direction.y = target_84[1] - motion_64[1];
++                    ScreenMapPosition current;
++                    current.x = motion_64[0];
++                    current.y = motion_64[1];
++                    ScreenMapPosition target;
++                    target.x = target_84[0];
++                    target.y = target_84[1];
++                    direction = ScreenMapPosition(target.x - current.x, target.y - current.y);
+                 }
+-                magnitude = WorldSquareRoot(static_cast<float>(static_cast<long double>(direction.x) * direction.x + static_cast<long double>(direction.y) * direction.y));
+-                float reciprocal = std::bit_cast<float>(0x7f000000u - std::bit_cast<unsigned int>(magnitude));
+-                reciprocal = static_cast<float>((2.0L - static_cast<long double>(magnitude) * reciprocal) * reciprocal);
+-                direction.x *= reciprocal;
+-                direction.y *= reciprocal;
++                float y = direction.y;
++                float x = direction.x;
++                float squared = static_cast<float>(static_cast<long double>(x) * x + static_cast<long double>(y) * y);
++                float reciprocal = VehicleReciprocal(WorldSquareRoot(squared));
++                direction.x = reciprocal * direction.x;
++                direction.y = direction.y * reciprocal;
+                 int facing = MotionDirection(direction, 16);
+-                ScreenWorldPosition point = { position_30.x, position_30.y, position_30.z };
+                 if (facing % 2)
+                 {
+-                    keyline_state_44->SetAnimation(vehicle_type_f8 == 0 ? vehicle_offset_animation : speedboat_offset_animation, 0.0f, &point);
+-                    SelectVehicleVariant(keyline_state_44, facing / 2);
++                    switch (vehicle_type_f8)
++                    {
++                    case 0:
++                        keyline_state_44->SetAnimation(vehicle_offset_animation, 0.0f, &position_30);
++                        break;
++                    case 1:
++                        keyline_state_44->SetAnimation(speedboat_offset_animation, 0.0f, &position_30);
++                        break;
++                    }
++                    keyline_state_44->SelectVariant(facing / 2);
+                 }
+                 else
+-                    keyline_state_44->SetAnimation(vehicle_type_f8 == 0 ? vehicle_normal_animation : speedboat_normal_animation, 0.0f, &point);
+-                SelectVehicleVariant(keyline_state_44, facing / 2);
++                {
++                    switch (vehicle_type_f8)
++                    {
++                    case 0:
++                        keyline_state_44->SetAnimation(vehicle_normal_animation, 0.0f, &position_30);
++                        break;
++                    case 1:
++                        keyline_state_44->SetAnimation(speedboat_normal_animation, 0.0f, &position_30);
++                        break;
++                    }
++                }
++                keyline_state_44->SelectVariant(facing / 2);
+             }
+             if (vehicle_type_f8 == 0)
+-                SelectVehicleVariant(resource_fc, keyline_state_44->word_18);
++                resource_fc->SelectVariant(keyline_state_44->word_18);
+         }
+         if (flag_900)
+             UpdateVehicleTurn(time);
+         else
++        {
+             for (unsigned int i = 0; i < passenger_count_5bc; ++i)
+             {
+                 WorldMovingEntity* guest = variable_world->FindObject(passengers_10c[i])->AsMoving();
+-                guest->SetMovementPosition({ position_30.x, position_30.y, position_30.z });
+-                SelectVehicleVariant(guest->keyline_state_44, keyline_state_44->word_18);
++                guest->SetMovementPosition(position_30);
++                ScreenDialogResource* resource = guest->keyline_state_44;
++                resource->SelectVariant(keyline_state_44->word_18);
+             }
++        }
+         break;
+     case 0x46:
+         if (flag_900)
+             UpdateVehicleTurn(time);
+         else
+         {
+-            queue_state(0x43);
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0x43;
++            screen_mode_commands->QueueCommand(&command);
+             word_8d8 = (static_cast<int>(word_8d8) + 1) % static_cast<int>(route_count_8d4);
+         }
+         break;
+     case 0x47:
+-    case 0x48:
+     {
+-        long double movement = static_cast<long double>(window_deactivation_state->value_16c) * speed_80;
+-        int heading = state_3c == 0x47 ? arrival_heading_958 : departure_heading_95c;
+-        float x;
+-        long double y;
+-        switch (heading)
++        long double movement = FrameStep() * speed_80;
++        // Retail stores x as a float and keeps y on the x87 stack. A heading
++        // outside 0..7 reads unset stack words in retail; the tree moves nothing.
++        float step_x = 0.0f;
++        long double step_y = 0.0L;
++        switch (arrival_heading_958)
+         {
+         case 0:
+-            x = 0.0f;
+-            y = -movement;
++            step_x = 0.0f;
++            step_y = -movement;
+             break;
+         case 1:
+-            x = movement * 0.5L;
+-            y = movement * -0.5L;
++            step_x = static_cast<float>(movement * 0.5f);
++            step_y = movement * -0.5f;
+             break;
+         case 2:
+-            x = movement;
+-            y = 0.0L;
++            step_x = static_cast<float>(movement);
++            step_y = 0.0f;
+             break;
+         case 3:
+-            x = movement * 0.5L;
+-            y = movement * 0.5L;
++            step_x = static_cast<float>(movement * 0.5f);
++            step_y = movement * 0.5f;
+             break;
+         case 4:
+-            x = 0.0f;
+-            y = movement;
++            step_x = 0.0f;
++            step_y = movement;
+             break;
+         case 5:
+-            x = movement * -0.5L;
+-            y = movement * 0.5L;
++            step_x = static_cast<float>(movement * -0.5f);
++            step_y = movement * 0.5f;
+             break;
+         case 6:
+-            x = -movement;
+-            y = 0.0L;
++            step_x = static_cast<float>(-movement);
++            step_y = 0.0f;
+             break;
+         case 7:
+-            x = movement * -0.5L;
+-            y = movement * -0.5L;
++            step_x = static_cast<float>(movement * -0.5f);
++            step_y = movement * -0.5f;
+             break;
+         }
+-        float old_x = arrival_tile_948.x;
+-        float old_y = arrival_tile_948.y;
+-        ScreenMapPosition* offsets = state_3c == 0x47 ? &arrival_tile_948 : &departure_tile_950;
+-        offsets->x = offsets->x - x;
+-        offsets->y = static_cast<float>(static_cast<long double>(offsets->y) - y);
+-        auto crossed = [](float before, float after)
++        ScreenMapPosition old = arrival_tile_948;
++        float x = arrival_tile_948.x - step_x;
++        arrival_tile_948.x = x;
++        float y = static_cast<float>(arrival_tile_948.y - step_y);
++        arrival_tile_948.y = y;
++        if (VehicleCrossed(old.x, x) && VehicleCrossed(old.y, y))
+         {
+-            return (before >= 0.0f && !(after > 0.0f)) || (!(before > 0.0f) && after >= 0.0f);
+-        };
+-        // The exit branch also compares the entry offsets in the retail code.
+-        if (crossed(old_x, arrival_tile_948.x) && crossed(old_y, arrival_tile_948.y))
++            SetMovementPosition(route_5d4[0]);
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 3;
++            command.words[3] = 0;
++            command.words[4] = 0x42;
++            screen_mode_commands->QueueCommand(&command);
++        }
++        break;
++    }
++    case 0x48:
++    {
++        long double movement = FrameStep() * speed_80;
++        // Retail stores x as a float and keeps y on the x87 stack. A heading
++        // outside 0..7 reads unset stack words in retail; the tree moves nothing.
++        float step_x = 0.0f;
++        long double step_y = 0.0L;
++        switch (departure_heading_95c)
+         {
+-            if (state_3c == 0x47)
+-            {
+-                SetMovementPosition(route_5d4[0]);
+-                queue_state(0x42);
+-            }
+-            else
+-                inactive_04 = 1;
++        case 0:
++            step_x = 0.0f;
++            step_y = -movement;
++            break;
++        case 1:
++            step_x = static_cast<float>(movement * 0.5f);
++            step_y = movement * -0.5f;
++            break;
++        case 2:
++            step_x = static_cast<float>(movement);
++            step_y = 0.0f;
++            break;
++        case 3:
++            step_x = static_cast<float>(movement * 0.5f);
++            step_y = movement * 0.5f;
++            break;
++        case 4:
++            step_x = 0.0f;
++            step_y = movement;
++            break;
++        case 5:
++            step_x = static_cast<float>(movement * -0.5f);
++            step_y = movement * 0.5f;
++            break;
++        case 6:
++            step_x = static_cast<float>(-movement);
++            step_y = 0.0f;
++            break;
++        case 7:
++            step_x = static_cast<float>(movement * -0.5f);
++            step_y = movement * -0.5f;
++            break;
+         }
++        // The exit branch also compares the entry offsets in the retail code.
++        ScreenMapPosition old = arrival_tile_948;
++        departure_tile_950.x -= step_x;
++        departure_tile_950.y = static_cast<float>(departure_tile_950.y - step_y);
++        if (VehicleCrossed(old.x, arrival_tile_948.x) && VehicleCrossed(old.y, arrival_tile_948.y))
++            inactive_04 = 1;
+         break;
+     }
+     }
+     if (_stricmp(name_06, "BOAT") == 0)
+-        SelectVehicleVariant(keyline_state_44, 0);
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    ScreenPoint tile = overlay_map->WorldToTile(&position);
+-    current_grid_964 = tile;
++        keyline_state_44->SelectVariant(0);
++    ScreenPoint tile;
++    tile = overlay_map->WorldToTile(&position_30);
++    current_grid_964.x = tile.x;
++    current_grid_964.y = tile.y;
+     if (vehicle_type_f8 == 6)
+     {
+-        neighbours(true);
++        MarkNeighbours(current_grid_964, true);
+         flag_960 = 1;
+     }
+     return true;

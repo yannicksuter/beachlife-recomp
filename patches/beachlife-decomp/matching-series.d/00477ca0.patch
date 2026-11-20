@@ -1,0 +1,112 @@
+diff --git a/metadata.d/00477ca0.csv b/metadata.d/00477ca0.csv
+new file mode 100644
+index 0000000..7384ae3
+--- /dev/null
++++ b/metadata.d/00477ca0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00477ca0,function,781,?PerformAction15@WorldGuestEntity@@QAEXXZ
+diff --git a/src/match_00477ca0.cpp b/src/match_00477ca0.cpp
+new file mode 100644
+index 0000000..f27873a
+--- /dev/null
++++ b/src/match_00477ca0.cpp
+@@ -0,0 +1,77 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_screen_terrain_tile_index.h"
++#include "startup_screen_command_inlines.h"
++#include <math.h>
++
++static inline bool GuestLandFlags(unsigned int flags)
++{
++    return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
++}
++
++static inline ScreenTerrainGrid* Terrain()
++{
++    return screen_terrain_grid;
++}
++
++static inline unsigned int GridFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
++// FUNCTION: BEACHLIFE 0x00477ca0
++void WorldGuestEntity::PerformAction15()
++{
++    struct
++    {
++        float distance;
++        unsigned int index;
++    } nearest;
++    nearest.distance = 50000.0f;
++    nearest.index = 0;
++    if (weather_values_16c[19] > 0.0f)
++    {
++        unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
++        unsigned int count;
++        VariableEntity** buildings = variable_world->ByType(2, &count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (buildings[i]->FlagAt00460370())
++            {
++                VariableBuilding* definition = buildings[i]->AsBuilding()->building_60;
++                for (unsigned int j = 0; j < definition->rows_1f4; ++j)
++                {
++                    if (variable_catalog->FeatureType(definition->features_1fc[j]) == alcohol)
++                    {
++                        const ScreenPoint* building_tile = &buildings[i]->TilePosition();
++                        unsigned int x = TilePosition().x - building_tile->x;
++                        const ScreenPoint* guest_tile = &TilePosition();
++                        unsigned int y = guest_tile->y - buildings[i]->TilePosition().y;
++                        unsigned int squared = y * y + x * x;
++                        float distance = sqrt(static_cast<long double>(squared));
++                        if (distance < nearest.distance)
++                        {
++                            nearest.distance = distance;
++                            nearest.index = i;
++                        }
++                    }
++                }
++            }
++        }
++        int x = buildings[nearest.index]->TilePosition().x + rand() % 15 - 7;
++        int y = buildings[nearest.index]->TilePosition().y + rand() % 15 - 7;
++        unsigned int flags = GridFlags(Terrain(), ScreenPoint(x, y));
++        while (!(GuestLandFlags(flags) && x < 128 && x >= 0 && y < 128 && y >= 0))
++        {
++            x = buildings[nearest.index]->TilePosition().x + rand() % 15 - 7;
++            y = buildings[nearest.index]->TilePosition().y + rand() % 15 - 7;
++            flags = GridFlags(Terrain(), ScreenPoint(x, y));
++        }
++        ScreenModeCommand command(id_28, id_28, 8, static_cast<int>(Terrain()->TileOrigin(ScreenPoint(x, y)).x), static_cast<int>(Terrain()->TileOrigin(ScreenPoint(x, y)).y));
++        screen_mode_commands->QueueCommand(&command);
++    }
++    else
++    {
++        ScreenModeCommand command(id_28, id_28, 3, 0, 12);
++        screen_mode_commands->QueueCommand(&command);
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00477ca0.json b/targets/beachlife-uk-1.1.d/00477ca0.json
+new file mode 100644
+index 0000000..2bcb40f
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00477ca0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00477ca0",
++      "size": 781,
++      "name": "WorldGuestEntity::PerformAction15",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00477ca0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

@@ -1,0 +1,275 @@
+diff --git a/src/startup_screen_mode1_virtuals.cpp b/src/startup_screen_mode1_virtuals.cpp
+index c5e62f4a338e4fcab44dd6aeaf186992dbf4ea09..5edaa52f419bf566f7d9eaebef40b5e35f5a4046 100644
+--- a/src/startup_screen_mode1_virtuals.cpp
++++ b/src/startup_screen_mode1_virtuals.cpp
+@@ -142,44 +142,45 @@ unsigned char ScreenMode1Controller::HandleThreeWords(unsigned int, unsigned int
+ // FUNCTION: BEACHLIFE 0x004a98e0
+ unsigned char ScreenMode1Controller::HandleFourWords(unsigned int x, unsigned int y, unsigned int buttons, unsigned int)
+ {
+-    ScreenRequestRenderer* renderer = screen_request_renderer;
+     OverlayMapPrefix* map = overlay_map;
+     bool done = false;
+     ScreenPoint point;
+-    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / renderer->value_58);
+-    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / renderer->value_58);
++    point.x = static_cast<int>(static_cast<double>(static_cast<int>(x)) / screen_request_renderer->value_58);
++    point.y = static_cast<int>(static_cast<double>(static_cast<int>(y)) / screen_request_renderer->value_58);
+     point.x += map->scroll_x_c4;
+     point.y += map->scroll_y_c8;
+-    ScreenWorldPosition position = map->ScreenToWorld(point);
++    ScreenWorldPosition position;
++    position = map->ScreenToWorld(point);
+     tile_18 = CurrentScreenTerrain()->WorldToTile(position);
+     if (buttons == 1 && !manager->IsPointerOverScreen(1))
+     {
+-        AdjustTile(&tile_18);
+-        if (CanPlace(&tile_18)
++        ScreenPoint* tile = &tile_18;
++        AdjustTile(tile);
++        // x87: the cost is subtracted as a signed word (fisub dword), the
++        // difference compared unrounded.
++        if (CanPlace(tile)
+             && static_cast<double>(window_deactivation_state->economy_1c->value_80) - scenery_08->cost_2d0 >= 0.0)
+         {
+             ScreenModeCommand command;
+-            command.words[0] = -2;
+-            command.words[1] = -2;
+-            command.words[2] = 0;
+-            command.words[3] = 0;
+-            command.words[4] = 1;
+             ScreenSceneryPlacement placement;
+-            placement.word_4c = -2;
+-            placement.tile = tile_18;
++            command = ScreenModeCommand(-2, -2, 0, 0, 1);
+             placement.enabled = 1;
++            placement.tile = *tile;
++            placement.word_4c = -2;
+             std::strcpy(placement.name, scenery_08->name_04);
+             std::strcpy(placement.model, scenery_08->model_44);
+             placement.rotation = static_cast<unsigned char>(word_0c->word_18);
+             screen_mode_commands->QueuePlacement(&command, &placement);
+-            VariableEconomy* economy = window_deactivation_state->economy_1c;
+-            economy->value_80 = static_cast<double>(economy->value_80) - scenery_08->cost_2d0;
++            window_deactivation_state->economy_1c->value_80
++                = static_cast<float>(static_cast<double>(window_deactivation_state->economy_1c->value_80) - scenery_08->cost_2d0);
++            // x87: the unsigned cost (fild qword) is added unrounded.
+             unsigned int cost = static_cast<unsigned int>(scenery_08->cost_2d0);
+-            window_deactivation_state->spent_78c = static_cast<double>(window_deactivation_state->spent_78c) + cost;
+-            window_deactivation_state->scenery_spent_794 = static_cast<double>(window_deactivation_state->scenery_spent_794) + cost;
++            WindowDeactivationState* state = window_deactivation_state;
++            state->spent_78c = static_cast<float>(cost + static_cast<double>(state->spent_78c));
++            state->scenery_spent_794 = static_cast<float>(cost + static_cast<double>(state->scenery_spent_794));
+             window_audio_state->PlaySound("cash", 1, 0.0f);
+-            word_20 = tile_18.x;
+-            word_24 = tile_18.y;
++            word_20 = tile->x;
++            word_24 = tile->y;
+         }
+         else
+             window_audio_state->PlaySound("click_bad_01", 1, 0.0f);
+@@ -188,16 +189,7 @@ unsigned char ScreenMode1Controller::HandleFourWords(unsigned int x, unsigned in
+         done = true;
+     if (startup_input_state->IsStateOne(0x39))
+     {
+-        ScreenDialogResource* resource = word_0c;
+-        int rotation = (static_cast<int>(resource->word_18) + 1)
+-                     % resource->record->frames[resource->word_10]->plane_count_0c;
+-        if (rotation >= resource->record->frames[resource->word_10]->plane_count_0c)
+-        {
+-            rotation = resource->record->frames[resource->word_10]->plane_count_0c - 1;
+-            char message[80];
+-            std::sprintf(message, "%s %d", resource->name, rotation);
+-        }
+-        resource->word_18 = rotation;
++        word_0c->SelectVariant((static_cast<int>(word_0c->word_18) + 1) % word_0c->SelectedFrame()->plane_count_0c);
+     }
+     if (done)
+     {
+diff --git a/src/startup_screen_mode_command_operations.cpp b/src/startup_screen_mode_command_operations.cpp
+index 2b62177c843db5876f47f77fee72a4724f4fbf55..9db30a3fa2e6516caa58a6371e7831c65046a772 100644
+--- a/src/startup_screen_mode_command_operations.cpp
++++ b/src/startup_screen_mode_command_operations.cpp
+@@ -148,55 +148,34 @@ void ScreenModeCommandQueue::LoadState(GameFileReader* file)
+ // FUNCTION: BEACHLIFE 0x0042e080
+ void ScreenModeCommandQueue::Append(VariableEntity* entity, ScreenModeCommand* command, const void* placement)
+ {
+-    if (static_cast<int>(command->words[1]) != -2)
+-    {
+-        if (entity)
+-            entity->Unknown14(command);
+-        return;
+-    }
+-    if (command->words[2] != 0x53)
+-    {
+-        window_deactivation_state->DispatchCommand(command, placement);
+-        return;
+-    }
+-    ScreenModeCommand copy = *command;
++    // Retail returns a byte no caller reads (the dispatch result, else the
++    // last FindNamed count or an unset value); retail expands QueueCommand
++    // (0x0042de60) in the three broadcast copies.
+     unsigned int count;
+-    VariableEntity** found = variable_world->FindNamed("WHARF", &count);
+-    copy.words[1] = (*found)->id_28;
+-    if (count == 0)
++    VariableEntity* found;
++    if (static_cast<int>(command->words[1]) == -2)
+     {
+-        found = variable_world->FindNamed("BUSSTOP", &count);
+-        copy.words[1] = (*found)->id_28;
+-    }
+-    {
+-        if (window_deactivation_state->deactivation_requested && static_cast<int>(copy.words[0]) != -3)
+-        {
+-            float time = static_cast<float>(static_cast<long double>(window_deactivation_state->clock_158) + 0.0001f);
+-            memcpy(&copy.words[7], &time, sizeof(time));
+-            screen_mode_commands->Insert({ screen_mode_commands->head }, copy);
+-        }
+-        else
++        if (command->words[2] == 0x53)
+         {
+-            memcpy(&copy.words[7], &window_deactivation_state->clock_158, sizeof(float));
+-            VariableEntity* target = variable_world->FindObject(copy.words[1]);
+-            screen_mode_commands->Append(target, &copy, 0);
+-        }
+-    }
+-    found = variable_world->FindNamed("COMPLAINTHUT", &count);
+-    copy.words[1] = (*found)->id_28;
+-    if (count != 0)
+-    {
+-        if (window_deactivation_state->deactivation_requested && static_cast<int>(copy.words[0]) != -3)
+-        {
+-            float time = static_cast<float>(static_cast<long double>(window_deactivation_state->clock_158) + 0.0001f);
+-            memcpy(&copy.words[7], &time, sizeof(time));
+-            screen_mode_commands->Insert({ screen_mode_commands->head }, copy);
++            ScreenModeCommand copy = *command;
++            found = *variable_world->FindNamed("WHARF", &count);
++            copy.words[1] = found->id_28;
++            if (count != 0)
++                screen_mode_commands->QueueCommand(&copy);
++            else
++            {
++                found = *variable_world->FindNamed("BUSSTOP", &count);
++                copy.words[1] = found->id_28;
++                screen_mode_commands->QueueCommand(&copy);
++            }
++            found = *variable_world->FindNamed("COMPLAINTHUT", &count);
++            copy.words[1] = found->id_28;
++            if (count != 0)
++                screen_mode_commands->QueueCommand(&copy);
+         }
+         else
+-        {
+-            memcpy(&copy.words[7], &window_deactivation_state->clock_158, sizeof(float));
+-            VariableEntity* target = variable_world->FindObject(copy.words[1]);
+-            screen_mode_commands->Append(target, &copy, 0);
+-        }
++            window_deactivation_state->DispatchCommand(command, placement);
+     }
++    else if (entity != 0)
++        entity->Unknown14(command);
+ }
+diff --git a/src/startup_terrain_rectangle.cpp b/src/startup_terrain_rectangle.cpp
+index d7e6e5e461bad2292a8e51ac95af83aab8f4391a..a2cc4f253cd30c4c8ae629fd6f56eaf14f7dd1ec 100644
+--- a/src/startup_terrain_rectangle.cpp
++++ b/src/startup_terrain_rectangle.cpp
+@@ -1,55 +1,63 @@
+ #include "startup_screen_mode_world.h"
+ #include "startup_screen_overlay_layout.h"
+ 
++static ScreenWorldPosition CenterOfTile(ScreenTerrainGrid* grid, const ScreenPoint& tile)
++{
++    ScreenWorldPosition position = grid->TileOrigin(tile);
++    position.y += static_cast<unsigned int>(grid->tile_size_00) >> 1;
++    return position;
++}
++
+ // FUNCTION: BEACHLIFE 0x004453b0
+-void ScreenTerrainGrid::RectangleTiles(const ScreenRectangle* rectangle,
+-    int* left, int* top, int* width, int* height)
++void ScreenTerrainGrid::RectangleTiles(const ScreenRectangle* rectangle, int* left, int* top, int* width, int* height)
+ {
+-    ScreenPoint corner = { rectangle->left, rectangle->top };
+-    ScreenWorldPosition first_world = overlay_map->ScreenToWorld(corner);
+-    corner.x = rectangle->right;
+-    corner.y = rectangle->bottom;
+-    ScreenWorldPosition last_world = overlay_map->ScreenToWorld(corner);
++    ScreenWorldPosition first_world = overlay_map->ScreenToWorld(ScreenPoint(rectangle->left, rectangle->top));
++    ScreenWorldPosition last_world = overlay_map->ScreenToWorld(ScreenPoint(rectangle->right, rectangle->bottom));
+     ScreenPoint first = WorldToTile(first_world);
+     ScreenPoint last = WorldToTile(last_world);
+-    first_world = TileOrigin(first);
+-    first_world.y += static_cast<unsigned int>(tile_size_00) >> 1;
+-    last_world = TileOrigin(last);
+-    last_world.y += static_cast<unsigned int>(tile_size_00) >> 1;
+-    overlay_map->WorldToScreen(first_world);
+-    ScreenPoint projected = overlay_map->WorldToScreen(last_world);
++    ScreenWorldPosition first_origin = CenterOfTile(this, first);
++    ScreenWorldPosition last_origin = CenterOfTile(this, last);
++    overlay_map->WorldToScreen(first_origin);
++    ScreenPoint projected;
++    projected = overlay_map->WorldToScreen(last_origin);
+     projected.x += overlay_map->scroll_x_c4;
+     projected.y += overlay_map->scroll_y_c8;
++    bool below_top = projected.y > rectangle->top;
++    bool above_bottom = projected.y < rectangle->bottom;
++    bool left_of_right = projected.x < rectangle->right;
+     if (projected.x > rectangle->left)
+         --first.x;
+-    if (projected.y > rectangle->top && (first.x & 1))
++    if (below_top && (first.x & 1))
+         --first.y;
+-    if (projected.x < rectangle->right)
++    int first_y = first.y;
++    if (left_of_right)
+         ++last.x;
+-    if (projected.y < rectangle->bottom)
+-        ++last.y;
+-    if (first.x > last.x)
+-        last.x = 128;
+-    if (first.y > last.y)
+-        last.y = 128;
++    int last_x = last.x;
++    int last_y = last.y;
++    if (above_bottom)
++        ++last_y;
++    if (first.x > last_x)
++        last_x = 128;
++    if (first_y > last_y)
++        last_y = 128;
+     if (first.x < 0)
+         first.x = 0;
+     else if (first.x > 128)
+         first.x = 128;
+-    if (first.y < 0)
+-        first.y = 0;
+-    else if (first.y > 128)
+-        first.y = 128;
+-    if (last.x < 0)
+-        last.x = 0;
+-    else if (last.x > 128)
+-        last.x = 128;
+-    if (last.y < 0)
+-        last.y = 0;
+-    else if (last.y > 128)
+-        last.y = 128;
++    if (first_y < 0)
++        first_y = 0;
++    else if (first_y > 128)
++        first_y = 128;
++    if (last_x < 0)
++        last_x = 0;
++    else if (last_x > 128)
++        last_x = 128;
++    if (last_y < 0)
++        last_y = 0;
++    else if (last_y > 128)
++        last_y = 128;
+     *left = first.x;
+-    *top = first.y;
+-    *width = last.x - first.x + 1;
+-    *height = last.y - first.y + 1;
++    *top = first_y;
++    *width = last_x - first.x + 1;
++    *height = last_y - first_y + 1;
+ }

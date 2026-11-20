@@ -1,0 +1,522 @@
+diff --git a/src/startup_world_cleaner_actions.cpp b/src/startup_world_cleaner_actions.cpp
+index d19eccf328929b5662f2bc19664a6b38dcdccdf0..f3c8d4ce3ce1880a025f5747ac3388a05f948d86 100644
+--- a/src/startup_world_cleaner_actions.cpp
++++ b/src/startup_world_cleaner_actions.cpp
+@@ -7,21 +7,45 @@
+ extern const char* world_cleaner_dialog_name;
+ void FindCleanerBinPosition(unsigned int id, WorldCleanerEntity* cleaner, ScreenWorldPosition* position); // 0x00466d60.
+ 
++static void RemoveLitter(VariableEntity* entity)
++{
++    ScreenModeCommand command(entity->id_28, entity->id_28, 3, 0, 3);
++    screen_mode_commands->QueueCommand(&command);
++    entity->AsStatic()->SetCleaningAssigned(0);
++    entity->SetCleaningRequested(0);
++    entity->inactive_04 = 1;
++}
++
++static void MatchVariant(VariableEntity* self, VariableEntity* other)
++{
++    self->keyline_state_44->SelectVariant(other->keyline_state_44->word_18);
++}
++
++static unsigned int TakeFeedback(WorldCleanerEntity* cleaner)
++{
++    cleaner->current_feedback_7a4 = cleaner->required_feedback_7a0;
++    cleaner->required_feedback_7a0 = 0;
++    return cleaner->current_feedback_7a4;
++}
++
++static int Clamp(int value, int low, int high)
++{
++    if (value < low)
++        return low;
++    if (value > high)
++        return high;
++    return value;
++}
++
+ // FUNCTION: BEACHLIFE 0x004659e0
+ void WorldCleanerEntity::Unknown34(unsigned int value)
+ {
+     switch (value)
+     {
+-    case 0x0b:
+-        visible_40 = 0;
+-        return;
+-    case 0x0c:
+-        visible_40 = 1;
+-        return;
+     case 0x6e:
+     {
+         unsigned int kind = 0;
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
++        ScreenWorldPosition position = Position();
+         word_98 = window_deactivation_state->cleaning_2c->FindUrgentTask(&position, &kind, clean_bins_781, clean_litter_780, clean_toilets_77f);
+         if (word_98 != static_cast<unsigned int>(-1))
+         {
+@@ -32,19 +56,27 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+     }
+     case 0x7d:
+     {
+-        litter_found_77c = bin_found_77e = toilet_found_77d = 0;
++        litter_found_77c = 0;
++        bin_found_77e = 0;
++        toilet_found_77d = 0;
+         unsigned int kind = 0;
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
++        ScreenWorldPosition position = Position();
+         word_98 = window_deactivation_state->cleaning_2c->FindTask(&position, &kind, clean_bins_781, clean_litter_780, clean_toilets_77f);
+         if (word_98 != static_cast<unsigned int>(-1))
+         {
+             time_784 = window_deactivation_state->render_value_160;
+-            if (kind == 0)
+-                litter_found_77c = 1;
+-            else if (kind == 1)
+-                bin_found_77e = 1;
+-            else if (kind == 2)
++            switch (kind)
++            {
++            case 2:
+                 toilet_found_77d = 1;
++                break;
++            case 1:
++                bin_found_77e = 1;
++                break;
++            case 0:
++                litter_found_77c = 1;
++                break;
++            }
+         }
+         return;
+     }
+@@ -54,11 +86,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         VariableEntity* entity = variable_world->FindObject(word_98);
+         if (entity)
+         {
+-            ScreenModeCommand command(entity->id_28, entity->id_28, 3, 0, 3);
+-            screen_mode_commands->QueueCommand(&command);
+-            entity->AsStatic()->SetCleaningAssigned(0);
+-            entity->SetCleaningRequested(0);
+-            entity->inactive_04 = 1;
++            RemoveLitter(entity);
+         }
+         ++litter_today_794;
+         AddThought(0x40);
+@@ -68,7 +96,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         FindCleanerBinPosition(word_98, this, &bin_position_7b0);
+         return;
+     case 0x71:
+-        keyline_state_44->SelectVariant(variable_world->FindObject(word_98)->keyline_state_44->word_18);
++        MatchVariant(this, variable_world->FindObject(word_98));
+         return;
+     case 0x72:
+     {
+@@ -86,8 +114,8 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+     {
+         unsigned int target = word_98;
+         WorldBuildingEntity* entity = variable_world->FindObject(target)->AsBuilding();
+-        ++entity->word_360;
+         entity->word_354 = 0;
++        ++entity->word_360;
+         if (static_cast<int>(entity->word_360) > 2)
+         {
+             busy_toilet_798 = target;
+@@ -105,39 +133,19 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+     case 0x74:
+         time_784 = window_deactivation_state->render_value_160;
+         return;
++    case 0x0b:
++        visible_40 = 0;
++        return;
++    case 0x0c:
++        visible_40 = 1;
++        return;
+     case 0x75:
+     {
+         VariableEntity* entity = variable_world->FindObject(word_98);
+         if (entity)
+-            keyline_state_44->FacePositions(entity->Position(), { position_30.x, position_30.y, position_30.z });
++            keyline_state_44->FacePositions(entity->Position(), Position());
+         return;
+     }
+-    case 0x77:
+-        window_deactivation_state->cleaning_2c->ReleaseAssignment(word_98);
+-        return;
+-    case 0x78:
+-        window_deactivation_state->cleaning_2c->MarkRequest(word_98);
+-        return;
+-    case 0x7b:
+-        AddThought(0x20000000);
+-        return;
+-    case 0x7c:
+-    {
+-        int duration = static_cast<int>(variable_world->FindObject(word_98)->AsBuilding()->word_354) / 2;
+-        if (duration < 2)
+-            duration = 2;
+-        else if (duration > 15)
+-            duration = 15;
+-        ScreenModeCommand command(id_28, id_28, 0x39, 0, 0);
+-        command.words[5] = 0x73;
+-        command.words[6] = 0;
+-        screen_mode_commands->QueueDelayed(&command, static_cast<float>(duration));
+-        return;
+-    }
+-    case 0xad:
+-        feedback_status_79c &= ~4u;
+-        required_feedback_7a0 = 0;
+-        break;
+     case 0xae:
+         inactive_04 = 1;
+         return;
+@@ -145,8 +153,7 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         screen_manager->SetNamedItemFlag("CleanerIcon", 1);
+         return;
+     case 0xb0:
+-        current_feedback_7a4 = required_feedback_7a0;
+-        required_feedback_7a0 = 0;
++        TakeFeedback(this);
+         Unknown50(1, 1);
+         screen_manager->ApplyScreenWord(world_cleaner_dialog_name, 2);
+         AddThought(current_feedback_7a4);
+@@ -154,15 +161,35 @@ void WorldCleanerEntity::Unknown34(unsigned int value)
+         return;
+     case 0xb1:
+     {
+-        current_feedback_7a4 = required_feedback_7a0;
+-        required_feedback_7a0 = 0;
+-        const char* text = Notification(current_feedback_7a4);
++        const char* text = Notification(TakeFeedback(this));
+         if (text)
+             window_deactivation_state->ticker_30->AddMessage(text, id_28, 0xc);
+         AddThought(current_feedback_7a4);
+         screen_manager->SetNamedItemFlag("CleanerIcon", 0);
+         return;
+     }
++    case 0x77:
++        window_deactivation_state->cleaning_2c->ReleaseAssignment(word_98);
++        return;
++    case 0x78:
++        window_deactivation_state->cleaning_2c->MarkRequest(word_98);
++        return;
++    case 0x7c:
++    {
++        int duration = static_cast<int>(variable_world->FindObject(word_98)->AsBuilding()->word_354) / 2;
++        duration = Clamp(duration, 2, 15);
++        ScreenModeCommand command(id_28, id_28, 0x39, 0, 0, 0.0f, 0x73);
++        screen_mode_commands->QueueDelayed(&command, static_cast<float>(duration));
++        return;
++    }
++    case 0x7b:
++        AddThought(0x20000000);
++        return;
++    case 0xad:
++        required_feedback_7a0 = 0;
++        feedback_status_79c &= ~4u;
++        WorldStaffEntity::Unknown34(value);
++        return;
+     }
+     WorldStaffEntity::Unknown34(value);
+ }
+diff --git a/src/startup_world_guest_route_actions.cpp b/src/startup_world_guest_route_actions.cpp
+index 502d112bfeef6992d2060d860c95d4a333934a30..506ddc7dbd9c6447165275dcd6d464a19fce4dd9 100644
+--- a/src/startup_world_guest_route_actions.cpp
++++ b/src/startup_world_guest_route_actions.cpp
+@@ -1,17 +1,30 @@
+ #include "startup_world_guest_action_helpers.h"
+ #include <cmath>
++#include <cstring>
++
++static unsigned int CellFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
+ 
+ // FUNCTION: BEACHLIFE 0x00475e80
+ void WorldGuestEntity::PerformAction38()
+ {
+-    unsigned char blocked[8] = { };
+-    ScreenPoint points[8];
+     bool found = false;
+-    for (ScreenPoint& point : points)
+-        point = TilePosition();
+-    for (;;)
++    unsigned char blocked[8];
++    ScreenPoint points[8];
++    ScreenPoint* cursor = points;
++    std::memset(blocked, 0, sizeof(blocked));
++    for (int k = 0; k < 8; ++k)
+     {
+-        bool stepped = false;
++        ScreenPoint tile;
++        tile = TilePosition();
++        *cursor++ = tile;
++    }
++    bool stepped;
++    do
++    {
++        stepped = false;
+         for (int i = 0; i < 8; ++i)
+         {
+             if (blocked[i])
+@@ -24,16 +37,21 @@ void WorldGuestEntity::PerformAction38()
+             }
+             stepped = true;
+             screen_terrain_grid->Step(previous, i, &points[i]);
+-            ScreenPoint point = points[i];
+-            unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(point.x, point.y)].flags_48;
+-            if (flags & 0x8030)
++            if (CellFlags(screen_terrain_grid, points[i]) & 0x8030)
+                 blocked[i] = 1;
+-            if (flags & 0x100)
++            ScreenPoint point = points[i];
++            if (CellFlags(screen_terrain_grid, point) & 0x100)
+             {
+                 found = true;
+-                int y = static_cast<int>(screen_terrain_grid->TileCenter(previous).y);
+-                int x = static_cast<int>(screen_terrain_grid->TileCenter(previous).x);
+-                ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 11, x, y);
++                ScreenTerrainGrid* terrain = screen_terrain_grid;
++                int y = static_cast<int>(terrain->TileCenter(previous).y);
++                int x = static_cast<int>(terrain->TileCenter(previous).x);
++                ScreenModeCommand command;
++                command.words[0] = id_28;
++                command.words[1] = id_28;
++                command.words[2] = 11;
++                command.words[3] = x;
++                command.words[4] = y;
+                 screen_mode_commands->QueueCommand(&command);
+                 // Retail resumes at direction five after finding a shore tile.
+                 i = 4;
+@@ -41,12 +59,17 @@ void WorldGuestEntity::PerformAction38()
+         }
+         if (!stepped)
+         {
+-            SendGuestWalk(id_28, 11, *FindLandWalkpoints({ position_30.x, position_30.y, position_30.z }));
++            ScreenWorldPosition walkpoint = *FindLandWalkpoints(position_30);
++            ScreenModeCommand command;
++            command.words[0] = id_28;
++            command.words[1] = id_28;
++            command.words[2] = 11;
++            command.words[3] = static_cast<int>(walkpoint.x);
++            command.words[4] = static_cast<int>(walkpoint.y);
++            screen_mode_commands->QueueCommand(&command);
+             return;
+         }
+-        if (found)
+-            return;
+-    }
++    } while (!found);
+ }
+ 
+ // x87: the candidate's offset is stored as floats before the sum, which runs
+diff --git a/src/startup_world_guest_scenery_actions.cpp b/src/startup_world_guest_scenery_actions.cpp
+index f7f1b223990222d5ef5280895de3e4435b580c77..98a7ba4d92ad85f4ebbd858439521aca472a0cca 100644
+--- a/src/startup_world_guest_scenery_actions.cpp
++++ b/src/startup_world_guest_scenery_actions.cpp
+@@ -10,37 +10,57 @@ static long double GuestSceneryDistance(WorldGuestEntity* guest, VariableEntity*
+     return std::sqrt(static_cast<long double>(squared));
+ }
+ 
++// Retail keeps the x offset unrounded on the x87 stack and stores the y offset
++// as a float before squaring both (0x00479853..0x00479885).
++static long double Distance(long double x, float y)
++{
++    long double squared = y;
++    x *= x;
++    squared *= squared;
++    return std::sqrt(x + squared);
++}
++
+ // FUNCTION: BEACHLIFE 0x004797f0
+ void WorldGuestEntity::PerformAction26()
+ {
+     unsigned int count;
+-    VariableEntity** bins = variable_world->FindNamed("Bin", &count);
+     float nearest = 160.0f;
+-    unsigned int selected = count;
+-    for (unsigned int i = 0; i < count; ++i)
++    VariableEntity** bins = variable_world->FindNamed("Bin", &count);
++    if (count)
+     {
+-        WorldSceneryEntity* bin = static_cast<WorldSceneryEntity*>(bins[i]);
+-        if (bin->byte_a0 || bin->scenery_f4->capacity_2dc <= bin->word_90)
+-            continue;
+-        long double x = static_cast<long double>(position_30.x) - bin->position_30.x;
+-        float y = static_cast<float>(static_cast<long double>(position_30.y) - bin->position_30.y);
+-        long double distance = std::sqrt(x * x + static_cast<long double>(y) * y);
+-        if (!(distance >= nearest))
++        unsigned int selected = count;
++        for (unsigned int i = 0; i < count; ++i)
+         {
+-            nearest = static_cast<float>(distance);
+-            selected = i;
++            WorldSceneryEntity* bin = static_cast<WorldSceneryEntity*>(bins[i]);
++            if (bin->byte_a0 || bin->scenery_f4->capacity_2dc <= bin->word_90)
++                continue;
++            long double x = static_cast<long double>(position_30.x) - bin->position_30.x;
++            float y = static_cast<float>(static_cast<long double>(position_30.y) - bin->position_30.y);
++            if (!(Distance(x, y) >= nearest))
++            {
++                nearest = static_cast<float>(Distance(x, y));
++                selected = i;
++            }
+         }
+-    }
+-    if (selected < count)
+-    {
+-        WorldSceneryEntity* bin = static_cast<WorldSceneryEntity*>(bins[selected]);
+-        if (bin->scenery_f4->capacity_2dc > bin->word_90
+-            && !(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f >= guest_f4->value_1ec))
++        if (selected < count)
+         {
+-            word_32c = bin->id_28;
+-            SendGuestWalk(id_28, 5, bin->Position());
+-            lightning_state_318 = 2;
+-            return;
++            if (static_cast<WorldSceneryEntity*>(bins[selected])->scenery_f4->capacity_2dc > static_cast<WorldSceneryEntity*>(bins[selected])->word_90
++                && !(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f >= guest_f4->value_1ec))
++            {
++                ScreenMapPosition position;
++                position.y = bins[selected]->position_30.y;
++                position.x = bins[selected]->position_30.x;
++                ScreenModeCommand command;
++                command.words[0] = id_28;
++                command.words[1] = id_28;
++                command.words[2] = 5;
++                command.words[3] = static_cast<int>(position.x);
++                command.words[4] = static_cast<int>(position.y);
++                word_32c = bins[selected]->id_28;
++                screen_mode_commands->QueueCommand(&command);
++                lightning_state_318 = 2;
++                return;
++            }
+         }
+     }
+     lightning_state_318 = 1;
+diff --git a/src/startup_world_object_draw.cpp b/src/startup_world_object_draw.cpp
+index cb708b4c3afbb32be1e306f6827912126f982119..f7b4eb0d6e3fe1d79e59effc9a6f534e7d6d7bc6 100644
+--- a/src/startup_world_object_draw.cpp
++++ b/src/startup_world_object_draw.cpp
+@@ -3,71 +3,92 @@
+ #include "window_activation.h"
+ #include <cstring>
+ 
++char object_jacuzzi_bubble_name[] = "Jacuzzi_bubble";
++char object_shower_water_name[] = "Beach_shower_water";
++
++// Retail adds the integer offsets in x87 precision (fild; fadd) before storing.
++static void Offset(ScreenWorldPosition& position, const ScreenWorldPosition& origin, int x, int y)
++{
++    position.x = static_cast<float>(static_cast<double>(origin.x) + x);
++    position.y = static_cast<float>(static_cast<double>(origin.y) + y);
++    position.z = origin.z;
++}
++
+ // FUNCTION: BEACHLIFE 0x00491aa0
+ void WorldObjectEntity::Unknown3c()
+ {
+     float time = window_deactivation_state->time_158;
+-    int x, y;
+-    unsigned short depth;
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-    if (std::strcmp(definition_60->resource_c4, "NONE") != 0)
+-        keyline_state_44->WorldCoordinates(&position, time, &x, &y, &depth);
+-    if (std::strcmp(definition_60->resource_c4, "NONE") != 0)
++    int x;
++    int y;
++    // Only the table sprite sets the depth; every retail object with a waiter
++    // has one (BuildingList.ble), so the zero is never drawn with retail data.
++    unsigned short depth = 0;
++    if (std::strcmp(definition_60->resource_c4, screen_dialog_none_name) != 0)
++        keyline_state_44->WorldCoordinates(&position_30, time, &x, &y, &depth);
++    if (std::strcmp(definition_60->resource_c4, screen_dialog_none_name) != 0)
+     {
+-        position = { position_30.x, position_30.y, position_30.z };
+-        if (std::strcmp(definition_60->resource_c4, "Jacuzzi_bubble") == 0)
++        if (std::strcmp(definition_60->resource_c4, object_jacuzzi_bubble_name) == 0)
+         {
+-            VariableEntity* owner = variable_world->FindObject(owner_94);
+-            position = { owner->position_30.x, owner->position_30.y, owner->position_30.z };
++            ScreenWorldPosition position = variable_world->FindObject(owner_94)->position_30;
++            Offset(position, position, definition_60->draw_offset_x_41c, definition_60->draw_offset_y_420);
++            keyline_state_44->DrawWorld(&position, time);
++        }
++        else
++        {
++            ScreenWorldPosition position;
++            Offset(position, position_30, definition_60->draw_offset_x_41c, definition_60->draw_offset_y_420);
++            keyline_state_44->DrawWorld(&position, time);
+         }
+-        position.x = static_cast<float>(static_cast<double>(position.x) + definition_60->draw_offset_x_41c);
+-        position.y = static_cast<float>(static_cast<double>(position.y) + definition_60->draw_offset_y_420);
+-        keyline_state_44->DrawWorld(&position, time);
+     }
+     if (flag_98)
+         return;
+     if (definition_60->flag_3f8 && flag_74)
+     {
+         VariableEntity* waiter = variable_world->FindObject(contained_id_84);
+-        position = { waiter->position_30.x, waiter->position_30.y, waiter->position_30.z };
+         unsigned short waiter_depth;
++        ScreenWorldPosition position = waiter->position_30;
+         waiter->keyline_state_44->WorldCoordinates(&position, time, &x, &y, &waiter_depth);
+         waiter->keyline_state_44->Draw(x, y, depth + 0x80, time);
+     }
+-    for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++    for (unsigned int i = 0; i < definition_60->frame_count_3d0; i++)
+     {
+         if (resources_6c)
+         {
+-            position = { position_30.x, position_30.y, position_30.z };
+-            if (std::strcmp(resources_6c[i]->name, "Beach_shower_water") == 0)
++            if (std::strcmp(resources_6c[i]->name, object_shower_water_name) == 0)
++            {
++                ScreenWorldPosition position = variable_world->FindObject(owner_94)->position_30;
++                resources_6c[i]->DrawWorld(&position, time);
++            }
++            else
+             {
+-                VariableEntity* owner = variable_world->FindObject(owner_94);
+-                position = { owner->position_30.x, owner->position_30.y, owner->position_30.z };
++                ScreenWorldPosition position = position_30;
++                resources_6c[i]->DrawWorld(&position, time);
+             }
+-            resources_6c[i]->DrawWorld(&position, time);
+         }
+         if (definition_60->flag_3f8 && flags_78[i])
+         {
+-            position = { position_30.x, position_30.y, position_30.z };
++            ScreenWorldPosition position = position_30;
+             resources_70[i]->DrawWorld(&position, time);
+         }
+         if (slots_8c[i].id_04 != -1 && slots_8c[i].flag_08)
+         {
+             WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(variable_world->FindObject(slots_8c[i].id_04));
+-            position = { guest->position_30.x, guest->position_30.y, guest->position_30.z };
+-            if (std::strcmp(definition_60->resource_c4, "NONE") != 0)
++            // Retail evaluates the call arguments right to left.
++            if (std::strcmp(definition_60->resource_c4, screen_dialog_none_name) != 0)
+             {
+                 unsigned short guest_depth;
++                ScreenWorldPosition position = guest->position_30;
+                 guest->keyline_state_44->WorldCoordinates(&position, time, &x, &y, &guest_depth);
+-                float illness = guest->IllnessTint();
+-                float tint = guest->GuestFade();
+-                guest->keyline_state_44->DrawValues(x, y, depth, time, tint, illness);
++                float second = guest->GuestValue467d70();
++                float first = guest->GuestFade();
++                guest->keyline_state_44->DrawValues(x, y, depth, time, first, second);
+             }
+             else
+             {
+-                float illness = guest->IllnessTint();
+-                float tint = guest->GuestFade();
+-                guest->keyline_state_44->DrawWorldModified(&position, time, tint, illness);
++                ScreenWorldPosition position = guest->position_30;
++                float second = guest->GuestValue467d70();
++                float first = guest->GuestFade();
++                guest->keyline_state_44->DrawWorldModified(&position, time, first, second);
+             }
+         }
+     }

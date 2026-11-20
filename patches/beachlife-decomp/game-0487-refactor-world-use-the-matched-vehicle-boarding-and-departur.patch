@@ -1,0 +1,524 @@
+diff --git a/src/startup_world_vehicle_enter.cpp b/src/startup_world_vehicle_enter.cpp
+index 60b534fa68964c0de201f4a9b7e81164eade5776..7029a124982bba10f1abe134b5da8e7b5195fb04 100644
+--- a/src/startup_world_vehicle_enter.cpp
++++ b/src/startup_world_vehicle_enter.cpp
+@@ -21,88 +21,82 @@ const char* vehicle_fall_animation = "d_jetski_fall_off";
+ // GLOBAL: BEACHLIFE 0x0057c3e8
+ const char* vehicle_passenger_fall_animation = "d_jetski_fall_off";
+ 
++// The circuit is a script entry table; its words hold the tile coordinates.
++static ScreenPoint CircuitTile(void* circuit, int index)
++{
++    WindowDeactivationState::ScriptEntry* entries = static_cast<WindowDeactivationState::ScriptEntry*>(circuit);
++    return ScreenPoint(static_cast<int>(entries[index].first), static_cast<int>(entries[index].second));
++}
++
++// Retail subtracts and squares in x87 precision and takes the table square root
++// of the float sum.
++static float MapDistance(const ScreenMapPosition& from, const ScreenMapPosition& to)
++{
++    long double x = static_cast<long double>(to.x) - from.x;
++    long double y = static_cast<long double>(to.y) - from.y;
++    return VehicleSquareRoot(static_cast<float>(x * x + y * y));
++}
++
++static void FlagVehicleCell(ScreenTerrainCell* cell, bool set)
++{
++    if (set)
++        cell->flags_48 |= 0x10;
++    else
++        cell->flags_48 &= ~0x10u;
++}
++
++static void SetNeighbourFlags(WorldVehicleEntity* entity)
++{
++    ScreenTerrainCell* cells[8];
++    screen_terrain_grid->Neighbours(entity->current_grid_964, cells);
++    for (int i = 0; i < 8; ++i)
++        cells[i]->flags_48 |= 0x10;
++}
++
++static void ClearNeighbourFlags(WorldVehicleEntity* entity)
++{
++    ScreenTerrainCell* cells[8];
++    screen_terrain_grid->Neighbours(entity->current_grid_964, cells);
++    for (int i = 0; i < 8; ++i)
++        cells[i]->flags_48 &= ~0x10u;
++}
++
++static void VehicleEnter_footprint(WorldVehicleEntity* entity, ScreenPoint tile, int heading, bool set)
++{
++    ScreenTerrainCell* cells[8];
++    screen_terrain_grid->Neighbours(tile, cells);
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    ScreenTerrainCell* center = &grid->cells_0c[grid->TileIndex(tile.x, tile.y)];
++    FlagVehicleCell(center, set);
++    switch (heading)
++    {
++    case 1:
++    case 5:
++        FlagVehicleCell(cells[0], set);
++        FlagVehicleCell(cells[4], set);
++        break;
++    case 3:
++    case 7:
++        FlagVehicleCell(cells[2], set);
++        FlagVehicleCell(cells[6], set);
++        break;
++    }
++}
++
++static void VehicleEnter_sound(WorldVehicleEntity* entity, const char* name)
++{
++    WindowAudioVector point = { entity->position_30.x, entity->position_30.y, 0.0f };
++    window_audio_state->PlaySoundAtPosition(name, 1.0f, &point, 1, -1);
++}
++
++static const float vehicle_jetski_volume = 1.0f;
++static const float vehicle_speedboat_volume = 1.0f;
++static const float vehicle_door_volume = 1.0f;
++
+ // FUNCTION: BEACHLIFE 0x00497a40
+ bool WorldVehicleEntity::Unknown08(unsigned int state)
+ {
+-    auto message = [&](unsigned int to, unsigned int code, unsigned int kind, unsigned int data)
+-    {
+-        ScreenModeCommand command;
+-        command.words[0] = id_28;
+-        command.words[1] = to;
+-        command.words[2] = code;
+-        command.words[3] = kind;
+-        command.words[4] = data;
+-        return command;
+-    };
+-    auto queue_state = [&](unsigned int next)
+-    {
+-        ScreenModeCommand command = message(id_28, 3, 0, next);
+-        screen_mode_commands->QueueCommand(&command);
+-    };
+-    auto go = [&](unsigned int code, ScreenWorldPosition point)
+-    {
+-        ScreenModeCommand command = message(id_28, code, static_cast<int>(point.x), static_cast<int>(point.y));
+-        screen_mode_commands->QueueCommand(&command);
+-    };
+-    auto neighbours = [&](bool set)
+-    {
+-        ScreenTerrainCell* cells[8];
+-        screen_terrain_grid->Neighbours(current_grid_964, cells);
+-        for (int i = 0; i < 8; ++i)
+-            if (set)
+-                cells[i]->flags_48 |= 0x10;
+-            else
+-                cells[i]->flags_48 &= ~0x10u;
+-    };
+-    auto footprint = [&](ScreenPoint tile, int heading, bool set)
+-    {
+-        ScreenTerrainCell* cells[8];
+-        screen_terrain_grid->Neighbours(tile, cells);
+-        ScreenTerrainGrid* grid = screen_terrain_grid;
+-        ScreenTerrainCell* center = &grid->cells_0c[grid->TileIndex(tile.x, tile.y)];
+-        auto flag = [&](ScreenTerrainCell* cell)
+-        {
+-            if (set)
+-                cell->flags_48 |= 0x10;
+-            else
+-                cell->flags_48 &= ~0x10u;
+-        };
+-        flag(center);
+-        if (heading == 1 || heading == 5)
+-        {
+-            flag(cells[0]);
+-            flag(cells[4]);
+-        }
+-        else if (heading == 3 || heading == 7)
+-        {
+-            flag(cells[2]);
+-            flag(cells[6]);
+-        }
+-    };
+-    auto unload_tile = [&]
+-    {
+-        ScreenWorldPosition point = { route_5d4[vehicle_variant_5cd].x, route_5d4[vehicle_variant_5cd].y, 0.0f };
+-        return CurrentScreenTerrain()->WorldToTile(point);
+-    };
+-    auto route_position = [&]
+-    {
+-        ScreenWorldPosition point = route_b8 ? VehicleRoutePosition(route_b8) : route_5d4[vehicle_variant_5cd];
+-        roam_point_8e8.x = point.x;
+-        roam_point_8e8.y = point.y;
+-        roam_point_8e8.z = point.z;
+-        return point;
+-    };
+-    auto circuit_point = [&](int index)
+-    {
+-        auto* entries = static_cast<WindowDeactivationState::ScriptEntry*>(circuit_920);
+-        return screen_terrain_grid->TileWorldPosition(
+-            ScreenPoint(static_cast<int>(entries[index].first), static_cast<int>(entries[index].second)));
+-    };
+-    auto sound = [&](const char* name)
+-    {
+-        WindowAudioVector point = { position_30.x, position_30.y, 0.0f };
+-        window_audio_state->PlaySoundAtPosition(name, 1.0f, &point, 1, -1);
+-    };
++    ScreenModeCommand command(0, 0, 0, 0, 0);
+     switch (state)
+     {
+     case 1:
+@@ -114,161 +108,206 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+             for (int i = 0; i < static_cast<int>(words_904[3]); ++i)
+             {
+                 ScreenTerrainGrid* grid = screen_terrain_grid;
+-                ScreenPoint tile = TilePosition();
+-                ScreenMapPosition first = grid->TileWorldPosition(tile);
+-                ScreenMapPosition second = circuit_point(i);
+-                long double x = static_cast<long double>(second.x) - first.x;
+-                long double y = static_cast<long double>(second.y) - first.y;
+-                float distance = VehicleSquareRoot(static_cast<float>(x * x + y * y));
++                ScreenMapPosition first = grid->TileWorldPosition(TilePosition());
++                ScreenMapPosition second = screen_terrain_grid->TileWorldPosition(CircuitTile(circuit_920, i));
++                float distance = MapDistance(first, second);
+                 if (!(distance >= nearest))
+                 {
+                     nearest = distance;
+                     words_904[4] = i;
+                 }
+             }
+-            words_904[5] = words_904[4] - 1;
+             vehicle_variant_5cd = 0;
+-            route_5d4[vehicle_variant_5cd].x = circuit_point(words_904[5]).x;
+-            route_5d4[vehicle_variant_5cd].y = circuit_point(words_904[5]).y;
++            words_904[5] = words_904[4] - 1;
++            route_5d4[vehicle_variant_5cd].x = screen_terrain_grid->TileWorldPosition(CircuitTile(circuit_920, words_904[5])).x;
++            route_5d4[vehicle_variant_5cd].y = screen_terrain_grid->TileWorldPosition(CircuitTile(circuit_920, words_904[5])).y;
+             SelectVehicleVariant(keyline_state_44, heading_5d0);
+         }
+         if (vehicle_type_f8 == 6)
+         {
+             ScreenPoint tile = TilePosition();
+             for (int i = 0; i < 3; ++i)
+-                screen_terrain_grid->Step(tile, (heading_5d0 + 7) % 8, &tile);
++            {
++                ScreenPoint next;
++                screen_terrain_grid->Step(tile, (heading_5d0 + 7) % 8, &next);
++                tile = next;
++            }
+             turn_area_8dc = tile;
+         }
+-        {
+-            ScreenModeCommand command = message(word_5c8, 0x4c, 0, 0);
+-            screen_mode_commands->QueueCommand(&command);
+-        }
+-        queue_state(0x41);
+-        break;
++        command = ScreenModeCommand(id_28, word_5c8, 0x4c, 0, 0);
++        screen_mode_commands->QueueCommand(&command);
++        command = ScreenModeCommand(id_28, id_28, 3, 0, 0x41);
++        screen_mode_commands->QueueCommand(&command);
++        return true;
+     case 0x41:
+         PrepareVehicle();
+         door_animation_92c = 0;
+-        if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
++        if (vehicle_type_f8 == 1 || vehicle_type_f8 == 0)
+         {
+-            unload_tile();
++            ScreenWorldPosition unload_point(route_5d4[vehicle_variant_5cd].x, route_5d4[vehicle_variant_5cd].y, 0.0f);
++            ScreenPoint unload = CurrentScreenTerrain()->WorldToTile(unload_point);
++            static_cast<void>(unload);
+             int heading = heading_5d0;
+-            ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(Position());
+-            footprint(tile, heading, true);
++            ScreenPoint tile;
++            tile = CurrentScreenTerrain()->WorldToTile(Position());
++            VehicleEnter_footprint(this, tile, heading, true);
+         }
+-        break;
++        return true;
+     case 0x44:
+         if (vehicle_type_f8 != 2 && vehicle_type_f8 != 5)
+         {
+-            AnimateVehicle(window_deactivation_state->time_158);
+-            if (definition_f4->unknown_1dc[0] == 2)
+-                go(0xa, route_5d4[word_8d8]);
+-            else if (definition_f4->unknown_1dc[0] == 1)
++            float clock = window_deactivation_state->time_158;
++            AnimateVehicle(clock);
++            switch (definition_f4->unknown_1dc[0])
++            {
++            case 1:
+             {
+-                ScreenPoint tile = unload_tile();
++                ScreenWorldPosition unload_point(route_5d4[vehicle_variant_5cd].x, route_5d4[vehicle_variant_5cd].y, 0.0f);
++                ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(unload_point);
+                 if (vehicle_type_f8 == 0)
+-                    game_update_pair->AddObjectSound(vehicle_jetski_sound, id_28, 1.0f, 1);
++                    game_update_pair->AddObjectSound(vehicle_jetski_sound, id_28, vehicle_jetski_volume, 1);
+                 if (vehicle_type_f8 == 1)
+-                    game_update_pair->AddObjectSound(vehicle_speedboat_sound, id_28, 1.0f, 1);
+-                if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
+-                    footprint(tile, heading_5d0, false);
++                    game_update_pair->AddObjectSound(vehicle_speedboat_sound, id_28, vehicle_speedboat_volume, 1);
++                if (vehicle_type_f8 == 1 || vehicle_type_f8 == 0)
++                    VehicleEnter_footprint(this, tile, heading_5d0, false);
+                 ClearVehicleApproach(tile, heading_5d0);
+                 ScreenTerrainGrid* grid = screen_terrain_grid;
+                 ScreenTerrainCell* cell = &grid->cells_0c[(static_cast<unsigned int>(tile.y) % grid->height_08) * grid->width_04 + static_cast<unsigned int>(tile.x) % grid->width_04];
+                 cell->flags_48 &= ~0x10u;
+-                ScreenMapPosition target = circuit_point(words_904[4]);
+-                ScreenModeCommand command = message(id_28, 0xb, static_cast<int>(target.x), static_cast<int>(target.y));
++                ScreenMapPosition target = screen_terrain_grid->TileWorldPosition(CircuitTile(circuit_920, words_904[4]));
++                command = ScreenModeCommand(id_28, id_28, 0xb, static_cast<int>(target.x), static_cast<int>(target.y));
+                 words_904[6] = words_904[4];
+                 screen_mode_commands->QueueCommand(&command);
+                 if (!route_b8)
+                 {
+                     SetMoving(0);
+-                    queue_state(0x43);
++                    command = ScreenModeCommand(id_28, id_28, 3, 0, 0x43);
++                    screen_mode_commands->QueueCommand(&command);
+                 }
+                 if (vehicle_type_f8 == 4)
+                     cell->flags_48 |= 0x10;
+                 RestoreVehicleApproach(tile, heading_5d0);
+                 if (vehicle_type_f8 == 6 && flag_960)
+-                    neighbours(true);
++                    SetNeighbourFlags(this);
++                break;
++            }
++            case 2:
++                command = ScreenModeCommand(id_28, id_28, 0xa, static_cast<int>(route_5d4[word_8d8].x), static_cast<int>(route_5d4[word_8d8].y));
++                screen_mode_commands->QueueCommand(&command);
++                break;
+             }
+             for (unsigned int i = 0; i < passenger_count_5bc; ++i)
+-                variable_world->FindObject(passengers_10c[i])->AsMoving()->SetMovementPosition({ position_30.x, position_30.y, position_30.z });
+-            ScreenWorldPosition target = route_position();
++            {
++                WorldMovingEntity* passenger = variable_world->FindObject(passengers_10c[i])->AsMoving();
++                passenger->SetMovementPosition(position_30);
++            }
++            if (route_b8)
++                roam_point_8e8 = VehicleRoutePosition(route_b8);
++            else
++                roam_point_8e8 = route_5d4[vehicle_variant_5cd];
+             if (vehicle_type_f8 == 4)
+-                FacePoint({ target.x, target.y });
++                FacePoint(ScreenMapPosition(roam_point_8e8.x, roam_point_8e8.y));
++            return true;
+         }
+-        else
++        if (vehicle_type_f8 == 5 || vehicle_type_f8 == 2)
+         {
+             if (vehicle_type_f8 == 5)
+             {
+                 SelectVehicleVariant(keyline_state_44, heading_5d0);
+-                sound(vehicle_coach_start_sound);
++                WindowAudioVector point = { position_30.x, position_30.y, 0.0f };
++                window_audio_state->PlaySoundAtPosition(vehicle_coach_start_sound, 1.0f, &point, 1, -1);
+                 game_update_pair->AddObjectSound(vehicle_coach_sound, id_28, 1.0f, 1);
+             }
+-            go(0xf, route_5d4[word_8d8]);
++            command = ScreenModeCommand(id_28, id_28, 0xf, static_cast<int>(route_5d4[word_8d8].x), static_cast<int>(route_5d4[word_8d8].y));
++            screen_mode_commands->QueueCommand(&command);
++            return true;
++        }
++        else
++        {
++            // Unreachable: every other type returned above (retail keeps the block).
++            command = ScreenModeCommand(id_28, id_28, 0xc, static_cast<int>(route_5d4[word_8d8].x), static_cast<int>(route_5d4[word_8d8].y));
++            screen_mode_commands->QueueCommand(&command);
++            return true;
+         }
+-        break;
+     case 0x42:
+         if (vehicle_type_f8 == 6)
+         {
+-            neighbours(false);
++            ClearNeighbourFlags(this);
+             ScreenWorldPosition point = screen_terrain_grid->TilePosition(turn_area_8dc, 4);
+-            go(0xa, point);
++            {
++                command = ScreenModeCommand(id_28, id_28, 0xa, static_cast<int>(point.x), static_cast<int>(point.y));
++                screen_mode_commands->QueueCommand(&command);
++            }
+             long double x = static_cast<long double>(position_30.x) - point.x;
+             long double y = static_cast<long double>(position_30.y) - point.y;
+             long double z = static_cast<long double>(position_30.z) - point.z;
+-            if (sqrtl(z * z + y * y + x * x) >= 5.0L)
+-                FacePoint({ point.x, point.y });
++            // Retail compares the unrounded square root (0x00498570 fsqrt; fcomp).
++            long double distance = sqrtl(z * z + y * y + x * x);
++            if (distance >= 5.0f)
++                FacePoint(ScreenMapPosition(point.x, point.y));
+             flag_8e4 = 1;
+-            neighbours(true);
++            SetNeighbourFlags(this);
+         }
+         else if (vehicle_type_f8 != 2 && vehicle_type_f8 != 5)
+         {
+-            ScreenPoint tile = unload_tile();
++            ScreenWorldPosition unload_point(route_5d4[vehicle_variant_5cd].x, route_5d4[vehicle_variant_5cd].y, 0.0f);
++            ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(unload_point);
+             ScreenTerrainGrid* grid = screen_terrain_grid;
+             ScreenTerrainCell* cell = &grid->cells_0c[(static_cast<unsigned int>(tile.y) % grid->height_08) * grid->width_04 + static_cast<unsigned int>(tile.x) % grid->width_04];
+-            if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
++            if (vehicle_type_f8 == 1 || vehicle_type_f8 == 0)
+                 ClearVehicleReturn(tile, heading_5d0);
+             if (vehicle_type_f8 == 4)
+                 cell->flags_48 &= ~0x10u;
+-            go(vehicle_type_f8 == 4 ? 0xc : 0xb, route_5d4[vehicle_variant_5cd]);
+-            if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
++            if (vehicle_type_f8 == 4)
++                command = ScreenModeCommand(id_28, id_28, 0xc, static_cast<int>(route_5d4[vehicle_variant_5cd].x), static_cast<int>(route_5d4[vehicle_variant_5cd].y));
++            else
++                command = ScreenModeCommand(id_28, id_28, 0xb, static_cast<int>(route_5d4[vehicle_variant_5cd].x), static_cast<int>(route_5d4[vehicle_variant_5cd].y));
++            screen_mode_commands->QueueCommand(&command);
++            if (vehicle_type_f8 == 1 || vehicle_type_f8 == 0)
+                 RestoreVehicleReturn(tile, heading_5d0);
+             cell->flags_48 |= 0x10;
+         }
+         else
+-            go(0xf, route_5d4[vehicle_variant_5cd]);
++        {
++            command = ScreenModeCommand(id_28, id_28, 0xf, static_cast<int>(route_5d4[vehicle_variant_5cd].x), static_cast<int>(route_5d4[vehicle_variant_5cd].y));
++            screen_mode_commands->QueueCommand(&command);
++        }
+         if (vehicle_type_f8 == 4 || vehicle_type_f8 == 0)
+         {
+-            ScreenWorldPosition target = route_position();
++            if (route_b8)
++                roam_point_8e8 = VehicleRoutePosition(route_b8);
++            else
++                roam_point_8e8 = route_5d4[vehicle_variant_5cd];
+             if (vehicle_type_f8 != 0)
+-                FacePoint({ target.x, target.y });
++                FacePoint(ScreenMapPosition(roam_point_8e8.x, roam_point_8e8.y));
+         }
+-        break;
++        return true;
+     case 0x43:
+         if (vehicle_type_f8 == 5 || vehicle_type_f8 == 2)
+         {
+             unsigned int count;
+             unsigned int rooms = 0;
+             VariableEntity** hotels = variable_world->FindNamed("HOTEL", &count);
+-            for (unsigned int i = 0; i < count; ++i)
++            unsigned int i;
++            for (i = 0; i < count; ++i)
+                 rooms += hotels[i]->AsBuilding()->AvailableRooms();
+             hotels = variable_world->FindNamed("ACCOMBLK", &count);
+-            for (unsigned int i = 0; i < count; ++i)
++            for (i = 0; i < count; ++i)
+                 if (!hotels[i]->FlagAt00460310() && !hotels[i]->FlagAt00460340())
+                     rooms += hotels[i]->AsBuilding()->AvailableRooms();
+             if (!rooms)
+                 window_deactivation_state->ticker_30->AddMessage("TICKER_MSG_NO_ROOMS", -2, 1);
+             if (vehicle_type_f8 == 2)
+-                sound(vehicle_ferry_sound);
++                VehicleEnter_sound(this, vehicle_ferry_sound);
+         }
+         if (vehicle_type_f8 == 5)
+         {
+             SelectVehicleVariant(keyline_state_44, heading_5d0);
++            WindowAudioVector point = { position_30.x, position_30.y, 0.0f };
+             game_update_pair->RemoveObjectSound(id_28);
+-            sound(vehicle_door_open_sound);
++            window_audio_state->PlaySoundAtPosition(vehicle_door_open_sound, vehicle_door_volume, &point, 1, -1);
+             resource_928->word_08 = 2;
+-            ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-            resource_928->SetAnimation("coach_doors", window_deactivation_state->time_158, &position);
++            resource_928->SetAnimation("coach_doors", window_deactivation_state->time_158, &position_30);
+         }
+         if (vehicle_type_f8 == 0 || vehicle_type_f8 == 1)
+             game_update_pair->RemoveObjectSound(id_28);
+@@ -276,15 +315,22 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+         if (passenger_count_5bc)
+         {
+             WorldMovingEntity* guest = variable_world->FindObject(passengers_10c[passenger_count_5bc - 1])->AsMoving();
+-            for (int i = 2; i < 6; ++i)
+-                guest->motion_64[i] = 0.0f;
+-            SelectVehicleVariant(guest->keyline_state_44, (guest->keyline_state_44->word_18 + 4) % 8);
+-            float duration = PassengerAnimation(window_deactivation_state->time_158, 0, passenger_count_5bc > 1);
+-            ScreenModeCommand command = message(passengers_10c[passenger_count_5bc - 1], 0x4f, 0, 0);
++            float* motion = guest->motion_64;
++            motion[2] = 0.0f;
++            motion[3] = 0.0f;
++            motion[4] = 0.0f;
++            motion[5] = 0.0f;
++            SelectVehicleVariant(guest->keyline_state_44, (static_cast<int>(guest->keyline_state_44->word_18) + 4) % 8);
++            float time = window_deactivation_state->time_158;
++            float duration = PassengerAnimation(time, 0, passenger_count_5bc > 1);
++            command = ScreenModeCommand(id_28, passengers_10c[passenger_count_5bc - 1], 0x4f, 0, 0);
+             screen_mode_commands->QueueDelayed(&command, duration);
+         }
+         else
+-            queue_state(0x41);
++        {
++            command = ScreenModeCommand(id_28, id_28, 3, 0, 0x41);
++            screen_mode_commands->QueueCommand(&command);
++        }
+         break;
+     case 0x45:
+         if (vehicle_type_f8 == 4)
+@@ -292,37 +338,50 @@ bool WorldVehicleEntity::Unknown08(unsigned int state)
+         if (vehicle_type_f8 == 6)
+             SwimVehicle();
+         vehicle_variant_5cd = 0;
+-        ride_time_5c0 = window_deactivation_state->time_158 + (vehicle_type_f8 == 6 ? 7.0f : 30.0f);
+-        break;
++        if (vehicle_type_f8 == 6)
++            ride_time_5c0 = window_deactivation_state->time_158 + 7.0f;
++        else
++            ride_time_5c0 = window_deactivation_state->time_158 + 30.0f;
++        return true;
+     case 0x49:
+     {
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        keyline_state_44->SetAnimation(vehicle_fall_animation, window_deactivation_state->time_158, &position);
++        keyline_state_44->SetAnimation(vehicle_fall_animation, window_deactivation_state->time_158, &position_30);
+         WorldMovingEntity* guest = variable_world->FindObject(passengers_10c[0])->AsMoving();
+-        guest->SetMovementPosition(position);
+-        float duration = guest->keyline_state_44->SetAnimation(vehicle_passenger_fall_animation, window_deactivation_state->time_158, &position);
+-        ScreenModeCommand command = message(id_28, 3, 0, 0x4a);
++        guest->SetMovementPosition(position_30);
++        float clock = window_deactivation_state->time_158;
++        ScreenDialogResource* keyline = guest->keyline_state_44;
++        float duration = keyline->SetAnimation(vehicle_passenger_fall_animation, clock, &position_30);
++        command = ScreenModeCommand(id_28, id_28, 3, 0, 0x4a);
+         screen_mode_commands->QueueDelayed(&command, duration);
+-        break;
++        return true;
+     }
+     case 0x4a:
+         AnimateVehicle(window_deactivation_state->time_158);
+         state_3c = 0x44;
+-        break;
++        return true;
+     case 0x46:
+-        motion_64[2] = motion_64[3] = -0.5f;
++    {
++        float* velocity = motion_64 + 2;
++        velocity[0] = -0.5f;
++        velocity[1] = -0.5f;
+         FaceVehicle(heading_5d0);
+-        break;
++    }
++        return true;
+     case 0x47:
+         if (vehicle_type_f8 == 5)
++        {
+             game_update_pair->AddObjectSound(vehicle_coach_sound, id_28, 1.0f, 1);
++            return true;
++        }
+         break;
+     case 0x48:
++    {
+         for (unsigned int i = 0; i < passenger_count_5bc; ++i)
+             variable_world->FindObject(passengers_10c[i])->inactive_04 = 1;
+         if (vehicle_type_f8 == 5)
+             game_update_pair->RemoveObjectSound(id_28);
+         break;
+     }
++    }
+     return true;
+ }

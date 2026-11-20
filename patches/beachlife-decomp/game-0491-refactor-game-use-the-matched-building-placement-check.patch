@@ -1,0 +1,136 @@
+diff --git a/src/startup_screen_mode5_virtuals.cpp b/src/startup_screen_mode5_virtuals.cpp
+index 15a1e0d364b2aff42a47ef58c427c6e12495c68a..8e836e379866701c85ae822596e1c0dadf7e8b09 100644
+--- a/src/startup_screen_mode5_virtuals.cpp
++++ b/src/startup_screen_mode5_virtuals.cpp
+@@ -75,7 +75,7 @@ void ScreenMode5Controller::Update(float elapsed)
+             ScreenWorldPosition position = map->ScreenToWorld(point);
+             ScreenPoint tile = CurrentScreenTerrain()->WorldToTile(position);
+             tile = AdjustTile(tile);
+-            valid_24 = CanPlace(tile.x, tile.y, 0);
++            valid_24 = CanPlace(tile, 0);
+             if (valid_24)
+             {
+                 ScreenBuildingPlacement placement;
+@@ -157,7 +157,7 @@ void ScreenMode5Controller::RenderScreens()
+     unsigned int width = building_0c->footprint_x_1d4;
+     unsigned int height = building_0c->footprint_y_1d8;
+     tile = AdjustTile(found);
+-    valid_24 = CanPlace(tile.x, tile.y, 1);
++    valid_24 = CanPlace(ScreenPoint(tile.x, tile.y), 1);
+     unsigned int draw_width = width;
+     unsigned int draw_height = height;
+     ScreenPoint bounds_point = tile;
+diff --git a/src/startup_screen_mode_can_place.cpp b/src/startup_screen_mode_can_place.cpp
+index c84ae8a3df187dcffb0e1cb57951c7e3215022ae..a5ccb292f86607b26bc48c001d8c59206a2ee7f8 100644
+--- a/src/startup_screen_mode_can_place.cpp
++++ b/src/startup_screen_mode_can_place.cpp
+@@ -46,22 +46,22 @@ unsigned char ScreenMode1Controller::CanPlace(const ScreenPoint* point)
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004a7d10
+-unsigned char ScreenMode5Controller::CanPlace(int x, int y, unsigned char draw)
++unsigned char ScreenMode5Controller::CanPlace(ScreenPoint point, unsigned char draw)
+ {
++    unsigned int rotation = preview_08->word_18;
+     ScreenTerrainGrid* grid = screen_terrain_grid;
++    ScreenPoint row = point;
+     unsigned int width = building_0c->footprint_x_1d4 + 2;
+     unsigned int height = building_0c->footprint_y_1d8 + 2;
+-    unsigned int rotated = preview_08->word_18 & 1;
+-    if (rotated)
++    if ((rotation & 1) == 1)
+     {
+         unsigned int old = width;
+         width = height;
+         height = old;
+     }
+-    ScreenPoint row = { x, y };
+     int first;
+     int last;
+-    grid->BuildingBounds(row, height, width, &first, &last, preview_08->word_18);
++    screen_terrain_grid->BuildingBounds(row, height, width, &first, &last, rotation);
+     ScreenPoint tile = row;
+     unsigned char valid = 1;
+     for (unsigned int r = 0; r < height; ++r)
+@@ -70,36 +70,52 @@ unsigned char ScreenMode5Controller::CanPlace(int x, int y, unsigned char draw)
+         {
+             unsigned char cell_valid = 1;
+             unsigned int flags = grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
+-            unsigned int required = building_0c->footprint_e14[rotated ? 2 + r + 25 * c : 2 + 25 * r + c];
++            unsigned int required;
++            if (!(rotation & 1))
++                required = building_0c->footprint_e14[2 + 25 * r + c];
++            else
++                required = building_0c->footprint_e14[2 + r + 25 * c];
+             if (required)
+             {
+-                if (required == 0x200)
+-                {
+-                    if (!screen_terrain_grid->CanPlaceBuilding(tile.x, tile.y, building_0c))
+-                        cell_valid = valid = 0;
+-                }
+-                else
++                if (required != 0x200)
+                 {
+-                    if (flags & 0x8050)
+-                        cell_valid = valid = 0;
++                    if ((flags & 0x50) || (flags & 0x8000))
++                        valid = cell_valid = 0;
+                     if (flags & 0x100)
+                     {
+                         if (!(required & 4))
+-                            cell_valid = valid = 0;
++                            valid = cell_valid = 0;
+                     }
+                     else if (!(required & flags))
+-                        cell_valid = valid = 0;
++                        valid = cell_valid = 0;
++                }
++                else if (!screen_terrain_grid->CanPlaceBuilding(tile.x, tile.y, building_0c))
++                {
++                    valid = 0;
++                    cell_valid = 0;
+                 }
+                 CircularList* objects = screen_terrain_grid->ObjectsAt(tile.x, tile.y);
+                 for (CircularListNode* node = objects->head->next; node != objects->head; node = node->next)
++                {
+                     if (strcmp(static_cast<ScreenTerrainEntityNode*>(node)->entity->name_06, "Bin") == 0)
+-                        cell_valid = valid = 0;
++                    {
++                        valid = 0;
++                        cell_valid = 0;
++                    }
++                }
+             }
+             if (draw && required)
+-                overlay_map->DrawTile(tile.x, tile.y, cell_valid ? colour_14 : colour_10);
++            {
++                if (cell_valid)
++                    overlay_map->DrawTile(tile.x, tile.y, colour_14);
++                else
++                    overlay_map->DrawTile(tile.x, tile.y, colour_10);
++            }
+             grid->Step(tile, first, &tile);
+         }
+-        grid->Step(row, last, &tile);
++        tile.x = row.x;
++        tile.y = row.y;
++        grid->Step(tile, last, &tile);
+         row = tile;
+     }
+     return valid;
+diff --git a/src/startup_screen_modes.h b/src/startup_screen_modes.h
+index a0c33faf094182d4c9c3f3b25b104ca552810e0b..b823af6812e34a2257ca9024156570c109a01c93 100644
+--- a/src/startup_screen_modes.h
++++ b/src/startup_screen_modes.h
+@@ -131,8 +131,8 @@ struct ScreenMode5Controller : ScreenModeController
+     unsigned char HandleFourWords(
+         unsigned int word0, unsigned int word1, unsigned int word2, unsigned int word3);
+ 
+-    ScreenPoint AdjustTile(ScreenPoint point);                // 0x004a7c70.
+-    unsigned char CanPlace(int x, int y, unsigned char draw); // 0x004a7d10.
++    ScreenPoint AdjustTile(ScreenPoint point);                     // 0x004a7c70.
++    unsigned char CanPlace(ScreenPoint point, unsigned char draw); // 0x004a7d10.
+ 
+     ScreenDialogResource* preview_08;
+     VariableBuilding* building_0c;

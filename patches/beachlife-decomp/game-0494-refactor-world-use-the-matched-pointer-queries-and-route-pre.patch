@@ -1,0 +1,361 @@
+diff --git a/src/startup_world_pointer_selection.cpp b/src/startup_world_pointer_selection.cpp
+index b49064762d9732359abba7eb9da54940c715f009..dede5a5827d1db4138a292395694fd1a4b160897 100644
+--- a/src/startup_world_pointer_selection.cpp
++++ b/src/startup_world_pointer_selection.cpp
+@@ -5,41 +5,43 @@
+ 
+ #include <cstring>
+ 
++static inline int FindPickFrame(ScreenDialogResource* resource)
++{
++    int count = resource->record->frame_count;
++    for (int index = 0; index < count; ++index)
++        if (std::strcmp("pick", resource->record->frames[index]->name) == 0)
++            return index;
++    return -1;
++}
++
+ // FUNCTION: BEACHLIFE 0x0042f380
+ bool IsPointerSelectedEntity(VariableEntity* entity, const void*)
+ {
+     if (!entity->CanSelectAtPointer() || !overlay_map->ContainsEntity(entity) || !entity->visible_40)
+         return false;
+-
+-    ScreenDialogResource* resource = entity->keyline_state_44;
+     if (entity->kind_2c == 2)
+     {
+-        for (int frame = 0; frame < resource->record->frame_count; ++frame)
++        ScreenDialogResource* resource = entity->keyline_state_44;
++        int selected = FindPickFrame(resource);
++        if (selected != -1 && resource->word_10 != static_cast<unsigned int>(selected))
+         {
+-            if (std::strcmp("pick", resource->record->frames[frame]->name) == 0)
+-            {
+-                if (resource->word_10 != static_cast<unsigned int>(frame))
+-                {
+-                    resource->word_10 = frame;
+-                    resource->word_14 = 0;
+-                }
+-                break;
+-            }
++            resource->word_10 = selected;
++            resource->word_14 = 0;
+         }
+     }
+-
+-    ScreenWorldPosition position = { entity->position_30.x, entity->position_30.y, entity->position_30.z };
+-    ScreenPoint point = overlay_map->WorldToScreen(position);
+-    point.x += resource->CurrentFrameValue();
+-    point.y += resource->record->frames[resource->word_10]->word_14;
+-    float scale;
+-    scale = screen_request_renderer->value_58;
+-    int x = static_cast<int>(static_cast<long double>(startup_input_motion_state->cursor_08.x) / scale) - point.x;
+-    int y = static_cast<int>(static_cast<long double>(startup_input_motion_state->cursor_08.y) / scale) - point.y;
+-    ScreenDialogResourceFrame* frame = resource->record->frames[resource->word_10];
+-    if (x < 0 || x >= frame->width_0e || y < 0 || y >= frame->height_10)
++    ScreenWorldPosition position(entity->position_30);
++    ScreenPoint point;
++    point = overlay_map->WorldToScreen(position);
++    point.x += entity->keyline_state_44->CurrentFrameValue();
++    point.y += entity->keyline_state_44->SelectedFrame()->word_14;
++    ScreenPoint mouse = startup_input_motion_state->cursor_08;
++    // Retail divides in x87 precision (fild; fdiv) and truncates (_ftol).
++    ScreenPoint cursor(static_cast<int>(static_cast<long double>(mouse.x) / screen_request_renderer->value_58), static_cast<int>(static_cast<long double>(mouse.y) / screen_request_renderer->value_58));
++    cursor.x -= point.x;
++    cursor.y -= point.y;
++    if (cursor.x < 0 || cursor.x >= entity->keyline_state_44->SelectedFrame()->width_0e || cursor.y < 0 || cursor.y >= entity->keyline_state_44->SelectedFrame()->height_10)
+         return false;
+-    return resource->TestPixel(x, y);
++    return entity->keyline_state_44->TestPixel(cursor.x, cursor.y) ? true : false;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0042f890
+diff --git a/src/startup_world_queries.cpp b/src/startup_world_queries.cpp
+index ce8e27c5a895a31741ea0ecf6f3e7261e8e11b66..a85c097353cc15bfe80759bdaf11e86caf5b4a9e 100644
+--- a/src/startup_world_queries.cpp
++++ b/src/startup_world_queries.cpp
+@@ -31,21 +31,19 @@ static bool IsPointerOverVisibleEntity(VariableEntity* entity, const void*)
+ {
+     if (!overlay_map->ContainsEntity(entity) || !entity->visible_40)
+         return false;
+-    ScreenWorldPosition position = { entity->position_30.x, entity->position_30.y, entity->position_30.z };
+-    ScreenPoint point = overlay_map->WorldToScreen(position);
++    ScreenWorldPosition position(entity->position_30);
++    ScreenPoint point;
++    point = overlay_map->WorldToScreen(position);
+     point.x += entity->keyline_state_44->CurrentFrameValue();
+-    ScreenDialogResource* resource = entity->keyline_state_44;
+-    point.y += resource->SelectedFrame()->word_14;
+-    float scale;
+-    scale = screen_request_renderer->value_58;
+-    int x = static_cast<int>(static_cast<long double>(startup_input_motion_state->cursor_08.x) / scale);
+-    scale = screen_request_renderer->value_58;
+-    int y = static_cast<int>(static_cast<long double>(startup_input_motion_state->cursor_08.y) / scale);
+-    x -= point.x;
+-    y -= point.y;
+-    if (x < 0 || x >= resource->SelectedFrame()->width_0e || y < 0 || y >= resource->SelectedFrame()->height_10)
++    point.y += entity->keyline_state_44->SelectedFrame()->word_14;
++    ScreenPoint mouse = startup_input_motion_state->cursor_08;
++    // Retail divides in x87 precision (fild; fdiv) and truncates (_ftol).
++    ScreenPoint cursor(static_cast<int>(static_cast<long double>(mouse.x) / screen_request_renderer->value_58), static_cast<int>(static_cast<long double>(mouse.y) / screen_request_renderer->value_58));
++    cursor.x -= point.x;
++    cursor.y -= point.y;
++    if (cursor.x < 0 || cursor.x >= entity->keyline_state_44->SelectedFrame()->width_0e || cursor.y < 0 || cursor.y >= entity->keyline_state_44->SelectedFrame()->height_10)
+         return false;
+-    return resource->TestPixel(x, y);
++    return entity->keyline_state_44->TestPixel(cursor.x, cursor.y) ? true : false;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x0042f230
+diff --git a/src/startup_world_route_expand.cpp b/src/startup_world_route_expand.cpp
+index b7255c0673eed654cb5977d2b797c9f028b6a178..d8c659fd3cad1e1b1ab0b5d1a6d7152d1e2bb97c 100644
+--- a/src/startup_world_route_expand.cpp
++++ b/src/startup_world_route_expand.cpp
+@@ -13,20 +13,20 @@ void WorldRouteFinder::ExpandRouteCell(ScreenTerrainCell* cell, ScreenPoint dest
+     terrain_00->Step(origin, 5, &neighbours[6]);
+     terrain_00->Step(origin, 6, &neighbours[7]);
+     terrain_00->Step(origin, 7, &neighbours[0]);
+-    if (callback_90(this, &neighbours[0]))
++    if ((this->*callback_90)(&neighbours[0]))
+         VisitRouteCell(cell, &neighbours[0], &destination, 0x1000);
+-    if (callback_90(this, &neighbours[1]))
++    if ((this->*callback_90)(&neighbours[1]))
+         VisitRouteCell(cell, &neighbours[1], &destination, 0x800);
+-    if (callback_90(this, &neighbours[2]))
++    if ((this->*callback_90)(&neighbours[2]))
+         VisitRouteCell(cell, &neighbours[2], &destination, 0x1000);
+-    if (callback_90(this, &neighbours[3]))
++    if ((this->*callback_90)(&neighbours[3]))
+         VisitRouteCell(cell, &neighbours[3], &destination, 0x800);
+-    if (callback_90(this, &neighbours[4]))
++    if ((this->*callback_90)(&neighbours[4]))
+         VisitRouteCell(cell, &neighbours[4], &destination, 0x1000);
+-    if (callback_90(this, &neighbours[5]))
++    if ((this->*callback_90)(&neighbours[5]))
+         VisitRouteCell(cell, &neighbours[5], &destination, 0x800);
+-    if (callback_90(this, &neighbours[6]))
++    if ((this->*callback_90)(&neighbours[6]))
+         VisitRouteCell(cell, &neighbours[6], &destination, 0x1000);
+-    if (callback_90(this, &neighbours[7]))
++    if ((this->*callback_90)(&neighbours[7]))
+         VisitRouteCell(cell, &neighbours[7], &destination, 0x800);
+ }
+diff --git a/src/startup_world_route_finder.cpp b/src/startup_world_route_finder.cpp
+index 8513ee516b0323fe17b4a71e34c4adccb11d5c1a..e071502b56b14dcfb9e4976f044cdaa37aae43bf 100644
+--- a/src/startup_world_route_finder.cpp
++++ b/src/startup_world_route_finder.cpp
+@@ -1,8 +1,7 @@
+ #include "startup_world_subsystems.h"
+ #include <new>
+ 
+-// The route searches keep the tree's plain cell predicate (the finder is its
+-// first argument) and allocate the points with the nothrow operator new that
++// The route searches allocate the points with the nothrow operator new that
+ // WorldRouteData releases with operator delete.
+ 
+ // FUNCTION: BEACHLIFE 0x004309e0
+@@ -12,10 +11,9 @@ unsigned int WorldRouteFinder::FindLandRoute(ScreenPoint from, ScreenPoint to, S
+     flags_04[2] = 0;
+     CopyRoutePoint(start_0c, from);
+     ++generation_08;
+-    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+-    { return finder->CanUseLandCell(point); };
++    callback_90 = &WorldRouteFinder::CanUseLandCell;
+     bool start_allowed = CanUseLandCell(&from) != 0;
+-    bool end_allowed = callback_90(this, &to) != 0;
++    bool end_allowed = (this->*callback_90)(&to) != 0;
+     if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+         return 0;
+     ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
+@@ -48,10 +46,9 @@ unsigned int WorldRouteFinder::FindWaterRoute(ScreenPoint from, ScreenPoint to,
+     flags_04[2] = 0;
+     CopyRoutePoint(start_0c, from);
+     ++generation_08;
+-    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+-    { return finder->CanUseWaterCell(point); };
++    callback_90 = &WorldRouteFinder::CanUseWaterCell;
+     bool start_allowed = CanUseWaterCell(&from) != 0;
+-    bool end_allowed = callback_90(this, &to) != 0;
++    bool end_allowed = (this->*callback_90)(&to) != 0;
+     if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+         return 0;
+     ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
+@@ -83,12 +80,11 @@ unsigned int WorldRouteFinder::FindVehicleRoute(ScreenPoint from, ScreenPoint to
+     flags_04[1] = 1;
+     flags_04[0] = 0;
+     flags_04[2] = 0;
+-    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+-    { return finder->CanUseVehicleCell(point); };
++    callback_90 = &WorldRouteFinder::CanUseVehicleCell;
+     CopyRoutePoint(start_0c, from);
+     ++generation_08;
+-    bool start_allowed = callback_90(this, &from) != 0;
+-    bool end_allowed = callback_90(this, &to) != 0;
++    bool start_allowed = (this->*callback_90)(&from) != 0;
++    bool end_allowed = (this->*callback_90)(&to) != 0;
+     if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+     {
+         flags_04[1] = 0;
+@@ -122,11 +118,10 @@ unsigned int WorldRouteFinder::FindGroundRoute(ScreenPoint from, ScreenPoint to,
+     ++generation_08;
+     flags_04[2] = 1;
+     flags_04[0] = 0;
+-    callback_90 = [](WorldRouteFinder* finder, const ScreenPoint* point)
+-    { return finder->CanUseGroundCell(point); };
++    callback_90 = &WorldRouteFinder::CanUseGroundCell;
+     CopyRoutePoint(start_0c, from);
+-    bool start_allowed = callback_90(this, &from) != 0;
+-    bool end_allowed = callback_90(this, &to) != 0;
++    bool start_allowed = (this->*callback_90)(&from) != 0;
++    bool end_allowed = (this->*callback_90)(&to) != 0;
+     if (!start_allowed || !end_allowed || (from.x == to.x && from.y == to.y) || !SearchRoute(from.x, from.y, to.x, to.y))
+         return 0;
+     ScreenTerrainCell* cell = static_cast<ScreenTerrainCell*>(data_88);
+diff --git a/src/startup_world_route_lifetime.cpp b/src/startup_world_route_lifetime.cpp
+index 7ecedaf3290df494a0870c4c2ebf1c62782cfee0..5fcef935ab6259deb510131fa6fb86713df337f3 100644
+--- a/src/startup_world_route_lifetime.cpp
++++ b/src/startup_world_route_lifetime.cpp
+@@ -2,22 +2,34 @@
+ #include <cstdlib>
+ #include <new>
+ 
++static inline unsigned int RouteCellFlags(ScreenTerrainGrid* terrain, ScreenPoint point)
++{
++    unsigned int y = static_cast<unsigned int>(point.y) % terrain->height_08;
++    unsigned int x = static_cast<unsigned int>(point.x) % terrain->width_04;
++    return terrain->cells_0c[y * terrain->width_04 + x].flags_48;
++}
++
+ // FUNCTION: BEACHLIFE 0x00431810
+-bool WorldRouteCellAllowed(WorldRouteFinder* finder, const ScreenPoint* point)
++bool WorldRouteFinder::CellAllowed(const ScreenPoint* point)
+ {
+-    ScreenTerrainGrid* terrain = finder->terrain_00;
+-    unsigned int x = static_cast<unsigned int>(point->x) % terrain->width_04;
+-    unsigned int y = static_cast<unsigned int>(point->y) % terrain->height_08;
+-    unsigned int flags = terrain->cells_0c[y * terrain->width_04 + x].flags_48;
+-    if (finder->flags_04[0])
+-        return (flags & 0xc0000000u) != 0;
+-    if (finder->flags_04[1])
+-        return (flags & 0x60000000u) && !(flags & 0x10);
+-    if (finder->flags_04[2])
+-        return ((flags & 0x10000000u) && !(flags & 0x8000))
+-            || ((flags & 2) && !(flags & 0x8010))
+-            || ((flags & 0x80) && !(flags & 0x8000));
+-    return (flags & 0x80000000u) && !(flags & 0x8000);
++    unsigned int flags = RouteCellFlags(terrain_00, *point);
++    if (flags_04[0])
++        return (flags & 0xc0000000u) ? true : false;
++    if (flags_04[1])
++    {
++        if ((flags & 0x60000000u) && !(flags & 0x10))
++            return true;
++        return false;
++    }
++    if (flags_04[2])
++    {
++        if (((flags & 0x10000000u) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010)) || ((flags & 0x80) && !(flags & 0x8000)))
++            return true;
++        return false;
++    }
++    if ((flags & 0x80000000u) && !(flags & 0x8000))
++        return true;
++    return false;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00430930
+@@ -30,7 +42,7 @@ WorldRouteFinder::WorldRouteFinder(ScreenTerrainGrid* terrain)
+     flags_04[0] = 0;
+     flags_04[1] = 0;
+     flags_04[2] = 0;
+-    callback_90 = WorldRouteCellAllowed;
++    callback_90 = &WorldRouteFinder::CellAllowed;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004303e0
+diff --git a/src/startup_world_subsystems.h b/src/startup_world_subsystems.h
+index f86d4b831600a3a00d35c5c2f5d4bc50f864e9f1..ddb2a8b60517d27fbd7d4ba0032997b6e43e68b0 100644
+--- a/src/startup_world_subsystems.h
++++ b/src/startup_world_subsystems.h
+@@ -15,6 +15,7 @@ struct WorldExpressionBranchData;
+ struct WorldExpressionSwitchData;
+ struct WorldRouteFinder
+ {
++    bool CellAllowed(const ScreenPoint* point);                                                                  // 0x00431810.
+     unsigned int FindLandRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut);  // 0x004309e0.
+     unsigned int FindWaterRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points, unsigned char shortcut); // 0x00430b00.
+     unsigned int FindVehicleRoute(ScreenPoint from, ScreenPoint to, ScreenPoint** points);                       // 0x00430c20.
+@@ -43,7 +44,7 @@ struct WorldRouteFinder
+     ScreenTerrainCell cell_34;
+     void* data_88;
+     AllocationNode* data_8c;
+-    bool (*callback_90)(WorldRouteFinder* finder, const ScreenPoint* point);
++    bool (WorldRouteFinder::*callback_90)(const ScreenPoint* point);
+     void Clear();                        // 0x00430e80.
+     ~WorldRouteFinder() noexcept(false); // 0x00430980.
+ 
+diff --git a/src/window_update_entities.cpp b/src/window_update_entities.cpp
+index 75bdf49963902134e745c2d490bec5b2e4632d60..06453eb4137f7217a2fa4ec3bdc56d7274e7ed7c 100644
+--- a/src/window_update_entities.cpp
++++ b/src/window_update_entities.cpp
+@@ -24,43 +24,31 @@ void WindowDeactivationState::UpdateAt0043d280()
+     }
+ }
+ 
+-// FUNCTION: BEACHLIFE 0x0043d310
+-void WindowDeactivationState::UpdateAt0043d310()
++// One removal pass over an entity array, last entry first. Retail prefetches
++// the next entry before testing the count and so reads the slot before the
++// array start once; the tree reads each entry only for a remaining count.
++static inline void RemoveInactive(WindowDeactivationState* state, VariableEntity** entities, unsigned int count, bool& removed)
+ {
+-    bool removed = false;
+-    for (unsigned int i = world_10->buildings_04; i != 0; --i)
++    for (unsigned int remaining = count; remaining != 0; --remaining)
+     {
+-        VariableEntity* entity = world_10->buildings_12120[i - 1];
++        VariableEntity* entity = entities[remaining - 1];
+         if (entity->inactive_04)
+         {
+             removed = true;
+-            PrepareEntityRemoval(entity);
++            state->PrepareEntityRemoval(entity);
+             entity->Unknown10();
+-            world_10->RemoveEntity(entity->id_28);
+-        }
+-    }
+-    for (unsigned int i = world_10->entities_0c; i != 0; --i)
+-    {
+-        VariableEntity* entity = world_10->entities_14060[i - 1];
+-        if (entity->inactive_04)
+-        {
+-            removed = true;
+-            PrepareEntityRemoval(entity);
+-            entity->Unknown10();
+-            world_10->RemoveEntity(entity->id_28);
+-        }
+-    }
+-    for (unsigned int i = world_10->guests_08; i != 0; --i)
+-    {
+-        VariableEntity* entity = world_10->guests_128f0[i - 1];
+-        if (entity->inactive_04)
+-        {
+-            removed = true;
+-            PrepareEntityRemoval(entity);
+-            entity->Unknown10();
+-            world_10->RemoveEntity(entity->id_28);
++            state->world_10->RemoveEntity(entity->id_28);
+         }
+     }
++}
++
++// FUNCTION: BEACHLIFE 0x0043d310
++void WindowDeactivationState::UpdateAt0043d310()
++{
++    bool removed = false;
++    RemoveInactive(this, world_10->buildings_12120, world_10->buildings_04, removed);
++    RemoveInactive(this, world_10->entities_14060, world_10->entities_0c, removed);
++    RemoveInactive(this, world_10->guests_128f0, world_10->guests_08, removed);
+     if (removed)
+         screen_manager->RefreshScreenContents();
+ }
