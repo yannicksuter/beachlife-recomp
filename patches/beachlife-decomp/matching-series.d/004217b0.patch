@@ -1,0 +1,223 @@
+diff --git a/fixtures/game.d/fixture_004217b0.cpp b/fixtures/game.d/fixture_004217b0.cpp
+new file mode 100644
+index 0000000..c72ca24
+--- /dev/null
++++ b/fixtures/game.d/fixture_004217b0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_building_status.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004217b0(VariableBuildingStatus* status)
++{
++    status->ReassignBuilders();
++}
+diff --git a/metadata.d/004217b0.csv b/metadata.d/004217b0.csv
+new file mode 100644
+index 0000000..2566bce
+--- /dev/null
++++ b/metadata.d/004217b0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004217b0,function,1602,?ReassignBuilders@VariableBuildingStatus@@QAEXXZ
+diff --git a/src/match_004217b0.cpp b/src/match_004217b0.cpp
+new file mode 100644
+index 0000000..ceedac1
+--- /dev/null
++++ b/src/match_004217b0.cpp
+@@ -0,0 +1,170 @@
++#include "startup_world_entities.h"
++#include "startup_building_status.h"
++#include "startup_screen_command_inlines.h"
++#include "startup_variable_catalog_fields.h"
++#include <math.h>
++
++static inline bool HasBuilderCapacity(BuildingStatusEntry* entry)
++{
++    VariableBuilding* building = variable_world->FindObject(entry->id_00)->AsBuilding()->building_60;
++    return static_cast<unsigned int>(entry->word_04) < building->build_time_d94;
++}
++
++static inline void ReleaseSlot(BuildingStatusEntry* entry, WorldBuilderEntity* builder)
++{
++    --entry->word_04;
++    for (int slot = 0; slot < 10; ++slot)
++    {
++        if (builder->builder_index_7f0 == static_cast<unsigned int>(entry->indices_54[slot]))
++        {
++            entry->indices_54[slot] = -1;
++            break;
++        }
++    }
++}
++
++static inline void CancelBuilder(VariableBuildingStatus* status, unsigned int id)
++{
++    WorldBuilderEntity* builder = variable_world->FindObject(id)->AsBuilder();
++    for (unsigned int index = 0; index < status->worker_count_3f0; ++index)
++    {
++        if (status->workers_08[index].id_00 == static_cast<int>(id))
++        {
++            BuildingStatusEntry* entry = status->FindTask(status->workers_08[index].word_0c);
++            if (entry)
++                ReleaseSlot(entry, builder);
++            status->FinishBuilderTask(id);
++        }
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x004217b0
++void VariableBuildingStatus::ReassignBuilders()
++{
++    unsigned int shortage = 0;
++    bool missing_home = false;
++    unsigned int available = 0;
++    BuildingStatusList::iterator node;
++    for (unsigned int index = 0; index < worker_count_3f0; ++index)
++    {
++        WorldBuilderEntity* builder = variable_world->FindObject(workers_08[index].id_00)->AsBuilder();
++        unsigned int home_id = builder->home_id_100;
++        VariableEntity* home = variable_world->FindObject(home_id);
++        if (home)
++        {
++            workers_08[index].word_04 = 1;
++            if (builder->IsOnDuty() && home->FlagAt00460370() && builder->words_794[2] == 0 && !workers_08[index].flag_10
++                && builder->state_3c != 0x83)
++            {
++                workers_08[index].word_04 = 0;
++                ++available;
++            }
++        }
++        else
++            missing_home = true;
++    }
++    if (missing_home)
++        return;
++    if (word_04)
++    {
++        unsigned int target = available / word_04;
++        if (target < 1)
++            target = 1;
++        int remainder = available % word_04;
++        for (node = tasks_00.begin(); node != tasks_00.end(); ++node)
++        {
++            BuildingStatusEntry* entry = *node;
++            if (!entry->byte_2b && static_cast<unsigned int>(entry->word_04) < target)
++                shortage += target - entry->word_04;
++        }
++        if (remainder > 1)
++            ++shortage;
++        for (node = tasks_00.begin(); node != tasks_00.end(); ++node)
++        {
++            BuildingStatusEntry* entry = *node;
++            if (!entry->byte_2b && target < static_cast<unsigned int>(entry->word_04))
++            {
++                unsigned int excess = entry->word_04 - target;
++                for (unsigned int index = 0; index < worker_count_3f0 && excess && shortage; ++index)
++                {
++                    if (workers_08[index].word_0c == static_cast<int>(entry->id_00) && !workers_08[index].word_04
++                        && !workers_08[index].flag_10)
++                    {
++                        CancelBuilder(this, workers_08[index].id_00);
++                        --excess;
++                        --shortage;
++                    }
++                }
++            }
++        }
++        for (node = tasks_00.begin(); node != tasks_00.end(); ++node)
++        {
++            BuildingStatusEntry* entry = *node;
++            if (!entry->byte_2b && target > static_cast<unsigned int>(entry->word_04))
++            {
++                unsigned int needed = target - entry->word_04;
++                for (unsigned int index = 0; index < worker_count_3f0 && needed; ++index)
++                {
++                    if (workers_08[index].word_0c == -1 && !workers_08[index].word_04 && !workers_08[index].flag_10
++                        && HasBuilderCapacity(entry) && (entry->byte_28 || entry->byte_29))
++                    {
++                        workers_08[index].word_0c = entry->id_00;
++                        ++entry->word_04;
++                        --needed;
++                        ScreenModeCommand command;
++                        if (entry->byte_28)
++                            command = ScreenModeCommand(workers_08[index].id_00, workers_08[index].id_00, 0x28, 0, workers_08[index].word_0c);
++                        else
++                            command = ScreenModeCommand(workers_08[index].id_00, workers_08[index].id_00, 0x2e, 0, workers_08[index].word_0c);
++                        screen_mode_commands->QueueCommand(&command);
++                    }
++                }
++            }
++        }
++        int idle = 0;
++        for (unsigned int index = 0; index < worker_count_3f0; ++index)
++        {
++            WorldStaffEntity* builder = variable_world->FindObject(workers_08[index].id_00)->AsStaff();
++            variable_world->FindObject(builder->home_id_100);
++            if (!workers_08[index].word_04 && workers_08[index].word_0c == -1)
++                ++idle;
++        }
++        unsigned int extra = static_cast<int>(ceil(static_cast<float>(idle) / static_cast<unsigned int>(word_04)));
++        if (!extra)
++            return;
++        for (node = tasks_00.begin(); node != tasks_00.end(); ++node)
++        {
++            BuildingStatusEntry* entry = *node;
++            if (!entry->byte_2b && target + extra > static_cast<unsigned int>(entry->word_04))
++            {
++                unsigned int needed = target - entry->word_04;
++                if (idle)
++                    needed += extra;
++                if (HasBuilderCapacity(entry))
++                {
++                    for (unsigned int index = 0; index < worker_count_3f0 && needed; ++index)
++                    {
++                        if (workers_08[index].word_0c == -1 && !workers_08[index].word_04)
++                        {
++                            workers_08[index].word_0c = entry->id_00;
++                            ++entry->word_04;
++                            --needed;
++                            --idle;
++                            ScreenModeCommand command;
++                            if (entry->byte_28)
++                                command = ScreenModeCommand(workers_08[index].id_00, workers_08[index].id_00, 0x28, 0, workers_08[index].word_0c);
++                            else
++                                command = ScreenModeCommand(workers_08[index].id_00, workers_08[index].id_00, 0x2e, 0, workers_08[index].word_0c);
++                            screen_mode_commands->QueueCommand(&command);
++                        }
++                    }
++                }
++            }
++        }
++    }
++    else
++    {
++        for (unsigned int index = 0; index < worker_count_3f0; ++index)
++            workers_08[index].word_0c = -1;
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/004217b0.json b/targets/beachlife-uk-1.1.d/004217b0.json
+new file mode 100644
+index 0000000..b0d3992
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004217b0.json
+@@ -0,0 +1,20 @@
++{
++  "functions": [
++    {
++      "address": "0x004217b0",
++      "size": 1602,
++      "name": "VariableBuildingStatus::ReassignBuilders",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004217b0.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004217b0.cpp",
++    "fixture_004217b0.cpp"
++  ]
++}

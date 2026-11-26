@@ -1,0 +1,117 @@
+diff --git a/fixtures/game.d/fixture_00485ca0.cpp b/fixtures/game.d/fixture_00485ca0.cpp
+new file mode 100644
+index 0000000..ed8eaa3
+--- /dev/null
++++ b/fixtures/game.d/fixture_00485ca0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00485ca0(WorldMovingEntity* item, ScreenPoint* start, ScreenPoint* end)
++{
++    item->NotifyRouteTransition(start, end, 0x80000000);
++}
+diff --git a/metadata.d/00485ca0.csv b/metadata.d/00485ca0.csv
+new file mode 100644
+index 0000000..96f5305
+--- /dev/null
++++ b/metadata.d/00485ca0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00485ca0,function,634,?NotifyRouteTransition@WorldMovingEntity@@QAEXPAUScreenPoint@@0I@Z
+diff --git a/src/match_00485ca0.cpp b/src/match_00485ca0.cpp
+new file mode 100644
+index 0000000..d07c8b0
+--- /dev/null
++++ b/src/match_00485ca0.cpp
+@@ -0,0 +1,69 @@
++#include "startup_screen_terrain_tile_index.h"
++#include "startup_world_entities.h"
++
++static inline ScreenTerrainCell* RouteCell(ScreenTerrainGrid* grid, const ScreenPoint& point)
++{
++    return &grid->cells_0c[grid->TileIndex(point.x, point.y)];
++}
++
++static inline unsigned int RouteFlags(ScreenTerrainGrid* grid, const ScreenPoint& point)
++{
++    return grid->cells_0c[grid->TileIndex(point.x, point.y)].flags_48;
++}
++
++static inline void ClearFlags(ScreenTerrainCell* cell, unsigned int flags)
++{
++    cell->flags_48 &= ~flags;
++}
++
++// A transition cell (0x100) that is not yet blocked (0x10).
++static inline bool IsTransition(ScreenPoint point)
++{
++    return (RouteFlags(screen_terrain_grid, point) & 0x100) && !(RouteFlags(screen_terrain_grid, point) & 0x10);
++}
++
++static inline bool IsTransitionAt(const ScreenPoint& point)
++{
++    return (RouteFlags(screen_terrain_grid, ScreenPoint(point)) & 0x100) && !(RouteFlags(screen_terrain_grid, point) & 0x10);
++}
++
++static inline void ClearTransition(const ScreenPoint& point)
++{
++    ScreenTerrainCell* cell = RouteCell(screen_terrain_grid, point);
++    cell->flags_48 &= ~0xd0000080;
++}
++
++static inline void ClearTransitionFlags(const ScreenPoint& point)
++{
++    ClearFlags(RouteCell(screen_terrain_grid, point), 0xd0000080);
++}
++
++// Clears the route transition marks around both route ends.
++// FUNCTION: BEACHLIFE 0x00485ca0
++void WorldMovingEntity::NotifyRouteTransition(ScreenPoint* start, ScreenPoint* end, unsigned int flags)
++{
++    ScreenPoint first = *start;
++    ScreenPoint last = *end;
++    if (IsTransitionAt(first))
++    {
++        ClearTransitionFlags(first);
++        for (int direction = 0; direction < 8; ++direction)
++        {
++            ScreenPoint neighbour;
++            screen_terrain_grid->Step(first, direction, &neighbour);
++            if (IsTransitionAt(neighbour))
++                ClearTransition(neighbour);
++        }
++    }
++    if (IsTransition(last))
++    {
++        ClearTransition(last);
++        for (int direction = 0; direction < 8; ++direction)
++        {
++            ScreenPoint neighbour;
++            screen_terrain_grid->Step(last, direction, &neighbour);
++            if (IsTransition(neighbour))
++                ClearTransition(neighbour);
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00485ca0.json b/targets/beachlife-uk-1.1.d/00485ca0.json
+new file mode 100644
+index 0000000..74548ad
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00485ca0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00485ca0",
++      "size": 634,
++      "name": "WorldMovingEntity::NotifyRouteTransition",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00485ca0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

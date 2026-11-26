@@ -1,0 +1,232 @@
+diff --git a/fixtures/game.d/fixture_004835a0.cpp b/fixtures/game.d/fixture_004835a0.cpp
+new file mode 100644
+index 0000000..d627f0c
+--- /dev/null
++++ b/fixtures/game.d/fixture_004835a0.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004835a0(WorldMovingEntity* item)
++{
++    item->AdvanceMotion();
++}
+diff --git a/metadata.d/004835a0.csv b/metadata.d/004835a0.csv
+new file mode 100644
+index 0000000..f2e464b
+--- /dev/null
++++ b/metadata.d/004835a0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004835a0,function,1244,?AdvanceMotion@WorldMovingEntity@@QAEXXZ
+diff --git a/src/match_004835a0.cpp b/src/match_004835a0.cpp
+new file mode 100644
+index 0000000..312c633
+--- /dev/null
++++ b/src/match_004835a0.cpp
+@@ -0,0 +1,184 @@
++#include "startup_world_motion_helpers.h"
++#include "startup_screen_mode_world.h"
++#include "startup_variable_state.h"
++#include "startup_screen_terrain_tile_index.h"
++
++extern float fast_reciprocal_two;
++
++static inline void QueueMotionState(WorldMovingEntity* entity, unsigned int kind, unsigned int first, unsigned int second)
++{
++    ScreenModeCommand command;
++    command.words[0] = entity->id_28;
++    command.words[1] = entity->id_28;
++    command.words[2] = kind;
++    command.words[3] = first;
++    command.words[4] = second;
++    command.words[5] = entity->state_3c;
++    if (entity->kind_2c == 3)
++        entity->Unknown24(command, 0.01f);
++    else
++        screen_mode_commands->QueueDelayed(&command, 0.01f);
++}
++
++static inline void QueueStopState(WorldMovingEntity* entity)
++{
++    ScreenModeCommand command;
++    command.words[0] = entity->id_28;
++    command.words[1] = entity->id_28;
++    command.words[2] = 22;
++    command.words[3] = 0;
++    command.words[4] = 0;
++    command.words[5] = entity->state_3c;
++    entity->flag_e4 = 0;
++    entity->word_e8 = 0;
++    if (entity->kind_2c == 3)
++        entity->Unknown24(command, 0.01f);
++    else
++        screen_mode_commands->QueueDelayed(&command, 0.01f);
++}
++
++static inline ScreenModeCommand PositionCommand(WorldMovingEntity* entity, unsigned int kind)
++{
++    ScreenModeCommand command;
++    command.words[0] = entity->id_28;
++    command.words[1] = entity->id_28;
++    command.words[2] = kind;
++    command.words[3] = static_cast<int>(entity->position_30.x);
++    command.words[4] = static_cast<int>(entity->position_30.y);
++    command.words[5] = entity->state_3c;
++    return command;
++}
++
++// Retail's fast reciprocal: 0x7f000000 - bits, then one Newton step against 2.0.
++static inline void DivideRoutePosition(ScreenMapPosition& position, float divisor)
++{
++    float reciprocal;
++    __asm
++        {
++        mov eax, 0x7f000000
++        sub eax, divisor
++        mov reciprocal, eax
++        fld divisor
++        fmul reciprocal
++        fsubr fast_reciprocal_two
++        fmul reciprocal
++        fstp reciprocal
++        }
++    position.x = reciprocal * position.x;
++    float y = position.y;
++    position.y = y * reciprocal;
++}
++
++static inline ScreenMapPosition Difference(const ScreenMapPosition& first, const ScreenMapPosition& second)
++{
++    return ScreenMapPosition(first.x - second.x, first.y - second.y);
++}
++
++static inline void Normalize(ScreenMapPosition& vector)
++{
++    DivideRoutePosition(vector, WorldSquareRoot(vector.x * vector.x + vector.y * vector.y));
++}
++
++static inline unsigned int TileFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
++// FUNCTION: BEACHLIFE 0x004835a0
++void WorldMovingEntity::AdvanceMotion()
++{
++    if (route_b8)
++    {
++        int result = static_cast<WorldRoutePosition*>(route_b8)->Advance();
++        if (result == 2)
++        {
++            world_subsystem_18->ReleaseRoute(route_b8);
++            route_b8 = 0;
++            return;
++        }
++        if (flag_d4 && word_ec == 1)
++        {
++            WorldRoutePosition* route = static_cast<WorldRoutePosition*>(route_b8);
++            ScreenMapPosition direction = Difference(screen_terrain_grid->TileWorldPosition(route->data_00->points_0c[route->index_08]), *reinterpret_cast<const ScreenMapPosition*>(&motion_64[0]));
++            Normalize(direction);
++            int heading = MotionDirection(direction, 8);
++            if (*reinterpret_cast<int*>(&values_d8[1]) != heading)
++            {
++                flag_5c = 0;
++                ScreenModeCommand command;
++                command.words[0] = id_28;
++                command.words[1] = id_28;
++                command.words[2] = 18;
++                command.words[3] = heading;
++                command.words[4] = 0;
++                screen_mode_commands->QueueDelayed(&command, 0.01f);
++            }
++            *reinterpret_cast<int*>(&values_d8[1]) = heading;
++        }
++        if (result == 1)
++        {
++            *reinterpret_cast<int*>(&values_d8[0]) = 0;
++            QueueMotionState(this, 25, 0, 0);
++            return;
++        }
++        if (!flags_d0[0])
++        {
++            WorldRoutePosition* route = static_cast<WorldRoutePosition*>(route_b8);
++            if ((TileFlags(screen_terrain_grid, route->data_00->points_0c[route->index_08]) & 0x40000000)
++                && !(TileFlags(screen_terrain_grid, static_cast<WorldRoutePosition*>(route_b8)->data_00->points_0c[static_cast<WorldRoutePosition*>(route_b8)->index_08]) & 0x10))
++            {
++                flags_d0[0] = 1;
++                ScreenModeCommand command = PositionCommand(this, 23);
++                if (kind_2c == 3)
++                    Unknown24(command, 0.01f);
++                else
++                    screen_mode_commands->QueueDelayed(&command, 0.01f);
++            }
++        }
++        return;
++    }
++    if (flag_bc)
++    {
++        if (!flag_c4)
++        {
++            if (++word_cc != word_c8)
++                return;
++        }
++        else if (static_cast<int>(--word_cc) >= 0)
++            return;
++        word_58 = 0;
++        flag_5c = 0;
++        flag_bc = 0;
++        float* motion = &motion_64[2];
++        motion[0] = 0.0f;
++        motion[1] = 0.0f;
++        motion[2] = 0.0f;
++        motion[3] = 0.0f;
++        QueueStopState(this);
++        return;
++    }
++    word_58 = 0;
++    if (flag_a8)
++    {
++        if (variable_world->FindObject(word_ac)->AsMoving()->flag_5c)
++            return;
++        flag_5c = 0;
++        flag_a8 = 0;
++        word_ac = -1;
++        word_a0 = 1;
++        float* motion = &motion_64[2];
++        motion[0] = 0.0f;
++        motion[1] = 0.0f;
++        motion[2] = 0.0f;
++        motion[3] = 0.0f;
++        QueueStopState(this);
++        return;
++    }
++    flag_5c = 0;
++    float* motion = &motion_64[2];
++    motion[0] = 0.0f;
++    motion[1] = 0.0f;
++    motion[2] = 0.0f;
++    motion[3] = 0.0f;
++    QueueStopState(this);
++}
+diff --git a/targets/beachlife-uk-1.1.d/004835a0.json b/targets/beachlife-uk-1.1.d/004835a0.json
+new file mode 100644
+index 0000000..5859687
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004835a0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x004835a0",
++      "size": 1244,
++      "name": "WorldMovingEntity::AdvanceMotion",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004835a0.cpp": [
++      "/Ob1"
++    ]
++  }
++}
