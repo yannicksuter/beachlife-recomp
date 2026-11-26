@@ -1,0 +1,275 @@
+diff --git a/src/startup_renderer_display_initialize_native.cpp b/src/startup_renderer_display_initialize_native.cpp
+index c264512aab52bc6d993e31b68391fb1b51f42e5c..b5b6491f77ab6b09ac3b09447408187049595c88 100644
+--- a/src/startup_renderer_display_initialize_native.cpp
++++ b/src/startup_renderer_display_initialize_native.cpp
+@@ -5,7 +5,6 @@
+ #include "startup_screen_renderer.h"
+ 
+ #include <limits>
+-#include <new>
+ #include <stdexcept>
+ #include <string.h>
+ 
+@@ -43,7 +42,55 @@ unsigned char ScreenRequestRenderer::InitializeDisplay(beachlife::platform::Vide
+         RecordDisplayMode(&description, display_mode_flags_48);
+     }
+ 
+-    if (mode == 0)
++    if (mode)
++    {
++        // The original software branch ignores the supplied bit-depth argument.
++        device = native_display;
++        device->use_windowed_mode();
++        device->resize_client(static_cast<int>(requested_width), static_cast<int>(requested_height));
++        device->clear_topmost();
++
++        const auto work_area = device->work_area();
++        auto rectangle = device->outer_rectangle();
++        if (rectangle.left < work_area.left)
++        {
++            rectangle.left = work_area.left;
++        }
++        if (rectangle.top < work_area.top)
++        {
++            rectangle.top = work_area.top;
++        }
++        device->move_outer(rectangle.left, rectangle.top);
++
++        // The original reloads the owner's stored window here, not the incoming
++        // argument. This borrowed view performs real queries and owns no window.
++        beachlife::runtime::renderer_display::SoftwareDisplay stored_window(*window_34);
++        const auto client = stored_window.client_rectangle_in_screen();
++        window_rectangle_24.left = client.left;
++        window_rectangle_24.top = client.top;
++        window_rectangle_24.right = client.right;
++        window_rectangle_24.bottom = client.bottom;
++
++        // Existing complete game bodies own the real entry/pixel allocation. Keep
++        // publication-before-initialization and the original first-entry selection.
++        CreateSurface(static_cast<int>(requested_width), static_cast<int>(requested_height), 0);
++        surface_storage[0]->position = ScreenPoint(0, 0);
++
++        bitmap_info = new beachlife::runtime::renderer_display::BitmapInfo;
++        memset(bitmap_info, 0, sizeof(beachlife::runtime::renderer_display::BitmapInfoHeader));
++        bitmap_info->bmiHeader.biSize = sizeof(beachlife::runtime::renderer_display::BitmapInfoHeader);
++        bitmap_info->bmiHeader.biWidth = static_cast<int>(requested_width);
++        bitmap_info->bmiHeader.biHeight = -static_cast<int>(requested_height);
++        bitmap_info->bmiHeader.biPlanes = 1;
++        bitmap_info->bmiHeader.biBitCount = 16;
++        bitmap_info->bmiHeader.biCompression = 0;
++        bitmap_info->bmiHeader.biSizeImage = 0;
++        bitmap_info->bmiHeader.biXPelsPerMeter = 0;
++        bitmap_info->bmiHeader.biYPelsPerMeter = 0;
++        bitmap_info->bmiHeader.biClrUsed = 0;
++        bitmap_info->bmiHeader.biClrImportant = 0;
++    }
++    else
+     {
+         using namespace beachlife::runtime::renderer_display;
+         native_fullscreen = new FullscreenDisplay(window);
+@@ -60,16 +107,7 @@ unsigned char ScreenRequestRenderer::InitializeDisplay(beachlife::platform::Vide
+         native_primary = &native_chain->front_surface();
+         native_back = &native_chain->back_surface();
+ 
+-        ScreenSurfacePosition* entry = 0;
+-        void* storage = ::operator new(sizeof(ScreenSurfacePosition));
+-        if (storage)
+-        {
+-            entry = ::new (storage) ScreenSurfacePosition;
+-            entry->position.x = 0;
+-            entry->position.y = 0;
+-            entry->active = 1;
+-            entry->prepared = 0;
+-        }
++        ScreenSurfacePosition* entry = new ScreenSurfacePosition;
+         entry->software = 0;
+         WordSurface16* attached = native_back;
+         entry->width = requested_width;
+@@ -82,81 +120,35 @@ unsigned char ScreenRequestRenderer::InitializeDisplay(beachlife::platform::Vide
+         // The same qualified host backing boundary as mode1 owns slots only.
+         // Publish the raw entry after its fields, retaining failure ownership.
+         surface_storage.PushBack(entry);
+-        surface_storage[0]->position.x = 0;
+-        surface_storage[0]->position.y = 0;
++        surface_storage[0]->position = ScreenPoint(0, 0);
+         const auto rectangle = native_fullscreen->screen_rectangle();
+         window_rectangle_24.left = rectangle.left;
+         window_rectangle_24.top = rectangle.top;
+         window_rectangle_24.right = rectangle.right;
+         window_rectangle_24.bottom = rectangle.bottom;
++    }
+ 
+-        const auto masks = word_masks(native_primary->description().format);
+-        if (masks.green == 0x3e0)
++    if (mode)
++    {
++        format_44 = 1;
++        fill_color = 0x3e0;
++    }
++    else
++    {
++        const auto masks = beachlife::runtime::renderer_display::word_masks(native_primary->description().format);
++        switch (masks.green)
+         {
++        case 0x3e0:
+             format_44 = 1;
+             fill_color = 0x3e0;
+-        }
+-        else if (masks.green == 0x7e0)
+-        {
++            break;
++        case 0x7e0:
+             format_44 = 0;
+             fill_color = 0x7e0;
+-        }
+-        else
+-        {
++            break;
++        default:
+             StartupFatal("Renderer16:CreateDisplay - something is wrong with the pixelformat");
+         }
+-        return successful;
+     }
+-
+-    // The original software branch ignores the supplied bit-depth argument.
+-    (void)bits;
+-    device = native_display;
+-    device->use_windowed_mode();
+-    device->resize_client(static_cast<int>(requested_width), static_cast<int>(requested_height));
+-    device->clear_topmost();
+-
+-    const auto work_area = device->work_area();
+-    auto rectangle = device->outer_rectangle();
+-    if (rectangle.left < work_area.left)
+-    {
+-        rectangle.left = work_area.left;
+-    }
+-    if (rectangle.top < work_area.top)
+-    {
+-        rectangle.top = work_area.top;
+-    }
+-    device->move_outer(rectangle.left, rectangle.top);
+-
+-    // The original reloads the owner's stored window here, not the incoming
+-    // argument. This borrowed view performs real queries and owns no window.
+-    beachlife::runtime::renderer_display::SoftwareDisplay stored_window(*window_34);
+-    const auto client = stored_window.client_rectangle_in_screen();
+-    window_rectangle_24.left = client.left;
+-    window_rectangle_24.top = client.top;
+-    window_rectangle_24.right = client.right;
+-    window_rectangle_24.bottom = client.bottom;
+-
+-    // Existing complete game bodies own the real entry/pixel allocation. Keep
+-    // publication-before-initialization and the original first-entry selection.
+-    CreateSurface(static_cast<int>(requested_width), static_cast<int>(requested_height), 0);
+-    surface_storage[0]->position.x = 0;
+-    surface_storage[0]->position.y = 0;
+-
+-    bitmap_info = new beachlife::runtime::renderer_display::BitmapInfo;
+-    memset(bitmap_info, 0, sizeof(beachlife::runtime::renderer_display::BitmapInfoHeader));
+-    bitmap_info->bmiHeader.biSize = sizeof(beachlife::runtime::renderer_display::BitmapInfoHeader);
+-    bitmap_info->bmiHeader.biWidth = static_cast<int>(requested_width);
+-    bitmap_info->bmiHeader.biHeight = -static_cast<int>(requested_height);
+-    bitmap_info->bmiHeader.biPlanes = 1;
+-    bitmap_info->bmiHeader.biBitCount = 16;
+-    bitmap_info->bmiHeader.biCompression = 0;
+-    bitmap_info->bmiHeader.biSizeImage = 0;
+-    bitmap_info->bmiHeader.biXPelsPerMeter = 0;
+-    bitmap_info->bmiHeader.biYPelsPerMeter = 0;
+-    bitmap_info->bmiHeader.biClrUsed = 0;
+-    bitmap_info->bmiHeader.biClrImportant = 0;
+-
+-    format_44 = 1;
+-    fill_color = 0x3e0;
+     return successful;
+ }
+diff --git a/src/startup_screen_renderer.h b/src/startup_screen_renderer.h
+index c1f868da05375514dfd6a4cfacfbeb05f1c00c7d..bf035866ba1ceb543b287622e54e61837b4979f1 100644
+--- a/src/startup_screen_renderer.h
++++ b/src/startup_screen_renderer.h
+@@ -83,6 +83,16 @@ struct ScreenSurfacePosition
+     beachlife::runtime::renderer_display::WordSurface16* native_surface = 0;
+     bool native_surface_owned = false;
+ 
++    // Retail expands this constructor after the allocation null test in
++    // CreateSurface 0x0040def0 and InitializeDisplay 0x0040d9c0; the
++    // remaining fields stay uninitialized.
++    ScreenSurfacePosition()
++        : active(1)
++    {
++        position.x = 0;
++        position.y = 0;
++        prepared = 0;
++    }
+     void Cleanup();
+ };
+ 
+diff --git a/src/startup_surface_create.cpp b/src/startup_surface_create.cpp
+index 48a9ad619be8c319b6b38d90e58faadb28301c3d..77741a9f3fb26975a455a2a63d82967a25955988 100644
+--- a/src/startup_surface_create.cpp
++++ b/src/startup_surface_create.cpp
+@@ -1,50 +1,35 @@
+ #include "startup_screen_renderer.h"
+ 
+-#include <new>
+-
+ // Native standard-library backing adaptation of the complete 0x0040def0.
+ // The container owns pointer slots only. Entries retain their real raw lifetime.
+ // FUNCTION: BEACHLIFE 0x0040def0
+-int ScreenRequestRenderer::CreateSurface(int image_width, int image_height, int mode)
++int ScreenRequestRenderer::CreateSurface(int width, int height, int mode)
+ {
+     ScreenSurfacePosition* selected = 0;
+-    unsigned int index = 0;
+-    ScreenSurfacePosition** scan = surface_storage.begin;
+-    if (!surface_storage.Empty())
++    int result;
++    for (unsigned int i = 0; i < static_cast<unsigned int>(surface_storage.Size()); ++i)
+     {
+-        do
++        if (surface_storage[i]->active == 0)
+         {
+-            if (scan[index]->active == 0)
+-            {
+-                selected = scan[index];
+-                break;
+-            }
+-            ++index;
+-        } while (index < static_cast<unsigned int>(surface_storage.Size()));
++            selected = surface_storage[i];
++            result = static_cast<int>(i);
++            break;
++        }
+     }
+-
+     if (selected != 0)
+     {
+         selected->active = 1;
+     }
+     else
+     {
+-        void* storage = ::operator new(sizeof(ScreenSurfacePosition));
+-        if (storage != 0)
+-        {
+-            selected = ::new (storage) ScreenSurfacePosition;
+-            selected->active = 1;
+-            selected->position.x = 0;
+-            selected->position.y = 0;
+-            selected->prepared = 0;
+-        }
+-        index = static_cast<unsigned int>(surface_storage.Size());
++        ScreenSurfacePosition* created = new ScreenSurfacePosition;
++        selected = created;
++        result = static_cast<int>(surface_storage.Size());
+         // Publish before InitializeSurface. A backing-allocation or initializer
+         // exception retains the original raw-entry failure ownership; no new
+         // owning-pointer rollback or missing game cleanup is introduced.
+-        surface_storage.PushBack(selected);
++        surface_storage.PushBack(created);
+     }
+-
+-    InitializeSurface(image_width, image_height, selected, static_cast<unsigned char>(mode));
+-    return static_cast<int>(index);
++    InitializeSurface(width, height, selected, static_cast<unsigned char>(mode));
++    return result;
+ }

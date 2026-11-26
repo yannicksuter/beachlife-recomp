@@ -1,0 +1,222 @@
+diff --git a/src/startup_world_guest_wander_action.cpp b/src/startup_world_guest_wander_action.cpp
+index f5e3fe7c084f26ee7a6a04707831ba64610ca68e..88968a580fe47252ec5d988d38723a81ab44e9f2 100644
+--- a/src/startup_world_guest_wander_action.cpp
++++ b/src/startup_world_guest_wander_action.cpp
+@@ -2,85 +2,119 @@
+ #include "startup_screen_overlay_layout.h"
+ #include <cmath>
+ 
+-static bool GuestWanderLand(unsigned int flags)
++static unsigned int GridFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
+ {
+-    return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
++static bool SandFlags(unsigned int flags)
++{
++    return (flags & 0x10000080) && !(flags & 0x8000);
++}
++
++static bool GrassFlags(unsigned int flags)
++{
++    return (flags & 2) && !(flags & 0x8010);
++}
++
++static bool CanStand(ScreenWorldPosition* position)
++{
++    unsigned int flags = GridFlags(screen_terrain_grid, overlay_map->WorldToTile(position));
++    return SandFlags(flags) || GrassFlags(flags);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00476fa0
+ void WorldGuestEntity::PerformAction6()
+ {
+-    ScreenWorldPosition position = Position();
++    ScreenModeCommand command(0, 0, 0, 0, 0);
++    ScreenWorldPosition position = position_30;
++    bool found = false;
+     unsigned int count;
++    VariableEntity** objects;
+     if (state_3c == 45)
+     {
+-        ScreenPoint tile = TilePosition();
+-        VariableEntity** nearby = variable_world->Nearby(tile, 5, &count);
+-        for (unsigned int i = 0; i < count; ++i)
++        objects = variable_world->Nearby(TilePosition(), 5, &count);
++        if (count)
+         {
+-            if (nearby[i]->id_28 == id_28 || nearby[i]->kind_2c != 3 || nearby[i]->state_3c != 45)
+-                continue;
+-            WorldGuestEntity* guest = static_cast<WorldGuestEntity*>(nearby[i]);
+-            if (guest->lightning_state_318 != 2)
+-                continue;
+-            lightning_state_318 = 1;
+-            word_32c = guest->id_28;
+-            position = guest->Position();
+-            position.x -= 20.0f;
+-            ScreenPoint target = overlay_map->WorldToTile(&position);
+-            if (GuestWanderLand(screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(target.x, target.y)].flags_48))
++            for (unsigned int i = 0; i < count; ++i)
+             {
+-                SendGuestWalk(id_28, 8, position);
+-                return;
++                if (objects[i]->id_28 != id_28 && objects[i]->kind_2c == 3 && objects[i]->state_3c == 45
++                    && objects[i]->AsGuest()->lightning_state_318 == 2)
++                {
++                    lightning_state_318 = 1;
++                    word_32c = objects[i]->id_28;
++                    ScreenWorldPosition partner = objects[i]->position_30;
++                    position = partner;
++                    position.x -= 20.0f;
++                    if (CanStand(&position))
++                    {
++                        command = MakeGuestCommand(id_28, id_28, 8, static_cast<int>(position.x), static_cast<int>(position.y));
++                        screen_mode_commands->QueueCommand(&command);
++                        found = true;
++                        i = count;
++                    }
++                    else
++                        found = false;
++                }
+             }
++            if (found)
++                return;
+         }
+     }
+     else
+     {
+-        VariableEntity** benches = variable_world->FindNamed("BENCH", &count);
+         float nearest = 5.0f;
+-        unsigned int selected = count;
+-        for (unsigned int i = 0; i < count; ++i)
++        objects = variable_world->FindNamed("BENCH", &count);
++        if (count)
+         {
+-            WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(benches[i]);
+-            if (bench->byte_a0 || !bench->AvailableSeats() || bench->state_3c == 4)
+-                continue;
+-            ScreenPoint tile = TilePosition();
+-            int x = tile.x - bench->TilePosition().x;
+-            int y = tile.y - bench->TilePosition().y;
+-            int squared = static_cast<int>(static_cast<unsigned int>(x) * x + static_cast<unsigned int>(y) * y);
+-            long double distance = std::sqrt(static_cast<long double>(squared));
+-            if (!(distance > nearest))
++            unsigned int selected = count;
++            for (unsigned int i = 0; i < count; ++i)
+             {
+-                nearest = static_cast<float>(distance);
+-                selected = i;
++                if (!static_cast<WorldSceneryEntity*>(objects[i])->byte_a0
++                    && static_cast<WorldSceneryEntity*>(objects[i])->AvailableSeats() && objects[i]->state_3c != 4)
++                {
++                    ScreenPoint tile = TilePosition();
++                    tile.x -= objects[i]->TilePosition().x;
++                    tile.y -= objects[i]->TilePosition().y;
++                    int squared = static_cast<int>(static_cast<unsigned int>(tile.y) * tile.y
++                                                   + static_cast<unsigned int>(tile.x) * tile.x);
++                    long double distance = std::sqrt(static_cast<long double>(squared));
++                    if (!(distance > nearest))
++                    {
++                        nearest = static_cast<float>(distance);
++                        selected = i;
++                    }
++                }
+             }
+-        }
+-        if (selected < count && std::rand() % 10 == 0)
+-        {
+-            WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(benches[selected]);
+-            if (bench->scenery_f4->capacity_2dc > bench->word_90)
++            if (selected < count && std::rand() % 10 == 0)
+             {
+-                lightning_state_318 = 20;
+-                ScreenModeCommand command = MakeGuestCommand(id_28, bench->id_28, 3, 0, 4);
+-                screen_mode_commands->QueueCommand(&command);
+-                command = MakeGuestCommand(id_28, id_28, 9, 0, bench->id_28);
+-                screen_mode_commands->QueueCommand(&command);
+-                return;
++                WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(objects[selected]);
++                if (bench->scenery_f4->capacity_2dc > bench->word_90)
++                {
++                    lightning_state_318 = 20;
++                    ScreenModeCommand sit(id_28, bench->id_28, 3, 0, 4);
++                    screen_mode_commands->QueueCommand(&sit);
++                    ScreenModeCommand rest(id_28, id_28, 9, 0, bench->id_28);
++                    screen_mode_commands->QueueCommand(&rest);
++                    return;
++                }
+             }
+         }
+     }
+-    for (;;)
++    position.x += std::rand() % 500 - 250;
++    position.y += std::rand() % 500 - 250;
++    unsigned int flags = GridFlags(screen_terrain_grid, overlay_map->WorldToTile(&position));
++    // Retail's x87 tests: the y bound passes an unordered value, the zero tests fail it.
++    while (!((SandFlags(flags) || GrassFlags(flags)) && !(position.y >= 8192.0f) && position.x >= 0.0f
++             && position.y >= 0.0f && !(position.x > 4096.0f)))
+     {
++        position = position_30;
+         position.x += std::rand() % 500 - 250;
+         position.y += std::rand() % 500 - 250;
+-        ScreenPoint tile = overlay_map->WorldToTile(&position);
+-        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
+-        if (GuestWanderLand(flags) && position.y < 8192.0f && position.x >= 0.0f && position.y >= 0.0f && !(position.x > 4096.0f))
+-            break;
+-        position = Position();
++        flags = GridFlags(screen_terrain_grid, overlay_map->WorldToTile(&position));
+     }
+     if (state_3c == 45)
+         lightning_state_318 = 0;
+-    SendGuestWalk(id_28, 8, position);
++    command = MakeGuestCommand(id_28, id_28, 8, static_cast<int>(position.x), static_cast<int>(position.y));
++    screen_mode_commands->QueueCommand(&command);
+ }
+diff --git a/src/startup_world_guest_water_actions.cpp b/src/startup_world_guest_water_actions.cpp
+index a34b12012c281c6c157189fa46d53034cf83fef2..f966cd8a8ef60ee3e1715cd426c01768d7c54436 100644
+--- a/src/startup_world_guest_water_actions.cpp
++++ b/src/startup_world_guest_water_actions.cpp
+@@ -1,11 +1,20 @@
+ #include "startup_world_guest_action_helpers.h"
+ 
++static unsigned int CellFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
+ // FUNCTION: BEACHLIFE 0x00473830
+ void WorldGuestEntity::PerformAction64()
+ {
+     ScreenPoint points[4];
+-    for (ScreenPoint& point : points)
+-        point = TilePosition();
++    for (int point_index = 0; point_index < 4; ++point_index)
++    {
++        ScreenPoint tile;
++        tile = TilePosition();
++        points[point_index] = tile;
++    }
+     bool found = false;
+     while (!found)
+     {
+@@ -13,13 +22,15 @@ void WorldGuestEntity::PerformAction64()
+         {
+             ScreenPoint& point = points[i];
+             screen_terrain_grid->Step(point, i * 2, &point);
+-            unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(point.x, point.y)].flags_48;
+-            if ((flags & 0x10000080) || ((flags & 2) && !(flags & 0x8010)))
++            ScreenTerrainGrid* grid = screen_terrain_grid;
++            if ((CellFlags(grid, point) & 0x10000080)
++                || ((CellFlags(grid, point) & 2) && !(CellFlags(grid, point) & 0x8010)))
+             {
+                 walkpoints_22c[0] = screen_terrain_grid->TileCenter(point);
+-                SendGuestWalk(id_28, 5, walkpoints_22c[0]);
++                ScreenModeCommand command(id_28, id_28, 5, static_cast<int>(walkpoints_22c[0].x), static_cast<int>(walkpoints_22c[0].y));
++                screen_mode_commands->QueueCommand(&command);
+                 found = true;
+-                break;
++                i = 4;
+             }
+         }
+     }

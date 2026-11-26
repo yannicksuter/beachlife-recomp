@@ -1,0 +1,184 @@
+diff --git a/src/startup_screen_dialog_terrain_tiles.cpp b/src/startup_screen_dialog_terrain_tiles.cpp
+index 6b891b8e408df36895d97e25883cb979ad7d5ece..5e4715da07053c092cac73cea77009d50574dac3 100644
+--- a/src/startup_screen_dialog_terrain_tiles.cpp
++++ b/src/startup_screen_dialog_terrain_tiles.cpp
+@@ -563,111 +563,90 @@ void ScreenDialogResource::BurnBuildingClippedTiles(const ScreenRectangle* recta
+ {
+     if (record->format_18 != 5)
+         return;
+-    const unsigned char* colours = record->frames[0]->SelectData(word_14, word_18);
+-    const unsigned char* depths = record->frames[1]->SelectData(word_14, word_18);
++    const unsigned char* colours = FramePlane(this, 0);
++    const unsigned char* depths = FramePlane(this, 1);
+     OverlayMapPrefix* map = overlay_map;
++    const OverlayMapPrefix* cache = map;
++    int size = overlay_map->tile_size_dc;
+     const unsigned short* palette = record->palettes[0];
+-    int width = SelectedFrame()->width_0e;
+-    // Retail clips rows here; horizontal runs still traverse their full width.
++    int width = record->frames[word_10]->width_0e;
++    int active_y = tile_y;
++    unsigned int data_index = 0;
++    for (int skipped = 0; skipped < rectangle->top; ++skipped)
+     {
+-        int top = rectangle->top;
+-        int bottom = rectangle->bottom;
+-
+-        unsigned int data_index = 0;
+-        for (int row = 0; row < top; ++row)
++        int column = 0;
++        while (column < width)
+         {
+-            int column = 0;
+-            while (column < width)
++            signed char run = colours[data_index++];
++            if (run > 0)
+             {
+-                int run = static_cast<signed char>(colours[data_index++]);
+-                if (run > 0)
+-                {
+-                    column += run;
+-                    data_index += run;
+-                }
+-                else
+-                    column -= run;
++                column += run;
++                data_index += run;
+             }
++            else
++                column -= run;
+         }
+-        int size = map->tile_size_dc;
+-        int active_y = tile_y;
+-        for (int row = top; row < bottom; ++row)
++    }
++    for (int row = rectangle->top; row < rectangle->bottom; ++row)
++    {
++        int active_x = tile_x;
++        int column = offset_x;
++        int decoded = 0;
++        if (row - rectangle->top + offset_y > size - 1)
++            active_y = tile_y + (row - rectangle->top + offset_y) / size;
++        int pixel = ((row - rectangle->top + offset_y) % size) * size + offset_x;
++        unsigned int* view;
++        if (!cache->cached_tiles_e0[active_y * cache->cache_height_d8 + active_x].ready)
++            map->MapCachedTile(active_x, active_y);
++        if (!cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].ready)
++            map->MapCachedTile(active_x, active_y);
++        view = static_cast<unsigned int*>(cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].view);
++        while (decoded < width)
+         {
+-            int y = offset_y + row - top;
+-            if (y > size - 1)
+-                active_y = tile_y + y / size;
+-            int active_x = tile_x;
+-            int column = offset_x;
+-            int row_offset = (y % size) * size;
+-            int pixel = row_offset + column;
+-            unsigned int* view;
+-            {
+-                int view_x = active_x;
+-                int view_y = active_y;
+-                if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                    map->MapCachedTile(view_x, view_y);
+-                if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                    map->MapCachedTile(view_x, view_y);
+-                view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
+-            }
+-            int decoded = 0;
+-            while (decoded < width)
++            signed char run = colours[data_index++];
++            if (run >= 0)
+             {
+-                int run = static_cast<signed char>(colours[data_index++]);
+-                if (run >= 0)
+-                {
+-                    unsigned int current = data_index;
+-                    data_index += run;
+-                    decoded += run;
+-                    for (int count = 0; count < run; ++count, ++current, ++column, ++pixel)
+-                    {
+-                        if (column >= size)
+-                        {
+-                            active_x = (active_x + 1) % static_cast<int>(map->cache_width_d4);
+-                            column %= size;
+-                            {
+-                                int view_x = active_x;
+-                                int view_y = active_y;
+-                                if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                                    map->MapCachedTile(view_x, view_y);
+-                                if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                                    map->MapCachedTile(view_x, view_y);
+-                                view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
+-                            }
+-                            pixel = row_offset + column;
+-                        }
+-                        unsigned int value = (static_cast<unsigned short>(static_cast<int>(
+-                                                  depths[current] * static_cast<long double>(depth_step)))
+-                                                 + (depth & 0xffffu))
+-                                          << 16;
+-                        value = (value & 0xfffeffffu) + 0x10000;
+-                        if ((view[pixel] & 0xffff0000u) <= value)
+-                            view[pixel] = value + palette[colours[current]];
+-                    }
+-                }
+-                else
++                while (run--)
+                 {
+-                    decoded -= run;
+-                    column -= run;
+                     if (column >= size)
+                     {
++                        active_x = (active_x + 1) % static_cast<int>(cache->cache_width_d4);
+                         column %= size;
+-                        active_x = (active_x + 1) % static_cast<int>(map->cache_width_d4);
+-                        {
+-                            int view_x = active_x;
+-                            int view_y = active_y;
+-                            if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                                map->MapCachedTile(view_x, view_y);
+-                            if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                                map->MapCachedTile(view_x, view_y);
+-                            view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
+-                        }
+-                        pixel = row_offset + column;
++                        if (!cache->cached_tiles_e0[active_y * cache->cache_height_d8 + active_x].ready)
++                            map->MapCachedTile(active_x, active_y);
++                        if (!cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].ready)
++                            map->MapCachedTile(active_x, active_y);
++                        view = static_cast<unsigned int*>(cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].view);
++                        pixel = ((row - rectangle->top + offset_y) % size) * size + column;
+                     }
+-                    else
+-                        pixel -= run;
++                    unsigned int value = (static_cast<unsigned short>(static_cast<int>(depths[data_index] * static_cast<long double>(depth_step))) + (depth & 0xffffu)) << 16;
++                    value = (value & 0xfffeffffu) + 0x10000;
++                    if ((view[pixel] & 0xffff0000u) <= value)
++                        view[pixel] = value + palette[colours[data_index]];
++                    ++data_index;
++                    ++pixel;
++                    ++column;
++                    ++decoded;
+                 }
+             }
++            else
++            {
++                decoded -= run;
++                column -= run;
++                if (column >= size)
++                {
++                    column %= size;
++                    active_x = (active_x + 1) % static_cast<int>(cache->cache_width_d4);
++                    if (!cache->cached_tiles_e0[active_y * cache->cache_height_d8 + active_x].ready)
++                        map->MapCachedTile(active_x, active_y);
++                    if (!cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].ready)
++                        map->MapCachedTile(active_x, active_y);
++                    view = static_cast<unsigned int*>(cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].view);
++                    pixel = ((row - rectangle->top + offset_y) % size) * size + column;
++                }
++                else
++                    pixel -= run;
++            }
+         }
+     }
+ }

@@ -1,5 +1,5 @@
 diff --git a/src/startup_game_file.h b/src/startup_game_file.h
-index 6165b11..4c0327e 100644
+index 657355d..42a5a55 100644
 --- a/src/startup_game_file.h
 +++ b/src/startup_game_file.h
 @@ -2,6 +2,15 @@
@@ -362,7 +362,7 @@ index 440b1e7..bcc5d36 100644
 +    }
  }
 diff --git a/src/startup_game_refresh_save_records.cpp b/src/startup_game_refresh_save_records.cpp
-index 5bc8647..1762ef6 100644
+index fbc0328..b512eda 100644
 --- a/src/startup_game_refresh_save_records.cpp
 +++ b/src/startup_game_refresh_save_records.cpp
 @@ -10,6 +10,7 @@
@@ -373,7 +373,7 @@ index 5bc8647..1762ef6 100644
  #include <stdio.h>
  #include <stdlib.h>
  #include <string.h>
-@@ -50,56 +51,62 @@ void ScreenRequestGamePrefix::RefreshSaveRecords()
+@@ -55,52 +56,58 @@ void ScreenRequestGamePrefix::RefreshSaveRecords()
          if (probe)
          {
              fclose(probe);
@@ -381,22 +381,18 @@ index 5bc8647..1762ef6 100644
 -            // Later read/append failures do not acquire a cleanup guard.
 -            GameFileReader* file = new GameFileReader(0, path);
 -            char signature[128];
+-            bool signature_matches = true;
 -            file->ReadString(signature, 128);
--            bool signature_matches = strcmp(signature, startup_save_signature) == 0;
--            float version;
+-            if (strcmp(signature, startup_save_signature) != 0)
+-                signature_matches = false;
 -            file->ReadFloat(&version);
--            // A NaN version is unordered and is not rejected by the original.
--            // Widen before subtraction to retain its unrounded comparison near
--            // the exact binary32 version and epsilon boundary.
--            if (!(fabs(static_cast<double>(version) - startup_save_version) > FLT_EPSILON) && signature_matches)
+-            if (IsCurrentVersion(version) && signature_matches)
 +            try
              {
 -                GameSaveRecord* record = new GameSaveRecord;
 -                record->word_00 = static_cast<unsigned int>(number);
--                int timestamp;
 -                file->ReadInt(&timestamp);
 -                record->time_04 = timestamp;
--                int scenario;
 -                file->ReadInt(&scenario);
 -                record->word_08 = static_cast<unsigned int>(scenario);
 -                int value;
@@ -417,23 +413,19 @@ index 5bc8647..1762ef6 100644
 -                if (position != saves.capacity.data)
 +                std::unique_ptr<GameFileReader> file(new GameFileReader(0, path));
 +                char signature[128];
++                bool signature_matches = true;
 +                file->ReadString(signature, 128);
-+                bool signature_matches = strcmp(signature, startup_save_signature) == 0;
-+                float version;
++                if (strcmp(signature, startup_save_signature) != 0)
++                    signature_matches = false;
 +                file->ReadFloat(&version);
-+                // A NaN version is unordered and is not rejected by the original.
-+                // Widen before subtraction to retain its unrounded comparison near
-+                // the exact binary32 version and epsilon boundary.
-+                if (!(fabs(static_cast<double>(version) - startup_save_version) > FLT_EPSILON) && signature_matches)
++                if (IsCurrentVersion(version) && signature_matches)
                  {
 -                    if (position)
 +                    std::unique_ptr<GameSaveRecord> pending(new GameSaveRecord);
 +                    GameSaveRecord* record = pending.get();
 +                    record->word_00 = static_cast<unsigned int>(number);
-+                    int timestamp;
 +                    file->ReadInt(&timestamp);
 +                    record->time_04 = timestamp;
-+                    int scenario;
 +                    file->ReadInt(&scenario);
 +                    record->word_08 = static_cast<unsigned int>(scenario);
 +                    int value;

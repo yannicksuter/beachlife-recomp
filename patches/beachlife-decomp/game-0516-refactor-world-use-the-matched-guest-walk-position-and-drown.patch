@@ -1,0 +1,86 @@
+diff --git a/src/startup_world_guest_random_walk_position.cpp b/src/startup_world_guest_random_walk_position.cpp
+index bb645c760075269ad8b8399e22e301f8e133bf16..857acca0848a74811782a5f2600cef8b21f803c7 100644
+--- a/src/startup_world_guest_random_walk_position.cpp
++++ b/src/startup_world_guest_random_walk_position.cpp
+@@ -1,18 +1,40 @@
+ #include "startup_world_guest_action_helpers.h"
+ #include "startup_screen_overlay_layout.h"
+ 
++// x87: rand() * (1 / 32767) stays on the FPU stack until the coordinate store
++// (fild; fmul; fmul; fadd; fstp at 0x004689a3..0x004689b9).
++static long double RandomUnit()
++{
++    return static_cast<long double>(std::rand()) * 3.0518509447574615e-5f;
++}
++
++static void RandomPosition(ScreenWorldPosition& position)
++{
++    long double random = RandomUnit();
++    position.x = static_cast<float>(random * 3998.0f + 1.0f);
++    random = RandomUnit();
++    position.y = static_cast<float>(random * 7998.0f + 1.0f);
++    position.z = 0.0f;
++}
++
+ // FUNCTION: BEACHLIFE 0x00468990
+ ScreenWorldPosition WorldGuestEntity::RandomWalkPosition()
+ {
+     ScreenWorldPosition position;
++    RandomPosition(position);
++    ScreenPoint found = overlay_map->WorldToTile(&position);
++    unsigned int x = found.x;
++    unsigned int y = found.y;
+     for (;;)
+     {
+-        position.x = static_cast<float>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * 3998.0f + 1.0f);
+-        position.y = static_cast<float>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * 7998.0f + 1.0f);
+-        position.z = 0.0f;
+-        ScreenPoint tile = overlay_map->WorldToTile(&position);
+-        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
++        ScreenTerrainGrid* terrain = screen_terrain_grid;
++        unsigned int flags = terrain->cells_0c[(y % terrain->height_08) * terrain->width_04 + x % terrain->width_04].flags_48;
+         if ((flags & 0x10000082) && !(flags & 0x8010))
+-            return position;
++            break;
++        RandomPosition(position);
++        found = overlay_map->WorldToTile(&position);
++        x = found.x;
++        y = found.y;
+     }
++    return position;
+ }
+diff --git a/src/startup_world_guest_thoughts.cpp b/src/startup_world_guest_thoughts.cpp
+index 6da3a826e52ffb5e2b61d1f1eb0eda03168347a3..724367e25e9260bc299a4c4048dfa5134fcdc66d 100644
+--- a/src/startup_world_guest_thoughts.cpp
++++ b/src/startup_world_guest_thoughts.cpp
+@@ -1,7 +1,7 @@
+ #include "startup_world_entities.h"
+ #include "startup_screen_text.h"
+-#include <cstdio>
+ #include <cstdlib>
++#include <cstring>
+ 
+ // FUNCTION: BEACHLIFE 0x0047b180
+ void WorldGuestEntity::ShowThought(unsigned int text)
+@@ -26,7 +26,19 @@ void WorldGuestEntity::AddContamination(float amount)
+ // FUNCTION: BEACHLIFE 0x00473450
+ void WorldGuestEntity::PerformAction79()
+ {
+-    char key[256];
+-    std::sprintf(key, "%s%d", guest_f4->word_1c4 ? "GUEST_THOUGHT_FEMALE_DROWNING" : "GUEST_THOUGHT_MALE_DROWNING", std::rand() % 3 + 1);
++    char number[2];
++    char key[252];
++    if (!guest_f4->word_1c4)
++    {
++        strcpy(key, "GUEST_THOUGHT_MALE_DROWNING");
++        _itoa(rand() % 3 + 1, number, 10);
++        strcat(key, number);
++    }
++    else
++    {
++        strcpy(key, "GUEST_THOUGHT_FEMALE_DROWNING");
++        _itoa(rand() % 3 + 1, number, 10);
++        strcat(key, number);
++    }
+     ShowThought(screen_text_lookup->LookupTextIndex(key));
+ }

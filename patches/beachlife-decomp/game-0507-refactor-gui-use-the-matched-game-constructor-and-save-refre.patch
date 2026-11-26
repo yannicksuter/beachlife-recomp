@@ -1,0 +1,257 @@
+diff --git a/src/startup_game_constructor.cpp b/src/startup_game_constructor.cpp
+index 148fab1438da7db119d957e8a3f9e67ed24c77cc..a24451d811c21a04a7388694654b85fa42e1b55f 100644
+--- a/src/startup_game_constructor.cpp
++++ b/src/startup_game_constructor.cpp
+@@ -19,62 +19,79 @@
+ #include "startup_load_game.h"
+ #include "startup_game_won.h"
+ #include "startup_config_owner.h"
+-#include "copy_trivial.h"
+ 
+ #include <io.h>
+ #include <new>
+ #include <stdio.h>
+ #include <windows.h>
+ 
+-// The original reuses this 280-byte automatic storage first for the movie
+-// pathname and later for the MSVCRT find record. Character access changes only
+-// its object representation; no find-record member is read before _findfirst.
+-typedef char GameConstructorFindRecordSize[(sizeof(_finddata_t) == 280) ? 1 : -1];
+-
+-// FUNCTION: BEACHLIFE 0x004e2530
+-ScreenRequestGamePrefix::ScreenRequestGamePrefix(void* instance, void* window)
+-    : ScreenGameRegistration(this)
++// The original constructor expands these helpers inline.
++static void EnsureDirectory(const char* name)
+ {
+     _finddata_t file_information;
++    long find_handle = _findfirst(name, &file_information);
++    if (find_handle == -1)
++        CreateDirectoryA(name, 0);
++    _findclose(find_handle);
++}
+ 
+-    inactive_c5 = 0;
+-    controller_selection.instance = instance;
+-    controller_selection.window = window;
+-    reload_screen = 0;
+-    word_b4 = -1;
+-    save_info_enabled = 0;
+-    byte_a4 = 0;
+-    selected_save = 0;
+-
+-    scenario_names.end = static_cast<unsigned short**>(
+-        CopyTrivial(scenario_names.end, scenario_names.end, scenario_names.begin));
+-    saves.end = static_cast<GameSaveRecord**>(CopyTrivial(saves.end, saves.end, saves.begin));
++static void CreateControllers(ScreenRequestGamePrefix* game)
++{
++    game->controller_selection.first_controller = new WorldTestController("WorldTest");
++    game->controller_selection.controllers[0] = new MainMenuController("MainMenu");
++    game->controller_selection.controllers[1] = new IntroController("Intro");
++    game->controller_selection.controllers[2] = new ExitGameController("ExitGame");
++    game->controller_selection.controllers[3] = new ResetGameController("ResetGame");
++    game->controller_selection.controllers[4] = new LoadGameController("LoadGame");
++    game->controller_selection.controllers[5] = new GameWonController("GameWon");
++}
+ 
+-    placement = new ScreenPlacementStore;
+-    switch (placement->menu_script_variant_3c)
++static void LoadText(ScreenRequestGamePrefix* game)
++{
++    switch (game->placement->menu_script_variant_3c)
+     {
+     case 0:
+-        text = new ScreenTextLookup("data/text_uk.uni");
++        game->text = new ScreenTextLookup("data/text_uk.uni");
+         break;
+     case 1:
+-        text = new ScreenTextLookup("data/text_french.uni");
++        game->text = new ScreenTextLookup("data/text_french.uni");
+         break;
+     case 2:
+-        text = new ScreenTextLookup("data/text_italian.uni");
++        game->text = new ScreenTextLookup("data/text_italian.uni");
+         break;
+     case 3:
+-        text = new ScreenTextLookup("data/text_german.uni");
++        game->text = new ScreenTextLookup("data/text_german.uni");
+         break;
+     case 4:
+-        text = new ScreenTextLookup("data/text_spanish.uni");
++        game->text = new ScreenTextLookup("data/text_spanish.uni");
+         break;
+     case 5:
+-        text = new ScreenTextLookup("data/text_polish.uni");
++        game->text = new ScreenTextLookup("data/text_polish.uni");
+         break;
+     default:
+-        text = new ScreenTextLookup("data/text_uk.uni");
++        game->text = new ScreenTextLookup("data/text_uk.uni");
+         break;
+     }
++}
++
++// FUNCTION: BEACHLIFE 0x004e2530
++ScreenRequestGamePrefix::ScreenRequestGamePrefix(void* instance, void* window)
++    : ScreenGameRegistration(this)
++{
++    inactive_c5 = 0;
++    controller_selection.instance = instance;
++    controller_selection.window = window;
++    reload_screen = 0;
++    word_b4 = -1;
++    save_info_enabled = 0;
++    byte_a4 = 0;
++    selected_save = 0;
++
++    scenario_names.end = scenario_names.begin;
++    saves.end = saves.begin;
++
++    placement = new ScreenPlacementStore;
++    LoadText(this);
+ 
+     SetFatalWindow(window);
+     bool play_movie;
+@@ -85,7 +102,7 @@ ScreenRequestGamePrefix::ScreenRequestGamePrefix(void* instance, void* window)
+         {
+         }
+ 
+-        char* movie_path = reinterpret_cast<char*>(&file_information);
++        char movie_path[MAX_PATH];
+         sprintf(movie_path, "%s%s", startup_movie_directory, startup_movie_filename);
+         StartupMovie* movie = new StartupMovie(controller_selection.window, 0, 0, 640, 480, 0, 0);
+         movie->Play(movie_path);
+@@ -102,7 +119,8 @@ ScreenRequestGamePrefix::ScreenRequestGamePrefix(void* instance, void* window)
+ 
+     // Game's window is Play's Video.
+     renderer = new ScreenRequestRenderer(*static_cast<beachlife::platform::Video*>(window), 800, 600, 0);
+-    if (!renderer->initialized_168)
++    unsigned char initialized = renderer->initialized_168;
++    if (!initialized)
+         ShowFatalWindowMessage(controller_selection.window, screen_text_lookup->LookupText("ERROR_DIRECTX"));
+ 
+     const char* font_filename;
+@@ -134,18 +152,14 @@ ScreenRequestGamePrefix::ScreenRequestGamePrefix(void* instance, void* window)
+     bool sound_enabled;
+     startup_config_owner->GetBool(&sound_enabled, "bSOUND_ENABLED");
+     audio = new WindowAudioState(static_cast<unsigned char>(sound_enabled), placement->provider_name_10, startup_sound_bank_name);
+-    audio->SetStreamVolume(placement->sound_volume_08);
+-    audio->SetEffectsVolume(placement->music_volume_0c);
++    float volume = placement->sound_volume_08;
++    audio->SetStreamVolume(volume);
++    volume = placement->music_volume_0c;
++    audio->SetEffectsVolume(volume);
+     update_pair = new GameUpdatePair(static_cast<unsigned char>(sound_enabled));
+     screens = new ScreenManager;
+ 
+-    controller_selection.first_controller = new WorldTestController("WorldTest");
+-    controller_selection.controllers[0] = new MainMenuController("MainMenu");
+-    controller_selection.controllers[1] = new IntroController("Intro");
+-    controller_selection.controllers[2] = new ExitGameController("ExitGame");
+-    controller_selection.controllers[3] = new ResetGameController("ResetGame");
+-    controller_selection.controllers[4] = new LoadGameController("LoadGame");
+-    controller_selection.controllers[5] = new GameWonController("GameWon");
++    CreateControllers(this);
+ 
+     LoadScenarioNames();
+     LoadScenarioProgress();
+@@ -153,14 +167,8 @@ ScreenRequestGamePrefix::ScreenRequestGamePrefix(void* instance, void* window)
+     controller_selection.pending = controller_selection.controllers[1];
+     screen_request_renderer->SetUnscaledClip(0);
+ 
+-    long find_handle = _findfirst("photos", &file_information);
+-    if (find_handle == -1)
+-        CreateDirectoryA("photos", 0);
+-    _findclose(find_handle);
+-    find_handle = _findfirst("SaveGames", &file_information);
+-    if (find_handle == -1)
+-        CreateDirectoryA("SaveGames", 0);
+-    _findclose(find_handle);
++    EnsureDirectory("photos");
++    EnsureDirectory("SaveGames");
+ 
+     window_deactivation_enabled = 1;
+     controller_selection.active->Enter();
+diff --git a/src/startup_game_refresh_save_records.cpp b/src/startup_game_refresh_save_records.cpp
+index 5bc86471ca1e75887228bb64f3b1b7438ef4db9d..fbc0328ba8ba84739a1d94679e0461f54d11979a 100644
+--- a/src/startup_game_refresh_save_records.cpp
++++ b/src/startup_game_refresh_save_records.cpp
+@@ -14,21 +14,28 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++static bool IsDotEntry(const char* name)
++{
++    return strcmp(name, ".") == 0 || strcmp(name, "..") == 0;
++}
++
++// A NaN version is unordered and is not rejected by the original.
++// Widen before subtraction to retain its unrounded comparison near
++// the exact binary32 version and epsilon boundary.
++static bool IsCurrentVersion(float version)
++{
++    return !(fabs(static_cast<double>(version) - startup_save_version) > FLT_EPSILON);
++}
++
+ // FUNCTION: BEACHLIFE 0x004e4740
+ void ScreenRequestGamePrefix::RefreshSaveRecords()
+ {
+-    GameSaveRecord** current = saves.begin;
+-    while (current != saves.end)
+-    {
+-        GameSaveRecord* record = *current;
+-        if (record)
+-        {
+-            ::operator delete(record);
+-        }
+-        ++current;
+-    }
+-    saves.Erase(saves.begin, saves.end);
+-    save_info_enabled = 0;
++    // Retail expands ClearSaveRecords (0x004e4c80) here.
++    ClearSaveRecords();
++
++    float version;
++    int timestamp;
++    int scenario;
+ 
+     char pattern[128];
+     _finddata_t found;
+@@ -38,10 +45,8 @@ void ScreenRequestGamePrefix::RefreshSaveRecords()
+     while (status != -1)
+     {
+         // These original branches do not advance enumeration.
+-        if (strcmp(found.name, ".") == 0 || strcmp(found.name, "..") == 0)
+-        {
++        if (IsDotEntry(found.name))
+             continue;
+-        }
+ 
+         int number = atoi(found.name + 4);
+         char path[128];
+@@ -54,21 +59,17 @@ void ScreenRequestGamePrefix::RefreshSaveRecords()
+             // Later read/append failures do not acquire a cleanup guard.
+             GameFileReader* file = new GameFileReader(0, path);
+             char signature[128];
++            bool signature_matches = true;
+             file->ReadString(signature, 128);
+-            bool signature_matches = strcmp(signature, startup_save_signature) == 0;
+-            float version;
++            if (strcmp(signature, startup_save_signature) != 0)
++                signature_matches = false;
+             file->ReadFloat(&version);
+-            // A NaN version is unordered and is not rejected by the original.
+-            // Widen before subtraction to retain its unrounded comparison near
+-            // the exact binary32 version and epsilon boundary.
+-            if (!(fabs(static_cast<double>(version) - startup_save_version) > FLT_EPSILON) && signature_matches)
++            if (IsCurrentVersion(version) && signature_matches)
+             {
+                 GameSaveRecord* record = new GameSaveRecord;
+                 record->word_00 = static_cast<unsigned int>(number);
+-                int timestamp;
+                 file->ReadInt(&timestamp);
+                 record->time_04 = timestamp;
+-                int scenario;
+                 file->ReadInt(&scenario);
+                 record->word_08 = static_cast<unsigned int>(scenario);
+                 int value;

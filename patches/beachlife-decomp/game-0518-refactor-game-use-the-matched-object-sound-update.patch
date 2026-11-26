@@ -1,0 +1,93 @@
+diff --git a/src/startup_game_object_sounds.cpp b/src/startup_game_object_sounds.cpp
+index ae51c9cba42a12dc4913b1e6a0124029eacce9bd..2ed1ee03eb0de347ce92765bd81e0ba120132b84 100644
+--- a/src/startup_game_object_sounds.cpp
++++ b/src/startup_game_object_sounds.cpp
+@@ -1,4 +1,4 @@
+-#include <math.h>
++#include <cmath>
+ 
+ #include "startup_game_update_pair.h"
+ #include "startup_variable_state.h"
+@@ -10,6 +10,31 @@ extern const float game_sound_start_fade;  // 0.1, 0x004f4d24.
+ extern const float game_sound_level_fade;  // 0.1, 0x004f4d28.
+ extern const float game_sound_music_level; // 0.05, 0x004f4d34.
+ 
++// x87: the level is not rounded before the volume product (fmul [esi+4] at
++// 0x004d2afb and 0x004d2b83); only the product is stored.
++static float ScaleLevel(long double level, float volume)
++{
++    float scaled = static_cast<float>(level * volume);
++    return scaled;
++}
++
++static float ListenerDistance(WindowAudioVector listener, VariableWorldObject* object)
++{
++    float dx = listener.x - object->X();
++    float dy = listener.y - object->Y();
++    // x87: the height difference stays unrounded until the root is stored
++    // (fild; fsubr at 0x004d2a2b..0x004d2a34; fsqrt; fstp at 0x004d2a48).
++    long double vertical = dy - static_cast<long double>(object->Unknown44());
++    float distance = static_cast<float>(std::sqrt(vertical * vertical + static_cast<long double>(dx) * dx));
++    return distance;
++}
++
++// x87: 1 - (distance - near) / (far - near) is not rounded before ScaleLevel.
++static long double FadeLevel(float distance, float near_distance, float far_distance)
++{
++    return 1.0f - (static_cast<long double>(distance) - near_distance) / (static_cast<long double>(far_distance) - near_distance);
++}
++
+ // FUNCTION: BEACHLIFE 0x004d2990
+ void GameUpdatePair::UpdateObjectSounds(float)
+ {
+@@ -31,13 +56,12 @@ void GameUpdatePair::UpdateObjectSounds(float)
+         }
+ 
+         WindowAudioVector listener = window_audio_state->position_e0;
+-        float dx = listener.x - object->X();
+-        float dy = listener.y - object->Y();
+-        float vertical = dy - object->Unknown44();
+-        float distance = static_cast<float>(sqrt(vertical * vertical + dx * dx));
++        float distance = ListenerDistance(listener, object);
+         if (sound->playing_28)
+         {
+-            bool out_of_range = distance > far_distance;
++            bool out_of_range = false;
++            if (distance > far_distance)
++                out_of_range = true;
+             if ((!sound->ignores_music_29 && window_audio_state->IsStreamPlaying() && window_audio_state->stream_volume_10 > game_sound_music_level) || out_of_range)
+             {
+                 window_audio_state->StopSound(sound->voice_2c, game_sound_stop_fade);
+@@ -45,21 +69,22 @@ void GameUpdatePair::UpdateObjectSounds(float)
+             }
+             else
+             {
+-                float level = distance > far_distance ? 0.0f
+-                            : distance < near_distance
+-                                ? 1.0f
+-                                : 1.0f - (distance - near_distance) / (far_distance - near_distance);
+-                window_audio_state->FadeSoundLevel(
+-                    sound->voice_2c, level * sound->volume_04, game_sound_level_fade);
++                // Retail's fcomp/test ah,1 takes an unordered distance as nearer.
++                long double level = distance > far_distance ? 0.0f
++                                  : !(distance >= near_distance)
++                                      ? 1.0f
++                                      : FadeLevel(distance, near_distance, far_distance);
++                float volume = ScaleLevel(level, sound->volume_04);
++                window_audio_state->FadeSoundLevel(sound->voice_2c, volume, game_sound_level_fade);
+             }
+         }
+-        else if (distance < far_distance)
++        else if (!(distance >= far_distance))
+         {
+             if (sound->ignores_music_29 || !window_audio_state->IsStreamPlaying() || !(window_audio_state->stream_volume_10 > game_sound_music_level))
+             {
+-                float level = distance < near_distance ? 1.0f
+-                                                       : 1.0f - (distance - near_distance) / (far_distance - near_distance);
+-                float volume = level * sound->volume_04;
++                long double level = !(distance >= near_distance) ? 1.0f
++                                                                 : FadeLevel(distance, near_distance, far_distance);
++                float volume = ScaleLevel(level, sound->volume_04);
+                 int voice = window_audio_state->PlaySoundAtLevel(
+                     sound->name_08, volume, 2, game_sound_start_fade);
+                 sound->voice_2c = voice;

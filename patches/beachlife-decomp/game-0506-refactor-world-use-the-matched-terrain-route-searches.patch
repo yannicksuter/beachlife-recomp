@@ -1,0 +1,226 @@
+diff --git a/src/startup_terrain_nearest_route.cpp b/src/startup_terrain_nearest_route.cpp
+index fe0eecfb20a19def8bebebdd14231871d6c57eaa..30ea1a7ee73c6741ea52e6cfa5cdf5c0edef185d 100644
+--- a/src/startup_terrain_nearest_route.cpp
++++ b/src/startup_terrain_nearest_route.cpp
+@@ -1,124 +1,127 @@
+ #include "startup_screen_mode_world.h"
+ #include <cmath>
+ 
+-// FUNCTION: BEACHLIFE 0x00446d90
+-int ScreenTerrainGrid::NearestRouteIndex(ScreenWorldPosition position)
++static ScreenWorldPosition operator-(const ScreenWorldPosition& first, const ScreenWorldPosition& second)
+ {
+-    ScreenTerrainRouteNode* routes = routes_1c;
++    return ScreenWorldPosition(first.x - second.x, first.y - second.y, first.z - second.z);
++}
+ 
+-    ScreenPoint tile = WorldToTile(position);
+-    unsigned int result = ~0u;
+-    unsigned int index = 0;
+-    for (ScreenTerrainRouteNode* route = routes; route; route = route->next_30, ++index)
+-    {
+-        if (tile.x >= static_cast<int>(route->words_04[0])
+-            && tile.x <= static_cast<int>(route->words_04[6])
+-            && tile.y >= static_cast<int>(route->words_04[1])
+-            && tile.y <= static_cast<int>(route->words_04[7]))
+-            result = index;
+-    }
+-    if (result != ~0u)
+-        return result;
++// Retail adds z * z + y * y first, then x * x, and keeps the root on the x87 stack.
++static long double Distance(long double x, long double y, long double z)
++{
++    return std::sqrt(z * z + y * y + x * x);
++}
++
++static long double Distance(const ScreenWorldPosition& offset)
++{
++    return Distance(offset.x, offset.y, offset.z);
++}
++
++// The candidate offset of the first route stays on the x87 stack (unrounded); later offsets are stored as floats.
++static long double UnroundedDistance(const ScreenWorldPosition& origin, const ScreenWorldPosition& position)
++{
++    return Distance(static_cast<long double>(origin.x) - position.x, static_cast<long double>(origin.y) - position.y, static_cast<long double>(origin.z) - position.z);
++}
++
++static bool Contains(ScreenPoint* bounds, ScreenPoint tile)
++{
++    return tile.x >= bounds[0].x && tile.x <= bounds[3].x && tile.y >= bounds[0].y && tile.y <= bounds[3].y;
++}
+ 
+-    ScreenPoint* points = static_cast<ScreenPoint*>(routes->data_00);
+-    ScreenPoint nearest = points[0];
+-    result = 0;
+-    for (unsigned int i = 1; i < routes->count_28; ++i)
++// FUNCTION: BEACHLIFE 0x00446d90
++int ScreenTerrainGrid::NearestRouteIndex(ScreenWorldPosition position)
++{
++    ScreenTerrainRouteNode* route = routes_1c;
++    int found = -1;
++    int index = 0;
++    ScreenPoint tile;
++    tile = WorldToTile(position);
++    for (; route; route = route->next_30, ++index)
+     {
+-        ScreenWorldPosition origin = TileOrigin(points[i]);
+-        long double x = static_cast<long double>(origin.x) - position.x;
+-        long double y = static_cast<long double>(origin.y) - position.y;
+-        long double z = static_cast<long double>(origin.z) - position.z;
+-        float distance = static_cast<float>(std::sqrt(z * z + y * y + x * x));
+-        origin = TileOrigin(nearest);
+-        x = static_cast<float>(static_cast<long double>(origin.x) - position.x);
+-        y = static_cast<float>(static_cast<long double>(origin.y) - position.y);
+-        z = static_cast<float>(static_cast<long double>(origin.z) - position.z);
+-        if (std::sqrt(z * z + y * y + x * x) > distance)
+-            nearest = points[i];
++        if (Contains(reinterpret_cast<ScreenPoint*>(route->words_04), tile))
++            found = index;
+     }
+-    index = 1;
+-    for (ScreenTerrainRouteNode* route = routes->next_30; route; route = route->next_30, ++index)
++    if (found == -1)
+     {
+-        points = static_cast<ScreenPoint*>(route->data_00);
+-        for (unsigned int i = 0; i < route->count_28; ++i)
++        ScreenTerrainRouteNode* first = routes_1c;
++        unsigned int count = first->count_28;
++        ScreenPoint* points = static_cast<ScreenPoint*>(first->data_00);
++        ScreenPoint nearest;
++        nearest = ScreenPoint(points[0].x, points[0].y);
++        found = 0;
++        for (unsigned int i = 1; i < count; ++i)
+         {
+-            ScreenWorldPosition origin = TileOrigin(points[i]);
+-            float x = static_cast<float>(static_cast<long double>(origin.x) - position.x);
+-            float y = static_cast<float>(static_cast<long double>(origin.y) - position.y);
+-            float z = static_cast<float>(static_cast<long double>(origin.z) - position.z);
+-            float distance = static_cast<float>(std::sqrt(static_cast<long double>(z) * z + static_cast<long double>(y) * y + static_cast<long double>(x) * x));
+-            origin = TileOrigin(nearest);
+-            x = static_cast<float>(static_cast<long double>(origin.x) - position.x);
+-            y = static_cast<float>(static_cast<long double>(origin.y) - position.y);
+-            z = static_cast<float>(static_cast<long double>(origin.z) - position.z);
+-            if (ScreenWorldPosition(x, y, z).Length() > distance)
++            float distance = static_cast<float>(UnroundedDistance(TileOrigin(points[i]), position));
++            if (distance < Distance(TileOrigin(nearest) - position))
+             {
++                found = 0;
+                 nearest = ScreenPoint(points[i].x, points[i].y);
+-                result = index;
++            }
++        }
++        for (route = first->next_30, index = 1; route; route = route->next_30, ++index)
++        {
++            count = route->count_28;
++            points = static_cast<ScreenPoint*>(route->data_00);
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                // The candidate's distance is stored as a float before the comparison.
++                float distance = static_cast<float>(Distance(TileOrigin(points[i]) - position));
++                if (distance < (TileOrigin(nearest) - position).Length())
++                {
++                    found = index;
++                    nearest = ScreenPoint(points[i].x, points[i].y);
++                }
+             }
+         }
+     }
+-    return result;
++    return found;
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x00447120
+ unsigned int ScreenTerrainGrid::InfluenceAreaAt(ScreenWorldPosition position)
+ {
+-    ScreenTerrainRouteNode* routes = routes_20;
+-
+-    ScreenPoint tile = WorldToTile(position);
+-    unsigned int result = ~0u;
+-    unsigned int index = 0;
+-    for (ScreenTerrainRouteNode* route = routes; route; route = route->next_30, ++index)
++    ScreenTerrainRouteNode* route = routes_20;
++    int found = -1;
++    int index = 0;
++    ScreenPoint tile;
++    tile = WorldToTile(position);
++    for (; route; route = route->next_30, ++index)
+     {
+-        if (tile.x >= static_cast<int>(route->words_04[0])
+-            && tile.x <= static_cast<int>(route->words_04[6])
+-            && tile.y >= static_cast<int>(route->words_04[1])
+-            && tile.y <= static_cast<int>(route->words_04[7]))
+-            result = index;
++        if (Contains(reinterpret_cast<ScreenPoint*>(route->words_04), tile))
++            found = index;
+     }
+-    if (result != ~0u)
+-        return result;
+-
+-    ScreenPoint* points = static_cast<ScreenPoint*>(routes->data_00);
+-    ScreenPoint nearest = points[0];
+-    result = 0;
+-    for (unsigned int i = 1; i < routes->count_28; ++i)
+-    {
+-        ScreenWorldPosition origin = TileOrigin(points[i]);
+-        long double x = static_cast<long double>(origin.x) - position.x;
+-        long double y = static_cast<long double>(origin.y) - position.y;
+-        long double z = static_cast<long double>(origin.z) - position.z;
+-        float distance = static_cast<float>(std::sqrt(z * z + y * y + x * x));
+-        origin = TileOrigin(nearest);
+-        x = static_cast<float>(static_cast<long double>(origin.x) - position.x);
+-        y = static_cast<float>(static_cast<long double>(origin.y) - position.y);
+-        z = static_cast<float>(static_cast<long double>(origin.z) - position.z);
+-        if (std::sqrt(z * z + y * y + x * x) > distance)
+-            nearest = points[i];
+-    }
+-    index = 1;
+-    for (ScreenTerrainRouteNode* route = routes->next_30; route; route = route->next_30, ++index)
++    if (found == -1)
+     {
+-        points = static_cast<ScreenPoint*>(route->data_00);
+-        for (unsigned int i = 0; i < route->count_28; ++i)
++        ScreenTerrainRouteNode* first = routes_20;
++        unsigned int count = first->count_28;
++        ScreenPoint* points = static_cast<ScreenPoint*>(first->data_00);
++        ScreenPoint nearest;
++        nearest = ScreenPoint(points[0].x, points[0].y);
++        found = 0;
++        for (unsigned int i = 1; i < count; ++i)
+         {
+-            ScreenWorldPosition origin = TileOrigin(points[i]);
+-            float x = static_cast<float>(static_cast<long double>(origin.x) - position.x);
+-            float y = static_cast<float>(static_cast<long double>(origin.y) - position.y);
+-            float z = static_cast<float>(static_cast<long double>(origin.z) - position.z);
+-            float distance = static_cast<float>(std::sqrt(static_cast<long double>(z) * z + static_cast<long double>(y) * y + static_cast<long double>(x) * x));
+-            origin = TileOrigin(nearest);
+-            x = static_cast<float>(static_cast<long double>(origin.x) - position.x);
+-            y = static_cast<float>(static_cast<long double>(origin.y) - position.y);
+-            z = static_cast<float>(static_cast<long double>(origin.z) - position.z);
+-            if (ScreenWorldPosition(x, y, z).Length() > distance)
++            float distance = static_cast<float>(UnroundedDistance(TileOrigin(points[i]), position));
++            if (distance < Distance(TileOrigin(nearest) - position))
+             {
++                found = 0;
+                 nearest = ScreenPoint(points[i].x, points[i].y);
+-                result = index;
++            }
++        }
++        for (route = first->next_30, index = 1; route; route = route->next_30, ++index)
++        {
++            count = route->count_28;
++            points = static_cast<ScreenPoint*>(route->data_00);
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                // The candidate's distance is stored as a float before the comparison.
++                float distance = static_cast<float>(Distance(TileOrigin(points[i]) - position));
++                if (distance < (TileOrigin(nearest) - position).Length())
++                {
++                    found = index;
++                    nearest = ScreenPoint(points[i].x, points[i].y);
++                }
+             }
+         }
+     }
+-    return result;
++    return found;
+ }

@@ -1,0 +1,608 @@
+diff --git a/src/startup_renderer_image_resize.cpp b/src/startup_renderer_image_resize.cpp
+index f11746d5aa030328378877df806646beb127eb0f..b48a4d51aea107b0e0bf9a582a3f7d6d9315307f 100644
+--- a/src/startup_renderer_image_resize.cpp
++++ b/src/startup_renderer_image_resize.cpp
+@@ -8,17 +8,21 @@ void ScreenRequestRenderer::ResizeImages(TgaImage* source, TgaImage* destination
+     TgaImage* images[6];
+     images[0] = source;
+     int level = 0;
+-    while (images[level]->width / 2 >= destination->width)
++    while (1)
+     {
+-        TgaImage* previous = images[level];
+-        ++level;
+-        images[level] = new (std::nothrow) TgaImage(previous->width / 2, previous->height / 2, 16, 0);
++        int width = images[level]->width;
++        int target_width = destination->width;
++        if (width / 2 < target_width)
++            break;
++        level++;
++        // VC6 operator new returns null on failure; the host keeps that with nothrow.
++        images[level] = new (std::nothrow) TgaImage(images[level - 1]->width / 2, images[level - 1]->height / 2, 16, 0);
+         if (format_44 == 0)
+-            ResizeImage565(previous, images[level]);
++            ResizeImage565(images[level - 1], images[level]);
+         else
+-            ResizeImage555(previous, images[level]);
++            ResizeImage555(images[level - 1], images[level]);
+         if (level > 1)
+-            delete previous;
++            delete images[level - 1];
+     }
+     if (format_44 == 0)
+         ResizeImage565(images[level], destination);
+diff --git a/src/startup_renderer_rectangle_accumulate.cpp b/src/startup_renderer_rectangle_accumulate.cpp
+index ce295a02b67972088eed3a0ca2da07b289387040..9dd40ef2b49412c2561bfba12bd96fd5695b9ad4 100644
+--- a/src/startup_renderer_rectangle_accumulate.cpp
++++ b/src/startup_renderer_rectangle_accumulate.cpp
+@@ -36,117 +36,214 @@ void ScreenRequestRenderer::AccumulateRectangle(ScreenRectangle bounds)
+         {
+             overlap = dirty_rectangles.At(index);
+             overlaps = true;
+-            break;
++            index = dirty_rectangle_count;
+         }
+     }
+ 
+-    if (!overlaps)
++    if (overlaps)
+     {
+-        dirty_rectangles.PushBack(bounds);
+-        ++dirty_rectangle_count;
+-        return;
+-    }
+-
+-    if (bounds.left > overlap.left && bounds.left < overlap.right && bounds.right > overlap.right)
+-    {
+-        if (bounds.top < overlap.top && bounds.bottom > overlap.bottom)
+-        {
+-            ScreenRectangle right = { overlap.right, overlap.top, bounds.right, overlap.bottom };
+-            ScreenRectangle top = { bounds.left, bounds.top, bounds.right, overlap.top };
+-            ScreenRectangle bottom = { bounds.left, overlap.bottom, bounds.right, bounds.bottom };
+-            AccumulateRectangle(right);
+-            AccumulateRectangle(top);
+-            AccumulateRectangle(bottom);
+-        }
+-        else if (bounds.top > overlap.top && bounds.top < overlap.bottom && bounds.bottom > overlap.bottom)
+-        {
+-            ScreenRectangle right = { overlap.right, bounds.top, bounds.right, bounds.bottom };
+-            ScreenRectangle bottom = { bounds.left, overlap.bottom, overlap.right, bounds.bottom };
+-            AccumulateRectangle(right);
+-            AccumulateRectangle(bottom);
+-        }
+-        else if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
+-        {
+-            ScreenRectangle right = { overlap.right, bounds.top, bounds.right, bounds.bottom };
+-            ScreenRectangle top = { bounds.left, bounds.top, overlap.right, overlap.top };
+-            AccumulateRectangle(right);
+-            AccumulateRectangle(top);
+-        }
+-        else
++        if (bounds.left > overlap.left && bounds.left < overlap.right && bounds.right > overlap.right)
+         {
+-            ScreenRectangle right = { overlap.right, bounds.top, bounds.right, bounds.bottom };
+-            AccumulateRectangle(right);
++            if (bounds.top < overlap.top && bounds.bottom > overlap.bottom)
++            {
++                ScreenRectangle right;
++                right.top = overlap.top;
++                right.bottom = overlap.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = bounds.left;
++                top.right = bounds.right;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = bounds.left;
++                bottom.right = bounds.right;
++                AccumulateRectangle(right);
++                AccumulateRectangle(top);
++                AccumulateRectangle(bottom);
++            }
++            else if (bounds.top > overlap.top && bounds.top < overlap.bottom && bounds.bottom > overlap.bottom)
++            {
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = bounds.left;
++                bottom.right = overlap.right;
++                AccumulateRectangle(right);
++                AccumulateRectangle(bottom);
++            }
++            else if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
++            {
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = bounds.left;
++                top.right = overlap.right;
++                AccumulateRectangle(right);
++                AccumulateRectangle(top);
++            }
++            else
++            {
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                AccumulateRectangle(right);
++            }
++            return;
+         }
+-        return;
+-    }
+ 
+-    if (bounds.right > overlap.left && bounds.right < overlap.right && bounds.left < overlap.left)
+-    {
+-        if (bounds.top < overlap.top && bounds.bottom > overlap.bottom)
+-        {
+-            ScreenRectangle left = { bounds.left, overlap.top, overlap.left, overlap.bottom };
+-            ScreenRectangle top = { bounds.left, bounds.top, bounds.right, overlap.top };
+-            ScreenRectangle bottom = { bounds.left, overlap.bottom, bounds.right, bounds.bottom };
+-            AccumulateRectangle(left);
+-            AccumulateRectangle(top);
+-            AccumulateRectangle(bottom);
+-        }
+-        else if (bounds.top >= overlap.top && bounds.top <= overlap.bottom && bounds.bottom > overlap.bottom)
++        if (bounds.right > overlap.left && bounds.right < overlap.right && bounds.left < overlap.left)
+         {
+-            ScreenRectangle left = { bounds.left, bounds.top, overlap.left, bounds.bottom };
+-            ScreenRectangle bottom = { overlap.left, overlap.bottom, bounds.right, bounds.bottom };
+-            AccumulateRectangle(left);
+-            AccumulateRectangle(bottom);
+-        }
+-        else if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
+-        {
+-            ScreenRectangle left = { bounds.left, bounds.top, overlap.left, bounds.bottom };
+-            ScreenRectangle top = { overlap.left, bounds.top, bounds.right, overlap.top };
+-            AccumulateRectangle(left);
+-            AccumulateRectangle(top);
+-        }
+-        else
+-        {
+-            ScreenRectangle left = { bounds.left, bounds.top, overlap.left, bounds.bottom };
+-            AccumulateRectangle(left);
++            if (bounds.top < overlap.top && bounds.bottom > overlap.bottom)
++            {
++                ScreenRectangle left;
++                left.top = overlap.top;
++                left.bottom = overlap.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = bounds.left;
++                top.right = bounds.right;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = bounds.left;
++                bottom.right = bounds.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(top);
++                AccumulateRectangle(bottom);
++            }
++            else if (bounds.top >= overlap.top && bounds.top <= overlap.bottom && bounds.bottom > overlap.bottom)
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = overlap.left;
++                bottom.right = bounds.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(bottom);
++            }
++            else if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = overlap.left;
++                top.right = bounds.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(top);
++            }
++            else
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                AccumulateRectangle(left);
++            }
++            return;
+         }
+-        return;
+-    }
+ 
+-    if (bounds.top > overlap.top && bounds.top < overlap.bottom && bounds.bottom > overlap.bottom)
+-    {
+-        if (bounds.left < overlap.left && bounds.right > overlap.right)
++        if (bounds.top > overlap.top && bounds.top < overlap.bottom && bounds.bottom > overlap.bottom)
+         {
+-            ScreenRectangle left = { bounds.left, bounds.top, overlap.left, bounds.bottom };
+-            ScreenRectangle right = { overlap.right, bounds.top, bounds.right, bounds.bottom };
+-            ScreenRectangle bottom = { overlap.left, overlap.bottom, overlap.right, bounds.bottom };
+-            AccumulateRectangle(left);
+-            AccumulateRectangle(right);
+-            AccumulateRectangle(bottom);
++            if (bounds.left < overlap.left && bounds.right > overlap.right)
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = overlap.left;
++                bottom.right = overlap.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(right);
++                AccumulateRectangle(bottom);
++            }
++            else
++            {
++                ScreenRectangle bottom;
++                bottom.top = overlap.bottom;
++                bottom.bottom = bounds.bottom;
++                bottom.left = bounds.left;
++                bottom.right = bounds.right;
++                AccumulateRectangle(bottom);
++            }
++            return;
+         }
+-        else
++
++        if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
+         {
+-            ScreenRectangle bottom = { bounds.left, overlap.bottom, bounds.right, bounds.bottom };
+-            AccumulateRectangle(bottom);
++            if (bounds.left < overlap.left && bounds.right > overlap.right)
++            {
++                ScreenRectangle left;
++                left.top = bounds.top;
++                left.bottom = bounds.bottom;
++                left.left = bounds.left;
++                left.right = overlap.left;
++                ScreenRectangle right;
++                right.top = bounds.top;
++                right.bottom = bounds.bottom;
++                right.left = overlap.right;
++                right.right = bounds.right;
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = overlap.left;
++                top.right = overlap.right;
++                AccumulateRectangle(left);
++                AccumulateRectangle(right);
++                AccumulateRectangle(top);
++            }
++            else
++            {
++                ScreenRectangle top;
++                top.top = bounds.top;
++                top.bottom = overlap.top;
++                top.left = bounds.left;
++                top.right = bounds.right;
++                AccumulateRectangle(top);
++            }
+         }
+-        return;
+     }
+-
+-    if (bounds.bottom > overlap.top && bounds.bottom < overlap.bottom && bounds.top < overlap.top)
++    else
+     {
+-        if (bounds.left < overlap.left && bounds.right > overlap.right)
+-        {
+-            ScreenRectangle left = { bounds.left, bounds.top, overlap.left, bounds.bottom };
+-            ScreenRectangle right = { overlap.right, bounds.top, bounds.right, bounds.bottom };
+-            ScreenRectangle top = { overlap.left, bounds.top, overlap.right, overlap.top };
+-            AccumulateRectangle(left);
+-            AccumulateRectangle(right);
+-            AccumulateRectangle(top);
+-        }
+-        else
+-        {
+-            ScreenRectangle top = { bounds.left, bounds.top, bounds.right, overlap.top };
+-            AccumulateRectangle(top);
+-        }
++        dirty_rectangles.PushBack(bounds);
++        ++dirty_rectangle_count;
+     }
+ }
+diff --git a/src/startup_renderer_rectangle_fill.cpp b/src/startup_renderer_rectangle_fill.cpp
+index 3d72e77265927c7cf40df3e8b8dc7683e9a9f4c4..714079269b914ce8a33cd4433352f8b6bd8c7447 100644
+--- a/src/startup_renderer_rectangle_fill.cpp
++++ b/src/startup_renderer_rectangle_fill.cpp
+@@ -6,84 +6,58 @@
+ // FUNCTION: BEACHLIFE 0x0040c0f0
+ void ScreenRequestRenderer::FillRectangle(const ScreenRectangle& bounds, unsigned short colour)
+ {
+-    int left = bounds.left;
+-    int top = bounds.top;
+-    int draw_width = bounds.right - left;
+-    int draw_height = bounds.bottom - top;
+-    if (top < 0)
++    ScreenRectangle area;
++    area.left = bounds.left;
++    area.top = bounds.top;
++    area.right = bounds.right;
++    area.bottom = bounds.bottom;
++    area.bottom -= area.top;
++    int draw_width = area.right - area.left;
++    if (area.top < 0)
+     {
+-        draw_height += top;
+-        top = 0;
++        area.bottom += area.top;
++        area.top = 0;
+     }
+-    if (left < 0)
++    if (area.left < 0)
+     {
+-        draw_width += left;
+-        left = 0;
++        draw_width += area.left;
++        area.left = 0;
+     }
+-    int initial_width = static_cast<int>(width);
+-    if (draw_width + left > initial_width)
+-        draw_width = initial_width - left;
+-    if (draw_height + top > static_cast<int>(height))
+-        draw_height = static_cast<int>(height) - top;
+-
++    if (draw_width + area.left > static_cast<int>(width))
++        draw_width = width - area.left;
++    if (area.bottom + area.top > static_cast<int>(height))
++        area.bottom = height - area.top;
+     if (unscaled_clip_5c)
+     {
+         unsigned short* pixels = AccessPixels();
+         if (!pixels)
+             return;
+         ScreenSurfacePosition* entry = surface_storage[current_surface];
+-        int position_x = entry->position.x;
+-        int pitch_words = static_cast<int>(entry->pitch >> 1);
+-        int position_y = entry->position.y;
+-        int offset = (top - position_y) * pitch_words;
+-        offset -= position_x;
+-        offset += left;
+-        unsigned int pair = colour & 0xffffu;
+-        pair |= pair << 16;
+-        for (int rows = draw_height; rows > 0; --rows)
+-        {
+-            if (draw_width > 0)
+-            {
+-                int column = 0;
+-                for (int pairs = draw_width >> 1; pairs != 0; --pairs)
+-                {
+-                    memcpy(pixels + offset + column, &pair, sizeof(pair));
+-                    column += 2;
+-                }
+-                if (draw_width & 1)
+-                    pixels[offset + column] = static_cast<unsigned short>(colour);
+-            }
+-            offset += pitch_words;
+-        }
+-        if (!software_mode)
++        unsigned int pitch = entry->pitch;
++        ScreenPoint origin = entry->position;
++        // Signed word offsets, as retail's 32-bit pointer arithmetic wraps.
++        unsigned short* row = pixels + (static_cast<int>(pitch >> 1) * (area.top - origin.y) - origin.x + area.left);
++        for (int rows = area.bottom; rows > 0; --rows)
+         {
+-            if (surface_storage[current_surface]->native_surface)
+-            {
+-                surface_storage[current_surface]->native_surface->unlock();
+-            }
+-            else
+-            {
+-                DirectDrawSurface7Prefix* surface = surface_storage[current_surface]->surface;
+-                surface->vtable->Unlock(surface, 0);
+-            }
++            unsigned short* pixel = row;
++            for (int columns = draw_width; columns > 0; --columns)
++                *pixel++ = colour;
++            row += pitch >> 1;
+         }
+-        pixels_locked = 0;
++        UnlockPixels();
+         return;
+     }
+-
+-    int row_offset = (initial_width * top + left) * 4;
+-    unsigned char* pixels = reinterpret_cast<unsigned char*>(pixels_1c);
+-    for (int rows = draw_height; rows > 0; --rows)
++    // 32-bit depth+colour cells, read and written bytewise on the host.
++    unsigned char* row = reinterpret_cast<unsigned char*>(pixels_1c) + static_cast<std::ptrdiff_t>(static_cast<int>(width) * area.top + area.left) * 4;
++    for (int y = 0; y < area.bottom; ++y)
+     {
+-        int offset = row_offset;
+-        for (int columns = draw_width; columns > 0; --columns)
++        for (int x = 0; x < draw_width; ++x)
+         {
+             unsigned int pixel;
+-            memcpy(&pixel, pixels + offset, sizeof(pixel));
+-            pixel = (pixel & 0xffff0000u) + (colour & 0xffffu);
+-            memcpy(pixels + offset, &pixel, sizeof(pixel));
+-            offset += 4;
++            memcpy(&pixel, row + x * 4, sizeof(pixel));
++            pixel = (pixel & 0xffff0000u) + colour;
++            memcpy(row + x * 4, &pixel, sizeof(pixel));
+         }
+-        row_offset += static_cast<int>(width) * 4;
++        row += static_cast<std::ptrdiff_t>(width) * 4;
+     }
+ }
+diff --git a/src/startup_resource_raster2.cpp b/src/startup_resource_raster2.cpp
+index a069bd84efccb9f2a5a05fd937d1abf38757114b..472abb64cd98d41104e4eeadb17cef9b9ef02599 100644
+--- a/src/startup_resource_raster2.cpp
++++ b/src/startup_resource_raster2.cpp
+@@ -1,76 +1,76 @@
+ #include "startup_resource_rasters.h"
+ #include <string.h>
+ 
++// The destination holds 32-bit depth+colour cells; the host reads and writes them bytewise.
++static inline unsigned int RasterCell(const unsigned char* cell)
++{
++    unsigned int value;
++    memcpy(&value, cell, sizeof(value));
++    return value;
++}
++
++static inline void SetRasterCell(unsigned char* cell, unsigned int value)
++{
++    memcpy(cell, &value, sizeof(value));
++}
++
+ // FUNCTION: BEACHLIFE 0x00408b50
+ void ResourceRaster2(unsigned short* destination, const unsigned char* source,
+     const unsigned short* palette, unsigned int stride, int x, int y,
+     int width, int height, int left, int top, int right, int bottom)
+ {
+-    unsigned char* row = reinterpret_cast<unsigned char*>(destination) + y * static_cast<int>(stride) * 4;
+-    if (left > 0 || top > 0 || right < width || bottom < height)
++    unsigned char* output;
++    bool adjacent;
++    int column;
++    signed char packet;
++    unsigned short colour;
++    // Cell offsets in signed 32-bit arithmetic, as retail's pointer arithmetic wraps.
++    unsigned char* row = reinterpret_cast<unsigned char*>(destination) + static_cast<std::ptrdiff_t>(static_cast<int>(stride) * y) * 4;
++    if (left <= 0 && top <= 0 && right >= width && bottom >= height)
+     {
+-        ResourceRaster1Direct(destination, source, palette, stride, x, y, width, height, left, top, right, bottom);
+-        return;
+-    }
+-    if (height <= 0)
+-        return;
+-
+-    row += x * 4;
+-    do
+-    {
+-        unsigned char* output = row;
+-        int column = 0;
+-        unsigned char adjacent = 0;
+-        while (column < width)
++        for (int j = 0; j < height; j++)
+         {
+-            signed char packet = static_cast<signed char>(*source++);
+-            if (packet < 0)
++            output = row + static_cast<std::ptrdiff_t>(j * static_cast<int>(stride) + x) * 4;
++            adjacent = false;
++            column = 0;
++            while (column < width)
+             {
+-                output -= static_cast<int>(packet) * 4;
+-                column -= packet;
+-                adjacent = 0;
+-            }
+-            else
+-            {
+-                unsigned int index = *source++;
+-                unsigned char remaining = static_cast<unsigned char>(packet - 1);
+-                ++column;
+-                unsigned int previous;
+-                memcpy(&previous, output, sizeof(previous));
+-                unsigned short colour = palette[index];
+-                unsigned int pixel = (previous & 0xffff0000u) + (adjacent ? colour : static_cast<unsigned int>(width) & 0xffffu);
+-                memcpy(output, &pixel, sizeof(pixel));
+-                output += 4;
+-
+-                if (remaining != 0)
++                packet = static_cast<signed char>(*source++);
++                if (packet >= 0)
+                 {
+-                    if (static_cast<signed char>(remaining) > 1)
++                    colour = palette[*source++];
++                    --packet;
++                    ++column;
++                    if (!adjacent)
++                        SetRasterCell(output, (RasterCell(output) & 0xffff0000u) + static_cast<unsigned short>(width));
++                    else
++                        SetRasterCell(output, (RasterCell(output) & 0xffff0000u) + colour);
++                    output += 4;
++                    if (packet)
+                     {
+-                        int count = static_cast<signed char>(remaining - 1);
+-                        column += count;
+-                        do
++                        while (packet-- > 1)
+                         {
+-                            index = *source;
+-                            colour = palette[index];
+-                            memcpy(&previous, output, sizeof(previous));
+-                            pixel = (previous & 0xffff0000u) + colour;
+-                            memcpy(output, &pixel, sizeof(pixel));
++                            SetRasterCell(output, (RasterCell(output) & 0xffff0000u) + palette[*source]);
+                             output += 4;
+                             ++source;
+-                        } while (--count != 0);
++                            ++column;
++                        }
++                        colour = palette[*source++];
++                        ++column;
++                        SetRasterCell(output, (RasterCell(output) & 0xffff0000u) + colour);
++                        output += 4;
+                     }
+-
+-                    index = *source++;
+-                    ++column;
+-                    colour = palette[index];
+-                    memcpy(&previous, output, sizeof(previous));
+-                    pixel = (previous & 0xffff0000u) + colour;
+-                    memcpy(output, &pixel, sizeof(pixel));
+-                    output += 4;
++                    adjacent = true;
++                }
++                else
++                {
++                    output -= static_cast<int>(packet) * 4;
++                    column -= packet;
++                    adjacent = false;
+                 }
+-                adjacent = 1;
+             }
+         }
+-        row += static_cast<int>(stride) * 4;
+-    } while (--height != 0);
++        return;
++    }
++    ResourceRaster1Direct(destination, source, palette, stride, x, y, width, height, left, top, right, bottom);
+ }

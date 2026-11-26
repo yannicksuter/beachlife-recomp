@@ -1,0 +1,748 @@
+diff --git a/src/startup_world_guest_beach_walkpoints.cpp b/src/startup_world_guest_beach_walkpoints.cpp
+index 32f262d4eb40094b18f275903a8a2036d92397c9..a10557a9a6e301c22f353dd0237335aa85d8f52d 100644
+--- a/src/startup_world_guest_beach_walkpoints.cpp
++++ b/src/startup_world_guest_beach_walkpoints.cpp
+@@ -3,144 +3,179 @@
+ #include <cmath>
+ #include <cstdlib>
+ 
++// Retail keeps the result in a function-local static; its guard, array and
++// empty atexit destructor are written out here so each has a name.
+ // GLOBAL: BEACHLIFE 0x005badb6
+ static unsigned char beach_walkpoints_initialized;
++// GLOBAL: BEACHLIFE 0x005badc0
++static ScreenWorldPosition beach_walkpoints[2];
+ 
+ // FUNCTION: BEACHLIFE 0x00469510
+ static void DestroyBeachWalkpoints()
+ {
+ }
+ 
++// The candidate offsets are stored as floats (fstp at 0x00468da7..0x00468dbf); the nearest point's offsets stay on
++// the x87 stack. Retail subtracts x and y only: z is the tile origin's own height (fld [eax+8] without fsub).
++static inline ScreenWorldPosition Difference(const ScreenWorldPosition& a, const ScreenWorldPosition& b)
++{
++    return ScreenWorldPosition(static_cast<float>(static_cast<long double>(a.x) - b.x),
++        static_cast<float>(static_cast<long double>(a.y) - b.y),
++        a.z);
++}
++
++struct BeachOffset
++{
++    long double x;
++    long double y;
++    long double z;
++};
++
++static inline BeachOffset UnroundedDifference(const ScreenWorldPosition& a, const ScreenWorldPosition& b)
++{
++    BeachOffset offset = { static_cast<long double>(a.x) - b.x, static_cast<long double>(a.y) - b.y, a.z };
++    return offset;
++}
++
++// Both roots stay unrounded for the fcompp. The first route sums (x*x + z*z) + y*y (0x00468ddb..0x00468e07), the
++// later routes (z*z + y*y) + x*x (0x00469025..0x00469051).
++template <class Offset>
++static inline long double FirstBeachDistance(const Offset& offset)
++{
++    long double x = offset.x;
++    long double y = offset.y;
++    long double z = offset.z;
++    return std::sqrt(x * x + z * z + y * y);
++}
++
++template <class Offset>
++static inline long double BeachDistance(const Offset& offset)
++{
++    long double x = offset.x;
++    long double y = offset.y;
++    long double z = offset.z;
++    return std::sqrt(z * z + y * y + x * x);
++}
++
++static inline unsigned int BeachFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
+ // FUNCTION: BEACHLIFE 0x00468ac0
+ ScreenWorldPosition* WorldGuestEntity::FindBeachWalkpoints(ScreenWorldPosition position)
+ {
+-    static ScreenWorldPosition result[2];
+     if (!(beach_walkpoints_initialized & 1))
+     {
+         beach_walkpoints_initialized |= 1;
+         std::atexit(DestroyBeachWalkpoints);
+     }
+-    ScreenTerrainGrid* terrain = screen_terrain_grid;
+-    ScreenTerrainRouteNode* selected = terrain->routes_20;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    ScreenTerrainRouteNode* selected = grid->routes_20;
+     while (selected && selected->disabled_2c)
+         selected = selected->Next();
+-    if (!selected)
+-        return 0;
+-    unsigned int count;
+-    ScreenPoint* points = selected->Points(&count);
+-    auto neighbours_of = [&](ScreenPoint tile, ScreenPoint* neighbours)
+-    {
+-        for (int i = 0; i < 4; ++i)
+-            terrain->Step(tile, i * 2, &neighbours[i]);
+-    };
+-    auto unblocked = [&](ScreenPoint tile, const ScreenPoint* neighbours)
+-    {
+-        if (terrain->cells_0c[terrain->TileIndex(tile.x, tile.y)].flags_48 & 0x10)
+-            return false;
+-        for (int i = 0; i < 4; ++i)
+-            if (terrain->cells_0c[terrain->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48 & 0x10)
+-                return false;
+-        return true;
+-    };
+-    unsigned int index = 0;
+-    for (;;)
+-    {
+-        ScreenPoint neighbours[4];
+-        neighbours_of(points[index], neighbours);
+-        if (unblocked(points[index], neighbours))
+-            break;
+-        if (++index == count)
+-        {
+-            selected = selected->Next();
+-            if (!selected)
+-                StartupFatal("I hope This Never Happens ( Cant Get Sea Entry Point)");
+-            points = selected->Points(&count);
+-            index = 0;
+-        }
+-    }
+-    ScreenPoint nearest = points[index++];
+-    auto nearer = [&](ScreenPoint candidate, bool first_route)
++    if (selected)
+     {
+-        ScreenPoint neighbours[4];
+-        neighbours_of(candidate, neighbours);
+-        ScreenWorldPosition candidate_position = terrain->TileOrigin(candidate);
+-        float x = static_cast<float>(static_cast<long double>(candidate_position.x) - position.x);
+-        float y = static_cast<float>(static_cast<long double>(candidate_position.y) - position.y);
+-        float z = candidate_position.z;
+-        ScreenWorldPosition nearest_position = terrain->TileOrigin(nearest);
+-        long double nearest_x = static_cast<long double>(nearest_position.x) - position.x;
+-        long double nearest_y = static_cast<long double>(nearest_position.y) - position.y;
+-        long double nearest_z = nearest_position.z;
+-        long double distance;
+-        long double nearest_distance;
+-        if (first_route)
++        unsigned int count;
++        ScreenPoint* points = selected->Points(&count);
++        unsigned int index = 0;
++        ScreenPoint neighbour0, neighbour1, neighbour2, neighbour3;
++        ScreenPoint nearest;
++        ScreenWorldPosition offset;
++        BeachOffset previous;
++        grid->Step(points[index], 0, &neighbour0);
++        grid->Step(points[index], 2, &neighbour1);
++        grid->Step(points[index], 4, &neighbour2);
++        grid->Step(points[index], 6, &neighbour3);
++        while (!(!(BeachFlags(grid, points[index]) & 0x10) && !(BeachFlags(grid, neighbour0) & 0x10) && !(BeachFlags(grid, neighbour1) & 0x10) && !(BeachFlags(grid, neighbour2) & 0x10) && !(BeachFlags(grid, neighbour3) & 0x10)))
+         {
+-            distance = std::sqrt(static_cast<long double>(x) * x + static_cast<long double>(z) * z + static_cast<long double>(y) * y);
+-            nearest_distance = std::sqrt(nearest_x * nearest_x + nearest_z * nearest_z + nearest_y * nearest_y);
++            if (++index == count)
++            {
++                selected = selected->Next();
++                if (!selected)
++                    StartupFatal("I hope This Never Happens ( Cant Get Sea Entry Point)");
++                points = selected->Points(&count);
++                index = 0;
++            }
++            grid->Step(points[index], 0, &neighbour0);
++            grid->Step(points[index], 2, &neighbour1);
++            grid->Step(points[index], 4, &neighbour2);
++            grid->Step(points[index], 6, &neighbour3);
+         }
+-        else
++        nearest = ScreenPoint(points[index].x, points[index].y);
++        for (unsigned int i = index + 1; i < count; ++i)
+         {
+-            distance = std::sqrt(static_cast<long double>(z) * z + static_cast<long double>(y) * y + static_cast<long double>(x) * x);
+-            nearest_distance = std::sqrt(nearest_z * nearest_z + nearest_y * nearest_y + nearest_x * nearest_x);
++            grid->Step(points[i], 0, &neighbour0);
++            grid->Step(points[i], 2, &neighbour1);
++            grid->Step(points[i], 4, &neighbour2);
++            grid->Step(points[i], 6, &neighbour3);
++            offset = Difference(grid->TileOrigin(points[i]), position);
++            previous = UnroundedDifference(grid->TileOrigin(nearest), position);
++            if (FirstBeachDistance(offset) < FirstBeachDistance(previous) && !(BeachFlags(grid, points[i]) & 0x10) && !(BeachFlags(grid, neighbour0) & 0x10) && !(BeachFlags(grid, neighbour1) & 0x10) && !(BeachFlags(grid, neighbour2) & 0x10) && !(BeachFlags(grid, neighbour3) & 0x10))
++                nearest = ScreenPoint(points[i].x, points[i].y);
+         }
+-        return nearest_distance > distance && unblocked(candidate, neighbours);
+-    };
+-    for (; index < count; ++index)
+-        if (nearer(points[index], true))
+-            nearest = points[index];
+-    for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
+-    {
+-        if (route->disabled_2c)
+-            continue;
+-        points = route->Points(&count);
+-        for (unsigned int i = 0; i < count; ++i)
++        for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
+         {
+-            if (nearer(points[i], false))
++            if (route->disabled_2c)
++                continue;
++            points = route->Points(&count);
++            for (unsigned int i = 0; i < count; ++i)
+             {
+-                nearest = points[i];
+-                selected = route;
++                grid->Step(points[i], 0, &neighbour0);
++                grid->Step(points[i], 2, &neighbour1);
++                grid->Step(points[i], 4, &neighbour2);
++                grid->Step(points[i], 6, &neighbour3);
++                offset = Difference(grid->TileOrigin(points[i]), position);
++                previous = UnroundedDifference(grid->TileOrigin(nearest), position);
++                if (BeachDistance(offset) < BeachDistance(previous) && !(BeachFlags(grid, points[i]) & 0x10) && !(BeachFlags(grid, neighbour0) & 0x10) && !(BeachFlags(grid, neighbour1) & 0x10) && !(BeachFlags(grid, neighbour2) & 0x10) && !(BeachFlags(grid, neighbour3) & 0x10))
++                {
++                    selected = route;
++                    nearest = ScreenPoint(points[i].x, points[i].y);
++                }
+             }
+         }
+-    }
+-    if (selected)
+-    {
+-        ScreenPoint lower = selected->Bounds()[0];
+-        ScreenPoint upper = selected->Bounds()[3];
+-        float width = static_cast<float>(upper.x - lower.x);
+-        float height = static_cast<float>(upper.y - lower.y);
+-        ScreenPoint tile;
+-        bool first_attempt = true;
+-        for (;;)
++        if (selected)
+         {
+-            tile.x = lower.x + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * width);
+-            tile.y = lower.y + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * height);
+-            ScreenPoint neighbours[4];
+-            for (int i = 0; i < 4; ++i)
++            ScreenPoint lower = selected->Bounds()[0];
++            ScreenPoint upper = selected->Bounds()[3];
++            float width = static_cast<float>(upper.x - lower.x);
++            ScreenPoint tile;
++            // Retail multiplies the rand() value, the float scale and the extent on the x87 stack before _ftol.
++            tile.x = lower.x + static_cast<int>(width * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++            float height = static_cast<float>(upper.y - lower.y);
++            tile.y = lower.y + static_cast<int>(height * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++            grid->Step(tile, 0, &neighbour0);
++            grid->Step(neighbour0, 0, &neighbour0);
++            grid->Step(tile, 2, &neighbour1);
++            grid->Step(neighbour1, 2, &neighbour1);
++            grid->Step(tile, 4, &neighbour2);
++            grid->Step(neighbour2, 4, &neighbour2);
++            grid->Step(tile, 6, &neighbour3);
++            grid->Step(neighbour3, 6, &neighbour3);
++            for (;;)
+             {
+-                terrain->Step(tile, i * 2, &neighbours[i]);
+-                // Retail retries check only one step in direction six.
+-                if (first_attempt || i != 3)
+-                    terrain->Step(neighbours[i], i * 2, &neighbours[i]);
+-            }
+-            first_attempt = false;
+-            unsigned int flags = terrain->cells_0c[terrain->TileIndex(tile.x, tile.y)].flags_48;
+-            if (!(flags & 4) || (flags & 0x10))
+-                continue;
+-            bool valid = true;
+-            for (int i = 0; i < 4; ++i)
+-            {
+-                if (!(terrain->cells_0c[terrain->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48 & 0xc))
+-                {
+-                    valid = false;
++                unsigned int flags = BeachFlags(grid, tile);
++                if ((flags & 4) && !(flags & 0x10)
++                    && (BeachFlags(grid, neighbour0) & 0xc)
++                    && (BeachFlags(grid, neighbour1) & 0xc)
++                    && (BeachFlags(grid, neighbour2) & 0xc)
++                    && (BeachFlags(grid, neighbour3) & 0xc))
+                     break;
+-                }
++                tile.x = lower.x + static_cast<int>(width * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++                tile.y = lower.y + static_cast<int>(height * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++                grid->Step(tile, 0, &neighbour0);
++                grid->Step(neighbour0, 0, &neighbour0);
++                grid->Step(tile, 2, &neighbour1);
++                grid->Step(neighbour1, 2, &neighbour1);
++                grid->Step(tile, 4, &neighbour2);
++                grid->Step(neighbour2, 4, &neighbour2);
++                // Retail steps the direction-six neighbour only once on each retry.
++                grid->Step(tile, 6, &neighbour3);
+             }
+-            if (valid)
+-                break;
++            beach_walkpoints[0] = grid->TilePosition(nearest, 4);
++            beach_walkpoints[1] = grid->TileOrigin(tile);
++            return beach_walkpoints;
+         }
+-        result[0] = terrain->TilePosition(nearest, 4);
+-        result[1] = terrain->TileOrigin(tile);
+-        return result;
+     }
+     return 0;
+ }
+diff --git a/src/startup_world_guest_land_walkpoints.cpp b/src/startup_world_guest_land_walkpoints.cpp
+index 4290f2e950517021c2bc40ca33bebfe793836274..7efcd3e92ff900f7237534f13d4c858036104e50 100644
+--- a/src/startup_world_guest_land_walkpoints.cpp
++++ b/src/startup_world_guest_land_walkpoints.cpp
+@@ -3,48 +3,88 @@
+ #include <cmath>
+ #include <cstdlib>
+ 
++// Retail keeps the result in a function-local static; its guard, array and
++// empty atexit destructor are written out here so each has a name.
+ // GLOBAL: BEACHLIFE 0x005badb4
+ static unsigned char land_walkpoints_initialized;
++// GLOBAL: BEACHLIFE 0x005bac70
++static ScreenWorldPosition land_walkpoints[2];
+ 
+ // FUNCTION: BEACHLIFE 0x00469f30
+ static void DestroyLandWalkpoints()
+ {
+ }
+ 
++// The candidate offsets are stored as floats (fstp at 0x004697d9..0x004697f1); the nearest point's offsets stay on
++// the x87 stack. Retail subtracts x and y only: z is the tile origin's own height (fld [eax+8] without fsub).
++static inline ScreenWorldPosition Difference(const ScreenWorldPosition& a, const ScreenWorldPosition& b)
++{
++    return ScreenWorldPosition(static_cast<float>(static_cast<long double>(a.x) - b.x),
++        static_cast<float>(static_cast<long double>(a.y) - b.y),
++        a.z);
++}
++
++struct LandOffset
++{
++    long double x;
++    long double y;
++    long double z;
++};
++
++static inline LandOffset UnroundedDifference(const ScreenWorldPosition& a, const ScreenWorldPosition& b)
++{
++    LandOffset offset = { static_cast<long double>(a.x) - b.x, static_cast<long double>(a.y) - b.y, a.z };
++    return offset;
++}
++
++// Both roots stay unrounded for the fcompp. The first route sums (x*x + z*z) + y*y (0x0046980d..0x00469839), the
++// later routes (z*z + y*y) + x*x (0x00469a4a..0x00469a76).
++template <class Offset>
++static inline long double FirstLandDistance(const Offset& offset)
++{
++    long double x = offset.x;
++    long double y = offset.y;
++    long double z = offset.z;
++    return std::sqrt(x * x + z * z + y * y);
++}
++
++template <class Offset>
++static inline long double LandDistance(const Offset& offset)
++{
++    long double x = offset.x;
++    long double y = offset.y;
++    long double z = offset.z;
++    return std::sqrt(z * z + y * y + x * x);
++}
++
++static inline unsigned int LandFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
+ // FUNCTION: BEACHLIFE 0x00469520
+ ScreenWorldPosition* WorldGuestEntity::FindLandWalkpoints(ScreenWorldPosition position)
+ {
+-    static ScreenWorldPosition result[2];
+     if (!(land_walkpoints_initialized & 1))
+     {
+         land_walkpoints_initialized |= 1;
+         std::atexit(DestroyLandWalkpoints);
+     }
+-    ScreenTerrainGrid* terrain = screen_terrain_grid;
+-    ScreenTerrainRouteNode* selected = terrain->routes_20;
++    ScreenTerrainGrid* grid = screen_terrain_grid;
++    ScreenTerrainRouteNode* selected = grid->routes_20;
+     unsigned int count;
+     ScreenPoint* points = selected->Points(&count);
+-    auto neighbours_of = [&](ScreenPoint tile, ScreenPoint* neighbours)
+-    {
+-        for (int i = 0; i < 4; ++i)
+-            terrain->Step(tile, i * 2, &neighbours[i]);
+-    };
+-    auto unblocked = [&](ScreenPoint tile, const ScreenPoint* neighbours)
+-    {
+-        if (terrain->cells_0c[terrain->TileIndex(tile.x, tile.y)].flags_48 & 0x10)
+-            return false;
+-        for (int i = 0; i < 4; ++i)
+-            if (terrain->cells_0c[terrain->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48 & 0x10)
+-                return false;
+-        return true;
+-    };
+     unsigned int index = 0;
+-    for (;;)
++    ScreenPoint neighbour0, neighbour1, neighbour2, neighbour3;
++    ScreenPoint nearest;
++    ScreenWorldPosition offset;
++    LandOffset previous;
++    grid->Step(points[index], 0, &neighbour0);
++    grid->Step(points[index], 2, &neighbour1);
++    grid->Step(points[index], 4, &neighbour2);
++    grid->Step(points[index], 6, &neighbour3);
++    while (!(!(LandFlags(grid, points[index]) & 0x10) && !(LandFlags(grid, neighbour0) & 0x10) && !(LandFlags(grid, neighbour1) & 0x10) && !(LandFlags(grid, neighbour2) & 0x10) && !(LandFlags(grid, neighbour3) & 0x10)))
+     {
+-        ScreenPoint neighbours[4];
+-        neighbours_of(points[index], neighbours);
+-        if (unblocked(points[index], neighbours))
+-            break;
+         if (++index == count)
+         {
+             selected = selected->Next();
+@@ -53,46 +93,38 @@ ScreenWorldPosition* WorldGuestEntity::FindLandWalkpoints(ScreenWorldPosition po
+             points = selected->Points(&count);
+             index = 0;
+         }
++        grid->Step(points[index], 0, &neighbour0);
++        grid->Step(points[index], 2, &neighbour1);
++        grid->Step(points[index], 4, &neighbour2);
++        grid->Step(points[index], 6, &neighbour3);
+     }
+-    ScreenPoint nearest = points[index++];
+-    auto nearer = [&](ScreenPoint candidate, bool first_route)
++    nearest = ScreenPoint(points[index].x, points[index].y);
++    for (unsigned int i = index + 1; i < count; ++i)
+     {
+-        ScreenPoint neighbours[4];
+-        neighbours_of(candidate, neighbours);
+-        ScreenWorldPosition candidate_position = terrain->TileOrigin(candidate);
+-        float x = static_cast<float>(static_cast<long double>(candidate_position.x) - position.x);
+-        float y = static_cast<float>(static_cast<long double>(candidate_position.y) - position.y);
+-        float z = candidate_position.z;
+-        ScreenWorldPosition nearest_position = terrain->TileOrigin(nearest);
+-        long double nearest_x = static_cast<long double>(nearest_position.x) - position.x;
+-        long double nearest_y = static_cast<long double>(nearest_position.y) - position.y;
+-        long double nearest_z = nearest_position.z;
+-        long double distance;
+-        long double nearest_distance;
+-        if (first_route)
+-        {
+-            distance = std::sqrt(static_cast<long double>(x) * x + static_cast<long double>(z) * z + static_cast<long double>(y) * y);
+-            nearest_distance = std::sqrt(nearest_x * nearest_x + nearest_z * nearest_z + nearest_y * nearest_y);
+-        }
+-        else
+-        {
+-            distance = std::sqrt(static_cast<long double>(z) * z + static_cast<long double>(y) * y + static_cast<long double>(x) * x);
+-            nearest_distance = std::sqrt(nearest_z * nearest_z + nearest_y * nearest_y + nearest_x * nearest_x);
+-        }
+-        return nearest_distance > distance && unblocked(candidate, neighbours);
+-    };
+-    for (; index < count; ++index)
+-        if (nearer(points[index], true))
+-            nearest = points[index];
++        grid->Step(points[i], 0, &neighbour0);
++        grid->Step(points[i], 2, &neighbour1);
++        grid->Step(points[i], 4, &neighbour2);
++        grid->Step(points[i], 6, &neighbour3);
++        offset = Difference(grid->TileOrigin(points[i]), position);
++        previous = UnroundedDifference(grid->TileOrigin(nearest), position);
++        if (FirstLandDistance(offset) < FirstLandDistance(previous) && !(LandFlags(grid, points[i]) & 0x10) && !(LandFlags(grid, neighbour0) & 0x10) && !(LandFlags(grid, neighbour1) & 0x10) && !(LandFlags(grid, neighbour2) & 0x10) && !(LandFlags(grid, neighbour3) & 0x10))
++            nearest = ScreenPoint(points[i].x, points[i].y);
++    }
+     for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
+     {
+         points = route->Points(&count);
+         for (unsigned int i = 0; i < count; ++i)
+         {
+-            if (nearer(points[i], false))
++            grid->Step(points[i], 0, &neighbour0);
++            grid->Step(points[i], 2, &neighbour1);
++            grid->Step(points[i], 4, &neighbour2);
++            grid->Step(points[i], 6, &neighbour3);
++            offset = Difference(grid->TileOrigin(points[i]), position);
++            previous = UnroundedDifference(grid->TileOrigin(nearest), position);
++            if (LandDistance(offset) < LandDistance(previous) && !(LandFlags(grid, points[i]) & 0x10) && !(LandFlags(grid, neighbour0) & 0x10) && !(LandFlags(grid, neighbour1) & 0x10) && !(LandFlags(grid, neighbour2) & 0x10) && !(LandFlags(grid, neighbour3) & 0x10))
+             {
+-                nearest = points[i];
+                 selected = route;
++                nearest = ScreenPoint(points[i].x, points[i].y);
+             }
+         }
+     }
+@@ -101,39 +133,41 @@ ScreenWorldPosition* WorldGuestEntity::FindLandWalkpoints(ScreenWorldPosition po
+         ScreenPoint lower = selected->Bounds()[0];
+         ScreenPoint upper = selected->Bounds()[3];
+         float width = static_cast<float>(upper.x - lower.x);
+-        float height = static_cast<float>(upper.y - lower.y);
+         ScreenPoint tile;
+-        bool first_attempt = true;
++        // Retail multiplies the rand() value, the float scale and the extent on the x87 stack before _ftol.
++        tile.x = lower.x + static_cast<int>(width * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++        float height = static_cast<float>(upper.y - lower.y);
++        tile.y = lower.y + static_cast<int>(height * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++        grid->Step(tile, 0, &neighbour0);
++        grid->Step(neighbour0, 0, &neighbour0);
++        grid->Step(tile, 2, &neighbour1);
++        grid->Step(neighbour1, 2, &neighbour1);
++        grid->Step(tile, 4, &neighbour2);
++        grid->Step(neighbour2, 4, &neighbour2);
++        grid->Step(tile, 6, &neighbour3);
++        grid->Step(neighbour3, 6, &neighbour3);
+         for (;;)
+         {
+-            tile.x = lower.x + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * width);
+-            tile.y = lower.y + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * height);
+-            ScreenPoint neighbours[4];
+-            for (int i = 0; i < 4; ++i)
+-            {
+-                terrain->Step(tile, i * 2, &neighbours[i]);
+-                // Retail retries check only one step in direction six.
+-                if (first_attempt || i != 3)
+-                    terrain->Step(neighbours[i], i * 2, &neighbours[i]);
+-            }
+-            first_attempt = false;
+-            unsigned int flags = terrain->cells_0c[terrain->TileIndex(tile.x, tile.y)].flags_48;
+-            if (!(flags & 4) || (flags & 0x10))
+-                continue;
+-            bool valid = true;
+-            for (int i = 0; i < 4; ++i)
+-            {
+-                if (!(terrain->cells_0c[terrain->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48 & 0xc))
+-                {
+-                    valid = false;
+-                    break;
+-                }
+-            }
+-            if (valid)
++            unsigned int flags = LandFlags(grid, tile);
++            if ((flags & 4) && !(flags & 0x10)
++                && (LandFlags(grid, neighbour0) & 0xc)
++                && (LandFlags(grid, neighbour1) & 0xc)
++                && (LandFlags(grid, neighbour2) & 0xc)
++                && (LandFlags(grid, neighbour3) & 0xc))
+                 break;
++            tile.x = lower.x + static_cast<int>(width * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++            tile.y = lower.y + static_cast<int>(height * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++            grid->Step(tile, 0, &neighbour0);
++            grid->Step(neighbour0, 0, &neighbour0);
++            grid->Step(tile, 2, &neighbour1);
++            grid->Step(neighbour1, 2, &neighbour1);
++            grid->Step(tile, 4, &neighbour2);
++            grid->Step(neighbour2, 4, &neighbour2);
++            // Retail steps the direction-six neighbour only once on each retry.
++            grid->Step(tile, 6, &neighbour3);
+         }
+-        result[0] = terrain->TilePosition(nearest, 4);
+-        result[1] = terrain->TileOrigin(tile);
++        land_walkpoints[0] = grid->TilePosition(nearest, 4);
++        land_walkpoints[1] = grid->TileOrigin(tile);
+     }
+-    return result;
++    return land_walkpoints;
+ }
+diff --git a/src/startup_world_guest_water_walkpoints.cpp b/src/startup_world_guest_water_walkpoints.cpp
+index 77bb58201745e3fb6ced7523da7ebefd6551aebb..cd5ccecaad284b88e06a1a7ace06fa585b180c93 100644
+--- a/src/startup_world_guest_water_walkpoints.cpp
++++ b/src/startup_world_guest_water_walkpoints.cpp
+@@ -2,53 +2,87 @@
+ #include <cmath>
+ #include <cstdlib>
+ 
++// Retail keeps the result in a function-local static; its guard, array and
++// empty atexit destructor are written out here so each has a name.
+ // GLOBAL: BEACHLIFE 0x005badb5
+ static unsigned char water_walkpoints_initialized;
++// GLOBAL: BEACHLIFE 0x005bad38
++static ScreenWorldPosition water_walkpoints[2];
+ 
+ // FUNCTION: BEACHLIFE 0x00468980
+ static void DestroyWaterWalkpoints()
+ {
+ }
+ 
++// Retail rounds the candidate offsets to floats (fstp at 0x004680a3..0x004680c1) and keeps the nearest point's
++// offsets on the x87 stack; both roots stay unrounded for the fcompp at 0x00468116. Sum order (x*x + z*z) + y*y.
++static inline long double WalkDistance(const ScreenWorldPosition& origin, const ScreenWorldPosition& position)
++{
++    float x = static_cast<float>(static_cast<long double>(origin.x) - position.x);
++    float y = static_cast<float>(static_cast<long double>(origin.y) - position.y);
++    float z = static_cast<float>(static_cast<long double>(origin.z) - position.z);
++    return std::sqrt(static_cast<long double>(x) * x + static_cast<long double>(z) * z + static_cast<long double>(y) * y);
++}
++
++static inline long double UnroundedWalkDistance(const ScreenWorldPosition& origin, const ScreenWorldPosition& position)
++{
++    long double x = static_cast<long double>(origin.x) - position.x;
++    long double y = static_cast<long double>(origin.y) - position.y;
++    long double z = static_cast<long double>(origin.z) - position.z;
++    return std::sqrt(x * x + z * z + y * y);
++}
++
++static inline unsigned int Index(ScreenTerrainGrid* grid, const ScreenPoint& point)
++{
++    return grid->TileIndex(point.x, point.y);
++}
++
++static inline void ReadWaterFlags(ScreenTerrainGrid* grid, const ScreenPoint& tile, const ScreenPoint& step0,
++    const ScreenPoint& step1, const ScreenPoint& step2, const ScreenPoint& step3, const ScreenPoint& step4,
++    const ScreenPoint& step5, const ScreenPoint& step6, const ScreenPoint& step7, unsigned int& flags,
++    unsigned int& flags0, unsigned int& flags1, unsigned int& flags2, unsigned int& flags3, unsigned int& flags4,
++    unsigned int& flags5, unsigned int& flags6, unsigned int& flags7)
++{
++    flags = grid->cells_0c[Index(grid, tile)].flags_48;
++    flags0 = grid->cells_0c[Index(grid, step0)].flags_48;
++    flags1 = grid->cells_0c[Index(grid, step1)].flags_48;
++    flags2 = grid->cells_0c[Index(grid, step2)].flags_48;
++    flags3 = grid->cells_0c[Index(grid, step3)].flags_48;
++    flags4 = grid->cells_0c[Index(grid, step4)].flags_48;
++    flags5 = grid->cells_0c[Index(grid, step5)].flags_48;
++    flags6 = grid->cells_0c[Index(grid, step6)].flags_48;
++    flags7 = grid->cells_0c[Index(grid, step7)].flags_48;
++}
++
+ // FUNCTION: BEACHLIFE 0x00468000
+ ScreenWorldPosition* WorldGuestEntity::FindWaterWalkpoints()
+ {
+-    static ScreenWorldPosition result[2];
+     if (!(water_walkpoints_initialized & 1))
+     {
+         water_walkpoints_initialized |= 1;
+         std::atexit(DestroyWaterWalkpoints);
+     }
+-    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
++    ScreenPoint step0, step1, step2, step3, step4, step5, step6, step7;
++    ScreenWorldPosition position = position_30;
+     ScreenTerrainRouteNode* selected = screen_terrain_grid->routes_1c;
+     unsigned int count;
+     ScreenPoint* points = selected->Points(&count);
+-    ScreenPoint nearest = points[0];
+-    auto nearer = [&](ScreenPoint candidate)
++    ScreenPoint nearest;
++    nearest = ScreenPoint(points[0].x, points[0].y);
++    for (unsigned int i = 1; i < count; i++)
+     {
+-        ScreenWorldPosition candidate_position = screen_terrain_grid->TileOrigin(candidate);
+-        float x = static_cast<float>(static_cast<long double>(candidate_position.x) - position.x);
+-        float y = static_cast<float>(static_cast<long double>(candidate_position.y) - position.y);
+-        float z = static_cast<float>(static_cast<long double>(candidate_position.z) - position.z);
+-        ScreenWorldPosition nearest_position = screen_terrain_grid->TileOrigin(nearest);
+-        long double nearest_x = static_cast<long double>(nearest_position.x) - position.x;
+-        long double nearest_y = static_cast<long double>(nearest_position.y) - position.y;
+-        long double nearest_z = static_cast<long double>(nearest_position.z) - position.z;
+-        long double distance = std::sqrt(static_cast<long double>(x) * x + static_cast<long double>(z) * z + static_cast<long double>(y) * y);
+-        return std::sqrt(nearest_x * nearest_x + nearest_z * nearest_z + nearest_y * nearest_y) > distance;
+-    };
+-    for (unsigned int i = 1; i < count; ++i)
+-        if (nearer(points[i]))
+-            nearest = points[i];
++        if (WalkDistance(screen_terrain_grid->TileOrigin(points[i]), position) < UnroundedWalkDistance(screen_terrain_grid->TileOrigin(nearest), position))
++            nearest = ScreenPoint(points[i].x, points[i].y);
++    }
+     for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
+     {
+         points = route->Points(&count);
+-        for (unsigned int i = 0; i < count; ++i)
++        for (unsigned int i = 0; i < count; i++)
+         {
+-            if (nearer(points[i]))
++            if (WalkDistance(screen_terrain_grid->TileOrigin(points[i]), position) < UnroundedWalkDistance(screen_terrain_grid->TileOrigin(nearest), position))
+             {
+-                nearest = points[i];
+                 selected = route;
++                nearest = ScreenPoint(points[i].x, points[i].y);
+             }
+         }
+     }
+@@ -57,35 +91,62 @@ ScreenWorldPosition* WorldGuestEntity::FindWaterWalkpoints()
+         ScreenPoint lower = selected->Bounds()[0];
+         ScreenPoint upper = selected->Bounds()[3];
+         float width = static_cast<float>(upper.x - lower.x);
+-        float height = static_cast<float>(upper.y - lower.y);
+         ScreenPoint tile;
+-        auto choose_tile = [&]
++        // Retail multiplies the rand() value, the float scale and the extent on the x87 stack before _ftol.
++        tile.x = lower.x + static_cast<int>(width * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++        float height = static_cast<float>(upper.y - lower.y);
++        tile.y = lower.y + static_cast<int>(height * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++        ScreenTerrainGrid* grid = screen_terrain_grid;
++        unsigned int flags, flags0, flags1, flags2, flags3, flags4, flags5, flags6, flags7;
++        grid->Step(tile, 0, &step0);
++        grid->Step(tile, 1, &step1);
++        grid->Step(tile, 2, &step2);
++        grid->Step(tile, 3, &step3);
++        grid->Step(tile, 4, &step4);
++        grid->Step(tile, 5, &step5);
++        grid->Step(tile, 6, &step6);
++        grid->Step(tile, 7, &step7);
++        ReadWaterFlags(grid, tile, step0, step1, step2, step3, step4, step5, step6, step7, flags, flags0, flags1, flags2, flags3, flags4, flags5, flags6, flags7);
++        int attempts = 0;
++        while (!((flags & 2) && !(flags & 0x10) && !(flags & 0x8100) && (flags0 & 2) && !(flags0 & 0x10)
++                   && !(flags0 & 0x8100) && (flags1 & 2) && !(flags1 & 0x10) && !(flags1 & 0x8100) && (flags2 & 2)
++                   && !(flags2 & 0x10) && !(flags2 & 0x8100) && (flags3 & 2) && !(flags3 & 0x10)
++                   && !(flags3 & 0x8100) && (flags4 & 2) && !(flags4 & 0x10) && !(flags4 & 0x8100) && (flags5 & 2)
++                   && !(flags5 & 0x10) && !(flags5 & 0x8100) && (flags6 & 2) && !(flags6 & 0x10)
++                   && !(flags6 & 0x8100) && (flags7 & 2) && !(flags7 & 0x10) && !(flags7 & 0x8100))
++               && attempts < 1000)
++        {
++            tile.x = lower.x + static_cast<int>(width * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++            tile.y = lower.y + static_cast<int>(height * (static_cast<long double>(std::rand()) * 3.0518509e-5f));
++            grid->Step(tile, 0, &step0);
++            grid->Step(tile, 1, &step1);
++            grid->Step(tile, 2, &step2);
++            grid->Step(tile, 3, &step3);
++            grid->Step(tile, 4, &step4);
++            grid->Step(tile, 5, &step5);
++            grid->Step(tile, 6, &step6);
++            grid->Step(tile, 7, &step7);
++            flags = grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++            flags0 = grid->cells_0c[grid->TileIndex(step0.x, step0.y)].flags_48;
++            flags1 = grid->cells_0c[grid->TileIndex(step1.x, step1.y)].flags_48;
++            flags2 = grid->cells_0c[grid->TileIndex(step2.x, step2.y)].flags_48;
++            flags3 = grid->cells_0c[grid->TileIndex(step3.x, step3.y)].flags_48;
++            flags4 = grid->cells_0c[grid->TileIndex(step4.x, step4.y)].flags_48;
++            flags5 = grid->cells_0c[grid->TileIndex(step5.x, step5.y)].flags_48;
++            flags6 = grid->cells_0c[grid->TileIndex(step6.x, step6.y)].flags_48;
++            flags7 = grid->cells_0c[grid->TileIndex(step7.x, step7.y)].flags_48;
++            attempts++;
++        }
++        if (attempts == 1000)
+         {
+-            tile.x = lower.x + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * width);
+-            tile.y = lower.y + static_cast<int>(static_cast<long double>(std::rand()) * 3.0518509447574615e-5f * height);
+-            ScreenPoint neighbours[8];
+-            for (int i = 0; i < 8; ++i)
+-                screen_terrain_grid->Step(tile, i, &neighbours[i]);
+-            unsigned int flags[9];
+-            flags[0] = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
+-            for (int i = 0; i < 8; ++i)
+-                flags[i + 1] = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(neighbours[i].x, neighbours[i].y)].flags_48;
+-            for (unsigned int flag : flags)
+-                if (!(flag & 2) || (flag & 0x8110))
+-                    return false;
+-            return true;
+-        };
+-        bool valid = choose_tile();
+-        unsigned int attempts = 0;
+-        while (!valid && attempts < 1000)
++            water_walkpoints[0] = screen_terrain_grid->TilePosition(nearest, 4);
++            water_walkpoints[1] = screen_terrain_grid->TilePosition(nearest, 4);
++        }
++        else
+         {
+-            valid = choose_tile();
+-            ++attempts;
++            water_walkpoints[0] = screen_terrain_grid->TilePosition(nearest, 4);
++            water_walkpoints[1] = screen_terrain_grid->TilePosition(tile, 4);
+         }
+-        result[0] = screen_terrain_grid->TilePosition(nearest, 4);
+-        result[1] = attempts == 1000
+-                      ? screen_terrain_grid->TilePosition(nearest, 4)
+-                      : screen_terrain_grid->TilePosition(tile, 4);
+     }
+-    return result;
++    return water_walkpoints;
+ }

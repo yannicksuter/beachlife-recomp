@@ -1,0 +1,233 @@
+diff --git a/src/startup_economy_save.cpp b/src/startup_economy_save.cpp
+index fe6d3ec4c67e16159dad690949e24ee147e41ee6..c861ec6c6f368f7fe8440487022b9618aaa82719 100644
+--- a/src/startup_economy_save.cpp
++++ b/src/startup_economy_save.cpp
+@@ -11,5 +11,5 @@ void VariableEconomy::SaveState(GameFileReader* file)
+     file->Unknown3c(economy_state_class_name);
+     file->Unknown24("sizeof", 0x84);
+     file->Unknown1c("Name", reinterpret_cast<const unsigned short*>(unknown_00));
+-    WriteStateFloat(file, "Cash", value_80);
++    file->Unknown30("Cash", value_80);
+ }
+diff --git a/src/startup_event_schedule_lifecycle.cpp b/src/startup_event_schedule_lifecycle.cpp
+index 35da6d603d26209147f1f6dab07750b16de93b34..b0108e712d609fedae7fe234c0152d2a7abbf6fd 100644
+--- a/src/startup_event_schedule_lifecycle.cpp
++++ b/src/startup_event_schedule_lifecycle.cpp
+@@ -60,31 +60,30 @@ void VariableEventSchedule::SaveState(GameFileReader* file)
+ {
+     file->Unknown28("m_OwnerID", word_15c);
+     file->Unknown34("m_bEventActive", active_160);
+-    for (int i = 0; i < 3; ++i)
++    for (int index = 0; index < 3; ++index)
+     {
+-        Entry& entry = entries_00[i];
+-        file->Unknown24("Type", entry.event_70);
+-        file->Unknown24("NumActors", entry.staff_count_28);
+-        int count = WorldDequeDistance(entry.staff_00.end, entry.staff_00.begin);
+-        file->Unknown24("ActorSize", count);
+-        for (int j = 0; j < count; ++j)
++        file->Unknown24("Type", entries_00[index].event_70);
++        file->Unknown24("NumActors", entries_00[index].staff_count_28);
++        int actors = WorldDequeDistance(entries_00[index].staff_00.end, entries_00[index].staff_00.begin);
++        file->Unknown24("ActorSize", actors);
++        for (int actor = 0; actor < actors; ++actor)
+         {
+-            auto position_1 = entry.staff_00.begin;
+-            position_1.Advance(j);
+-            file->Unknown28("ActorID", (*position_1.current));
++            auto position = entries_00[index].staff_00.begin;
++            position.Advance(actor);
++            file->Unknown28("ActorID", *position.current);
+         }
+-        file->Unknown24("NumGuests", entry.guest_count_54);
+-        count = WorldDequeDistance(entry.guests_2c.end, entry.guests_2c.begin);
+-        file->Unknown24("ActorSize", count);
+-        for (int j = 0; j < count; ++j)
++        file->Unknown24("NumGuests", entries_00[index].guest_count_54);
++        int guests = WorldDequeDistance(entries_00[index].guests_2c.end, entries_00[index].guests_2c.begin);
++        file->Unknown24("ActorSize", guests);
++        for (int guest = 0; guest < guests; ++guest)
+         {
+-            auto position_2 = entry.guests_2c.begin;
+-            position_2.Advance(j);
+-            file->Unknown28("ActorID", (*position_2.current));
++            auto position = entries_00[index].guests_2c.begin;
++            position.Advance(guest);
++            file->Unknown28("ActorID", *position.current);
+         }
+-        WriteStateFloat(file, "Start", entry.value_58);
+-        WriteStateFloat(file, "Duration", entry.value_5c);
+-        WriteStateFloat(file, "Price", entry.start_60);
++        file->Unknown30("Start", entries_00[index].value_58);
++        file->Unknown30("Duration", entries_00[index].value_5c);
++        file->Unknown30("Price", entries_00[index].start_60);
+     }
+ }
+ 
+diff --git a/src/startup_ticker_save_remove.cpp b/src/startup_ticker_save_remove.cpp
+index b7f1ac16974bb806c719c829e710afa3e2ef107f..def718cfd79741e79bf9fec3a74a988a94b649c7 100644
+--- a/src/startup_ticker_save_remove.cpp
++++ b/src/startup_ticker_save_remove.cpp
+@@ -43,7 +43,7 @@ void VariableTicker::SaveState(GameFileReader* file)
+         TickerHistoryMessage* message = *h;
+         file->Unknown28("ID", message->id_00);
+         file->Unknown28("day", message->day_04);
+-        WriteStateFloat(file, "time", message->time_08);
++        file->Unknown30("time", message->time_08);
+         if (message->text_0c)
+         {
+             file->Unknown34("pwText set", 1);
+@@ -66,5 +66,5 @@ void VariableTicker::SaveState(GameFileReader* file)
+     file->Unknown34("m_SuppressWorldMess", flag_80);
+     file->Unknown34("m_SuppressObjectMess", flag_81);
+     file->Unknown20("m_SuppressedMessages", suppressed_84, 100);
+-    WriteStateFloat(file, "m_fLastCheckedMissedDesires", value_214);
++    file->Unknown30("m_fLastCheckedMissedDesires", value_214);
+ }
+diff --git a/src/startup_variable_transport_schedule_save.cpp b/src/startup_variable_transport_schedule_save.cpp
+index b63700e7ecedc327fcb1cf26675480240207c57f..ce1a373743c7b14aad7c45a1c92c90b8897cd658 100644
+--- a/src/startup_variable_transport_schedule_save.cpp
++++ b/src/startup_variable_transport_schedule_save.cpp
+@@ -48,19 +48,6 @@ void VariableTransport::RecordDeparture(VariableEntity* guest)
+         ++male_5c;
+ }
+ 
+-static void WriteTransportRecord(GameFileReader* file, WorldTransportRecord* record)
+-{
+-    file->Unknown28("GuestInfo", record->kind_00);
+-    file->Unknown20("GuestType", record->random_04, 20);
+-    for (int i = 0; i < 20; ++i)
+-        file->Unknown38("GuestKeyword", record->names_54[i]);
+-    file->Unknown20("GuestKeywordNumbers", record->counts_554, 20);
+-    file->Unknown28("NumGuests", record->count_5a4);
+-    WriteStateFloat(file, "Time", record->time_5a8);
+-    file->Unknown28("Day", record->day_5ac);
+-    file->Unknown28("TimeFlags", record->repeat_5b0);
+-}
+-
+ // FUNCTION: BEACHLIFE 0x0042d3a0
+ void VariableTransport::SaveState(GameFileReader* file)
+ {
+@@ -74,12 +61,23 @@ void VariableTransport::SaveState(GameFileReader* file)
+     file->Unknown24("List size", PointerListDistance(list_iterator_1, list_iterator_2));
+     int current;
+     int index = 0;
+-    for (CircularListNode* node = scheduled_00.head->next; node != scheduled_00.head; node = node->next)
+     {
+-        WriteTransportRecord(file, static_cast<WorldTransportNode*>(node)->record);
+-        if (node == cursor_04)
+-            current = index;
+-        ++index;
++        for (CircularListNode* node = scheduled_00.head->next; node != scheduled_00.head; node = node->next)
++        {
++            WorldTransportRecord* record = static_cast<WorldTransportNode*>(node)->record;
++            file->Unknown28("GuestInfo", record->kind_00);
++            file->Unknown20("GuestType", record->random_04, 20);
++            for (int i = 0; i < 20; ++i)
++                file->Unknown38("GuestKeyword", record->names_54[i]);
++            file->Unknown20("GuestKeywordNumbers", record->counts_554, 20);
++            file->Unknown28("NumGuests", record->count_5a4);
++            file->Unknown30("Time", record->time_5a8);
++            file->Unknown28("Day", record->day_5ac);
++            file->Unknown28("TimeFlags", record->repeat_5b0);
++            if (node == cursor_04)
++                current = index;
++            ++index;
++        }
+     }
+     file->Unknown24("Current It", cursor_04 == scheduled_00.head ? -1 : current);
+     CircularListIterator list_iterator_3;
+@@ -87,8 +85,19 @@ void VariableTransport::SaveState(GameFileReader* file)
+     CircularListIterator list_iterator_4;
+     list_iterator_4.node = pending_08.head;
+     file->Unknown24("Now list size", PointerListDistance(list_iterator_3, list_iterator_4));
+-    for (CircularListNode* node = pending_08.head->next; node != pending_08.head; node = node->next)
+-        WriteTransportRecord(file, static_cast<WorldTransportNode*>(node)->record);
++    for (CircularListNode* pending = pending_08.head->next; pending != pending_08.head; pending = pending->next)
++    {
++        WorldTransportRecord* record = static_cast<WorldTransportNode*>(pending)->record;
++        file->Unknown28("GuestInfo", record->kind_00);
++        file->Unknown20("GuestType", record->random_04, 20);
++        for (int i = 0; i < 20; ++i)
++            file->Unknown38("GuestKeyword", record->names_54[i]);
++        file->Unknown20("GuestKeywordNumbers", record->counts_554, 20);
++        file->Unknown28("NumGuests", record->count_5a4);
++        file->Unknown30("Time", record->time_5a8);
++        file->Unknown28("Day", record->day_5ac);
++        file->Unknown28("TimeFlags", record->repeat_5b0);
++    }
+     file->Unknown10("m_GuestsLeft.fAvgHapp", reinterpret_cast<unsigned int*>(weights_0c), 20);
+     file->Unknown24("m_GuestsLeft.iHappyLeavers", male_5c);
+     file->Unknown24("m_GuestsLeft.iUnhappyLeavers", female_60);
+diff --git a/src/startup_weather_save.cpp b/src/startup_weather_save.cpp
+index 632570603183243e4c9095125270e4bcca17d430..3de0be86ebb7da27dfbb0a53c9837a69c836da0c 100644
+--- a/src/startup_weather_save.cpp
++++ b/src/startup_weather_save.cpp
+@@ -6,16 +6,16 @@ void VariableWeather::SaveState(GameFileReader* file)
+ {
+     file->Unknown24("m_LightIndex", word_2ac0);
+     file->Unknown24("m_LightPrevIndex", word_2ac4);
+-    WriteStateFloat(file, "m_WeatherTime", value_2ac8);
++    file->Unknown30("m_WeatherTime", value_2ac8);
+     file->Unknown10("m_DesireModifiers", values_2b00, 26);
+     file->Unknown28("m_dwNextEvent", word_2b94);
+     file->Unknown28("m_dwNumEvents", event_count_2b98);
+     file->Unknown34("m_bLightFlash", flag_2ba4);
+     file->Unknown28("m_dwLightCol", word_2ba8);
+-    WriteStateFloat(file, "m_fFlashTime", value_2bac);
++    file->Unknown30("m_fFlashTime", value_2bac);
+     file->Unknown34("m_bManual", flag_2bb0);
+     file->Unknown24("m_ManualCol", colour_2bb4);
+-    WriteStateFloat(file, "m_fLightningStrikeTime", value_2acc);
++    file->Unknown30("m_fLightningStrikeTime", value_2acc);
+     file->Unknown28("m_dwStrikeLevel", word_2ad0);
+     file->Unknown28("m_dwStrikeBuilding", word_2ad4);
+     file->Unknown34("m_bStrikeBuilding", flag_2ae0);
+@@ -23,9 +23,9 @@ void VariableWeather::SaveState(GameFileReader* file)
+     file->Unknown24("m_rStrikeArea.bottom", rectangle_2ae4.bottom);
+     file->Unknown24("m_rStrikeArea.left", rectangle_2ae4.left);
+     file->Unknown24("m_rStrikeArea.right", rectangle_2ae4.right);
+-    WriteStateFloat(file, "m_StrikePoint.x", strike_point_2af4.x);
+-    WriteStateFloat(file, "m_StrikePoint.y", strike_point_2af4.y);
+-    WriteStateFloat(file, "m_StrikePoint.z", strike_point_2af4.z);
++    file->Unknown30("m_StrikePoint.x", strike_point_2af4.x);
++    file->Unknown30("m_StrikePoint.y", strike_point_2af4.y);
++    file->Unknown30("m_StrikePoint.z", strike_point_2af4.z);
+     file->Unknown34("m_bStrikes", flag_2ba5);
+     if (haze_2b68)
+         file->Unknown34("m_LightningLightmap", 1);
+diff --git a/src/startup_world_maintenance_save.cpp b/src/startup_world_maintenance_save.cpp
+index 09d81b3d113adbd844be02ececbb064338ea7ea6..418ae7d517887a22fb2654eb074f1b67717453a2 100644
+--- a/src/startup_world_maintenance_save.cpp
++++ b/src/startup_world_maintenance_save.cpp
+@@ -32,7 +32,7 @@ void WorldCleaningManager::SaveState(GameFileReader* file)
+         WorldCleaningRequest* entry = static_cast<WorldRepairNode<WorldCleaningRequest>*>(node)->entry;
+         file->Unknown28("CleaningID", entry->id_00);
+         file->Unknown24("iCalls", entry->count_04);
+-        WriteStateFloat(file, "fTimeCalled", entry->time_08);
++        file->Unknown30("fTimeCalled", entry->time_08);
+         file->Unknown34("bUrgent", entry->flag_0c);
+     }
+     CircularListIterator list_iterator_3;
+@@ -69,8 +69,8 @@ void WorldRepairManager::SaveState(GameFileReader* file)
+             WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
+             file->Unknown28("RepairID", entry->id_00);
+             file->Unknown24("iCalls", entry->word_04);
+-            WriteStateFloat(file, "fDistance", entry->value_08);
+-            WriteStateFloat(file, "fTimeCalled", entry->value_0c);
++            file->Unknown30("fDistance", entry->value_08);
++            file->Unknown30("fTimeCalled", entry->value_0c);
+             file->Unknown34("bUrgent", entry->flag_10);
+             file->Unknown28("Type", entry->word_14);
+         }
+@@ -87,8 +87,8 @@ void WorldRepairManager::SaveState(GameFileReader* file)
+             WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
+             file->Unknown28("RepairID", entry->id_00);
+             file->Unknown24("iCalls", entry->word_04);
+-            WriteStateFloat(file, "fDistance", entry->value_08);
+-            WriteStateFloat(file, "fTimeCalled", entry->value_0c);
++            file->Unknown30("fDistance", entry->value_08);
++            file->Unknown30("fTimeCalled", entry->value_0c);
+             file->Unknown34("bUrgent", entry->flag_10);
+             file->Unknown28("Type", entry->word_14);
+         }

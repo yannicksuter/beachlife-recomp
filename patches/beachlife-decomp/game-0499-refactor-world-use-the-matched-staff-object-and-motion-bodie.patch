@@ -1,0 +1,1603 @@
+diff --git a/src/startup_world_cabaret_commands.cpp b/src/startup_world_cabaret_commands.cpp
+index 78b27e7f7df9d00ee81157597de51846ddf8199d..c1464946fed7540d2bf76474ac118febe8f959e8 100644
+--- a/src/startup_world_cabaret_commands.cpp
++++ b/src/startup_world_cabaret_commands.cpp
+@@ -2,144 +2,212 @@
+ #include "window_activation.h"
+ #include <stdlib.h>
+ 
++// GLOBAL: BEACHLIFE 0x00577fa0
++const char* world_d_cabaret = "D_CABARET";
++
++extern const char* cabaret_walk_name;
++
++// GLOBAL: BEACHLIFE 0x00577fa8
++const char* world_d_cabaret_to_walk = "D_CABARET_TO_WALK";
++
++static inline int TurnVariant(int base, unsigned int rotation)
++{
++    return ((base - static_cast<int>(rotation)) * 2) % 8;
++}
++
++static inline unsigned int Rotation(WorldBuildingEntity* owner)
++{
++    return owner->keyline_state_44->word_18;
++}
++
+ // FUNCTION: BEACHLIFE 0x00462e10
+ bool WorldEntity14::Unknown14(ScreenModeCommand* command)
+ {
+-    unsigned char result = 0;
++    // Retail returns a local byte that the 0x3b branch does not initialize;
++    // every caller discards it, natively it is false.
++    bool result = false;
++    WorldBuildingEntity* owner;
+     unsigned int kind = command->words[2];
+-    if (kind == 0x3b)
++    switch (kind)
++    {
++    case 0x3b:
+     {
+         flag_104 = 1;
+-        // Retail returns a local byte that this branch does not initialize;
+-        // every caller discards it, natively it is false.
+-        return result != 0;
++        return result;
+     }
+-    if (kind == 0x39)
++    case 0x39:
+     {
+-        if (action_state_f4 <= 1)
++        if (action_state_f4 == 0)
+         {
+-            bool starting = action_state_f4 == 0;
+-            WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
+-            unsigned int rotation = owner->keyline_state_44->word_18;
++            owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
+             ScreenMapPosition point;
+-            if (rotation == 0)
++            ScreenMapPosition offset;
++            switch (Rotation(owner))
+             {
+-                point = { owner->position_30.x - 21.0f, owner->position_30.y - 322.0f };
+-                keyline_state_44->SelectVariant(4);
+-            }
+-            else if (rotation == 3)
++            default:
+             {
+-                point = { owner->position_30.x + 33.0f, owner->position_30.y - 308.0f };
++                offset.x = -25.0f;
++                offset.y = -282.0f;
++                point = CurrentScreenTerrain()->BuildingOffset(owner->TilePosition(),
++                    owner->BuildingDefinition()->footprint_x_1d4,
++                    owner->BuildingDefinition()->footprint_y_1d8,
++                    offset,
++                    Rotation(owner));
++                keyline_state_44->SelectVariant((static_cast<int>(keyline_state_44->word_18) + 7) % 8);
++                break;
++            }
++            case 3:
++                point.x = owner->Position().x + 33.0f;
++                point.y = owner->Position().y - 308.0f;
+                 keyline_state_44->SelectVariant(6);
++                break;
++            case 0:
++                point.x = owner->Position().x - 21.0f;
++                point.y = owner->Position().y - 322.0f;
++                keyline_state_44->SelectVariant(4);
++                break;
+             }
+-            else
++            float duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation(world_d_cabaret, duration, &position_30);
++            keyline_state_44->word_08 = 2;
++            SetMovementPosition(ScreenWorldPosition(point, 0.0f));
++            action_state_f4 = 1;
++            ScreenModeCommand next(id_28, id_28, 0x39, 0, 0);
++            screen_mode_commands->QueueDelayed(&next, duration);
++            return true;
++        }
++        if (action_state_f4 == 1)
++        {
++            owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++            ScreenMapPosition point;
++            ScreenMapPosition offset;
++            switch (Rotation(owner))
+             {
+-                {
+-                    ScreenMapPosition offset_value = { -25.0f, -282.0f };
+-                    unsigned int rotation_value = owner->keyline_state_44->word_18;
+-                    unsigned int height_value = owner->BuildingDefinition()->footprint_y_1d8;
+-                    unsigned int width_value = owner->BuildingDefinition()->footprint_x_1d4;
+-                    ScreenPoint tile = owner->TilePosition();
+-                    point = CurrentScreenTerrain()->BuildingOffset(tile, width_value, height_value, offset_value, rotation_value);
+-                }
+-                if (starting)
+-                    keyline_state_44->SelectVariant((static_cast<int>(keyline_state_44->word_18) + 7) % 8);
+-                else
+-                    keyline_state_44->SelectVariant(((4 - static_cast<int>(owner->keyline_state_44->word_18)) * 2) % 8);
++            default:
++            {
++                offset.x = -25.0f;
++                offset.y = -282.0f;
++                point = CurrentScreenTerrain()->BuildingOffset(owner->TilePosition(),
++                    owner->BuildingDefinition()->footprint_x_1d4,
++                    owner->BuildingDefinition()->footprint_y_1d8,
++                    offset,
++                    Rotation(owner));
++                keyline_state_44->SelectVariant(TurnVariant(4, owner->keyline_state_44->word_18));
++                break;
+             }
+-            ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-            float duration = keyline_state_44->SetAnimation(starting ? "D_CABARET" : "D_CABARET_TO_WALK",
+-                window_deactivation_state->time_158,
+-                &position);
++            case 0:
++                point.x = owner->Position().x - 21.0f;
++                point.y = owner->Position().y - 322.0f;
++                keyline_state_44->SelectVariant(4);
++                break;
++            case 3:
++                point.x = owner->Position().x + 33.0f;
++                point.y = owner->Position().y - 308.0f;
++                keyline_state_44->SelectVariant(6);
++                break;
++            }
++            float duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation(world_d_cabaret_to_walk, duration, &position_30);
+             keyline_state_44->word_08 = 2;
+-            SetMovementPosition({ point.x, point.y, 0.0f });
+-            action_state_f4 = starting ? 1 : 2;
+-            ScreenModeCommand next;
+-            next.words[0] = id_28;
+-            next.words[1] = id_28;
+-            next.words[2] = 0x39;
+-            next.words[3] = 0;
+-            next.words[4] = 0;
++            SetMovementPosition(ScreenWorldPosition(point, 0.0f));
++            action_state_f4 = 2;
++            ScreenModeCommand next(id_28, id_28, 0x39, 0, 0);
+             screen_mode_commands->QueueDelayed(&next, duration);
++            return true;
+         }
+-        else if (action_state_f4 == 2)
++        if (action_state_f4 == 2)
+         {
+-            WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
+-            unsigned int rotation = owner->keyline_state_44->word_18;
++            owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
+             ScreenMapPosition point;
+-            if (rotation == 0)
+-                point = { owner->position_30.x + 5.0f, owner->position_30.y - 364.0f };
+-            else if (rotation == 3)
+-                point = { owner->position_30.x + 102.0f, owner->position_30.y - 286.0f };
+-            else
++            ScreenMapPosition offset;
++            switch (Rotation(owner))
++            {
++            default:
+             {
+-                ScreenMapPosition offset_value = { 5.0f, -364.0f };
+-                unsigned int rotation_value = owner->keyline_state_44->word_18;
+-                unsigned int height_value = owner->BuildingDefinition()->footprint_y_1d8;
+-                unsigned int width_value = owner->BuildingDefinition()->footprint_x_1d4;
+-                ScreenPoint tile = owner->TilePosition();
+-                point = CurrentScreenTerrain()->BuildingOffset(tile, width_value, height_value, offset_value, rotation_value);
++                offset.x = 5.0f;
++                offset.y = -364.0f;
++                point = CurrentScreenTerrain()->BuildingOffset(owner->TilePosition(),
++                    owner->BuildingDefinition()->footprint_x_1d4,
++                    owner->BuildingDefinition()->footprint_y_1d8,
++                    offset,
++                    Rotation(owner));
++                break;
++            }
++            case 3:
++                point.x = owner->Position().x + 102.0f;
++                point.y = owner->Position().y - 286.0f;
++                break;
++            case 0:
++                point.x = owner->Position().x + 5.0f;
++                point.y = owner->Position().y - 364.0f;
++                break;
++            }
++            float time = window_deactivation_state->time_158;
++            keyline_state_44->SetAnimation(cabaret_walk_name, time, &position_30);
++            switch (Rotation(owner))
++            {
++            default:
++                keyline_state_44->SelectVariant(3);
++                break;
++            case 3:
++                keyline_state_44->SelectVariant(3);
++                break;
++            case 0:
++                keyline_state_44->SelectVariant(1);
++                break;
+             }
+-            ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-            keyline_state_44->SetAnimation("D_CABARET_WALK_CYCLE", window_deactivation_state->time_158, &position);
+-            keyline_state_44->SelectVariant(owner->keyline_state_44->word_18 == 0 ? 1 : 3);
+             keyline_state_44->word_08 = 0;
+             action_state_f4 = 3;
+-            ScreenModeCommand next;
+-            next.words[0] = id_28;
+-            next.words[1] = id_28;
+-            next.words[2] = 0xa;
+-            next.words[3] = static_cast<int>(point.x);
+-            next.words[4] = static_cast<int>(point.y);
++            ScreenModeCommand next(id_28, id_28, 0xa, static_cast<int>(point.x), static_cast<int>(point.y));
+             screen_mode_commands->QueueCommand(&next);
+         }
+-        return true;
++        break;
+     }
+-    if (kind == 0x16)
++    case 0x16:
+     {
+         if (action_state_f4 == 0)
+         {
+-            WorldBuildingEntity* owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
+-            ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-            float duration = keyline_state_44->SetAnimation("D_CABARET_TO_WALK", window_deactivation_state->time_158, &position);
+-            int rotation = owner->keyline_state_44->word_18;
+-            keyline_state_44->SelectVariant(rotation == 0 ? 4 : rotation == 3 ? 6
+-                                                                              : ((6 - rotation) * 2) % 8);
++            owner = variable_world->FindObject(owner_id_fc)->AsBuilding();
++            float duration = window_deactivation_state->time_158;
++            duration = keyline_state_44->SetAnimation(world_d_cabaret_to_walk, duration, &position_30);
++            switch (Rotation(owner))
++            {
++            default:
++                keyline_state_44->SelectVariant(TurnVariant(6, owner->keyline_state_44->word_18));
++                break;
++            case 3:
++                keyline_state_44->SelectVariant(6);
++                break;
++            case 0:
++                keyline_state_44->SelectVariant(4);
++                break;
++            }
+             keyline_state_44->word_08 = 1;
+-            ScreenModeCommand next;
+-            next.words[0] = id_28;
+-            next.words[1] = id_28;
+-            next.words[2] = 0x39;
+-            next.words[3] = 0;
+-            next.words[4] = 0;
++            ScreenModeCommand next(id_28, id_28, 0x39, 0, 0);
+             screen_mode_commands->QueueDelayed(&next, duration);
++            return true;
+         }
+-        else if (action_state_f4 == 3)
++        if (action_state_f4 == 3)
+         {
+-            ScreenModeCommand next;
+             if (!flag_104)
+             {
+                 screen_dialog_resources->Release(keyline_state_44);
+                 keyline_state_44 = 0;
+                 SetOwner(rand() % 2);
+-                next.words[0] = id_28;
+-                next.words[1] = id_28;
+-                next.words[2] = 3;
+-                next.words[3] = 0;
+-                next.words[4] = 1;
++                ScreenModeCommand next(id_28, id_28, 3, 0, 1);
++                screen_mode_commands->QueueCommand(&next);
+             }
+             else
+             {
+                 inactive_04 = 1;
+-                next.words[0] = id_28;
+-                next.words[1] = owner_id_fc;
+-                next.words[2] = 0x3b;
+-                next.words[3] = 0;
+-                next.words[4] = 0;
++                ScreenModeCommand next(id_28, owner_id_fc, 0x3b, 0, 0);
++                screen_mode_commands->QueueCommand(&next);
+             }
+-            screen_mode_commands->QueueCommand(&next);
+         }
+-        return true;
++        break;
++    }
++    default:
++        return WorldPedestrianEntity::Unknown14(command);
+     }
+-    return WorldPedestrianEntity::Unknown14(command);
++    return true;
+ }
+diff --git a/src/startup_world_motion_routes.cpp b/src/startup_world_motion_routes.cpp
+index 7737feab1811185ac14011db1961536690e00fe3..956a8ba4a4dc6e8b77376b6d99b34ca5849c239c 100644
+--- a/src/startup_world_motion_routes.cpp
++++ b/src/startup_world_motion_routes.cpp
+@@ -5,38 +5,46 @@ static unsigned int& RouteTileFlags(ScreenPoint point)
+     return screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(point.x, point.y)].flags_48;
+ }
+ 
++static inline bool Differs(const ScreenPoint& a, ScreenPoint b)
++{
++    return a.x != b.x || a.y != b.y;
++}
++
+ // FUNCTION: BEACHLIFE 0x00483f60
+ void WorldMovingEntity::FindMotionRoute(ScreenPoint* start, ScreenPoint* end,
+     unsigned char* success, unsigned int flags)
+ {
+     unsigned int first = RouteTileFlags(*start);
+     unsigned int last = RouteTileFlags(*end);
+-    bool different = start->x != end->x || start->y != end->y;
+-    if ((first & flags) && (last & flags) && different)
++    if ((first & flags) && (last & flags) && Differs(*start, *end))
+     {
+-        if (flags == 0x10000082u)
++        if (flags != 0x10000082u || (!(first & 0x8000) && !(last & 0x8000)))
+         {
+-            if (!(first & 0x8000) && !(last & 0x8000))
++            switch (flags)
+             {
++            case 0x10000082u:
+                 route_b8 = world_subsystem_18->FindPathRoute(*start, *end, success);
+-                return;
+-            }
+-        }
+-        else
+-        {
+-            if (flags == 0x80000000u)
++                break;
++            case 0x80000000u:
+                 route_b8 = world_subsystem_18->FindLandRoute(*start, *end, success, 0);
++                break;
++            }
+             return;
+         }
+     }
+-    if (different)
++    if (start->x != end->x || start->y != end->y)
+     {
+         if (AdjustRouteEndpoints(start, end, flags))
+         {
+-            if (flags == 0x10000082u)
++            switch (flags)
++            {
++            case 0x10000082u:
+                 route_b8 = world_subsystem_18->FindPathRoute(*start, *end, success);
+-            else if (flags == 0x80000000u)
++                break;
++            case 0x80000000u:
+                 route_b8 = world_subsystem_18->FindLandRoute(*start, *end, success, 0);
++                break;
++            }
+         }
+         NotifyRouteTransition(start, end, flags);
+     }
+diff --git a/src/startup_world_motion_velocity.cpp b/src/startup_world_motion_velocity.cpp
+index eb4ece8cad1144cea131e3b4dc80d5e86abc21ed..5678a796bd66726a73bb41847c11df8ba2834621 100644
+--- a/src/startup_world_motion_velocity.cpp
++++ b/src/startup_world_motion_velocity.cpp
+@@ -3,12 +3,10 @@
+ // FUNCTION: BEACHLIFE 0x00482d90
+ void WorldMovingEntity::IntegrateVelocity(float step)
+ {
++    // MotionReciprocal is the retail reciprocal estimate with one Newton step (inline asm in the original).
+     float reciprocal = MotionReciprocal(value_60);
+-    float acceleration_x = static_cast<long double>(reciprocal) * motion_64[4];
+-    float acceleration_y = static_cast<long double>(motion_64[5]) * reciprocal;
+-    ScreenMapPosition velocity = MotionVelocity();
+-    SetMotionVelocity({ static_cast<float>(static_cast<long double>(acceleration_x) + velocity.x),
+-        static_cast<float>(static_cast<long double>(acceleration_y) + velocity.y) });
++    ScreenMapPosition acceleration(reciprocal * motion_64[4], motion_64[5] * reciprocal);
++    SetMotionVelocity(MotionVelocity() + acceleration);
+     long double x = motion_64[2];
+     long double y = motion_64[3];
+     float length = MotionSquareRoot(static_cast<float>(y * y + x * x));
+@@ -16,12 +14,10 @@ void WorldMovingEntity::IntegrateVelocity(float step)
+         return;
+     if (!(speed_80 >= length))
+     {
+-        float ratio = static_cast<long double>(length) / speed_80;
+-        float limited_y = static_cast<long double>(MotionVelocity().y) / ratio;
+-        SetMotionVelocity({ static_cast<float>(static_cast<long double>(MotionVelocity().x) / ratio), limited_y });
++        float speed = speed_80;
++        float ratio = length / speed;
++        SetMotionVelocity(ScreenMapPosition(static_cast<float>(static_cast<long double>(MotionVelocity().x) / ratio),
++            static_cast<float>(static_cast<long double>(MotionVelocity().y) / ratio)));
+     }
+-    ScreenMapPosition offset = MotionVelocity() * step;
+-    ScreenMapPosition position = MotionPosition();
+-    SetMotionPosition({ static_cast<float>(static_cast<long double>(offset.x) + position.x),
+-        static_cast<float>(static_cast<long double>(offset.y) + position.y) });
++    SetMotionPosition(MotionPosition() + MotionVelocity() * step);
+ }
+diff --git a/src/startup_world_object_commands.cpp b/src/startup_world_object_commands.cpp
+index a3dc16f95c3fa6cd53132b3c71ba0a9cca70d390..8e7b7be7dec5745e46e0bb4590af69753096d6b8 100644
+--- a/src/startup_world_object_commands.cpp
++++ b/src/startup_world_object_commands.cpp
+@@ -1,6 +1,7 @@
+ #include "startup_world_entities.h"
+ #include "startup_screen_mode_world.h"
+ #include "window_activation.h"
++#include <cstdint>
+ #include <cstdlib>
+ #include <cstring>
+ 
+@@ -9,213 +10,223 @@ static char world_object_animation_text[32];
+ // GLOBAL: BEACHLIFE 0x005bae84
+ static char world_object_arrival_text[32];
+ 
+-static ScreenModeCommand ObjectCommand(unsigned int sender, unsigned int recipient,
+-    unsigned int kind, int first = 0, int second = 0)
++// Retail pushes the text address as the fifth 32-bit word; native words carry the host pointer.
++static ScreenModeCommandWord CommandText(char* text)
+ {
+-    ScreenModeCommand command;
+-    command.words[0] = sender;
+-    command.words[1] = recipient;
+-    command.words[2] = kind;
+-    command.words[3] = first;
+-    command.words[4] = second;
+-    return command;
+-}
+-
+-static ScreenModeCommand ObjectGuestCommand(unsigned int sender, unsigned int recipient,
+-    unsigned int kind, int first = 0, int second = 0)
+-{
+-    ScreenModeCommand command = ObjectCommand(sender, recipient, kind, first, second);
+-    command.words[5] = 46;
+-    command.words[6] = 0;
+-    return command;
+-}
+-
+-static ScreenModeCommand ObjectAnimationCommand(unsigned int sender, unsigned int recipient,
+-    char* text, bool guest = true, unsigned int once = 0)
+-{
+-    ScreenModeCommand command = guest ? ObjectGuestCommand(sender, recipient, 60, once)
+-                                      : ObjectCommand(sender, recipient, 60, once);
+-    command.words[4] = ScreenModeCommandWord::FromData(reinterpret_cast<std::uintptr_t>(text));
+-    return command;
+-}
+-
+-static const unsigned int* ObjectWalkPath(const WorldObjectEntity* object, unsigned int slot)
+-{
+-    return static_cast<const unsigned int*>(object->definition_60->frames_3f4[slot]);
+-}
+-
+-static ScreenMapPosition ObjectOffsetPosition(WorldObjectEntity* object, ScreenMapPosition offset)
+-{
+-    return CurrentScreenTerrain()->OffsetPosition({ object->position_30.x, object->position_30.y }, offset, object->word_90);
+-}
+-
+-static ScreenMapPosition ObjectPathPosition(WorldObjectEntity* object, unsigned int slot, unsigned int point)
+-{
+-    const ScreenMapPosition* positions = static_cast<const ScreenMapPosition*>(object->definition_60->data_3e0);
+-    return ObjectOffsetPosition(object, positions[ObjectWalkPath(object, slot)[point]]);
+-}
+-
+-static ScreenMapPosition ObjectGuestPosition(WorldObjectEntity* object, unsigned int slot,
+-    unsigned int point, bool seated)
+-{
+-    const char* name = object->definition_60->name_04;
+-    if (std::strcmp(name, "FISHBOAT1") == 0)
+-    {
+-        float x = variable_world->FindObject(object->owner_94)->position_30.x;
+-        float y = variable_world->FindObject(object->owner_94)->position_30.y;
+-        ScreenMapPosition position;
+-        switch (object->word_90)
+-        {
+-        case 0:
+-            position = { x + 263.0f, y - 408.0f };
+-            break;
+-        case 1:
+-            position = { x - 148.0f, y - 522.0f };
+-            break;
+-        case 2:
+-            position = { x - 107.0f, y - 265.0f };
+-            break;
+-        case 3:
+-            position = { x - 5.0f, y - 154.0f };
+-            break;
+-        }
+-        return position;
+-    }
+-    if (seated)
+-        return ObjectOffsetPosition(object, static_cast<const ScreenMapPosition*>(object->definition_60->data_3e8)[slot]);
+-    return ObjectPathPosition(object, slot, point);
+-}
+-
+-static void FaceObjectSlot(WorldObjectEntity* object, unsigned int id, unsigned int slot)
+-{
+-    ScreenDialogResource* keyline = variable_world->FindObject(id)->keyline_state_44;
+-    int rotation = static_cast<const int*>(object->definition_60->data_3f0)[slot];
+-    int direction = static_cast<int>(rotation + (4 - object->word_90) * 2) % 8;
+-    keyline->SelectVariant(direction);
+-}
+-
+-static void AnimateObjectSlot(WorldObjectEntity* object, unsigned int slot,
+-    const char* animation, unsigned int mode)
+-{
+-    if (object->resources_6c)
+-    {
+-        object->resources_6c[slot]->SetAnimation(animation, window_deactivation_state->clock_158, 0);
+-        object->resources_6c[slot]->word_08 = mode;
+-    }
+-}
+-
+-static void SetObjectGuestPosition(unsigned int id, ScreenMapPosition point)
+-{
+-    // These two retail paths leave the third coordinate unwritten.
+-    ScreenWorldPosition position;
+-    position.x = point.x;
+-    position.y = point.y;
+-    variable_world->FindObject(id)->SetWorldPosition(&position);
+-}
+-
+-static void AnimateContainedObject(WorldObjectEntity* object)
+-{
+-    VariableEntity* contained = variable_world->FindObject(object->contained_id_84);
+-    ScreenWorldPosition position = { contained->position_30.x, contained->position_30.y, contained->position_30.z };
+-    float time = window_deactivation_state->clock_158;
+-    variable_world->FindObject(object->contained_id_84)->keyline_state_44->SetAnimation(static_cast<const char*>(object->definition_60->data_404), time, &position);
+-    variable_world->FindObject(object->contained_id_84)->keyline_state_44->word_08 = 0;
+-}
+-
+-static ScreenModeCommand MoveContainedObject(WorldObjectEntity* object, ScreenMapPosition position)
+-{
+-    return ObjectCommand(object->id_28, object->contained_id_84, 10, static_cast<int>(position.x), static_cast<int>(position.y));
++    return ScreenModeCommandWord::FromData(reinterpret_cast<std::uintptr_t>(text));
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004920e0
+ bool WorldObjectEntity::Unknown14(ScreenModeCommand* command)
+ {
+-    // Retail only assigns this return byte in the guest and base-handler paths (cases 22 and 83 return a stale
++    unsigned int i;
++    // Retail only assigns this return byte in the guest and base-handler paths (cases 22, 30 and 83 return a stale
+     // stack byte); the only caller, the command dispatcher, discards it, so it starts defined here.
+-    unsigned char handled = 0;
++    bool handled = false;
+     switch (static_cast<int>(command->words[2]))
+     {
+     case 100:
+-        for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++        for (i = 0; i < definition_60->frame_count_3d0; ++i)
+         {
+             if (slots_8c[i].id_04 != command->words[0])
+                 continue;
+-            unsigned int end = ObjectWalkPath(this, i)[0] + 1;
+-            if (slots_8c[i].position_0c == end)
++            if (slots_8c[i].position_0c == *static_cast<const unsigned int*>(definition_60->frames_3f4[i]) + 1)
+             {
+                 if (variable_world->FindObject(command->words[0])->AsGuest()->lightning_state_318 == 0)
+                 {
+                     if (definition_60->flag_424)
+                     {
+-                        ScreenModeCommand next = ObjectCommand(id_28, owner_94, 78, 0, command->words[0]);
++                        ScreenModeCommand next(id_28, owner_94, 78, 0, command->words[0]);
+                         screen_mode_commands->QueueCommand(&next);
+                         continue;
+                     }
+                     if (!definition_60->flag_3f8)
+                     {
+-                        ScreenModeCommand next = ObjectGuestCommand(id_28, command->words[0], 56);
++                        ScreenModeCommand next(id_28, command->words[0], 56, 0, 0, 0.0f, 46);
+                         screen_mode_commands->QueueDelayed(&next, 30.0f);
+                     }
+-                    ScreenMapPosition position = ObjectGuestPosition(this, i, 0, true);
+-                    SetObjectGuestPosition(command->words[0], position);
+-                    FaceObjectSlot(this, command->words[0], i);
++                    ScreenMapPosition position;
++                    {
++                        ScreenMapPosition origin;
++                        origin.x = position_30.x;
++                        origin.y = position_30.y;
++                        if (std::strcmp(definition_60->name_04, "FISHBOAT1") == 0)
++                        {
++                            const ScreenWorldPosition& owner = variable_world->FindObject(owner_94)->position_30;
++                            origin.x = owner.x;
++                            ScreenWorldPosition other = variable_world->FindObject(owner_94)->position_30;
++                            origin.y = other.y;
++                            switch (word_90)
++                            {
++                            case 0:
++                                position.x = origin.x + 263.0f;
++                                position.y = other.y - 408.0f;
++                                break;
++                            case 1:
++                                position.x = origin.x - 148.0f;
++                                position.y = other.y - 522.0f;
++                                break;
++                            case 2:
++                                position.x = origin.x - 107.0f;
++                                position.y = other.y - 265.0f;
++                                break;
++                            case 3:
++                                position.x = origin.x - 5.0f;
++                                position.y = other.y - 154.0f;
++                                break;
++                            }
++                        }
++                        else
++                            position = CurrentScreenTerrain()->OffsetPosition(origin, static_cast<const ScreenMapPosition*>(definition_60->data_3e8)[i], word_90);
++                    }
++                    VariableEntity* guest = variable_world->FindObject(command->words[0]);
++                    ScreenWorldPosition world;
++                    world.x = position.x;
++                    world.y = position.y;
++                    // Retail leaves the height unwritten (a stale stack word); the guest keeps its own.
++                    world.z = guest->position_30.z;
++                    guest->SetWorldPosition(&world);
++                    ScreenDialogResource* keyline = variable_world->FindObject(command->words[0])->keyline_state_44;
++                    keyline->SelectVariant((static_cast<const int*>(definition_60->data_3f0)[i] + (4 - static_cast<int>(word_90)) * 2) % 8);
+                     std::strcpy(world_object_arrival_text, reinterpret_cast<const char*>(definition_60->unknown_2c4));
+-                    ScreenModeCommand next = ObjectAnimationCommand(id_28, command->words[0], world_object_arrival_text);
++                    ScreenModeCommand next(id_28, command->words[0], 60, 0, 0, 0.0f, 46);
++                    next.words[4] = CommandText(world_object_arrival_text);
+                     screen_mode_commands->QueueCommand(&next);
+                     slots_8c[i].flag_08 = 1;
+                     slots_8c[i].flag_09 = 1;
+-                    AnimateObjectSlot(this, i, "chair_stand_sit", 2);
++                    if (resources_6c)
++                    {
++                        float time = window_deactivation_state->clock_158;
++                        resources_6c[i]->SetAnimation("chair_stand_sit", time, 0);
++                        resources_6c[i]->word_08 = 2;
++                    }
+                 }
+                 else if (!definition_60->flag_424)
+                 {
+                     if (definition_60->flag_3f8)
+                         flags_78[i] = 0;
+                     std::strcpy(world_object_arrival_text, reinterpret_cast<const char*>(definition_60->unknown_348));
+-                    ScreenModeCommand next = ObjectAnimationCommand(id_28, command->words[0], world_object_arrival_text);
++                    ScreenModeCommand next(id_28, command->words[0], 60, 0, 0, 0.0f, 46);
++                    next.words[4] = CommandText(world_object_arrival_text);
+                     screen_mode_commands->QueueCommand(&next);
+                 }
+             }
+             else if (variable_world->FindObject(command->words[0])->AsGuest()->lightning_state_318 == 0)
+             {
+-                ScreenMapPosition position = ObjectGuestPosition(this, i, slots_8c[i].position_0c, false);
+-                ScreenModeCommand next = ObjectGuestCommand(id_28, command->words[0], 10, static_cast<int>(position.x), static_cast<int>(position.y));
++                ScreenMapPosition position;
++                {
++                    ScreenMapPosition origin;
++                    origin.x = position_30.x;
++                    origin.y = position_30.y;
++                    if (std::strcmp(definition_60->name_04, "FISHBOAT1") == 0)
++                    {
++                        const ScreenWorldPosition& owner = variable_world->FindObject(owner_94)->position_30;
++                        origin.x = owner.x;
++                        ScreenWorldPosition other = variable_world->FindObject(owner_94)->position_30;
++                        origin.y = other.y;
++                        switch (word_90)
++                        {
++                        case 0:
++                            position.x = origin.x + 263.0f;
++                            position.y = other.y - 408.0f;
++                            break;
++                        case 1:
++                            position.x = origin.x - 148.0f;
++                            position.y = other.y - 522.0f;
++                            break;
++                        case 2:
++                            position.x = origin.x - 107.0f;
++                            position.y = other.y - 265.0f;
++                            break;
++                        case 3:
++                            position.x = origin.x - 5.0f;
++                            position.y = other.y - 154.0f;
++                            break;
++                        }
++                    }
++                    else
++                    {
++                        const VariableCatalogObjectDefinition* definition = definition_60;
++                        position = CurrentScreenTerrain()->OffsetPosition(origin, static_cast<const ScreenMapPosition*>(definition->data_3e0)[static_cast<const unsigned int*>(definition->frames_3f4[i])[slots_8c[i].position_0c]], word_90);
++                    }
++                }
++                ScreenModeCommand next(id_28, command->words[0], 10, static_cast<int>(position.x), static_cast<int>(position.y), 0.0f, 46);
+                 screen_mode_commands->QueueCommand(&next);
+                 ++slots_8c[i].position_0c;
+             }
+-            else if (static_cast<int>(slots_8c[i].position_0c) <= 1)
++            else
+             {
+-                for (unsigned int j = 0; j < definition_60->frame_count_3d0; ++j)
++                ScreenModeCommand next(0, 0, 0, 0, 0);
++                if (static_cast<int>(slots_8c[i].position_0c) <= 1)
+                 {
+-                    if (slots_8c[j].id_04 == command->words[0])
++                    unsigned int id = command->words[0];
++                    for (unsigned int j = 0; j < definition_60->frame_count_3d0; ++j)
+                     {
+-                        variable_world->FindObject(command->words[0])->visible_40 = 1;
+-                        slots_8c[j].id_04 = -1;
+-                        slots_8c[j].flag_08 = 0;
+-                        ++word_9c;
+-                        break;
++                        if (slots_8c[j].id_04 == id)
++                        {
++                            variable_world->FindObject(id)->visible_40 = 1;
++                            slots_8c[j].id_04 = -1;
++                            slots_8c[j].flag_08 = 0;
++                            ++word_9c;
++                            j = definition_60->frame_count_3d0;
++                        }
++                    }
++                    if (!flag_98)
++                    {
++                        ScreenModeCommand idle(id_28, owner_94, 50, 0, 0);
++                        screen_mode_commands->QueueCommand(&idle);
+                     }
++                    variable_world->FindObject(command->words[0])->AsGuest()->lightning_state_318 = 0;
++                    ScreenModeCommand leave(id_28, command->words[0], 3, 0, 28);
++                    screen_mode_commands->QueueCommand(&leave);
++                    slots_8c[i].position_0c = 0;
+                 }
+-                if (!flag_98)
++                else
+                 {
+-                    ScreenModeCommand next = ObjectCommand(id_28, owner_94, 50);
++                    ScreenMapPosition position;
++                    {
++                        ScreenMapPosition origin;
++                        origin.x = position_30.x;
++                        origin.y = position_30.y;
++                        if (std::strcmp(definition_60->name_04, "FISHBOAT1") == 0)
++                        {
++                            origin.x = variable_world->FindObject(owner_94)->position_30.x;
++                            ScreenWorldPosition other = variable_world->FindObject(owner_94)->position_30;
++                            origin.y = other.y;
++                            switch (word_90)
++                            {
++                            case 0:
++                                position.x = origin.x + 263.0f;
++                                position.y = other.y - 408.0f;
++                                break;
++                            case 1:
++                                position.x = origin.x - 148.0f;
++                                position.y = other.y - 522.0f;
++                                break;
++                            case 2:
++                                position.x = origin.x - 107.0f;
++                                position.y = other.y - 265.0f;
++                                break;
++                            case 3:
++                                position.x = origin.x - 5.0f;
++                                position.y = other.y - 154.0f;
++                                break;
++                            }
++                        }
++                        else
++                            position = CurrentScreenTerrain()->OffsetPosition(origin, static_cast<const ScreenMapPosition*>(definition_60->data_3e0)[static_cast<const unsigned int*>(definition_60->frames_3f4[i])[slots_8c[i].position_0c - 1]], word_90);
++                    }
++                    ScreenModeCommand walk(id_28, command->words[0], 10, static_cast<int>(position.x), static_cast<int>(position.y), 0.0f, 46);
++                    next = walk;
++                    --slots_8c[i].position_0c;
+                     screen_mode_commands->QueueCommand(&next);
+                 }
+-                variable_world->FindObject(command->words[0])->AsGuest()->lightning_state_318 = 0;
+-                ScreenModeCommand next = ObjectCommand(id_28, command->words[0], 3, 0, 28);
+-                screen_mode_commands->QueueCommand(&next);
+-                slots_8c[i].position_0c = 0;
+-            }
+-            else
+-            {
+-                ScreenMapPosition position = ObjectGuestPosition(this, i, slots_8c[i].position_0c - 1, false);
+-                ScreenModeCommand next = ObjectGuestCommand(id_28, command->words[0], 10, static_cast<int>(position.x), static_cast<int>(position.y));
+-                --slots_8c[i].position_0c;
+-                screen_mode_commands->QueueCommand(&next);
+             }
+         }
+-        return true;
++        handled = true;
++        break;
+     case 57:
+-        for (unsigned int i = 0; i < definition_60->frame_count_3d0; ++i)
++        for (i = 0; i < definition_60->frame_count_3d0; ++i)
+         {
+             if (slots_8c[i].id_04 != command->words[0])
+                 continue;
+@@ -229,162 +240,303 @@ bool WorldObjectEntity::Unknown14(ScreenModeCommand* command)
+                 if (definition_60->flag_3f8)
+                     flags_78[i] = 0;
+                 std::strcpy(world_object_animation_text, reinterpret_cast<const char*>(definition_60->unknown_348));
+-                ScreenModeCommand next = ObjectAnimationCommand(id_28, command->words[0], world_object_animation_text);
+-                FaceObjectSlot(this, command->words[0], i);
++                ScreenModeCommand next(id_28, command->words[0], 60, 0, 0, 0.0f, 46);
++                next.words[4] = CommandText(world_object_animation_text);
++                ScreenDialogResource* keyline = variable_world->FindObject(command->words[0])->keyline_state_44;
++                keyline->SelectVariant((static_cast<const int*>(definition_60->data_3f0)[i] + (4 - static_cast<int>(word_90)) * 2) % 8);
+                 screen_mode_commands->QueueCommand(&next);
+-                AnimateObjectSlot(this, i, "chair_sit_stand", 2);
++                if (resources_6c)
++                {
++                    float time = window_deactivation_state->clock_158;
++                    resources_6c[i]->SetAnimation("chair_sit_stand", time, 0);
++                    resources_6c[i]->word_08 = 2;
++                }
+             }
+             else if (variable_world->FindObject(command->words[0])->AsGuest()->lightning_state_318 == 3)
+             {
+-                ScreenMapPosition position = ObjectGuestPosition(this, i, slots_8c[i].position_0c - 1, false);
+-                SetObjectGuestPosition(command->words[0], position);
++                ScreenMapPosition position;
++                {
++                    ScreenMapPosition origin;
++                    origin.x = position_30.x;
++                    origin.y = position_30.y;
++                    if (std::strcmp(definition_60->name_04, "FISHBOAT1") == 0)
++                    {
++                        const ScreenWorldPosition& owner = variable_world->FindObject(owner_94)->position_30;
++                        origin.x = owner.x;
++                        ScreenWorldPosition other = variable_world->FindObject(owner_94)->position_30;
++                        origin.y = other.y;
++                        switch (word_90)
++                        {
++                        case 0:
++                            position.x = origin.x + 263.0f;
++                            position.y = other.y - 408.0f;
++                            break;
++                        case 1:
++                            position.x = origin.x - 148.0f;
++                            position.y = other.y - 522.0f;
++                            break;
++                        case 2:
++                            position.x = origin.x - 107.0f;
++                            position.y = other.y - 265.0f;
++                            break;
++                        case 3:
++                            position.x = origin.x - 5.0f;
++                            position.y = other.y - 154.0f;
++                            break;
++                        }
++                    }
++                    else
++                        position = CurrentScreenTerrain()->OffsetPosition(origin, static_cast<const ScreenMapPosition*>(definition_60->data_3e0)[static_cast<const unsigned int*>(definition_60->frames_3f4[i])[slots_8c[i].position_0c - 1]], word_90);
++                }
++                VariableEntity* guest = variable_world->FindObject(command->words[0]);
++                ScreenWorldPosition world;
++                world.x = position.x;
++                world.y = position.y;
++                // Retail leaves the height unwritten (a stale stack word); the guest keeps its own.
++                world.z = guest->position_30.z;
++                guest->SetWorldPosition(&world);
+                 std::strcpy(world_object_animation_text, "WalkAnimation");
+-                ScreenModeCommand next = ObjectAnimationCommand(id_28, command->words[0], world_object_animation_text);
++                ScreenModeCommand next(id_28, command->words[0], 60, 0, 0, 0.0f, 46);
++                next.words[4] = CommandText(world_object_animation_text);
+                 screen_mode_commands->QueueCommand(&next);
+                 --slots_8c[i].position_0c;
+                 slots_8c[i].flag_08 = 0;
+-                AnimateObjectSlot(this, i, "chair", 0);
+-                next = ObjectGuestCommand(command->words[0], id_28, 100);
+-                screen_mode_commands->QueueCommand(&next);
++                unsigned int mode = 0;
++                if (resources_6c)
++                {
++                    float time = window_deactivation_state->clock_158;
++                    resources_6c[i]->SetAnimation("chair", time, 0);
++                    resources_6c[i]->word_08 = mode;
++                }
++                ScreenModeCommand back(command->words[0], id_28, 100, mode, mode, 0.0f, 46);
++                screen_mode_commands->QueueCommand(&back);
+             }
+             else if (variable_world->FindObject(command->words[0])->AsGuest()->lightning_state_318 != 4
+                      && !definition_60->flag_424)
+             {
+-                ScreenModeCommand next;
+-                if (definition_60->flag_3f8 && slots_8c[i].flag_09)
++                if (definition_60->flag_3f8)
+                 {
+-                    if (word_7c == -1 && flag_88)
++                    if (slots_8c[i].flag_09)
+                     {
+-                        word_7c = i;
+-                        word_80 = 0;
+-                        std::strcpy(world_object_animation_text, static_cast<const char*>(definition_60->data_3fc));
+-                        next = ObjectAnimationCommand(id_28, command->words[0], world_object_animation_text);
+-                        FaceObjectSlot(this, command->words[0], i);
+-                        screen_mode_commands->QueueCommand(&next);
+-                        ScreenMapPosition position = ObjectPathPosition(this, word_7c, word_80 + 1);
+-                        AnimateContainedObject(this);
+-                        next = MoveContainedObject(this, position);
++                        if (word_7c == -1 && flag_88)
++                        {
++                            word_7c = i;
++                            word_80 = 0;
++                            std::strcpy(world_object_animation_text, static_cast<const char*>(definition_60->data_3fc));
++                            ScreenModeCommand eat(id_28, command->words[0], 60, 0, 0, 0.0f, 46);
++                            eat.words[4] = CommandText(world_object_animation_text);
++                            ScreenDialogResource* keyline = variable_world->FindObject(command->words[0])->keyline_state_44;
++                            keyline->SelectVariant((static_cast<const int*>(definition_60->data_3f0)[i] + (4 - static_cast<int>(word_90)) * 2) % 8);
++                            screen_mode_commands->QueueCommand(&eat);
++                            ScreenMapPosition origin;
++                            origin.x = position_30.x;
++                            origin.y = position_30.y;
++                            ScreenMapPosition position = CurrentScreenTerrain()->OffsetPosition(origin,
++                                static_cast<const ScreenMapPosition*>(definition_60->data_3e0)[static_cast<const unsigned int*>(
++                                    definition_60->frames_3f4[word_7c])[word_80 + 1]],
++                                word_90);
++                            ScreenWorldPosition contained = variable_world->FindObject(contained_id_84)->position_30;
++                            float time = window_deactivation_state->clock_158;
++                            VariableEntity* entity = variable_world->FindObject(contained_id_84);
++                            entity->keyline_state_44->SetAnimation(static_cast<const char*>(definition_60->data_404), time, &contained);
++                            variable_world->FindObject(contained_id_84)->keyline_state_44->word_08 = 0;
++                            ScreenModeCommand walk(id_28, contained_id_84, 10, static_cast<int>(position.x), static_cast<int>(position.y));
++                            screen_mode_commands->QueueCommand(&walk);
++                        }
++                        else
++                        {
++                            std::strcpy(world_object_animation_text, static_cast<const char*>(definition_60->data_400));
++                            float number = 0.0f;
++                            ScreenModeCommand eat(id_28, command->words[0], 60, 0, 0, number, 46);
++                            eat.words[4] = CommandText(world_object_animation_text);
++                            ScreenDialogResource* keyline = variable_world->FindObject(command->words[0])->keyline_state_44;
++                            keyline->SelectVariant((static_cast<const int*>(definition_60->data_3f0)[i] + (4 - static_cast<int>(word_90)) * 2) % 8);
++                            screen_mode_commands->QueueCommand(&eat);
++                        }
+                     }
+                     else
+                     {
+-                        std::strcpy(world_object_animation_text, static_cast<const char*>(definition_60->data_400));
+-                        next = ObjectAnimationCommand(id_28, command->words[0], world_object_animation_text);
+-                        FaceObjectSlot(this, command->words[0], i);
++                        std::strcpy(world_object_animation_text, static_cast<const char*>(definition_60->names_344[std::rand() % definition_60->name_count_3d4]));
++                        float number = 0.0f;
++                        ScreenModeCommand animation(id_28, command->words[0], 60, 0, 0, number);
++                        animation.words[4] = CommandText(world_object_animation_text);
++                        animation.words[5] = ScreenModeCommandWord::FromData(46);
++                        ScreenDialogResource* keyline = variable_world->FindObject(command->words[0])->keyline_state_44;
++                        keyline->SelectVariant((static_cast<const int*>(definition_60->data_3f0)[i] + (4 - static_cast<int>(word_90)) * 2) % 8);
++                        screen_mode_commands->QueueCommand(&animation);
+                     }
+                 }
+                 else
+                 {
+-                    const char* animation = static_cast<const char*>(definition_60->names_344[std::rand() % definition_60->name_count_3d4]);
+-                    std::strcpy(world_object_animation_text, animation);
+-                    next = ObjectAnimationCommand(id_28, command->words[0], world_object_animation_text);
+-                    FaceObjectSlot(this, command->words[0], i);
++                    std::strcpy(world_object_animation_text, static_cast<const char*>(definition_60->names_344[std::rand() % definition_60->name_count_3d4]));
++                    ScreenModeCommand animation(id_28, command->words[0], 60, 0, 0, 0.0f);
++                    animation.words[4] = CommandText(world_object_animation_text);
++                    animation.words[5] = ScreenModeCommandWord::FromData(46);
++                    ScreenDialogResource* keyline = variable_world->FindObject(command->words[0])->keyline_state_44;
++                    keyline->SelectVariant((static_cast<const int*>(definition_60->data_3f0)[i] + (4 - static_cast<int>(word_90)) * 2) % 8);
++                    screen_mode_commands->QueueCommand(&animation);
++                }
++                if (resources_6c)
++                {
++                    float time = window_deactivation_state->clock_158;
++                    resources_6c[i]->SetAnimation("chair_eat", time, 0);
++                    resources_6c[i]->word_08 = 0;
+                 }
+-                screen_mode_commands->QueueCommand(&next);
+-                AnimateObjectSlot(this, i, "chair_eat", 0);
+             }
+         }
+-        return true;
++        handled = true;
++        break;
+     case 40:
+     case 42:
+     case 95:
+-        return true;
++        handled = true;
++        break;
+     case 22:
+         if (word_7c != -1)
+         {
+             if (slots_8c[word_7c].flag_09)
+             {
+                 ++word_80;
+-                unsigned int count = ObjectWalkPath(this, word_7c)[0];
+-                if (word_80 == count)
++                if (word_80 == *static_cast<const unsigned int*>(definition_60->frames_3f4[word_7c]))
+                 {
+-                    FaceObjectSlot(this, contained_id_84, word_7c);
+-                    ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-                    variable_world->FindObject(contained_id_84)->SetWorldPosition(&position);
++                    ScreenDialogResource* keyline = variable_world->FindObject(contained_id_84)->keyline_state_44;
++                    keyline->SelectVariant((static_cast<const int*>(definition_60->data_3f0)[word_7c] + (4 - static_cast<int>(word_90)) * 2) % 8);
++                    variable_world->FindObject(contained_id_84)->SetWorldPosition(&position_30);
+                     variable_world->FindObject(contained_id_84)->visible_40 = 0;
+                     std::strcpy(world_object_animation_text, static_cast<const char*>(definition_60->data_408));
+                     flag_74 = 1;
+-                    ScreenModeCommand next = ObjectAnimationCommand(id_28, contained_id_84, world_object_animation_text, false);
++                    ScreenModeCommand next(id_28, contained_id_84, 60, 0, 0);
++                    next.words[4] = CommandText(world_object_animation_text);
+                     screen_mode_commands->QueueCommand(&next);
++                    break;
+                 }
+-                else
++                if (word_80 == *static_cast<const unsigned int*>(definition_60->frames_3f4[word_7c]) - 1)
+                 {
+-                    ScreenMapPosition position = word_80 == count - 1
+-                                                   ? ObjectOffsetPosition(this, static_cast<const ScreenMapPosition*>(definition_60->data_410)[word_7c])
+-                                                   : ObjectPathPosition(this, word_7c, word_80 + 1);
+-                    ScreenModeCommand next = MoveContainedObject(this, position);
++                    ScreenMapPosition origin;
++                    origin.x = position_30.x;
++                    origin.y = position_30.y;
++                    ScreenMapPosition position;
++                    position = CurrentScreenTerrain()->OffsetPosition(origin,
++                        static_cast<const ScreenMapPosition*>(definition_60->data_410)[word_7c],
++                        word_90);
++                    ScreenModeCommand next(id_28, contained_id_84, 10, static_cast<int>(position.x), static_cast<int>(position.y));
+                     screen_mode_commands->QueueCommand(&next);
++                    break;
++                }
++                {
++                    ScreenMapPosition origin;
++                    origin.x = position_30.x;
++                    origin.y = position_30.y;
++                    ScreenMapPosition position;
++                    position = CurrentScreenTerrain()->OffsetPosition(origin,
++                        static_cast<const ScreenMapPosition*>(definition_60->data_3e0)[static_cast<const unsigned int*>(
++                            definition_60->frames_3f4[word_7c])[word_80 + 1]],
++                        word_90);
++                    ScreenModeCommand next(id_28, contained_id_84, 10, static_cast<int>(position.x), static_cast<int>(position.y));
++                    screen_mode_commands->QueueCommand(&next);
++                    break;
+                 }
+             }
+-            else
++            --word_80;
++            if (word_80 == static_cast<unsigned int>(-1))
+             {
+-                --word_80;
+-                if (word_80 == static_cast<unsigned int>(-1))
++                unsigned int slot;
++                for (slot = 0; slot < definition_60->frame_count_3d0; ++slot)
+                 {
+-                    unsigned int i;
+-                    for (i = 0; i < definition_60->frame_count_3d0; ++i)
++                    if (slots_8c[slot].flag_09)
+                     {
+-                        if (slots_8c[i].flag_09)
+-                        {
+-                            word_7c = i;
+-                            word_80 = 0;
+-                            ScreenMapPosition position = ObjectPathPosition(this, i, 1);
+-                            AnimateContainedObject(this);
+-                            ScreenModeCommand next = MoveContainedObject(this, position);
+-                            screen_mode_commands->QueueCommand(&next);
+-                            // The original loop increments twice after selecting a slot.
+-                            i = definition_60->frame_count_3d0 + 1;
+-                        }
+-                    }
+-                    if (i != definition_60->frame_count_3d0 + 1)
+-                    {
+-                        WorldBuildingEntity* building = variable_world->FindObject(owner_94)->AsBuilding();
+-                        ScreenMapPosition position;
+-                        position.x = building->ContentPosition(building->count_178 - 1).x;
+-                        position.y = building->ContentPosition(building->count_178 - 1).y;
+-                        ScreenModeCommand next = MoveContainedObject(this, position);
++                        word_7c = slot;
++                        word_80 = 0;
++                        ScreenMapPosition origin;
++                        origin.x = position_30.x;
++                        origin.y = position_30.y;
++                        ScreenMapPosition position = CurrentScreenTerrain()->OffsetPosition(origin,
++                            static_cast<const ScreenMapPosition*>(definition_60->data_3e0)[static_cast<const unsigned int*>(
++                                definition_60->frames_3f4[slot])[1]],
++                            word_90);
++                        ScreenWorldPosition contained = variable_world->FindObject(contained_id_84)->position_30;
++                        float time = window_deactivation_state->clock_158;
++                        VariableEntity* entity = variable_world->FindObject(contained_id_84);
++                        entity->keyline_state_44->SetAnimation(static_cast<const char*>(definition_60->data_404), time, &contained);
++                        variable_world->FindObject(contained_id_84)->keyline_state_44->word_08 = 0;
++                        ScreenModeCommand next(id_28, contained_id_84, 10, static_cast<int>(position.x), static_cast<int>(position.y));
+                         screen_mode_commands->QueueCommand(&next);
+-                        word_7c = -1;
+-                        flag_88 = 0;
++                        // The original loop increments twice after selecting a slot.
++                        slot = definition_60->frame_count_3d0 + 1;
+                     }
+                 }
+-                else
++                if (slot != definition_60->frame_count_3d0 + 1)
+                 {
+-                    ScreenMapPosition position = ObjectPathPosition(this, word_7c, word_80 + 1);
+-                    ScreenModeCommand next = MoveContainedObject(this, position);
++                    WorldBuildingEntity* building = variable_world->FindObject(owner_94)->AsBuilding();
++                    ScreenMapPosition position;
++                    position.x = building->ContentPosition(building->count_178 - 1).x;
++                    position.y = building->ContentPosition(building->count_178 - 1).y;
++                    ScreenModeCommand next(id_28, contained_id_84, 10, static_cast<int>(position.x), static_cast<int>(position.y));
+                     screen_mode_commands->QueueCommand(&next);
++                    word_7c = -1;
++                    flag_88 = 0;
+                 }
++                break;
++            }
++            {
++                ScreenMapPosition origin;
++                origin.x = position_30.x;
++                origin.y = position_30.y;
++                ScreenMapPosition position;
++                position = CurrentScreenTerrain()->OffsetPosition(origin,
++                    static_cast<const ScreenMapPosition*>(definition_60->data_3e0)[static_cast<const unsigned int*>(
++                        definition_60->frames_3f4[word_7c])[word_80 + 1]],
++                    word_90);
++                ScreenModeCommand next(id_28, contained_id_84, 10, static_cast<int>(position.x), static_cast<int>(position.y));
++                screen_mode_commands->QueueCommand(&next);
++                break;
+             }
+         }
+         else
+         {
+             std::strcpy(world_object_animation_text, "d_stand_snooty");
+-            ScreenModeCommand next = ObjectAnimationCommand(id_28, contained_id_84, world_object_animation_text, false, 1);
++            ScreenModeCommand next(id_28, contained_id_84, 60, 1, 0);
++            next.words[4] = CommandText(world_object_animation_text);
+             screen_mode_commands->QueueCommand(&next);
+             flag_88 = 1;
+         }
+-        return handled;
++        break;
+     case 83:
+     {
+         slots_8c[word_7c].flag_09 = 0;
+         flags_78[word_7c] = 1;
+-        word_80 = ObjectWalkPath(this, word_7c)[0] - 1;
+-        ScreenMapPosition point = ObjectOffsetPosition(this,
+-            static_cast<const ScreenMapPosition*>(definition_60->data_410)[word_7c]);
+-        ScreenWorldPosition position = { point.x, point.y, 0.0f };
++        word_80 = *static_cast<const unsigned int*>(definition_60->frames_3f4[word_7c]) - 1;
++        ScreenMapPosition origin;
++        origin.x = position_30.x;
++        origin.y = position_30.y;
++        ScreenMapPosition point;
++        point = CurrentScreenTerrain()->OffsetPosition(origin,
++            static_cast<const ScreenMapPosition*>(definition_60->data_410)[word_7c],
++            word_90);
++        ScreenWorldPosition position;
++        position.x = point.x;
++        position.y = point.y;
++        position.z = 0.0f;
+         variable_world->FindObject(contained_id_84)->SetWorldPosition(&position);
+         variable_world->FindObject(contained_id_84)->visible_40 = 1;
+         flag_74 = 0;
+-        ScreenModeCommand next = MoveContainedObject(this, point);
++        ScreenModeCommand next(id_28, contained_id_84, 10, static_cast<int>(point.x), static_cast<int>(point.y));
+         screen_mode_commands->QueueCommand(&next);
+-        AnimateContainedObject(this);
+-        next = ObjectGuestCommand(id_28, slots_8c[word_7c].id_04, 56);
+-        screen_mode_commands->QueueDelayed(&next, 20.0f);
+-        return handled;
++        ScreenWorldPosition contained = variable_world->FindObject(contained_id_84)->position_30;
++        float time = window_deactivation_state->clock_158;
++        VariableEntity* entity = variable_world->FindObject(contained_id_84);
++        entity->keyline_state_44->SetAnimation(static_cast<const char*>(definition_60->data_404), time, &contained);
++        variable_world->FindObject(contained_id_84)->keyline_state_44->word_08 = 0;
++        ScreenModeCommand later(id_28, slots_8c[word_7c].id_04, 56, 0, 0, 0.0f, 46);
++        screen_mode_commands->QueueDelayed(&later, 20.0f);
++        break;
+     }
+     case 30:
+         contained_id_84 = command->words[0];
+-        return handled;
++        break;
+     default:
+-        return WorldStaticEntity::Unknown14(command);
++        handled = WorldStaticEntity::Unknown14(command);
++        break;
+     }
++    return handled;
+ }
+diff --git a/src/startup_world_staff_script_actions.cpp b/src/startup_world_staff_script_actions.cpp
+index a65cbaad6255ab7d486bcb67d6769d6243d5ce16..ec7ddf00eef848d335e35d3a765943d19e3ddae7 100644
+--- a/src/startup_world_staff_script_actions.cpp
++++ b/src/startup_world_staff_script_actions.cpp
+@@ -56,23 +56,17 @@ static unsigned int FindMechanicJob(WorldMechanicEntity* entity, unsigned int ty
+     return window_deactivation_state->repairs_28->FindJob(&position, type, &entity->repair_type_7a0);
+ }
+ 
++static inline void TakeFeedback(WorldMechanicEntity* mechanic)
++{
++    mechanic->current_feedback_790 = mechanic->required_feedback_78c;
++    mechanic->required_feedback_78c = 0;
++}
++
+ // FUNCTION: BEACHLIFE 0x004813a0
+-void WorldMechanicEntity::Unknown34(unsigned int kind)
++void WorldMechanicEntity::Unknown34(unsigned int value)
+ {
+-    switch (kind)
++    switch (value)
+     {
+-    case 0xb:
+-        visible_40 = 0;
+-        break;
+-    case 0xc:
+-        visible_40 = 1;
+-        break;
+-    case 0x74:
+-        time_784 = window_deactivation_state->render_value_160;
+-        break;
+-    case 0x7b:
+-        AddThought(0x20000000);
+-        break;
+     case 0x99:
+         repair_type_7a0 = 2;
+         word_98 = -1;
+@@ -96,9 +90,13 @@ void WorldMechanicEntity::Unknown34(unsigned int kind)
+                 }
+             }
+             else if (word_778 & 1)
++            {
+                 word_98 = FindMechanicJob(this, 2);
++            }
+             else if (word_778 & 2)
++            {
+                 word_98 = FindMechanicJob(this, 1);
++            }
+             if ((word_778 & 1) && word_98 == static_cast<unsigned int>(-1))
+                 word_98 = FindMechanicJob(this, 0);
+         }
+@@ -108,116 +106,141 @@ void WorldMechanicEntity::Unknown34(unsigned int kind)
+             time_784 = window_deactivation_state->render_value_160;
+         }
+         else
+-            found_repair_780 = 0;
+-        break;
+-    case 0x9a:
+-    {
+-        ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
+-        unsigned int id = window_deactivation_state->repairs_28->FindBetterJob(&position, word_98, &repair_type_7a0);
+-        if (id != static_cast<unsigned int>(-1))
+         {
+-            found_better_job_781 = 1;
+-            word_98 = id;
++            found_repair_780 = 0;
+         }
+-        else
+-            found_better_job_781 = 0;
+-        break;
+-    }
++        return;
+     case 0x9b:
+         if (word_778 & 4)
+         {
+-            ScreenWorldPosition position = { position_30.x, position_30.y, position_30.z };
++            ScreenWorldPosition position = position_30;
+             word_98 = window_deactivation_state->repairs_28->FindWateringJob(&position);
+             if (word_98 != static_cast<unsigned int>(-1))
+             {
+                 found_repair_780 = 1;
+                 time_784 = window_deactivation_state->render_value_160;
+                 repair_type_7a0 = 3;
+-                break;
++                return;
+             }
+         }
+         found_repair_780 = 0;
+-        break;
++        return;
++    case 0x9a:
++    {
++        ScreenWorldPosition position = position_30;
++        unsigned int id = window_deactivation_state->repairs_28->FindBetterJob(&position, word_98, &repair_type_7a0);
++        if (id != static_cast<unsigned int>(-1))
++        {
++            found_better_job_781 = 1;
++            word_98 = id;
++        }
++        else
++        {
++            found_better_job_781 = 0;
++        }
++        return;
++    }
++    case 0x74:
++        time_784 = window_deactivation_state->render_value_160;
++        return;
++    case 0xae:
++        inactive_04 = 1;
++        return;
++    case 0xaf:
++        screen_manager->SetNamedItemFlag("MechanicIcon", 1);
++        return;
++    case 0xb0:
++        TakeFeedback(this);
++        Unknown50(1, 1);
++        screen_manager->ApplyScreenWord("MechanicDialog", 2);
++        AddThought(current_feedback_790);
++        screen_manager->SetNamedItemFlag("MechanicIcon", 0);
++        return;
++    case 0xb1:
++    {
++        TakeFeedback(this);
++        const char* text = Notification(current_feedback_790);
++        if (text)
++            window_deactivation_state->ticker_30->AddMessage(text, id_28, 9);
++        AddThought(current_feedback_790);
++        screen_manager->SetNamedItemFlag("MechanicIcon", 0);
++        return;
++    }
++    case 0x0b:
++        visible_40 = 0;
++        return;
++    case 0x0c:
++        visible_40 = 1;
++        return;
+     case 0x9d:
+         if (variable_world->FindObject(word_98)->kind_2c == 2)
+             window_deactivation_state->repairs_28->RequeueAssignment(word_98, 2);
+         else
+             window_deactivation_state->repairs_28->RequeueAssignment(word_98, 1);
+-        break;
++        return;
+     case 0x9e:
+-    {
+-        static const unsigned int thoughts[] = { 4, 0x10, 8, 0x20 };
+-        if (repair_type_7a0 <= 3)
+-            AddThought(thoughts[repair_type_7a0]);
++        switch (repair_type_7a0)
++        {
++        case 0:
++            AddThought(4);
++            break;
++        case 2:
++            AddThought(8);
++            break;
++        case 1:
++            AddThought(0x10);
++            break;
++        case 3:
++            AddThought(0x20);
++            break;
++        }
+         window_deactivation_state->repairs_28->RemoveAssignment(word_98);
+         word_98 = -1;
+-        break;
+-    }
++        return;
+     case 0x9f:
+-    {
+         window_deactivation_state->repairs_28->MarkRepairing(word_98);
+         switch (repair_type_7a0)
+         {
+         case 0:
+             ++inspections_today_7a4;
+             break;
+-        case 1:
+-            ++vandals_today_7ac;
+-            break;
+         case 2:
+             ++repairs_today_7a8;
+             break;
++        case 1:
++            ++vandals_today_7ac;
++            break;
+         case 3:
+             ++watered_today_7b0;
+             break;
+         }
+-        break;
+-    }
++        return;
+     case 0xa0:
+     {
+-        VariableEntity* target = variable_world->FindObject(word_98);
+-        long double x = static_cast<long double>(target->position_30.x) + 34.0f;
+-        watering_position_7b4.y = static_cast<float>(static_cast<long double>(target->position_30.y) - 22.0f);
+-        watering_position_7b4.x = static_cast<float>(x);
+-        break;
++        ScreenWorldPosition position;
++        position = variable_world->FindObject(word_98)->Position();
++        float x = position.x + 34.0f;
++        position.x = x;
++        position.y -= 22.0f;
++        watering_position_7b4.x = position.x;
++        watering_position_7b4.y = position.y;
++        return;
+     }
+     case 0xa1:
+         variable_world->FindObject(word_98);
+         keyline_state_44->SelectVariant(5);
+-        break;
++        return;
+     case 0xad:
+         required_feedback_78c = 0;
+         feedback_status_788 &= ~2u;
+-        WorldStaffEntity::Unknown34(kind);
+-        break;
+-    case 0xae:
+-        inactive_04 = 1;
+-        break;
+-    case 0xaf:
+-        screen_manager->SetNamedItemFlag("MechanicIcon", 1);
+-        break;
+-    case 0xb0:
+-        current_feedback_790 = required_feedback_78c;
+-        required_feedback_78c = 0;
+-        Unknown50(1, 1);
+-        screen_manager->ApplyScreenWord("MechanicDialog", 2);
+-        AddThought(current_feedback_790);
+-        screen_manager->SetNamedItemFlag("MechanicIcon", 0);
+-        break;
+-    case 0xb1:
+-    {
+-        current_feedback_790 = required_feedback_78c;
+-        required_feedback_78c = 0;
+-        const char* message = Notification(current_feedback_790);
+-        if (message)
+-            window_deactivation_state->ticker_30->AddMessage(message, id_28, 9);
+-        AddThought(current_feedback_790);
+-        screen_manager->SetNamedItemFlag("MechanicIcon", 0);
+-        break;
+-    }
++        WorldStaffEntity::Unknown34(value);
++        return;
+     default:
+-        WorldStaffEntity::Unknown34(kind);
+-        break;
++        WorldStaffEntity::Unknown34(value);
++        return;
++    case 0x7b:
++        AddThought(0x20000000);
++        return;
+     }
+ }
+ 
+diff --git a/src/startup_world_vehicle_turn_animation.cpp b/src/startup_world_vehicle_turn_animation.cpp
+index cffd5b9cc3e2dd4340f0dc28d04b763d512828e9..a7da307102f8bd590946c3c5ef7f7ae868440b01 100644
+--- a/src/startup_world_vehicle_turn_animation.cpp
++++ b/src/startup_world_vehicle_turn_animation.cpp
+@@ -10,41 +10,39 @@ void WorldVehicleEntity::StartTurnAnimation()
+     const char* animation = "";
+     const char* first = "";
+     const char* second = "";
+-    ScreenWorldPosition position = Position();
++    const char* wake = 0;
++    const char* rod1 = 0;
++    const char* rod2 = 0;
++    const char* driver = 0;
+     if (flag_901)
+     {
+         switch (vehicle_type_f8)
+         {
++        case 4:
++            animation = vehicle_animation_57c378;
++            first = vehicle_animation_57c41c;
++            second = vehicle_animation_57c430;
++            break;
+         case 0:
++        {
+             animation = vehicle_animation_57c2e0;
+             first = vehicle_animation_57c3e4;
+-            if (vehicle_animation_57c308)
+-                resource_fc->SetAnimation(vehicle_animation_57c308, MotionFloat(words_904[1]), &position);
++            wake = vehicle_animation_57c308;
+             break;
++        }
+         case 1:
+             animation = vehicle_animation_57c338;
+             first = vehicle_animation_57c3fc;
+             second = vehicle_animation_57c40c;
+             break;
+-        case 4:
+-            animation = vehicle_animation_57c378;
+-            first = vehicle_animation_57c41c;
+-            second = vehicle_animation_57c430;
+-            break;
+         case 6:
+         {
+             animation = vehicle_animation_57c390;
++            rod1 = vehicle_animation_57c3b0;
++            rod2 = vehicle_animation_57c3cc;
+             first = vehicle_animation_57c45c;
++            driver = vehicle_animation_57c39c;
+             second = vehicle_animation_57c460;
+-            const char* rod1 = vehicle_animation_57c3b0;
+-            const char* rod2 = vehicle_animation_57c3cc;
+-            const char* driver = vehicle_animation_57c39c;
+-            if (rod1)
+-                resource_100->SetAnimation(rod1, MotionFloat(words_904[1]), &position);
+-            if (rod2)
+-                resource_104->SetAnimation(rod2, MotionFloat(words_904[1]), &position);
+-            if (driver)
+-                resource_108->SetAnimation(driver, MotionFloat(words_904[1]), &position);
+             break;
+         }
+         }
+@@ -53,42 +51,46 @@ void WorldVehicleEntity::StartTurnAnimation()
+     {
+         switch (vehicle_type_f8)
+         {
++        case 4:
++            animation = vehicle_animation_57c374;
++            first = vehicle_animation_57c418;
++            second = vehicle_animation_57c42c;
++            break;
+         case 0:
++        {
+             animation = vehicle_animation_57c2dc;
+             first = vehicle_animation_57c3e0;
+-            if (vehicle_animation_57c30c)
+-                resource_fc->SetAnimation(vehicle_animation_57c30c, MotionFloat(words_904[1]), &position);
++            wake = vehicle_animation_57c30c;
+             break;
++        }
+         case 1:
+             animation = vehicle_animation_57c334;
+             first = vehicle_animation_57c3f8;
+             second = vehicle_animation_57c408;
+             break;
+-        case 4:
+-            animation = vehicle_animation_57c374;
+-            first = vehicle_animation_57c418;
+-            second = vehicle_animation_57c42c;
+-            break;
+         case 6:
+         {
+             animation = vehicle_animation_57c38c;
++            rod1 = vehicle_animation_57c3ac;
++            rod2 = vehicle_animation_57c3c8;
+             first = vehicle_animation_57c454;
++            driver = vehicle_animation_57c39c;
+             second = vehicle_animation_57c458;
+-            const char* rod1 = vehicle_animation_57c3ac;
+-            const char* rod2 = vehicle_animation_57c3c8;
+-            const char* driver = vehicle_animation_57c39c;
+-            if (rod1)
+-                resource_100->SetAnimation(rod1, MotionFloat(words_904[1]), &position);
+-            if (rod2)
+-                resource_104->SetAnimation(rod2, MotionFloat(words_904[1]), &position);
+-            if (driver)
+-                resource_108->SetAnimation(driver, MotionFloat(words_904[1]), &position);
+             break;
+         }
+         }
+     }
+-    words_904[1] = MotionWord(window_deactivation_state->clock_158);
+-    words_904[2] = MotionWord(keyline_state_44->SetAnimation(animation, MotionFloat(words_904[1]), &position));
++    if (wake)
++        resource_fc->SetAnimation(wake, MotionFloat(words_904[1]), &position_30);
++    if (rod1)
++        resource_100->SetAnimation(rod1, MotionFloat(words_904[1]), &position_30);
++    if (rod2)
++        resource_104->SetAnimation(rod2, MotionFloat(words_904[1]), &position_30);
++    if (driver)
++        resource_108->SetAnimation(driver, MotionFloat(words_904[1]), &position_30);
++    float time = window_deactivation_state->clock_158;
++    words_904[1] = MotionWord(time);
++    words_904[2] = MotionWord(keyline_state_44->SetAnimation(animation, time, &position_30));
+     keyline_state_44->word_08 = 2;
+     if (vehicle_type_f8 == 6 && flag_901)
+     {
+@@ -99,16 +101,22 @@ void WorldVehicleEntity::StartTurnAnimation()
+     }
+     if (passenger_count_5bc)
+     {
+-        WorldMovingEntity* passenger = variable_world->FindObject(passengers_10c[0])->AsMoving();
+-        passenger->SetMovementPosition(position);
+-        passenger->keyline_state_44->SetAnimation(first, MotionFloat(words_904[1]), &position);
+-        passenger->keyline_state_44->word_08 = vehicle_type_f8 == 6 && flag_901 ? 1 : 2;
++        WorldMovingEntity* rider = static_cast<WorldMovingEntity*>(variable_world->FindObject(passengers_10c[0]));
++        rider->SetMovementPosition(position_30);
++        rider->keyline_state_44->SetAnimation(first, MotionFloat(words_904[1]), &position_30);
++        if (vehicle_type_f8 == 6 && flag_901)
++            rider->keyline_state_44->word_08 = 1;
++        else
++            rider->keyline_state_44->word_08 = 2;
+         if (passenger_count_5bc > 1)
+         {
+-            passenger = variable_world->FindObject(passengers_10c[1])->AsMoving();
+-            passenger->SetMovementPosition(position);
+-            passenger->keyline_state_44->SetAnimation(second, MotionFloat(words_904[1]), &position);
+-            passenger->keyline_state_44->word_08 = vehicle_type_f8 == 6 && flag_901 ? 1 : 2;
++            rider = static_cast<WorldMovingEntity*>(variable_world->FindObject(passengers_10c[1]));
++            rider->SetMovementPosition(position_30);
++            rider->keyline_state_44->SetAnimation(second, MotionFloat(words_904[1]), &position_30);
++            if (vehicle_type_f8 == 6 && flag_901)
++                rider->keyline_state_44->word_08 = 1;
++            else
++                rider->keyline_state_44->word_08 = 2;
+         }
+     }
+     --words_904[0];

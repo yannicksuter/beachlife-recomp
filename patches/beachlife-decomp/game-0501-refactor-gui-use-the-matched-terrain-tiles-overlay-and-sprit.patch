@@ -1,0 +1,541 @@
+diff --git a/src/startup_overlay_render.cpp b/src/startup_overlay_render.cpp
+index c9ec113fe45f52585510a2dfdfe0e87ae6e2a2f4..a035a2f1b39c5a3183390801fd86f85c80d01617 100644
+--- a/src/startup_overlay_render.cpp
++++ b/src/startup_overlay_render.cpp
+@@ -32,25 +32,50 @@ void OverlayMapPrefix::SetViewScale(float scale)
+     screen_request_renderer->SetViewScale(scale);
+ }
+ 
++static inline ScreenPoint WorldToScreenPoint(OverlayMapPrefix* map, const ScreenWorldPosition& point)
++{
++    ScreenPoint result;
++    result.x = static_cast<int>(point.x);
++    result.y = static_cast<int>(point.y * 0.5f);
++    result.y -= static_cast<int>(map->HeightAt(result.x, result.y));
++    result.x -= map->scroll_x_c4;
++    result.y -= map->scroll_y_c8;
++    return result;
++}
++
++static inline bool EntityOnScreen(OverlayMapPrefix* map, VariableEntity* entity)
++{
++    ScreenWorldPosition position = entity->position_30;
++    ScreenPoint point = WorldToScreenPoint(map, position);
++    point.x += entity->keyline_state_44->CurrentFrameValue();
++    point.y += entity->keyline_state_44->SelectedFrame()->word_14;
++    int x = point.x;
++    int y = point.y;
++    int left = 0;
++    int top = 0;
++    int right = entity->keyline_state_44->SelectedFrame()->width_0e;
++    int bottom = entity->keyline_state_44->SelectedFrame()->height_10;
++    return map->renderer_fc->ClipWorldRectangle(x, y, left, top, right, bottom);
++}
++
+ // FUNCTION: BEACHLIFE 0x004193f0
+ bool OverlayMapPrefix::ContainsEntity(VariableEntity* entity)
+ {
+-    int x = static_cast<int>(entity->position_30.x);
+-    int y = static_cast<int>(static_cast<long double>(entity->position_30.y) * 0.5L);
+-    y -= static_cast<int>(HeightAt(x, y));
+-    x -= scroll_x_c4;
+-    y -= scroll_y_c8;
+-    ScreenDialogResource* image = entity->keyline_state_44;
+-    x += image->CurrentFrameValue();
+-    y += image->SelectedFrame()->word_14;
+-    int left = 0, top = 0;
+-    int right = image->SelectedFrame()->width_0e;
+-    int bottom = image->SelectedFrameHeight();
++    ScreenWorldPosition position = entity->position_30;
++    ScreenPoint point = WorldToScreenPoint(this, position);
++    point.x += entity->keyline_state_44->CurrentFrameValue();
++    point.y += entity->keyline_state_44->SelectedFrame()->word_14;
++    int x = point.x;
++    int y = point.y;
++    int left = 0;
++    int top = 0;
++    int right = entity->keyline_state_44->SelectedFrame()->width_0e;
++    int bottom = entity->keyline_state_44->SelectedFrame()->height_10;
+     return renderer_fc->ClipWorldRectangle(x, y, left, top, right, bottom);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004194e0
+-void OverlayMapPrefix::RenderEntities(VariableEntity** entities, unsigned int count, unsigned char)
++void OverlayMapPrefix::RenderEntities(VariableEntity** entities, unsigned int count, unsigned char flag)
+ {
+     screen_request_renderer->rectangle_enabled_4e = 1;
+     rendered_guests_158 = 0;
+@@ -61,17 +86,16 @@ void OverlayMapPrefix::RenderEntities(VariableEntity** entities, unsigned int co
+             continue;
+         if (entity->kind_2c != 2 && entity->kind_2c != 1)
+         {
+-            int x = static_cast<int>(entity->position_30.x);
+-            int y = static_cast<int>(static_cast<long double>(entity->position_30.y) * 0.5L);
+-            y -= static_cast<int>(HeightAt(x, y));
+-            x -= scroll_x_c4;
+-            y -= scroll_y_c8;
+-            ScreenDialogResource* image = entity->keyline_state_44;
+-            x += image->CurrentFrameValue();
+-            y += image->SelectedFrame()->word_14;
+-            int left = 0, top = 0;
+-            int right = image->SelectedFrame()->width_0e;
+-            int bottom = image->SelectedFrameHeight();
++            ScreenWorldPosition position = entity->position_30;
++            ScreenPoint point = WorldToScreenPoint(this, position);
++            point.x += entity->keyline_state_44->CurrentFrameValue();
++            point.y += entity->keyline_state_44->SelectedFrame()->word_14;
++            int x = point.x;
++            int y = point.y;
++            int left = 0;
++            int top = 0;
++            int right = entity->keyline_state_44->SelectedFrame()->width_0e;
++            int bottom = entity->keyline_state_44->SelectedFrameHeight();
+             if (!renderer_fc->ClipWorldRectangle(x, y, left, top, right, bottom))
+                 continue;
+         }
+@@ -88,20 +112,8 @@ void OverlayMapPrefix::RenderEntityOverlays(VariableEntity** entities, unsigned
+     for (int i = 0; i < static_cast<int>(count); ++i)
+     {
+         VariableEntity* entity = entities[i];
+-        int x = static_cast<int>(entity->position_30.x);
+-        int y = static_cast<int>(static_cast<long double>(entity->position_30.y) * 0.5L);
+-        y -= static_cast<int>(HeightAt(x, y));
+-        x -= scroll_x_c4;
+-        y -= scroll_y_c8;
+-        ScreenDialogResource* image = entity->keyline_state_44;
+-        x += image->CurrentFrameValue();
+-        y += image->SelectedFrame()->word_14;
+-        int left = 0, top = 0;
+-        int right = image->SelectedFrame()->width_0e;
+-        int bottom = image->SelectedFrame()->height_10;
+-        if (!renderer_fc->ClipWorldRectangle(x, y, left, top, right, bottom))
+-            continue;
+-        entity->Unknown40();
++        if (EntityOnScreen(this, entity))
++            entity->Unknown40();
+     }
+ }
+ 
+@@ -135,23 +147,36 @@ void OverlayMapPrefix::RenderGrid()
+ // FUNCTION: BEACHLIFE 0x0041b1b0
+ bool OverlayMapPrefix::RenderWater()
+ {
+-    float scale;
+-    scale = screen_request_renderer->value_58;
+-    int first_x = scroll_x_c4 / tile_size_dc;
+-    int first_y = scroll_y_c8 / tile_size_dc;
+-    int last_x = (scroll_x_c4 + static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.right)) / scale)) / 128 + 1;
+-    int last_y = (scroll_y_c8 + static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.bottom)) / scale)) / 128 + 1;
+-    for (int row = first_y; row < last_y; ++row)
+-        for (int column = first_x; column < last_x; ++column)
++    int first_column = scroll_x_c4 / tile_size_dc;
++    int first_row = scroll_y_c8 / tile_size_dc;
++    int last_column = (scroll_x_c4 + static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.right)) / screen_request_renderer->value_58)) / 128 + 1;
++    int last_row = (scroll_y_c8 + static_cast<int>(static_cast<long double>(static_cast<unsigned int>(view_ac.bottom)) / screen_request_renderer->value_58)) / 128 + 1;
++    int row = first_row;
++    if (first_row < last_row)
++    {
++        do
+         {
+-            OverlayCachedTile& tile = cached_tiles_e0[row * cache_width_d4 + column];
+-            if (!tile.ready)
+-                continue;
+-            ScreenPoint position = { column * tile_size_dc - scroll_x_c4, row * tile_size_dc - scroll_y_c8 };
+-            ScreenRectangle bounds = { 0, 0, 0, 0 };
+-            overlay_water_image.pixels = static_cast<unsigned char*>(tile.view);
+-            renderer_fc->DrawWaterTile(column, row, position, bounds, &overlay_water_image, 8, 0, tile.water_01 ? 1 : 0);
+-        }
++            for (int column = first_column; column < last_column; ++column)
++            {
++                OverlayCachedTile& tile = cached_tiles_e0[row * cache_width_d4 + column];
++                if (!tile.ready)
++                    continue;
++                ScreenPoint position;
++                position.x = column * tile_size_dc - scroll_x_c4;
++                position.y = row * tile_size_dc - scroll_y_c8;
++                ScreenRectangle bounds;
++                bounds.left = 0;
++                bounds.top = 0;
++                bounds.right = 0;
++                bounds.bottom = 0;
++                overlay_water_image.pixels = static_cast<unsigned char*>(tile.view);
++                if (cached_tiles_e0[row * cache_width_d4 + column].water_01)
++                    renderer_fc->DrawWaterTile(column, row, position, bounds, &overlay_water_image, 8, 0, 1);
++                else
++                    renderer_fc->DrawWaterTile(column, row, position, bounds, &overlay_water_image, 8, 0, 0);
++            }
++        } while (++row < last_row);
++    }
+     ScreenRectangle bounds;
+     while (screen_request_renderer->TakeDirtyRectangle(bounds))
+     {
+diff --git a/src/startup_overlay_world_coordinates.cpp b/src/startup_overlay_world_coordinates.cpp
+index 81cef7ad78330865fe82e74b63eee8aa8b012079..15a829aecbc98128ce56b64e7c18ef8ed647fb47 100644
+--- a/src/startup_overlay_world_coordinates.cpp
++++ b/src/startup_overlay_world_coordinates.cpp
+@@ -17,18 +17,34 @@ ScreenPoint OverlayMapPrefix::WorldToScreen(const ScreenWorldPosition& point)
+ // FUNCTION: BEACHLIFE 0x0041b360
+ ScreenWorldPosition OverlayMapPrefix::ScreenToWorld(const ScreenPoint& point)
+ {
+-    float height = static_cast<int>(static_cast<double>(screen_terrain_grid->height_scale_14) * 255.0f) * 0.5f;
+-    float step = height;
+-    for (int iteration = 0; iteration < 100; ++iteration)
++    unsigned char done = 0;
++    // Retail truncates the unrounded x87 product of the float scale and 255.
++    double grid_scale = screen_terrain_grid->height_scale_14;
++    long double initial = static_cast<int>(grid_scale * 255.0f) * 0.5f;
++    float height = initial;
++    float step = initial;
++    int iteration = 0;
++    while (!done)
+     {
+-        double sampled = HeightAt(point.x, point.y + static_cast<int>(height));
+-        if (!(std::fabs(sampled - height) > 3.0))
++        if (iteration >= 100)
+             break;
+-        step *= 0.5f;
+-        if (sampled > height)
+-            height += step;
++        // Retail keeps the sample on the x87 stack for both comparisons.
++        long double sampled = HeightAt(point.x, point.y + static_cast<int>(height));
++        if (std::fabs(sampled - height) > 3.0f)
++        {
++            step *= 0.5f;
++            if (sampled > height)
++                height = step + height;
++            else
++                height -= step;
++        }
+         else
+-            height -= step;
++            done = 1;
++        ++iteration;
+     }
+-    return { static_cast<float>(point.x), static_cast<float>((point.y + static_cast<double>(height)) * 2.0), 0.0f };
++    ScreenWorldPosition result;
++    result.x = static_cast<float>(point.x);
++    result.y = (point.y + height) * 2.0f;
++    result.z = 0.0f;
++    return result;
+ }
+diff --git a/src/startup_screen_dialog_resource_load.cpp b/src/startup_screen_dialog_resource_load.cpp
+index e93c8c46a0f2d0152a91c24008a33aea88d508ea..da8fc822d54f3513462dde9a3bc6f7e7ab1e399c 100644
+--- a/src/startup_screen_dialog_resource_load.cpp
++++ b/src/startup_screen_dialog_resource_load.cpp
+@@ -15,56 +15,60 @@ int ScreenDialogResourceLookup::Load()
+         return -1;
+ 
+     char file_header[20];
+-    unsigned int file_word;
+-    record_count = 0;
+-    resource_files::read_stream(file_header, 1, 20, metadata_file);
+-    resource_files::read_stream(&file_word, 4, 1, metadata_file);
+-    resource_files::read_stream(&record_count, 4, 1, metadata_file);
+-    records = static_cast<ScreenDialogResourceRecord**>(
+-        ::operator new(record_count * sizeof(ScreenDialogResourceRecord*)));
+-    for (int index = 0; index < record_count; ++index)
++    unsigned int initial_read_bytes;
++    int initial_record_count;
+     {
+-        records[index] = new ScreenDialogResourceRecord;
+-        records[index]->ReadMetadata(metadata_file, screen_request_renderer->format_44);
+-    }
+-    resource_files::close_stream(metadata_file);
++        struct
++        {
++            int frames;
++            unsigned int word;
++        } info;
++        record_count = 0;
++        resource_files::read_stream(file_header, 1, 20, metadata_file);
++        resource_files::read_stream(&info.word, 4, 1, metadata_file);
++        resource_files::read_stream(&record_count, 4, 1, metadata_file);
++        records = static_cast<ScreenDialogResourceRecord**>(
++            ::operator new(record_count * sizeof(ScreenDialogResourceRecord*)));
++        for (int index = 0; index < record_count; ++index)
++        {
++            records[index] = new ScreenDialogResourceRecord;
++            records[index]->ReadMetadata(metadata_file, screen_request_renderer->format_44);
++        }
++        resource_files::close_stream(metadata_file);
+ 
+-    data_file = resource_files::open_descriptor("data\\sprites\\BLSprite.Dat", 0x8000);
+-    if (data_file < 0)
+-        return -1;
++        data_file = resource_files::open_descriptor("data\\sprites\\BLSprite.Dat", 0x8000);
++        if (data_file < 0)
++            return -1;
+ 
+-    unsigned int initial_read_bytes = resource_files::read_descriptor(data_file, file_header, 20);
+-    initial_read_bytes += resource_files::read_descriptor(data_file, &file_word, 4);
++        initial_read_bytes = resource_files::read_descriptor(data_file, file_header, 20);
++        initial_read_bytes += resource_files::read_descriptor(data_file, &info.word, 4);
+ 
+-    int initial_record_count = record_count;
+-    if (initial_record_count > 0)
+-    {
+-        int last_frame_count;
+-        for (int index = 0; index < initial_record_count; ++index)
+-            last_frame_count = records[index]->frame_count;
+-        (void)last_frame_count;
++        initial_record_count = record_count;
++        for (int other_index = 0; other_index < initial_record_count; ++other_index)
++            info.frames = records[other_index]->frame_count;
+     }
+ 
+-    int palette_matches = 0;
+     unsigned int palette_bytes = 0;
++    ScreenDialogResourceLookup* lookup = this;
++    int palette_matches = 0;
+     int* marked = static_cast<int*>(::operator new(initial_record_count * sizeof(int)));
+-    memset(marked, 0, record_count * sizeof(int));
+-    for (int record = 0; record < record_count; ++record)
++    memset(marked, 0, lookup->record_count * sizeof(int));
++    for (int record = 0; record < lookup->record_count; ++record)
+     {
+-        for (int palette = 0; palette < records[record]->palette_count; ++palette)
++        for (int palette = 0; palette < lookup->records[record]->palette_count; ++palette)
+         {
+             if (!marked[record])
+             {
+                 marked[record] = 1;
+-                unsigned short* reference = records[record]->palettes[palette];
+-                unsigned int format = records[record]->format_18;
+-                for (int other = 0; other < record_count; ++other)
++                unsigned short* reference = lookup->records[record]->palettes[palette];
++                unsigned int format = lookup->records[record]->format_18;
++                for (int other = 0; other < lookup->record_count; ++other)
+                 {
+-                    for (int other_palette = 0; other_palette < records[other]->palette_count; ++other_palette)
++                    for (int other_palette = 0; other_palette < lookup->records[other]->palette_count; ++other_palette)
+                     {
+-                        if (format == records[other]->format_18)
++                        if (format == lookup->records[other]->format_18)
+                         {
+-                            unsigned short* candidate = records[other]->palettes[other_palette];
++                            unsigned short* candidate = lookup->records[other]->palettes[other_palette];
+                             // Retail scans 256 colours for format 6 too, although
+                             // its palettes hold only 64. This scan only updates
+                             // discarded statistics; keep native reads in bounds.
+@@ -76,9 +80,8 @@ int ScreenDialogResourceLookup::Load()
+                                     for (colour = 0; colour < 256; ++colour)
+                                     {
+                                         if ((!reference[colour]) == candidate[colour])
+-                                            break;
++                                            goto next_palette;
+                                     }
+-                                    if (colour == 256)
+                                     {
+                                         ++palette_matches;
+                                         marked[other] = 1;
+@@ -92,9 +95,8 @@ int ScreenDialogResourceLookup::Load()
+                                 for (colour = 0; colour < 64; ++colour)
+                                 {
+                                     if ((!reference[colour]) == candidate[colour])
+-                                        break;
++                                        goto next_palette;
+                                 }
+-                                if (colour == 64)
+                                 {
+                                     ++palette_matches;
+                                     marked[other] = 1;
+@@ -102,6 +104,7 @@ int ScreenDialogResourceLookup::Load()
+                                 }
+                             }
+                         }
++                    next_palette:;
+                     }
+                 }
+             }
+diff --git a/src/startup_screen_dialog_terrain_tiles.cpp b/src/startup_screen_dialog_terrain_tiles.cpp
+index f0847d274a7f7b56eb32a7968eda4addb7ddb836..6b891b8e408df36895d97e25883cb979ad7d5ece 100644
+--- a/src/startup_screen_dialog_terrain_tiles.cpp
++++ b/src/startup_screen_dialog_terrain_tiles.cpp
+@@ -355,47 +355,100 @@ void ScreenDialogResource::DrawTerrainTiles(int tile_x, int tile_y, int offset_x
+     float, unsigned int depth)
+ {
+     OverlayMapPrefix* map = overlay_map;
+-    const unsigned char* data = record->frames[0]->SelectData(word_14, word_18);
++    ScreenDialogResourceFrame* frame = record->frames[0];
++    const unsigned char* data = frame->SelectData(word_14, word_18);
+     const unsigned short* palette = record->palettes[0];
+-    unsigned int half = RenderHalfMask() >> 1;
+-    unsigned int quarter = RenderQuarterMask() >> 2;
+-    int width = SelectedFrame()->width_0e;
+-    int height = SelectedFrame()->height_10;
++    unsigned short half = RenderHalfMask();
++    unsigned short quarter = RenderQuarterMask();
++    int width = record->frames[word_10]->width_0e;
++    int height = record->frames[word_10]->height_10;
+     int size = map->tile_size_dc;
+     int active_y = tile_y;
+-    for (int row = 0; row < height; ++row)
++    unsigned int data_index = 0;
++    int row = 0;
++    if (row < height)
+     {
+-        int y = offset_y + row;
+-        int active_x = tile_x;
+-        int column = offset_x;
+-        if (y > size - 1)
+-            active_y = tile_y + y / size;
+-        int row_offset = (y % size) * size;
+-        int pixel = row_offset + column;
+-        unsigned int* view;
++        int y = offset_y;
++        for (; row < height; ++row, ++y)
+         {
+-            int view_x = active_x;
+-            int view_y = active_y;
+-            if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                map->MapCachedTile(view_x, view_y);
+-            if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                map->MapCachedTile(view_x, view_y);
+-            view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
+-        }
+-        unsigned int row_depth = ((depth & 0xffffu) + static_cast<unsigned int>(row) * 16) << 16;
+-        int decoded = 0;
+-        while (decoded < width)
+-        {
+-            int run = static_cast<signed char>(*data++);
+-            if (run >= 0)
++            int decoded = 0;
++            int active_x = tile_x;
++            int column = offset_x;
++            if (y > size - 1)
++                active_y = tile_y + y / size;
++            int row_offset = (y % size) * size;
++            int pixel = row_offset + column;
++            unsigned int* view;
+             {
+-                decoded += run;
+-                for (int i = 0; i < run; ++i)
++                int view_x = active_x;
++                int view_y = active_y;
++                if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
++                    map->MapCachedTile(view_x, view_y);
++                if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
++                    map->MapCachedTile(view_x, view_y);
++                view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
++            }
++            while (decoded < width)
++            {
++                signed char run = data[data_index++];
++                if (run >= 0)
+                 {
+-                    if (column >= size)
++                    while (run--)
++                    {
++                        if (column >= size)
++                        {
++                            active_x = (active_x + 1) % static_cast<int>(overlay_map->cache_width_d4);
++                            column %= size;
++                            {
++                                int view_x = active_x;
++                                int view_y = active_y;
++                                if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
++                                    map->MapCachedTile(view_x, view_y);
++                                if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
++                                    map->MapCachedTile(view_x, view_y);
++                                view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
++                            }
++                            pixel = row_offset + column;
++                        }
++                        unsigned int row_depth = ((depth & 0xffffu) + static_cast<unsigned int>(row) * 16) << 16;
++                        unsigned int old_depth = view[pixel] & 0xffff0000u;
++                        if (old_depth <= row_depth)
++                        {
++                            unsigned char mode = data[data_index] & 0xc0u;
++                            unsigned short colour = palette[data[data_index] - mode];
++                            unsigned short old_colour = static_cast<unsigned short>(view[pixel]);
++                            unsigned short result;
++                            switch (mode)
++                            {
++                            case 0:
++                                result = colour;
++                                break;
++                            case 0x40:
++                                result = ((colour >> 1) & (half >> 1)) + ((old_colour >> 2) & (quarter >> 2)) + ((colour >> 2) & (quarter >> 2));
++                                break;
++                            case 0x80:
++                                result = ((old_colour >> 1) & (half >> 1)) + ((colour >> 1) & (half >> 1));
++                                break;
++                            case 0xc0:
++                                result = ((old_colour >> 1) & (half >> 1)) + ((old_colour >> 2) & (quarter >> 2)) + ((colour >> 2) & (quarter >> 2));
++                                break;
++                            }
++                            view[pixel] = old_depth + result;
++                        }
++                        ++data_index;
++                        ++decoded;
++                        ++pixel;
++                        ++column;
++                    }
++                }
++                else
++                {
++                    decoded -= run;
++                    column -= run;
++                    if (column > size)
+                     {
+-                        active_x = (active_x + 1) % static_cast<int>(overlay_map->cache_width_d4);
+                         column %= size;
++                        active_x = (active_x + 1) % static_cast<int>(overlay_map->cache_width_d4);
+                         {
+                             int view_x = active_x;
+                             int view_y = active_y;
+@@ -407,52 +460,9 @@ void ScreenDialogResource::DrawTerrainTiles(int tile_x, int tile_y, int offset_x
+                         }
+                         pixel = row_offset + column;
+                     }
+-                    unsigned int old_depth = view[pixel] & 0xffff0000u;
+-                    if (old_depth <= row_depth)
+-                    {
+-                        unsigned int mode = *data & 0xc0u;
+-                        unsigned int colour = palette[*data - mode];
+-                        unsigned int old_colour = view[pixel] & 0xffffu;
+-                        switch (mode)
+-                        {
+-                        case 0x40:
+-                            colour = ((colour >> 1) & half) + ((old_colour >> 2) & quarter) + ((colour >> 2) & quarter);
+-                            break;
+-                        case 0x80:
+-                            colour = ((old_colour >> 1) & half) + ((colour >> 1) & half);
+-                            break;
+-                        case 0xc0:
+-                            colour = ((old_colour >> 1) & half) + ((old_colour >> 2) & quarter) + ((colour >> 2) & quarter);
+-                            break;
+-                        }
+-                        view[pixel] = old_depth + (colour & 0xffffu);
+-                    }
+-                    ++data;
+-                    ++pixel;
+-                    ++column;
+-                }
+-            }
+-            else
+-            {
+-                decoded -= run;
+-                column -= run;
+-                if (column > size)
+-                {
+-                    column %= size;
+-                    active_x = (active_x + 1) % static_cast<int>(overlay_map->cache_width_d4);
+-                    {
+-                        int view_x = active_x;
+-                        int view_y = active_y;
+-                        if (!map->cached_tiles_e0[view_y * map->cache_height_d8 + view_x].ready)
+-                            map->MapCachedTile(view_x, view_y);
+-                        if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
+-                            map->MapCachedTile(view_x, view_y);
+-                        view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
+-                    }
+-                    pixel = row_offset + column;
++                    else
++                        pixel -= run;
+                 }
+-                else
+-                    pixel -= run;
+             }
+         }
+     }

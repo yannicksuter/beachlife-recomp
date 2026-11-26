@@ -1,0 +1,342 @@
+diff --git a/src/startup_world_guest_draw.cpp b/src/startup_world_guest_draw.cpp
+index 3a3436347c4ec448b41904a7004c08f373fae6fa..31ee15f4928bb6661b502d4f9a08f04c43c03e7b 100644
+--- a/src/startup_world_guest_draw.cpp
++++ b/src/startup_world_guest_draw.cpp
+@@ -42,46 +42,62 @@ void WorldGuestEntity::Unknown3c()
+ // FUNCTION: BEACHLIFE 0x00467d80
+ void WorldGuestEntity::Unknown40()
+ {
+-    if (state_3c == 0x2b || (state_3c == 0x29 && lightning_state_318 == 14))
++    unsigned char show = 1;
++    if (state_3c == 0x2b)
++        show = 0;
++    if (state_3c == 0x29 && lightning_state_318 == 14)
+         return;
+-    if (selection_state_54 == 1 || selection_state_54 == 2)
++    if (!show)
++        return;
++    if (static_cast<int>(selection_state_54) > 0 && static_cast<int>(selection_state_54) <= 2)
+     {
+-        ScreenWorldPosition world_position = { position_30.x, position_30.y, position_30.z };
+-        ScreenPoint position = overlay_map->WorldToScreen(world_position);
+-        position.x += keyline_state_44->CurrentFrameValue();
+-        position.y += keyline_state_44->SelectedFrame()->word_14;
+-        int offset_x, offset_y;
+-        keyline_state_44->SelectionOffset(&offset_x, &offset_y);
+-        position.x += offset_x;
+-        position.y += offset_y;
++        ScreenWorldPosition world_position(position_30);
++        ScreenPoint position;
++        {
++            int offset_x, offset_y;
++            position = overlay_map->WorldToScreen(world_position);
++            position.x += keyline_state_44->CurrentFrameValue();
++            position.y += keyline_state_44->SelectedFrame()->word_14;
++            keyline_state_44->SelectionOffset(&offset_x, &offset_y);
++            position.x += offset_x;
++            position.y += offset_y;
++        }
+         DrawGuestHappiness(&position, happiness_264, resource_3c4);
+     }
+     if (screen_manager->word_70)
+     {
+-        ScreenWorldPosition world_position = { position_30.x, position_30.y, position_30.z };
+-        ScreenPoint position = overlay_map->WorldToScreen(world_position);
+-        position.x += keyline_state_44->CurrentFrameValue();
+-        position.y += keyline_state_44->SelectedFrame()->word_14;
+-        int offset_x, offset_y;
+-        keyline_state_44->SelectionOffset(&offset_x, &offset_y);
+-        position.x += offset_x;
+-        position.y += offset_y;
++        ScreenWorldPosition world_position(position_30);
++        ScreenPoint position;
++        {
++            int offset_x, offset_y;
++            position = overlay_map->WorldToScreen(world_position);
++            position.x += keyline_state_44->CurrentFrameValue();
++            position.y += keyline_state_44->SelectedFrame()->word_14;
++            keyline_state_44->SelectionOffset(&offset_x, &offset_y);
++            position.x += offset_x;
++            position.y += offset_y;
++        }
+         DrawDesire(&position);
+     }
+     if (word_3cc > 0.0f)
+     {
+-        ScreenWorldPosition world_position = { position_30.x, position_30.y, position_30.z };
+-        ScreenPoint position = overlay_map->WorldToScreen(world_position);
++        ScreenWorldPosition world_position(position_30);
++        ScreenPoint position;
++        position = overlay_map->WorldToScreen(world_position);
+         position.x += keyline_state_44->CurrentFrameValue();
+         position.y += keyline_state_44->SelectedFrame()->word_14;
+         int offset_x, offset_y;
+         keyline_state_44->SelectionOffset(&offset_x, &offset_y);
+         position.x += offset_x;
+         position.y += offset_y;
++        ScreenDialogResource* resource = resource_3c8;
++        // Retail multiplies the float scale on the x87 stack and truncates the unrounded products.
+         double scale = screen_request_renderer->value_58;
+-        int x = static_cast<int>(position.x * scale) + static_cast<int>(scale * -25.0f);
+-        int y = static_cast<int>(position.y * scale) - resource_3c8->SelectedFrame()->height_10 - 2;
+-        resource_3c8->Draw(x, y, 0xffff, 999999.0f);
++        ScreenPoint draw;
++        draw.x = static_cast<int>(position.x * scale);
++        draw.y = static_cast<int>(position.y * scale);
++        draw.x += static_cast<int>(scale * -25.0f);
++        resource->Draw(draw.x, draw.y - resource->SelectedFrame()->height_10 - 2, 0xffff, 999999.0f);
+     }
+ }
+ 
+diff --git a/src/startup_world_guest_social_actions.cpp b/src/startup_world_guest_social_actions.cpp
+index ca435bbdfbc79d0536830478d705c924c5664f96..972e3ec227a859ededc9155422d89d130664d357 100644
+--- a/src/startup_world_guest_social_actions.cpp
++++ b/src/startup_world_guest_social_actions.cpp
+@@ -8,49 +8,6 @@ static bool GuestLandFlags(unsigned int flags)
+     return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
+ }
+ 
+-static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
+-{
+-    unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
+-    unsigned int count;
+-    VariableEntity** buildings = variable_world->ByType(2, &count);
+-    float nearest = 50000.0f;
+-    unsigned int selected = 0;
+-    for (unsigned int i = 0; i < count; ++i)
+-    {
+-        if (!buildings[i]->FlagAt00460370())
+-            continue;
+-        VariableBuilding* definition = buildings[i]->AsBuilding()->building_60;
+-        for (unsigned int j = 0; j < definition->rows_1f4; ++j)
+-        {
+-            if (variable_catalog->FeatureType(definition->features_1fc[j]) == alcohol)
+-            {
+-                ScreenPoint building_tile = buildings[i]->TilePosition();
+-                unsigned int x = static_cast<unsigned int>(guest->TilePosition().x) - building_tile.x;
+-                ScreenPoint guest_tile = guest->TilePosition();
+-                unsigned int y = static_cast<unsigned int>(guest_tile.y) - buildings[i]->TilePosition().y;
+-                unsigned int squared = y * y + x * x;
+-                long double distance = std::sqrt(static_cast<long double>(squared));
+-                if (!(distance >= nearest))
+-                {
+-                    nearest = static_cast<float>(distance);
+-                    selected = i;
+-                }
+-            }
+-        }
+-    }
+-    ScreenPoint tile;
+-    for (;;)
+-    {
+-        int x = buildings[selected]->TilePosition().x;
+-        tile.x = x + std::rand() % 15 - 7;
+-        int y = buildings[selected]->TilePosition().y;
+-        tile.y = y + std::rand() % 15 - 7;
+-        unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
+-        if (GuestLandFlags(flags) && tile.x < 128 && tile.x >= 0 && tile.y < 128 && tile.y >= 0)
+-            return tile;
+-    }
+-}
+-
+ static inline unsigned int GridFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
+ {
+     return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
+@@ -159,8 +116,7 @@ void WorldGuestEntity::PerformAction16()
+ void WorldGuestEntity::PerformAction21()
+ {
+     unsigned int count;
+-    ScreenPoint tile = TilePosition();
+-    VariableEntity** nearby = variable_world->Nearby(tile, 2, &count);
++    VariableEntity** nearby = variable_world->Nearby(TilePosition(), 2, &count);
+     if (count)
+     {
+         unsigned int index = static_cast<unsigned int>(std::rand()) % count;
+@@ -171,27 +127,29 @@ void WorldGuestEntity::PerformAction21()
+             float preferred_group;
+             std::memcpy(&preferred_group, guest_f4->unknown_1e0 + 4, sizeof(preferred_group));
+             float group = guest->guest_f4->group_value_1d8;
++            // Retail tests C3 after fcomp: equal or unordered groups pass.
+             if (guest->guest_f4->word_1c4 == 1 && guest_f4->word_1c4 == 0
+                 && (guest->state_3c == 13 || guest->state_3c == 34)
+                 && !(group < preferred_group || group > preferred_group))
+             {
+-                ScreenWorldPosition position = guest->Position();
++                ScreenWorldPosition position = guest->position_30;
+                 position.x -= 20.0f;
+                 if (GuestLandFlags(CurrentScreenTerrain()->CellAt(position)->flags_48))
+                 {
+                     lightning_state_318 = 1;
+-                    word_32c = guest->id_28;
+-                    ScreenModeCommand command = MakeGuestCommand(id_28, word_32c, 21);
++                    word_32c = nearby[index]->id_28;
++                    ScreenModeCommand command(id_28, word_32c, 21, 0, 0);
+                     screen_mode_commands->QueueCommand(&command);
+-                    guest->KeylineState()->FacePositions(guest->Position(), { position_30.x, position_30.y, position_30.z });
++                    nearby[index]->KeylineState()->FacePositions(nearby[index]->Position(), ScreenWorldPosition(position_30));
+                     if (guest->route_b8)
+                     {
+                         world_subsystem_18->ReleaseRoute(guest->route_b8);
+                         guest->route_b8 = 0;
+                     }
+-                    command = MakeGuestCommand(id_28, word_32c, 3, 0, 35);
+-                    screen_mode_commands->QueueCommand(&command);
+-                    SendGuestWalk(id_28, 8, position);
++                    ScreenModeCommand next(id_28, word_32c, 3, 0, 35);
++                    screen_mode_commands->QueueCommand(&next);
++                    ScreenModeCommand walk(id_28, id_28, 8, static_cast<int>(position.x), static_cast<int>(position.y));
++                    screen_mode_commands->QueueCommand(&walk);
+                     return;
+                 }
+             }
+@@ -199,12 +157,57 @@ void WorldGuestEntity::PerformAction21()
+     }
+     if (weather_values_16c[20] > 0.0f)
+     {
+-        ScreenPoint target = GuestAlcoholWalkTile(this);
+-        SendGuestWalk(id_28, 8, screen_terrain_grid->TilePosition(target, 4));
++        unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
++        struct
++        {
++            float distance;
++            unsigned int index;
++        } nearest;
++        nearest.distance = 50000.0f;
++        nearest.index = 0;
++        unsigned int count;
++        VariableEntity** buildings = variable_world->ByType(2, &count);
++        for (unsigned int i = 0; i < count; ++i)
++        {
++            if (buildings[i]->FlagAt00460370())
++            {
++                VariableBuilding* definition = buildings[i]->AsBuilding()->building_60;
++                for (unsigned int j = 0; j < definition->rows_1f4; ++j)
++                {
++                    if (variable_catalog->FeatureType(definition->features_1fc[j]) == alcohol)
++                    {
++                        ScreenPoint building_tile = buildings[i]->TilePosition();
++                        unsigned int x = static_cast<unsigned int>(TilePosition().x) - building_tile.x;
++                        ScreenPoint guest_tile = TilePosition();
++                        unsigned int y = static_cast<unsigned int>(guest_tile.y) - buildings[i]->TilePosition().y;
++                        unsigned int squared = y * y + x * x;
++                        // Retail compares the unrounded root (fsqrt; fcom); an unordered one also selects.
++                        long double distance = std::sqrt(static_cast<long double>(squared));
++                        if (!(distance >= nearest.distance))
++                        {
++                            nearest.distance = static_cast<float>(distance);
++                            nearest.index = i;
++                        }
++                    }
++                }
++            }
++        }
++        int x = buildings[nearest.index]->TilePosition().x + std::rand() % 15 - 7;
++        int y = buildings[nearest.index]->TilePosition().y + std::rand() % 15 - 7;
++        unsigned int flags = GridFlags(screen_terrain_grid, ScreenPoint(x, y));
++        while (!(GuestLandFlags(flags) && x < 128 && x >= 0 && y < 128 && y >= 0))
++        {
++            x = buildings[nearest.index]->TilePosition().x + std::rand() % 15 - 7;
++            y = buildings[nearest.index]->TilePosition().y + std::rand() % 15 - 7;
++            flags = GridFlags(screen_terrain_grid, ScreenPoint(x, y));
++        }
++        ScreenWorldPosition position = screen_terrain_grid->TilePosition(ScreenPoint(x, y), 4);
++        ScreenModeCommand walk(id_28, id_28, 8, static_cast<int>(position.x), static_cast<int>(position.y));
++        screen_mode_commands->QueueCommand(&walk);
+     }
+     else
+     {
+-        ScreenModeCommand command = MakeGuestCommand(id_28, id_28, 3, 0, 12);
++        ScreenModeCommand command(id_28, id_28, 3, 0, 12);
+         screen_mode_commands->QueueCommand(&command);
+     }
+ }
+@@ -213,52 +216,72 @@ void WorldGuestEntity::PerformAction21()
+ void WorldGuestEntity::PerformAction24()
+ {
+     ScreenPoint offset;
+-    int direction = keyline_state_44->rotation_18;
+-    variable_world->FindObject(word_32c)->keyline_state_44->SelectVariant(direction);
+     if (state_3c == 39)
+-        offset = { 0, 0 };
++    {
++        offset.x = 0;
++        offset.y = 0;
++        variable_world->FindObject(word_32c)->keyline_state_44->SelectVariant(keyline_state_44->rotation_18);
++    }
+     else
+     {
++        variable_world->FindObject(word_32c)->keyline_state_44->SelectVariant(keyline_state_44->rotation_18);
+         bool switch_left = false;
+         switch (keyline_state_44->word_18)
+         {
+         case 0:
+-            offset = { 18, 0 };
++            offset.x = 18;
++            offset.y = 0;
+             switch_left = true;
+             break;
+         case 1:
+-            offset = { 12, 10 };
++            offset.x = 12;
++            offset.y = 10;
+             switch_left = true;
+             break;
+         case 2:
+-            offset = { 0, 18 };
++            offset.x = 0;
++            offset.y = 18;
+             break;
+         case 3:
+-            offset = { 12, -12 };
++            offset.x = 12;
++            offset.y = -12;
+             break;
+         case 4:
+-            offset = { 18, 0 };
++            offset.x = 18;
++            offset.y = 0;
+             break;
+         case 5:
+-            offset = { 12, 10 };
++            offset.x = 12;
++            offset.y = 10;
+             break;
+         case 6:
+-            offset = { 0, 18 };
++            offset.x = 0;
++            offset.y = 18;
+             switch_left = true;
+             break;
+         case 7:
+-            offset = { 12, -12 };
++            offset.x = 12;
++            offset.y = -12;
+             switch_left = true;
+             break;
+         }
+-        const char* from = switch_left ? "D_WALK_HOLDHAND_LEFT" : "D_WALK_HOLDHAND_RIGHT";
+-        const char* to = switch_left ? "D_WALK_HOLDHAND_RIGHT" : "D_WALK_HOLDHAND_LEFT";
+-        if (std::strcmp(current_animation_2b9, from) == 0)
++        if (switch_left)
++        {
++            if (std::strcmp(current_animation_2b9, "D_WALK_HOLDHAND_LEFT") == 0)
++            {
++                Unknown28("D_WALK_HOLDHAND_RIGHT", 0, -1, 1, 0);
++                variable_world->FindObject(word_32c)->Unknown28("D_WALK_HOLDHAND_LEFT", 0, -1, 1, 0);
++            }
++        }
++        else if (std::strcmp(current_animation_2b9, "D_WALK_HOLDHAND_RIGHT") == 0)
+         {
+-            Unknown28(to, 0, -1, 1, 0);
+-            variable_world->FindObject(word_32c)->Unknown28(from, 0, -1, 1, 0);
++            Unknown28("D_WALK_HOLDHAND_LEFT", 0, -1, 1, 0);
++            variable_world->FindObject(word_32c)->Unknown28("D_WALK_HOLDHAND_RIGHT", 0, -1, 1, 0);
+         }
+     }
+-    ScreenWorldPosition position = { position_30.x + offset.x, position_30.y + offset.y, position_30.z };
++    ScreenWorldPosition position;
++    position.x = offset.x + position_30.x;
++    position.y = offset.y + position_30.y;
++    position.z = position_30.z;
+     variable_world->FindObject(word_32c)->SetWorldPosition(&position);
+ }

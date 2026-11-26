@@ -1,0 +1,459 @@
+diff --git a/src/startup_game_destructor.cpp b/src/startup_game_destructor.cpp
+index eee295125e3a4aefa9731f95c04cd22e35465754..c295cd7535cc1ade4da0b370bd47f51daf6fa713 100644
+--- a/src/startup_game_destructor.cpp
++++ b/src/startup_game_destructor.cpp
+@@ -10,20 +10,45 @@
+ #include "startup_screen_dialog_resource.h"
+ #include "window_audio.h"
+ #include "startup_game_update_pair.h"
+-#include "copy_trivial.h"
+ 
+ #include <new>
+ #include <stdio.h>
+ 
+-// FUNCTION: BEACHLIFE 0x004e2e00
+-ScreenRequestGamePrefix::~ScreenRequestGamePrefix() noexcept(false)
++// Retail expands SaveScenarioProgress (0x004e4100) and ClearSaveRecords
++// (0x004e4c80) here; the scenario names are released between them.
++static inline void SaveProgress(ScreenRequestGamePrefix* game)
++{
++    FILE* file = fopen(startup_game_state_path, "wb");
++    if (file)
++    {
++        fwrite(game->words_70, 0x30, 1, file);
++        fclose(file);
++    }
++}
++
++// The tree's raw ranges stand for the matched STLport vectors; clear() keeps the storage.
++static inline void ClearNames(ScreenRequestGamePrefix* game)
++{
++    for (unsigned int i = 0; i < static_cast<unsigned int>(game->scenario_names.end - game->scenario_names.begin); ++i)
++        ::operator delete(game->scenario_names.begin[i]);
++    game->scenario_names.end = game->scenario_names.begin;
++}
++
++static inline void ClearSaves(ScreenRequestGamePrefix* game)
+ {
+-    FILE* progress = fopen(startup_game_state_path, "wb");
+-    if (progress)
++    for (GameSaveRecord** record = game->saves.begin; record != game->saves.end; ++record)
+     {
+-        fwrite(words_70, 48, 1, progress);
+-        fclose(progress);
++        if (*record)
++            ::operator delete(*record);
+     }
++    game->saves.Erase(game->saves.begin, game->saves.end);
++    game->save_info_enabled = 0;
++}
++
++// FUNCTION: BEACHLIFE 0x004e2e00
++ScreenRequestGamePrefix::~ScreenRequestGamePrefix() noexcept(false)
++{
++    SaveProgress(this);
+ 
+     // Each direct ordinary destructor is followed by a separate scalar release.
+     // A throwing destructor therefore does not release its captured allocation.
+@@ -121,28 +146,8 @@ ScreenRequestGamePrefix::~ScreenRequestGamePrefix() noexcept(false)
+         ::operator delete(old_resources);
+     }
+ 
+-    unsigned int index = 0;
+-    if (scenario_names.end - scenario_names.begin != 0)
+-    {
+-        do
+-        {
+-            ::operator delete(scenario_names.begin[index]);
+-            ++index;
+-        } while (index < static_cast<unsigned int>(scenario_names.end - scenario_names.begin));
+-    }
+-    scenario_names.end = static_cast<unsigned short**>(
+-        CopyTrivial(scenario_names.end, scenario_names.end, scenario_names.begin));
+-
+-    GameSaveRecord** record = saves.begin;
+-    while (record != saves.end)
+-    {
+-        GameSaveRecord* saved = *record;
+-        if (saved)
+-            ::operator delete(saved);
+-        ++record;
+-    }
+-    saves.Erase(saves.begin, saves.end);
+-    save_info_enabled = 0;
++    ClearNames(this);
++    ClearSaves(this);
+ 
+     // Genuine members then release saves and scenario backing storage in that
+     // order; the first registration base unconditionally clears the Game slot.
+diff --git a/src/startup_screen_list_box_destructor.cpp b/src/startup_screen_list_box_destructor.cpp
+index 81d7cc66a8c411f58c58bf5ad99fe3680fed82ea..a74d43e8dbbaf1df54836ab0ffc208c09e1a3dd3 100644
+--- a/src/startup_screen_list_box_destructor.cpp
++++ b/src/startup_screen_list_box_destructor.cpp
+@@ -1,4 +1,3 @@
+-#include "copy_trivial.h"
+ #include "startup_screen_list_box.h"
+ #include "startup_screen_list_box_entry.h"
+ 
+@@ -6,40 +5,44 @@
+ #include <stddef.h>
+ #include <string.h>
+ 
+-// FUNCTION: BEACHLIFE 0x004c4090
+-ScreenListBoxPrefix::~ScreenListBoxPrefix()
++static inline void DeleteRow(ScreenListBoxEntry* row)
+ {
+-    ::operator delete(name_54);
++    if (row)
++        delete row;
++}
++
++static inline void DeleteRows(ScreenListBoxEntry** first, ScreenListBoxEntry** last)
++{
++    for (; first != last; ++first)
++        DeleteRow(*first);
++}
++
++static inline void ResetTop(ScreenListBoxPrefix* box)
++{
++    box->word_68 = 0;
++}
+ 
+-    ScreenListBoxEntry** current = entries.begin;
+-    ScreenListBoxEntry** finish = entries.end;
+-    while (current != finish)
+-    {
+-        ScreenListBoxEntry* entry = *current;
+-        if (entry != 0)
+-        {
+-            entry->~ScreenListBoxEntry();
+-            ::operator delete(entry);
+-        }
+-        ++current;
+-    }
+-    entries.end = static_cast<ScreenListBoxEntry**>(CopyTrivial(entries.end, entries.end, entries.begin));
+-    word_68 = 0;
+-    word_64 = 0;
+-    word_88 = 0;
++static inline void ResetSelected(ScreenListBoxPrefix* box)
++{
++    box->word_64 = 0;
++}
+ 
+-    int* last = selection.end;
+-    int* first = last;
+-    int* destination = selection.begin;
+-    // The original inline erase retains this unreachable memmove arm.
+-    if (first != last)
+-    {
+-        ptrdiff_t count = last - first;
+-        memmove(destination, first, static_cast<size_t>(count) * sizeof(unsigned int));
+-        destination += count;
+-    }
+-    selection.end = destination;
++static inline void ResetHighlight(ScreenListBoxPrefix* box)
++{
++    box->word_88 = 0;
++}
+ 
++// FUNCTION: BEACHLIFE 0x004c4090
++ScreenListBoxPrefix::~ScreenListBoxPrefix()
++{
++    ::operator delete(name_54);
++    DeleteRows(entries.begin, entries.end);
++    // The tree's raw ranges stand for the matched STLport vectors; clear() keeps the storage.
++    entries.end = entries.begin;
++    ResetTop(this);
++    ResetSelected(this);
++    ResetHighlight(this);
++    selection.end = selection.begin;
+     delete owned_item_8c;
+     // Real selection, entries and ScreenItem destructors follow automatically.
+ }
+diff --git a/src/startup_screen_manager_ticker.cpp b/src/startup_screen_manager_ticker.cpp
+index 2da115ed21b68b0f7ae6b5989695b2c155c16fba..b60f1ca6e79d6253615be77bbf28949b0e129283 100644
+--- a/src/startup_screen_manager_ticker.cpp
++++ b/src/startup_screen_manager_ticker.cpp
+@@ -7,6 +7,9 @@
+ 
+ #include <new>
+ 
++// GLOBAL: BEACHLIFE 0x004f468c
++extern const float ticker_message_volume = 0.5f;
++
+ // FUNCTION: BEACHLIFE 0x004af380
+ void ScreenManager::ShowTickerMessage(const unsigned short* text, int mode)
+ {
+@@ -15,16 +18,20 @@ void ScreenManager::ShowTickerMessage(const unsigned short* text, int mode)
+         delete ticker_item_d0;
+         ticker_item_d0 = 0;
+     }
++    int font_number = 0;
++    ScreenFontRenderer* font = fonts_2c[font_number];
+     ticker_repetitions_cc = mode;
+     ticker_enabled_d4 = 1;
+     int left = ticker_rectangle_d8.right - 1;
+-    unsigned int width = fonts_2c[0]->MeasureText(text);
+-    ScreenRectangle bounds = {
+-        left, ticker_rectangle_d8.top, static_cast<int>(width + left + 1), ticker_rectangle_d8.bottom
+-    };
+-    int font = renderer->width < 800 ? 3 : 0;
+-    ticker_item_d0 = new (std::nothrow) ScreenTextItem(bounds, text, font, 0x2a0fb2, 2);
+-    window_audio_state->PlaySoundAtLevel("NewMessage", 0.5f, 1, 0.0f);
++    ScreenRectangle bounds;
++    bounds.left = left;
++    bounds.right = font->MeasureText(text) + left + 1;
++    bounds.top = ticker_rectangle_d8.top;
++    bounds.bottom = ticker_rectangle_d8.bottom;
++    int size = renderer->width < 800 ? 3 : 0;
++    // VC6 operator new returns null on failure; the host keeps that with nothrow.
++    ticker_item_d0 = new (std::nothrow) ScreenTextItem(bounds, text, size, 0x2a0fb2, 2);
++    window_audio_state->PlaySoundAtLevel("NewMessage", ticker_message_volume, 1, 0.0f);
+ }
+ 
+ // FUNCTION: BEACHLIFE 0x004af490
+diff --git a/src/startup_screen_overlay_state.cpp b/src/startup_screen_overlay_state.cpp
+index d2de02fbccef9b58629c9ea9a9c8519aed847a11..6d3c31fc566746c7c50c5a96cf2f7f5c305c7f3a 100644
+--- a/src/startup_screen_overlay_state.cpp
++++ b/src/startup_screen_overlay_state.cpp
+@@ -5,27 +5,25 @@
+ // FUNCTION: BEACHLIFE 0x004b04b0
+ void ScreenManager::UpdateOverlayState()
+ {
+-    if (!byte_f8 || !byte_f9)
++    if (byte_f8 && byte_f9)
+     {
+-        return;
++        ScreenMapPosition view(overlay_map->view_x_e4, overlay_map->view_y_e8);
++        view.x -= static_cast<int>(overlay_margin_x);
++        view.y -= static_cast<int>(overlay_margin_y);
++        float width = word_fc->GetRectangle().right - word_fc->GetRectangle().left;
++        // Retail keeps the height and the map height on the x87 stack and truncates the unrounded
++        // quotient products (fdivr; fmul; _ftol at 0x004b05af, fdiv; fmul; _ftol at 0x004b05e3).
++        long double height = word_fc->GetRectangle().bottom - word_fc->GetRectangle().top;
++        float map_width = overlay_map->map_width_cc - 2 * overlay_margin_x;
++        long double map_height = overlay_map->map_height_d0 - 2 * static_cast<long double>(overlay_margin_y);
++        int top = static_cast<int>(view.y / map_height * height);
++        top += word_fc->GetRectangle().top;
++        int left = word_fc->GetRectangle().left + static_cast<int>(view.x / static_cast<long double>(map_width) * width);
++        int dy = top - detail_rectangle_108.top;
++        int dx = left - detail_rectangle_108.left;
++        detail_rectangle_108.left += dx;
++        detail_rectangle_108.top += dy;
++        detail_rectangle_108.right += dx;
++        detail_rectangle_108.bottom += dy;
+     }
+-
+-    // Follow the map view: place the detail rectangle's corner at the view
+-    // position and shift the whole rectangle there.
+-    float x = overlay_map->view_x_e4;
+-    float y = overlay_map->view_y_e8;
+-    x -= static_cast<int>(overlay_margin_x);
+-    y -= static_cast<int>(overlay_margin_y);
+-    float width = word_fc->GetRectangle().right - word_fc->GetRectangle().left;
+-    float height = word_fc->GetRectangle().bottom - word_fc->GetRectangle().top;
+-    float map_width = overlay_map->map_width_cc - 2 * overlay_margin_x;
+-    float map_height = overlay_map->map_height_d0 - 2 * overlay_margin_y;
+-    int top = static_cast<int>(y / map_height * height) + word_fc->GetRectangle().top;
+-    int left = word_fc->GetRectangle().left + static_cast<int>(x / map_width * width);
+-    int dx = left - detail_rectangle_108.left;
+-    int dy = top - detail_rectangle_108.top;
+-    detail_rectangle_108.left += dx;
+-    detail_rectangle_108.top += dy;
+-    detail_rectangle_108.right += dx;
+-    detail_rectangle_108.bottom += dy;
+ }
+diff --git a/src/startup_screen_placement_constructor.cpp b/src/startup_screen_placement_constructor.cpp
+index 679d2123a4e114eced3531309cd64ba7a7f22b6c..eb39dadea6f7947602890924e32136e624943b15 100644
+--- a/src/startup_screen_placement_constructor.cpp
++++ b/src/startup_screen_placement_constructor.cpp
+@@ -9,6 +9,43 @@
+ #include <stddef.h>
+ #include <string.h>
+ 
++// The construction resets run through small inline helpers (matched shape); the tree's
++// own saved list and music range stand for the matched STLport containers.
++static inline void ResetOptions(ScreenPlacementStore* store)
++{
++    CircularListNode* node = store->saved.head->next;
++    while (node != store->saved.head)
++    {
++        CircularListNode* released = node;
++        node = node->next;
++        if (released != 0)
++        {
++            ReturnPool(released, sizeof(SavedScreenPlacementNode));
++        }
++    }
++    store->saved.head->next = store->saved.head;
++    store->saved.head->previous = store->saved.head;
++    // The actual range erase receives begin/end and therefore only
++    // publishes begin as the new end; no trailing elements exist.
++    store->music_end_1c = store->music_begin_18;
++    store->sound_volume_08 = 0.5f;  // screen_sound_volume_default, 0x004f4d48.
++    store->music_volume_0c = 0.75f; // screen_music_volume_default, 0x004f4d4c.
++    store->flag_14 = 1;
++}
++
++static inline void ReleaseMusic(ScreenPlacementStore* store)
++{
++    VisitPointerRange(store->music_begin_18, store->music_end_1c, ReleasePlacementMusicEntry);
++    ClearPointerRange(store->music_begin_18, store->music_end_1c);
++}
++
++static inline void ResetMusic(ScreenPlacementStore* store)
++{
++    ReleaseMusic(store);
++    for (unsigned int i = 0; i < 12; ++i)
++        store->AddMusicEntry(screen_placement_default_music_directory, screen_placement_default_music[i].name, screen_placement_default_music[i].word_08, screen_placement_default_music[i].word_0c);
++}
++
+ // FUNCTION: BEACHLIFE 0x004e6330
+ ScreenPlacementStore::ScreenPlacementStore()
+ {
+@@ -27,36 +64,8 @@ ScreenPlacementStore::ScreenPlacementStore()
+         saved.head = sentinel;
+         try
+         {
+-            CircularListNode* node = saved.head->next;
+-            while (node != saved.head)
+-            {
+-                CircularListNode* released = node;
+-                node = node->next;
+-                if (released != 0)
+-                {
+-                    ReturnPool(released, sizeof(SavedScreenPlacementNode));
+-                }
+-            }
+-            saved.head->next = saved.head;
+-            saved.head->previous = saved.head;
+-
+-            // The actual range erase receives begin/end and therefore only
+-            // publishes begin as the new end; no trailing elements exist.
+-            music_end_1c = music_begin_18;
+-            sound_volume_08 = 0.5f;
+-            music_volume_0c = 0.75f;
+-            flag_14 = 1;
+-
+-            VisitPointerRange(music_begin_18, music_end_1c, ReleasePlacementMusicEntry);
+-            ClearPointerRange(music_begin_18, music_end_1c);
+-
+-            for (unsigned int i = 0; i < 12; ++i)
+-            {
+-                unsigned int word_0c = screen_placement_default_music[i].word_0c;
+-                unsigned int word_08 = screen_placement_default_music[i].word_08;
+-                const char* name = screen_placement_default_music[i].name;
+-                AddMusicEntry(screen_placement_default_music_directory, name, word_08, word_0c);
+-            }
++            ResetOptions(this);
++            ResetMusic(this);
+ 
+             music_enabled_24 = 1;
+             provider_name_10 = static_cast<char*>(::operator new(strlen(screen_placement_default_provider) + 1));
+@@ -69,11 +78,8 @@ ScreenPlacementStore::ScreenPlacementStore()
+             flag_36 = 1;
+             flag_37 = 0;
+             menu_script_variant_3c = 0;
+-
+-            unsigned int required = GetCurrentDirectoryA(0, 0);
+-            unsigned int length = static_cast<unsigned int>(strlen(screen_placement_preferences_filename));
+-            length += static_cast<unsigned int>(strlen("\\"));
+-            length += required;
++            unsigned int length = GetCurrentDirectoryA(0, 0);
++            length = static_cast<unsigned int>(strlen(screen_placement_preferences_filename) + strlen("\\") + length);
+             preferences_path_04 = static_cast<char*>(::operator new(length + 1u));
+             GetCurrentDirectoryA(length, preferences_path_04);
+             strcat(preferences_path_04, "\\");
+diff --git a/src/window_sound_bank_load_index.cpp b/src/window_sound_bank_load_index.cpp
+index 3873075c37214dd0c4b378449c6a3e9843b1dcd9..7e02a31d8303d0fcf2664f74abe0239a41111e38 100644
+--- a/src/window_sound_bank_load_index.cpp
++++ b/src/window_sound_bank_load_index.cpp
+@@ -3,53 +3,57 @@
+ 
+ #include <new>
+ 
++static inline void InsertSound(WindowSoundTable* table, const char* name, WindowSoundRecord* value)
++{
++    WindowSoundTable* view = table;
++    unsigned int hash = SoundNameHash(name);
++    int count = table->bucket_count;
++    int first = static_cast<int>(hash % static_cast<unsigned int>(count));
++    int index = first;
++    while (view->buckets[index].unavailable == 0)
++    {
++        if (++index >= count)
++            index = 0;
++        if (index == first)
++            return;
++    }
++    WindowSoundBucket* bucket = view->buckets + index;
++    bucket->key = name;
++    view->buckets[index].value = value;
++    table->buckets[index].unavailable = 0;
++    ++table->word_14;
++}
++
+ // FUNCTION: BEACHLIFE 0x004d2140
+ void WindowSoundBank::LoadIndex(const char* header_path, const char* bank_path)
+ {
+     stream_18 = fopen(bank_path, "rb");
+     FILE* header = fopen(header_path, "rb");
+     int offset;
+-    unsigned int bytes;
+-    while (fread(&offset, 1, 4, header) == 4)
++    while (1)
+     {
+-        WindowSoundRecord* record = new WindowSoundRecord;
+-        if (record != 0)
++        if (fread(&offset, 1, 4, header) != 4)
++            break;
++        // VC6 operator new returns null on failure; the host keeps that with nothrow.
++        void* memory = ::operator new(sizeof(WindowSoundRecord), std::nothrow);
++        WindowSoundRecord* record = 0;
++        if (memory != 0)
+         {
+-            record->bytes_20 = 0;
+-            record->offset_24 = 0;
+-            record->cached_28 = 0;
+-            record->references_30 = 0;
++            static_cast<WindowSoundRecord*>(memory)->bytes_20 = 0;
++            static_cast<WindowSoundRecord*>(memory)->offset_24 = 0;
++            static_cast<WindowSoundRecord*>(memory)->cached_28 = 0;
++            static_cast<WindowSoundRecord*>(memory)->references_30 = 0;
++            record = static_cast<WindowSoundRecord*>(memory);
+         }
+ 
+         record->offset_24 = offset;
++        unsigned int bytes;
+         fread(&bytes, 1, 4, header);
+         record->bytes_20 = bytes;
+         fread(record->name, 1, 32, header);
+ 
+         ScreenTextKey key(record->name);
+-        unsigned int hash = SoundNameHash(key.text);
+-        int count = bucket_count;
+-        int first = static_cast<int>(hash % static_cast<unsigned int>(count));
+-        WindowSoundBucket* table = buckets;
+-        int index = first;
+-        bool available = table[index].unavailable != 0;
+-        while (!available)
+-        {
+-            ++index;
+-            if (index >= count)
+-                index = 0;
+-            if (index == first)
+-                break;
+-            available = table[index].unavailable != 0;
+-        }
+-
+-        if (available)
+-        {
+-            table[index].key = key.text;
+-            buckets[index].value = record;
+-            buckets[index].unavailable = 0;
+-            ++word_14;
+-        }
++        InsertSound(this, key.text, record);
+     }
+     fclose(header);
+ }

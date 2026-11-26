@@ -1,45 +1,8 @@
 diff --git a/src/startup_world_guest_social_actions.cpp b/src/startup_world_guest_social_actions.cpp
-index ab2f5a3..4893ebc 100644
+index 60d6128..05dc37a 100644
 --- a/src/startup_world_guest_social_actions.cpp
 +++ b/src/startup_world_guest_social_actions.cpp
-@@ -8,13 +8,13 @@ static bool GuestLandFlags(unsigned int flags)
-     return ((flags & 0x10000080) && !(flags & 0x8000)) || ((flags & 2) && !(flags & 0x8010));
- }
- 
--static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
-+static bool GuestAlcoholWalkTile(WorldGuestEntity* guest, ScreenPoint* result)
- {
-     unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
-     unsigned int count;
-     VariableEntity** buildings = variable_world->ByType(2, &count);
-     float nearest = 50000.0f;
--    unsigned int selected = 0;
-+    unsigned int selected = count;
-     for (unsigned int i = 0; i < count; ++i)
-     {
-         if (!buildings[i]->FlagAt00460370())
-@@ -38,6 +38,8 @@ static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
-             }
-         }
-     }
-+    if (selected == count)
-+        return false;
-     ScreenPoint tile;
-     for (;;)
-     {
-@@ -47,7 +49,10 @@ static ScreenPoint GuestAlcoholWalkTile(WorldGuestEntity* guest)
-         tile.y = y + std::rand() % 15 - 7;
-         unsigned int flags = screen_terrain_grid->cells_0c[screen_terrain_grid->TileIndex(tile.x, tile.y)].flags_48;
-         if (GuestLandFlags(flags) && tile.x < 128 && tile.x >= 0 && tile.y < 128 && tile.y >= 0)
--            return tile;
-+        {
-+            *result = tile;
-+            return true;
-+        }
-     }
- }
- 
-@@ -71,6 +76,7 @@ void WorldGuestEntity::PerformAction15()
+@@ -28,6 +28,7 @@ void WorldGuestEntity::PerformAction15()
          unsigned int alcohol = variable_catalog->FindFeatureType("ALCOHOL");
          unsigned int count;
          VariableEntity** buildings = variable_world->ByType(2, &count);
@@ -47,7 +10,7 @@ index ab2f5a3..4893ebc 100644
          for (unsigned int i = 0; i < count; ++i)
          {
              if (buildings[i]->FlagAt00460370())
-@@ -91,11 +97,18 @@ void WorldGuestEntity::PerformAction15()
+@@ -48,11 +49,18 @@ void WorldGuestEntity::PerformAction15()
                          {
                              nearest.distance = static_cast<float>(distance);
                              nearest.index = i;
@@ -66,15 +29,30 @@ index ab2f5a3..4893ebc 100644
          int x = buildings[nearest.index]->TilePosition().x + std::rand() % 15 - 7;
          int y = buildings[nearest.index]->TilePosition().y + std::rand() % 15 - 7;
          unsigned int flags = GridFlags(screen_terrain_grid, ScreenPoint(x, y));
-@@ -197,9 +210,9 @@ void WorldGuestEntity::PerformAction21()
+@@ -167,6 +175,7 @@ void WorldGuestEntity::PerformAction21()
+         nearest.index = 0;
+         unsigned int count;
+         VariableEntity** buildings = variable_world->ByType(2, &count);
++        bool found = false;
+         for (unsigned int i = 0; i < count; ++i)
+         {
+             if (buildings[i]->FlagAt00460370())
+@@ -187,11 +196,18 @@ void WorldGuestEntity::PerformAction21()
+                         {
+                             nearest.distance = static_cast<float>(distance);
+                             nearest.index = i;
++                            found = true;
+                         }
+                     }
+                 }
              }
          }
-     }
--    if (weather_values_16c[20] > 0.0f)
-+    ScreenPoint target;
-+    if (weather_values_16c[20] > 0.0f && GuestAlcoholWalkTile(this, &target))
-     {
--        ScreenPoint target = GuestAlcoholWalkTile(this);
-         SendGuestWalk(id_28, 8, screen_terrain_grid->TilePosition(target, 4));
-     }
-     else
++        if (!found)
++        {
++            ScreenModeCommand command(id_28, id_28, 3, 0, 12);
++            screen_mode_commands->QueueCommand(&command);
++            return;
++        }
+         int x = buildings[nearest.index]->TilePosition().x + std::rand() % 15 - 7;
+         int y = buildings[nearest.index]->TilePosition().y + std::rand() % 15 - 7;
+         unsigned int flags = GridFlags(screen_terrain_grid, ScreenPoint(x, y));

@@ -1,0 +1,409 @@
+diff --git a/src/startup_building_footprint.cpp b/src/startup_building_footprint.cpp
+index c49ba9b30031776109e119aca7e18a4531361589..f3a4990e044ae781ef5d81c7aea0316fc895ed9a 100644
+--- a/src/startup_building_footprint.cpp
++++ b/src/startup_building_footprint.cpp
+@@ -165,33 +165,39 @@ void VariableBuildingStatus::UpdateConstructionFootprint(unsigned int id)
+     unsigned int search_id = id;
+     CircularListIterator found = FindPointerListRecord(first, last, [search_id](CircularListNode* node)
+         { return static_cast<BuildingStatusNode*>(node)->entry->id_00 == search_id; });
+-    BuildingStatusEntry* task = found.node == head_00 ? 0 : static_cast<BuildingStatusNode*>(found.node)->entry;
+-    if (!building->footprint_e14 || !task || !task->count_0c)
+-        return;
+-    if (!(static_cast<long double>(window_deactivation_state->time_158) - entity->placed_time_108 > 0.1f))
+-        return;
+-    --task->count_0c;
+-    int* item = task->values_08 + task->count_0c * 4;
+-    ScreenSceneryPlacement placement;
+-    placement.tile = { item[1], item[2] };
+-    placement.enabled = 1;
+-    placement.word_4c = -2;
+-    if (BuildingFootprintCell(screen_terrain_grid, placement.tile)->flags_48 & 3)
+-        return;
+-    char number[20];
+-    _itoa(id, number, 20);
+-    std::strcpy(placement.model, "HOARDING_");
+-    std::strcat(placement.model, number);
+-    std::strcpy(placement.name, "singlecell");
+-    placement.rotation = static_cast<unsigned char>(task->values_08[task->count_0c * 4]);
+-    ScreenModeCommand command;
+-    command.words[0] = -2;
+-    command.words[1] = -2;
+-    command.words[2] = 0;
+-    command.words[3] = 0;
+-    command.words[4] = 1;
+-    screen_mode_commands->QueuePlacement(&command, &placement);
+-    entity->placed_time_108 = window_deactivation_state->time_158;
++    BuildingStatusEntry* task = found.node != head_00 ? static_cast<BuildingStatusNode*>(found.node)->entry : 0;
++    if (building->footprint_e14 && task && task->count_0c)
++    {
++        float now = window_deactivation_state->time_158;
++        // Retail subtracts on the x87 stack and compares the unrounded difference (fsub; fcomp).
++        if (static_cast<long double>(now) - entity->placed_time_108 > 0.1f)
++        {
++            --task->count_0c;
++            ScreenSceneryPlacement placement;
++            placement.word_4c = -2;
++            placement.enabled = 1;
++            placement.tile.x = task->values_08[task->count_0c * 4 + 1];
++            placement.tile.y = task->values_08[task->count_0c * 4 + 2];
++            unsigned int flags = BuildingFootprintCell(screen_terrain_grid, placement.tile)->flags_48;
++            if (flags & 1 || flags & 2)
++                return;
++            char number[20];
++            _itoa(id, number, 20);
++            std::strcpy(placement.model, "HOARDING_");
++            std::strcat(placement.model, number);
++            std::strcpy(placement.name, "singlecell");
++            placement.rotation = static_cast<unsigned char>(task->values_08[task->count_0c * 4]);
++            ScreenModeCommand command;
++            command.words[0] = -2;
++            command.words[1] = -2;
++            command.words[2] = 0;
++            command.words[3] = 0;
++            command.words[4] = 1;
++            screen_mode_commands->QueuePlacement(&command, &placement);
++            float time = window_deactivation_state->time_158;
++            entity->placed_time_108 = time;
++        }
++    }
+ }
+ 
+ static inline void ReserveFootprintTile(const ScreenPoint& tile)
+diff --git a/src/startup_building_footprint_restore.cpp b/src/startup_building_footprint_restore.cpp
+index 19bea100d8b94ddfa398102eb8a7ce7bfb4bda3a..e730bcd45bc86f26dc6bc388816c887ad573d7ab 100644
+--- a/src/startup_building_footprint_restore.cpp
++++ b/src/startup_building_footprint_restore.cpp
+@@ -8,42 +8,53 @@ void VariableBuildingStatus::PrepareBuilderLocations(unsigned int id)
+ {
+     WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
+     VariableBuilding* building = entity->building_60;
+-    CircularListIterator first;
+-    first.node = head_00->next;
+-    CircularListIterator last;
+-    last.node = head_00;
++    const VariableBuilding* definition = building;
++    CircularListIterator first_node;
++    first_node.node = head_00->next;
++    CircularListIterator last_node;
++    last_node.node = head_00;
+     unsigned int search_id = id;
+-    CircularListIterator found = FindPointerListRecord(first, last, [search_id](CircularListNode* node)
++    CircularListIterator found = FindPointerListRecord(first_node, last_node, [search_id](CircularListNode* node)
+         { return static_cast<BuildingStatusNode*>(node)->entry->id_00 == search_id; });
+-    BuildingStatusEntry* task = found.node == head_00 ? 0 : static_cast<BuildingStatusNode*>(found.node)->entry;
++    BuildingStatusEntry* task = found.node != head_00 ? static_cast<BuildingStatusNode*>(found.node)->entry : 0;
+     ScreenPoint row_start = entity->TilePosition();
++    ScreenPoint tile = row_start;
+     unsigned int rotation = entity->keyline_state_44->word_18;
+     unsigned int columns = building->footprint_x_1d4 + 2;
+     unsigned int rows = building->footprint_y_1d8 + 2;
+-    bool odd = (rotation & 1) != 0;
+-    if (odd)
++    unsigned int odd = rotation & 1;
++    if (odd == 1)
+     {
+-        unsigned int temporary = columns;
+-        columns = rows;
+-        rows = temporary;
++        std::swap(columns, rows);
+     }
+     int column_direction;
+     int row_direction;
+-    screen_terrain_grid->BuildingBounds(row_start, rows, columns, &column_direction, &row_direction, rotation);
+-    ScreenPoint tile = row_start;
+     unsigned int count = 0;
++    screen_terrain_grid->BuildingBounds(row_start, rows, columns, &column_direction, &row_direction, rotation);
++    tile = row_start;
+     for (unsigned int row = 0; row < rows; ++row)
+     {
+         for (unsigned int column = 0; column < columns; ++column)
+         {
+-            unsigned int index = odd ? column * 25 + row : row * 25 + column;
+-            unsigned int flags = building->footprint_e14[0x9cc / 4 + index];
++            unsigned int first;
++            unsigned int second;
++            if ((rotation & 1) == 0)
++            {
++                first = row;
++                second = column;
++            }
++            else
++            {
++                first = column;
++                second = row;
++            }
++            unsigned int flags = definition->footprint_e14[0x9cc / 4 + first * 25 + second];
+             if (flags != 0x80000000 && flags != 0 && !(flags & 0x40000800))
+             {
+                 ScreenWorldPosition position = screen_terrain_grid->TilePosition(tile, 4);
+                 task->details_2c[count]->word_00 = static_cast<int>(position.x);
+                 task->details_2c[count]->word_04 = static_cast<int>(position.y);
+-                unsigned int direction = building->footprint_e14[0x9cc / 4 + index];
++                unsigned int direction = definition->footprint_e14[0x9cc / 4 + first * 25 + second];
+                 if (flags & 0x80000000)
+                     direction &= 0x7fffffff;
+                 task->details_2c[count]->word_08 = direction;
+@@ -51,7 +62,8 @@ void VariableBuildingStatus::PrepareBuilderLocations(unsigned int id)
+             }
+             screen_terrain_grid->Step(tile, column_direction, &tile);
+         }
+-        tile = row_start;
++        tile.x = row_start.x;
++        tile.y = row_start.y;
+         screen_terrain_grid->Step(tile, row_direction, &tile);
+         row_start = tile;
+     }
+diff --git a/src/startup_world_building_destructor.cpp b/src/startup_world_building_destructor.cpp
+index 093f6b831e995b5521397ded03f8b5f85ef232f9..0fe4a42b91a96102632d354f09f769dedcc2c3a0 100644
+--- a/src/startup_world_building_destructor.cpp
++++ b/src/startup_world_building_destructor.cpp
+@@ -2,6 +2,38 @@
+ #include "startup_animation_sound.h"
+ #include <new>
+ 
++static inline void DeleteThought(VariableThought* thought)
++{
++    if (thought)
++    {
++        if (thought->data_00)
++            ::operator delete(thought->data_00);
++        delete thought;
++    }
++}
++
++// Retail's deque for_each + clear; the tree walks its own deque blocks.
++static inline void ReleaseThoughts(WorldBuildingEntity* owner)
++{
++    for (auto it = owner->thoughts_428.begin; it.current != owner->thoughts_428.end.current;)
++    {
++        DeleteThought(*it.current);
++        if (++it.current == it.last)
++        {
++            ++it.node;
++            it.first = *it.node;
++            it.last = it.first + 32;
++            it.current = it.first;
++        }
++    }
++    auto& deque = owner->thoughts_428;
++    for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
++        DeallocateImageListPointerSlots(*node, 32);
++    if (deque.begin.node != deque.end.node)
++        DeallocateImageListPointerSlots(deque.end.first, 32);
++    deque.end = deque.begin;
++}
++
+ // FUNCTION: BEACHLIFE 0x00456d00
+ WorldBuildingEntity::~WorldBuildingEntity() noexcept(false)
+ {
+@@ -13,31 +45,7 @@ WorldBuildingEntity::~WorldBuildingEntity() noexcept(false)
+         delete events_170;
+         if (flag_188)
+             screen_dialog_resources->Release(resource_198);
+-        for (auto it = thoughts_428.begin; it.current != thoughts_428.end.current;)
+-        {
+-            VariableThought* thought = *it.current;
+-            if (thought)
+-            {
+-                if (thought->data_00)
+-                    ::operator delete(thought->data_00);
+-                delete thought;
+-            }
+-            if (++it.current == it.last)
+-            {
+-                ++it.node;
+-                it.first = *it.node;
+-                it.last = it.first + 32;
+-                it.current = it.first;
+-            }
+-        }
+-        {
+-            auto& deque = thoughts_428;
+-            for (auto node = deque.begin.node + 1; node < deque.end.node; ++node)
+-                DeallocateImageListPointerSlots(*node, 32);
+-            if (deque.begin.node != deque.end.node)
+-                DeallocateImageListPointerSlots(deque.end.first, 32);
+-            deque.end = deque.begin;
+-        }
++        ReleaseThoughts(this);
+         screen_dialog_resources->Release(resource_164);
+         screen_dialog_resources->Release(resource_168);
+         animation_sounds->StopObject(id_28);
+diff --git a/src/startup_world_place_building.cpp b/src/startup_world_place_building.cpp
+index cfc6433afd8ae5555ca7aa327ab0167245692eca..40eae3025fc08cfae6a943941992ba2ce3a01c31 100644
+--- a/src/startup_world_place_building.cpp
++++ b/src/startup_world_place_building.cpp
+@@ -4,15 +4,6 @@
+ #include "startup_screen_overlay_layout.h"
+ #include <cstring>
+ 
+-static ScreenWorldPosition PlacementBuildingOffset(const ScreenBuildingPlacement* placement,
+-    VariableBuilding* definition, short x, short y, OverlayMapPrefix* map)
+-{
+-    ScreenMapPosition offset = { static_cast<float>(x), static_cast<float>(y) };
+-    ScreenMapPosition point = CurrentScreenTerrain()->BuildingOffset(placement->tile, definition->footprint_x_1d4, definition->footprint_y_1d8, offset, placement->rotation);
+-    ScreenWorldPosition position = { point.x, point.y, map->WorldHeightAt(static_cast<int>(point.x), static_cast<int>(point.y)) };
+-    return position;
+-}
+-
+ // FUNCTION: BEACHLIFE 0x004402d0
+ VariableEntity* WindowDeactivationState::PlaceEntity2(const void* data)
+ {
+@@ -22,8 +13,8 @@ VariableEntity* WindowDeactivationState::PlaceEntity2(const void* data)
+     entity->building_60 = definition;
+     entity->SetKind(2);
+     entity->SetMovementMode(0);
+-    ScreenWorldPosition position = terrain_14->TilePosition(placement->tile, 1);
+-    entity->SetWorldPosition(&position);
++    ScreenWorldPosition tile_position = terrain_14->TilePosition(placement->tile, 1);
++    entity->SetWorldPosition(&tile_position);
+     if (placement->rotation & 1)
+     {
+         entity->SetFootprintX(static_cast<unsigned char>(definition->footprint_y_1d8));
+@@ -36,12 +27,38 @@ VariableEntity* WindowDeactivationState::PlaceEntity2(const void* data)
+     }
+     entity->keyline_state_44->SelectVariant(placement->rotation);
+     entity->SetRotation(placement->rotation);
++    ScreenWorldPosition position;
+     if (definition->entrance_x_ca4 || definition->entrance_y_ca6)
+-        entity->SetEntrancePosition(PlacementBuildingOffset(placement, definition, definition->entrance_x_ca4, definition->entrance_y_ca6, map_34));
+-    entity->SetStaffPosition(PlacementBuildingOffset(placement, definition, definition->staff_x_314, definition->staff_y_316, map_34));
++    {
++        ScreenMapPosition entrance;
++        entrance.x = definition->entrance_x_ca4;
++        entrance.y = definition->entrance_y_ca6;
++        const ScreenMapPosition result = CurrentScreenTerrain()->BuildingOffset(placement->tile,
++            definition->footprint_x_1d4,
++            definition->footprint_y_1d8,
++            entrance,
++            placement->rotation);
++        position.x = result.x;
++        position.y = result.y;
++        position.z = map_34->WorldHeightAt(static_cast<int>(position.x), static_cast<int>(position.y));
++        entity->SetEntrancePosition(position);
++    }
++    ScreenMapPosition staff;
++    staff.x = definition->staff_x_314;
++    staff.y = definition->staff_y_316;
++    const ScreenMapPosition result = CurrentScreenTerrain()->BuildingOffset(placement->tile,
++        definition->footprint_x_1d4,
++        definition->footprint_y_1d8,
++        staff,
++        placement->rotation);
++    position.x = result.x;
++    position.y = result.y;
++    position.z = map_34->WorldHeightAt(static_cast<int>(position.x), static_cast<int>(position.y));
++    entity->SetStaffPosition(position);
+     entity->word_35c = definition->power_cf4;
+     for (unsigned int i = 0; i < definition->rows_1f4; ++i)
+     {
++        // Bit copy of the float value; -1.0f (0xbf800000) marks an unset entry.
+         unsigned int value;
+         std::memcpy(&value, &placement->values_4c[i], sizeof(value));
+         if (value != 0xbf800000u)
+@@ -55,7 +72,14 @@ VariableEntity* WindowDeactivationState::PlaceEntity2(const void* data)
+     entity->word_224 = placement->word_68;
+     if (placement->byte_6c)
+         entity->BreakDown();
+-    QueuePlacedEntity(commands_0c, entity, 1);
++    unsigned int id = entity->id_28;
++    ScreenModeCommand command;
++    command.words[0] = -2;
++    command.words[1] = id;
++    command.words[2] = 3;
++    command.words[3] = 0;
++    command.words[4] = 1;
++    commands_0c->QueueCommand(&command);
+     ++word_444;
+     variable_world->SortLastBuilding();
+     return entity;
+diff --git a/src/startup_world_repair_assignments.cpp b/src/startup_world_repair_assignments.cpp
+index 1fb61dab4d635d94c56bf59b7edf0bde9ab20d1d..6f63f9b0f87d3266b7a036527dbe1be9b79f4989 100644
+--- a/src/startup_world_repair_assignments.cpp
++++ b/src/startup_world_repair_assignments.cpp
+@@ -165,40 +165,59 @@ unsigned int WorldRepairManager::FindWateringJob(const ScreenWorldPosition* posi
+ // FUNCTION: BEACHLIFE 0x004367a0
+ unsigned int WorldRepairManager::FindJob(const ScreenWorldPosition* position, unsigned int type, unsigned int* result_type)
+ {
++    unsigned int id;
+     if (type == 3)
+     {
+-        unsigned int id = SelectWateringJob(position, 200);
+-        if (id == static_cast<unsigned int>(-1))
++        id = SelectWateringJob(position, 200);
++        if (id != 0xffffffff)
++        {
++            AddAssignment(id, 1, 3);
++            WorldStaticEntity* watered = variable_world->FindObject(id)->AsStatic();
++            watered->SetRepairAssigned(1);
++            *result_type = 3;
+             return id;
+-        AddAssignment(id, 1, 3);
+-        variable_world->FindObject(id)->AsStatic()->SetRepairAssigned(1);
+-        *result_type = 3;
+-        return id;
++        }
++        return 0xffffffff;
+     }
+     WorldRepairSelection selection;
+-    selection.flags_00[0] = 0;
+-    selection.flags_00[1] = 0;
+-    selection.flags_00[2] = 0;
++    selection.flags_00[0] = selection.flags_00[1] = selection.flags_00[2] = 0;
+     SelectJobs(&selection, position, type);
+-    CircularListNode* node;
+     if (selection.flags_00[0])
+-        node = selection.nodes_04[0];
+-    else if (selection.flags_00[1])
+-        node = selection.nodes_04[1];
+-    else if (selection.flags_00[2])
+-        node = selection.nodes_04[2];
++    {
++        CircularListNode* node = selection.nodes_04[0];
++        WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++        id = entry->id_00;
++        WorldStaticEntity* entity = variable_world->FindObject(id)->AsStatic();
++        AddAssignment(id, 1, entry->word_14);
++        *result_type = entry->word_14;
++        entity->SetRepairAssigned(1);
++        ::operator delete(entry);
++        CircularListIterator erased;
++        erased.node = node;
++        ErasePointerListNode<WorldRepairNode<WorldRepairEntry> >(erased);
++    }
+     else
+-        return static_cast<unsigned int>(-1);
+-    WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
+-    unsigned int id = entry->id_00;
+-    WorldStaticEntity* entity = variable_world->FindObject(id)->AsStatic();
+-    AddAssignment(id, selection.flags_00[0] ? 1 : 0, entry->word_14);
+-    *result_type = entry->word_14;
+-    entity->SetRepairAssigned(1);
+-    ::operator delete(static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry);
+-    CircularListIterator erased;
+-    erased.node = node;
+-    ErasePointerListNode<WorldRepairNode<WorldRepairEntry> >(erased);
++    {
++        CircularListNode* node;
++        if (selection.flags_00[1])
++            node = selection.nodes_04[1];
++        else
++        {
++            node = selection.nodes_04[2];
++            if (!selection.flags_00[2])
++                return 0xffffffff;
++        }
++        WorldRepairEntry* entry = static_cast<WorldRepairNode<WorldRepairEntry>*>(node)->entry;
++        id = entry->id_00;
++        WorldStaticEntity* entity = variable_world->FindObject(id)->AsStatic();
++        AddAssignment(id, 0, entry->word_14);
++        *result_type = entry->word_14;
++        entity->SetRepairAssigned(1);
++        ::operator delete(entry);
++        CircularListIterator erased;
++        erased.node = node;
++        ErasePointerListNode<WorldRepairNode<WorldRepairEntry> >(erased);
++    }
+     return id;
+ }
+ 
