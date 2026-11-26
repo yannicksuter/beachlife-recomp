@@ -1,0 +1,207 @@
+diff --git a/fixtures/game.d/fixture_00468000.cpp b/fixtures/game.d/fixture_00468000.cpp
+new file mode 100644
+index 0000000..b4a3d2d
+--- /dev/null
++++ b/fixtures/game.d/fixture_00468000.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00468000(WorldGuestEntity* item)
++{
++    item->WorldGuestEntity::FindWaterWalkpoints();
++}
+diff --git a/metadata.d/00468000.csv b/metadata.d/00468000.csv
+new file mode 100644
+index 0000000..517f9c4
+--- /dev/null
++++ b/metadata.d/00468000.csv
+@@ -0,0 +1,5 @@
++address,type,size,symbol
++0x00468000,function,2430,?FindWaterWalkpoints@WorldGuestEntity@@QAEPAUScreenWorldPosition@@XZ
++0x00468980,function,1,?DestroyWaterWalkpoints@@YAXXZ
++0x004ee75c,function,18,_atexit
++0x004f33c8,float,4,
+diff --git a/src/match_00468000.cpp b/src/match_00468000.cpp
+new file mode 100644
+index 0000000..1d008d1
+--- /dev/null
++++ b/src/match_00468000.cpp
+@@ -0,0 +1,149 @@
++#include "startup_screen_position_inlines.h"
++#include "startup_screen_terrain_tile_index.h"
++#include "startup_screen_mode_world.h"
++#include "startup_world_entities.h"
++#include <math.h>
++#include <stdlib.h>
++
++// Retail keeps the result in a function-local static; its guard, array and
++// empty atexit destructor are written out here so each has a name.
++// GLOBAL: BEACHLIFE 0x005badb5
++static unsigned char water_walkpoints_initialized;
++// GLOBAL: BEACHLIFE 0x005bad38
++static ScreenWorldPosition water_walkpoints[2];
++
++// FUNCTION: BEACHLIFE 0x00468980
++void DestroyWaterWalkpoints()
++{
++}
++
++static inline float WalkDistance(const ScreenWorldPosition& origin, const ScreenWorldPosition& position)
++{
++    ScreenWorldPosition delta(origin.x - position.x, origin.y - position.y, origin.z - position.z);
++    float x = delta.x;
++    float y = delta.y;
++    float z = delta.z;
++    x *= x;
++    return sqrt(x + z * z + y * y);
++}
++
++static inline unsigned int Index(ScreenTerrainGrid* grid, const ScreenPoint& point)
++{
++    return grid->TileIndex(point.x, point.y);
++}
++
++static inline void ReadWaterFlags(ScreenTerrainGrid* grid, const ScreenPoint& tile, const ScreenPoint& step0, const ScreenPoint& step1, const ScreenPoint& step2, const ScreenPoint& step3, const ScreenPoint& step4, const ScreenPoint& step5, const ScreenPoint& step6, const ScreenPoint& step7, unsigned int& flags, unsigned int& flags0, unsigned int& flags1,
++    unsigned int& flags2, unsigned int& flags3, unsigned int& flags4, unsigned int& flags5, unsigned int& flags6,
++    unsigned int& flags7)
++{
++    flags = grid->cells_0c[Index(grid, tile)].flags_48;
++    flags0 = grid->cells_0c[Index(grid, step0)].flags_48;
++    flags1 = grid->cells_0c[Index(grid, step1)].flags_48;
++    flags2 = grid->cells_0c[Index(grid, step2)].flags_48;
++    flags3 = grid->cells_0c[Index(grid, step3)].flags_48;
++    flags4 = grid->cells_0c[Index(grid, step4)].flags_48;
++    flags5 = grid->cells_0c[Index(grid, step5)].flags_48;
++    flags6 = grid->cells_0c[Index(grid, step6)].flags_48;
++    flags7 = grid->cells_0c[Index(grid, step7)].flags_48;
++}
++
++static inline ScreenTerrainGrid* Grid()
++{
++    return screen_terrain_grid;
++}
++
++// FUNCTION: BEACHLIFE 0x00468000
++ScreenWorldPosition* WorldGuestEntity::FindWaterWalkpoints()
++{
++    if (!(water_walkpoints_initialized & 1))
++    {
++        water_walkpoints_initialized |= 1;
++        atexit(DestroyWaterWalkpoints);
++    }
++    ScreenPoint step0, step1, step2, step3, step4, step5, step6, step7;
++    ScreenWorldPosition position = position_30;
++    ScreenTerrainRouteNode* selected = screen_terrain_grid->routes_1c;
++    unsigned int count;
++    ScreenPoint* points = selected->Points(&count);
++    ScreenPoint nearest;
++    nearest = ScreenPoint(points[0].x, points[0].y);
++    for (unsigned int i = 1; i < count; i++)
++    {
++        if (WalkDistance(screen_terrain_grid->TileOrigin(points[i]), position) < WalkDistance(screen_terrain_grid->TileOrigin(nearest), position))
++            nearest = ScreenPoint(points[i].x, points[i].y);
++    }
++    for (ScreenTerrainRouteNode* route = selected->Next(); route; route = route->Next())
++    {
++        points = route->Points(&count);
++        for (unsigned int i = 0; i < count; i++)
++        {
++            if (WalkDistance(screen_terrain_grid->TileOrigin(points[i]), position) < WalkDistance(screen_terrain_grid->TileOrigin(nearest), position))
++            {
++                selected = route;
++                nearest = ScreenPoint(points[i].x, points[i].y);
++            }
++        }
++    }
++    if (selected)
++    {
++        ScreenPoint lower = selected->Bounds()[0];
++        ScreenPoint upper = selected->Bounds()[3];
++        float width = upper.x - lower.x;
++        ScreenPoint tile;
++        tile.x = lower.x + static_cast<int>(width * (rand() * 3.0518509e-5f));
++        float height = upper.y - lower.y;
++        tile.y = lower.y + static_cast<int>(height * (rand() * 3.0518509e-5f));
++        ScreenTerrainGrid* grid = Grid();
++        unsigned int flags, flags0, flags1, flags2, flags3, flags4, flags5, flags6, flags7;
++        grid->Step(tile, 0, &step0);
++        grid->Step(tile, 1, &step1);
++        grid->Step(tile, 2, &step2);
++        grid->Step(tile, 3, &step3);
++        grid->Step(tile, 4, &step4);
++        grid->Step(tile, 5, &step5);
++        grid->Step(tile, 6, &step6);
++        grid->Step(tile, 7, &step7);
++        ReadWaterFlags(grid, tile, step0, step1, step2, step3, step4, step5, step6, step7, flags, flags0, flags1, flags2, flags3, flags4, flags5, flags6, flags7);
++        int attempts = 0;
++        while (!((flags & 2) && !(flags & 0x10) && !(flags & 0x8100) && (flags0 & 2) && !(flags0 & 0x10)
++                   && !(flags0 & 0x8100) && (flags1 & 2) && !(flags1 & 0x10) && !(flags1 & 0x8100) && (flags2 & 2)
++                   && !(flags2 & 0x10) && !(flags2 & 0x8100) && (flags3 & 2) && !(flags3 & 0x10)
++                   && !(flags3 & 0x8100) && (flags4 & 2) && !(flags4 & 0x10) && !(flags4 & 0x8100) && (flags5 & 2)
++                   && !(flags5 & 0x10) && !(flags5 & 0x8100) && (flags6 & 2) && !(flags6 & 0x10)
++                   && !(flags6 & 0x8100) && (flags7 & 2) && !(flags7 & 0x10) && !(flags7 & 0x8100))
++               && attempts < 1000)
++        {
++            tile.x = lower.x + static_cast<int>(width * (rand() * 3.0518509e-5f));
++            tile.y = lower.y + static_cast<int>(height * (rand() * 3.0518509e-5f));
++            grid->Step(tile, 0, &step0);
++            grid->Step(tile, 1, &step1);
++            grid->Step(tile, 2, &step2);
++            grid->Step(tile, 3, &step3);
++            grid->Step(tile, 4, &step4);
++            grid->Step(tile, 5, &step5);
++            grid->Step(tile, 6, &step6);
++            grid->Step(tile, 7, &step7);
++            flags = grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++            flags0 = grid->cells_0c[grid->TileIndex(step0.x, step0.y)].flags_48;
++            flags1 = grid->cells_0c[grid->TileIndex(step1.x, step1.y)].flags_48;
++            flags2 = grid->cells_0c[grid->TileIndex(step2.x, step2.y)].flags_48;
++            flags3 = grid->cells_0c[grid->TileIndex(step3.x, step3.y)].flags_48;
++            flags4 = grid->cells_0c[grid->TileIndex(step4.x, step4.y)].flags_48;
++            flags5 = grid->cells_0c[grid->TileIndex(step5.x, step5.y)].flags_48;
++            flags6 = grid->cells_0c[grid->TileIndex(step6.x, step6.y)].flags_48;
++            flags7 = grid->cells_0c[grid->TileIndex(step7.x, step7.y)].flags_48;
++            attempts++;
++        }
++        if (attempts == 1000)
++        {
++            water_walkpoints[0] = Grid()->TilePosition(nearest, 4);
++            water_walkpoints[1] = Grid()->TilePosition(nearest, 4);
++        }
++        else
++        {
++            water_walkpoints[0] = Grid()->TilePosition(nearest, 4);
++            water_walkpoints[1] = Grid()->TilePosition(tile, 4);
++        }
++    }
++    return water_walkpoints;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00468000.json b/targets/beachlife-uk-1.1.d/00468000.json
+new file mode 100644
+index 0000000..c81b363
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00468000.json
+@@ -0,0 +1,22 @@
++{
++  "functions": [
++    {
++      "address": "0x00468000",
++      "size": 2430,
++      "name": "WorldGuestEntity::FindWaterWalkpoints",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    },
++    {
++      "address": "0x00468980",
++      "size": 1,
++      "name": "DestroyWaterWalkpoints",
++      "name_status": "Retail `dynamic atexit destructor' of the walkpoint static; audited 1-byte ret, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00468000.cpp": [
++      "/Gy-",
++      "/Ob1"
++    ]
++  }
++}

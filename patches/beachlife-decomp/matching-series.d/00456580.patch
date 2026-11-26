@@ -1,0 +1,245 @@
+diff --git a/fixtures/game.d/fixture_00456580.cpp b/fixtures/game.d/fixture_00456580.cpp
+new file mode 100644
+index 0000000..878a8d2
+--- /dev/null
++++ b/fixtures/game.d/fixture_00456580.cpp
+@@ -0,0 +1,8 @@
++#include "startup_world_entities.h"
++#include <new>
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00456580(void* memory, const char* name)
++{
++    new (memory) WorldBuildingEntity(name);
++}
+diff --git a/metadata.d/00456580.csv b/metadata.d/00456580.csv
+new file mode 100644
+index 0000000..1f2717c
+--- /dev/null
++++ b/metadata.d/00456580.csv
+@@ -0,0 +1,5 @@
++address,type,size,symbol
++0x00456580,function,1878,??0WorldBuildingEntity@@QAE@PBD@Z
++0x00576ff0,string,15,
++0x00577000,string,16,
++0x00577010,string,16,
+diff --git a/src/match_00456580.cpp b/src/match_00456580.cpp
+new file mode 100644
+index 0000000..a301758
+--- /dev/null
++++ b/src/match_00456580.cpp
+@@ -0,0 +1,188 @@
++#include "startup_world_entities.h"
++#include "startup_variable_state.h"
++#include "startup_screen_dialog_resource.h"
++#include "window_activation.h"
++#include <stdlib.h>
++#include <string.h>
++#include "startup_screen_mode_world.h"
++
++// The original reads the building definition and the shared catalogs through
++// these small inline helpers; their sites set the retail /Ob1 decisions (the
++// thoughts deque base constructor and one node deallocation stay out of line).
++static inline VariableBuilding* Definition(WorldBuildingEntity* entity)
++{
++    return entity->building_60;
++}
++static inline VariableCatalog* Catalog()
++{
++    return variable_catalog;
++}
++
++static inline ScreenDialogResourceLookup* Resources()
++{
++    return screen_dialog_resources;
++}
++static inline void ResetThoughts(WorldBuildingEntity* owner)
++{
++    owner->thoughts_428.clear();
++}
++static inline float BuildingHour()
++{
++    return window_deactivation_state->render_value_160;
++}
++// Retail expands SetDrinkType (0x0045ee10) inline here.
++static inline void SelectDrinkType(VariableEntity* entity, unsigned int type)
++{
++    if (entity->AsBuilding()->drink_type_210 == type)
++        return;
++    VariableBuilding* building = entity->AsBuilding()->building_60;
++    entity->AsBuilding()->drink_type_210 = type;
++    int found = -1;
++    for (unsigned int i = 0; i < building->rows_1f4; ++i)
++    {
++        if (_stricmp("Beer", variable_catalog->FeatureName(building->features_1fc[i])) == 0)
++        {
++            found = i;
++            break;
++        }
++    }
++    if (found != -1)
++    {
++        VariableCatalogUnlock* drink = variable_catalog->UnlockRecord(entity->AsBuilding()->drink_type_210);
++        float base = drink->base_value_c4;
++        entity->AsBuilding()->feature_prices_1f8[found] = base;
++        entity->AsBuilding()->feature_prices_1f8[found] = base + entity->AsBuilding()->drink_value_20c * drink->multiplier_c8;
++        entity->AsBuilding()->feature_values_1d0[found] = drink->feature_type_cc;
++    }
++}
++
++// FUNCTION: BEACHLIFE 0x00456580
++WorldBuildingEntity::WorldBuildingEntity(const char* name)
++    : WorldStaticEntity(name)
++{
++
++    unsigned int i;
++    building_60 = Catalog()->Building(Catalog()->FindBuilding(name));
++    pending_staff_90 = 0;
++    staff_count_8c = 0;
++    flag_420 = 0;
++    additional_staff_count_bc = 0;
++    building_queue_16c = 0;
++    events_170 = 0;
++    building_state_19c = 1;
++    word_1a0 = 0;
++    word_1a4 = 0;
++    building_values_214[0] = 0;
++    building_values_214[1] = 0;
++    building_values_214[2] = 0;
++    building_values_214[3] = 0;
++    word_35c = 0;
++    word_224 = 0;
++    word_118 = 0;
++    value_328 = -1.0f;
++    word_32c = 0;
++    building_value_330 = 0;
++    word_334 = 8;
++    word_338 = static_cast<unsigned int>(rand()) % word_334 + 1;
++    power_state_33c = 0;
++    hour_344 = static_cast<int>(BuildingHour());
++    hour_358 = static_cast<int>(BuildingHour());
++    value_348 = -1.0f;
++    word_34c = 0;
++    flag_340 = 0;
++    word_11c = 0;
++    child_count_398 = 0;
++    building_value_350 = 0;
++    word_354 = 0;
++    contents_count_36c = 0;
++    burn_limbo_3ec = 0;
++    word_360 = 0;
++    byte_364 = 0;
++    closed_365 = 0;
++    flag_366 = 0;
++    flag_367 = 0;
++    flag_188 = 0;
++    flag_368 = 0;
++    // A clearing loop, not memset: VC6 folds the six-byte store into the member.
++    for (i = 0; i < 6; ++i)
++        flags_138[i] = 0;
++    value_f4 = 12.0f;
++    value_f0 = -12.0f;
++    if (strcmp(name_06, "EQPTHIRE") == 0)
++    {
++        word_114 = 20;
++        word_10c = 20;
++        word_110 = 20;
++    }
++    else
++    {
++        word_114 = 0;
++        word_10c = 0;
++        word_110 = 0;
++    }
++    for (i = 0; i < Definition(this)->rows_1f4; ++i)
++    {
++        appeal_1a8[i][0] = Definition(this)->appeal_210[i][0];
++        appeal_1a8[i][1] = Definition(this)->appeal_210[i][1];
++        feature_values_1d0[i] = Definition(this)->feature_values_24c[i];
++        feature_prices_1f8[i] = Definition(this)->feature_prices_274[i];
++        feature_scale_1e4[i] = 1.0f;
++    }
++    drink_value_20c = 0.5f;
++    drink_type_210 = -1;
++    for (i = 0; i < Definition(this)->rows_1f4; ++i)
++    {
++        unsigned int feature = Catalog()->FeatureType(Definition(this)->features_1fc[i]);
++        if (feature == Catalog()->FindFeatureType("ALCOHOL"))
++        {
++            if (Catalog()->UnlockRecord(Definition(this)->default_drink_e18)->flag_d8)
++                SelectDrinkType(this, Definition(this)->default_drink_e18);
++            else
++            {
++                unsigned int count = Catalog()->drink_count_28;
++                for (unsigned int drink = 0; drink < count; ++drink)
++                    if (Catalog()->UnlockRecord(drink)->flag_d8)
++                    {
++                        SelectDrinkType(this, drink);
++                        drink = count;
++                    }
++            }
++            i = Definition(this)->rows_1f4;
++        }
++    }
++    for (i = 0; i < 64; ++i)
++        data_228[i] = 0;
++    keyline_state_44 = Resources()->Find(building_60->resource_c4);
++    memset(resources_140, 0, sizeof(resources_140));
++    if (Definition(this)->resource_count_380)
++        for (i = 0; i < Definition(this)->resource_count_380; ++i)
++        {
++            resources_140[i] = Resources()->Find(building_60->resources_384[i].name);
++            if (_stricmp(building_60->resources_384[i].name, "BEACHDISCO_ANIM") == 0)
++                resources_140[i]->record->format_18 = 12;
++        }
++    flag_ca = 1;
++    flag_cb = 0;
++    if (Definition(this)->count_d88)
++    {
++        data_174 = Definition(this)->data_d84;
++        count_178 = Definition(this)->count_d88;
++    }
++    else
++    {
++        data_174 = 0;
++        count_178 = 0;
++    }
++    word_17c = 0;
++    resource_160 = 0;
++    if (Definition(this)->flag_cc0)
++        resource_160 = Resources()->Find(building_60->resource_cc1);
++    ResetThoughts(this);
++    resource_164 = Resources()->Find("UI3_fb_shortage");
++    resource_168 = Resources()->Find("UI3_fb_spanner");
++    resource_164->word_0c = 2;
++    resource_168->word_0c = 2;
++    value_180 = rand() * 3.0518509e-05f + 19.5f;
++    value_184 = rand() * 3.0518509e-05f + 5.5f;
++    word_450 = -1;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00456580.json b/targets/beachlife-uk-1.1.d/00456580.json
+new file mode 100644
+index 0000000..c2ff4c4
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00456580.json
+@@ -0,0 +1,20 @@
++{
++  "functions": [
++    {
++      "address": "0x00456580",
++      "size": 1878,
++      "name": "WorldBuildingEntity::WorldBuildingEntity",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00456580.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "fixture_00456580.cpp",
++    "match_00456580.cpp"
++  ]
++}

@@ -1,0 +1,119 @@
+diff --git a/fixtures/game.d/fixture_00422a50.cpp b/fixtures/game.d/fixture_00422a50.cpp
+new file mode 100644
+index 0000000..de0881b
+--- /dev/null
++++ b/fixtures/game.d/fixture_00422a50.cpp
+@@ -0,0 +1,7 @@
++#include "startup_building_status.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00422a50(VariableBuildingStatus* item, unsigned int value)
++{
++    item->VariableBuildingStatus::UpdateConstructionFootprint(value);
++}
+diff --git a/metadata.d/00422a50.csv b/metadata.d/00422a50.csv
+new file mode 100644
+index 0000000..8a2c1df
+--- /dev/null
++++ b/metadata.d/00422a50.csv
+@@ -0,0 +1,4 @@
++address,type,size,symbol
++0x00422a50,function,512,?UpdateConstructionFootprint@VariableBuildingStatus@@QAEXI@Z
++0x004fd138,string,10,
++0x00572af8,string,11,
+diff --git a/src/match_00422a50.cpp b/src/match_00422a50.cpp
+new file mode 100644
+index 0000000..2a954b2
+--- /dev/null
++++ b/src/match_00422a50.cpp
+@@ -0,0 +1,64 @@
++#include "startup_building_status_list.h"
++#include "startup_world_entities.h"
++#include "startup_screen_command_inlines.h"
++#include "window_activation.h"
++#include "startup_screen_terrain_tile_index.h"
++#include <string.h>
++#include <stdlib.h>
++
++static inline ScreenTerrainCell* BuildingFootprintCell(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    unsigned int index = (static_cast<unsigned int>(tile.y) % grid->height_08) * grid->width_04
++                       + static_cast<unsigned int>(tile.x) % grid->width_04;
++    return &grid->cells_0c[index];
++}
++
++static inline unsigned int FootprintFlags(ScreenTerrainGrid* grid, ScreenPoint* tile)
++{
++    return BuildingFootprintCell(grid, *tile)->flags_48;
++}
++
++static inline unsigned int& RemainingCells(BuildingStatusEntry* task)
++{
++    return task->count_0c;
++}
++
++// FUNCTION: BEACHLIFE 0x00422a50
++void VariableBuildingStatus::UpdateConstructionFootprint(unsigned int id)
++{
++    WorldBuildingEntity* entity = variable_world->FindObject(id)->AsBuilding();
++    VariableBuilding* building = entity->building_60;
++    std::_List_node_base* found = FindBuildingStatusNode(tasks_00, id);
++    BuildingStatusEntry* task = found != tasks_00.end()._M_node ? static_cast<BuildingStatusNode*>(found)->_M_data : 0;
++    if (building->footprint_e14 && task && RemainingCells(task))
++    {
++        float now = window_deactivation_state->time_158;
++        if (now - entity->placed_time_108 > 0.1f)
++        {
++            --RemainingCells(task);
++            ScreenSceneryPlacement placement;
++            placement.word_4c = -2;
++            placement.enabled = 1;
++            placement.tile.x = task->values_08[RemainingCells(task) * 4 + 1];
++            placement.tile.y = task->values_08[RemainingCells(task) * 4 + 2];
++            unsigned int flags = FootprintFlags(screen_terrain_grid, &placement.tile);
++            if (flags & 1 || flags & 2)
++                return;
++            char number[20];
++            _itoa(id, number, 20);
++            strcpy(placement.model, "HOARDING_");
++            strcat(placement.model, number);
++            strcpy(placement.name, "singlecell");
++            placement.rotation = static_cast<unsigned char>(task->values_08[RemainingCells(task) * 4]);
++            ScreenModeCommand command;
++            command.words[0] = -2;
++            command.words[1] = -2;
++            command.words[2] = 0;
++            command.words[3] = 0;
++            command.words[4] = 1;
++            screen_mode_commands->QueuePlacement(&command, &placement);
++            float time = window_deactivation_state->time_158;
++            entity->placed_time_108 = time;
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00422a50.json b/targets/beachlife-uk-1.1.d/00422a50.json
+new file mode 100644
+index 0000000..50078b3
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00422a50.json
+@@ -0,0 +1,20 @@
++{
++  "functions": [
++    {
++      "address": "0x00422a50",
++      "size": 512,
++      "name": "VariableBuildingStatus::UpdateConstructionFootprint",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00422a50.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_00422a50.cpp",
++    "fixture_00422a50.cpp"
++  ]
++}

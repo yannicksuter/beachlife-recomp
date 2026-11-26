@@ -1,0 +1,174 @@
+diff --git a/metadata.d/00476fa0.csv b/metadata.d/00476fa0.csv
+new file mode 100644
+index 0000000..12310c3
+--- /dev/null
++++ b/metadata.d/00476fa0.csv
+@@ -0,0 +1,7 @@
++address,type,size,symbol
++0x00476fa0,function,1365,?PerformAction6@WorldGuestEntity@@QAEXXZ
++0x004f3454,float,4,
++0x004fd128,string,6,
++0x004f39a0,float,4,
++0x004f3350,float,4,
++0x004f39a4,float,4,
+diff --git a/src/match_00476fa0.cpp b/src/match_00476fa0.cpp
+new file mode 100644
+index 0000000..ee3fb17
+--- /dev/null
++++ b/src/match_00476fa0.cpp
+@@ -0,0 +1,134 @@
++#include "startup_world_guest_action_helpers.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_terrain_tile_index.h"
++#include "startup_screen_command_inlines.h"
++#include <math.h>
++
++static inline VariableWorldPrefix* World()
++{
++    return variable_world;
++}
++
++static inline unsigned int GridFlags(ScreenTerrainGrid* grid, ScreenPoint tile)
++{
++    return grid->cells_0c[grid->TileIndex(tile.x, tile.y)].flags_48;
++}
++
++static inline ScreenTerrainGrid* Grid()
++{
++    return screen_terrain_grid;
++}
++
++static inline bool SandFlags(unsigned int flags)
++{
++    return (flags & 0x10000080) && !(flags & 0x8000);
++}
++
++static inline bool GrassFlags(unsigned int flags)
++{
++    return (flags & 2) && !(flags & 0x8010);
++}
++
++static inline bool CanStand(ScreenWorldPosition* position)
++{
++    unsigned int flags = GridFlags(Grid(), overlay_map->WorldToTile(position));
++    return SandFlags(flags) || GrassFlags(flags);
++}
++
++// FUNCTION: BEACHLIFE 0x00476fa0
++void WorldGuestEntity::PerformAction6()
++{
++    ScreenModeCommand command;
++    command.words[0] = 0;
++    command.words[1] = 0;
++    command.words[2] = 0;
++    command.words[3] = 0;
++    command.words[4] = 0;
++    ScreenWorldPosition position = position_30;
++    bool found = false;
++    unsigned int count;
++    VariableEntity** objects;
++    if (state_3c == 45)
++    {
++        objects = World()->Nearby(TilePosition(), 5, &count);
++        if (count)
++        {
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                if (objects[i]->id_28 != id_28 && objects[i]->kind_2c == 3 && objects[i]->state_3c == 45
++                    && objects[i]->AsGuest()->lightning_state_318 == 2)
++                {
++                    lightning_state_318 = 1;
++                    word_32c = objects[i]->id_28;
++                    ScreenWorldPosition partner = objects[i]->position_30;
++                    position = partner;
++                    position.x -= 20.0f;
++                    if (CanStand(&position))
++                    {
++                        command = MakeGuestCommand(id_28, id_28, 8, static_cast<int>(position.x), static_cast<int>(position.y));
++                        screen_mode_commands->QueueCommand(&command);
++                        found = true;
++                        i = count;
++                    }
++                    else
++                        found = false;
++                }
++            }
++            if (found)
++                return;
++        }
++    }
++    else
++    {
++        float nearest = 5.0f;
++        objects = variable_world->FindNamed("BENCH", &count);
++        if (count)
++        {
++            unsigned int selected = count;
++            for (unsigned int i = 0; i < count; ++i)
++            {
++                if (!static_cast<WorldSceneryEntity*>(objects[i])->byte_a0
++                    && static_cast<WorldSceneryEntity*>(objects[i])->AvailableSeats() && objects[i]->state_3c != 4)
++                {
++                    ScreenPoint tile = TilePosition();
++                    tile.x -= objects[i]->TilePosition().x;
++                    tile.y -= objects[i]->TilePosition().y;
++                    int squared = tile.y * tile.y + tile.x * tile.x;
++                    long double distance = sqrt(static_cast<long double>(squared));
++                    if (!(distance > nearest))
++                    {
++                        nearest = static_cast<float>(distance);
++                        selected = i;
++                    }
++                }
++            }
++            if (selected < count && rand() % 10 == 0)
++            {
++                WorldSceneryEntity* bench = static_cast<WorldSceneryEntity*>(objects[selected]);
++                if (bench->scenery_f4->capacity_2dc > bench->word_90)
++                {
++                    lightning_state_318 = 20;
++                    ScreenModeCommand sit(id_28, bench->id_28, 3, 0, 4);
++                    screen_mode_commands->QueueCommand(&sit);
++                    ScreenModeCommand rest(id_28, id_28, 9, 0, bench->id_28);
++                    screen_mode_commands->QueueCommand(&rest);
++                    return;
++                }
++            }
++        }
++    }
++    position.x += rand() % 500 - 250;
++    position.y += rand() % 500 - 250;
++    unsigned int flags = GridFlags(Grid(), overlay_map->WorldToTile(&position));
++    while (!((SandFlags(flags) || GrassFlags(flags)) && position.y < 8192.0f && !(position.x < 0.0f) && !(position.y < 0.0f) && !(position.x > 4096.0f)))
++    {
++        position = position_30;
++        position.x += rand() % 500 - 250;
++        position.y += rand() % 500 - 250;
++        flags = GridFlags(Grid(), overlay_map->WorldToTile(&position));
++    }
++    if (state_3c == 45)
++        lightning_state_318 = 0;
++    command = MakeGuestCommand(id_28, id_28, 8, static_cast<int>(position.x), static_cast<int>(position.y));
++    screen_mode_commands->QueueCommand(&command);
++}
+diff --git a/targets/beachlife-uk-1.1.d/00476fa0.json b/targets/beachlife-uk-1.1.d/00476fa0.json
+new file mode 100644
+index 0000000..3e76cd2
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00476fa0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00476fa0",
++      "size": 1365,
++      "name": "WorldGuestEntity::PerformAction6",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00476fa0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

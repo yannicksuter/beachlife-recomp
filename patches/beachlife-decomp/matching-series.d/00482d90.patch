@@ -1,0 +1,112 @@
+diff --git a/fixtures/game.d/fixture_00482d90.cpp b/fixtures/game.d/fixture_00482d90.cpp
+new file mode 100644
+index 0000000..fbd7ba1
+--- /dev/null
++++ b/fixtures/game.d/fixture_00482d90.cpp
+@@ -0,0 +1,7 @@
++#include "startup_world_entities.h"
++
++// Compile/link retention only; never execute this image.
++extern "C" __declspec(dllexport) void Fixture_00482d90(WorldMovingEntity* entity, float step)
++{
++    entity->IntegrateVelocity(step);
++}
+diff --git a/metadata.d/00482d90.csv b/metadata.d/00482d90.csv
+new file mode 100644
+index 0000000..a73a5f7
+--- /dev/null
++++ b/metadata.d/00482d90.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00482d90,function,368,?IntegrateVelocity@WorldMovingEntity@@QAEXM@Z
+diff --git a/src/match_00482d90.cpp b/src/match_00482d90.cpp
+new file mode 100644
+index 0000000..b41f357
+--- /dev/null
++++ b/src/match_00482d90.cpp
+@@ -0,0 +1,64 @@
++#include "startup_screen_map_position_add.h"
++#include "startup_world_motion_helpers.h"
++#include "startup_world_motion_inlines.h"
++
++extern float fast_reciprocal_two;
++
++static inline float MotionMass(const WorldMovingEntity* entity)
++{
++    return entity->value_60;
++}
++
++static inline float FastSquareRoot(float value)
++{
++    if (*reinterpret_cast<unsigned int*>(&value) == 0)
++        return 0.0f;
++    *reinterpret_cast<unsigned int*>(&value) = square_root_mantissas[(*reinterpret_cast<unsigned int*>(&value) >> 8) & 0xffff]
++                                             | ((((*reinterpret_cast<unsigned int*>(&value) - 0x3f800000u) >> 1) + 0x3f800000u) & 0x7f800000u);
++    return value;
++}
++
++static inline ScreenMapPosition& SteeringVector(float* components)
++{
++    return *reinterpret_cast<ScreenMapPosition*>(components);
++}
++
++// Fast reciprocal estimate refined by one Newton step, then a scale by it.
++static inline ScreenMapPosition SteeringDivided(const ScreenMapPosition& vector, float divisor)
++{
++    float reciprocal;
++    __asm
++    {
++        mov eax, 0x7f000000
++        sub eax, divisor
++        mov reciprocal, eax
++        fld divisor
++        fmul reciprocal
++        fsubr fast_reciprocal_two
++        fmul reciprocal
++        fstp reciprocal
++    }
++    return ScreenMapPosition(reciprocal * vector.x, vector.y * reciprocal);
++}
++
++// FUNCTION: BEACHLIFE 0x00482d90
++void WorldMovingEntity::IntegrateVelocity(float step)
++{
++    ScreenMapPosition force = SteeringVector(motion_64 + 4);
++    ScreenMapPosition acceleration;
++    acceleration = SteeringDivided(force, MotionMass(this));
++    SetMotionVelocity(MotionVelocity() + acceleration);
++    long double x = motion_64[2];
++    long double y = motion_64[3];
++    float length = FastSquareRoot(static_cast<float>(y * y + x * x));
++    if (!(length > 0.0f))
++        return;
++    if (!(speed_80 >= length))
++    {
++        float speed = speed_80;
++        float ratio = length / speed;
++        SetMotionVelocity(ScreenMapPosition(static_cast<float>(static_cast<long double>(MotionVelocity().x) / ratio),
++            static_cast<float>(static_cast<long double>(MotionVelocity().y) / ratio)));
++    }
++    SetMotionPosition(MotionPosition() + MotionVelocity() * step);
++}
+diff --git a/targets/beachlife-uk-1.1.d/00482d90.json b/targets/beachlife-uk-1.1.d/00482d90.json
+new file mode 100644
+index 0000000..01c659e
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00482d90.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00482d90",
++      "size": 368,
++      "name": "WorldMovingEntity::IntegrateVelocity",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00482d90.cpp": [
++      "/Ob1"
++    ]
++  }
++}
