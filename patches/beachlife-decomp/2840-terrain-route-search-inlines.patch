@@ -1,0 +1,70 @@
+diff --git a/src/startup_screen_point.h b/src/startup_screen_point.h
+index f3aea9d..b30f65d 100644
+--- a/src/startup_screen_point.h
++++ b/src/startup_screen_point.h
+@@ -5,11 +5,14 @@ struct ScreenPoint
+ {
+     // Retail inlines both constructors (its out-of-line ScreenPoint(int, int)
+     // copy is 0x004479f0); units that construct points compile with /Ob1.
++    // The terrain route searches keep their last (int, int) construction out
++    // of line, which needs this body form's inline size.
+     ScreenPoint() { }
+-    ScreenPoint(int first, int second)
++    ScreenPoint(const int first, const int second)
+         : x(first)
+         , y(second)
+     {
++        return;
+     }
+     int x;
+     int y;
+@@ -57,7 +60,7 @@ struct ScreenWorldPosition
+     }
+     ScreenWorldPosition(const ScreenWorldPosition& other);            // 0x0041c0b0.
+     ScreenWorldPosition& operator=(const ScreenWorldPosition& other); // Folded into 0x0041c0b0.
+-    long double Length() const;                                       // 0x004479c0.
++    float Length() const;                                             // 0x004479c0, inline.
+     float x;
+     float y;
+     float z;
+diff --git a/src/startup_screen_terrain_origin.h b/src/startup_screen_terrain_origin.h
+new file mode 100644
+index 0000000..10fb1b3
+--- /dev/null
++++ b/src/startup_screen_terrain_origin.h
+@@ -0,0 +1,35 @@
++#ifndef STARTUP_SCREEN_TERRAIN_ORIGIN_H
++#define STARTUP_SCREEN_TERRAIN_ORIGIN_H
++
++#include <math.h>
++#include "startup_screen_mode_world.h"
++#include "startup_screen_position_inlines.h"
++
++// Inline in retail: the terrain route searches expand both within their /Ob1
++// budget and call the shared out-of-line copies where it refuses a site. Every
++// other caller sees only the declarations; match_004479c0.cpp and
++// match_00446200.cpp emit the copies.
++// FUNCTION: BEACHLIFE 0x004479c0
++inline float ScreenWorldPosition::Length() const
++{
++    return static_cast<float>(sqrt(x * x + y * y + z * z));
++}
++
++// FUNCTION: BEACHLIFE 0x00446200
++inline ScreenWorldPosition ScreenTerrainGrid::TileOrigin(ScreenPoint tile)
++{
++    int size = tile_size_00;
++    int x = tile.x;
++    int y = tile.y;
++    int half = size / 2;
++    ScreenWorldPosition result;
++    result.x = static_cast<float>(half * x);
++    if (x & 1)
++        result.y = static_cast<float>(y * size);
++    else
++        result.y = static_cast<float>(y * size - half);
++    result.z = 0.0f;
++    return result;
++}
++
++#endif
