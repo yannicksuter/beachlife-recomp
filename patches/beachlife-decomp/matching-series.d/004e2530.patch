@@ -1,0 +1,315 @@
+diff --git a/fixtures/game.d/fixture_004e2530.cpp b/fixtures/game.d/fixture_004e2530.cpp
+new file mode 100644
+index 0000000..e926c8f
+--- /dev/null
++++ b/fixtures/game.d/fixture_004e2530.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_manager.h"
++#include <new>
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004e2530(void* memory, void* instance, void* window)
++{
++    new (memory) ScreenRequestGamePrefix(instance, window);
++}
+diff --git a/metadata.d/004e2530.csv b/metadata.d/004e2530.csv
+new file mode 100644
+index 0000000..64dbaaa
+--- /dev/null
++++ b/metadata.d/004e2530.csv
+@@ -0,0 +1,26 @@
++address,type,size,symbol
++0x004e2530,function,2248,??0ScreenRequestGamePrefix@@QAE@PAX0@Z
++0x00417df0,function,1530,??0DebugFont@@QAE@PBDII@Z
++0x0058634c,global,4,?startup_movie_directory@@3PBDB
++0x00586350,global,4,?startup_movie_filename@@3PBDB
++0x00586354,global,4,?startup_sound_bank_name@@3PBDB
++0x0057e06c,string,9,
++0x0057e134,string,10,
++0x00586418,string,10,
++0x00586424,string,7,
++0x0058642c,string,8,
++0x00586434,string,6,
++0x0058643c,string,10,
++0x00586448,string,15,
++0x00586458,string,16,
++0x00586468,string,16,
++0x00586478,string,16,
++0x00586488,string,20,
++0x0058649c,string,14,
++0x005864ac,string,12,
++0x005864b8,string,21,
++0x005864d0,string,22,
++0x005864e8,string,21,
++0x00586500,string,22,
++0x00586518,string,21,
++0x00586530,string,17,
+diff --git a/src/match_004e2530.cpp b/src/match_004e2530.cpp
+new file mode 100644
+index 0000000..5bd948d
+--- /dev/null
++++ b/src/match_004e2530.cpp
+@@ -0,0 +1,228 @@
++#include "startup_screen_manager.h"
++#include "startup_window_fatal.h"
++#include "startup_world_test.h"
++extern const char* startup_movie_directory;
++extern const char* startup_movie_filename;
++extern const char* startup_sound_bank_name;
++extern unsigned char window_deactivation_enabled;
++#include "startup_screen_placement.h"
++#include "startup_screen_text.h"
++#include "startup_movie.h"
++#include "startup_screen_renderer.h"
++#include "startup_debug_font.h"
++#include "startup_input_state.h"
++#include "startup_input_motion.h"
++#include "startup_frame_clock.h"
++#include "startup_timer.h"
++#include "startup_screen_dialog_resource.h"
++#include "window_audio.h"
++#include "startup_game_update_pair.h"
++#include "startup_main_menu.h"
++#include "startup_intro.h"
++#include "startup_exit_game.h"
++#include "startup_reset_game.h"
++#include "startup_load_game.h"
++#include "startup_game_won.h"
++#include "startup_config_owner.h"
++
++#include <io.h>
++#include <new>
++#include <stdio.h>
++#include <windows.h>
++
++// GLOBAL: BEACHLIFE 0x0058634c
++const char* startup_movie_directory = "data/movies/";
++
++// GLOBAL: BEACHLIFE 0x00586350
++const char* startup_movie_filename = "eidosmovie.mpg";
++
++// GLOBAL: BEACHLIFE 0x00586354
++const char* startup_sound_bank_name = "blsnd";
++
++inline ScreenGameRegistration::ScreenGameRegistration(ScreenRequestGamePrefix* owner)
++{
++    screen_request_game = owner;
++}
++
++// The original constructor expands these helpers inline. Their cut follows the
++// retail /Ob1 decisions: both vector clears keep __copy_trivial out of line while
++// the member vectors' allocator proxies still expand.
++static inline ScreenRequestRenderer* Renderer()
++{
++    return screen_request_renderer;
++}
++static inline ScreenTextLookup* Text()
++{
++    return screen_text_lookup;
++}
++static inline InputState* Input()
++{
++    return startup_input_state;
++}
++static inline const char* ProviderName(ScreenPlacementStore* store)
++{
++    return store->provider_name_10;
++}
++static inline int ScreenWidth()
++{
++    return static_cast<int>(Renderer()->width);
++}
++static inline int ScreenHeight()
++{
++    return static_cast<int>(Renderer()->height);
++}
++static inline void EnsureDirectory(const char* name)
++{
++    _finddata_t file_information;
++    long find_handle = _findfirst(name, &file_information);
++    if (find_handle == -1)
++        CreateDirectoryA(name, 0);
++    _findclose(find_handle);
++}
++static inline void CreateControllers(ScreenRequestGamePrefix* game)
++{
++    game->controller_selection.first_controller = reinterpret_cast<FirstControllerSelectionPrefix*>(new WorldTestController("WorldTest"));
++    game->controller_selection.controllers[0] = new MainMenuController("MainMenu");
++    game->controller_selection.controllers[1] = new IntroController("Intro");
++    game->controller_selection.controllers[2] = new ExitGameController("ExitGame");
++    game->controller_selection.controllers[3] = new ResetGameController("ResetGame");
++    game->controller_selection.controllers[4] = new LoadGameController("LoadGame");
++    game->controller_selection.controllers[5] = new GameWonController("GameWon");
++}
++static inline void LoadText(ScreenRequestGamePrefix* game)
++{
++    switch (game->placement->menu_script_variant_3c)
++    {
++    case 0:
++        game->text = new ScreenTextLookup("data/text_uk.uni");
++        break;
++    case 1:
++        game->text = new ScreenTextLookup("data/text_french.uni");
++        break;
++    case 2:
++        game->text = new ScreenTextLookup("data/text_italian.uni");
++        break;
++    case 3:
++        game->text = new ScreenTextLookup("data/text_german.uni");
++        break;
++    case 4:
++        game->text = new ScreenTextLookup("data/text_spanish.uni");
++        break;
++    case 5:
++        game->text = new ScreenTextLookup("data/text_polish.uni");
++        break;
++    default:
++        game->text = new ScreenTextLookup("data/text_uk.uni");
++        break;
++    }
++}
++// The windowed flag reaches InputState through a one-byte value copy: retail
++// stores it to a frame temporary and pushes the whole slot.
++struct InputWindowedFlag
++{
++    unsigned char value;
++};
++static inline InputWindowedFlag WindowedFlag(unsigned char mode)
++{
++    InputWindowedFlag flag;
++    flag.value = mode;
++    return flag;
++}
++
++// FUNCTION: BEACHLIFE 0x004e2530
++ScreenRequestGamePrefix::ScreenRequestGamePrefix(void* instance, void* window)
++    : ScreenGameRegistration(this)
++{
++    inactive_c5 = 0;
++    controller_selection.instance = instance;
++    controller_selection.window = window;
++    reload_screen = 0;
++    word_b4 = -1;
++    save_info_enabled = 0;
++    byte_a4 = 0;
++    selected_save = 0;
++
++    scenario_names.clear();
++    saves.clear();
++
++    placement = new ScreenPlacementStore;
++    LoadText(this);
++
++    SetFatalWindow(window);
++    bool play_movie;
++    startup_config_owner->GetBool(&play_movie, "bPLAY_MOVIE");
++    if (play_movie)
++    {
++        while (ShowCursor(FALSE) >= 0)
++        {
++        }
++
++        char movie_path[MAX_PATH];
++        sprintf(movie_path, "%s%s", startup_movie_directory, startup_movie_filename);
++        StartupMovie* movie = new StartupMovie(controller_selection.window, 0, 0, 640, 480, 0, 0);
++        movie->Play(movie_path);
++        if (movie)
++        {
++            movie->~StartupMovie();
++            ::operator delete(movie);
++        }
++
++        while (ShowCursor(TRUE) < 0)
++        {
++        }
++    }
++
++    renderer = new ScreenRequestRenderer(window, 800, 600, 0);
++    unsigned char initialized = renderer->initialized_168;
++    if (!initialized)
++        ShowFatalWindowMessage(controller_selection.window, Text()->LookupText("ERROR_DIRECTX"));
++
++    const char* font_filename;
++    const char* font_name;
++    int font_size;
++    startup_config_owner->GetString(&font_filename, "sDEBUGFONT_FILENAME");
++    startup_config_owner->GetString(&font_name, "sDEBUGFONT_NAME");
++    startup_config_owner->GetInteger(&font_size, "iDEBUGFONT_SIZE");
++    if (*font_filename != 'X')
++        AddFontResourceA(font_filename);
++    debug_font = new DebugFont(font_name, static_cast<unsigned int>(font_size), 0);
++    if (*font_filename != 'X')
++        RemoveFontResourceA(font_filename);
++
++    input = new InputState(ScreenWidth(), ScreenHeight(), WindowedFlag(renderer->software_mode).value);
++    if (!input->Initialize(instance, window))
++        ShowFatalWindowMessage(controller_selection.window, Text()->LookupText("ERROR_DIRECTX"));
++    if (!placement->byte_38)
++        Input()->SetSystemCursor(0);
++
++    input_motion = new InputMotionState("data/cursor.tga", window);
++    clock = new FrameClock(static_cast<int>(GetTickCount()));
++    profiler = new StartupProfiler;
++    resources = new ScreenDialogResourceLookup;
++    word_60 = 0;
++
++    bool sound_enabled;
++    startup_config_owner->GetBool(&sound_enabled, "bSOUND_ENABLED");
++    audio = new WindowAudioState(static_cast<unsigned char>(sound_enabled), ProviderName(placement), startup_sound_bank_name);
++    float volume = placement->sound_volume_08;
++    audio->SetStreamVolume(volume);
++    volume = placement->music_volume_0c;
++    double music = volume;
++    audio->SetEffectsVolume(music);
++    update_pair = new GameUpdatePair(static_cast<unsigned char>(sound_enabled));
++    screens = new ScreenManager;
++
++    CreateControllers(this);
++
++    LoadScenarioNames();
++    LoadScenarioProgress();
++    controller_selection.active = controller_selection.controllers[1];
++    controller_selection.pending = controller_selection.controllers[1];
++    Renderer()->SetUnscaledClip(0);
++
++    EnsureDirectory("photos");
++    EnsureDirectory("SaveGames");
++
++    window_deactivation_enabled = 1;
++    controller_selection.active->Enter();
++}
+diff --git a/targets/beachlife-uk-1.1.d/004e2530.json b/targets/beachlife-uk-1.1.d/004e2530.json
+new file mode 100644
+index 0000000..2a98a1f
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004e2530.json
+@@ -0,0 +1,29 @@
++{
++  "functions": [
++    {
++      "address": "0x004e2530",
++      "size": 2223,
++      "name": "ScreenRequestGamePrefix::ScreenRequestGamePrefix",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment and the 24-byte jump table."
++    }
++  ],
++  "source_compile_options": {
++    "match_004e2530.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "fixture_004e2530.cpp",
++    "match_004e2530.cpp"
++  ],
++  "comparison_lifetime_anchors": [
++    {
++      "address": "0x00417df0",
++      "size": 1530,
++      "name": "DebugFont::DebugFont",
++      "symbol": "??0DebugFont@@QAE@PBDII@Z",
++      "header": "startup_debug_font.h"
++    }
++  ]
++}

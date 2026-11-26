@@ -1,0 +1,172 @@
+diff --git a/fixtures/game.d/fixture_00417820.cpp b/fixtures/game.d/fixture_00417820.cpp
+new file mode 100644
+index 0000000..d45886d
+--- /dev/null
++++ b/fixtures/game.d/fixture_00417820.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_dialog_resource.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) int Fixture_00417820(ScreenDialogResourceLookup* lookup)
++{
++    return lookup->Load();
++}
+diff --git a/metadata.d/00417820.csv b/metadata.d/00417820.csv
+new file mode 100644
+index 0000000..43d1ee1
+--- /dev/null
++++ b/metadata.d/00417820.csv
+@@ -0,0 +1,5 @@
++address,type,size,symbol
++0x00417820,function,877,?Load@ScreenDialogResourceLookup@@QAEHXZ
++0x004fc204,string,3,
++0x004fcd54,string,26,
++0x004fcd70,string,26,
+diff --git a/src/match_00417820.cpp b/src/match_00417820.cpp
+new file mode 100644
+index 0000000..0b5acca
+--- /dev/null
++++ b/src/match_00417820.cpp
+@@ -0,0 +1,117 @@
++#include <stdio.h>
++#include <io.h>
++#include "startup_screen_dialog_frame_file.h"
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_renderer.h"
++#include <new>
++#include <string.h>
++
++// FUNCTION: BEACHLIFE 0x00417820
++int ScreenDialogResourceLookup::Load()
++{
++    metadata_file = fopen("data/sprites/BLSprite.hdr", "rb");
++    if (!metadata_file)
++        return -1;
++
++    char file_header[20];
++    unsigned int initial_read_bytes;
++    int initial_record_count;
++    {
++        struct
++        {
++            int frames;
++            unsigned int word;
++        } info;
++        record_count = 0;
++        fread(file_header, 1, 20, metadata_file);
++        fread(&info.word, 4, 1, metadata_file);
++        fread(&record_count, 4, 1, metadata_file);
++        records = static_cast<ScreenDialogResourceRecord**>(
++            ::operator new(record_count * sizeof(ScreenDialogResourceRecord*)));
++        for (int index = 0; index < record_count; ++index)
++        {
++            records[index] = new ScreenDialogResourceRecord;
++            records[index]->ReadMetadata(metadata_file, screen_request_renderer->format_44);
++        }
++        fclose(metadata_file);
++
++        data_file = _open("data\\sprites\\BLSprite.Dat", 0x8000);
++        if (data_file < 0)
++            return -1;
++
++        initial_read_bytes = _read(data_file, file_header, 20);
++        initial_read_bytes += _read(data_file, &info.word, 4);
++
++        initial_record_count = record_count;
++        for (int other_index = 0; other_index < initial_record_count; ++other_index)
++            info.frames = records[other_index]->frame_count;
++    }
++
++    unsigned int palette_bytes = 0;
++    ScreenDialogResourceLookup* lookup = this;
++    int palette_matches = 0;
++    int* marked = static_cast<int*>(::operator new(initial_record_count * sizeof(int)));
++    memset(marked, 0, lookup->record_count * sizeof(int));
++    for (int record = 0; record < lookup->record_count; ++record)
++    {
++        for (int palette = 0; palette < lookup->records[record]->palette_count; ++palette)
++        {
++            if (!marked[record])
++            {
++                marked[record] = 1;
++                unsigned short* reference = lookup->records[record]->palettes[palette];
++                unsigned int format = lookup->records[record]->format_18;
++                for (int other = 0; other < lookup->record_count; ++other)
++                {
++                    for (int other_palette = 0; other_palette < lookup->records[other]->palette_count; ++other_palette)
++                    {
++                        if (format == lookup->records[other]->format_18)
++                        {
++                            unsigned short* candidate = lookup->records[other]->palettes[other_palette];
++                            if (format != 3)
++                            {
++                                if (!marked[other])
++                                {
++                                    int colour;
++                                    for (colour = 0; colour < 256; ++colour)
++                                    {
++                                        if ((!reference[colour]) == candidate[colour])
++                                            goto next_palette;
++                                    }
++                                    {
++                                        ++palette_matches;
++                                        marked[other] = 1;
++                                        palette_bytes += 512;
++                                    }
++                                }
++                            }
++                            else if (!marked[other])
++                            {
++                                int colour;
++                                for (colour = 0; colour < 64; ++colour)
++                                {
++                                    if ((!reference[colour]) == candidate[colour])
++                                        goto next_palette;
++                                }
++                                {
++                                    ++palette_matches;
++                                    marked[other] = 1;
++                                    palette_bytes += 128;
++                                }
++                            }
++                        }
++                    next_palette:;
++                    }
++                }
++            }
++        }
++    }
++    (void)palette_matches;
++    (void)palette_bytes;
++    ::operator delete(marked);
++
++    if (screen_dialog_frame_file == -1)
++        screen_dialog_frame_file = data_file;
++    screen_dialog_frame_cursor = initial_read_bytes;
++    return 0;
++}
+diff --git a/targets/beachlife-uk-1.1.d/00417820.json b/targets/beachlife-uk-1.1.d/00417820.json
+new file mode 100644
+index 0000000..3fe52dc
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00417820.json
+@@ -0,0 +1,19 @@
++{
++  "functions": [
++    {
++      "address": "0x00417820",
++      "size": 877,
++      "name": "ScreenDialogResourceLookup::Load",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "runtime_cdecl_imports": [
++    "_open"
++  ],
++  "source_compile_options": {
++    "match_00417820.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  }
++}

@@ -1,0 +1,151 @@
+diff --git a/fixtures/game.d/fixture_00415c40.cpp b/fixtures/game.d/fixture_00415c40.cpp
+new file mode 100644
+index 0000000..80c4dfd
+--- /dev/null
++++ b/fixtures/game.d/fixture_00415c40.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_dialog_resource.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_00415c40(ScreenDialogResource* item, const ScreenRectangle* rectangle,
++    int tile_x, int tile_y, int offset_x, int offset_y, float depth_step, unsigned int depth)
++{
++    item->BurnBuildingClippedTiles(rectangle, tile_x, tile_y, offset_x, offset_y, depth_step, depth);
++}
+diff --git a/metadata.d/00415c40.csv b/metadata.d/00415c40.csv
+new file mode 100644
+index 0000000..916743c
+--- /dev/null
++++ b/metadata.d/00415c40.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x00415c40,function,1044,?BurnBuildingClippedTiles@ScreenDialogResource@@QAEXPBUScreenRectangle@@HHHHMI@Z
+diff --git a/src/match_00415c40.cpp b/src/match_00415c40.cpp
+new file mode 100644
+index 0000000..19f1ed6
+--- /dev/null
++++ b/src/match_00415c40.cpp
+@@ -0,0 +1,102 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_overlay_layout.h"
++
++static inline const unsigned char* FramePlane(ScreenDialogResource* resource, int index)
++{
++    ScreenDialogResourceFrame* frame = resource->record->frames[index];
++    return frame->SelectData(resource->word_14, resource->word_18);
++}
++
++// FUNCTION: BEACHLIFE 0x00415c40
++void ScreenDialogResource::BurnBuildingClippedTiles(const ScreenRectangle* rectangle,
++    int tile_x, int tile_y, int offset_x, int offset_y, float depth_step, unsigned int depth)
++{
++    if (record->format_18 != 5)
++        return;
++    const unsigned char* colours = FramePlane(this, 0);
++    const unsigned char* depths = FramePlane(this, 1);
++    OverlayMapPrefix* map = overlay_map;
++    const OverlayMapPrefix* cache = map;
++    int size = overlay_map->tile_size_dc;
++    const unsigned short* palette = record->palettes[0];
++    int width = record->frames[word_10]->width_0e;
++    int active_y = tile_y;
++    unsigned int data_index = 0;
++    for (int skipped = 0; skipped < rectangle->top; ++skipped)
++    {
++        int column = 0;
++        while (column < width)
++        {
++            signed char run = colours[data_index++];
++            if (run > 0)
++            {
++                column += run;
++                data_index += run;
++            }
++            else
++                column -= run;
++        }
++    }
++    for (int row = rectangle->top; row < rectangle->bottom; ++row)
++    {
++        int active_x = tile_x;
++        int column = offset_x;
++        int decoded = 0;
++        if (row - rectangle->top + offset_y > size - 1)
++            active_y = tile_y + (row - rectangle->top + offset_y) / size;
++        int pixel = ((row - rectangle->top + offset_y) % size) * size + offset_x;
++        unsigned int* view;
++        if (!cache->cached_tiles_e0[active_y * cache->cache_height_d8 + active_x].ready)
++            map->MapCachedTile(active_x, active_y);
++        if (!cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].ready)
++            map->MapCachedTile(active_x, active_y);
++        view = static_cast<unsigned int*>(cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].view);
++        while (decoded < width)
++        {
++            signed char run = colours[data_index++];
++            if (run >= 0)
++            {
++                while (run--)
++                {
++                    if (column >= size)
++                    {
++                        active_x = (active_x + 1) % static_cast<int>(cache->cache_width_d4);
++                        column %= size;
++                        if (!cache->cached_tiles_e0[active_y * cache->cache_height_d8 + active_x].ready)
++                            map->MapCachedTile(active_x, active_y);
++                        if (!cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].ready)
++                            map->MapCachedTile(active_x, active_y);
++                        view = static_cast<unsigned int*>(cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].view);
++                        pixel = ((row - rectangle->top + offset_y) % size) * size + column;
++                    }
++                    unsigned int value = (static_cast<unsigned short>(static_cast<int>(depths[data_index] * static_cast<long double>(depth_step))) + (depth & 0xffffu)) << 16;
++                    value = (value & 0xfffeffffu) + 0x10000;
++                    if ((view[pixel] & 0xffff0000u) <= value)
++                        view[pixel] = value + palette[colours[data_index]];
++                    ++data_index;
++                    ++pixel;
++                    ++column;
++                    ++decoded;
++                }
++            }
++            else
++            {
++                decoded -= run;
++                column -= run;
++                if (column >= size)
++                {
++                    column %= size;
++                    active_x = (active_x + 1) % static_cast<int>(cache->cache_width_d4);
++                    if (!cache->cached_tiles_e0[active_y * cache->cache_height_d8 + active_x].ready)
++                        map->MapCachedTile(active_x, active_y);
++                    if (!cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].ready)
++                        map->MapCachedTile(active_x, active_y);
++                    view = static_cast<unsigned int*>(cache->cached_tiles_e0[active_y * cache->cache_width_d4 + active_x].view);
++                    pixel = ((row - rectangle->top + offset_y) % size) * size + column;
++                }
++                else
++                    pixel -= run;
++            }
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/00415c40.json b/targets/beachlife-uk-1.1.d/00415c40.json
+new file mode 100644
+index 0000000..2ffbab4
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/00415c40.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x00415c40",
++      "size": 1044,
++      "name": "ScreenDialogResource::BurnBuildingClippedTiles",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_00415c40.cpp": [
++      "/Ob1"
++    ]
++  }
++}

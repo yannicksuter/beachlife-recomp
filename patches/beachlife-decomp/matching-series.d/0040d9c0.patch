@@ -1,0 +1,216 @@
+diff --git a/fixtures/game.d/fixture_0040d9c0.cpp b/fixtures/game.d/fixture_0040d9c0.cpp
+new file mode 100644
+index 0000000..f8126ec
+--- /dev/null
++++ b/fixtures/game.d/fixture_0040d9c0.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_renderer.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) unsigned char Fixture_0040d9c0(ScreenRequestRenderer* renderer, void* window,
++    unsigned char mode, unsigned int width, unsigned int height, unsigned int bits)
++{
++    return renderer->InitializeDisplay(window, mode, width, height, bits);
++}
+diff --git a/metadata.d/0040d9c0.csv b/metadata.d/0040d9c0.csv
+new file mode 100644
+index 0000000..ffea51f
+--- /dev/null
++++ b/metadata.d/0040d9c0.csv
+@@ -0,0 +1,8 @@
++address,type,size,symbol
++0x0040d9c0,function,1312,?InitializeDisplay@ScreenRequestRenderer@@QAEEPAXEIII@Z
++0x004ee6a0,library,6,_DirectDrawCreateEx@16
++0x004fc2c8,string,67,
++0x004fc328,string,30,
++0x004fc348,string,31,
++0x004fc368,string,27,
++0x004fc384,string,62,
+diff --git a/src/match_0040d9c0.cpp b/src/match_0040d9c0.cpp
+new file mode 100644
+index 0000000..a8180bb
+--- /dev/null
++++ b/src/match_0040d9c0.cpp
+@@ -0,0 +1,156 @@
++#include "startup_screen_renderer.h"
++#include "pool_allocate.h"
++#include "startup_renderer_display.h"
++
++#include "startup_direct_draw7.h"
++#include <new>
++#include <string.h>
++
++static inline void ResizeWindow(HWND window, RECT* rectangle, unsigned int width, unsigned int height)
++{
++    SetRect(rectangle, 0, 0, width, height);
++    AdjustWindowRectEx(rectangle, GetWindowLongA(window, -16), GetMenu(window) != 0, GetWindowLongA(window, -20));
++    SetWindowPos(window, 0, 0, 0, rectangle->right - rectangle->left, rectangle->bottom - rectangle->top, 0x16);
++    SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0, 0x15);
++}
++
++// FUNCTION: BEACHLIFE 0x0040d9c0
++unsigned char ScreenRequestRenderer::InitializeDisplay(void* window, unsigned char mode,
++    unsigned int requested_width, unsigned int requested_height, unsigned int bits)
++{
++    unsigned char successful = 1;
++    DirectDraw7Prefix* device;
++    if (DirectDrawCreateEx(0, reinterpret_cast<void**>(&draw), IID_IDirectDraw7, 0) < 0)
++    {
++        successful = 0;
++    }
++    else
++    {
++        memset(display_mode_flags_48, 0, sizeof(display_mode_flags_48));
++        device = draw;
++        device->vtable->EnumDisplayModes(device, 0, 0, display_mode_flags_48, RecordDisplayMode);
++    }
++
++    if (mode)
++    {
++        device = draw;
++        if (device->vtable->SetCooperativeLevel(device, window, 8) < 0)
++            StartupFatal("Renderer16::CreateDisplay - error calling SetCooperativeLevel");
++
++        RECT rectangle;
++        ResizeWindow(static_cast<HWND>(window), &rectangle, requested_width, requested_height);
++
++        RECT work_area;
++        SystemParametersInfoA(0x30, 0, &work_area, 0);
++        GetWindowRect(static_cast<HWND>(window), &rectangle);
++        if (rectangle.left < work_area.left)
++            rectangle.left = work_area.left;
++        if (rectangle.top < work_area.top)
++            rectangle.top = work_area.top;
++        SetWindowPos(static_cast<HWND>(window), 0, rectangle.left, rectangle.top, 0, 0, 0x15);
++
++        GetClientRect(static_cast<HWND>(window_34), reinterpret_cast<RECT*>(&window_rectangle_24));
++        ClientToScreen(static_cast<HWND>(window_34), reinterpret_cast<POINT*>(&window_rectangle_24.left));
++        ClientToScreen(static_cast<HWND>(window_34), reinterpret_cast<POINT*>(&window_rectangle_24.right));
++
++        CreateSurface(requested_width, requested_height, 0);
++        surfaces[0]->position = ScreenPoint(0, 0);
++
++        bitmap_info = new BITMAPINFO;
++        // Only the 40-byte header is cleared; the RGBQUAD tail stays untouched.
++        memset(bitmap_info, 0, sizeof(BITMAPINFOHEADER));
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biWidth = requested_width;
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biHeight = -static_cast<int>(requested_height);
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biPlanes = 1;
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biBitCount = 16;
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biCompression = 0;
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biSizeImage = 0;
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biXPelsPerMeter = 0;
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biYPelsPerMeter = 0;
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biClrUsed = 0;
++        static_cast<BITMAPINFO*>(bitmap_info)->bmiHeader.biClrImportant = 0;
++    }
++    else
++    {
++        try
++        {
++            device = draw;
++            if (device->vtable->SetCooperativeLevel(device, window, 0x11) < 0)
++                throw const_cast<char*>("SetCooperativeLevel failed");
++
++            device = draw;
++            if (device->vtable->SetDisplayMode(device, requested_width, requested_height, bits, 0, 0) < 0)
++                throw const_cast<char*>("CreateDisplay - SetDisplayMode");
++
++            SurfaceDescription description;
++            memset(&description, 0, sizeof(description));
++            description.size = sizeof(description);
++            description.flags = 0x21;
++            description.caps = 0x218;
++            description.back_buffer_count = 1;
++            device = draw;
++            if (device->vtable->CreateSurface(device, &description, &primary_surface, 0) < 0)
++                throw const_cast<char*>("CreateDisplay - CreateSurface");
++
++            DirectDrawSurface7Prefix* primary = primary_surface;
++            SurfaceCapabilities capabilities;
++            memset(&capabilities, 0, sizeof(capabilities));
++            capabilities.caps = 4;
++            if (primary->vtable->GetAttachedSurface(primary, &capabilities, &back_surface) < 0)
++                throw const_cast<char*>("GetAttachedSurface failed");
++
++            DirectDrawSurface7Prefix* attached = back_surface;
++            attached->vtable->AddRef(attached);
++            ScreenSurfacePosition* entry = new ScreenSurfacePosition;
++            entry->software = 0;
++            entry->surface = back_surface;
++            entry->height = requested_height;
++            entry->width = requested_width;
++
++            SurfaceDescription attached_description;
++            memset(&attached_description, 0, sizeof(attached_description));
++            attached_description.size = sizeof(attached_description);
++            attached = back_surface;
++            attached->vtable->GetSurfaceDesc(attached, &attached_description);
++            entry->pitch = attached_description.pitch;
++
++            surfaces.push_back(entry);
++
++            surfaces[0]->position = ScreenPoint(0, 0);
++            SetRect(reinterpret_cast<RECT*>(&window_rectangle_24), 0, 0, GetSystemMetrics(0), GetSystemMetrics(1));
++        }
++        catch (char* message)
++        {
++            successful = 0;
++        }
++    }
++
++    if (mode)
++    {
++        format_44 = 1;
++        fill_color = 0x3e0;
++    }
++    else
++    {
++        DDPIXELFORMAT pixel_format;
++        memset(&pixel_format, 0, sizeof(pixel_format));
++        pixel_format.dwSize = sizeof(pixel_format);
++        DirectDrawSurface7Prefix* primary = primary_surface;
++        reinterpret_cast<IDirectDrawSurface7*>(primary)->GetPixelFormat(&pixel_format);
++        switch (pixel_format.dwGBitMask)
++        {
++        case 0x3e0:
++            format_44 = 1;
++            fill_color = 0x3e0;
++            break;
++        case 0x7e0:
++            format_44 = 0;
++            fill_color = 0x7e0;
++            break;
++        default:
++            StartupFatal("Renderer16:CreateDisplay - something is wrong with the pixelformat");
++        }
++    }
++    return successful;
++}
+diff --git a/targets/beachlife-uk-1.1.d/0040d9c0.json b/targets/beachlife-uk-1.1.d/0040d9c0.json
+new file mode 100644
+index 0000000..84a411c
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/0040d9c0.json
+@@ -0,0 +1,20 @@
++{
++  "functions": [
++    {
++      "address": "0x0040d9c0",
++      "size": 1312,
++      "name": "ScreenRequestRenderer::InitializeDisplay",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "stlport_sources": [
++    "match_0040d9c0.cpp",
++    "fixture_0040d9c0.cpp"
++  ],
++  "source_compile_options": {
++    "match_0040d9c0.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  }
++}

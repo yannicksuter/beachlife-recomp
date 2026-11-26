@@ -1,0 +1,173 @@
+diff --git a/fixtures/game.d/fixture_004161f0.cpp b/fixtures/game.d/fixture_004161f0.cpp
+new file mode 100644
+index 0000000..6e40c6b
+--- /dev/null
++++ b/fixtures/game.d/fixture_004161f0.cpp
+@@ -0,0 +1,8 @@
++#include "startup_screen_dialog_resource.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004161f0(ScreenDialogResource* item, int tile_x, int tile_y, int offset_x,
++    int offset_y, float depth_step, unsigned int depth)
++{
++    item->DrawTerrainTiles(tile_x, tile_y, offset_x, offset_y, depth_step, depth);
++}
+diff --git a/metadata.d/004161f0.csv b/metadata.d/004161f0.csv
+new file mode 100644
+index 0000000..9d92965
+--- /dev/null
++++ b/metadata.d/004161f0.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004161f0,function,1305,?DrawTerrainTiles@ScreenDialogResource@@QAEXHHHHMI@Z
+diff --git a/src/match_004161f0.cpp b/src/match_004161f0.cpp
+new file mode 100644
+index 0000000..6f7ab2d
+--- /dev/null
++++ b/src/match_004161f0.cpp
+@@ -0,0 +1,124 @@
++#include "startup_screen_dialog_resource.h"
++#include "startup_screen_overlay_layout.h"
++#include "startup_screen_point.h"
++#include "render_mask_setup.h"
++
++// FUNCTION: BEACHLIFE 0x004161f0
++void ScreenDialogResource::DrawTerrainTiles(int tile_x, int tile_y, int offset_x, int offset_y,
++    float, unsigned int depth)
++{
++    OverlayMapPrefix* map = overlay_map;
++    const OverlayMapPrefix* cache = map;
++    ScreenDialogResourceFrame* frame = record->frames[0];
++    const unsigned char* data = frame->SelectData(word_14, word_18);
++    const unsigned short* palette = record->palettes[0];
++    unsigned short half = RenderHalfMask();
++    unsigned short quarter = RenderQuarterMask();
++    int width = record->frames[word_10]->width_0e;
++    int height = record->frames[word_10]->height_10;
++    int size = map->tile_size_dc;
++    int active_y = tile_y;
++    unsigned int data_index = 0;
++    int row = 0;
++    if (row < height)
++    {
++        int y = offset_y;
++        for (; row < height; ++row, ++y)
++        {
++            int decoded = 0;
++            int active_x = tile_x;
++            int column = offset_x;
++            if (y > size - 1)
++                active_y = tile_y + y / size;
++            int row_offset = (y % size) * size;
++            int pixel = row_offset + column;
++            unsigned int* view;
++            {
++                int view_x = active_x;
++                int view_y = active_y;
++                if (!cache->cached_tiles_e0[view_y * cache->cache_height_d8 + view_x].ready)
++                    map->MapCachedTile(view_x, view_y);
++                if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
++                    map->MapCachedTile(view_x, view_y);
++                view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
++            }
++
++            while (decoded < width)
++            {
++                signed char run = data[data_index++];
++                if (run >= 0)
++                {
++                    while (run--)
++                    {
++                        if (column >= size)
++                        {
++                            active_x = (active_x + 1) % static_cast<int>(overlay_map->cache_width_d4);
++                            column %= size;
++                            {
++                                int view_x = active_x;
++                                int view_y = active_y;
++                                if (!cache->cached_tiles_e0[view_y * cache->cache_height_d8 + view_x].ready)
++                                    map->MapCachedTile(view_x, view_y);
++                                if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
++                                    map->MapCachedTile(view_x, view_y);
++                                view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
++                            }
++                            pixel = row_offset + column;
++                        }
++                        unsigned int row_depth = ((depth & 0xffffu) + static_cast<unsigned int>(row) * 16) << 16;
++                        unsigned int old_depth = view[pixel] & 0xffff0000u;
++                        if (old_depth <= row_depth)
++                        {
++                            unsigned char mode = data[data_index] & 0xc0u;
++                            unsigned short colour = palette[data[data_index] - mode];
++                            unsigned short old_colour = static_cast<unsigned short>(view[pixel]);
++                            unsigned short result;
++                            switch (mode)
++                            {
++                            case 0:
++                                result = colour;
++                                break;
++                            case 0x40:
++                                result = ((colour >> 1) & (half >> 1)) + ((old_colour >> 2) & (quarter >> 2)) + ((colour >> 2) & (quarter >> 2));
++                                break;
++                            case 0x80:
++                                result = ((old_colour >> 1) & (half >> 1)) + ((colour >> 1) & (half >> 1));
++                                break;
++                            case 0xc0:
++                                result = ((old_colour >> 1) & (half >> 1)) + ((old_colour >> 2) & (quarter >> 2)) + ((colour >> 2) & (quarter >> 2));
++                                break;
++                            }
++                            view[pixel] = old_depth + result;
++                        }
++                        ++data_index;
++                        ++decoded;
++                        ++pixel;
++                        ++column;
++                    }
++                }
++                else
++                {
++                    decoded -= run;
++                    column -= run;
++                    if (column > size)
++                    {
++                        column %= size;
++                        active_x = (active_x + 1) % static_cast<int>(overlay_map->cache_width_d4);
++                        {
++                            int view_x = active_x;
++                            int view_y = active_y;
++                            if (!cache->cached_tiles_e0[view_y * cache->cache_height_d8 + view_x].ready)
++                                map->MapCachedTile(view_x, view_y);
++                            if (!map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].ready)
++                                map->MapCachedTile(view_x, view_y);
++                            view = static_cast<unsigned int*>(map->cached_tiles_e0[view_y * map->cache_width_d4 + view_x].view);
++                        }
++                        pixel = row_offset + column;
++                    }
++                    else
++                        pixel -= run;
++                }
++            }
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/004161f0.json b/targets/beachlife-uk-1.1.d/004161f0.json
+new file mode 100644
+index 0000000..2d07d9a
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004161f0.json
+@@ -0,0 +1,15 @@
++{
++  "functions": [
++    {
++      "address": "0x004161f0",
++      "size": 1091,
++      "name": "ScreenDialogResource::DrawTerrainTiles",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment and the inline jump tables."
++    }
++  ],
++  "source_compile_options": {
++    "match_004161f0.cpp": [
++      "/Ob1"
++    ]
++  }
++}

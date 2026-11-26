@@ -1,0 +1,193 @@
+diff --git a/fixtures/game.d/fixture_004e4740.cpp b/fixtures/game.d/fixture_004e4740.cpp
+new file mode 100644
+index 0000000..0ca142d
+--- /dev/null
++++ b/fixtures/game.d/fixture_004e4740.cpp
+@@ -0,0 +1,7 @@
++#include "startup_screen_manager.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004e4740(ScreenRequestGamePrefix* game)
++{
++    game->RefreshSaveRecords();
++}
+diff --git a/metadata.d/004e4740.csv b/metadata.d/004e4740.csv
+new file mode 100644
+index 0000000..72d68af
+--- /dev/null
++++ b/metadata.d/004e4740.csv
+@@ -0,0 +1,4 @@
++address,type,size,symbol
++0x004e4740,function,1331,?RefreshSaveRecords@ScreenRequestGamePrefix@@QAEXXZ
++0x005867b4,string,6,
++0x005867bc,string,13,
+diff --git a/src/match_004e4740.cpp b/src/match_004e4740.cpp
+new file mode 100644
+index 0000000..9a7ac51
+--- /dev/null
++++ b/src/match_004e4740.cpp
+@@ -0,0 +1,121 @@
++#include "startup_screen_manager.h"
++#include "startup_game_file.h"
++#include "startup_game_save_record.h"
++#include "startup_game_save_sort.h"
++
++#include <algorithm>
++#include <float.h>
++#include <io.h>
++#include <math.h>
++#include <new>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++// Retail expands ClearSaveRecords (0x004e4c80) here.
++static inline void ClearSaves(ScreenRequestGamePrefix* game)
++{
++    for (GameSaveRecord** record = game->saves.begin(); record != game->saves.end(); ++record)
++    {
++        if (*record)
++            delete *record;
++    }
++    game->saves.clear();
++    game->save_info_enabled = 0;
++}
++
++// The original reads, tests and advances the enumeration through these small
++// inline helpers; their cut follows the retail /Ob1 decisions (the cleared
++// vector's erase, the push_back overflow path and the sort helpers that stay
++// out of line).
++static inline const char* SaveDirectory()
++{
++    return startup_save_directory;
++}
++static inline bool IsDotEntry(const char* name)
++{
++    return strcmp(name, ".") == 0 || strcmp(name, "..") == 0;
++}
++static inline long FindNext(long handle, _finddata_t* found)
++{
++    return _findnext(handle, found);
++}
++// A NaN version is unordered and is not rejected by the original. Widen before
++// subtraction to retain its unrounded comparison near the exact binary32
++// version and epsilon boundary.
++static inline bool IsCurrentVersion(float version)
++{
++    return !(fabs(static_cast<double>(version) - startup_save_version) > FLT_EPSILON);
++}
++
++// FUNCTION: BEACHLIFE 0x004e4740
++void ScreenRequestGamePrefix::RefreshSaveRecords()
++{
++    ClearSaves(this);
++
++    float version;
++    int timestamp;
++    int scenario;
++
++    char pattern[128];
++    _finddata_t found;
++    sprintf(pattern, "%s/save*.dat", SaveDirectory());
++    long handle = _findfirst(pattern, &found);
++    long status = handle;
++    while (status != -1)
++    {
++        // These original branches do not advance enumeration.
++        if (IsDotEntry(found.name))
++            continue;
++
++        int number = atoi(found.name + 4);
++        char path[128];
++        sprintf(path, "%s/%s", SaveDirectory(), found.name);
++        FILE* probe = fopen(path, "rb");
++        if (probe)
++        {
++            fclose(probe);
++            // Only a failed construction releases the pending allocation.
++            // Later read/append failures do not acquire a cleanup guard.
++            GameFileReader* file = new GameFileReader(0, path);
++            char signature[128];
++            bool signature_matches = true;
++            file->ReadString(signature, 128);
++            if (strcmp(signature, startup_save_signature) != 0)
++                signature_matches = false;
++            file->ReadFloat(&version);
++            if (IsCurrentVersion(version) && signature_matches)
++            {
++                GameSaveRecord* record = new GameSaveRecord;
++                record->word_00 = static_cast<unsigned int>(number);
++                file->ReadInt(&timestamp);
++                record->time_04 = timestamp;
++                file->ReadInt(&scenario);
++                record->word_08 = static_cast<unsigned int>(scenario);
++                int value;
++                file->ReadInt(&value);
++                record->day_0c = value;
++                float time;
++                file->ReadFloat(&time);
++                record->time_10 = time;
++                file->ReadFloat(&time);
++                record->cash_14 = time;
++                file->ReadInt(&value);
++                record->guests_18 = value;
++                file->ReadText(record->name_1c, 64);
++                unsigned char ignored_flag;
++                file->ReadByte(&ignored_flag);
++
++                saves.push_back(record);
++            }
++            delete file;
++        }
++        status = FindNext(handle, &found);
++    }
++    _findclose(handle);
++
++    GameSaveRecord** last = saves.end();
++    GameSaveRecord** first = saves.begin();
++    if (first != last)
++        std::sort(first, last, SaveRecordTimeOrder());
++}
+diff --git a/targets/beachlife-uk-1.1.d/004e4740.json b/targets/beachlife-uk-1.1.d/004e4740.json
+new file mode 100644
+index 0000000..be015c9
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004e4740.json
+@@ -0,0 +1,37 @@
++{
++  "functions": [
++    {
++      "address": "0x004e4740",
++      "size": 1331,
++      "name": "ScreenRequestGamePrefix::RefreshSaveRecords",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004e4740.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "fixture_004e4740.cpp",
++    "match_004e4740.cpp"
++  ],
++  "comparison_vendor_identities": [
++    {
++      "function": "0x004e4740",
++      "address": "0x004e80d0",
++      "symbol": "?erase@?$vector@PAUGameSaveRecord@@V?$allocator@PAUGameSaveRecord@@@_STL@@@_STL@@QAEPAPAUGameSaveRecord@@PAPAU3@0@Z"
++    },
++    {
++      "function": "0x004e4740",
++      "address": "0x004c3a30",
++      "symbol": "?_M_insert_overflow@?$vector@PAUGameSaveRecord@@V?$allocator@PAUGameSaveRecord@@@_STL@@@_STL@@IAEXPAPAUGameSaveRecord@@ABQAU3@ABU__true_type@2@I_N@Z"
++    },
++    {
++      "function": "0x004e4740",
++      "address": "0x004450e0",
++      "symbol": "?__copy_backward_aux@_STL@@YAPAPAUGameSaveRecord@@PAPAU2@00ABU__true_type@1@@Z"
++    }
++  ]
++}

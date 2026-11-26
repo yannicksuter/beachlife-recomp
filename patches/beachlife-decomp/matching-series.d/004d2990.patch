@@ -1,0 +1,137 @@
+diff --git a/fixtures/game.d/fixture_004d2990.cpp b/fixtures/game.d/fixture_004d2990.cpp
+new file mode 100644
+index 0000000..706ba94
+--- /dev/null
++++ b/fixtures/game.d/fixture_004d2990.cpp
+@@ -0,0 +1,7 @@
++#include "startup_game_update_pair.h"
++
++// Compile/link retention only; this image is never executed.
++extern "C" __declspec(dllexport) void Fixture_004d2990(GameUpdatePair* pair, float delta)
++{
++    pair->UpdateObjectSounds(delta);
++}
+diff --git a/metadata.d/004d2990.csv b/metadata.d/004d2990.csv
+new file mode 100644
+index 0000000..d4c9636
+--- /dev/null
++++ b/metadata.d/004d2990.csv
+@@ -0,0 +1,2 @@
++address,type,size,symbol
++0x004d2990,function,568,?UpdateObjectSounds@GameUpdatePair@@QAEXM@Z
+diff --git a/src/match_004d2990.cpp b/src/match_004d2990.cpp
+new file mode 100644
+index 0000000..f593c66
+--- /dev/null
++++ b/src/match_004d2990.cpp
+@@ -0,0 +1,84 @@
++#include "window_audio_inlines.h"
++#include "startup_screen_position_inlines.h"
++#include "startup_variable_position_inlines.h"
++#include "startup_world_sound_data.h"
++#include <math.h>
++#include "startup_game_update_pair.h"
++#include "startup_variable_state.h"
++#include "window_audio.h"
++#include "window_audio_initialization.h"
++
++static inline float ScaleLevel(float level, float volume)
++{
++    float scaled = level * volume;
++    return scaled;
++}
++
++static inline float ListenerDistance(WindowAudioVector listener, VariableEntity* object)
++{
++    float dx = listener.x - object->Position().x;
++    float dy = listener.y - object->Position().y;
++    dy -= object->Unknown44();
++    float distance = sqrt(dy * dy + dx * dx);
++    return distance;
++}
++
++// FUNCTION: BEACHLIFE 0x004d2990
++void GameUpdatePair::UpdateObjectSounds(float)
++{
++    if (!enabled_00)
++    {
++        return;
++    }
++
++    float near_distance = static_cast<double>(window_audio_state->NearDistance());
++    float far_distance = static_cast<double>(window_audio_state->FarDistance());
++    for (GameObjectSoundList::iterator node = object_sounds_08.begin(); node != object_sounds_08.end(); ++node)
++    {
++        GameObjectSound* sound = *node;
++        VariableEntity* object = variable_world->FindObject(sound->object_id);
++        if (!object)
++        {
++            continue;
++        }
++
++        WindowAudioVector listener = window_audio_state->position_e0;
++        float distance = ListenerDistance(listener, object);
++        if (sound->playing_28)
++        {
++            bool out_of_range = false;
++            if (distance > far_distance)
++                out_of_range = true;
++            if ((!sound->ignores_music_29 && window_audio_state->IsStreamPlaying() && window_audio_state->stream_volume_10 > game_sound_music_level) || out_of_range)
++            {
++                window_audio_state->StopSound(sound->voice_2c, game_sound_stop_fade);
++                sound->playing_28 = 0;
++            }
++            else
++            {
++                float level = distance > far_distance ? 0.0f
++                            : distance < near_distance
++                                ? 1.0f
++                                : 1.0f - (distance - near_distance) / (far_distance - near_distance);
++                float volume = ScaleLevel(level, sound->volume_04);
++                window_audio_state->FadeSoundLevel(sound->voice_2c, volume, game_sound_level_fade);
++            }
++        }
++        else if (distance < far_distance)
++        {
++            if (sound->ignores_music_29 || !window_audio_state->IsStreamPlaying() || !(window_audio_state->stream_volume_10 > game_sound_music_level))
++            {
++                float level = distance < near_distance ? 1.0f
++                                                       : 1.0f - (distance - near_distance) / (far_distance - near_distance);
++                float volume = ScaleLevel(level, sound->volume_04);
++                int voice = window_audio_state->PlaySoundAtLevel(
++                    sound->name_08, volume, 2, game_sound_start_fade);
++                sound->voice_2c = voice;
++                if (voice != -1)
++                {
++                    sound->playing_28 = 1;
++                }
++            }
++        }
++    }
++}
+diff --git a/targets/beachlife-uk-1.1.d/004d2990.json b/targets/beachlife-uk-1.1.d/004d2990.json
+new file mode 100644
+index 0000000..5f80fd9
+--- /dev/null
++++ b/targets/beachlife-uk-1.1.d/004d2990.json
+@@ -0,0 +1,20 @@
++{
++  "functions": [
++    {
++      "address": "0x004d2990",
++      "size": 568,
++      "name": "GameUpdatePair::UpdateObjectSounds",
++      "name_status": "Descriptive; audited complete original code extent, excluding alignment."
++    }
++  ],
++  "source_compile_options": {
++    "match_004d2990.cpp": [
++      "/GX",
++      "/Ob1"
++    ]
++  },
++  "stlport_sources": [
++    "match_004d2990.cpp",
++    "fixture_004d2990.cpp"
++  ]
++}
